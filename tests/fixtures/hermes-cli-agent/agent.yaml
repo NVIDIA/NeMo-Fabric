@@ -1,0 +1,51 @@
+schema_version: fabric.agent/v1alpha1
+
+metadata:
+  name: hermes-cli-agent
+  description: Test-only Hermes CLI-shaped agent package.
+
+harness:
+  adapter_id: nvidia.fabric.hermes.cli
+  resolution: preinstalled
+  settings:
+    command: ./bin/fake-hermes.py
+    agent_profile: code_reviewer
+    workspace: ./repos/my-service
+    hermes_home: ./artifacts/hermes-cli/home
+    enabled_toolsets: []
+
+models:
+  default:
+    provider: test
+    model: test-model
+    temperature: 0.0
+
+runtime:
+  mode: oneshot
+  transport: cli
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts/hermes-cli
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/hermes-cli
+
+skills:
+  paths:
+    - ./skills/code-review
+
+mcp:
+  servers:
+    github:
+      transport: streamable-http
+      url: ${GITHUB_MCP_URL}
+      expose_as: native
+
+telemetry:
+  enabled: false
+
+profiles:
+  directories:
+    - ./profiles

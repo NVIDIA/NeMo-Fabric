@@ -1,0 +1,501 @@
+{
+  "$defs": {
+    "ControlLocation": {
+      "description": "Where Fabric control code runs relative to the environment.",
+      "oneOf": [
+        {
+          "const": "external_control",
+          "description": "Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
+          "type": "string"
+        },
+        {
+          "const": "in_env_control",
+          "description": "Fabric runs inside the prepared environment with the harness.",
+          "type": "string"
+        }
+      ]
+    },
+    "EnvironmentConfig": {
+      "description": "Execution environment configuration.",
+      "properties": {
+        "artifacts": {
+          "description": "Artifact path inside or outside the provider.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection": {
+          "additionalProperties": true,
+          "description": "Provider connection metadata, such as server URL, session id, or namespace.",
+          "type": "object"
+        },
+        "control_location": {
+          "$ref": "#/$defs/ControlLocation",
+          "default": "in_env_control",
+          "description": "Where Fabric control code runs relative to the environment."
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Consumer-provided environment metadata.",
+          "type": "object"
+        },
+        "ownership": {
+          "$ref": "#/$defs/EnvironmentOwnership",
+          "default": "caller_owned",
+          "description": "Whether Fabric owns the environment resource."
+        },
+        "provider": {
+          "description": "Environment provider, for example `local`, `docker`, `opensandbox`, or `k8s`.",
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Provider-specific settings.",
+          "type": "object"
+        },
+        "workspace": {
+          "description": "Workspace path inside or outside the provider.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "EnvironmentOwnership": {
+      "description": "Whether Fabric owns the underlying environment resource.",
+      "oneOf": [
+        {
+          "const": "caller_owned",
+          "description": "The caller or a surrounding system owns the environment resource.",
+          "type": "string"
+        },
+        {
+          "const": "fabric_owned",
+          "description": "Fabric created or leased the environment resource and may release it.",
+          "type": "string"
+        }
+      ]
+    },
+    "HarnessConfig": {
+      "description": "Harness selection.",
+      "properties": {
+        "adapter_id": {
+          "description": "Adapter implementation id.",
+          "type": "string"
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResolutionStrategy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Selected install or availability strategy."
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Harness-specific settings.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "adapter_id"
+      ],
+      "type": "object"
+    },
+    "McpConfig": {
+      "description": "MCP capability configuration.",
+      "properties": {
+        "servers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/McpServerConfig"
+          },
+          "description": "Named MCP servers.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "McpExposure": {
+      "description": "MCP exposure strategy.",
+      "oneOf": [
+        {
+          "const": "native",
+          "description": "Map into harness-native MCP config.",
+          "type": "string"
+        },
+        {
+          "const": "env",
+          "description": "Export env/config for the harness to consume.",
+          "type": "string"
+        },
+        {
+          "const": "proxy",
+          "description": "Use an MCP proxy.",
+          "type": "string"
+        },
+        {
+          "const": "fabric_managed",
+          "description": "Fabric manages MCP and exposes basic tools/actions.",
+          "type": "string"
+        }
+      ]
+    },
+    "McpServerConfig": {
+      "description": "MCP server configuration.",
+      "properties": {
+        "expose_as": {
+          "$ref": "#/$defs/McpExposure",
+          "description": "How Fabric exposes the MCP capability to the harness."
+        },
+        "transport": {
+          "description": "MCP transport.",
+          "type": "string"
+        },
+        "url": {
+          "description": "MCP server URL or process command, depending on transport.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transport",
+        "url",
+        "expose_as"
+      ],
+      "type": "object"
+    },
+    "MetadataConfig": {
+      "description": "Human-readable metadata.",
+      "properties": {
+        "description": {
+          "description": "Optional description.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Agent/config name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ModelConfig": {
+      "description": "Model configuration.",
+      "properties": {
+        "api_key_env": {
+          "description": "Optional environment variable containing an API key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Provider model identifier.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Model provider name.",
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Provider-specific settings.",
+          "type": "object"
+        },
+        "temperature": {
+          "description": "Optional temperature.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model"
+      ],
+      "type": "object"
+    },
+    "ProfileRegistryConfig": {
+      "description": "Profile discovery config for curated package profiles.",
+      "properties": {
+        "directories": {
+          "description": "Directories searched when a caller selects a profile by name.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ResolutionStrategy": {
+      "description": "Adapter install or availability strategy.",
+      "oneOf": [
+        {
+          "const": "preinstalled",
+          "description": "Harness is already available in the prepared environment.",
+          "type": "string"
+        },
+        {
+          "const": "image_provided",
+          "description": "Environment image already contains the harness and dependencies.",
+          "type": "string"
+        },
+        {
+          "const": "pip_uv",
+          "description": "Adapter may install a Python package with pip or uv.",
+          "type": "string"
+        },
+        {
+          "const": "npm",
+          "description": "Adapter may install a Node package.",
+          "type": "string"
+        },
+        {
+          "const": "source",
+          "description": "Adapter may install from source.",
+          "type": "string"
+        },
+        {
+          "const": "service",
+          "description": "Adapter connects to an already-running service.",
+          "type": "string"
+        },
+        {
+          "const": "native_plugin",
+          "description": "Adapter is installed through a harness-native plugin manager.",
+          "type": "string"
+        }
+      ]
+    },
+    "RuntimeConfig": {
+      "description": "Runtime mode and input/output contract.",
+      "properties": {
+        "artifacts": {
+          "description": "Artifact directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "input_schema": {
+          "description": "Input schema label.",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/RuntimeMode",
+          "description": "Runtime mode."
+        },
+        "output_schema": {
+          "description": "Output schema label.",
+          "type": "string"
+        },
+        "transport": {
+          "$ref": "#/$defs/Transport",
+          "description": "Transport used to operate the harness."
+        }
+      },
+      "required": [
+        "mode",
+        "transport",
+        "input_schema",
+        "output_schema"
+      ],
+      "type": "object"
+    },
+    "RuntimeMode": {
+      "description": "Runtime lifecycle mode.",
+      "oneOf": [
+        {
+          "const": "oneshot",
+          "description": "Request is the lifecycle boundary.",
+          "type": "string"
+        },
+        {
+          "const": "service",
+          "description": "Long-running process or service is the lifecycle boundary.",
+          "type": "string"
+        },
+        {
+          "const": "session",
+          "description": "Session is the lifecycle boundary.",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillConfig": {
+      "description": "Skill capability configuration.",
+      "properties": {
+        "paths": {
+          "description": "Skill paths relative to the agent root.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "TelemetryConfig": {
+      "description": "Telemetry configuration.",
+      "properties": {
+        "config": {
+          "description": "Pass-through telemetry backend config."
+        },
+        "enabled": {
+          "default": false,
+          "description": "Whether telemetry is enabled for this run. Relay is the Phase 1 telemetry path.",
+          "type": "boolean"
+        },
+        "mode": {
+          "description": "Telemetry mode, for example `sdk`, `gateway`, or `external`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "output_dir": {
+          "description": "Optional telemetry output directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "project": {
+          "description": "Optional project name for telemetry backends.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Transport": {
+      "description": "Runtime transport.",
+      "oneOf": [
+        {
+          "const": "library",
+          "description": "In-process library/SDK call.",
+          "type": "string"
+        },
+        {
+          "const": "cli",
+          "description": "CLI process.",
+          "type": "string"
+        },
+        {
+          "const": "http",
+          "description": "HTTP service.",
+          "type": "string"
+        },
+        {
+          "const": "native_plugin",
+          "description": "Harness-native plugin surface.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Versioned Fabric agent config.",
+  "properties": {
+    "environment": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EnvironmentConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Environment where the harness or its tools execute."
+    },
+    "harness": {
+      "$ref": "#/$defs/HarnessConfig",
+      "description": "Harness selection and harness-specific settings."
+    },
+    "mcp": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/McpConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "MCP capability configuration."
+    },
+    "metadata": {
+      "$ref": "#/$defs/MetadataConfig",
+      "description": "Human-readable metadata."
+    },
+    "models": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ModelConfig"
+      },
+      "description": "Model aliases.",
+      "type": "object"
+    },
+    "profiles": {
+      "$ref": "#/$defs/ProfileRegistryConfig",
+      "description": "Optional profile discovery config."
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeConfig",
+      "description": "Runtime mode and input/output contract."
+    },
+    "schema_version": {
+      "description": "Config schema version.",
+      "type": "string"
+    },
+    "skills": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SkillConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Skill capability configuration."
+    },
+    "telemetry": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TelemetryConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Telemetry configuration."
+    },
+    "tools": {
+      "description": "Tool capability configuration."
+    }
+  },
+  "required": [
+    "schema_version",
+    "metadata",
+    "harness",
+    "runtime"
+  ],
+  "title": "FabricConfig",
+  "type": "object"
+}

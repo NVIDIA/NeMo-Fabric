@@ -1,0 +1,31 @@
+schema_version: fabric.profile/v1alpha1
+name: swebench_shim
+description: Test-only SWE-Bench-style run that mutates a repo and captures a patch artifact.
+
+harness:
+  adapter_id: test.fabric.hermes_shim
+  resolution: preinstalled
+  settings:
+    mode: swebench_shim
+    agent_profile: code_reviewer
+    workspace: ./repos/my-service
+    target_file: calculator.py
+    expected_before: "return 41"
+    replacement: "return 42"
+    new_file: generated/fix-notes.txt
+    new_file_contents: "patched by Fabric\n"
+
+runtime:
+  mode: oneshot
+  transport: library
+  input_schema: swe_bench_task
+  output_schema: patch_result
+  artifacts: ./artifacts/swebench
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/swebench
+
+telemetry:
+  enabled: false

@@ -1,154 +1,261 @@
-# __NVIDIA_OSS__ Standard Repo Template
+# NeMo Fabric
 
-This README file is from the NVIDIA_OSS standard repo template of [PLC-OSS-Template](https://github.com/NVIDIA-GitHub-Management/PLC-OSS-Template?tab=readme-ov-file). It provides a list of files in the PLC-OSS-Template and guidelines on how to use (clone and customize) them.
+NeMo Fabric standardizes how applications configure, launch, invoke, and collect
+artifacts from agent harnesses.
 
-**Upon completing the customization for the project repo, the repo admin should replace this README template with the project specific README file.**
+Fabric provides:
 
-- Files (org-wide templates in the NVIDIA .github org repo; per-repo overrides allowed) in [PLC-OSS-Template](https://github.com/NVIDIA-GitHub-Management/PLC-OSS-Template?tab=readme-ov-file)
+- a versioned `agent.yaml` config contract;
+- profile-based config variation for evaluation and ablation runs;
+- adapter descriptors for harness-specific launch and control;
+- a Rust core with a CLI and Python bindings;
+- JSON Schema snapshots for the public config and runtime contract;
+- normalized run results, artifact manifests, and telemetry references.
 
-   - Root 
-     - README.md skeleton (CTA + Quickstart + Support/Security/Governance links) 
-     - LICENSE (Apache 2.0 by default)
-        - For other licenses, see the [Confluence page](https://confluence.nvidia.com/pages/viewpage.action?pageId=788418816) for other licenses
-        - CLA.md file (delete if not using MIT or BSD licenses)
-     - CODE_OF_CONDUCT.md 
-     - SECURITY.md (vuln reporting path) 
-     - CONTRIBUTING.md (base; repo can add specifics)
-     - SUPPORT.md (Support levels/channels)
-     - GOVERNANCE.md (baseline; repo may extend)
-     - CITATION.md (for projects that need citation)
+## Architecture
 
-   - .github/ 
-     - ISSUE_TEMPLATE/ (<https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository>)
-       - bug.yml, feature.yml, task.yml, config.yml 
-     - PULL_REQUEST_TEMPLATE.md (<https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository>)
-     - workflows/
-     - Note: workflow-templates/ for starter workflows should live in the org-level .github repo, not per-repo
+```mermaid
+flowchart TB
+  Consumer["Consumer\nCLI | Python SDK | Harbor smoke"]
+  Config["Agent package\nagent.yaml + profiles"]
+  Core["Fabric Rust core\nvalidate | resolve | plan | run"]
+  Adapter["Selected Hermes adapter\nSDK | CLI"]
+  Harness["Agent harness runtime\nHermes"]
+  Artifacts["Artifact manifest\noutput | logs | patches | telemetry refs"]
+  Relay["NeMo Relay\nATOF / ATIF when enabled"]
 
-   - Repo-specific (not org-template, maintained by the team)
-     - CODEOWNERS (place at .github/CODEOWNERS or repo root)
-     - CHANGELOG.md (or RELEASE.md) 
-     - ROADMAP.md 
-     - MAINTAINERS.md 
-     - NOTICE or THIRD_PARTY_NOTICES / THIRD_PARTY_LICENSES (dependency specific)
-     - Build/package files (CMake, pyproject, Dockerfile, etc.)
-
-   - Recommended structure and hygiene
-     - docs/
-     - examples/
-     - tests/
-     - scripts/
-     - Container/dev env: Dockerfile, docker/, .devcontainer/ (optional)
-     - Build/package (language-specific):
-       - Python: pyproject.toml, setup.cfg/setup.py, requirements.txt, environment.yml
-       - C++: CMakeLists.txt, cmake/, vcpkg.json
-     - Repo hygiene: .gitignore, .gitattributes, .editorconfig, .pre-commit-config.yaml, .clang-format
-
-
-## Usage of [PLC-OSS-Template](https://github.com/NVIDIA-GitHub-Management/PLC-OSS-Template?tab=readme-ov-file) for NEW NVIDIA OSS repos
-
-1. Clone the [PLC-OSS-Template](https://github.com/NVIDIA-GitHub-Management/PLC-OSS-Template?tab=readme-ov-file)
-2. Find/replace all in the clone of `___PROJECT___` and `__PROJECT_NAME__` with the name of the specific project.
-3. Inspect all files to make sure all replacements work and update text as needed
-
-
-**What you can reuse immediately**
-- CODE_OF_CONDUCT.md
-- SECURITY.md
-- CONTRIBUTING.md (base)
-- .github/ISSUE_TEMPLATE/.yml (bug/feature/task + config.yml)
-- .github/PULL_REQUEST_TEMPLATE.md
-- Reusable workflows 
-
-**What you must customize per repo**
-- README.md: copy the skeleton and fill in product-specific details (Quickstart, Requirements, Usage, Support level, links)
-- LICENSE: check file is correct, update year, consult Confluence for alternatives https://confluence.nvidia.com/pages/viewpage.action?pageId=788418816, add CLA.md only if your license/process requires it
-- CODEOWNERS: replace <TEAM> with your GitHub team handle(s). Place at .github/CODEOWNERS (or repo root)
-- MAINTAINERS.md: list maintainers names/roles, escalation path
-- CHANGELOG.md (or RELEASE.md): track releases/changes
-- SUPPORT.md: Update for your project
-- ROADMAP.md (optional): upcoming milestones
-- NOTICE / THIRD_PARTY_NOTICES (if you ship third‑party content)
-- Build/package files (CMake/pyproject/Dockerfile/etc.), tests/, docs/, examples/, scripts/ as appropriate
-- Workflows: Edit if you need custom behavior 
-
-
-4. Change git origin to point to new repo and push
-5. Remove the line break below and everything above it
-
-## Usage for existing NVIDIA OSS repos
-
-1. Follow the steps above, but add the files to your existing repo and merge
-
-<!-- REMOVE THE LINE BELOW AND EVERYTHING ABOVE -->
------------------------------------------
-# [Project Title]
-One-sentence value proposition for users. Who is it for, and why it matters. 
-
-# Overview
-What the project does? Why the project is useful?
-Provide a brief overview, highlighting key features or problem-solving capabilities.
-
-# Getting Started
-Guide users on how they can get started with the project. This should include basic installation step, quick-start examples 
-```bash
-# Option A: Package manager (pip/conda/npm/etc.)
-<copy-paste install>
-
-# Option B: Container
-docker run <image> <args>
-
-# Verify (hello world)
-<one-liner or ~10-line example>
+  Consumer --> Core
+  Config --> Core
+  Core --> Adapter
+  Adapter --> Harness
+  Harness --> Artifacts
+  Core --> Artifacts
+  Core -. telemetry config .-> Relay
+  Harness -. harness telemetry .-> Relay
 ```
-# Requirements
-Include a list of pre-requisites. 
-- OS/Arch: <summary or link to full matrix>
-- Runtime/Compiler: <versions>
-- GPU/Drivers (if applicable): CUDA <ver>, driver <ver>, etc.
 
-# Usage
-```bash
-# Minimal runnable snippet (≤20 lines)
-<code>
+## Repository Layout
+
+```text
+crates/fabric-core/      Rust core types, config resolution, planning, schemas
+crates/fabric-cli/       `fabric` CLI
+crates/fabric-python/    native Python extension
+python/                  `nemo_fabric` Python SDK wrapper
+schemas/                 committed JSON Schema snapshots
+adapters/                maintained harness adapter implementations
+integrations/            consumer integrations such as Harbor
+examples/                sample agent packages and runnable demos
+tests/                   CLI, SDK, Hermes, Relay, and Harbor smoke tests
 ```
-- More examples/tutorials: <link>
-- API reference: <link>
 
-# Performance (Optional)
-Summary of benchmarks; link to detailed results and hardware used.
+## Requirements
 
-## Releases & Roadmap 
-- Releases/Changelog: <link>
-- (Optional) Next milestones or link to `ROADMAP.md`.
-  
-# Contribution Guidelines
-- Start here: `CONTRIBUTING.md`
-- Code of Conduct: `CODE_OF_CONDUCT.md`
-- Development quickstart (build/test):
+- Rust and Cargo
+- Python 3.10+
+- `NVIDIA_API_KEY` for real Hermes/NVIDIA-hosted model runs
+- `uv` only for the optional clean Hermes + Relay environment recipe
+
+## Quick Start
+
+Run the dependency-free checks:
+
 ```bash
-<clone> && <deps> && <build/test>
+cargo test
+cargo check -p fabric-python
+python3 tests/smoke_cli.py
+python3 tests/smoke_hermes_cli.py
+python3 tests/smoke_hermes_config_mapping.py
+python3 tests/smoke_swebench_style.py
+python3 python/tests/smoke_sdk.py
 ```
-## Governance & Maintainers
-- Governance: `GOVERNANCE.md`
-- Maintainers: <team/handles>
-- Labeling/triage policy: <link>
 
-## Security
-- Vulnerability disclosure: `SECURITY.md`
-- Do not file public issues for security reports.
+Install the Python SDK with native bindings:
 
-## Support
-- Level: <Experimental | Maintained | Stable>
-- How to get help: Issues/Discussions/<channel link>
-- Response expectations (if any).
+```bash
+python3 -m venv .tmp/fabric-native-venv
+.tmp/fabric-native-venv/bin/python -m pip install -e .
+.tmp/fabric-native-venv/bin/python -c "from nemo_fabric import FabricClient; print(FabricClient().plan('examples/code-review-agent', profile='env_local')['agent_name'])"
+.tmp/fabric-native-venv/bin/python python/tests/smoke_native_sdk.py
+```
 
-# Community
-Provide the channel for community communications.
+## CLI Usage
 
-# References
-Provide a list of related references
+Validate and inspect the example agent package:
 
-# License
-This project is licensed under the [NAME HERE] License - see the LICENSE.md file for details
-- License: <link>
+```bash
+cargo run -p fabric-cli -- validate examples/code-review-agent
+cargo run -p fabric-cli -- inspect examples/code-review-agent
+cargo run -p fabric-cli -- doctor examples/code-review-agent --profile env_local
+```
+
+Plan a run with one or more profiles:
+
+```bash
+cargo run -p fabric-cli -- plan examples/code-review-agent --profile env_local
+cargo run -p fabric-cli -- plan examples/code-review-agent --profile env_local --profile mcp_github
+```
+
+Generate or inspect JSON Schemas:
+
+```bash
+cargo run -p fabric-cli -- schema --name agent
+cargo run -p fabric-cli -- schema --output-dir schemas
+```
+
+Run `cargo test` after regenerating schemas. The tests verify that committed
+schema snapshots match the Rust core types.
+
+## Python SDK Usage
+
+```python
+import asyncio
+from pathlib import Path
+
+from nemo_fabric import FabricClient
+
+async def main():
+    agent = Path("examples/code-review-agent")
+
+    async with FabricClient() as client:
+        plan = client.plan(agent, profile="env_local")
+        report = await client.doctor(agent, profile="env_local")
+
+    print(plan["agent_name"])
+    print(report["checks"])
+
+asyncio.run(main())
+```
+
+When installed from the repository root, `FabricClient()` uses the native Rust
+binding. For source-tree debugging, pass an explicit CLI command:
+
+```python
+client = FabricClient(command=("cargo", "run", "-q", "-p", "fabric-cli", "--"))
+```
+
+## Agent Packages
+
+Fabric supports an agent directory or a single `agent.yaml` file.
+
+Canonical package:
+
+```text
+code-review-agent/
+  agent.yaml
+  profiles/
+    env-local.yaml
+    env-opensandbox.yaml
+    hermes-cli.yaml
+    hermes-real.yaml
+    hermes-relay.yaml
+    mcp-github.yaml
+  repos/
+  skills/
+```
+
+`agent.yaml` defines the default runnable package:
+
+- `metadata`
+- `harness`
+- `models`
+- `runtime`
+- `environment`
+- `tools`
+- `skills`
+- `mcp`
+- `telemetry`
+- `profiles.directories`
+
+Profiles are named variations of the base config. Use profiles to vary harness,
+model, MCP, tools, skills, telemetry, or environment context without editing
+`agent.yaml`. Fabric applies profiles in the order provided by the caller and
+validates the final effective config before planning or running.
+
+Maintained adapter implementations live at the repository top level under
+`adapters/`. Example agent packages reference adapters by `harness.adapter_id`;
+they do not carry adapter implementation code. Package-local
+`adapters/<adapter-name>/fabric-adapter.json` files are supported for custom
+harnesses.
+
+Adapter descriptors are adapter-owned JSON metadata. They tell Fabric which
+runtime modes, transports, control locations, resolution strategies, runner
+defaults, binaries, files, services, env vars, and plugin hooks an adapter
+supports.
+
+## Included Example Profiles
+
+- `env_local`: local execution context with Relay disabled.
+- `hermes_cli`: real Hermes CLI invocation through an installed `hermes`
+  command.
+- `hermes_real`: real Hermes SDK invocation through an installed Hermes Python
+  environment.
+- `hermes_relay`: real Hermes SDK invocation with Hermes-native NeMo Relay
+  telemetry enabled.
+- `mcp_github`: MCP capability variation layered on top of another profile.
+
+## Optional Hermes CLI Run
+
+The Hermes CLI path expects an installed `hermes` command and `NVIDIA_API_KEY`.
+Fabric maps the resolved model, workspace, skill paths, MCP servers, selected
+toolsets, and plugin settings into an isolated Hermes `config.yaml`, then runs
+Hermes in one-shot mode.
+
+```bash
+export NVIDIA_API_KEY=...
+cargo run -p fabric-cli -- run examples/code-review-agent --profile hermes_cli --input "Reply with exactly: hermes cli ok"
+```
+
+## Optional Hermes SDK Run
+
+The real Hermes SDK path expects an installed Hermes Python environment and
+`NVIDIA_API_KEY`.
+Fabric maps the resolved model, workspace, skill paths, MCP servers, selected
+toolsets, plugins, and Relay settings into an isolated Hermes `config.yaml`
+before invoking the Hermes SDK.
+
+```bash
+export NVIDIA_API_KEY=...
+export HERMES_PYTHON=/path/to/hermes/python
+RUN_FABRIC_HERMES_INTEGRATION=1 python3 tests/smoke_hermes_real.py
+```
+
+If `HERMES_PYTHON` is unset, the smoke first tries the current Python
+interpreter and then `python3`.
+
+## Optional Hermes + NeMo Relay Run
+
+The Hermes Relay path uses Hermes' native `observability/nemo_relay` plugin.
+Fabric writes `relay-config.json`, prepares an isolated `HERMES_HOME`, enables
+the Hermes plugin, maps the Fabric Relay config into Hermes export settings, and
+lets Hermes emit ATOF/ATIF from the real session, LLM, and tool lifecycle.
+
+For a sibling checkout layout:
+
+```bash
+uv venv .tmp/fabric-hermes-relay-venv --python 3.12
+uv pip install --python .tmp/fabric-hermes-relay-venv/bin/python \
+  -e ../nemo-relay \
+  -e ../hermes-agent
+
+export NVIDIA_API_KEY=...
+export HERMES_PYTHON="$PWD/.tmp/fabric-hermes-relay-venv/bin/python"
+RUN_FABRIC_RELAY_INTEGRATION=1 python3 tests/smoke_relay_integration.py
+```
+
+Adjust the editable install paths if your checkouts live elsewhere.
+
+## Optional Harbor SWE-Bench Task Smoke
+
+The Harbor SWE-Bench smoke keeps Harbor responsible for task materialization and
+uses Fabric as the harness runner. It expects a sibling `../harbor` checkout
+with the generated `django__django-13741` task and a local SWE-Bench image:
+
+```bash
+RUN_FABRIC_HARBOR_SWEBENCH_DOCKER=1 python3 tests/smoke_harbor_swebench_task.py
+```
+
+The smoke copies `/testbed` from
+`swebench/sweb.eval.x86_64.django_1776_django-13741:latest`, invokes the
+test fixture `harbor_swebench_django_13741` profile with a structured
+`RunRequest`, and asserts that Fabric captures a patch artifact for
+`django/contrib/auth/forms.py`.

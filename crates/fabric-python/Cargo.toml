@@ -1,0 +1,22 @@
+[package]
+name = "fabric-python"
+description = "Python native extension bindings for NeMo Fabric."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+test = false
+doctest = false
+
+[dependencies]
+fabric-core.workspace = true
+pyo3 = { workspace = true, features = ["abi3", "abi3-py310", "macros"] }
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

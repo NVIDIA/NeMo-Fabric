@@ -1,0 +1,11 @@
+schema_version: fabric.profile/v1alpha1
+name: env_local
+description: Local Hermes CLI test profile.
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/hermes-cli
+
+telemetry:
+  enabled: false

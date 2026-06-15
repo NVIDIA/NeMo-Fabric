@@ -1,0 +1,49 @@
+schema_version: fabric.agent/v1alpha1
+
+metadata:
+  name: code-review-agent
+  description: Reviews code changes and summarizes correctness risks.
+
+harness:
+  adapter_id: nvidia.fabric.hermes.sdk
+  resolution: preinstalled
+  settings:
+    agent_profile: code_reviewer
+    workspace: ./repos/my-service
+
+models:
+  default:
+    provider: nvidia
+    model: nvidia/nemotron-3-nano-30b-a3b
+    temperature: 0.0
+    api_key_env: NVIDIA_API_KEY
+
+runtime:
+  mode: session
+  transport: library
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/local
+
+skills:
+  paths:
+    - ./skills/code-review
+
+mcp:
+  servers:
+    github:
+      transport: streamable-http
+      url: ${GITHUB_MCP_URL}
+      expose_as: native
+
+telemetry:
+  enabled: false
+
+profiles:
+  directories:
+    - ./profiles

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nemo-fabric"
+version = "0.1.0"
+description = "Python SDK surface for NeMo Fabric"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+nemo_fabric = ["py.typed", "_native.pyi"]

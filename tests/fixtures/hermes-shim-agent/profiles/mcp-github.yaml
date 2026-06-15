@@ -1,0 +1,14 @@
+schema_version: fabric.profile/v1alpha1
+name: mcp_github
+description: Test MCP capability variation.
+
+mcp:
+  servers:
+    github:
+      transport: streamable-http
+      url: ${GITHUB_MCP_URL}
+      expose_as: native
+
+telemetry:
+  enabled: true
+  output_dir: ./artifacts/relay

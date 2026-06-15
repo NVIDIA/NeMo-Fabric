@@ -1,0 +1,54 @@
+{
+  "$defs": {
+    "ArtifactRef": {
+      "description": "Reference to one artifact.",
+      "properties": {
+        "kind": {
+          "description": "Artifact kind.",
+          "type": "string"
+        },
+        "media_type": {
+          "description": "Optional media type.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Logical artifact name.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Artifact path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "path"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Manifest of run artifacts.",
+  "properties": {
+    "artifacts": {
+      "description": "Artifact entries.",
+      "items": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "type": "array"
+    },
+    "root": {
+      "description": "Artifact root directory.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "ArtifactManifest",
+  "type": "object"
+}

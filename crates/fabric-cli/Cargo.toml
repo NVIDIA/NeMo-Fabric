@@ -1,0 +1,19 @@
+[package]
+name = "fabric-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for NeMo Fabric."
+
+[[bin]]
+name = "fabric"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+clap.workspace = true
+fabric-core.workspace = true
+serde_json.workspace = true

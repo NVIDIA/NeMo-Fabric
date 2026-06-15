@@ -1,0 +1,51 @@
+{
+  "adapter_id": "test.fabric.hermes_shim",
+  "harness_id": "hermes-shim",
+  "adapter_kind": "python",
+  "version": 1,
+  "runner": {
+    "script": "src/nemo_fabric_test_adapters/hermes_shim/adapter.py"
+  },
+  "runtime_modes": [
+    "oneshot",
+    "session"
+  ],
+  "transports": [
+    "library"
+  ],
+  "control_locations": [
+    "in_env_control"
+  ],
+  "resolution": {
+    "default": "preinstalled",
+    "supported": [
+      "preinstalled"
+    ]
+  },
+  "requirements": {
+    "binaries": [
+      "python3"
+    ]
+  },
+  "config": {
+    "accepts": [
+      "model",
+      "instructions",
+      "tools",
+      "mcp",
+      "skills",
+      "telemetry",
+      "runtime.limits"
+    ]
+  },
+  "artifacts": {
+    "collects": [
+      "logs",
+      "patches",
+      "run_metadata"
+    ]
+  },
+  "telemetry": {
+    "supports": []
+  }
+}

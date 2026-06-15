@@ -1,0 +1,55 @@
+schema_version: fabric.profile/v1alpha1
+name: hermes_relay
+description: Run Hermes SDK with native NeMo Relay ATOF/ATIF hooks enabled.
+
+harness:
+  adapter_id: nvidia.fabric.hermes.sdk
+  resolution: preinstalled
+  settings:
+    python_env: HERMES_PYTHON
+    agent_profile: code_reviewer
+    workspace: ./repos/my-service
+    hermes_home: ./artifacts/hermes-relay/home
+    base_url: https://integrate.api.nvidia.com/v1
+    max_turns: 1
+    max_tokens: 512
+    temperature: 0.0
+    reasoning_config:
+      effort: none
+    enabled_toolsets: []
+    system_prompt: You are a concise smoke test assistant.
+
+runtime:
+  mode: oneshot
+  transport: library
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts/hermes-relay
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/hermes-relay
+
+telemetry:
+  enabled: true
+  mode: sdk
+  output_dir: ./artifacts/hermes-relay/relay
+  config:
+    version: 1
+    components:
+      - kind: observability
+        enabled: true
+        config:
+          version: 1
+          atif:
+            enabled: true
+            output_directory: ./artifacts/hermes-relay/relay
+            filename_template: "trajectory-{session_id}.atif.json"
+            agent_name: code-review-agent
+            agent_version: fabric-poc
+          atof:
+            enabled: true
+            output_directory: ./artifacts/hermes-relay/relay
+            filename: events.atof.jsonl
+            mode: overwrite

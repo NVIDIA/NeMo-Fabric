@@ -1,0 +1,16 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "nemo-fabric"
+version = "0.1.0"
+description = "Python SDK and native bindings for NeMo Fabric"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.maturin]
+manifest-path = "crates/fabric-python/Cargo.toml"
+python-source = "python/src"
+module-name = "nemo_fabric._native"
+features = ["pyo3/extension-module"]

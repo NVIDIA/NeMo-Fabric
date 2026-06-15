@@ -1,0 +1,29 @@
+{
+  "adapter_id": "nvidia.fabric.hermes.cli",
+  "harness_id": "hermes",
+  "adapter_kind": "python",
+  "version": 1,
+  "runner": {
+    "script": "src/nemo_fabric_adapters/hermes_cli/adapter.py"
+  },
+  "runtime_modes": ["oneshot"],
+  "transports": ["cli"],
+  "control_locations": ["external_control", "in_env_control"],
+  "resolution": {
+    "default": "preinstalled",
+    "supported": ["preinstalled", "image_provided", "pip_uv", "source"]
+  },
+  "requirements": {
+    "env": ["NVIDIA_API_KEY"],
+    "binaries": ["hermes"]
+  },
+  "config": {
+    "accepts": ["models", "instructions", "tools", "mcp", "skills", "telemetry", "runtime.limits"]
+  },
+  "artifacts": {
+    "collects": ["logs", "run_metadata"]
+  },
+  "telemetry": {
+    "supports": ["relay", "atif", "otel", "openinference"]
+  }
+}

@@ -1,0 +1,48 @@
+schema_version: fabric.agent/v1alpha1
+
+metadata:
+  name: hermes-shim-agent
+  description: Test-only Hermes-shaped agent package.
+
+harness:
+  adapter_id: test.fabric.hermes_shim
+  resolution: preinstalled
+  settings:
+    agent_profile: code_reviewer
+    workspace: ./repos/my-service
+
+models:
+  default:
+    provider: test
+    model: test-model
+    temperature: 0.0
+
+runtime:
+  mode: session
+  transport: library
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/local
+
+skills:
+  paths:
+    - ./skills/code-review
+
+mcp:
+  servers:
+    github:
+      transport: streamable-http
+      url: ${GITHUB_MCP_URL}
+      expose_as: native
+
+telemetry:
+  enabled: false
+
+profiles:
+  directories:
+    - ./profiles

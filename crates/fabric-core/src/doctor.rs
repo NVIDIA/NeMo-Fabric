@@ -1,0 +1,416 @@
+//! Plan diagnostics for Fabric.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::config::{ControlLocation, EnvironmentOwnership, ResolutionStrategy, RunPlan};
+
+/// Diagnostic status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DoctorStatus {
+    /// Check passed.
+    Pass,
+    /// Check is informational or partially supported.
+    Warn,
+    /// Check failed.
+    Fail,
+}
+
+/// Diagnostic check result.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DoctorCheck {
+    /// Stable check name.
+    pub name: String,
+    /// Check status.
+    pub status: DoctorStatus,
+    /// Human-readable detail.
+    pub message: String,
+    /// Optional structured metadata.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+/// Diagnostic report for a resolved run plan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DoctorReport {
+    /// Agent name.
+    pub agent_name: String,
+    /// Selected profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// Overall status.
+    pub status: DoctorStatus,
+    /// Checks.
+    pub checks: Vec<DoctorCheck>,
+}
+
+/// Inspect a resolved run plan without mutating the environment.
+pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
+    let mut checks = Vec::new();
+    checks.push(check_adapter_descriptor(plan));
+    checks.push(check_resolution(plan));
+    checks.push(check_environment_context(plan));
+    checks.extend(check_requirements(plan));
+    let status = checks.iter().fold(DoctorStatus::Pass, |status, check| {
+        worst(status, check.status)
+    });
+    DoctorReport {
+        agent_name: plan.agent_name.clone(),
+        profile: plan.profile.clone(),
+        status,
+        checks,
+    }
+}
+
+fn check_adapter_descriptor(plan: &RunPlan) -> DoctorCheck {
+    if let Some(adapter) = &plan.adapter_descriptor {
+        let mut metadata = BTreeMap::new();
+        metadata.insert(
+            "source".to_string(),
+            Value::String(format!("{:?}", adapter.source).to_lowercase()),
+        );
+        return check_with_metadata(
+            "adapter_descriptor",
+            DoctorStatus::Pass,
+            format!(
+                "resolved {} adapter descriptor `{}`",
+                format!("{:?}", adapter.source).to_lowercase(),
+                adapter.descriptor.adapter_id
+            ),
+            metadata,
+        );
+    }
+    check(
+        "adapter_descriptor",
+        DoctorStatus::Fail,
+        "adapter id was configured but no adapter descriptor was resolved",
+    )
+}
+
+fn check_resolution(plan: &RunPlan) -> DoctorCheck {
+    let Some(resolution) = plan.resolution else {
+        return check(
+            "resolution",
+            DoctorStatus::Warn,
+            "no resolution strategy selected",
+        );
+    };
+    let status = match resolution {
+        ResolutionStrategy::Preinstalled | ResolutionStrategy::ImageProvided => DoctorStatus::Pass,
+        ResolutionStrategy::PipUv
+        | ResolutionStrategy::Npm
+        | ResolutionStrategy::Source
+        | ResolutionStrategy::Service
+        | ResolutionStrategy::NativePlugin => DoctorStatus::Warn,
+    };
+    let message = match status {
+        DoctorStatus::Pass => format!("selected resolution strategy `{resolution:?}`"),
+        DoctorStatus::Warn => format!(
+            "selected resolution strategy `{resolution:?}` is declared but not executed by this POC"
+        ),
+        DoctorStatus::Fail => unreachable!("resolution check never fails directly"),
+    };
+    check("resolution", status, message)
+}
+
+fn check_environment_context(plan: &RunPlan) -> DoctorCheck {
+    let Some(environment) = &plan.environment_plan else {
+        return check(
+            "environment",
+            DoctorStatus::Warn,
+            "no environment configured; using caller-owned local context",
+        );
+    };
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "provider".to_string(),
+        Value::String(environment.provider.clone()),
+    );
+    metadata.insert(
+        "control_location".to_string(),
+        Value::String(control_location_name(environment.control_location).to_string()),
+    );
+    metadata.insert(
+        "ownership".to_string(),
+        Value::String(ownership_name(environment.ownership).to_string()),
+    );
+    check_with_metadata(
+        "environment",
+        DoctorStatus::Pass,
+        format!(
+            "resolved {} {} environment context",
+            ownership_name(environment.ownership),
+            environment.provider
+        ),
+        metadata,
+    )
+}
+
+fn check_requirements(plan: &RunPlan) -> Vec<DoctorCheck> {
+    match plan.resolution {
+        Some(ResolutionStrategy::ImageProvided) => return check_image_provided_requirements(plan),
+        Some(
+            ResolutionStrategy::PipUv
+            | ResolutionStrategy::Npm
+            | ResolutionStrategy::Source
+            | ResolutionStrategy::Service
+            | ResolutionStrategy::NativePlugin,
+        ) => {
+            return vec![check(
+                "requirements.resolution",
+                DoctorStatus::Warn,
+                format!(
+                    "requirements are declared for `{}` but this POC does not execute that resolution strategy",
+                    resolution_name(plan.resolution)
+                ),
+            )];
+        }
+        Some(ResolutionStrategy::Preinstalled) | None => {
+            if let Some(check) = non_local_preinstalled_check(plan) {
+                return vec![check];
+            }
+        }
+    }
+    let Some(adapter) = &plan.adapter_descriptor else {
+        return Vec::new();
+    };
+    let descriptor = &adapter.descriptor;
+    let mut checks = Vec::new();
+    for binary in &descriptor.requirements.binaries {
+        checks.push(if command_available(binary) {
+            check(
+                "requirement.binary",
+                DoctorStatus::Pass,
+                format!("binary `{binary}` is available on PATH"),
+            )
+        } else {
+            check(
+                "requirement.binary",
+                DoctorStatus::Fail,
+                format!("binary `{binary}` was not found on PATH"),
+            )
+        });
+    }
+    for env in &descriptor.requirements.env {
+        checks.push(if std::env::var_os(env).is_some() {
+            check(
+                "requirement.env",
+                DoctorStatus::Pass,
+                format!("environment variable `{env}` is set"),
+            )
+        } else {
+            check(
+                "requirement.env",
+                DoctorStatus::Fail,
+                format!("environment variable `{env}` is not set"),
+            )
+        });
+    }
+    for file in &descriptor.requirements.files {
+        let path = resolve_path(&adapter.root, file);
+        checks.push(if path.exists() {
+            check(
+                "requirement.file",
+                DoctorStatus::Pass,
+                format!("file `{}` exists", path.display()),
+            )
+        } else {
+            check(
+                "requirement.file",
+                DoctorStatus::Fail,
+                format!("file `{}` does not exist", path.display()),
+            )
+        });
+    }
+    for service in &descriptor.requirements.services {
+        checks.push(check(
+            "requirement.service",
+            DoctorStatus::Warn,
+            format!("service requirement `{service}` is declared but not probed by this POC"),
+        ));
+    }
+    for hook in &descriptor.requirements.plugin_hooks {
+        checks.push(check(
+            "requirement.plugin_hook",
+            DoctorStatus::Warn,
+            format!("plugin hook `{hook}` is declared but not probed by this POC"),
+        ));
+    }
+    checks
+}
+
+fn check_image_provided_requirements(plan: &RunPlan) -> Vec<DoctorCheck> {
+    let image = plan
+        .environment_plan
+        .as_ref()
+        .and_then(|environment| environment.settings.get("image"))
+        .and_then(Value::as_str);
+    let Some(image) = image else {
+        return vec![check(
+            "requirements.image",
+            DoctorStatus::Warn,
+            "`image_provided` selected but no environment image is configured",
+        )];
+    };
+    vec![check(
+        "requirements.image",
+        DoctorStatus::Pass,
+        format!("requirements are expected from environment image `{image}`"),
+    )]
+}
+
+fn non_local_preinstalled_check(plan: &RunPlan) -> Option<DoctorCheck> {
+    let environment = plan.environment_plan.as_ref()?;
+    if environment.provider == "local" {
+        return None;
+    }
+    Some(check(
+        "requirements.environment",
+        DoctorStatus::Warn,
+        format!(
+            "`preinstalled` requirements are expected inside `{}` and are not probed by this POC",
+            environment.provider
+        ),
+    ))
+}
+
+fn control_location_name(control_location: ControlLocation) -> &'static str {
+    match control_location {
+        ControlLocation::ExternalControl => "external_control",
+        ControlLocation::InEnvControl => "in_env_control",
+    }
+}
+
+fn ownership_name(ownership: EnvironmentOwnership) -> &'static str {
+    match ownership {
+        EnvironmentOwnership::CallerOwned => "caller_owned",
+        EnvironmentOwnership::FabricOwned => "fabric_owned",
+    }
+}
+
+fn resolution_name(resolution: Option<ResolutionStrategy>) -> &'static str {
+    match resolution {
+        Some(ResolutionStrategy::Preinstalled) => "preinstalled",
+        Some(ResolutionStrategy::ImageProvided) => "image_provided",
+        Some(ResolutionStrategy::PipUv) => "pip_uv",
+        Some(ResolutionStrategy::Npm) => "npm",
+        Some(ResolutionStrategy::Source) => "source",
+        Some(ResolutionStrategy::Service) => "service",
+        Some(ResolutionStrategy::NativePlugin) => "native_plugin",
+        None => "unspecified",
+    }
+}
+
+fn command_available(binary: &str) -> bool {
+    let path = Path::new(binary);
+    if path.components().count() > 1 {
+        return path.is_file();
+    }
+    let Some(paths) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&paths).any(|dir| dir.join(binary).is_file())
+}
+
+fn resolve_path(root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    root.join(path)
+}
+
+fn check(name: impl Into<String>, status: DoctorStatus, message: impl Into<String>) -> DoctorCheck {
+    DoctorCheck {
+        name: name.into(),
+        status,
+        message: message.into(),
+        metadata: BTreeMap::new(),
+    }
+}
+
+fn check_with_metadata(
+    name: impl Into<String>,
+    status: DoctorStatus,
+    message: impl Into<String>,
+    metadata: BTreeMap<String, Value>,
+) -> DoctorCheck {
+    DoctorCheck {
+        name: name.into(),
+        status,
+        message: message.into(),
+        metadata,
+    }
+}
+
+fn worst(left: DoctorStatus, right: DoctorStatus) -> DoctorStatus {
+    match (left, right) {
+        (DoctorStatus::Fail, _) | (_, DoctorStatus::Fail) => DoctorStatus::Fail,
+        (DoctorStatus::Warn, _) | (_, DoctorStatus::Warn) => DoctorStatus::Warn,
+        _ => DoctorStatus::Pass,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use serde_json::Value;
+
+    use super::*;
+    use crate::config::{ResolutionStrategy, resolve_run_plan};
+
+    fn example_agent_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/code-review-agent")
+    }
+
+    #[test]
+    fn image_provided_uses_environment_image_instead_of_host_requirements() {
+        let mut plan = resolve_run_plan(example_agent_dir(), None).expect("run plan");
+        plan.resolution = Some(ResolutionStrategy::ImageProvided);
+        plan.environment_plan
+            .as_mut()
+            .expect("environment")
+            .settings
+            .insert(
+                "image".to_string(),
+                Value::String("fabric-hermes:latest".to_string()),
+            );
+
+        let report = doctor_plan(&plan);
+
+        assert_eq!(report.status, DoctorStatus::Pass);
+        assert!(report.checks.iter().any(|check| {
+            check.name == "requirements.image" && check.message.contains("fabric-hermes:latest")
+        }));
+        assert!(
+            !report
+                .checks
+                .iter()
+                .any(|check| check.name == "requirement.binary")
+        );
+    }
+
+    #[test]
+    fn preinstalled_non_local_environment_does_not_probe_host_requirements() {
+        let plan =
+            resolve_run_plan(example_agent_dir(), Some("env_opensandbox")).expect("run plan");
+
+        let report = doctor_plan(&plan);
+
+        assert_eq!(report.status, DoctorStatus::Warn);
+        assert!(report.checks.iter().any(|check| {
+            check.name == "requirements.environment" && check.message.contains("opensandbox")
+        }));
+        assert!(
+            !report
+                .checks
+                .iter()
+                .any(|check| check.name == "requirement.binary")
+        );
+    }
+}

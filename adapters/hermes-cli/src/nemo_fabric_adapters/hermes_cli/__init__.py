@@ -1,0 +1,1 @@
+"""Hermes CLI adapter package."""
