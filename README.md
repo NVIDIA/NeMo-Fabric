@@ -1,4 +1,4 @@
-# NeMo Fabric
+# NVIDIA NeMo Fabric
 
 NeMo Fabric standardizes how applications configure, launch, invoke, and collect
 artifacts from agent harnesses.
