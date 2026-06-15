@@ -191,6 +191,10 @@ default unless an adapter explicitly declares concurrent invocation support.
 Run failures return structured `ErrorInfo` with lifecycle stage, stable code,
 retryability, message, and adapter metadata. Consumers own job-level retries.
 
+Process-backed adapters capture harness stdout and stderr as log artifacts when
+those streams are non-empty. Additional files, patches, and telemetry outputs
+are reported through the same `ArtifactManifest`.
+
 ## Included Example Profiles
 
 - `env_local`: local execution context with Relay disabled.

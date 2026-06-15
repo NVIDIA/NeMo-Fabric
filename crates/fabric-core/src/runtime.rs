@@ -1398,6 +1398,7 @@ runtime:
   transport: cli
   input_schema: text
   output_schema: text
+  artifacts: ./artifacts
 "#,
         )
         .expect("write config");
@@ -1425,6 +1426,16 @@ runtime:
 }"#
     }
 
+    fn artifact_content(result: &RunResult, name: &str) -> String {
+        let artifact = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == name)
+            .unwrap_or_else(|| panic!("missing artifact {name}"));
+        fs::read_to_string(&artifact.path).expect("read artifact")
+    }
+
     fn run_command(cwd: &Path, command: &str, args: &[&str]) {
         let output = Command::new(command)
             .args(args)
@@ -1448,6 +1459,7 @@ runtime:
         assert_eq!(result.status, RunStatus::Succeeded);
         assert_eq!(result.output, Value::String("hello fabric".to_string()));
         assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
+        assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1497,7 +1509,7 @@ runtime:
         let result = run_plan(&plan, RunRequest::text("hello fabric")).expect("run result");
 
         assert_eq!(result.status, RunStatus::Failed);
-        let error = result.error.expect("structured error");
+        let error = result.error.as_ref().expect("structured error");
         assert_eq!(error.stage, ErrorStage::Invoke);
         assert_eq!(error.code, "process_exit_nonzero");
         assert!(!error.retryable);
@@ -1507,13 +1519,7 @@ runtime:
             Some(&Value::String("process".to_string()))
         );
         assert_eq!(error.metadata.get("exit_code"), Some(&Value::from(7)));
-        assert!(
-            result
-                .artifacts
-                .artifacts
-                .iter()
-                .any(|artifact| artifact.name == "stderr")
-        );
+        assert_eq!(artifact_content(&result, "stderr"), "adapter exploded\n");
 
         let _ = fs::remove_dir_all(root);
     }
