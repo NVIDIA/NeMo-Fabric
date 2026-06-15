@@ -63,6 +63,7 @@ Run the dependency-free checks:
 cargo test
 cargo check -p fabric-python
 python3 tests/smoke_cli.py
+python3 tests/smoke_local_env_e2e.py
 python3 tests/smoke_hermes_cli.py
 python3 tests/smoke_hermes_config_mapping.py
 python3 tests/smoke_swebench_style.py

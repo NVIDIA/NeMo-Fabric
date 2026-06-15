@@ -36,6 +36,7 @@ Already implemented:
 - Relay config pass-through and Hermes-native Relay smoke path.
 - Test-only Hermes shim fixtures for dependency-free CLI/SDK and patch-artifact
   smokes.
+- Dependency-free local environment e2e smoke.
 
 ## MVP Scope
 
