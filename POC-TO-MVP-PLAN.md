@@ -30,6 +30,7 @@ Already implemented:
 - Hermes SDK adapter path with Fabric-to-Hermes config mapping.
 - Hermes CLI adapter path with Fabric-to-Hermes config mapping and one-shot
   invocation.
+- Harbor consumer wrapper at `nemo_fabric.integrations.harbor:FabricAgent`.
 - Capability routing into harness-native vs Fabric-managed buckets.
 - Workspace patch/status artifact capture, including untracked files.
 - Relay config pass-through and Hermes-native Relay smoke path.
@@ -133,7 +134,7 @@ Tasks:
   - image-provided environment
   - documented local dev venv
 - Run Hermes through `FabricClient.run(...)` or the equivalent CLI path.
-- Add Harbor `FabricAgent(BaseAgent)` wrapper or equivalent SDK path.
+- Use Harbor `FabricAgent(BaseAgent)` wrapper.
 - Run one Harbor SWE-Bench Verified task through Fabric.
 - Run the Harbor verifier against the Fabric-produced patch.
 

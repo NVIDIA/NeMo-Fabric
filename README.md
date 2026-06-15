@@ -195,6 +195,18 @@ Process-backed adapters capture harness stdout and stderr as log artifacts when
 those streams are non-empty. Additional files, patches, and telemetry outputs
 are reported through the same `ArtifactManifest`.
 
+## Harbor Consumer Integration
+
+Fabric provides a Harbor agent wrapper at
+`nemo_fabric.integrations.harbor:FabricAgent`. Harbor owns task materialization,
+environment lifecycle, verifier execution, and reward calculation; Fabric owns
+the selected harness invocation during the Harbor agent phase.
+
+```bash
+pip install "nemo-fabric[harbor]"
+python3 python/tests/smoke_harbor_integration.py
+```
+
 ## Included Example Profiles
 
 - `env_local`: local execution context with Relay disabled.
