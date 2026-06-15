@@ -17,6 +17,9 @@
     "external_control",
     "in_env_control"
   ],
+  "concurrency": {
+    "same_runtime_invocations": "serialized"
+  },
   "resolution": {
     "default": "preinstalled",
     "supported": [

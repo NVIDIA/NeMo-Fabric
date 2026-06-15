@@ -182,6 +182,11 @@ runtime modes, transports, control locations, resolution strategies, runner
 defaults, binaries, files, services, env vars, and plugin hooks an adapter
 supports.
 
+Adapter descriptors also declare same-runtime invocation concurrency. Fabric
+does not schedule global parallelism; consumers may start multiple Fabric runs
+or clients in parallel. Within one runtime handle, sessions are serialized by
+default unless an adapter explicitly declares concurrent invocation support.
+
 ## Included Example Profiles
 
 - `env_local`: local execution context with Relay disabled.

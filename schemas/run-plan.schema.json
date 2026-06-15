@@ -13,6 +13,26 @@
       },
       "type": "object"
     },
+    "AdapterConcurrency": {
+      "description": "Adapter concurrency support within one runtime handle.",
+      "properties": {
+        "max_concurrent_invocations": {
+          "description": "Optional limit when same-runtime invocations are concurrent.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "same_runtime_invocations": {
+          "$ref": "#/$defs/SameRuntimeInvocationPolicy",
+          "default": "serialized",
+          "description": "Whether one runtime handle accepts concurrent invocations."
+        }
+      },
+      "type": "object"
+    },
     "AdapterConfigSupport": {
       "description": "Adapter config support.",
       "properties": {
@@ -48,6 +68,10 @@
           "$ref": "#/$defs/AdapterArtifactSupport",
           "default": {},
           "description": "Artifact support declared by this adapter."
+        },
+        "concurrency": {
+          "$ref": "#/$defs/AdapterConcurrency",
+          "description": "Same-runtime invocation concurrency declared by this adapter."
         },
         "config": {
           "$ref": "#/$defs/AdapterConfigSupport",
@@ -885,6 +909,21 @@
         {
           "const": "session",
           "description": "Session is the lifecycle boundary.",
+          "type": "string"
+        }
+      ]
+    },
+    "SameRuntimeInvocationPolicy": {
+      "description": "Same-runtime invocation concurrency policy.",
+      "oneOf": [
+        {
+          "const": "serialized",
+          "description": "Invocations against one runtime handle are serialized.",
+          "type": "string"
+        },
+        {
+          "const": "concurrent",
+          "description": "Invocations against one runtime handle may run concurrently.",
           "type": "string"
         }
       ]

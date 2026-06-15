@@ -121,6 +121,9 @@ pub struct AdapterDescriptor {
     /// Supported Fabric control locations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub control_locations: Vec<ControlLocation>,
+    /// Same-runtime invocation concurrency declared by this adapter.
+    #[serde(default, skip_serializing_if = "AdapterConcurrency::is_default")]
+    pub concurrency: AdapterConcurrency,
     /// Supported install or availability strategies.
     pub resolution: AdapterResolutionConfig,
     /// Runtime requirements.
@@ -293,6 +296,35 @@ pub struct AdapterResolutionConfig {
     /// Strategies supported by this adapter.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub supported: Vec<ResolutionStrategy>,
+}
+
+/// Adapter concurrency support within one runtime handle.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterConcurrency {
+    /// Whether one runtime handle accepts concurrent invocations.
+    #[serde(default)]
+    pub same_runtime_invocations: SameRuntimeInvocationPolicy,
+    /// Optional limit when same-runtime invocations are concurrent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_concurrent_invocations: Option<u32>,
+}
+
+impl AdapterConcurrency {
+    fn is_default(&self) -> bool {
+        self.same_runtime_invocations == SameRuntimeInvocationPolicy::Serialized
+            && self.max_concurrent_invocations.is_none()
+    }
+}
+
+/// Same-runtime invocation concurrency policy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SameRuntimeInvocationPolicy {
+    /// Invocations against one runtime handle are serialized.
+    #[default]
+    Serialized,
+    /// Invocations against one runtime handle may run concurrently.
+    Concurrent,
 }
 
 /// Where Fabric control code runs relative to the environment.
@@ -914,6 +946,29 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
             "resolution.default must be included in resolution.supported",
         );
     }
+    if matches!(
+        descriptor.concurrency.same_runtime_invocations,
+        SameRuntimeInvocationPolicy::Serialized
+    ) && descriptor
+        .concurrency
+        .max_concurrent_invocations
+        .is_some_and(|max| max > 1)
+    {
+        return invalid_adapter_descriptor(
+            path,
+            "concurrency.max_concurrent_invocations cannot exceed 1 when same_runtime_invocations is serialized",
+        );
+    }
+    if descriptor
+        .concurrency
+        .max_concurrent_invocations
+        .is_some_and(|max| max == 0)
+    {
+        return invalid_adapter_descriptor(
+            path,
+            "concurrency.max_concurrent_invocations must be greater than 0",
+        );
+    }
     Ok(())
 }
 
@@ -1347,6 +1402,11 @@ mod tests {
         );
         assert!(descriptor.runtime_modes.contains(&RuntimeMode::Session));
         assert!(descriptor.transports.contains(&Transport::Library));
+        assert_eq!(
+            descriptor.concurrency.same_runtime_invocations,
+            SameRuntimeInvocationPolicy::Serialized
+        );
+        assert_eq!(descriptor.concurrency.max_concurrent_invocations, None);
     }
 
     #[test]
@@ -1718,6 +1778,47 @@ environment:
             error,
             FabricError::InvalidAdapterDescriptor { message, .. }
                 if message.contains("resolution.default")
+        ));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_invalid_adapter_concurrency() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-invalid-concurrency-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let descriptor_path = root.join("fabric-adapter.json");
+        std::fs::write(
+            &descriptor_path,
+            r#"{
+  "adapter_id": "acme.fabric.invalid_concurrency",
+  "harness_id": "invalid-agent",
+  "adapter_kind": "process",
+  "version": 1,
+  "runtime_modes": ["oneshot"],
+  "transports": ["cli"],
+  "control_locations": ["in_env_control"],
+  "concurrency": {
+    "same_runtime_invocations": "serialized",
+    "max_concurrent_invocations": 2
+  },
+  "resolution": {
+    "default": "preinstalled",
+    "supported": ["preinstalled"]
+  }
+}"#,
+        )
+        .expect("write adapter descriptor");
+
+        let error = load_adapter_descriptor(&descriptor_path).expect_err("invalid descriptor");
+        assert!(matches!(
+            error,
+            FabricError::InvalidAdapterDescriptor { message, .. }
+                if message.contains("same_runtime_invocations")
         ));
 
         let _ = std::fs::remove_dir_all(root);

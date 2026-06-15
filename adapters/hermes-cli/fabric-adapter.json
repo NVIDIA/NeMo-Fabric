@@ -9,6 +9,9 @@
   "runtime_modes": ["oneshot"],
   "transports": ["cli"],
   "control_locations": ["external_control", "in_env_control"],
+  "concurrency": {
+    "same_runtime_invocations": "serialized"
+  },
   "resolution": {
     "default": "preinstalled",
     "supported": ["preinstalled", "image_provided", "pip_uv", "source"]

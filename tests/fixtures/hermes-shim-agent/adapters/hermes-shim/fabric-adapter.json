@@ -16,6 +16,9 @@
   "control_locations": [
     "in_env_control"
   ],
+  "concurrency": {
+    "same_runtime_invocations": "serialized"
+  },
   "resolution": {
     "default": "preinstalled",
     "supported": [

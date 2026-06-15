@@ -7,14 +7,14 @@ pub mod runtime;
 pub mod schema;
 
 pub use config::{
-    AdapterArtifactSupport, AdapterConfigSupport, AdapterDescriptor, AdapterDescriptorSource,
-    AdapterKind, AdapterRequirements, AdapterResolutionConfig, AdapterTelemetrySupport,
-    CapabilityPlan, ControlLocation, EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan,
-    FabricConfig, FabricDocument, HarnessConfig, McpConfig, McpExposure, McpServerPlan,
-    MetadataConfig, ModelConfig, ProfileConfig, ResolutionStrategy, ResolvedAdapterDescriptor,
-    RunPlan, RuntimeConfig, RuntimeMode, SkillConfig, TelemetryConfig, TelemetryPlan, Transport,
-    load_adapter_descriptor, load_fabric_document, resolve_run_plan,
-    resolve_run_plan_with_profiles,
+    AdapterArtifactSupport, AdapterConcurrency, AdapterConfigSupport, AdapterDescriptor,
+    AdapterDescriptorSource, AdapterKind, AdapterRequirements, AdapterResolutionConfig,
+    AdapterTelemetrySupport, CapabilityPlan, ControlLocation, EnvironmentConfig,
+    EnvironmentOwnership, EnvironmentPlan, FabricConfig, FabricDocument, HarnessConfig, McpConfig,
+    McpExposure, McpServerPlan, MetadataConfig, ModelConfig, ProfileConfig, ResolutionStrategy,
+    ResolvedAdapterDescriptor, RunPlan, RuntimeConfig, RuntimeMode, SameRuntimeInvocationPolicy,
+    SkillConfig, TelemetryConfig, TelemetryPlan, Transport, load_adapter_descriptor,
+    load_fabric_document, resolve_run_plan, resolve_run_plan_with_profiles,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
