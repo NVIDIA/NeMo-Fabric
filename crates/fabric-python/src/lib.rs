@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use fabric_core::{RunRequest, doctor_plan, load_fabric_document, resolve_run_plan, run_plan};
+use fabric_core::{
+    RunRequest, doctor_plan, load_fabric_document, resolve_run_plan_with_profiles, run_plan,
+};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
@@ -29,16 +31,18 @@ fn inspect(path: String) -> PyResult<String> {
 /// Resolve an agent/profile into a runnable plan and return JSON.
 #[pyfunction]
 #[pyo3(signature = (path, profile=None))]
-fn plan(path: String, profile: Option<String>) -> PyResult<String> {
-    let plan = resolve_run_plan(path, profile.as_deref()).map_err(to_py_error)?;
+fn plan(py: Python<'_>, path: String, profile: Option<Py<PyAny>>) -> PyResult<String> {
+    let profiles = profile_values(py, profile)?;
+    let plan = resolve_run_plan_with_profiles(path, &profiles).map_err(to_py_error)?;
     to_json(&plan)
 }
 
 /// Diagnose a resolved agent/profile without installing or running it.
 #[pyfunction]
 #[pyo3(signature = (path, profile=None))]
-fn doctor(path: String, profile: Option<String>) -> PyResult<String> {
-    let plan = resolve_run_plan(path, profile.as_deref()).map_err(to_py_error)?;
+fn doctor(py: Python<'_>, path: String, profile: Option<Py<PyAny>>) -> PyResult<String> {
+    let profiles = profile_values(py, profile)?;
+    let plan = resolve_run_plan_with_profiles(path, &profiles).map_err(to_py_error)?;
     to_json(&doctor_plan(&plan))
 }
 
@@ -46,14 +50,16 @@ fn doctor(path: String, profile: Option<String>) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (path, profile=None, input_text=None, input_file=None, request_json=None, request_file=None))]
 fn run(
+    py: Python<'_>,
     path: String,
-    profile: Option<String>,
+    profile: Option<Py<PyAny>>,
     input_text: Option<String>,
     input_file: Option<String>,
     request_json: Option<String>,
     request_file: Option<String>,
 ) -> PyResult<String> {
-    let plan = resolve_run_plan(path, profile.as_deref()).map_err(to_py_error)?;
+    let profiles = profile_values(py, profile)?;
+    let plan = resolve_run_plan_with_profiles(path, &profiles).map_err(to_py_error)?;
     let request = match (request_file, request_json, input_file) {
         (Some(path), None, None) => std::fs::read_to_string(PathBuf::from(&path))
             .map_err(|error| PyRuntimeError::new_err(format!("failed to read {path}: {error}")))
@@ -96,6 +102,25 @@ where
 
 fn to_py_error(error: fabric_core::FabricError) -> PyErr {
     PyRuntimeError::new_err(error.to_string())
+}
+
+fn profile_values(py: Python<'_>, profile: Option<Py<PyAny>>) -> PyResult<Vec<String>> {
+    let Some(profile) = profile else {
+        return Ok(Vec::new());
+    };
+    let profile = profile.bind(py);
+    if profile.is_none() {
+        return Ok(Vec::new());
+    }
+    if let Ok(profile) = profile.extract::<String>() {
+        return Ok(vec![profile]);
+    }
+    if let Ok(profiles) = profile.extract::<Vec<String>>() {
+        return Ok(profiles);
+    }
+    Err(PyRuntimeError::new_err(
+        "profile must be None, a string, or a sequence of strings",
+    ))
 }
 
 fn parse_run_request(contents: String) -> PyResult<RunRequest> {

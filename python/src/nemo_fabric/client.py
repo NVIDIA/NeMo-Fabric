@@ -68,7 +68,7 @@ class FabricClient:
 
         native = self._native_module()
         native_profile = _native_profile_arg(profile)
-        if native is not None and native_profile is not _USE_CLI_PROFILE_ARGS:
+        if native is not None:
             return json.loads(native.plan(str(path), native_profile))
         args = ["plan", str(path)]
         args.extend(_profile_args(profile))
@@ -81,7 +81,7 @@ class FabricClient:
 
         native = self._native_module()
         native_profile = _native_profile_arg(profile)
-        if native is not None and native_profile is not _USE_CLI_PROFILE_ARGS:
+        if native is not None:
             return await asyncio.to_thread(
                 lambda: json.loads(native.doctor(str(path), native_profile))
             )
@@ -103,7 +103,7 @@ class FabricClient:
 
         native = self._native_module()
         native_profile = _native_profile_arg(profile)
-        if native is not None and native_profile is not _USE_CLI_PROFILE_ARGS:
+        if native is not None:
             return await asyncio.to_thread(
                 lambda: json.loads(
                     native.run(
@@ -184,9 +184,6 @@ class FabricClient:
         return _native
 
 
-_USE_CLI_PROFILE_ARGS = object()
-
-
 def _profile_args(profile: str | Sequence[str] | None) -> list[str]:
     if profile is None:
         return []
@@ -198,12 +195,10 @@ def _profile_args(profile: str | Sequence[str] | None) -> list[str]:
     return args
 
 
-def _native_profile_arg(profile: str | Sequence[str] | None) -> str | None | object:
+def _native_profile_arg(profile: str | Sequence[str] | None) -> str | list[str] | None:
     if profile is None or isinstance(profile, str):
         return profile
     profiles = list(profile)
     if not profiles:
         return None
-    if len(profiles) == 1:
-        return profiles[0]
-    return _USE_CLI_PROFILE_ARGS
+    return profiles

@@ -129,7 +129,8 @@ asyncio.run(main())
 ```
 
 When installed from the repository root, `FabricClient()` uses the native Rust
-binding. For source-tree debugging, pass an explicit CLI command:
+binding. The SDK accepts the same ordered profile stacks as the CLI. For
+source-tree debugging, pass an explicit CLI command:
 
 ```python
 client = FabricClient(command=("cargo", "run", "-q", "-p", "fabric-cli", "--"))

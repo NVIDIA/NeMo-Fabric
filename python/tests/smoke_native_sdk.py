@@ -32,6 +32,10 @@ async def smoke(client: FabricClient) -> None:
     assert plan["capability_plan"]["native"]["mcp_servers"]["github"]
     assert plan["capability_plan"]["native"]["skill_paths"]
 
+    multi_plan = client.plan(fixture_agent, profile=["env_local", "mcp_github"])
+    assert multi_plan["profiles"] == ["env_local", "mcp_github"]
+    assert multi_plan["telemetry_plan"]["relay_enabled"] is True
+
     with tempfile.TemporaryDirectory(prefix="fabric-native-sdk-") as tmpdir:
         temp_agent = Path(tmpdir) / "hermes-shim-agent"
         copytree(fixture_agent, temp_agent)
