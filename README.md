@@ -67,6 +67,7 @@ python3 tests/smoke_hermes_cli.py
 python3 tests/smoke_hermes_config_mapping.py
 python3 tests/smoke_swebench_style.py
 python3 python/tests/smoke_sdk.py
+python3 python/tests/smoke_sdk_concurrency.py
 ```
 
 Install the Python SDK with native bindings:
