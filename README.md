@@ -188,6 +188,9 @@ does not schedule global parallelism; consumers may start multiple Fabric runs
 or clients in parallel. Within one runtime handle, sessions are serialized by
 default unless an adapter explicitly declares concurrent invocation support.
 
+Run failures return structured `ErrorInfo` with lifecycle stage, stable code,
+retryability, message, and adapter metadata. Consumers own job-level retries.
+
 ## Included Example Profiles
 
 - `env_local`: local execution context with Relay disabled.

@@ -19,9 +19,9 @@ pub use config::{
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
 pub use runtime::{
-    ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, FabricEvent, InvocationHandle,
-    RunRequest, RunResult, RunStatus, RuntimeHandle, TelemetryRef, invoke_runtime,
-    prepare_environment, run_plan, start_runtime, stop_runtime,
+    ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage, FabricEvent,
+    InvocationHandle, RunRequest, RunResult, RunStatus, RuntimeHandle, TelemetryRef,
+    invoke_runtime, prepare_environment, run_plan, start_runtime, stop_runtime,
 };
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,

@@ -102,10 +102,40 @@ pub enum RunStatus {
 /// Normalized error metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ErrorInfo {
+    /// Fabric lifecycle stage where the failure surfaced.
+    pub stage: ErrorStage,
     /// Stable error code.
     pub code: String,
     /// Human-readable error message.
     pub message: String,
+    /// Whether Fabric considers this failure safe for a consumer-level retry.
+    #[serde(default)]
+    pub retryable: bool,
+    /// Adapter or runtime metadata useful for diagnostics.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+/// Fabric lifecycle stage associated with an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorStage {
+    /// Configuration or profile loading failed.
+    Config,
+    /// Effective config planning failed.
+    Plan,
+    /// Environment preparation failed.
+    Prepare,
+    /// Runtime start/connect failed.
+    Start,
+    /// Runtime invocation failed.
+    Invoke,
+    /// Runtime stop/detach failed.
+    Stop,
+    /// Environment release failed.
+    Release,
+    /// Artifact collection or writing failed.
+    Artifact,
 }
 
 /// Manifest of run artifacts.
@@ -602,6 +632,10 @@ fn run_process_adapter(
     collect_workspace_artifacts(&mut artifacts, runtime, &mut events)?;
 
     let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "adapter_runner".to_string(),
+        Value::String("process".to_string()),
+    );
     metadata.insert("command".to_string(), Value::String(settings.command));
     metadata.insert(
         "args".to_string(),
@@ -620,14 +654,12 @@ fn run_process_adapter(
     );
 
     let error = if status == RunStatus::Failed {
-        Some(ErrorInfo {
-            code: "process_exit_nonzero".to_string(),
-            message: if stderr.is_empty() {
-                "process exited with non-zero status".to_string()
-            } else {
-                stderr.clone()
-            },
-        })
+        Some(adapter_exit_error(
+            "process_exit_nonzero",
+            "process exited with non-zero status",
+            &stderr,
+            &metadata,
+        ))
     } else {
         None
     };
@@ -828,14 +860,12 @@ fn run_python_adapter(
     );
 
     let error = if status == RunStatus::Failed {
-        Some(ErrorInfo {
-            code: "python_adapter_exit_nonzero".to_string(),
-            message: if stderr.is_empty() {
-                "python adapter exited with non-zero status".to_string()
-            } else {
-                stderr.clone()
-            },
-        })
+        Some(adapter_exit_error(
+            "python_adapter_exit_nonzero",
+            "python adapter exited with non-zero status",
+            &stderr,
+            &metadata,
+        ))
     } else {
         None
     };
@@ -878,6 +908,25 @@ fn adapter_kind(plan: &RunPlan) -> AdapterKind {
         .as_ref()
         .map(|adapter| adapter.descriptor.adapter_kind)
         .unwrap_or(AdapterKind::Process)
+}
+
+fn adapter_exit_error(
+    code: &str,
+    default_message: &str,
+    stderr: &str,
+    metadata: &BTreeMap<String, Value>,
+) -> ErrorInfo {
+    ErrorInfo {
+        stage: ErrorStage::Invoke,
+        code: code.to_string(),
+        message: if stderr.is_empty() {
+            default_message.to_string()
+        } else {
+            stderr.to_string()
+        },
+        retryable: false,
+        metadata: metadata.clone(),
+    }
 }
 
 fn parse_python_settings(plan: &RunPlan) -> Result<PythonAdapterSettings> {
@@ -1399,6 +1448,72 @@ runtime:
         assert_eq!(result.status, RunStatus::Succeeded);
         assert_eq!(result.output, Value::String("hello fabric".to_string()));
         assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn process_adapter_failure_returns_structured_error() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-process-adapter-failure-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
+        fs::write(
+            root.join("agent.yaml"),
+            r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: process-failure-agent
+harness:
+  adapter_id: acme.fabric.process
+  settings:
+    command: sh
+    args:
+      - -c
+      - |
+        echo adapter exploded >&2
+        exit 7
+models:
+  default:
+    provider: test
+    model: test-model
+runtime:
+  mode: oneshot
+  transport: cli
+  input_schema: text
+  output_schema: text
+  artifacts: ./artifacts
+"#,
+        )
+        .expect("write config");
+        fs::write(
+            root.join("adapters/process/fabric-adapter.json"),
+            process_adapter_descriptor(),
+        )
+        .expect("write adapter descriptor");
+
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let result = run_plan(&plan, RunRequest::text("hello fabric")).expect("run result");
+
+        assert_eq!(result.status, RunStatus::Failed);
+        let error = result.error.expect("structured error");
+        assert_eq!(error.stage, ErrorStage::Invoke);
+        assert_eq!(error.code, "process_exit_nonzero");
+        assert!(!error.retryable);
+        assert!(error.message.contains("adapter exploded"));
+        assert_eq!(
+            error.metadata.get("adapter_runner"),
+            Some(&Value::String("process".to_string()))
+        );
+        assert_eq!(error.metadata.get("exit_code"), Some(&Value::from(7)));
+        assert!(
+            result
+                .artifacts
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.name == "stderr")
+        );
 
         let _ = fs::remove_dir_all(root);
     }

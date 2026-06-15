@@ -85,13 +85,73 @@
         "message": {
           "description": "Human-readable error message.",
           "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Adapter or runtime metadata useful for diagnostics.",
+          "type": "object"
+        },
+        "retryable": {
+          "default": false,
+          "description": "Whether Fabric considers this failure safe for a consumer-level retry.",
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/ErrorStage",
+          "description": "Fabric lifecycle stage where the failure surfaced."
         }
       },
       "required": [
+        "stage",
         "code",
         "message"
       ],
       "type": "object"
+    },
+    "ErrorStage": {
+      "description": "Fabric lifecycle stage associated with an error.",
+      "oneOf": [
+        {
+          "const": "config",
+          "description": "Configuration or profile loading failed.",
+          "type": "string"
+        },
+        {
+          "const": "plan",
+          "description": "Effective config planning failed.",
+          "type": "string"
+        },
+        {
+          "const": "prepare",
+          "description": "Environment preparation failed.",
+          "type": "string"
+        },
+        {
+          "const": "start",
+          "description": "Runtime start/connect failed.",
+          "type": "string"
+        },
+        {
+          "const": "invoke",
+          "description": "Runtime invocation failed.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "Runtime stop/detach failed.",
+          "type": "string"
+        },
+        {
+          "const": "release",
+          "description": "Environment release failed.",
+          "type": "string"
+        },
+        {
+          "const": "artifact",
+          "description": "Artifact collection or writing failed.",
+          "type": "string"
+        }
+      ]
     },
     "FabricEvent": {
       "description": "Fabric lifecycle or progress event.",
