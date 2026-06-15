@@ -1,5 +1,14 @@
 # NVIDIA NeMo Fabric
 
+Fabric is the harness-management layer that turns many agent runtimes into one
+configurable, observable execution surface.
+
+<p align="center">
+  <img src="assets/fabric-hero.png" alt="NeMo Fabric connects deployment platforms, evaluation harnesses, and RL rollout harnesses to multiple agent runtimes through one observable execution surface." width="1000">
+</p>
+
+## Architecture
+
 NeMo Fabric standardizes how applications configure, launch, invoke, and collect
 artifacts from agent harnesses.
 
@@ -11,8 +20,6 @@ Fabric provides:
 - a Rust core with a CLI and Python bindings;
 - JSON Schema snapshots for the public config and runtime contract;
 - normalized run results, artifact manifests, and telemetry references.
-
-## Architecture
 
 ```mermaid
 flowchart TB
