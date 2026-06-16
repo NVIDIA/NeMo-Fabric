@@ -1,5 +1,5 @@
 schema_version: fabric.profile/v1alpha1
-name: hermes_real
+name: hermes_sdk
 description: Run the Hermes Python adapter through an installed Hermes SDK.
 
 harness:
@@ -24,12 +24,12 @@ runtime:
   transport: library
   input_schema: chat
   output_schema: message
-  artifacts: ./artifacts/hermes-real
+  artifacts: ./artifacts/hermes-sdk
 
 environment:
   provider: local
   workspace: ./repos/my-service
-  artifacts: ./artifacts/hermes-real
+  artifacts: ./artifacts/hermes-sdk
 
 telemetry:
   enabled: false

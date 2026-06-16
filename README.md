@@ -58,7 +58,6 @@ Install Fabric and the `fabric` CLI:
 
 ```bash
 python3 -m venv .tmp/fabric-venv
-.tmp/fabric-venv/bin/python -m pip install -U pip
 .tmp/fabric-venv/bin/python -m pip install -e .
 
 cargo install --path crates/fabric-cli --locked --force
@@ -70,7 +69,6 @@ Install Hermes into its own environment:
 ```bash
 # Use any Python 3.11-3.13 interpreter for Hermes.
 python3.12 -m venv .tmp/hermes-venv
-.tmp/hermes-venv/bin/python -m pip install -U pip
 .tmp/hermes-venv/bin/python -m pip install hermes-agent
 ```
 
@@ -87,14 +85,14 @@ Run one input:
 export NVIDIA_API_KEY=...
 export HERMES_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
 
-fabric doctor examples/code-review-agent --profile hermes_real
+fabric doctor examples/code-review-agent --profile hermes_sdk
 fabric run examples/code-review-agent \
-  --profile hermes_real \
+  --profile hermes_sdk \
   --input "Reply with exactly: fabric works"
 ```
 
 The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
-under `examples/code-review-agent/artifacts/hermes-real/`.
+under `examples/code-review-agent/artifacts/hermes-sdk/`.
 
 ## Core Concepts
 
@@ -120,7 +118,7 @@ before planning or running.
 Inspect the run plan before invoking a harness:
 
 ```bash
-fabric plan examples/code-review-agent --profile hermes_real
+fabric plan examples/code-review-agent --profile hermes_sdk
 fabric plan examples/code-review-agent --profile env_local --profile mcp_github
 ```
 
@@ -136,8 +134,8 @@ async def main():
     agent = Path("examples/code-review-agent")
 
     async with FabricClient() as client:
-        plan = client.plan(agent, profile="hermes_real")
-        report = await client.doctor(agent, profile="hermes_real")
+        plan = client.plan(agent, profile="hermes_sdk")
+        report = await client.doctor(agent, profile="hermes_sdk")
 
     print(plan["agent_name"])
     print(report["checks"])

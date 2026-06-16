@@ -1539,7 +1539,7 @@ mod tests {
 
     #[test]
     fn resolves_hermes_sdk_adapter_descriptor() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("hermes_real")).expect("run plan");
+        let plan = resolve_run_plan(example_agent_dir(), Some("hermes_sdk")).expect("run plan");
         let adapter = plan
             .adapter_descriptor
             .as_ref()
@@ -1759,10 +1759,10 @@ environment:
 
     #[test]
     fn resolves_hermes_sdk_profile_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("hermes_real")).expect("run plan");
+        let plan = resolve_run_plan(example_agent_dir(), Some("hermes_sdk")).expect("run plan");
 
-        assert_eq!(plan.profile.as_deref(), Some("hermes_real"));
-        assert_eq!(plan.profiles, vec!["hermes_real"]);
+        assert_eq!(plan.profile.as_deref(), Some("hermes_sdk"));
+        assert_eq!(plan.profiles, vec!["hermes_sdk"]);
         assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");
         assert_eq!(
             plan.adapter_descriptor
@@ -1808,10 +1808,10 @@ environment:
 
     #[test]
     fn resolves_direct_profile_path_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("./profiles/hermes-real.yaml"))
+        let plan = resolve_run_plan(example_agent_dir(), Some("./profiles/hermes-sdk.yaml"))
             .expect("run plan");
 
-        assert_eq!(plan.profile.as_deref(), Some("./profiles/hermes-real.yaml"));
+        assert_eq!(plan.profile.as_deref(), Some("./profiles/hermes-sdk.yaml"));
         assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");
         assert_eq!(
             plan.adapter_descriptor

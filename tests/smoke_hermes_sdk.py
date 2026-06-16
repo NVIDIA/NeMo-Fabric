@@ -1,4 +1,4 @@
-"""Opt-in smoke test for the real Hermes SDK adapter path."""
+"""Opt-in smoke test for the Hermes SDK adapter path."""
 
 from __future__ import annotations
 
@@ -26,14 +26,14 @@ def main() -> None:
     env["HERMES_PYTHON"] = resolve_hermes_python(env)
 
     agent = ROOT / "examples" / "code-review-agent"
-    with tempfile.TemporaryDirectory(prefix="fabric-hermes-real-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="fabric-hermes-sdk-") as tmpdir:
         temp_agent = Path(tmpdir) / "code-review-agent"
         copytree(agent, temp_agent)
         result = call_json(
             "run",
             temp_agent,
             "--profile",
-            "hermes_real",
+            "hermes_sdk",
             "--input",
             "Reply with exactly: hermes ok",
             env=env,

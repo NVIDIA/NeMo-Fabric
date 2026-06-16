@@ -38,7 +38,7 @@ def main() -> None:
         assert (schema_dir / "agent.schema.json").is_file()
         assert (schema_dir / "adapter-descriptor.schema.json").is_file()
 
-        direct_profile = temp_example / "profiles" / "hermes-real.yaml"
+        direct_profile = temp_example / "profiles" / "hermes-sdk.yaml"
         direct_plan = call_json("plan", temp_example, "--profile", direct_profile)
         assert direct_plan["profile"] == str(direct_profile)
         assert direct_plan["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
