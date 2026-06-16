@@ -10,13 +10,12 @@ pub mod runtime;
 pub mod schema;
 
 pub use config::{
-    AdapterArtifactSupport, AdapterConcurrency, AdapterConfigSupport, AdapterDescriptor,
-    AdapterDescriptorSource, AdapterKind, AdapterRequirements, AdapterResolutionConfig,
-    AdapterTelemetrySupport, CapabilityPlan, ControlLocation, EnvironmentConfig,
-    EnvironmentOwnership, EnvironmentPlan, FabricConfig, FabricDocument, HarnessConfig, McpConfig,
-    McpExposure, McpServerPlan, MetadataConfig, ModelConfig, ProfileConfig, ResolutionStrategy,
-    ResolveContext, ResolvedAdapterDescriptor, RunPlan, RuntimeConfig, RuntimeMode,
-    SameRuntimeInvocationPolicy, SkillConfig, TelemetryConfig, TelemetryPlan, Transport,
+    AdapterConfigSupport, AdapterDescriptor, AdapterDescriptorSource, AdapterKind,
+    AdapterRequirements, AdapterTelemetrySupport, CapabilityPlan, ControlLocation,
+    EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan, FabricConfig, FabricDocument,
+    HarnessConfig, McpConfig, McpExposure, McpServerPlan, MetadataConfig, ModelConfig,
+    ProfileConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, RunPlan,
+    RuntimeConfig, RuntimeMode, SkillConfig, TelemetryConfig, TelemetryPlan, Transport,
     load_adapter_descriptor, load_fabric_document, resolve_run_plan, resolve_run_plan_from_config,
     resolve_run_plan_with_profiles,
 };

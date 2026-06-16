@@ -22,10 +22,16 @@ from typing import Any
 
 def main() -> None:
     payload = json.load(sys.stdin)
-    output = run_hermes_sdk(payload)
+    output = run(payload)
     print(json.dumps(output, sort_keys=True))
     if output.get("failed"):
         raise SystemExit(2)
+
+
+def run(payload: dict[str, Any]) -> dict[str, Any]:
+    """Inline Fabric adapter entrypoint used by the Python SDK."""
+
+    return run_hermes_sdk(payload)
 
 
 def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:

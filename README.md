@@ -175,7 +175,12 @@ plan = client.plan_config(
 ```
 
 When installed from the repository root, `FabricClient()` uses the native Rust
-binding. For source-tree debugging, pass an explicit CLI command:
+binding. If the selected Python adapter descriptor provides a `runner.module`
+and `runner.callable`, the SDK imports and invokes that adapter inline. The
+`fabric` CLI continues to use the adapter script/process path, which is useful
+for local debugging and environment-backed consumers.
+
+For source-tree debugging, pass an explicit CLI command:
 
 ```python
 client = FabricClient(command=("cargo", "run", "-q", "-p", "fabric-cli", "--"))

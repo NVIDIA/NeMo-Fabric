@@ -14,10 +14,16 @@ from typing import Any
 
 def main() -> None:
     payload = json.load(sys.stdin)
-    output = run_selected_mode(payload)
+    output = run(payload)
     print(json.dumps(output, sort_keys=True))
     if output.get("failed"):
         raise SystemExit(2)
+
+
+def run(payload: dict[str, Any]) -> dict[str, Any]:
+    """Inline test adapter entrypoint used by SDK smoke tests."""
+
+    return run_selected_mode(payload)
 
 
 def run_selected_mode(payload: dict[str, Any]) -> dict[str, Any]:

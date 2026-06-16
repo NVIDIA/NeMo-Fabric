@@ -86,14 +86,20 @@ The repo already contains the core shape of the MVP:
   - MCP
   - telemetry
 - Harness-native config generation for supported Hermes surfaces.
-- Clear validation failures for unsupported runtime modes, transports,
-  adapters, requirements, and capability mappings.
+- Clear validation failures for unsupported adapters, requirements, and
+  capability mappings.
 - Relay telemetry configuration pass-through.
 - ArtifactManifest entries for output, logs, patches, and telemetry references
   where available.
 - Consumer integration smoke with a Fabric-managed Hermes run.
+
+## In Scope, Deferred Until Base MVP Is Stable
+
+- Final adapter contract definition.
+- Third-party adapter support. The base MVP supports built-in adapters only.
 - Harbor SWE-Bench Verified smoke with verifier as the first evaluation proof
   once the environment is available.
+- Harbor integration beyond the proof already included in the POC.
 
 ## Out Of Scope
 
@@ -115,7 +121,8 @@ The repo layout separates Fabric-owned concepts:
 - `crates/fabric-cli/`: `fabric` command-line surface.
 - `crates/fabric-python/`: native Python bindings for the Rust core.
 - `python/src/nemo_fabric/`: Python SDK and consumer integrations.
-- `adapters/hermes-sdk/`: Hermes SDK adapter implementation.
+- `adapters/hermes-sdk/`: Hermes SDK adapter implementation; this is the
+  primary inline Python path for SDK consumers.
 - `adapters/hermes-cli/`: Hermes CLI adapter implementation.
 - `integrations/harbor/`: Harbor consumer integration notes.
 - `examples/`: portable agent packages and config examples.
@@ -136,6 +143,9 @@ Status:
 - Consumers can validate and plan without running.
 - The same base config can be resolved with different ordered profile stacks.
 - Adapters receive EffectiveConfig/RunPlan, not raw profile files.
+- The full adapter contract definition is deferred until the base MVP is
+  stable; the base MVP keeps only the minimal descriptor fields Fabric already
+  uses.
 
 How to maintain:
 
@@ -150,18 +160,20 @@ How to maintain:
 Status:
 
 - Base Hermes SDK and Hermes CLI adapter work is in place.
-- Install modes are explicit:
-  - preinstalled
-  - image-provided
-  - local development venv
+- `hermes-sdk` is the inline Python adapter path for SDK consumers. The Python
+  SDK imports the adapter callable directly and preserves the async SDK shape.
+- `hermes-cli` is the process-backed path for CLI/debug and environment-backed
+  consumers. Fabric launches the wrapper process and captures stdout, stderr,
+  exit status, logs, and artifacts.
+- Both paths return the normalized Fabric `RunResult` shape.
 
 Next steps:
 
-- Review the Hermes adapter implementation for maintainability and alignment
-  with the adapter contract.
+- Review the Hermes adapter implementations for maintainability and alignment
+  with the minimal descriptor fields Fabric currently uses.
 - Test Hermes SDK and CLI paths with more representative inputs.
-- Validate Hermes SDK and CLI paths against clean installed Hermes
-  environments.
+- Add parity checks for normalized result fields shared by the inline SDK and
+  process-backed CLI paths.
 - Fabric model, workspace, skills, MCP, tools, telemetry, and artifact config
   should remain visible in generated Hermes-native config or launch settings.
 - Add testing for Relay artifacts such as ATOF/ATIF references.

@@ -1,38 +1,5 @@
 {
   "$defs": {
-    "AdapterArtifactSupport": {
-      "description": "Adapter artifact support.",
-      "properties": {
-        "collects": {
-          "description": "Artifact kinds collected by this adapter.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "AdapterConcurrency": {
-      "description": "Adapter concurrency support within one runtime handle.",
-      "properties": {
-        "max_concurrent_invocations": {
-          "description": "Optional limit when same-runtime invocations are concurrent.",
-          "format": "uint32",
-          "minimum": 0,
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "same_runtime_invocations": {
-          "$ref": "#/$defs/SameRuntimeInvocationPolicy",
-          "default": "serialized",
-          "description": "Whether one runtime handle accepts concurrent invocations."
-        }
-      },
-      "type": "object"
-    },
     "AdapterConfigSupport": {
       "description": "Adapter config support.",
       "properties": {
@@ -119,26 +86,6 @@
       },
       "type": "object"
     },
-    "AdapterResolutionConfig": {
-      "description": "Adapter resolution support.",
-      "properties": {
-        "default": {
-          "$ref": "#/$defs/ResolutionStrategy",
-          "description": "Default strategy for this adapter."
-        },
-        "supported": {
-          "description": "Strategies supported by this adapter.",
-          "items": {
-            "$ref": "#/$defs/ResolutionStrategy"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "default"
-      ],
-      "type": "object"
-    },
     "AdapterTelemetrySupport": {
       "description": "Adapter telemetry support.",
       "properties": {
@@ -151,121 +98,6 @@
         }
       },
       "type": "object"
-    },
-    "ControlLocation": {
-      "description": "Where Fabric control code runs relative to the environment.",
-      "oneOf": [
-        {
-          "const": "external_control",
-          "description": "Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
-          "type": "string"
-        },
-        {
-          "const": "in_env_control",
-          "description": "Fabric runs inside the prepared environment with the harness.",
-          "type": "string"
-        }
-      ]
-    },
-    "ResolutionStrategy": {
-      "description": "Adapter install or availability strategy.",
-      "oneOf": [
-        {
-          "const": "preinstalled",
-          "description": "Harness is already available in the prepared environment.",
-          "type": "string"
-        },
-        {
-          "const": "image_provided",
-          "description": "Environment image already contains the harness and dependencies.",
-          "type": "string"
-        },
-        {
-          "const": "pip_uv",
-          "description": "Adapter may install a Python package with pip or uv.",
-          "type": "string"
-        },
-        {
-          "const": "npm",
-          "description": "Adapter may install a Node package.",
-          "type": "string"
-        },
-        {
-          "const": "source",
-          "description": "Adapter may install from source.",
-          "type": "string"
-        },
-        {
-          "const": "service",
-          "description": "Adapter connects to an already-running service.",
-          "type": "string"
-        },
-        {
-          "const": "native_plugin",
-          "description": "Adapter is installed through a harness-native plugin manager.",
-          "type": "string"
-        }
-      ]
-    },
-    "RuntimeMode": {
-      "description": "Runtime lifecycle mode.",
-      "oneOf": [
-        {
-          "const": "oneshot",
-          "description": "Request is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "service",
-          "description": "Long-running process or service is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "session",
-          "description": "Session is the lifecycle boundary.",
-          "type": "string"
-        }
-      ]
-    },
-    "SameRuntimeInvocationPolicy": {
-      "description": "Same-runtime invocation concurrency policy.",
-      "oneOf": [
-        {
-          "const": "serialized",
-          "description": "Invocations against one runtime handle are serialized.",
-          "type": "string"
-        },
-        {
-          "const": "concurrent",
-          "description": "Invocations against one runtime handle may run concurrently.",
-          "type": "string"
-        }
-      ]
-    },
-    "Transport": {
-      "description": "Runtime transport.",
-      "oneOf": [
-        {
-          "const": "library",
-          "description": "In-process library/SDK call.",
-          "type": "string"
-        },
-        {
-          "const": "cli",
-          "description": "CLI process.",
-          "type": "string"
-        },
-        {
-          "const": "http",
-          "description": "HTTP service.",
-          "type": "string"
-        },
-        {
-          "const": "native_plugin",
-          "description": "Harness-native plugin surface.",
-          "type": "string"
-        }
-      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -279,77 +111,30 @@
       "$ref": "#/$defs/AdapterKind",
       "description": "Adapter implementation kind."
     },
-    "artifacts": {
-      "$ref": "#/$defs/AdapterArtifactSupport",
-      "default": {},
-      "description": "Artifact support declared by this adapter."
-    },
-    "concurrency": {
-      "$ref": "#/$defs/AdapterConcurrency",
-      "description": "Same-runtime invocation concurrency declared by this adapter."
-    },
     "config": {
       "$ref": "#/$defs/AdapterConfigSupport",
       "default": {},
       "description": "Fabric config areas this adapter consumes or generates."
-    },
-    "control_locations": {
-      "description": "Supported Fabric control locations.",
-      "items": {
-        "$ref": "#/$defs/ControlLocation"
-      },
-      "type": "array"
-    },
-    "harness_id": {
-      "description": "Stable id for the underlying harness.",
-      "type": "string"
     },
     "requirements": {
       "$ref": "#/$defs/AdapterRequirements",
       "default": {},
       "description": "Runtime requirements."
     },
-    "resolution": {
-      "$ref": "#/$defs/AdapterResolutionConfig",
-      "description": "Supported install or availability strategies."
-    },
     "runner": {
       "additionalProperties": true,
       "description": "Generic runner defaults consumed by the selected runtime adapter.",
       "type": "object"
     },
-    "runtime_modes": {
-      "description": "Supported runtime modes.",
-      "items": {
-        "$ref": "#/$defs/RuntimeMode"
-      },
-      "type": "array"
-    },
     "telemetry": {
       "$ref": "#/$defs/AdapterTelemetrySupport",
       "default": {},
       "description": "Telemetry support declared by this adapter."
-    },
-    "transports": {
-      "description": "Supported invocation transports.",
-      "items": {
-        "$ref": "#/$defs/Transport"
-      },
-      "type": "array"
-    },
-    "version": {
-      "description": "Adapter descriptor schema version.",
-      "format": "uint32",
-      "minimum": 0,
-      "type": "integer"
     }
   },
   "required": [
     "adapter_id",
-    "harness_id",
-    "adapter_kind",
-    "version",
-    "resolution"
+    "adapter_kind"
   ],
   "title": "AdapterDescriptor",
   "type": "object"

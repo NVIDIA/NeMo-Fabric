@@ -1,33 +1,10 @@
 {
   "adapter_id": "nvidia.fabric.hermes.sdk",
-  "harness_id": "hermes",
   "adapter_kind": "python",
-  "version": 1,
   "runner": {
+    "module": "nemo_fabric_adapters.hermes_sdk.adapter",
+    "callable": "run",
     "script": "src/nemo_fabric_adapters/hermes_sdk/adapter.py"
-  },
-  "runtime_modes": [
-    "oneshot",
-    "session"
-  ],
-  "transports": [
-    "library"
-  ],
-  "control_locations": [
-    "external_control",
-    "in_env_control"
-  ],
-  "concurrency": {
-    "same_runtime_invocations": "serialized"
-  },
-  "resolution": {
-    "default": "preinstalled",
-    "supported": [
-      "preinstalled",
-      "image_provided",
-      "pip_uv",
-      "source"
-    ]
   },
   "requirements": {
     "env": [
@@ -36,20 +13,10 @@
   },
   "config": {
     "accepts": [
-      "models",
-      "instructions",
       "tools",
       "mcp",
       "skills",
-      "telemetry",
-      "runtime.limits"
-    ]
-  },
-  "artifacts": {
-    "collects": [
-      "logs",
-      "trajectories",
-      "run_metadata"
+      "telemetry"
     ]
   },
   "telemetry": {

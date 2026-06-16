@@ -4,7 +4,7 @@
 //! Runtime invocation helpers.
 
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -573,12 +573,7 @@ fn run_process_adapter(
     };
     if !stdin_payload.is_empty() {
         if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(stdin_payload.as_bytes())
-                .map_err(|source| FabricError::ProcessRunner {
-                    command: settings.command.clone(),
-                    source,
-                })?;
+            write_child_stdin(&mut stdin, &stdin_payload, &settings.command)?;
         }
     }
 
@@ -773,12 +768,7 @@ fn run_python_adapter(
 
     let stdin_payload = fabric_adapter_payload(plan, runtime, &request)?;
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(stdin_payload.as_bytes())
-            .map_err(|source| FabricError::ProcessRunner {
-                command: python.to_string_lossy().into_owned(),
-                source,
-            })?;
+        write_child_stdin(&mut stdin, &stdin_payload, &python.to_string_lossy())?;
     }
 
     let output = child
@@ -899,11 +889,19 @@ fn adapter_id(plan: &RunPlan) -> Option<String> {
         .or_else(|| Some(plan.config.harness.adapter_id.clone()))
 }
 
+fn write_child_stdin(stdin: &mut impl Write, payload: &str, command: &str) -> Result<()> {
+    match stdin.write_all(payload.as_bytes()) {
+        Ok(()) => Ok(()),
+        Err(source) if source.kind() == ErrorKind::BrokenPipe => Ok(()),
+        Err(source) => Err(FabricError::ProcessRunner {
+            command: command.to_string(),
+            source,
+        }),
+    }
+}
+
 fn harness_type(plan: &RunPlan) -> String {
-    plan.adapter_descriptor
-        .as_ref()
-        .map(|adapter| adapter.descriptor.harness_id.clone())
-        .unwrap_or_else(|| "unknown".to_string())
+    adapter_id(plan).unwrap_or_else(|| "unknown".to_string())
 }
 
 fn adapter_kind(plan: &RunPlan) -> AdapterKind {
@@ -1416,16 +1414,7 @@ runtime:
     fn process_adapter_descriptor() -> &'static str {
         r#"{
   "adapter_id": "acme.fabric.process",
-  "harness_id": "process-test",
-  "adapter_kind": "process",
-  "version": 1,
-  "runtime_modes": ["oneshot", "session"],
-  "transports": ["cli"],
-  "control_locations": ["in_env_control"],
-  "resolution": {
-    "default": "preinstalled",
-    "supported": ["preinstalled"]
-  }
+  "adapter_kind": "process"
 }"#
     }
 
