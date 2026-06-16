@@ -432,6 +432,39 @@ pub struct ProfileConfig {
     pub telemetry: Option<TelemetryConfig>,
 }
 
+/// Source context used when resolving an in-memory Fabric config.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolveContext {
+    /// Root used to resolve agent package paths.
+    pub agent_root: PathBuf,
+    /// Path recorded as config provenance in the run plan.
+    pub config_path: PathBuf,
+    /// Root used to resolve config-local paths.
+    pub config_root: PathBuf,
+}
+
+impl ResolveContext {
+    /// Build a context for an agent package root.
+    pub fn from_agent_root(root: impl Into<PathBuf>) -> Self {
+        let root = root.into();
+        Self {
+            agent_root: root.clone(),
+            config_path: root.join(AGENT_YAML),
+            config_root: root,
+        }
+    }
+
+    /// Build a context for a config file and its config root.
+    pub fn from_config_path(path: impl Into<PathBuf>, root: impl Into<PathBuf>) -> Self {
+        let root = root.into();
+        Self {
+            agent_root: root.clone(),
+            config_path: path.into(),
+            config_root: root,
+        }
+    }
+}
+
 /// Adapter implementation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -653,38 +686,39 @@ pub fn resolve_run_plan_with_profiles(
     match load_fabric_document(path)? {
         FabricDocument::FabricConfig { path, root, config } => {
             let agent_name = config.metadata.name.clone();
-            let (config, selected_profile) =
-                resolve_config_profiles(&agent_name, config, &root, profiles)?;
-            let adapter_descriptor = resolve_adapter_descriptor(&config, &root)?;
-            let descriptor = adapter_descriptor
-                .as_ref()
-                .map(|adapter| &adapter.descriptor);
-            let resolution = resolve_resolution(&config, descriptor)?;
-            let environment_plan = resolve_environment_plan(&config, &root);
-            validate_control_location(descriptor, environment_plan.as_ref())?;
-            let capability_plan =
-                resolve_capability_plan(&config, &root, adapter_descriptor.as_ref());
-            let telemetry_plan = resolve_telemetry_plan(&config, descriptor);
-            Ok(RunPlan {
-                agent_name: config.metadata.name.clone(),
-                profile: if selected_profile.len() == 1 {
-                    selected_profile.first().cloned()
-                } else {
-                    None
-                },
-                profiles: selected_profile,
-                adapter_descriptor,
-                resolution,
-                environment_plan,
-                capability_plan,
-                telemetry_plan,
-                agent_root: root.clone(),
-                config_path: path,
-                config_root: root,
+            let (profile_configs, selected_profiles) =
+                load_profile_configs(&agent_name, &config, &root, profiles)?;
+            resolve_run_plan_from_config_with_profile_names(
                 config,
-            })
+                &profile_configs,
+                selected_profiles,
+                ResolveContext::from_config_path(path, root),
+            )
         }
     }
+}
+
+/// Resolve a typed Fabric config and typed profile overlays into a runnable plan.
+///
+/// This is the SDK-facing entrypoint. File and YAML loading stays outside this
+/// function; callers provide already-typed configs and the path context used for
+/// resolving relative paths.
+pub fn resolve_run_plan_from_config(
+    config: FabricConfig,
+    profiles: &[ProfileConfig],
+    context: ResolveContext,
+) -> Result<RunPlan> {
+    let selected_profiles = profiles
+        .iter()
+        .enumerate()
+        .map(|(index, profile)| {
+            profile
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("profile_{}", index + 1))
+        })
+        .collect();
+    resolve_run_plan_from_config_with_profile_names(config, profiles, selected_profiles, context)
 }
 
 fn load_fabric_config(path: &Path) -> Result<FabricDocument> {
@@ -731,17 +765,17 @@ fn parent_or_current(path: &Path) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn resolve_config_profiles(
+fn load_profile_configs(
     agent_name: &str,
-    config: FabricConfig,
+    config: &FabricConfig,
     config_root: &Path,
     profiles: &[String],
-) -> Result<(FabricConfig, Vec<String>)> {
+) -> Result<(Vec<ProfileConfig>, Vec<String>)> {
     if profiles.is_empty() {
-        return Ok((into_effective_config(config), Vec::new()));
+        return Ok((Vec::new(), Vec::new()));
     }
     let discovered = discover_profiles(&config, config_root)?;
-    let mut effective = config.clone();
+    let mut profile_configs = Vec::new();
     let mut selected_profiles = Vec::new();
     for profile_name in profiles {
         let profile_path =
@@ -757,10 +791,51 @@ fn resolve_config_profiles(
                 });
             };
         let profile_config = read_yaml::<ProfileConfig>(&profile_path)?;
-        apply_profile_config(&mut effective, &profile_config);
+        profile_configs.push(profile_config);
         selected_profiles.push(profile_name.clone());
     }
-    Ok((into_effective_config(effective), selected_profiles))
+    Ok((profile_configs, selected_profiles))
+}
+
+fn resolve_run_plan_from_config_with_profile_names(
+    config: FabricConfig,
+    profiles: &[ProfileConfig],
+    selected_profiles: Vec<String>,
+    context: ResolveContext,
+) -> Result<RunPlan> {
+    let mut effective = config;
+    for profile in profiles {
+        apply_profile_config(&mut effective, profile);
+    }
+    let config = into_effective_config(effective);
+    let adapter_descriptor = resolve_adapter_descriptor(&config, &context.config_root)?;
+    let descriptor = adapter_descriptor
+        .as_ref()
+        .map(|adapter| &adapter.descriptor);
+    let resolution = resolve_resolution(&config, descriptor)?;
+    let environment_plan = resolve_environment_plan(&config, &context.config_root);
+    validate_control_location(descriptor, environment_plan.as_ref())?;
+    let capability_plan =
+        resolve_capability_plan(&config, &context.config_root, adapter_descriptor.as_ref());
+    let telemetry_plan = resolve_telemetry_plan(&config, descriptor);
+    Ok(RunPlan {
+        agent_name: config.metadata.name.clone(),
+        profile: if selected_profiles.len() == 1 {
+            selected_profiles.first().cloned()
+        } else {
+            None
+        },
+        profiles: selected_profiles,
+        adapter_descriptor,
+        resolution,
+        environment_plan,
+        capability_plan,
+        telemetry_plan,
+        agent_root: context.agent_root,
+        config_path: context.config_path,
+        config_root: context.config_root,
+        config,
+    })
 }
 
 fn into_effective_config(mut config: FabricConfig) -> FabricConfig {
@@ -1607,6 +1682,33 @@ environment:
                 .mcp_servers
                 .contains_key("github")
         );
+    }
+
+    #[test]
+    fn resolves_in_memory_config_with_typed_profiles() {
+        let FabricDocument::FabricConfig { config, root, .. } =
+            load_fabric_document(example_agent_dir()).expect("agent config");
+        let profile = read_yaml::<ProfileConfig>(&root.join("profiles/mcp-github.yaml"))
+            .expect("profile config");
+
+        let plan = resolve_run_plan_from_config(
+            config,
+            &[profile],
+            ResolveContext::from_agent_root(root.clone()),
+        )
+        .expect("run plan");
+
+        assert_eq!(plan.profile.as_deref(), Some("mcp_github"));
+        assert_eq!(plan.profiles, vec!["mcp_github"]);
+        assert!(plan.config_path.ends_with("agent.yaml"));
+        assert!(plan.config.profiles.directories.is_empty());
+        assert!(
+            plan.capability_plan
+                .managed
+                .mcp_servers
+                .contains_key("github")
+        );
+        assert_eq!(plan.config_root, root);
     }
 
     #[test]

@@ -13,6 +13,7 @@ import json
 import os
 import shlex
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -32,6 +33,10 @@ class FabricCliError(RuntimeError):
         self.returncode = returncode
         self.stdout = stdout
         self.stderr = stderr
+
+
+class FabricNativeUnavailableError(RuntimeError):
+    """Raised when a typed-config SDK method needs the native extension."""
 
 
 @dataclass(frozen=True)
@@ -74,6 +79,24 @@ class FabricClient:
         args.extend(_profile_args(profile))
         return self._call_json(args)
 
+    def plan_config(
+        self,
+        config: Mapping[str, Any] | Any,
+        *,
+        profile_configs: Sequence[Mapping[str, Any] | Any] | None = None,
+        base_dir: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Resolve an in-memory typed config into a run plan."""
+
+        native = self._require_native_module("plan_config")
+        return json.loads(
+            native.plan_config(
+                _config_json(config),
+                _profiles_json(profile_configs),
+                None if base_dir is None else str(base_dir),
+            )
+        )
+
     async def doctor(
         self, path: str | Path, *, profile: str | Sequence[str] | None = None
     ) -> dict[str, Any]:
@@ -88,6 +111,26 @@ class FabricClient:
         args = ["doctor", str(path)]
         args.extend(_profile_args(profile))
         return await self._call_json_async(args)
+
+    async def doctor_config(
+        self,
+        config: Mapping[str, Any] | Any,
+        *,
+        profile_configs: Sequence[Mapping[str, Any] | Any] | None = None,
+        base_dir: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Diagnose an in-memory typed config without running the harness."""
+
+        native = self._require_native_module("doctor_config")
+        return await asyncio.to_thread(
+            lambda: json.loads(
+                native.doctor_config(
+                    _config_json(config),
+                    _profiles_json(profile_configs),
+                    None if base_dir is None else str(base_dir),
+                )
+            )
+        )
 
     async def run(
         self,
@@ -127,6 +170,34 @@ class FabricClient:
         else:
             args.extend(["--input", input_text])
         return await self._call_json_async(args)
+
+    async def run_config(
+        self,
+        config: Mapping[str, Any] | Any,
+        *,
+        profile_configs: Sequence[Mapping[str, Any] | Any] | None = None,
+        base_dir: str | Path | None = None,
+        input_text: str = "",
+        input_file: str | Path | None = None,
+        request: dict[str, Any] | None = None,
+        request_file: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Run an in-memory typed config through the selected Fabric adapter."""
+
+        native = self._require_native_module("run_config")
+        return await asyncio.to_thread(
+            lambda: json.loads(
+                native.run_config(
+                    _config_json(config),
+                    _profiles_json(profile_configs),
+                    None if base_dir is None else str(base_dir),
+                    input_text,
+                    None if input_file is None else str(input_file),
+                    None if request is None else json.dumps(request),
+                    None if request_file is None else str(request_file),
+                )
+            )
+        )
 
     def _command(self) -> tuple[str, ...]:
         if self.command is not None:
@@ -183,6 +254,15 @@ class FabricClient:
             return None
         return _native
 
+    def _require_native_module(self, method: str) -> Any:
+        native = self._native_module()
+        if native is None:
+            raise FabricNativeUnavailableError(
+                f"{method} requires the nemo_fabric native extension; "
+                "the CLI fallback only supports file-based agent configs"
+            )
+        return native
+
 
 def _profile_args(profile: str | Sequence[str] | None) -> list[str]:
     if profile is None:
@@ -202,3 +282,25 @@ def _native_profile_arg(profile: str | Sequence[str] | None) -> str | list[str] 
     if not profiles:
         return None
     return profiles
+
+
+def _config_json(config: Mapping[str, Any] | Any) -> str:
+    return json.dumps(_json_compatible(config))
+
+
+def _profiles_json(profiles: Sequence[Mapping[str, Any] | Any] | None) -> str | None:
+    if profiles is None:
+        return None
+    return json.dumps([_json_compatible(profile) for profile in profiles])
+
+
+def _json_compatible(value: Mapping[str, Any] | Any) -> dict[str, Any]:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json", exclude_none=True)
+    if hasattr(value, "dict"):
+        return value.dict(exclude_none=True)
+    if isinstance(value, Mapping):
+        return dict(value)
+    raise TypeError(
+        "config values must be mappings or Pydantic-like objects with model_dump()/dict()"
+    )

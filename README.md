@@ -14,7 +14,8 @@ artifacts from agent harnesses.
 
 Fabric provides:
 
-- a versioned `agent.yaml` config contract;
+- a versioned typed config contract, with `agent.yaml` as the portable file
+  format;
 - profile-based config variation for evaluation and ablation runs;
 - adapter descriptors for harness-specific launch and control;
 - a Rust core with a CLI and Python bindings;
@@ -99,6 +100,9 @@ under `examples/code-review-agent/artifacts/hermes-real/`.
 
 - **Agent package:** an `agent.yaml` file plus optional profiles, skills, repos,
   and artifacts. Start with `examples/code-review-agent/agent.yaml`.
+- **Typed config:** the SDK can pass an in-memory config directly to Fabric.
+  `agent.yaml` is the portable representation for CLI, examples, CI, and
+  reproducible runs.
 - **Profiles:** named variations of the base config. Use profiles to vary the
   harness, model, MCP, tools, skills, telemetry, or environment context without
   editing `agent.yaml`.
@@ -139,6 +143,32 @@ async def main():
     print(report["checks"])
 
 asyncio.run(main())
+```
+
+Consumers that already own a top-level job config can construct the Fabric slice
+in code instead of materializing an agent directory:
+
+```python
+plan = client.plan_config(
+    {
+        "schema_version": "fabric.agent/v1alpha1",
+        "metadata": {"name": "code-review-agent"},
+        "harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},
+        "models": {
+            "default": {
+                "provider": "nvidia",
+                "model": "nvidia/nemotron-3-nano-30b-a3b",
+            }
+        },
+        "runtime": {
+            "mode": "session",
+            "transport": "library",
+            "input_schema": "chat",
+            "output_schema": "message",
+        },
+    },
+    base_dir="examples/code-review-agent",
+)
 ```
 
 When installed from the repository root, `FabricClient()` uses the native Rust

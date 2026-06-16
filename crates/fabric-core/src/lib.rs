@@ -12,9 +12,10 @@ pub use config::{
     AdapterTelemetrySupport, CapabilityPlan, ControlLocation, EnvironmentConfig,
     EnvironmentOwnership, EnvironmentPlan, FabricConfig, FabricDocument, HarnessConfig, McpConfig,
     McpExposure, McpServerPlan, MetadataConfig, ModelConfig, ProfileConfig, ResolutionStrategy,
-    ResolvedAdapterDescriptor, RunPlan, RuntimeConfig, RuntimeMode, SameRuntimeInvocationPolicy,
-    SkillConfig, TelemetryConfig, TelemetryPlan, Transport, load_adapter_descriptor,
-    load_fabric_document, resolve_run_plan, resolve_run_plan_with_profiles,
+    ResolveContext, ResolvedAdapterDescriptor, RunPlan, RuntimeConfig, RuntimeMode,
+    SameRuntimeInvocationPolicy, SkillConfig, TelemetryConfig, TelemetryPlan, Transport,
+    load_adapter_descriptor, load_fabric_document, resolve_run_plan, resolve_run_plan_from_config,
+    resolve_run_plan_with_profiles,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
