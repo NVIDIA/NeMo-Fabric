@@ -41,80 +41,86 @@ flowchart TB
   Harness -. harness telemetry .-> Relay
 ```
 
-## Repository Layout
+## Quick Start: Hermes SDK
 
-```text
-crates/fabric-core/      Rust core types, config resolution, planning, schemas
-crates/fabric-cli/       `fabric` CLI
-crates/fabric-python/    native Python extension
-python/                  `nemo_fabric` Python SDK wrapper
-schemas/                 committed JSON Schema snapshots
-adapters/                maintained harness adapter implementations
-integrations/            consumer integrations such as Harbor
-examples/                sample agent packages and runnable demos
-tests/                   CLI, SDK, Hermes, Relay, and Harbor smoke tests
-```
+This path installs Fabric, installs Hermes in a separate Python environment,
+and runs one input through the Hermes SDK adapter.
 
-## Requirements
+Prerequisites:
 
 - Rust and Cargo
-- Python 3.10+
-- `NVIDIA_API_KEY` for real Hermes/NVIDIA-hosted model runs
-- `uv` only for the optional clean Hermes + Relay environment recipe
+- Python 3.10+ for Fabric
+- Python 3.11-3.13 for Hermes
+- `NVIDIA_API_KEY` for NVIDIA-hosted model access
 
-## Quick Start
-
-Run the dependency-free checks:
+Install Fabric and the `fabric` CLI:
 
 ```bash
-cargo test
-cargo check -p fabric-python
-python3 tests/smoke_cli.py
-python3 tests/smoke_local_env_e2e.py
-python3 tests/smoke_hermes_cli.py
-python3 tests/smoke_hermes_config_mapping.py
-python3 tests/smoke_swebench_style.py
-python3 python/tests/smoke_sdk.py
-python3 python/tests/smoke_sdk_concurrency.py
+python3 -m venv .tmp/fabric-venv
+.tmp/fabric-venv/bin/python -m pip install -U pip
+.tmp/fabric-venv/bin/python -m pip install -e .
+
+cargo install --path crates/fabric-cli --locked --force
+export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-Install the Python SDK with native bindings:
+Install Hermes into its own environment:
 
 ```bash
-python3 -m venv .tmp/fabric-native-venv
-.tmp/fabric-native-venv/bin/python -m pip install -e .
-.tmp/fabric-native-venv/bin/python -c "from nemo_fabric import FabricClient; print(FabricClient().plan('examples/code-review-agent', profile='env_local')['agent_name'])"
-.tmp/fabric-native-venv/bin/python python/tests/smoke_native_sdk.py
+# Use any Python 3.11-3.13 interpreter for Hermes.
+python3.12 -m venv .tmp/hermes-venv
+.tmp/hermes-venv/bin/python -m pip install -U pip
+.tmp/hermes-venv/bin/python -m pip install hermes-agent
 ```
 
-## CLI Usage
-
-Validate and inspect the example agent package:
+If you are working from a local Hermes checkout, replace the final install line
+with:
 
 ```bash
-cargo run -p fabric-cli -- validate examples/code-review-agent
-cargo run -p fabric-cli -- inspect examples/code-review-agent
-cargo run -p fabric-cli -- doctor examples/code-review-agent --profile env_local
+.tmp/hermes-venv/bin/python -m pip install -e ../hermes-agent
 ```
 
-Plan a run with one or more profiles:
+Run one input:
 
 ```bash
-cargo run -p fabric-cli -- plan examples/code-review-agent --profile env_local
-cargo run -p fabric-cli -- plan examples/code-review-agent --profile env_local --profile mcp_github
+export NVIDIA_API_KEY=...
+export HERMES_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
+
+fabric doctor examples/code-review-agent --profile hermes_real
+fabric run examples/code-review-agent \
+  --profile hermes_real \
+  --input "Reply with exactly: fabric works"
 ```
 
-Generate or inspect JSON Schemas:
+The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
+under `examples/code-review-agent/artifacts/hermes-real/`.
+
+## Core Concepts
+
+- **Agent package:** an `agent.yaml` file plus optional profiles, skills, repos,
+  and artifacts. Start with `examples/code-review-agent/agent.yaml`.
+- **Profiles:** named variations of the base config. Use profiles to vary the
+  harness, model, MCP, tools, skills, telemetry, or environment context without
+  editing `agent.yaml`.
+- **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
+  The Hermes SDK and CLI adapters live under `adapters/hermes-sdk/` and
+  `adapters/hermes-cli/`.
+- **Artifacts:** normalized output, logs, patches, and telemetry references
+  returned through an `ArtifactManifest`.
+
+Fabric applies profiles in caller order and validates the final effective config
+before planning or running.
+
+## Use Fabric
+
+Inspect the run plan before invoking a harness:
 
 ```bash
-cargo run -p fabric-cli -- schema --name agent
-cargo run -p fabric-cli -- schema --output-dir schemas
+fabric plan examples/code-review-agent --profile hermes_real
+fabric plan examples/code-review-agent --profile env_local --profile mcp_github
 ```
 
-Run `cargo test` after regenerating schemas. The tests verify that committed
-schema snapshots match the Rust core types.
-
-## Python SDK Usage
+Use Fabric from Python:
 
 ```python
 import asyncio
@@ -126,8 +132,8 @@ async def main():
     agent = Path("examples/code-review-agent")
 
     async with FabricClient() as client:
-        plan = client.plan(agent, profile="env_local")
-        report = await client.doctor(agent, profile="env_local")
+        plan = client.plan(agent, profile="hermes_real")
+        report = await client.doctor(agent, profile="hermes_real")
 
     print(plan["agent_name"])
     print(report["checks"])
@@ -136,134 +142,24 @@ asyncio.run(main())
 ```
 
 When installed from the repository root, `FabricClient()` uses the native Rust
-binding. The SDK accepts the same ordered profile stacks as the CLI. For
-source-tree debugging, pass an explicit CLI command:
+binding. For source-tree debugging, pass an explicit CLI command:
 
 ```python
 client = FabricClient(command=("cargo", "run", "-q", "-p", "fabric-cli", "--"))
 ```
 
-## Agent Packages
+## Other Runs
 
-Fabric supports an agent directory or a single `agent.yaml` file.
-
-Canonical package:
-
-```text
-code-review-agent/
-  agent.yaml
-  profiles/
-    env-local.yaml
-    env-opensandbox.yaml
-    hermes-cli.yaml
-    hermes-real.yaml
-    hermes-relay.yaml
-    mcp-github.yaml
-  repos/
-  skills/
-```
-
-`agent.yaml` defines the default runnable package:
-
-- `metadata`
-- `harness`
-- `models`
-- `runtime`
-- `environment`
-- `tools`
-- `skills`
-- `mcp`
-- `telemetry`
-- `profiles.directories`
-
-Profiles are named variations of the base config. Use profiles to vary harness,
-model, MCP, tools, skills, telemetry, or environment context without editing
-`agent.yaml`. Fabric applies profiles in the order provided by the caller and
-validates the final effective config before planning or running.
-
-Maintained adapter implementations live at the repository top level under
-`adapters/`. Example agent packages reference adapters by `harness.adapter_id`;
-they do not carry adapter implementation code. Package-local
-`adapters/<adapter-name>/fabric-adapter.json` files are supported for custom
-harnesses.
-
-Adapter descriptors are adapter-owned JSON metadata. They tell Fabric which
-runtime modes, transports, control locations, resolution strategies, runner
-defaults, binaries, files, services, env vars, and plugin hooks an adapter
-supports.
-
-Adapter descriptors also declare same-runtime invocation concurrency. Fabric
-does not schedule global parallelism; consumers may start multiple Fabric runs
-or clients in parallel. Within one runtime handle, sessions are serialized by
-default unless an adapter explicitly declares concurrent invocation support.
-
-Run failures return structured `ErrorInfo` with lifecycle stage, stable code,
-retryability, message, and adapter metadata. Consumers own job-level retries.
-
-Process-backed adapters capture harness stdout and stderr as log artifacts when
-those streams are non-empty. Additional files, patches, and telemetry outputs
-are reported through the same `ArtifactManifest`.
-
-## Harbor Consumer Integration
-
-Fabric provides a Harbor agent wrapper at
-`nemo_fabric.integrations.harbor:FabricAgent`. Harbor owns task materialization,
-environment lifecycle, verifier execution, and reward calculation; Fabric owns
-the selected harness invocation during the Harbor agent phase.
-
-```bash
-pip install "nemo-fabric[harbor]"
-python3 python/tests/smoke_harbor_integration.py
-```
-
-## Included Example Profiles
-
-- `env_local`: local execution context with Relay disabled.
-- `hermes_cli`: real Hermes CLI invocation through an installed `hermes`
-  command.
-- `hermes_real`: real Hermes SDK invocation through an installed Hermes Python
-  environment.
-- `hermes_relay`: real Hermes SDK invocation with Hermes-native NeMo Relay
-  telemetry enabled.
-- `mcp_github`: MCP capability variation layered on top of another profile.
-
-## Optional Hermes CLI Run
-
-The Hermes CLI path expects an installed `hermes` command and `NVIDIA_API_KEY`.
-Fabric maps the resolved model, workspace, skill paths, MCP servers, selected
-toolsets, and plugin settings into an isolated Hermes `config.yaml`, then runs
-Hermes in one-shot mode.
+Run the Hermes CLI adapter:
 
 ```bash
 export NVIDIA_API_KEY=...
-cargo run -p fabric-cli -- run examples/code-review-agent --profile hermes_cli --input "Reply with exactly: hermes cli ok"
+fabric run examples/code-review-agent \
+  --profile hermes_cli \
+  --input "Reply with exactly: hermes cli ok"
 ```
 
-## Optional Hermes SDK Run
-
-The real Hermes SDK path expects an installed Hermes Python environment and
-`NVIDIA_API_KEY`.
-Fabric maps the resolved model, workspace, skill paths, MCP servers, selected
-toolsets, plugins, and Relay settings into an isolated Hermes `config.yaml`
-before invoking the Hermes SDK.
-
-```bash
-export NVIDIA_API_KEY=...
-export HERMES_PYTHON=/path/to/hermes/python
-RUN_FABRIC_HERMES_INTEGRATION=1 python3 tests/smoke_hermes_real.py
-```
-
-If `HERMES_PYTHON` is unset, the smoke first tries the current Python
-interpreter and then `python3`.
-
-## Optional Hermes + NeMo Relay Run
-
-The Hermes Relay path uses Hermes' native `observability/nemo_relay` plugin.
-Fabric writes `relay-config.json`, prepares an isolated `HERMES_HOME`, enables
-the Hermes plugin, maps the Fabric Relay config into Hermes export settings, and
-lets Hermes emit ATOF/ATIF from the real session, LLM, and tool lifecycle.
-
-For a sibling checkout layout:
+Run Hermes with NeMo Relay enabled:
 
 ```bash
 uv venv .tmp/fabric-hermes-relay-venv --python 3.12
@@ -276,20 +172,16 @@ export HERMES_PYTHON="$PWD/.tmp/fabric-hermes-relay-venv/bin/python"
 RUN_FABRIC_RELAY_INTEGRATION=1 python3 tests/smoke_relay_integration.py
 ```
 
-Adjust the editable install paths if your checkouts live elsewhere.
+Use Fabric from Harbor:
 
-## Optional Harbor SWE-Bench Task Smoke
+```bash
+.tmp/fabric-venv/bin/python -m pip install -e ".[harbor]"
+.tmp/fabric-venv/bin/python python/tests/smoke_harbor_integration.py
+```
 
-The Harbor SWE-Bench smoke keeps Harbor responsible for task materialization and
-uses Fabric as the harness runner. It expects a sibling `../harbor` checkout
-with the generated `django__django-13741` task and a local SWE-Bench image:
+Run the Harbor SWE-Bench smoke when the local SWE-Bench image and generated task
+are available:
 
 ```bash
 RUN_FABRIC_HARBOR_SWEBENCH_DOCKER=1 python3 tests/smoke_harbor_swebench_task.py
 ```
-
-The smoke copies `/testbed` from
-`swebench/sweb.eval.x86_64.django_1776_django-13741:latest`, invokes the
-test fixture `harbor_swebench_django_13741` profile with a structured
-`RunRequest`, and asserts that Fabric captures a patch artifact for
-`django/contrib/auth/forms.py`.
