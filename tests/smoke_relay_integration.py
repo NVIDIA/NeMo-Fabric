@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Opt-in smoke test for Hermes adapter Relay ATOF/ATIF emission."""
 
 from __future__ import annotations

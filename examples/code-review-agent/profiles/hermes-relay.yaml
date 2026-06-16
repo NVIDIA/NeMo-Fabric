@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 schema_version: fabric.profile/v1alpha1
 name: hermes_relay
 description: Run Hermes SDK with native NeMo Relay ATOF/ATIF hooks enabled.

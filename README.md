@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # NVIDIA NeMo Fabric
 
 Fabric is the harness-management layer that turns many agent runtimes into one
@@ -24,7 +29,7 @@ Fabric provides:
 
 ```mermaid
 flowchart TB
-  Consumer["Consumer\nCLI | Python SDK | Harbor smoke"]
+  Consumer["Consumer\nCLI | Python SDK | integrations"]
   Config["Agent package\nagent.yaml + profiles"]
   Core["Fabric Rust core\nvalidate | resolve | plan | run"]
   Adapter["Selected Hermes adapter\nSDK | CLI"]
@@ -198,18 +203,4 @@ uv pip install --python .tmp/fabric-hermes-relay-venv/bin/python \
 export NVIDIA_API_KEY=...
 export HERMES_PYTHON="$PWD/.tmp/fabric-hermes-relay-venv/bin/python"
 RUN_FABRIC_RELAY_INTEGRATION=1 python3 tests/smoke_relay_integration.py
-```
-
-Use Fabric from Harbor:
-
-```bash
-.tmp/fabric-venv/bin/python -m pip install -e ".[harbor]"
-.tmp/fabric-venv/bin/python python/tests/smoke_harbor_integration.py
-```
-
-Run the Harbor SWE-Bench smoke when the local SWE-Bench image and generated task
-are available:
-
-```bash
-RUN_FABRIC_HARBOR_SWEBENCH_DOCKER=1 python3 tests/smoke_harbor_swebench_task.py
 ```

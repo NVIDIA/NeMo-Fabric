@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 """Smoke a Fabric run against a Harbor-generated SWE-Bench task directory.
 
 This smoke is opt-in because it needs Docker and a local SWE-Bench image. It
