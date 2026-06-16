@@ -70,8 +70,6 @@ The repo already contains the core shape of the MVP:
 - Harbor proof wrapper at `nemo_fabric.integrations.harbor:FabricAgent`.
 - Workspace patch/status artifact capture.
 - Relay config pass-through and a Hermes Relay smoke path.
-- Dependency-free local environment, CLI, SDK, config-mapping, and Harbor smoke
-  tests.
 
 ## In Scope
 
@@ -129,140 +127,136 @@ The repo layout separates Fabric-owned concepts:
 
 ### 1. Core Contract
 
-Goal: make the Rust core contract stable enough for adapter and consumer work.
+Status:
 
-Remaining work:
-
-- Keep schema snapshots current.
-- Tighten error messages for invalid profile stacks, unsupported capability
-  mappings, missing requirements, and unknown adapters.
-- Keep SDK typed-config behavior and YAML package behavior aligned.
-- Add or update tests whenever the config contract changes.
-
-Acceptance:
-
+- Mostly complete.
+- Schema snapshots, profile resolution, ordered profile stacking, typed SDK
+  config, YAML package config, adapter descriptor validation, planning, doctor
+  checks, and CLI/SDK smoke coverage are already present.
 - Consumers can validate and plan without running.
 - The same base config can be resolved with different ordered profile stacks.
 - Adapters receive EffectiveConfig/RunPlan, not raw profile files.
 
+How to maintain:
+
+- Keep schema snapshots current as the contract evolves.
+- Tighten error messages where review or smoke tests show ambiguity.
+- Keep SDK typed-config behavior and YAML package behavior aligned when new
+  config fields are added.
+- Add or update tests whenever the config contract changes.
+
 ### 2. Hermes Adapter Readiness
 
-Goal: make Hermes adapter behavior reproducible and inspectable.
+Status:
 
-Remaining work:
-
-- Validate Hermes SDK adapter behavior against a clean installed Hermes
-  environment.
-- Validate Hermes CLI adapter behavior against a clean installed Hermes CLI
-  environment.
-- Remove any remaining local path assumptions.
-- Keep install modes explicit:
+- Base Hermes SDK and Hermes CLI adapter work is in place.
+- Install modes are explicit:
   - preinstalled
   - image-provided
   - local development venv
-- Persist adapter-generated Hermes config artifacts where useful for review.
-- Keep dependency-free test shims in fixtures, not as product adapters.
 
-Acceptance:
+Next steps:
 
-- Hermes SDK and CLI paths can run from documented clean environments.
+- Review the Hermes adapter implementation for maintainability and alignment
+  with the adapter contract.
+- Test Hermes SDK and CLI paths with more representative inputs.
+- Validate Hermes SDK and CLI paths against clean installed Hermes
+  environments.
 - Fabric model, workspace, skills, MCP, tools, telemetry, and artifact config
-  are visible in generated Hermes-native config or launch settings.
-- Unsupported mappings fail before invocation with actionable errors.
+  should remain visible in generated Hermes-native config or launch settings.
+- Add testing for Relay artifacts such as ATOF/ATIF references.
+- Add testing for harness-native events, artifacts, and logs.
+- Ensure unsupported mappings fail before invocation with actionable errors.
 
 ### 3. Config Variation Matrix
 
-Goal: prove Fabric profiles can vary the same logical agent across capabilities
-and harnesses without rewriting the base agent package.
+Status:
 
-Hermes is the first target for the full variation matrix. The example
-`examples/code-review-agent` should test:
+- Ordered profile stacking is implemented.
+- `examples/code-review-agent` includes Hermes SDK, Hermes CLI, local env, MCP,
+  and Relay-oriented profile examples.
+- CLI and SDK smoke tests cover profile resolution and multi-profile planning.
+- Hermes capability mapping exists for model, workspace, skills, MCP, tools,
+  telemetry, and artifacts.
 
-- harness adapter variation: Hermes SDK and Hermes CLI profiles both resolve
-  and run where supported;
-- model variation: default model and alternate model profiles map into
-  Hermes-native config;
-- runtime variation: one-shot/CLI and session/library paths are planned where
-  the selected adapter supports them;
-- workspace and artifact variation: profile-specific workspace and artifact
-  locations are respected;
-- skills variation: base skill directories and profile-added skill directories
-  map into Hermes config;
-- tools variation: command allowlists or toolsets map into Hermes-native tool
-  config, or fail clearly if unsupported;
-- MCP variation: MCP server definitions map into Hermes-native MCP config when
-  supported;
-- telemetry variation: Relay-disabled and Relay-enabled profiles produce the
-  expected adapter config and ArtifactManifest references;
-- output variation: stdout/stderr logs, generated harness config, patch/status,
-  and telemetry references are captured where available.
+Next steps:
 
-After the Hermes matrix is stable, each new harness should reuse the same
-example shape:
-
-- add a harness profile for the new adapter, such as Codex or Claude Code;
-- add only harness-specific profile fields where the adapter requires them;
-- run `plan` and `doctor` across the shared variation profiles;
-- run the supported execution subset for that harness;
-- require unsupported variations to fail during planning or doctor checks with
+- Turn the example profiles into an explicit variation matrix for Hermes.
+- Add missing profile variations where useful, including alternate model,
+  toolset, workspace, artifact, and telemetry combinations.
+- Test both Hermes SDK and Hermes CLI against the applicable matrix.
+- Add tests to confirm generated Hermes config or launch settings contain
+  enabled skills, tools, MCP, telemetry, workspace, and artifact settings.
+- Add ATIF/ATOF checks that confirm enabled skills, tools, MCP, or telemetry
+  appear in the emitted trajectory where the harness and adapter support it.
+- Add checks for harness-native events, artifacts, and logs.
+- Add negative tests where unsupported mappings fail before invocation with
   actionable errors.
 
-Acceptance:
+Config mapping and actual runtime behavior are related but not identical.
+Fabric should prove that capability config is mapped into the harness-native
+surface, and trajectory tests should prove whether the harness actually exposed
+or used that capability during a run.
 
-- The base example agent remains stable while profiles vary harness and
-  capabilities.
-- Hermes SDK and Hermes CLI pass the full applicable variation matrix.
-- Follow-on harnesses can be added by contributing profiles and adapter tests
-  without changing the base example contract.
+After the Hermes matrix is stable, each new harness should reuse the same
+example shape while keeping the base `agent.yaml` stable.
 
 ### 4. SDK And CLI API
 
-Goal: give Platform and other consumers a stable surface while adapter
-implementation evolves.
+Status:
 
-Remaining work:
+- Base Python SDK and CLI surfaces are in place.
+- SDK supports agent-package paths and typed/in-memory config.
+- CLI supports validate, inspect, plan, doctor, schema generation, and run.
+- SDK and CLI can plan and run Hermes without callers importing
+  Hermes-specific code.
+- CLI and SDK smoke tests cover core planning and run paths.
 
-- Keep Python SDK as the primary API.
-- Support SDK calls from typed config, agent directory, or single config file.
-- Keep CLI behavior aligned with SDK behavior.
+Next steps:
+
+- Define an SDK API doc that flushes out the APIs and request/response schema
+  for each API.
+- Keep Python SDK as the primary API for consumers.
+- Keep CLI behavior aligned with SDK behavior for the same config/profile stack.
 - Keep plan/doctor/run examples in the README accurate.
-- Decide which async SDK methods are required for MVP versus follow-up.
-- Keep the API independent of Harbor-specific concepts.
-
-Acceptance:
-
-- A consumer can plan and run Hermes without importing Hermes-specific code.
-- A consumer can inspect EffectiveConfig, RunPlan, RunResult, and
-  ArtifactManifest.
-- CLI and SDK produce equivalent plans for the same config/profile stack.
-- Platform can construct the Fabric agent slice from its own job/deployment
-  config without materializing an agent directory.
+- Finish the async SDK boundary for start, invoke, stream, cancel, stop, and
+  run.
+- Keep typed config as a first-class SDK path so Platform can construct the
+  Fabric agent slice from its own job/deployment config without materializing
+  an agent directory.
+- Keep the SDK API consumer-neutral. Consider consumers such as Harbor while
+  defining the API so it does not become Platform-specific.
 
 ### 5. Telemetry And Artifacts
 
-Goal: make telemetry and artifacts reviewable in the MVP path.
+Status:
 
-Remaining work:
+- Base artifact capture is in place for output, logs, generated harness config,
+  workspace patch/status, and telemetry references where available.
+- Relay config pass-through exists for Hermes profiles.
+- Native harness outputs are preserved separately from Relay outputs.
+- SDK, CLI, and Harbor-facing paths expose ArtifactManifest data.
 
-- Pass Relay config and metadata through to Hermes adapters.
-- Discover Relay ATOF/ATIF outputs when telemetry is enabled.
-- Preserve native harness outputs without forcing Relay to replace them.
-- Capture stdout/stderr logs as artifacts for process-backed runs.
-- Keep ArtifactManifest populated with output, logs, patch/status, and
-  telemetry references where available.
+Next steps:
 
-Acceptance:
-
-- Enabling Relay in a profile produces inspectable telemetry outputs or clear
-  telemetry references.
-- Disabling Relay still produces useful native output and logs.
-- Artifacts are visible to SDK, CLI, and Harbor consumers.
+- Harden Relay artifact discovery for ATOF/ATIF outputs when telemetry is
+  enabled.
+- Add tests that verify Relay-enabled profiles produce inspectable telemetry
+  outputs or clear telemetry references.
+- Add tests that verify Relay-disabled profiles still produce native output,
+  harness events where available, and logs.
+- Keep ArtifactManifest populated with output, logs, patch/status, native
+  harness artifacts, and telemetry references where available.
+- Confirm these artifacts are visible through SDK, CLI, and Harbor consumers.
 
 ### 6. Consumer Proof: Harbor
 
-Goal: validate the SDK/CLI contract through one real evaluation consumer.
+Status: optional/stretch goal.
 
-Remaining work:
+Goal: validate the SDK/CLI contract through one real evaluation consumer after
+the SDK/CLI and Hermes paths are stable.
+
+Next steps:
 
 - Keep `nemo_fabric.integrations.harbor:FabricAgent` as the Harbor entrypoint.
 - Keep Harbor-specific usage in `integrations/harbor/README.md`.
@@ -270,7 +264,7 @@ Remaining work:
 - Run one Harbor SWE-Bench Verified task through Fabric.
 - Run the Harbor verifier against the Fabric-produced patch.
 
-Acceptance:
+Success criteria:
 
 - Harbor can invoke Fabric without Hermes-specific launch code.
 - Fabric result metadata is copied into Harbor context metadata.
@@ -286,11 +280,11 @@ Acceptance:
 4. Run the Hermes config-variation matrix across model, runtime, skills, tools,
    MCP, telemetry, workspace, artifacts, and harness adapter profiles.
 5. Harden Relay telemetry and ArtifactManifest discovery for Hermes runs.
-6. Run the Harbor lightweight smoke from a clean install.
-7. Run a Harbor SWE-Bench Verified smoke and verifier path as the first
-   evaluation proof.
-8. After the SDK/CLI and Hermes path are stable, split follow-up work into
+6. After the SDK/CLI and Hermes path are stable, split follow-up work into
    adapter, consumer API, and telemetry/artifact readiness tracks.
+7. Stretch: run the Harbor lightweight smoke from a clean install.
+8. Stretch: run a Harbor SWE-Bench Verified smoke and verifier path as the
+   first evaluation proof.
 
 ## Review Checklist
 
