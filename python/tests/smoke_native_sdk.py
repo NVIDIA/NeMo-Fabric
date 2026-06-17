@@ -86,7 +86,7 @@ async def smoke(client: FabricClient) -> None:
                     "github": {
                         "transport": "streamable-http",
                         "url": "${GITHUB_MCP_URL}",
-                        "expose_as": "native",
+                        "exposure": "harness_native",
                     }
                 }
             },

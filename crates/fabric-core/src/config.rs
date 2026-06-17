@@ -534,19 +534,15 @@ pub struct McpServerConfig {
     /// MCP server URL or process command, depending on transport.
     pub url: String,
     /// How Fabric exposes the MCP capability to the harness.
-    pub expose_as: McpExposure,
+    pub exposure: McpExposure,
 }
 
 /// MCP exposure strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum McpExposure {
-    /// Map into harness-native MCP config.
-    Native,
-    /// Export env/config for the harness to consume.
-    Env,
-    /// Use an MCP proxy.
-    Proxy,
+    /// Map into harness-native MCP config through the selected adapter.
+    HarnessNative,
     /// Fabric manages MCP and exposes basic tools/actions.
     FabricManaged,
 }
@@ -1043,7 +1039,7 @@ fn resolve_capability_plan(
                         McpServerPlan {
                             transport: server.transport.clone(),
                             url: server.url.clone(),
-                            expose_as: server.expose_as,
+                            exposure: server.exposure,
                         },
                     )
                 })
@@ -1097,7 +1093,7 @@ fn resolve_capability_plan(
 
     for (name, server) in &mcp_servers {
         let can_map_native =
-            accepts("mcp") && matches!(server.expose_as, McpExposure::Native | McpExposure::Env);
+            accepts("mcp") && matches!(server.exposure, McpExposure::HarnessNative);
         if can_map_native {
             native.mcp_servers.insert(name.clone(), server.clone());
             routes.push(CapabilityRoute {
@@ -1105,8 +1101,8 @@ fn resolve_capability_plan(
                 name: name.clone(),
                 target: CapabilityTarget::HarnessNative,
                 reason: format!(
-                    "MCP server uses {:?} exposure and adapter accepts mcp",
-                    server.expose_as
+                    "MCP server uses {} exposure and adapter accepts mcp",
+                    mcp_exposure_name(server.exposure)
                 ),
             });
         } else {
@@ -1115,11 +1111,10 @@ fn resolve_capability_plan(
                 kind: CapabilityKind::Mcp,
                 name: name.clone(),
                 target: CapabilityTarget::FabricManaged,
-                reason: match server.expose_as {
+                reason: match server.exposure {
                     McpExposure::FabricManaged => {
                         "MCP server explicitly requests Fabric-managed exposure".to_string()
                     }
-                    McpExposure::Proxy => "MCP server requests proxy exposure".to_string(),
                     _ => "selected adapter does not declare native MCP support".to_string(),
                 },
             });
@@ -1133,6 +1128,13 @@ fn resolve_capability_plan(
         native,
         managed,
         routes,
+    }
+}
+
+fn mcp_exposure_name(exposure: McpExposure) -> &'static str {
+    match exposure {
+        McpExposure::HarnessNative => "harness_native",
+        McpExposure::FabricManaged => "fabric_managed",
     }
 }
 
@@ -1333,7 +1335,7 @@ pub struct McpServerPlan {
     /// MCP URL or command.
     pub url: String,
     /// Exposure strategy.
-    pub expose_as: McpExposure,
+    pub exposure: McpExposure,
 }
 
 /// Resolved telemetry plan.

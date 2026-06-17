@@ -10,7 +10,7 @@ mcp:
     github:
       transport: streamable-http
       url: ${GITHUB_MCP_URL}
-      expose_as: fabric_managed
+      exposure: fabric_managed
 
 telemetry:
   enabled: true

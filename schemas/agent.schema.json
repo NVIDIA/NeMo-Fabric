@@ -128,18 +128,8 @@
       "description": "MCP exposure strategy.",
       "oneOf": [
         {
-          "const": "native",
-          "description": "Map into harness-native MCP config.",
-          "type": "string"
-        },
-        {
-          "const": "env",
-          "description": "Export env/config for the harness to consume.",
-          "type": "string"
-        },
-        {
-          "const": "proxy",
-          "description": "Use an MCP proxy.",
+          "const": "harness_native",
+          "description": "Map into harness-native MCP config through the selected adapter.",
           "type": "string"
         },
         {
@@ -152,7 +142,7 @@
     "McpServerConfig": {
       "description": "MCP server configuration.",
       "properties": {
-        "expose_as": {
+        "exposure": {
           "$ref": "#/$defs/McpExposure",
           "description": "How Fabric exposes the MCP capability to the harness."
         },
@@ -168,7 +158,7 @@
       "required": [
         "transport",
         "url",
-        "expose_as"
+        "exposure"
       ],
       "type": "object"
     },

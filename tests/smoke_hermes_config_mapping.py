@@ -82,7 +82,7 @@ def payload(tmpdir: str) -> dict:
                     "github": {
                         "transport": "streamable-http",
                         "url": "https://mcp.github.example/mcp",
-                        "expose_as": "native",
+                        "exposure": "harness_native",
                     }
                 },
             }
