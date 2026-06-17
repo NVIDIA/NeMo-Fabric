@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Fabric lifecycle or progress event.",
+  "properties": {
+    "event_id": {
+      "description": "Event id.",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Event kind.",
+      "type": "string"
+    },
+    "message": {
+      "description": "Event message.",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "Event metadata.",
+      "type": "object"
+    },
+    "timestamp_millis": {
+      "description": "Unix timestamp in milliseconds.",
+      "format": "uint128",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "event_id",
+    "timestamp_millis",
+    "kind",
+    "message"
+  ],
+  "title": "FabricEvent",
+  "type": "object"
+}

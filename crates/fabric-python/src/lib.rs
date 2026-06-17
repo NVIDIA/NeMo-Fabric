@@ -7,7 +7,8 @@ use std::path::PathBuf;
 
 use fabric_core::{
     FabricConfig, ProfileConfig, ResolveContext, RunRequest, doctor_plan, load_fabric_document,
-    resolve_run_plan_from_config, resolve_run_plan_with_profiles, run_plan,
+    resolve_effective_config_with_profiles, resolve_run_plan_from_config,
+    resolve_run_plan_with_profiles, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -25,11 +26,14 @@ fn validate(path: String) -> PyResult<String> {
     Ok(format!("validated {path}"))
 }
 
-/// Load and return the normalized Fabric document as JSON.
+/// Resolve and return the effective Fabric config as JSON.
 #[pyfunction]
-fn inspect(path: String) -> PyResult<String> {
-    let document = load_fabric_document(path).map_err(to_py_error)?;
-    to_json(&document)
+#[pyo3(signature = (path, profile=None))]
+fn inspect(py: Python<'_>, path: String, profile: Option<Py<PyAny>>) -> PyResult<String> {
+    let profiles = profile_values(py, profile)?;
+    let effective_config =
+        resolve_effective_config_with_profiles(path, &profiles).map_err(to_py_error)?;
+    to_json(&effective_config)
 }
 
 /// Resolve an agent/profile into a runnable plan and return JSON.

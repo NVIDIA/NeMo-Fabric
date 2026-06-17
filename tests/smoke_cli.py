@@ -26,10 +26,14 @@ def main() -> None:
 
         assert call_text("validate", temp_example).startswith("validated")
         inspected = call_json("inspect", temp_example)
-        assert inspected["kind"] == "fabric_config"
+        assert inspected["agent_name"] == "code-review-agent"
+        assert inspected.get("profiles", []) == []
+        assert inspected["config"]["metadata"]["name"] == "code-review-agent"
 
         plan = call_json("plan", temp_example, "--profile", "env_local")
         assert plan["agent_name"] == "code-review-agent"
+        assert plan["effective_config"]["agent_name"] == "code-review-agent"
+        assert plan["effective_config"]["profiles"] == ["env_local"]
         assert plan["adapter_descriptor"]["source"] == "repository"
         assert plan["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
 
@@ -40,6 +44,14 @@ def main() -> None:
         call_text("schema", "--output-dir", schema_dir)
         assert (schema_dir / "agent.schema.json").is_file()
         assert (schema_dir / "adapter-descriptor.schema.json").is_file()
+        assert (schema_dir / "effective-config.schema.json").is_file()
+        assert (schema_dir / "adapter-invocation.schema.json").is_file()
+        assert (schema_dir / "runtime-context.schema.json").is_file()
+        assert (schema_dir / "environment-handle.schema.json").is_file()
+        assert (schema_dir / "runtime-handle.schema.json").is_file()
+        assert (schema_dir / "invocation-handle.schema.json").is_file()
+        assert (schema_dir / "error-info.schema.json").is_file()
+        assert (schema_dir / "fabric-event.schema.json").is_file()
 
         direct_profile = temp_example / "profiles" / "hermes-sdk.yaml"
         direct_plan = call_json("plan", temp_example, "--profile", direct_profile)

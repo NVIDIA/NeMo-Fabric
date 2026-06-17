@@ -38,6 +38,10 @@ async def smoke(client: FabricClient) -> None:
     fixture_agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
 
     assert client.validate(example_agent).startswith("validated")
+    inspected = client.inspect(example_agent, profile="env_local")
+    assert inspected["agent_name"] == "code-review-agent"
+    assert inspected["profiles"] == ["env_local"]
+    assert inspected["config"]["metadata"]["name"] == "code-review-agent"
 
     plan = client.plan(example_agent, profile="env_local")
     assert plan["agent_name"] == "code-review-agent"

@@ -11,20 +11,23 @@ pub mod schema;
 
 pub use config::{
     AdapterConfigSupport, AdapterDescriptor, AdapterDescriptorSource, AdapterKind,
-    AdapterRequirements, AdapterTelemetrySupport, CapabilityPlan, ControlLocation,
+    AdapterRequirements, AdapterTelemetrySupport, CapabilityPlan, ControlLocation, EffectiveConfig,
     EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan, FabricConfig, FabricDocument,
     HarnessConfig, McpConfig, McpExposure, McpServerPlan, MetadataConfig, ModelConfig,
     ProfileConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, RunPlan,
     RuntimeConfig, RuntimeMode, SkillConfig, TelemetryConfig, TelemetryPlan, Transport,
-    load_adapter_descriptor, load_fabric_document, resolve_run_plan, resolve_run_plan_from_config,
+    load_adapter_descriptor, load_fabric_document, resolve_effective_config,
+    resolve_effective_config_from_config, resolve_effective_config_with_profiles, resolve_run_plan,
+    resolve_run_plan_from_config, resolve_run_plan_from_effective_config,
     resolve_run_plan_with_profiles,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
 pub use runtime::{
-    ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage, FabricEvent,
-    InvocationHandle, RunRequest, RunResult, RunStatus, RuntimeHandle, TelemetryRef,
-    invoke_runtime, prepare_environment, run_plan, start_runtime, stop_runtime,
+    AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage,
+    FabricEvent, InvocationHandle, RunRequest, RunResult, RunStatus, RuntimeContext, RuntimeHandle,
+    RuntimeTelemetryContext, TelemetryRef, invoke_runtime, prepare_environment, run_plan,
+    start_runtime, stop_runtime,
 };
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,

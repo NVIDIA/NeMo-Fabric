@@ -9,7 +9,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use fabric_core::{
     RunRequest, SchemaName, doctor_plan, generate_all_schemas, generate_schema_json,
-    load_fabric_document, resolve_run_plan_with_profiles, run_plan, write_schema_snapshots,
+    load_fabric_document, resolve_effective_config_with_profiles, resolve_run_plan_with_profiles,
+    run_plan, write_schema_snapshots,
 };
 
 #[derive(Debug, Parser)]
@@ -28,10 +29,13 @@ enum Command {
         /// Path to an agent directory or YAML config.
         path: PathBuf,
     },
-    /// Print the normalized Fabric document as JSON.
+    /// Resolve and print the effective Fabric config as JSON.
     Inspect {
         /// Path to an agent directory or YAML config.
         path: PathBuf,
+        /// Profile name from configured profile directories, or a YAML profile path.
+        #[arg(long = "profile")]
+        profile: Vec<String>,
     },
     /// Resolve an agent/profile into a runnable plan.
     Plan {
@@ -99,9 +103,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             load_fabric_document(&path)?;
             println!("validated {}", path.display());
         }
-        Some(Command::Inspect { path }) => {
-            let document = load_fabric_document(path)?;
-            println!("{}", serde_json::to_string_pretty(&document)?);
+        Some(Command::Inspect { path, profile }) => {
+            let effective_config = resolve_effective_config_with_profiles(path, &profile)?;
+            println!("{}", serde_json::to_string_pretty(&effective_config)?);
         }
         Some(Command::Plan { path, profile }) => {
             let plan = resolve_run_plan_with_profiles(path, &profile)?;

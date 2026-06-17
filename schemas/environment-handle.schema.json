@@ -1,0 +1,86 @@
+{
+  "$defs": {
+    "ControlLocation": {
+      "description": "Where Fabric control code runs relative to the environment.",
+      "oneOf": [
+        {
+          "const": "external_control",
+          "description": "Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
+          "type": "string"
+        },
+        {
+          "const": "in_env_control",
+          "description": "Fabric runs inside the prepared environment with the harness.",
+          "type": "string"
+        }
+      ]
+    },
+    "EnvironmentOwnership": {
+      "description": "Whether Fabric owns the underlying environment resource.",
+      "oneOf": [
+        {
+          "const": "caller_owned",
+          "description": "The caller or a surrounding system owns the environment resource.",
+          "type": "string"
+        },
+        {
+          "const": "fabric_owned",
+          "description": "Fabric created or leased the environment resource and may release it.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Resolved execution environment context.",
+  "properties": {
+    "artifacts": {
+      "description": "Artifact root visible to the harness runtime.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "connection": {
+      "additionalProperties": true,
+      "description": "Provider connection metadata.",
+      "type": "object"
+    },
+    "control_location": {
+      "$ref": "#/$defs/ControlLocation",
+      "description": "Where Fabric control code runs."
+    },
+    "environment_id": {
+      "description": "Environment handle id.",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "description": "Provider-specific metadata.",
+      "type": "object"
+    },
+    "ownership": {
+      "$ref": "#/$defs/EnvironmentOwnership",
+      "description": "Whether Fabric owns the environment resource."
+    },
+    "provider": {
+      "description": "Environment provider.",
+      "type": "string"
+    },
+    "workspace": {
+      "description": "Workspace visible to the harness runtime.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "environment_id",
+    "provider",
+    "control_location",
+    "ownership"
+  ],
+  "title": "EnvironmentHandle",
+  "type": "object"
+}

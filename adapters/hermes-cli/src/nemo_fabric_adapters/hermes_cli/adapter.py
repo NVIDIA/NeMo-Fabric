@@ -26,11 +26,48 @@ def main() -> None:
         raise SystemExit(2)
 
 
+def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("effective_config") or {}
+
+
+def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
+    return effective_config(payload).get("config") or {}
+
+
+def config_root_payload(payload: dict[str, Any]) -> str:
+    return effective_config(payload).get("config_root") or payload.get("config_root") or "."
+
+
+def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("runtime_context") or {}
+
+
+def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("request") or {}
+
+
+def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return runtime_context(payload).get("environment") or payload.get("environment") or {}
+
+
+def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    harness = (fabric_config(payload).get("harness") or {})
+    return harness.get("settings") or payload.get("settings") or {}
+
+
+def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return fabric_config(payload).get("models") or payload.get("models") or {}
+
+
+def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("capability_plan") or payload.get("capabilities") or {}
+
+
 def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = payload.get("settings", {})
-    request = payload.get("request", {})
-    config_root = Path(payload.get("config_root") or ".").resolve()
-    environment = payload.get("environment", {})
+    settings = settings_payload(payload)
+    request = request_payload(payload)
+    config_root = Path(config_root_payload(payload)).resolve()
+    environment = environment_payload(payload)
     model_config = selected_model_config(payload)
 
     hermes_home = resolve_path(
@@ -114,10 +151,10 @@ def write_hermes_config(payload: dict[str, Any], hermes_home: Path) -> tuple[Pat
 
 
 def build_hermes_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = payload.get("settings", {})
+    settings = settings_payload(payload)
     model_config = selected_model_config(payload)
-    native = (payload.get("capabilities") or {}).get("native") or {}
-    environment = payload.get("environment", {})
+    native = (capability_plan(payload)).get("native") or {}
+    environment = environment_payload(payload)
 
     model_name = settings.get("model_name") or model_config.get("model", "")
     provider = settings.get("provider") or model_config.get("provider")
@@ -189,8 +226,8 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
 
 
 def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = payload.get("settings", {})
-    models = payload.get("models", {})
+    settings = settings_payload(payload)
+    models = models_payload(payload)
     model_config = models.get(settings.get("model", "default"), {})
     if not isinstance(model_config, dict):
         return {}

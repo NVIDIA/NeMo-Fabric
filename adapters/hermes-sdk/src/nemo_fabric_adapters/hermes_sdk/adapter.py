@@ -34,6 +34,47 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     return run_hermes_sdk(payload)
 
 
+def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("effective_config") or {}
+
+
+def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
+    return effective_config(payload).get("config") or {}
+
+
+def agent_name(payload: dict[str, Any]) -> str:
+    return effective_config(payload).get("agent_name") or payload.get("agent_name") or "fabric-agent"
+
+
+def config_root(payload: dict[str, Any]) -> str:
+    return effective_config(payload).get("config_root") or payload.get("config_root") or "."
+
+
+def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("runtime_context") or {}
+
+
+def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("request") or {}
+
+
+def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return runtime_context(payload).get("environment") or payload.get("environment") or {}
+
+
+def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    harness = (fabric_config(payload).get("harness") or {})
+    return harness.get("settings") or payload.get("settings") or {}
+
+
+def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return fabric_config(payload).get("models") or payload.get("models") or {}
+
+
+def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("capability_plan") or payload.get("capabilities") or {}
+
+
 def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
     config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
     if not config_path:
@@ -62,7 +103,7 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
-    base = Path(payload.get("config_root") or ".").resolve()
+    base = Path(config_root(payload)).resolve()
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":
             continue
@@ -84,13 +125,13 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
                 section.setdefault("mode", "overwrite")
             if section_name == "atif":
                 section.setdefault("filename_template", "trajectory-{session_id}.atif.json")
-                section.setdefault("agent_name", payload.get("agent_name") or "fabric-agent")
+                section.setdefault("agent_name", agent_name(payload))
                 section.setdefault("model_name", relay_model_name(payload))
 
 
 def relay_model_name(payload: dict[str, Any]) -> str:
-    settings = payload.get("settings", {})
-    models = payload.get("models", {})
+    settings = settings_payload(payload)
+    models = models_payload(payload)
     model_config = models.get(settings.get("model", "default"), {})
     return settings.get("model_name") or model_config.get("model") or "unknown"
 
@@ -145,7 +186,7 @@ def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
             atif.get("filename_template", "trajectory-{session_id}.atif.json")
         )
         os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_NAME"] = str(
-            atif.get("agent_name") or payload.get("agent_name") or "fabric-agent"
+            atif.get("agent_name") or agent_name(payload)
         )
         os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"] = str(atif.get("agent_version", "fabric-poc"))
         os.environ["HERMES_NEMO_RELAY_ATIF_MODEL_NAME"] = str(atif.get("model_name") or relay_model_name(payload))
@@ -174,10 +215,10 @@ def write_hermes_config(
 
 
 def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False) -> dict[str, Any]:
-    settings = payload.get("settings", {})
+    settings = settings_payload(payload)
     model_config = selected_model_config(payload)
-    native = (payload.get("capabilities") or {}).get("native") or {}
-    environment = payload.get("environment", {})
+    native = (capability_plan(payload)).get("native") or {}
+    environment = environment_payload(payload)
 
     model_name = settings.get("model_name") or model_config.get("model", "")
     provider = settings.get("provider") or model_config.get("provider")
@@ -251,8 +292,8 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
 
 
 def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = payload.get("settings", {})
-    models = payload.get("models", {})
+    settings = settings_payload(payload)
+    models = models_payload(payload)
     key = settings.get("model", "default")
     model_config = models.get(key, {})
     if not isinstance(model_config, dict):
@@ -285,10 +326,10 @@ def resolve_hermes_toolsets(settings: dict[str, Any], config: dict[str, Any]) ->
 
 
 def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = payload.get("settings", {})
-    request = payload.get("request", {})
+    settings = settings_payload(payload)
+    request = request_payload(payload)
     model_config = selected_model_config(payload)
-    hermes_home = Path(payload.get("config_root", ".")).joinpath(
+    hermes_home = Path(config_root(payload)).joinpath(
         settings.get("hermes_home", "./artifacts/hermes-home")
     )
     hermes_home.mkdir(parents=True, exist_ok=True)

@@ -591,6 +591,60 @@ pub fn load_adapter_descriptor(path: impl AsRef<Path>) -> Result<AdapterDescript
     Ok(descriptor)
 }
 
+/// Resolve an agent directory or single agent config into merged effective config.
+pub fn resolve_effective_config(
+    path: impl AsRef<Path>,
+    profile: Option<&str>,
+) -> Result<EffectiveConfig> {
+    let profiles: Vec<String> = profile.into_iter().map(str::to_string).collect();
+    resolve_effective_config_with_profiles(path, &profiles)
+}
+
+/// Resolve an agent directory or single agent config with ordered profiles into
+/// merged effective config.
+pub fn resolve_effective_config_with_profiles(
+    path: impl AsRef<Path>,
+    profiles: &[String],
+) -> Result<EffectiveConfig> {
+    match load_fabric_document(path)? {
+        FabricDocument::FabricConfig { path, root, config } => {
+            let agent_name = config.metadata.name.clone();
+            let (profile_configs, selected_profiles) =
+                load_profile_configs(&agent_name, &config, &root, profiles)?;
+            Ok(resolve_effective_config_from_config_with_profile_names(
+                config,
+                &profile_configs,
+                selected_profiles,
+                ResolveContext::from_config_path(path, root),
+            ))
+        }
+    }
+}
+
+/// Resolve typed config/profile overlays into merged effective config.
+pub fn resolve_effective_config_from_config(
+    config: FabricConfig,
+    profiles: &[ProfileConfig],
+    context: ResolveContext,
+) -> EffectiveConfig {
+    let selected_profiles = profiles
+        .iter()
+        .enumerate()
+        .map(|(index, profile)| {
+            profile
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("profile_{}", index + 1))
+        })
+        .collect();
+    resolve_effective_config_from_config_with_profile_names(
+        config,
+        profiles,
+        selected_profiles,
+        context,
+    )
+}
+
 fn load_directory(path: &Path) -> Result<FabricDocument> {
     let agent = path.join(AGENT_YAML);
     if agent.exists() {
@@ -618,19 +672,7 @@ pub fn resolve_run_plan_with_profiles(
     path: impl AsRef<Path>,
     profiles: &[String],
 ) -> Result<RunPlan> {
-    match load_fabric_document(path)? {
-        FabricDocument::FabricConfig { path, root, config } => {
-            let agent_name = config.metadata.name.clone();
-            let (profile_configs, selected_profiles) =
-                load_profile_configs(&agent_name, &config, &root, profiles)?;
-            resolve_run_plan_from_config_with_profile_names(
-                config,
-                &profile_configs,
-                selected_profiles,
-                ResolveContext::from_config_path(path, root),
-            )
-        }
-    }
+    resolve_run_plan_from_effective_config(resolve_effective_config_with_profiles(path, profiles)?)
 }
 
 /// Resolve a typed Fabric config and typed profile overlays into a runnable plan.
@@ -643,17 +685,9 @@ pub fn resolve_run_plan_from_config(
     profiles: &[ProfileConfig],
     context: ResolveContext,
 ) -> Result<RunPlan> {
-    let selected_profiles = profiles
-        .iter()
-        .enumerate()
-        .map(|(index, profile)| {
-            profile
-                .name
-                .clone()
-                .unwrap_or_else(|| format!("profile_{}", index + 1))
-        })
-        .collect();
-    resolve_run_plan_from_config_with_profile_names(config, profiles, selected_profiles, context)
+    resolve_run_plan_from_effective_config(resolve_effective_config_from_config(
+        config, profiles, context,
+    ))
 }
 
 fn load_fabric_config(path: &Path) -> Result<FabricDocument> {
@@ -732,44 +766,63 @@ fn load_profile_configs(
     Ok((profile_configs, selected_profiles))
 }
 
-fn resolve_run_plan_from_config_with_profile_names(
+fn resolve_effective_config_from_config_with_profile_names(
     config: FabricConfig,
     profiles: &[ProfileConfig],
     selected_profiles: Vec<String>,
     context: ResolveContext,
-) -> Result<RunPlan> {
+) -> EffectiveConfig {
     let mut effective = config;
     for profile in profiles {
         apply_profile_config(&mut effective, profile);
     }
     let config = into_effective_config(effective);
-    let adapter_descriptor = resolve_adapter_descriptor(&config, &context.config_root)?;
+    let profile = if selected_profiles.len() == 1 {
+        selected_profiles.first().cloned()
+    } else {
+        None
+    };
+    EffectiveConfig {
+        agent_name: config.metadata.name.clone(),
+        profile,
+        profiles: selected_profiles,
+        agent_root: context.agent_root,
+        config_path: context.config_path,
+        config_root: context.config_root,
+        config,
+    }
+}
+
+/// Resolve execution planning metadata from merged effective config.
+pub fn resolve_run_plan_from_effective_config(
+    effective_config: EffectiveConfig,
+) -> Result<RunPlan> {
+    let config = effective_config.config.clone();
+    let config_root = effective_config.config_root.clone();
+    let adapter_descriptor = resolve_adapter_descriptor(&config, &config_root)?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
     let resolution = resolve_resolution(&config, descriptor)?;
-    let environment_plan = resolve_environment_plan(&config, &context.config_root);
+    let environment_plan = resolve_environment_plan(&config, &config_root);
     validate_control_location(descriptor, environment_plan.as_ref())?;
     let capability_plan =
-        resolve_capability_plan(&config, &context.config_root, adapter_descriptor.as_ref());
+        resolve_capability_plan(&config, &config_root, adapter_descriptor.as_ref());
     let telemetry_plan = resolve_telemetry_plan(&config, descriptor);
     Ok(RunPlan {
-        agent_name: config.metadata.name.clone(),
-        profile: if selected_profiles.len() == 1 {
-            selected_profiles.first().cloned()
-        } else {
-            None
-        },
-        profiles: selected_profiles,
+        agent_name: effective_config.agent_name.clone(),
+        profile: effective_config.profile.clone(),
+        profiles: effective_config.profiles.clone(),
         adapter_descriptor,
         resolution,
         environment_plan,
         capability_plan,
         telemetry_plan,
-        agent_root: context.agent_root,
-        config_path: context.config_path,
-        config_root: context.config_root,
+        agent_root: effective_config.agent_root.clone(),
+        config_path: effective_config.config_path.clone(),
+        config_root,
         config,
+        effective_config,
     })
 }
 
@@ -1115,9 +1168,32 @@ fn normalize_path(path: PathBuf) -> PathBuf {
         .collect()
 }
 
+/// Merged Fabric config after applying selected profiles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EffectiveConfig {
+    /// Stable agent name.
+    pub agent_name: String,
+    /// Selected profile when exactly one profile is applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// Ordered selected profiles.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<String>,
+    /// Root used to resolve agent package paths.
+    pub agent_root: PathBuf,
+    /// Resolved Fabric config path.
+    pub config_path: PathBuf,
+    /// Root used to resolve config-local paths.
+    pub config_root: PathBuf,
+    /// Merged Fabric config with authoring-time profile discovery removed.
+    pub config: FabricConfig,
+}
+
 /// Resolved Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunPlan {
+    /// Merged config and provenance used as the base for this plan.
+    pub effective_config: EffectiveConfig,
     /// Stable agent name.
     pub agent_name: String,
     /// Selected profile when exactly one profile is applied.

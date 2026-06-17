@@ -26,18 +26,47 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     return run_selected_mode(payload)
 
 
+def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("effective_config") or {}
+
+
+def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
+    return effective_config(payload).get("config") or {}
+
+
+def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("runtime_context") or {}
+
+
+def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("request") or {}
+
+
+def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return runtime_context(payload).get("environment") or payload.get("environment") or {}
+
+
+def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    harness = (fabric_config(payload).get("harness") or {})
+    return harness.get("settings") or payload.get("settings") or {}
+
+
+def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("capability_plan") or payload.get("capabilities") or {}
+
+
 def run_selected_mode(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = payload.get("settings", {})
+    settings = settings_payload(payload)
     if settings.get("mode") == "swebench_shim":
         return run_swebench_shim(payload)
     return run_shim(payload)
 
 
 def run_shim(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = payload.get("settings", {})
-    request = payload.get("request", {})
-    environment = payload.get("environment", {})
-    capabilities = payload.get("capabilities", {})
+    settings = settings_payload(payload)
+    request = request_payload(payload)
+    environment = environment_payload(payload)
+    capabilities = capability_plan(payload)
 
     return {
         "harness": "hermes",
@@ -56,10 +85,10 @@ def run_shim(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def run_swebench_shim(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = payload.get("settings", {})
-    request = payload.get("request", {})
+    settings = settings_payload(payload)
+    request = request_payload(payload)
     context = request.get("context", {})
-    environment = payload.get("environment", {})
+    environment = environment_payload(payload)
     workspace = Path(environment.get("workspace") or settings.get("workspace") or ".")
     target_file = workspace / settings.get("target_file", "calculator.py")
     before = settings.get("expected_before")

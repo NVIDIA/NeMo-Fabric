@@ -14,7 +14,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::config::{AdapterKind, ControlLocation, EnvironmentOwnership, RunPlan, RuntimeMode};
+use crate::config::{
+    AdapterKind, CapabilityPlan, ControlLocation, EffectiveConfig, EnvironmentOwnership, RunPlan,
+    RuntimeMode, TelemetryPlan,
+};
 use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -246,6 +249,57 @@ pub struct InvocationHandle {
     pub request_id: String,
     /// Runtime id.
     pub runtime_id: String,
+}
+
+/// Per-run/per-invocation context passed to harness adapters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RuntimeContext {
+    /// Runtime handle id.
+    pub runtime_id: String,
+    /// Invocation handle id.
+    pub invocation_id: String,
+    /// Request id.
+    pub request_id: String,
+    /// Prepared execution environment.
+    pub environment: EnvironmentHandle,
+    /// Artifact manifest visible to the adapter at invocation start.
+    pub artifacts: ArtifactManifest,
+    /// Runtime telemetry context generated for this invocation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<RuntimeTelemetryContext>,
+}
+
+/// Runtime telemetry config passed to adapters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RuntimeTelemetryContext {
+    /// Whether Relay is enabled for this invocation.
+    pub relay_enabled: bool,
+    /// Generated Relay config path for this invocation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_path: Option<PathBuf>,
+    /// Environment variables Fabric applies while invoking the adapter.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+    /// Additional telemetry metadata surfaced to consumers and adapters.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+/// Adapter-facing invocation payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterInvocation {
+    /// Merged agent config and provenance.
+    pub effective_config: EffectiveConfig,
+    /// Per-runtime/per-invocation execution context.
+    pub runtime_context: RuntimeContext,
+    /// Per-invocation request.
+    pub request: RunRequest,
+    /// Derived capability routing plan for the selected adapter.
+    #[serde(default)]
+    pub capability_plan: CapabilityPlan,
+    /// Derived telemetry plan for the selected adapter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry_plan: Option<TelemetryPlan>,
 }
 
 trait RuntimeAdapter {
@@ -569,7 +623,14 @@ fn run_process_adapter(
 
     let stdin_payload = match settings.stdin_payload {
         ProcessStdinPayload::Input => value_to_stdin(&request.input)?,
-        ProcessStdinPayload::FabricRequest => fabric_adapter_payload(plan, runtime, &request)?,
+        ProcessStdinPayload::FabricRequest => fabric_adapter_payload(
+            plan,
+            runtime,
+            &invocation,
+            &request,
+            &artifacts,
+            relay_config.as_ref(),
+        )?,
     };
     if !stdin_payload.is_empty() {
         if let Some(mut stdin) = child.stdin.take() {
@@ -766,7 +827,14 @@ fn run_python_adapter(
             source,
         })?;
 
-    let stdin_payload = fabric_adapter_payload(plan, runtime, &request)?;
+    let stdin_payload = fabric_adapter_payload(
+        plan,
+        runtime,
+        &invocation,
+        &request,
+        &artifacts,
+        relay_config.as_ref(),
+    )?;
     if let Some(mut stdin) = child.stdin.take() {
         write_child_stdin(&mut stdin, &stdin_payload, &python.to_string_lossy())?;
     }
@@ -969,27 +1037,88 @@ fn adapter_setting_root<'a>(plan: &'a RunPlan, key: &str) -> &'a Path {
 fn fabric_adapter_payload(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
+    invocation: &InvocationHandle,
     request: &RunRequest,
+    artifacts: &ArtifactManifest,
+    relay_config: Option<&RelayRuntimeConfig>,
 ) -> Result<String> {
-    let agent_root = absolute_path(plan.agent_root.clone())?;
-    let config_root = absolute_path(plan.config_root.clone())?;
-    serde_json::to_string_pretty(&serde_json::json!({
-        "agent_name": plan.agent_name,
-        "profile": plan.profile,
-        "agent_root": agent_root,
-        "config_root": config_root,
-        "adapter_root": plan.adapter_descriptor.as_ref().map(|adapter| &adapter.root),
-        "harness_type": harness_type(plan),
-        "adapter_id": adapter_id(plan),
-        "runtime_id": runtime.runtime_id,
-        "environment": runtime.environment,
-        "request": request,
-        "models": plan.config.models,
-        "capabilities": plan.capability_plan,
-        "telemetry": plan.telemetry_plan,
-        "settings": plan.config.harness.settings,
-    }))
+    serde_json::to_string_pretty(&adapter_invocation(
+        plan,
+        runtime,
+        invocation,
+        request,
+        artifacts,
+        relay_config,
+    )?)
     .map_err(FabricError::SerializeJson)
+}
+
+fn adapter_invocation(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    invocation: &InvocationHandle,
+    request: &RunRequest,
+    artifacts: &ArtifactManifest,
+    relay_config: Option<&RelayRuntimeConfig>,
+) -> Result<AdapterInvocation> {
+    let mut effective_config = plan.effective_config.clone();
+    effective_config.agent_root = absolute_path(effective_config.agent_root)?;
+    effective_config.config_path = absolute_path(effective_config.config_path)?;
+    effective_config.config_root = absolute_path(effective_config.config_root)?;
+    Ok(AdapterInvocation {
+        effective_config,
+        runtime_context: RuntimeContext {
+            runtime_id: runtime.runtime_id.clone(),
+            invocation_id: invocation.invocation_id.clone(),
+            request_id: request.request_id.clone(),
+            environment: runtime.environment.clone(),
+            artifacts: artifacts.clone(),
+            telemetry: runtime_telemetry_context(plan, relay_config),
+        },
+        request: request.clone(),
+        capability_plan: plan.capability_plan.clone(),
+        telemetry_plan: plan.telemetry_plan.clone(),
+    })
+}
+
+fn runtime_telemetry_context(
+    plan: &RunPlan,
+    relay_config: Option<&RelayRuntimeConfig>,
+) -> Option<RuntimeTelemetryContext> {
+    let telemetry = plan.telemetry_plan.as_ref()?;
+    let mut metadata = BTreeMap::new();
+    if let Some(mode) = &telemetry.relay_mode {
+        metadata.insert("relay_mode".to_string(), Value::String(mode.clone()));
+    }
+    if let Some(project) = &telemetry.relay_project {
+        metadata.insert("relay_project".to_string(), Value::String(project.clone()));
+    }
+    if let Some(output_dir) = &telemetry.relay_output_dir {
+        metadata.insert(
+            "relay_output_dir".to_string(),
+            Value::String(output_dir.to_string_lossy().into_owned()),
+        );
+    }
+    if !telemetry.adapter_outputs.is_empty() {
+        metadata.insert(
+            "adapter_outputs".to_string(),
+            Value::Array(
+                telemetry
+                    .adapter_outputs
+                    .iter()
+                    .map(|output| Value::String(output.clone()))
+                    .collect(),
+            ),
+        );
+    }
+    Some(RuntimeTelemetryContext {
+        relay_enabled: telemetry.relay_enabled,
+        config_path: relay_config.map(|relay| relay.path.clone()),
+        env: relay_config
+            .map(|relay| relay.env.clone())
+            .unwrap_or_default(),
+        metadata,
+    })
 }
 
 fn resolve_path(root: &Path, path: &Path) -> PathBuf {

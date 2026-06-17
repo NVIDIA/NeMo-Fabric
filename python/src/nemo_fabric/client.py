@@ -69,13 +69,18 @@ class FabricClient:
             return native.validate(str(path))
         return self._call_text(["validate", str(path)])
 
-    def inspect(self, path: str | Path) -> dict[str, Any]:
-        """Load and print the normalized Fabric document."""
+    def inspect(
+        self, path: str | Path, *, profile: str | Sequence[str] | None = None
+    ) -> dict[str, Any]:
+        """Resolve and return the effective Fabric config."""
 
         native = self._native_module()
+        native_profile = _native_profile_arg(profile)
         if native is not None:
-            return json.loads(native.inspect(str(path)))
-        return self._call_json(["inspect", str(path)])
+            return json.loads(native.inspect(str(path), native_profile))
+        args = ["inspect", str(path)]
+        args.extend(_profile_args(profile))
+        return self._call_json(args)
 
     def plan(
         self, path: str | Path, *, profile: str | Sequence[str] | None = None
@@ -392,7 +397,15 @@ async def _run_inline_adapter(
     relay_runtime = _prepare_relay_runtime_config(
         plan, runtime_id, invocation_id, request, artifacts
     )
-    payload = _fabric_adapter_payload(plan, runtime_id, environment, request)
+    payload = _fabric_adapter_payload(
+        plan,
+        runtime_id,
+        invocation_id,
+        environment,
+        artifacts,
+        relay_runtime,
+        request,
+    )
     module_name, callable_name = entrypoint
     events = [
         _event(
@@ -509,24 +522,68 @@ async def _call_blocking(func: Any) -> Any:
 def _fabric_adapter_payload(
     plan: dict[str, Any],
     runtime_id: str,
+    invocation_id: str,
     environment: dict[str, Any],
+    artifacts: dict[str, Any],
+    relay_runtime: dict[str, Any],
     request: dict[str, Any],
 ) -> dict[str, Any]:
+    effective_config = _effective_config(plan)
     return {
-        "agent_name": plan.get("agent_name"),
-        "profile": plan.get("profile"),
-        "agent_root": _absolute_plan_path(plan.get("agent_root")),
-        "config_root": _absolute_plan_path(plan.get("config_root")),
-        "adapter_root": (plan.get("adapter_descriptor") or {}).get("root"),
-        "harness_type": _harness_type(plan),
-        "adapter_id": _adapter_id(plan),
-        "runtime_id": runtime_id,
-        "environment": environment,
+        "effective_config": effective_config,
+        "runtime_context": {
+            "runtime_id": runtime_id,
+            "invocation_id": invocation_id,
+            "request_id": request["request_id"],
+            "environment": environment,
+            "artifacts": artifacts,
+            "telemetry": _runtime_telemetry_context(plan, relay_runtime),
+        },
         "request": request,
-        "models": (plan.get("config") or {}).get("models", {}),
-        "capabilities": plan.get("capability_plan") or {},
-        "telemetry": plan.get("telemetry_plan"),
-        "settings": ((plan.get("config") or {}).get("harness") or {}).get("settings", {}),
+        "capability_plan": plan.get("capability_plan") or {},
+        "telemetry_plan": plan.get("telemetry_plan"),
+    }
+
+
+def _effective_config(plan: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(plan.get("effective_config"), dict):
+        effective = json.loads(json.dumps(plan["effective_config"]))
+    else:
+        effective = {
+            "agent_name": plan.get("agent_name"),
+            "profile": plan.get("profile"),
+            "profiles": plan.get("profiles") or [],
+            "agent_root": plan.get("agent_root"),
+            "config_path": plan.get("config_path"),
+            "config_root": plan.get("config_root"),
+            "config": plan.get("config") or {},
+        }
+    effective["agent_root"] = _absolute_plan_path(effective.get("agent_root"))
+    effective["config_path"] = _absolute_plan_path(effective.get("config_path"))
+    effective["config_root"] = _absolute_plan_path(effective.get("config_root"))
+    return effective
+
+
+def _runtime_telemetry_context(
+    plan: dict[str, Any], relay_runtime: dict[str, Any]
+) -> dict[str, Any] | None:
+    telemetry = plan.get("telemetry_plan")
+    if telemetry is None:
+        return None
+    metadata: dict[str, Any] = {}
+    for source, target in (
+        ("relay_mode", "relay_mode"),
+        ("relay_project", "relay_project"),
+        ("relay_output_dir", "relay_output_dir"),
+        ("adapter_outputs", "adapter_outputs"),
+    ):
+        if source in telemetry and telemetry[source] is not None:
+            metadata[target] = telemetry[source]
+    return {
+        "relay_enabled": bool(telemetry.get("relay_enabled")),
+        "config_path": relay_runtime.get("config_path"),
+        "env": relay_runtime.get("env") or {},
+        "metadata": metadata,
     }
 
 

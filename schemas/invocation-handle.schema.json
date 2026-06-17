@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One request sent to a runtime.",
+  "properties": {
+    "invocation_id": {
+      "description": "Invocation handle id.",
+      "type": "string"
+    },
+    "request_id": {
+      "description": "Request id.",
+      "type": "string"
+    },
+    "runtime_id": {
+      "description": "Runtime id.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "invocation_id",
+    "request_id",
+    "runtime_id"
+  ],
+  "title": "InvocationHandle",
+  "type": "object"
+}
