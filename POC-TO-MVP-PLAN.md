@@ -167,17 +167,15 @@ Status:
 - `hermes-cli` is the process-backed path for CLI/debug and environment-backed
   consumers. Fabric launches the wrapper process and captures stdout, stderr,
   exit status, logs, and artifacts.
+- The `hermes-cli` process path now gets a per-invocation `FABRIC_HOME` and
+  `FABRIC_INVOCATION` file. The launcher reads that invocation file, maps Fabric
+  config into Hermes-native config, and then invokes the real `hermes` CLI.
 - Both paths return the normalized Fabric `RunResult` shape.
 
 Next steps:
 
 - Review the Hermes adapter implementations for maintainability and alignment
   with the minimal descriptor fields Fabric currently uses.
-- Refactor `hermes-cli` into a true process adapter: Fabric should create a
-  per-run `FABRIC_HOME`, write `adapter-invocation.json`, set
-  `FABRIC_INVOCATION`, and let the Hermes CLI launcher read that file before
-  falling back to stdin. The launcher owns Fabric-to-Hermes config mapping and
-  then invokes the real `hermes` CLI.
 - Test Hermes SDK and CLI paths with more representative inputs.
 - Add parity checks for normalized result fields shared by the inline SDK and
   process-backed CLI paths.

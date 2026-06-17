@@ -11,7 +11,7 @@ harness:
   adapter_id: nvidia.fabric.hermes.cli
   resolution: preinstalled
   settings:
-    command: ./bin/fake-hermes.py
+    hermes_command: ./bin/fake-hermes.py
     agent_profile: code_reviewer
     workspace: ./repos/my-service
     hermes_home: ./artifacts/hermes-cli/home

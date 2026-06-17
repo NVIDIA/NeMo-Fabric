@@ -1,8 +1,10 @@
 {
   "adapter_id": "nvidia.fabric.hermes.cli",
-  "adapter_kind": "python",
+  "adapter_kind": "process",
   "runner": {
-    "script": "src/nemo_fabric_adapters/hermes_cli/adapter.py"
+    "command": "python3",
+    "script": "src/nemo_fabric_adapters/hermes_cli/adapter.py",
+    "stdin_payload": "fabric_request"
   },
   "requirements": {
     "env": ["NVIDIA_API_KEY"],

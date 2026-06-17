@@ -436,6 +436,8 @@ pub fn stop_runtime(_plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabr
 struct ProcessAdapterSettings {
     command: String,
     #[serde(default)]
+    script: Option<PathBuf>,
+    #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
     cwd: Option<PathBuf>,
@@ -562,6 +564,12 @@ fn run_process_adapter(
         runtime_id: runtime.runtime_id.clone(),
     };
     let settings = parse_process_settings(plan)?;
+    let command_path = resolve_command_path(
+        adapter_setting_root(plan, "command"),
+        Path::new(&settings.command),
+    );
+    let command_display = command_path.to_string_lossy().into_owned();
+    let command_args = process_command_args(plan, &settings);
     let cwd = settings
         .cwd
         .as_ref()
@@ -571,16 +579,31 @@ fn run_process_adapter(
     let mut artifacts = artifact_manifest(plan)?;
     let relay_config =
         prepare_relay_runtime_config(plan, runtime, &invocation, &request, &mut artifacts)?;
+    let adapter_payload = fabric_adapter_payload(
+        plan,
+        runtime,
+        &invocation,
+        &request,
+        &artifacts,
+        relay_config.as_ref(),
+    )?;
+    let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
+    let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
 
-    let mut command = Command::new(&settings.command);
+    let mut command = Command::new(&command_path);
     command
-        .args(&settings.args)
+        .args(&command_args)
         .current_dir(&cwd)
         .envs(&settings.env)
         .envs(relay_env(&relay_config))
+        .env("FABRIC_HOME", &fabric_home)
+        .env("FABRIC_INVOCATION", &fabric_invocation)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(root) = artifacts.root.as_ref() {
+        command.env("FABRIC_ARTIFACTS", root);
+    }
 
     let mut events = vec![event_with_metadata(
         "runtime_start",
@@ -617,31 +640,24 @@ fn run_process_adapter(
     let mut child = command
         .spawn()
         .map_err(|source| FabricError::ProcessRunner {
-            command: settings.command.clone(),
+            command: command_display.clone(),
             source,
         })?;
 
     let stdin_payload = match settings.stdin_payload {
         ProcessStdinPayload::Input => value_to_stdin(&request.input)?,
-        ProcessStdinPayload::FabricRequest => fabric_adapter_payload(
-            plan,
-            runtime,
-            &invocation,
-            &request,
-            &artifacts,
-            relay_config.as_ref(),
-        )?,
+        ProcessStdinPayload::FabricRequest => adapter_payload,
     };
     if !stdin_payload.is_empty() {
         if let Some(mut stdin) = child.stdin.take() {
-            write_child_stdin(&mut stdin, &stdin_payload, &settings.command)?;
+            write_child_stdin(&mut stdin, &stdin_payload, &command_display)?;
         }
     }
 
     let output = child
         .wait_with_output()
         .map_err(|source| FabricError::ProcessRunner {
-            command: settings.command.clone(),
+            command: command_display.clone(),
             source,
         })?;
 
@@ -695,10 +711,18 @@ fn run_process_adapter(
         "adapter_runner".to_string(),
         Value::String("process".to_string()),
     );
-    metadata.insert("command".to_string(), Value::String(settings.command));
+    metadata.insert("command".to_string(), Value::String(command_display));
     metadata.insert(
         "args".to_string(),
-        Value::Array(settings.args.into_iter().map(Value::String).collect()),
+        Value::Array(command_args.into_iter().map(Value::String).collect()),
+    );
+    metadata.insert(
+        "fabric_home".to_string(),
+        Value::String(fabric_home.to_string_lossy().into_owned()),
+    );
+    metadata.insert(
+        "fabric_invocation".to_string(),
+        Value::String(fabric_invocation.to_string_lossy().into_owned()),
     );
     if let Some(exit_code) = exit_code {
         metadata.insert("exit_code".to_string(), Value::from(exit_code));
@@ -1162,6 +1186,16 @@ fn parse_stdout_output(stdout: &str) -> Value {
     serde_json::from_str(stdout).unwrap_or_else(|_| Value::String(stdout.to_string()))
 }
 
+fn process_command_args(plan: &RunPlan, settings: &ProcessAdapterSettings) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(script) = settings.script.as_ref() {
+        let root = adapter_setting_root(plan, "script");
+        args.push(resolve_path(root, script).to_string_lossy().into_owned());
+    }
+    args.extend(settings.args.clone());
+    args
+}
+
 fn value_to_stdin(value: &Value) -> Result<String> {
     match value {
         Value::Null => Ok(String::new()),
@@ -1192,6 +1226,35 @@ fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
         root,
         artifacts: Vec::new(),
     })
+}
+
+fn prepare_fabric_home(
+    manifest: &ArtifactManifest,
+    runtime: &RuntimeHandle,
+    invocation: &InvocationHandle,
+) -> Result<PathBuf> {
+    let root = manifest
+        .root
+        .clone()
+        .unwrap_or_else(|| std::env::temp_dir().join("nemo-fabric"));
+    let fabric_home = root
+        .join(".fabric")
+        .join(&runtime.runtime_id)
+        .join(&invocation.invocation_id);
+    std::fs::create_dir_all(&fabric_home).map_err(|source| FabricError::Write {
+        path: fabric_home.clone(),
+        source,
+    })?;
+    Ok(fabric_home)
+}
+
+fn write_fabric_invocation(fabric_home: &Path, payload: &str) -> Result<PathBuf> {
+    let path = fabric_home.join("adapter-invocation.json");
+    std::fs::write(&path, payload).map_err(|source| FabricError::Write {
+        path: path.clone(),
+        source,
+    })?;
+    Ok(path)
 }
 
 fn write_artifact(

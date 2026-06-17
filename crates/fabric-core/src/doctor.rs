@@ -185,17 +185,18 @@ fn check_requirements(plan: &RunPlan) -> Vec<DoctorCheck> {
     let descriptor = &adapter.descriptor;
     let mut checks = Vec::new();
     for binary in &descriptor.requirements.binaries {
-        checks.push(if command_available(binary) {
+        let requirement = binary_requirement(plan, binary);
+        checks.push(if requirement.available {
             check(
                 "requirement.binary",
                 DoctorStatus::Pass,
-                format!("binary `{binary}` is available on PATH"),
+                requirement.pass_message,
             )
         } else {
             check(
                 "requirement.binary",
                 DoctorStatus::Fail,
-                format!("binary `{binary}` was not found on PATH"),
+                requirement.fail_message,
             )
         });
     }
@@ -320,6 +321,56 @@ fn command_available(binary: &str) -> bool {
     std::env::split_paths(&paths).any(|dir| dir.join(binary).is_file())
 }
 
+struct BinaryRequirement {
+    available: bool,
+    pass_message: String,
+    fail_message: String,
+}
+
+fn binary_requirement(plan: &RunPlan, binary: &str) -> BinaryRequirement {
+    let setting_key = binary_command_setting_key(binary);
+    if let Some(Value::String(command)) = plan.config.harness.settings.get(&setting_key) {
+        let command_path = resolve_command(&plan.config_root, command);
+        let display = command_path.to_string_lossy().into_owned();
+        return BinaryRequirement {
+            available: command_available(&display),
+            pass_message: format!(
+                "binary `{binary}` resolved from harness setting `{setting_key}` as `{display}`"
+            ),
+            fail_message: format!(
+                "binary `{binary}` resolved from harness setting `{setting_key}` as `{display}` but was not found"
+            ),
+        };
+    }
+    BinaryRequirement {
+        available: command_available(binary),
+        pass_message: format!("binary `{binary}` is available on PATH"),
+        fail_message: format!("binary `{binary}` was not found on PATH"),
+    }
+}
+
+fn binary_command_setting_key(binary: &str) -> String {
+    let normalized: String = binary
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{normalized}_command")
+}
+
+fn resolve_command(root: &Path, command: &str) -> PathBuf {
+    let path = Path::new(command);
+    if path.is_absolute() || path.components().count() == 1 {
+        return path.to_path_buf();
+    }
+    root.join(path)
+}
+
 fn resolve_path(root: &Path, path: &Path) -> PathBuf {
     if path.is_absolute() {
         return path.to_path_buf();
@@ -415,5 +466,22 @@ mod tests {
                 .iter()
                 .any(|check| check.name == "requirement.binary")
         );
+    }
+
+    #[test]
+    fn binary_requirement_can_use_harness_command_setting() {
+        let plan = resolve_run_plan(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hermes-cli-agent"),
+            Some("env_local"),
+        )
+        .expect("run plan");
+
+        let report = doctor_plan(&plan);
+
+        assert!(report.checks.iter().any(|check| {
+            check.name == "requirement.binary"
+                && check.status == DoctorStatus::Pass
+                && check.message.contains("hermes_command")
+        }));
     }
 }

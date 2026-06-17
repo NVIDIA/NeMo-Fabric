@@ -192,6 +192,8 @@ Run the Hermes CLI adapter:
 
 ```bash
 export NVIDIA_API_KEY=...
+export PATH="$PWD/.tmp/hermes-venv/bin:$PATH"
+
 fabric run examples/code-review-agent \
   --profile hermes_cli \
   --input "Reply with exactly: hermes cli ok"

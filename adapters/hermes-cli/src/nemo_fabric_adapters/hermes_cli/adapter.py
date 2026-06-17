@@ -19,11 +19,20 @@ from typing import Any
 
 
 def main() -> None:
-    payload = json.load(sys.stdin)
+    payload = load_payload()
     output = run_hermes_cli(payload)
     print(json.dumps(output, sort_keys=True))
     if output.get("failed"):
         raise SystemExit(2)
+
+
+def load_payload() -> dict[str, Any]:
+    invocation_path = os.environ.get("FABRIC_INVOCATION")
+    if invocation_path:
+        path = Path(invocation_path)
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return json.load(sys.stdin)
 
 
 def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -98,6 +107,8 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         "mode": "hermes_cli_oneshot",
         "command": redact_command(command),
         "cwd": str(cwd),
+        "fabric_home": os.environ.get("FABRIC_HOME"),
+        "fabric_invocation": os.environ.get("FABRIC_INVOCATION"),
         "returncode": completed.returncode,
         "response": response,
         "stdout": completed.stdout,
@@ -116,8 +127,11 @@ def build_command(
     model_config: dict[str, Any],
     prompt: str,
 ) -> list[str]:
-    command = resolve_command(config_root, settings.get("command", "hermes"))
-    command_args = normalize_list(settings.get("command_args"))
+    command = resolve_command(
+        config_root,
+        settings.get("hermes_command") or settings.get("command", "hermes"),
+    )
+    command_args = normalize_list(settings.get("hermes_args") or settings.get("command_args"))
     model_name = settings.get("model_name") or model_config.get("model")
     provider = settings.get("provider") or model_config.get("provider")
     toolsets = normalize_list(settings.get("enabled_toolsets"))
