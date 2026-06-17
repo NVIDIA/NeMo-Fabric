@@ -173,6 +173,11 @@ Next steps:
 
 - Review the Hermes adapter implementations for maintainability and alignment
   with the minimal descriptor fields Fabric currently uses.
+- Refactor `hermes-cli` into a true process adapter: Fabric should create a
+  per-run `FABRIC_HOME`, write `adapter-invocation.json`, set
+  `FABRIC_INVOCATION`, and let the Hermes CLI launcher read that file before
+  falling back to stdin. The launcher owns Fabric-to-Hermes config mapping and
+  then invokes the real `hermes` CLI.
 - Test Hermes SDK and CLI paths with more representative inputs.
 - Add parity checks for normalized result fields shared by the inline SDK and
   process-backed CLI paths.
