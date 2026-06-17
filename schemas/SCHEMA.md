@@ -41,9 +41,12 @@ contract. The files are generated from the Rust core types, not edited by hand.
 - `error-info`: structured runtime or adapter error metadata.
 - `fabric-event`: Fabric lifecycle/progress event.
 
-Normalized trajectory structures and policy hooks for auditability are not
-separate Fabric schemas yet. When Fabric owns those contracts directly, add
-them as first-class Rust types and export them here.
+### Deferred Core Objects
+
+The MVP core object pass intentionally defers normalized trajectory structures
+and policy hooks for auditability. They are not separate Fabric schemas yet.
+When Fabric owns those contracts directly, add them as first-class Rust types
+and export them here.
 
 ## How To Maintain
 

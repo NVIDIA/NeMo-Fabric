@@ -146,6 +146,8 @@ Status:
 - The full adapter contract definition is deferred until the base MVP is
   stable; the base MVP keeps only the minimal descriptor fields Fabric already
   uses.
+- Normalized trajectory structures and policy hooks for auditability are
+  deferred until Fabric owns those contracts directly.
 
 How to maintain:
 
