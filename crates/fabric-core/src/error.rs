@@ -32,6 +32,14 @@ pub enum FabricError {
         /// Available profile names.
         available: Vec<String>,
     },
+    /// A profile config failed validation.
+    #[error("profile error in {path}: {message}")]
+    ProfileError {
+        /// Profile path.
+        path: PathBuf,
+        /// Validation message.
+        message: String,
+    },
     /// A requested adapter id is not present in the agent config.
     #[error("unknown adapter `{adapter_id}`; available adapters: {available:?}")]
     UnknownAdapter {
