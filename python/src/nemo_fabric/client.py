@@ -595,7 +595,7 @@ def _environment_handle(plan: dict[str, Any]) -> dict[str, Any]:
         "environment_id": _new_id("environment"),
         "provider": environment_plan.get("provider", "local"),
         "control_location": environment_plan.get("control_location", "external_control"),
-        "workspace": environment_plan.get("workspace") or plan.get("agent_root"),
+        "workspace": _absolute_plan_path(environment_plan.get("workspace") or plan.get("agent_root")),
         "artifacts": environment_plan.get("artifacts") or _runtime_artifact_path(plan, runtime),
         "ownership": environment_plan.get("ownership", "caller_owned"),
         "connection": environment_plan.get("connection", {}),
