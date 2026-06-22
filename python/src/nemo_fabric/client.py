@@ -24,6 +24,7 @@ import uuid
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -46,6 +47,10 @@ class FabricCliError(RuntimeError):
 
 class FabricNativeUnavailableError(RuntimeError):
     """Raised when a typed-config SDK method needs the native extension."""
+
+
+class FabricSessionUnsupportedError(RuntimeError):
+    """Raised when start()/start_config() resolve a non-session-capable adapter."""
 
 
 @dataclass(frozen=True)
@@ -241,6 +246,35 @@ class FabricClient:
             )
         )
 
+    async def start(
+        self,
+        path: str | Path,
+        *,
+        profile: str | Sequence[str] | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> "Session":
+        """Open a multi-turn session over a session-capable agent/profile."""
+
+        self._require_native_module("start")
+        plan = self.plan(path, profile=profile)
+        return _make_session(self, plan, overrides)
+
+    async def start_config(
+        self,
+        config: Mapping[str, Any] | Any,
+        *,
+        profile_configs: Sequence[Mapping[str, Any] | Any] | None = None,
+        base_dir: str | Path | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> "Session":
+        """Open a multi-turn session over an in-memory typed config."""
+
+        self._require_native_module("start_config")
+        plan = self.plan_config(
+            config, profile_configs=profile_configs, base_dir=base_dir
+        )
+        return _make_session(self, plan, overrides)
+
     def _command(self) -> tuple[str, ...]:
         if self.command is not None:
             return self.command
@@ -304,6 +338,150 @@ class FabricClient:
                 "the CLI fallback only supports file-based agent configs"
             )
         return native
+
+
+class SessionStatus(str, Enum):
+    """Lifecycle state of a :class:`Session`."""
+
+    ACTIVE = "active"
+    STOPPED = "stopped"
+    CANCELLED = "cancelled"
+
+
+class Session:
+    """A multi-turn session over a session-capable Fabric adapter.
+
+    Created by :meth:`FabricClient.start` / :meth:`FabricClient.start_config`.
+    Each :meth:`invoke` runs one turn through the resolved plan, replaying the
+    accumulated transcript as conversation history so the harness sees prior
+    turns. The session is stateless on the Fabric side: the running transcript
+    lives in Python and is threaded back in via ``request.context.history``. A
+    persistent, harness-stateful session is a later phase.
+    """
+
+    def __init__(
+        self,
+        *,
+        client: "FabricClient",
+        plan: dict[str, Any],
+        entrypoint: tuple[str, str],
+        overrides: dict[str, Any] | None = None,
+    ) -> None:
+        self._client = client
+        self._plan = plan
+        self._entrypoint = entrypoint
+        self._overrides = overrides
+        self._messages: list[Any] = []
+        self._status = SessionStatus.ACTIVE
+        self.id = _new_id("session")
+
+    @property
+    def status(self) -> SessionStatus:
+        return self._status
+
+    @property
+    def messages(self) -> list[Any]:
+        """Read-only copy of the accumulated transcript."""
+
+        return list(self._messages)
+
+    @property
+    def info(self) -> dict[str, Any]:
+        return {
+            "session_id": self.id,
+            "agent_name": self._plan.get("agent_name"),
+            "profile": self._plan.get("profile"),
+            "harness_type": _harness_type(self._plan),
+            "adapter_kind": _adapter_kind(self._plan),
+        }
+
+    async def invoke(
+        self,
+        input_text: str | None = None,
+        *,
+        request: dict[str, Any] | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Run one turn, replaying the accumulated transcript as history."""
+
+        if self._status is not SessionStatus.ACTIVE:
+            raise RuntimeError(f"cannot invoke a {self._status.value} session")
+        request_payload = _run_request_payload(
+            input_text=input_text or "",
+            input_file=None,
+            request=request,
+            request_file=None,
+        )
+        if self._messages:
+            request_payload["context"].setdefault("history", self._messages)
+        merged_overrides = _merge_overrides(self._overrides, overrides)
+        if merged_overrides is not None:
+            request_payload.setdefault("overrides", merged_overrides)
+        result = await _run_inline_adapter(self._plan, request_payload, self._entrypoint)
+        output = result.get("output") if isinstance(result, dict) else None
+        if isinstance(output, dict):
+            messages = output.get("messages")
+            if isinstance(messages, list) and messages:
+                self._messages = messages
+            session_id = output.get("session_id")
+            if session_id:
+                self.id = str(session_id)
+        return result
+
+    async def stop(self) -> None:
+        """Finalize the session. Idempotent."""
+
+        if self._status is SessionStatus.ACTIVE:
+            self._status = SessionStatus.STOPPED
+
+    async def cancel(self) -> None:
+        raise NotImplementedError(
+            "Session.cancel is a follow-up (FABRIC-10); the first cut ships "
+            "start/invoke/stop only"
+        )
+
+    async def stream(
+        self,
+        input_text: str | None = None,
+        *,
+        request: dict[str, Any] | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> Any:
+        raise NotImplementedError(
+            "Session.stream is a follow-up (FABRIC-10); the first cut ships "
+            "start/invoke/stop only"
+        )
+
+    async def __aenter__(self) -> "Session":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        await self.stop()
+
+
+def _make_session(
+    client: "FabricClient",
+    plan: dict[str, Any],
+    overrides: dict[str, Any] | None,
+) -> "Session":
+    entrypoint = _inline_adapter_entrypoint(plan)
+    if entrypoint is None:
+        raise FabricSessionUnsupportedError(
+            "sessions require an inline Python adapter (adapter_kind='python'); "
+            f"resolved adapter_kind={_adapter_kind(plan)!r}"
+        )
+    return Session(client=client, plan=plan, entrypoint=entrypoint, overrides=overrides)
+
+
+def _merge_overrides(
+    base: dict[str, Any] | None, extra: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    merged: dict[str, Any] = {}
+    if isinstance(base, dict):
+        merged.update(base)
+    if isinstance(extra, dict):
+        merged.update(extra)
+    return merged or None
 
 
 def _profile_args(profile: str | Sequence[str] | None) -> list[str]:
