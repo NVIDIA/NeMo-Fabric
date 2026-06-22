@@ -848,6 +848,7 @@ fn discover_profiles(
     for directory in &config.profiles.directories {
         let directory = resolve_path(config_root, directory);
         if !directory.exists() {
+            println!("warning: profile directory does not exist: {}", directory.display());
             continue;
         }
         let entries = std::fs::read_dir(&directory).map_err(|source| FabricError::Read {
