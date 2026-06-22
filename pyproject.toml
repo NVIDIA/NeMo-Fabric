@@ -13,7 +13,7 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
-harbor = ["harbor>=0.13.2"]
+harbor = ["harbor>=0.13.2; python_version >= '3.12'"]
 
 [dependency-groups]
 dev = [
