@@ -855,7 +855,7 @@ fn discover_profiles(
     config: &FabricConfig,
     config_root: &Path,
 ) -> Result<BTreeMap<String, PathBuf>> {
-    let mut profiles = BTreeMap::new();
+    let mut profiles: BTreeMap<String, PathBuf> = BTreeMap::new();
     for directory in &config.profiles.directories {
         let directory = resolve_path(config_root, directory);
         if !directory.exists() {
@@ -887,7 +887,14 @@ fn discover_profiles(
             }) else {
                 continue;
             };
-            profiles.insert(name, normalize_path(path));
+            let profile_path = normalize_path(path);
+            if profiles.contains_key(&name) {
+                return Err(FabricError::ProfileError {
+                    path: profile_path,
+                    message: format!("duplicate profile `{name}`"),
+                });
+            }
+            profiles.insert(name, profile_path);
         }
     }
     Ok(profiles)
