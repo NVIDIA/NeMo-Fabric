@@ -79,16 +79,27 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     environment = environment_payload(payload)
     model_config = selected_model_config(payload)
 
+    model_name = settings.get("model_name") or model_config.get("model")
+
     hermes_home = resolve_path(
         config_root,
         settings.get("hermes_home", "./artifacts/hermes-cli/home"),
     )
     hermes_home.mkdir(parents=True, exist_ok=True)
-    hermes_config_path, hermes_config = write_hermes_config(payload, hermes_home)
+    hermes_config_path, hermes_config = write_hermes_config(
+        payload, hermes_home)
 
     prompt = request_to_prompt(request)
-    command = build_command(settings, config_root, model_config, prompt)
-    cwd = resolve_path(config_root, settings.get("cwd") or environment.get("workspace") or ".")
+    toolsets = normalize_list(settings.get("enabled_toolsets"))
+    command = build_command(settings,
+                            config_root,
+                            model_config,
+                            model_name,
+                            prompt,
+                            toolsets=toolsets)
+    cwd = resolve_path(
+        config_root,
+        settings.get("cwd") or environment.get("workspace") or ".")
     env = build_env(settings, hermes_home)
 
     completed = subprocess.run(
@@ -104,11 +115,15 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     output = {
         "harness": "hermes",
         "adapter": "cli",
+        "base_url": get_base_url(settings, model_config),
         "mode": "hermes_cli_oneshot",
         "command": redact_command(command),
         "cwd": str(cwd),
+        "enabled_toolsets": toolsets,
+        "error": completed.stderr or None,
         "fabric_home": os.environ.get("FABRIC_HOME"),
         "fabric_invocation": os.environ.get("FABRIC_INVOCATION"),
+        "model": model_name,
         "returncode": completed.returncode,
         "response": response,
         "stdout": completed.stdout,
@@ -125,16 +140,16 @@ def build_command(
     settings: dict[str, Any],
     config_root: Path,
     model_config: dict[str, Any],
+    model_name: str | None,
     prompt: str,
+    toolsets: list[str] | None = None
 ) -> list[str]:
     command = resolve_command(
         config_root,
         settings.get("hermes_command") or settings.get("command", "hermes"),
     )
     command_args = normalize_list(settings.get("hermes_args") or settings.get("command_args"))
-    model_name = settings.get("model_name") or model_config.get("model")
     provider = settings.get("provider") or model_config.get("provider")
-    toolsets = normalize_list(settings.get("enabled_toolsets"))
 
     args = [command, *command_args, "-z", prompt]
     if model_name:
@@ -163,6 +178,12 @@ def write_hermes_config(payload: dict[str, Any], hermes_home: Path) -> tuple[Pat
     config_path.write_text(dump_yaml(config), encoding="utf-8")
     return config_path, config
 
+def get_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
+    return (
+        settings.get("base_url")
+        or (model_config.get("settings") or {}).get("base_url")
+        or default_base_url(model_config.get("provider"))
+    )
 
 def build_hermes_config(payload: dict[str, Any]) -> dict[str, Any]:
     settings = settings_payload(payload)
@@ -172,11 +193,7 @@ def build_hermes_config(payload: dict[str, Any]) -> dict[str, Any]:
 
     model_name = settings.get("model_name") or model_config.get("model", "")
     provider = settings.get("provider") or model_config.get("provider")
-    base_url = (
-        settings.get("base_url")
-        or (model_config.get("settings") or {}).get("base_url")
-        or default_base_url(model_config.get("provider"))
-    )
+    base_url = get_base_url(settings, model_config)
 
     config: dict[str, Any] = {
         "model": without_none(
