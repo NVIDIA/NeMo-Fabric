@@ -72,6 +72,9 @@ enum Command {
         /// Full Fabric RunRequest JSON file.
         #[arg(long)]
         request_file: Option<PathBuf>,
+        /// Show adapter output.
+        #[arg(long = "show-output")]
+        show_output: bool,
     },
     /// Generate JSON Schema for Fabric config and runtime types.
     Schema {
@@ -123,6 +126,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             input_file,
             request_json,
             request_file,
+            show_output,
         }) => {
             let plan = resolve_run_plan_with_profiles(path, &profile)?;
             let request = match (request_file, request_json, input_file) {
@@ -141,6 +145,17 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             let result = run_plan(&plan, request)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
+            if show_output {
+                if let Some(response) = result.output.get("response") {
+                    println!("\nResponse:");
+                    if let Some(response) = response.as_str() {
+                        println!("{response}");
+                    } else {
+                        println!("{}", serde_json::to_string_pretty(response)?);
+                    }
+                }
+            }
+
             let _exit_code = result
                 .metadata
                 .get("exit_code")
