@@ -370,6 +370,10 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
             serde_json::Map::new(),
         )
     };
+    let workspace = match workspace {
+        Some(path) => Some(absolute_path(path)?),
+        None => None,
+    };
     for (key, value) in connection_settings {
         connection.insert(key, value);
     }
@@ -1608,6 +1612,62 @@ runtime:
   "adapter_id": "acme.fabric.process",
   "adapter_kind": "process"
 }"#
+    }
+
+    #[test]
+    fn prepare_environment_absolutizes_workspace() {
+        let root =
+            std::env::temp_dir().join(format!("fabric-workspace-abs-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("adapters/process")).expect("create agent dir");
+        fs::write(
+            root.join("agent.yaml"),
+            r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: workspace-abs-agent
+harness:
+  adapter_id: acme.fabric.process
+  settings:
+    command: cat
+models:
+  default:
+    provider: test
+    model: test-model
+runtime:
+  mode: oneshot
+  transport: cli
+  input_schema: text
+  output_schema: text
+  artifacts: ./artifacts
+environment:
+  provider: local
+  workspace: ./repos/my-service
+"#,
+        )
+        .expect("write config");
+        fs::write(
+            root.join("adapters/process/fabric-adapter.json"),
+            process_adapter_descriptor(),
+        )
+        .expect("write adapter descriptor");
+
+        let mut plan = resolve_run_plan(&root, None).expect("run plan");
+        // Force a relative workspace to reproduce the pre-fix condition where an
+        // adapter would re-join it onto the absolute config_root and double the path.
+        plan.environment_plan
+            .as_mut()
+            .expect("environment plan")
+            .workspace = Some(PathBuf::from("repos/my-service"));
+
+        let environment = prepare_environment(&plan).expect("prepare environment");
+        let workspace = environment.workspace.expect("workspace");
+        assert!(
+            workspace.is_absolute(),
+            "prepared workspace must be absolute so adapters do not re-resolve it: {workspace:?}"
+        );
+        assert!(workspace.ends_with("repos/my-service"), "{workspace:?}");
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     fn artifact_content(result: &RunResult, name: &str) -> String {
