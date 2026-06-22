@@ -15,6 +15,20 @@ dependencies = []
 [project.optional-dependencies]
 harbor = ["harbor>=0.13.2"]
 
+[dependency-groups]
+dev = [
+    "ipython~=8.20",
+]
+
+test = [
+    "pytest>=8",
+    "pytest-asyncio>=0.26",
+    "pytest-cov~=7.0",
+]
+
+[tool.uv]
+default-groups = ["dev", "test"]
+
 [tool.maturin]
 manifest-path = "crates/fabric-python/Cargo.toml"
 python-source = "python/src"
