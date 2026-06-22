@@ -141,6 +141,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             let result = run_plan(&plan, request)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
+            let _exit_code = result
+                .metadata
+                .get("exit_code")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            if _exit_code != 0 {
+                let message = result
+                    .error
+                    .as_ref()
+                    .map(|error| error.message.clone())
+                    .unwrap_or_else(|| {
+                        format!("harness exited with an exit code of {_exit_code}")
+                    });
+                return Err(message.into());
+            }
         }
         Some(Command::Schema { name, output_dir }) => {
             if let Some(output_dir) = output_dir {
