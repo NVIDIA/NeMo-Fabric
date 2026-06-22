@@ -579,6 +579,17 @@ pub fn load_fabric_document(path: impl AsRef<Path>) -> Result<FabricDocument> {
     load_file(path)
 }
 
+/// Validate an agent directory or config, including discoverable profile YAMLs.
+pub fn validate_agent_directory(path: impl AsRef<Path>) -> Result<()> {
+    match load_fabric_document(path)? {
+        FabricDocument::FabricConfig { root, config, .. } => {
+            discover_profiles(&config, &root)?;
+        }
+    }
+
+    Ok(())
+}
+
 /// Load an adapter descriptor from JSON package metadata.
 pub fn load_adapter_descriptor(path: impl AsRef<Path>) -> Result<AdapterDescriptor> {
     let path = path.as_ref();
@@ -848,7 +859,10 @@ fn discover_profiles(
     for directory in &config.profiles.directories {
         let directory = resolve_path(config_root, directory);
         if !directory.exists() {
-            println!("warning: profile directory does not exist: {}", directory.display());
+            println!(
+                "warning: profile directory does not exist: {}",
+                directory.display()
+            );
             continue;
         }
         let entries = std::fs::read_dir(&directory).map_err(|source| FabricError::Read {

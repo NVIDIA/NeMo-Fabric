@@ -9,8 +9,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use fabric_core::{
     RunRequest, SchemaName, doctor_plan, generate_all_schemas, generate_schema_json,
-    load_fabric_document, resolve_effective_config_with_profiles, resolve_run_plan_with_profiles,
-    run_plan, write_schema_snapshots,
+    resolve_effective_config_with_profiles, resolve_run_plan_with_profiles, run_plan,
+    validate_agent_directory, write_schema_snapshots,
 };
 
 #[derive(Debug, Parser)]
@@ -24,7 +24,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Validate an agent directory, manifest, or profile config.
+    /// Validate an agent directory or YAML config.
     Validate {
         /// Path to an agent directory or YAML config.
         path: PathBuf,
@@ -100,7 +100,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     match cli.command {
         Some(Command::Validate { path }) => {
-            load_fabric_document(&path)?;
+            validate_agent_directory(&path)?;
             println!("validated {}", path.display());
         }
         Some(Command::Inspect { path, profile }) => {
@@ -151,9 +151,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     .error
                     .as_ref()
                     .map(|error| error.message.clone())
-                    .unwrap_or_else(|| {
-                        format!("harness exited with an exit code of {_exit_code}")
-                    });
+                    .unwrap_or_else(|| format!("harness exited with an exit code of {_exit_code}"));
                 return Err(message.into());
             }
         }
