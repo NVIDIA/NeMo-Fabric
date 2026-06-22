@@ -24,3 +24,4 @@ tests/fixtures/*/artifacts/
 # UV Lock
 # TBD if we want to track this in git
 uv.lock
+
