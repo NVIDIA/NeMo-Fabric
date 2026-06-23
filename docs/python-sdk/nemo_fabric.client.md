@@ -56,7 +56,7 @@ The client uses the native Rust binding when installed and otherwise falls back 
 
 
 
-**Args:**
+**Attributes:**
  
  - <b>`command`</b>:  Explicit CLI command to use instead of the native binding,  e.g. ``("cargo", "run", "-q", "-p", "fabric-cli", "--")``. 
  - <b>`cwd`</b>:  Working directory for CLI invocations. 

@@ -40,7 +40,7 @@ jobs:
       - name: Generate API reference from docstrings
         run: |
           uv venv .docs-venv
-          uv pip install --python .docs-venv/bin/python lazydocs
+          uv pip install --python .docs-venv/bin/python "lazydocs>=0.4"
           PATH="$PWD/.docs-venv/bin:$PATH" bash scripts/generate_api_docs.sh
 
       - name: Set up Node
