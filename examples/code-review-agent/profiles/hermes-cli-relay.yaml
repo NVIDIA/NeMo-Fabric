@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+name: hermes_cli_relay
+description: Run Hermes CLI with native NeMo Relay ATOF/ATIF hooks enabled.
+
+harness:
+  adapter_id: nvidia.fabric.hermes.cli
+  resolution: preinstalled
+  settings:
+    python_env: HERMES_PYTHON
+    workspace: ./repos/my-service
+    hermes_home: ./artifacts/hermes-cli-relay/home
+    base_url: https://integrate.api.nvidia.com/v1
+    max_turns: 1
+    max_tokens: 512
+    temperature: 0.0
+    reasoning_config:
+      effort: none
+    enabled_toolsets: []
+
+runtime:
+  mode: oneshot
+  transport: cli
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts/hermes-cli-relay
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/hermes-cli-relay
+
+telemetry:
+  enabled: true
+  mode: sdk
+  output_dir: ./artifacts/hermes-cli-relay/relay
+  config:
+    version: 1
+    components:
+      - kind: observability
+        enabled: true
+        config:
+          version: 1
+          atif:
+            enabled: true
+            output_directory: ./artifacts/hermes-cli-relay/relay
+            filename_template: "trajectory-{session_id}.atif.json"
+            agent_name: code-review-agent
+            agent_version: fabric-poc
+          atof:
+            enabled: true
+            output_directory: ./artifacts/hermes-cli-relay/relay
+            filename: events.atof.jsonl
+            mode: overwrite

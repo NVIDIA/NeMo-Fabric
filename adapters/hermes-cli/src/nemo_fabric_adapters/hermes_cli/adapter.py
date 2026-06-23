@@ -43,9 +43,14 @@ def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
     return effective_config(payload).get("config") or {}
 
 
-def config_root_payload(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("config_root") or payload.get("config_root") or "."
+def _get_config_val(payload: dict[str, Any], key: str, default: Any) -> Any:
+    return effective_config(payload).get(key) or payload.get(key) or default
 
+def config_root_payload(payload: dict[str, Any]) -> str:
+    return _get_config_val(payload, "config_root", ".")
+
+def agent_name(payload: dict[str, Any]) -> str:
+    return _get_config_val(payload, "agent_name", "fabric-agent")
 
 def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("runtime_context") or {}
@@ -87,6 +92,9 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     config_root = Path(config_root_payload(payload)).resolve()
     environment = environment_payload(payload)
     model_config = selected_model_config(payload)
+
+    relay_plugin_config = configure_hermes_relay(payload)
+
     _api_key_preflight_check(settings, model_config)
 
     model_name = settings.get("model_name") or model_config.get("model")
@@ -97,7 +105,8 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     )
     hermes_home.mkdir(parents=True, exist_ok=True)
     hermes_config_path, hermes_config = write_hermes_config(
-        payload, hermes_home)
+        payload, hermes_home, 
+        relay_enabled=relay_plugin_config is not None,)
 
     prompt = request_to_prompt(request)
     toolsets = normalize_list(settings.get("enabled_toolsets"))
@@ -143,6 +152,16 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         "hermes_config_path": str(hermes_config_path),
         "hermes_native_config": summarize_hermes_config(hermes_config),
     }
+
+    if relay_plugin_config is not None:
+        relay_artifacts = collect_relay_artifacts(relay_plugin_config)
+        output["relay_runtime"] = {
+            "enabled": True,
+            "mode": os.environ.get("FABRIC_RELAY_MODE"),
+            "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
+            "emitter": "hermes.observability/nemo_relay",
+        }
+        output["relay_artifacts"] = relay_artifacts
     return output
 
 
@@ -181,9 +200,13 @@ def build_env(settings: dict[str, Any], hermes_home: Path) -> dict[str, str]:
     return env
 
 
-def write_hermes_config(payload: dict[str, Any], hermes_home: Path) -> tuple[Path, dict[str, Any]]:
+def write_hermes_config(
+    payload: dict[str, Any],
+    hermes_home: Path, *,
+    relay_enabled: bool = False,
+) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
-    config = build_hermes_config(payload)
+    config = build_hermes_config(payload, relay_enabled=relay_enabled)
     config_path = hermes_home / "config.yaml"
     config_path.write_text(dump_yaml(config), encoding="utf-8")
     return config_path, config
@@ -195,7 +218,7 @@ def get_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str 
         or default_base_url(model_config.get("provider"))
     )
 
-def build_hermes_config(payload: dict[str, Any]) -> dict[str, Any]:
+def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False) -> dict[str, Any]:
     settings = settings_payload(payload)
     model_config = selected_model_config(payload)
     native = (capability_plan(payload)).get("native") or {}
@@ -247,6 +270,8 @@ def build_hermes_config(payload: dict[str, Any]) -> dict[str, Any]:
         }
 
     plugins = normalize_list(settings.get("plugins_enabled"))
+    if relay_enabled and "observability/nemo_relay" not in plugins:
+        plugins.append("observability/nemo_relay")
     if plugins:
         config["plugins"] = {"enabled": plugins}
 
@@ -352,6 +377,120 @@ def default_base_url(provider: str | None) -> str | None:
         return "https://integrate.api.nvidia.com/v1"
     return None
 
+
+def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
+    if os.environ.get("FABRIC_RELAY_ENABLED") != "true":
+        return None
+
+    relay_plugin_config = load_relay_plugin_config(payload)
+    observability = next(
+        (
+            component.get("config") or {}
+            for component in relay_plugin_config.get("components", [])
+            if component.get("kind") == "observability" and component.get("enabled", True)
+        ),
+        {},
+    )
+    atof = observability.get("atof") if isinstance(observability, dict) else None
+    atif = observability.get("atif") if isinstance(observability, dict) else None
+
+    if isinstance(atof, dict) and atof.get("enabled"):
+        os.environ["HERMES_NEMO_RELAY_ATOF_ENABLED"] = "1"
+        os.environ["HERMES_NEMO_RELAY_ATOF_OUTPUT_DIRECTORY"] = str(atof["output_directory"])
+        os.environ["HERMES_NEMO_RELAY_ATOF_FILENAME"] = str(atof.get("filename", "events.atof.jsonl"))
+        os.environ["HERMES_NEMO_RELAY_ATOF_MODE"] = str(atof.get("mode", "overwrite"))
+
+    if isinstance(atif, dict) and atif.get("enabled"):
+        os.environ["HERMES_NEMO_RELAY_ATIF_ENABLED"] = "1"
+        os.environ["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] = str(atif["output_directory"])
+        os.environ["HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE"] = str(
+            atif.get("filename_template", "trajectory-{session_id}.atif.json")
+        )
+        os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_NAME"] = str(
+            atif.get("agent_name") or agent_name(payload)
+        )
+        os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"] = str(atif.get("agent_version", "fabric-poc"))
+        os.environ["HERMES_NEMO_RELAY_ATIF_MODEL_NAME"] = str(atif.get("model_name") or relay_model_name(payload))
+
+    return relay_plugin_config
+
+def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
+    config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
+    if not config_path:
+        raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
+
+    with Path(config_path).open() as stream:
+        wrapper = json.load(stream)
+
+    relay = wrapper.get("relay", {})
+    plugin_config = relay.get("config") or {}
+    if "components" not in plugin_config:
+        plugin_config = {
+            "version": 1,
+            "components": [
+                {
+                    "kind": "observability",
+                    "enabled": True,
+                    "config": plugin_config or {"version": 1},
+                }
+            ],
+        }
+    plugin_config.setdefault("version", 1)
+    plugin_config.setdefault("components", [])
+    normalize_relay_output_dirs(plugin_config, payload)
+    return plugin_config
+
+def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
+    base = Path(config_root_payload(payload)).resolve()
+    for component in plugin_config.get("components", []):
+        if component.get("kind") != "observability":
+            continue
+        config = component.setdefault("config", {})
+        config.setdefault("version", 1)
+        for section_name in ("atof", "atif"):
+            section = config.get(section_name)
+            if not isinstance(section, dict) or not section.get("enabled"):
+                continue
+            output_directory = section.get("output_directory")
+            if output_directory:
+                path = Path(output_directory)
+                if not path.is_absolute():
+                    section["output_directory"] = str(base / path)
+            else:
+                section["output_directory"] = str(base / "artifacts" / "relay")
+            if section_name == "atof":
+                section.setdefault("filename", "events.atof.jsonl")
+                section.setdefault("mode", "overwrite")
+            if section_name == "atif":
+                section.setdefault("filename_template", "trajectory-{session_id}.atif.json")
+                section.setdefault("agent_name", agent_name(payload))
+                section.setdefault("model_name", relay_model_name(payload))
+
+def relay_model_name(payload: dict[str, Any]) -> str:
+    settings = settings_payload(payload)
+    models = models_payload(payload)
+    model_config = models.get(settings.get("model", "default"), {})
+    return settings.get("model_name") or model_config.get("model") or "unknown"
+
+def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str]]:
+    artifacts: list[dict[str, str]] = []
+    for component in plugin_config.get("components", []):
+        if component.get("kind") != "observability":
+            continue
+        config = component.get("config") or {}
+        for section_name, pattern in (
+            ("atof", "*.jsonl"),
+            ("atif", "*.json"),
+        ):
+            section = config.get(section_name)
+            if not isinstance(section, dict) or not section.get("enabled"):
+                continue
+            directory = Path(section.get("output_directory") or ".")
+            if not directory.exists():
+                continue
+            for path in sorted(directory.glob(pattern)):
+                artifacts.append({"kind": section_name, "path": str(path)})
+    return artifacts
 
 if __name__ == "__main__":
     main()
