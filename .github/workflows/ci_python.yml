@@ -55,9 +55,8 @@ jobs:
 
       # Dependency-free smokes only: the gated integration smokes
       # (smoke_hermes_sdk, smoke_relay_integration, smoke_harbor_*) need an
-      # NVIDIA_API_KEY / a running Hermes / a sibling harbor checkout, and
-      # smoke_sdk_concurrency is currently flaky (runtime_id collisions), so it
-      # is excluded until that is fixed.
+      # NVIDIA_API_KEY / a running Hermes / a sibling harbor checkout, so they
+      # are excluded.
       - name: Run dependency-free smokes
         run: |
           set -euo pipefail
@@ -65,6 +64,7 @@ jobs:
           smokes=(
             python/tests/smoke_environment_handle.py
             python/tests/smoke_sdk.py
+            python/tests/smoke_sdk_concurrency.py
             python/tests/smoke_native_sdk.py
             tests/smoke_cli.py
             tests/smoke_hermes_cli.py
