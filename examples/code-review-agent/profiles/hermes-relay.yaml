@@ -10,7 +10,6 @@ harness:
   resolution: preinstalled
   settings:
     python_env: HERMES_PYTHON
-    agent_profile: code_reviewer
     workspace: ./repos/my-service
     hermes_home: ./artifacts/hermes-relay/home
     base_url: https://integrate.api.nvidia.com/v1

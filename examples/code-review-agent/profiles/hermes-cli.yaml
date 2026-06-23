@@ -9,7 +9,6 @@ harness:
   adapter_id: nvidia.fabric.hermes.cli
   resolution: preinstalled
   settings:
-    agent_profile: code_reviewer
     workspace: ./repos/my-service
     hermes_home: ./artifacts/hermes-cli/home
     base_url: https://integrate.api.nvidia.com/v1
