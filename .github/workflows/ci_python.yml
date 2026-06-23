@@ -1,0 +1,79 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Python
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-python-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      # Rust is needed both to build the native extension (maturin backend) and
+      # because the CLI-backed smokes shell out to `cargo run -p fabric-cli`.
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: fabric-rust
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+
+      # PyYAML is not a project dependency, but smoke_hermes_config_mapping
+      # imports it to read Hermes config fixtures, so install it for the smokes.
+      - name: Build SDK with native extension
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -e . "pyyaml>=6"
+
+      # Dependency-free smokes only: the gated integration smokes
+      # (smoke_hermes_sdk, smoke_relay_integration, smoke_harbor_*) need an
+      # NVIDIA_API_KEY / a running Hermes / a sibling harbor checkout, so they
+      # are excluded.
+      - name: Run dependency-free smokes
+        run: |
+          set -euo pipefail
+          py=.venv/bin/python
+          smokes=(
+            python/tests/smoke_environment_handle.py
+            python/tests/smoke_sdk.py
+            python/tests/smoke_sdk_concurrency.py
+            python/tests/smoke_native_sdk.py
+            tests/smoke_cli.py
+            tests/smoke_hermes_cli.py
+            tests/smoke_hermes_config_mapping.py
+            tests/smoke_swebench_style.py
+            tests/smoke_local_env_e2e.py
+          )
+          for s in "${smokes[@]}"; do
+            echo "::group::$s"
+            "$py" "$s"
+            echo "::endgroup::"
+          done
