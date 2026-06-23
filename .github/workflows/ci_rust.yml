@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Rust
+
+# These checks need no secrets, so a plain pull_request trigger shows the result
+# directly on the PR (the docs workflow uses copy-pr-bot mirror branches only
+# because it needs FERN_TOKEN).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-rust-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          components: rustfmt
+          cache: false
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: fabric-rust
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check native extension crate
+        run: cargo check -p fabric-python --locked
+
+      # Includes the schema snapshot tests, which guard the public contract
+      # against drift from the Rust types.
+      - name: Run workspace tests
+        run: cargo test --workspace --locked
