@@ -175,7 +175,7 @@ plan = client.plan_config(
 ```
 
 For multi-turn sessions, open a `Session` and invoke it repeatedly. The session
-replays the accumulated transcript as conversation history so the harness sees
+replays the accumulated transcript as conversation history so the harness has access to
 prior turns:
 
 ```python
