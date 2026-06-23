@@ -36,7 +36,7 @@ def hermes_agent_dir_fixture(hermes_cli_agent_dir_src: Path, tmp_path: Path) -> 
     agent_dir = tmp_path / "hermes-cli-agent"
     shutil.copytree(hermes_cli_agent_dir_src, agent_dir)
     assert agent_dir.exists(), f"Missing fake Hermes CLI agent directory: {agent_dir}"
-    return agent_dir
+    return agent_dir.resolve()
 
 @pytest.fixture(name="hermes_cli_profile", scope="session")
 def hermes_cli_profile_fixture() -> str:
@@ -48,4 +48,4 @@ def hermes_command_fixture(hermes_agent_dir: Path) -> Path:
     hermes_command = hermes_agent_dir / "bin" / "fake-hermes.py"
     assert hermes_command.exists(
     ), f"Missing fake Hermes CLI: {hermes_command}"
-    return hermes_command
+    return hermes_command.resolve()
