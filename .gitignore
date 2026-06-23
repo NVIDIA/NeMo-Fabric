@@ -21,6 +21,9 @@ tests/fixtures/*/artifacts/
 
 .DS_Store
 
+# vscode settings
+.vscode/
+
 # UV Lock
 # TBD if we want to track this in git
 uv.lock
