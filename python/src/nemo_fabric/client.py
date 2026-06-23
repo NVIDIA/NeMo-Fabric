@@ -253,7 +253,24 @@ class FabricClient:
         profile: str | Sequence[str] | None = None,
         overrides: dict[str, Any] | None = None,
     ) -> "Session":
-        """Open a multi-turn session over a session-capable agent/profile."""
+        """Open a multi-turn session over a session-capable agent/profile.
+
+        Args:
+            path: Agent package directory or config file to resolve.
+            profile: Profile name, or several applied in order, layered onto the
+                base config.
+            overrides: Config overrides applied to every turn in the session; a
+                turn's own ``overrides`` merge over these.
+
+        Returns:
+            An active :class:`Session` bound to the resolved plan.
+
+        Raises:
+            FabricNativeUnavailableError: The native extension is unavailable
+                (sessions are not supported over the CLI fallback).
+            FabricSessionUnsupportedError: The resolved adapter is not
+                session-capable (no inline Python entrypoint).
+        """
 
         self._require_native_module("start")
         plan = self.plan(path, profile=profile)
@@ -267,7 +284,25 @@ class FabricClient:
         base_dir: str | Path | None = None,
         overrides: dict[str, Any] | None = None,
     ) -> "Session":
-        """Open a multi-turn session over an in-memory typed config."""
+        """Open a multi-turn session over an in-memory typed config.
+
+        Args:
+            config: Typed Fabric config as a mapping or a Pydantic-like object
+                (``model_dump()``/``dict()``); no agent directory required.
+            profile_configs: Profile configs layered onto the base config, in order.
+            base_dir: Resolution root for relative paths and package-local
+                adapters. ``None`` resolves against the process working directory.
+            overrides: Config overrides applied to every turn; a turn's own
+                ``overrides`` merge over these.
+
+        Returns:
+            An active :class:`Session` bound to the resolved plan.
+
+        Raises:
+            FabricNativeUnavailableError: The native extension is unavailable.
+            FabricSessionUnsupportedError: The resolved adapter is not
+                session-capable.
+        """
 
         self._require_native_module("start_config")
         plan = self.plan_config(
@@ -401,6 +436,9 @@ class Session:
 
     @property
     def info(self) -> dict[str, Any]:
+        """Summary handle: ``session_id``, ``agent_name``, ``profile``,
+        ``harness_type``, and ``adapter_kind``."""
+
         return {
             "session_id": self.id,
             "agent_name": self._plan.get("agent_name"),
@@ -416,7 +454,22 @@ class Session:
         request: dict[str, Any] | None = None,
         overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Run one turn, replaying the accumulated transcript as history."""
+        """Run one turn, replaying the accumulated transcript as history.
+
+        Args:
+            input_text: Text input for the turn. Ignored when ``request`` is given.
+            request: A full ``RunRequest`` mapping for the turn, as an alternative
+                to ``input_text``.
+            overrides: Per-turn config overrides, merged over the session-level
+                overrides passed to :meth:`FabricClient.start`.
+
+        Returns:
+            The turn's normalized ``RunResult`` mapping. The transcript
+            (:attr:`messages`) and :attr:`invocations` advance as a side effect.
+
+        Raises:
+            RuntimeError: The session is not active (already stopped or cancelled).
+        """
 
         if self._status is not SessionStatus.ACTIVE:
             raise RuntimeError(f"cannot invoke a {self._status.value} session")
@@ -454,6 +507,19 @@ class Session:
         normalized ``events`` are yielded in order, followed by the terminal
         ``RunResult`` (the last item). The async-iterator shape is
         forward-compatible with live token streaming if a harness exposes one.
+
+        Args:
+            input_text: Text input for the turn. Ignored when ``request`` is given.
+            request: A full ``RunRequest`` mapping for the turn.
+            overrides: Per-turn config overrides, merged over the session-level
+                overrides.
+
+        Yields:
+            Each ``fabric-event`` mapping for the turn, in order, then the final
+            ``RunResult`` mapping as the terminal item.
+
+        Raises:
+            RuntimeError: The session is not active (already stopped or cancelled).
         """
 
         result = await self.invoke(input_text, request=request, overrides=overrides)
