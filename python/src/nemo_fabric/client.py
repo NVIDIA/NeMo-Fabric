@@ -372,6 +372,7 @@ class Session:
         self._entrypoint = entrypoint
         self._overrides = overrides
         self._messages: list[Any] = []
+        self._invocations: list[dict[str, Any]] = []
         self._status = SessionStatus.ACTIVE
         self._current_task: asyncio.Task[Any] | None = None
         self.id = _new_id("session")
@@ -385,6 +386,18 @@ class Session:
         """Read-only copy of the accumulated transcript."""
 
         return list(self._messages)
+
+    @property
+    def invocations(self) -> list[dict[str, Any]]:
+        """Per-turn ``{request_id, runtime_id, invocation_id}`` for correlating the
+        session to its runtimes, telemetry, and artifacts.
+
+        A Fabric session may span multiple runtimes -- one per turn -- where the
+        harness exposes no resumable runtime (e.g. Hermes), so identity is tracked
+        per invocation rather than via a single stable ``runtime_id``.
+        """
+
+        return list(self._invocations)
 
     @property
     def info(self) -> dict[str, Any]:
@@ -472,9 +485,20 @@ class Session:
             self._status = SessionStatus.STOPPED
 
     def _absorb(self, result: Any) -> None:
-        """Advance the transcript and session id from a turn's ``RunResult``."""
+        """Record the turn's handles and advance the transcript from its ``RunResult``."""
 
-        output = result.get("output") if isinstance(result, dict) else None
+        if not isinstance(result, dict):
+            return
+        # Per-turn identity for correlation; runtime_id may differ each turn when
+        # the harness has no resumable runtime.
+        self._invocations.append(
+            {
+                "request_id": result.get("request_id"),
+                "runtime_id": result.get("runtime_id"),
+                "invocation_id": result.get("invocation_id"),
+            }
+        )
+        output = result.get("output")
         if not isinstance(output, dict):
             return
         messages = output.get("messages")

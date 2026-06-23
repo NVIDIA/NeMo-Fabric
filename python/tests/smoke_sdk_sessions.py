@@ -43,6 +43,9 @@ async def _fake_inline(plan, request, entrypoint):
     ]
     return {
         "status": "succeeded",
+        "request_id": request.get("request_id"),
+        "runtime_id": f"runtime-{turn}",
+        "invocation_id": f"invocation-{turn}",
         "events": [{"event_id": f"evt-{turn}", "kind": "log", "message": f"turn {turn}"}],
         "output": {
             "messages": transcript,
@@ -76,6 +79,15 @@ async def multi_turn_threads_history() -> None:
     assert seen_history[1] == after_turn1, (seen_history[1], after_turn1)
     assert len(session.messages) == 4, session.messages
     assert session.id == "sess-fake", session.id
+
+    # Per-turn handles are tracked for correlation, and a session can span
+    # multiple runtimes (one per turn) where the harness has no resumable runtime.
+    assert len(session.invocations) == 2, session.invocations
+    assert session.invocations[0]["runtime_id"] == "runtime-1", session.invocations
+    assert session.invocations[1]["runtime_id"] == "runtime-2", session.invocations
+    assert (
+        session.invocations[0]["runtime_id"] != session.invocations[1]["runtime_id"]
+    ), session.invocations
 
 
 async def stream_yields_events_then_result() -> None:
