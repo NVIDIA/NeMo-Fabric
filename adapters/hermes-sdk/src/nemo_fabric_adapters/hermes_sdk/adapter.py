@@ -67,6 +67,22 @@ def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return harness.get("settings") or payload.get("settings") or {}
 
 
+def resolve_history(payload: dict[str, Any]) -> Any:
+    """Conversation history for this turn.
+
+    A per-invocation request context wins over static harness settings, so the
+    SDK can drive multi-turn sessions by passing accumulated messages in
+    ``request.context.history`` without mutating the agent config.
+    """
+
+    context = request_payload(payload).get("context") or {}
+    # Check key presence so an explicit empty history ([]) clears the conversation
+    # rather than falling back to static harness settings.
+    if isinstance(context, dict) and "history" in context:
+        return context["history"]
+    return settings_payload(payload).get("history")
+
+
 def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return fabric_config(payload).get("models") or payload.get("models") or {}
 
@@ -393,7 +409,7 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
             conversation_kwargs = filter_supported_call_kwargs(
                 agent.run_conversation,
                 system_message=settings.get("system_prompt"),
-                conversation_history=settings.get("history"),
+                conversation_history=resolve_history(payload),
                 sync_honcho=False,
                 dont_review=True,
             )

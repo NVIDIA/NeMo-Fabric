@@ -69,6 +69,7 @@ jobs:
             python/tests/smoke_typed_config.py
             python/tests/smoke_consumer_neutral.py
             python/tests/smoke_readme_examples.py
+            python/tests/smoke_sdk_sessions.py
             tests/smoke_cli.py
             tests/smoke_hermes_cli.py
             tests/smoke_hermes_config_mapping.py
