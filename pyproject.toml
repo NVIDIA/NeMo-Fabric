@@ -14,6 +14,7 @@ dependencies = []
 
 [project.optional-dependencies]
 harbor = ["harbor>=0.13.2; python_version >= '3.12'"]
+hermes = ["hermes-agent>=0.17.0; python_version >= '3.11' and python_version < '3.14'"]
 
 [dependency-groups]
 dev = [
@@ -34,3 +35,7 @@ manifest-path = "crates/fabric-python/Cargo.toml"
 python-source = "python/src"
 module-name = "nemo_fabric._native"
 features = ["pyo3/extension-module"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
