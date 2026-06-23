@@ -72,12 +72,22 @@ def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("capability_plan") or payload.get("capabilities") or {}
 
 
+def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, Any]) -> None:
+    api_key_env = settings.get("api_key_env") or model_config.get("api_key_env")
+    if api_key_env:
+        try:
+            os.environ[api_key_env]
+        except KeyError as exc:
+            raise RuntimeError(f"api_key_env={api_key_env} is defined in the configuration but is not set in the "
+                               "environment. Please set it to your API key.") from exc
+
 def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     settings = settings_payload(payload)
     request = request_payload(payload)
     config_root = Path(config_root_payload(payload)).resolve()
     environment = environment_payload(payload)
     model_config = selected_model_config(payload)
+    _api_key_preflight_check(settings, model_config)
 
     model_name = settings.get("model_name") or model_config.get("model")
 
