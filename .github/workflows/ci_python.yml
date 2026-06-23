@@ -46,10 +46,12 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
+      # PyYAML is not a project dependency, but smoke_hermes_config_mapping
+      # imports it to read Hermes config fixtures, so install it for the smokes.
       - name: Build SDK with native extension
         run: |
           uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python -e .
+          uv pip install --python .venv/bin/python -e . "pyyaml>=6"
 
       # Dependency-free smokes only: the gated integration smokes
       # (smoke_hermes_sdk, smoke_relay_integration, smoke_harbor_*) need an
