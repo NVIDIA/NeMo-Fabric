@@ -6,7 +6,7 @@ import pytest
 
 CUR_DIR = Path(__file__).parent.resolve()
 
-@pytest.fixture(name="restore_environ")
+@pytest.fixture(name="restore_environ", autouse=True)
 def restore_environ_fixture():
     """
     Fixture to restore the environment variables after a test.
