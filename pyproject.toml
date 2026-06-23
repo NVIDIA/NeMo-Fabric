@@ -14,6 +14,7 @@ dependencies = []
 
 [project.optional-dependencies]
 harbor = ["harbor>=0.13.2; python_version >= '3.12'"]
+hermes = ["hermes-agent>=0.17.0; python_version >= '3.11' and python_version < '3.14'"]
 
 [dependency-groups]
 dev = [
