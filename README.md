@@ -187,7 +187,7 @@ async def chat():
     ) as session:
         await session.invoke("My name is Robin.")
         reply = await session.invoke("What's my name?")   # recalls "Robin"
-        print(session.id, session.status, len(session.messages))
+        print(session.id, session.status.value, len(session.messages))
         print(reply["output"]["response"])
 
 asyncio.run(chat())

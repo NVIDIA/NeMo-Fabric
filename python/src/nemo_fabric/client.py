@@ -23,6 +23,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Mapping
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -418,9 +419,9 @@ class Session:
 
     @property
     def messages(self) -> list[Any]:
-        """Read-only copy of the accumulated transcript."""
+        """Read-only deep copy of the accumulated transcript."""
 
-        return list(self._messages)
+        return deepcopy(self._messages)
 
     @property
     def invocations(self) -> list[dict[str, Any]]:
@@ -479,11 +480,16 @@ class Session:
             request=request,
             request_file=None,
         )
-        if self._messages:
-            request_payload["context"].setdefault("history", self._messages)
-        merged_overrides = _merge_overrides(self._overrides, overrides)
+        # The session transcript is authoritative: thread it (a deep copy, so the
+        # adapter cannot mutate our state) and override any history a caller passed
+        # via ``request``.
+        request_payload["context"]["history"] = deepcopy(self._messages)
+        # Merge overrides as session < request < per-turn; request-level overrides
+        # must not bypass the documented session/turn merge.
+        merged_overrides = _merge_overrides(self._overrides, request_payload.get("overrides"))
+        merged_overrides = _merge_overrides(merged_overrides, overrides)
         if merged_overrides is not None:
-            request_payload.setdefault("overrides", merged_overrides)
+            request_payload["overrides"] = merged_overrides
         self._current_task = asyncio.current_task()
         try:
             result = await _run_inline_adapter(
@@ -569,7 +575,7 @@ class Session:
             return
         messages = output.get("messages")
         if isinstance(messages, list) and messages:
-            self._messages = messages
+            self._messages = deepcopy(messages)
         session_id = output.get("session_id")
         if session_id:
             self.id = str(session_id)

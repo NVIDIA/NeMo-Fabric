@@ -76,7 +76,11 @@ def resolve_history(payload: dict[str, Any]) -> Any:
     """
 
     context = request_payload(payload).get("context") or {}
-    return context.get("history") or settings_payload(payload).get("history")
+    # Check key presence so an explicit empty history ([]) clears the conversation
+    # rather than falling back to static harness settings.
+    if isinstance(context, dict) and "history" in context:
+        return context["history"]
+    return settings_payload(payload).get("history")
 
 
 def models_payload(payload: dict[str, Any]) -> dict[str, Any]:

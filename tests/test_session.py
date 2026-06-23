@@ -201,11 +201,13 @@ async def test_messages_and_invocations_return_copies(seen_history: list[list]) 
 
     snapshot = session.messages
     snapshot.append({"role": "user", "content": "tampered"})
+    snapshot[0]["content"] = "mutated"  # deep mutation of a returned message object
     invocations = session.invocations
     invocations.clear()
 
-    # Mutating the returned lists must not affect internal session state.
+    # Mutating the returned lists or their items must not affect session state.
     assert len(session.messages) == 2
+    assert session.messages[0]["content"] != "mutated"
     assert len(session.invocations) == 1
 
 
@@ -221,6 +223,39 @@ async def test_invoke_without_output_messages_keeps_transcript(
 
     assert session.messages == []  # no echoed messages -> transcript unchanged
     assert len(session.invocations) == 1  # the turn is still recorded for correlation
+
+
+async def test_session_history_is_authoritative_over_request(
+    seen_history: list[list],
+) -> None:
+    session = _session()
+    await session.invoke("turn one")
+    transcript = session.messages
+
+    # A caller-supplied request carrying stale history must not override the
+    # session's accumulated transcript.
+    stale = {"input": "turn two", "context": {"history": [{"role": "user", "content": "stale"}]}}
+    await session.invoke(request=stale)
+
+    assert seen_history[1] == transcript
+
+
+async def test_request_level_overrides_are_merged(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict = {}
+
+    async def _fake(plan, request, entrypoint):
+        captured["overrides"] = request.get("overrides")
+        return {"status": "succeeded", "output": {}}
+
+    monkeypatch.setattr(client_mod, "_run_inline_adapter", _fake)
+    session = _session(overrides={"a": "session"})
+    await session.invoke(
+        request={"input": "x", "overrides": {"b": "request"}},
+        overrides={"c": "turn"},
+    )
+
+    # session < request < per-turn, all merged (none bypassed).
+    assert captured["overrides"] == {"a": "session", "b": "request", "c": "turn"}
 
 
 async def test_make_session_rejects_non_session_adapter() -> None:
