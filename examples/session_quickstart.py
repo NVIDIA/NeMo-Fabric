@@ -27,7 +27,7 @@ from nemo_fabric import FabricClient
 
 async def main() -> None:
     async with await FabricClient().start(
-        "examples/code-review-agent", profile="hermes_sdk"
+        "examples/code-review-agent", profile="hermes_session"
     ) as session:
         print(f"session {session.id} [{session.status.value}]")
 

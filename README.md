@@ -183,7 +183,7 @@ from nemo_fabric import FabricClient
 
 async def chat():
     async with await FabricClient().start(
-        "examples/code-review-agent", profile="hermes_sdk"
+        "examples/code-review-agent", profile="hermes_session"
     ) as session:
         await session.invoke("My name is Robin.")
         reply = await session.invoke("What's my name?")   # recalls "Robin"
@@ -196,7 +196,8 @@ asyncio.run(chat())
 Sessions require the native binding and a session-capable (inline Python)
 adapter; `start_config(...)` is the typed-config equivalent. `stream(...)` yields
 events then the final result (buffered today); `cancel()` cooperatively aborts an
-in-flight turn. See `examples/session_quickstart.py`.
+in-flight turn. Sessions are SDK-only — there is no `fabric` CLI equivalent (the
+CLI runs one invocation per process). See `examples/session_quickstart.py`.
 
 When installed from the repository root, `FabricClient()` uses the native Rust
 binding. If the selected Python adapter descriptor provides a `runner.module`

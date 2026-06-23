@@ -52,7 +52,7 @@ async def _run() -> None:
     from nemo_fabric import FabricClient, SessionStatus
 
     agent = str(ROOT / "examples" / "code-review-agent")
-    async with await FabricClient().start(agent, profile="hermes_sdk") as session:
+    async with await FabricClient().start(agent, profile="hermes_session") as session:
         assert session.status is SessionStatus.ACTIVE, session.status
 
         r1 = await session.invoke("My name is Robin. Please remember it for later.")
