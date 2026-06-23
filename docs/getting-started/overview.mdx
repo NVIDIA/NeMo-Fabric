@@ -1,0 +1,55 @@
+---
+title: "Overview"
+description: "Configure, plan, and run agent harnesses with the NeMo Fabric Python SDK."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NeMo Fabric standardizes how applications configure, launch, invoke, and collect
+artifacts from agent harnesses. The Python SDK (`nemo_fabric.FabricClient`) is the
+primary API for consumers (Platform, Harbor/Gym, local users): resolve an agent's
+config, plan it, diagnose it, and run it through a harness — with normalized
+results and no harness-specific code in the caller.
+
+## Install
+
+```bash
+pip install -e .        # installs the SDK with the native binding (maturin)
+```
+
+## Quickstart
+
+Run from an agent package:
+
+```python
+import asyncio
+from nemo_fabric import FabricClient
+
+async def main():
+    client = FabricClient()
+    result = await client.run(
+        "examples/code-review-agent",
+        profile="hermes_sdk",
+        input_text="review this diff",
+    )
+    print(result["status"])
+
+asyncio.run(main())
+```
+
+Or build the Fabric slice from a typed config in code, with no agent directory:
+
+```python
+result = await client.run_config(
+    {
+        "schema_version": "fabric.agent/v1alpha1",
+        "metadata": {"name": "code-review-agent"},
+        "harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},
+        "models": {"default": {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-30b-a3b"}},
+    },
+    input_text="review this diff",
+)
+```
+
+The full method-by-method reference is under **Python SDK → API Reference**, generated
+from the SDK docstrings.

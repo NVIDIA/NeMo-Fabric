@@ -16,6 +16,9 @@ dependencies = []
 codex = ["tomli-w~=1.2"]
 
 harbor = ["harbor>=0.13.2; python_version >= '3.12'"]
+docs = [
+  "lazydocs>=0.4",
+]
 
 hermes = [
   "hermes-agent>=0.17.0; python_version >= '3.11' and python_version < '3.14'",

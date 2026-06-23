@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+navigation:
+  - section: Getting Started
+    contents:
+      - page: Overview
+        path: ./getting-started/overview.mdx
+  - section: Python SDK
+    contents:
+      - page: API Reference
+        path: ./python-sdk/nemo_fabric.client.md
