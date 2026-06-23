@@ -258,6 +258,28 @@ async def test_request_level_overrides_are_merged(monkeypatch: pytest.MonkeyPatc
     assert captured["overrides"] == {"a": "session", "b": "request", "c": "turn"}
 
 
+async def test_concurrent_invokes_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _blocking(plan, request, entrypoint):
+        started.set()
+        await release.wait()
+        return {"status": "succeeded", "output": {}}
+
+    monkeypatch.setattr(client_mod, "_run_inline_adapter", _blocking)
+    session = _session()
+    first = asyncio.create_task(session.invoke("turn one"))
+    await started.wait()  # first turn is in flight
+
+    # A session is ordered/single-flight: a second concurrent turn is rejected.
+    with pytest.raises(RuntimeError):
+        await session.invoke("turn two")
+
+    release.set()
+    await first  # the in-flight turn still completes cleanly
+
+
 async def test_make_session_rejects_non_session_adapter() -> None:
     with pytest.raises(FabricSessionUnsupportedError):
         client_mod._make_session(FabricClient(), _plan(adapter_kind="process"), None)

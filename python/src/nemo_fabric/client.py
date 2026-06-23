@@ -474,31 +474,37 @@ class Session:
 
         if self._status is not SessionStatus.ACTIVE:
             raise RuntimeError(f"cannot invoke a {self._status.value} session")
-        request_payload = _run_request_payload(
-            input_text=input_text or "",
-            input_file=None,
-            request=request,
-            request_file=None,
-        )
-        # The session transcript is authoritative: thread it (a deep copy, so the
-        # adapter cannot mutate our state) and override any history a caller passed
-        # via ``request``.
-        request_payload["context"]["history"] = deepcopy(self._messages)
-        # Merge overrides as session < request < per-turn; request-level overrides
-        # must not bypass the documented session/turn merge.
-        merged_overrides = _merge_overrides(self._overrides, request_payload.get("overrides"))
-        merged_overrides = _merge_overrides(merged_overrides, overrides)
-        if merged_overrides is not None:
-            request_payload["overrides"] = merged_overrides
+        if self._current_task is not None:
+            raise RuntimeError(
+                "session is already running a turn; turns are ordered (one at a time)"
+            )
+        # Claim the turn before any await so concurrent invoke()/stream() calls
+        # cannot both replay the transcript and race _absorb().
         self._current_task = asyncio.current_task()
         try:
+            request_payload = _run_request_payload(
+                input_text=input_text or "",
+                input_file=None,
+                request=request,
+                request_file=None,
+            )
+            # The session transcript is authoritative: thread it (a deep copy, so
+            # the adapter cannot mutate our state) and override any history a caller
+            # passed via ``request``.
+            request_payload["context"]["history"] = deepcopy(self._messages)
+            # Merge overrides as session < request < per-turn; request-level
+            # overrides must not bypass the documented session/turn merge.
+            merged_overrides = _merge_overrides(self._overrides, request_payload.get("overrides"))
+            merged_overrides = _merge_overrides(merged_overrides, overrides)
+            if merged_overrides is not None:
+                request_payload["overrides"] = merged_overrides
             result = await _run_inline_adapter(
                 self._plan, request_payload, self._entrypoint
             )
+            self._absorb(result)
+            return result
         finally:
             self._current_task = None
-        self._absorb(result)
-        return result
 
     async def stream(
         self,

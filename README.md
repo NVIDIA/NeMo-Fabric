@@ -179,6 +179,8 @@ replays the accumulated transcript as conversation history so the harness sees
 prior turns:
 
 ```python
+import asyncio
+
 from nemo_fabric import FabricClient
 
 async def chat():
