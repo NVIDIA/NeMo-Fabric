@@ -52,7 +52,7 @@ Primary Python entrypoint for NeMo Fabric.
 
 Resolve an agent's configuration, plan it, diagnose it, and run it through a harness, returning normalized results -- without importing harness-specific code. Every method accepts either an agent-package directory (``agent.yaml`` plus ``profiles/``) or, via the ``*_config`` methods, an in-memory typed config, so a consumer can build the Fabric slice from its own job/deployment config without materializing an agent directory. 
 
-The client uses the native Rust binding when installed and otherwise falls back to the ``fabric`` CLI; pass ``command`` to force a specific CLI invocation. 
+The client uses the native Rust binding when installed and otherwise falls back to the ``fabric`` CLI; pass ``command`` to force a specific CLI invocation. See the Getting Started overview for a runnable quickstart. 
 
 
 
@@ -60,22 +60,6 @@ The client uses the native Rust binding when installed and otherwise falls back 
  
  - <b>`command`</b>:  Explicit CLI command to use instead of the native binding,  e.g. ``("cargo", "run", "-q", "-p", "fabric-cli", "--")``. 
  - <b>`cwd`</b>:  Working directory for CLI invocations. 
-
-
-
-**Example:**
- ``` import asyncio```
-    >>> from nemo_fabric import FabricClient
-    >>> async def main() -> None:
-    ...     client = FabricClient()
-    ...     result = await client.run(
-    ...         "examples/code-review-agent",
-    ...         profile="hermes_sdk",
-    ...         input_text="review this diff",
-    ...     )
-    ...     print(result["status"])
-    >>> asyncio.run(main())
-
 
 
 ### <kbd>method</kbd> `__init__`
