@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit configuration: https://docs.coderabbit.ai/reference/configuration
+#
+# Intentionally minimal: NeMo Fabric is an early POC and the codebase is still
+# changing, so this avoids per-path rules and strict merge gates. Tighten as the
+# contract stabilizes.
+language: "en-US"
+tone_instructions: "Be concise and technical. Prioritize correctness and maintainability over style nits."
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!**/target/**"
+    - "!**/.venv/**"
+    - "!**/node_modules/**"
+    - "!.tmp/**"
+    - "!docs/python-sdk/**"
+  poem: false
