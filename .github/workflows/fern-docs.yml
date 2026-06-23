@@ -34,14 +34,23 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
-      # The API reference is generated from the SDK docstrings (no native build:
-      # lazydocs reads python/src on PYTHONPATH), so the published docs never
-      # drift from the code.
-      - name: Generate API reference from docstrings
+      # The Rust library reference is built from rustdoc (cargo doc -> MDX), so a
+      # Rust toolchain is required here in addition to uv/Node.
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          cache: false
+
+      # The Python reference is generated from the SDK docstrings (lazydocs) and
+      # the Rust reference from rustdoc (cargo doc --no-deps -p fabric-core),
+      # so the published docs never drift from the code.
+      - name: Generate API reference (Python docstrings + Rust rustdoc)
         run: |
           uv venv .docs-venv
-          uv pip install --python .docs-venv/bin/python "lazydocs>=0.4"
+          uv pip install --python .docs-venv/bin/python "lazydocs>=0.4" beautifulsoup4
           PATH="$PWD/.docs-venv/bin:$PATH" bash scripts/generate_api_docs.sh
+          .docs-venv/bin/python scripts/docs/generate_rust_library_reference.py
 
       - name: Set up Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6

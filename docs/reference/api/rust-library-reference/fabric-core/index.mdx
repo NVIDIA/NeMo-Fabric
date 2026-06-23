@@ -1,0 +1,99 @@
+---
+title: "fabric-core"
+sidebar-title: "fabric-core"
+description: "Core config and runtime contract for NeMo Fabric."
+position: 1
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p fabric-core`.
+
+Core config and runtime contract for NeMo Fabric.
+
+## Re-exports
+
+- `pub use config::AdapterConfigSupport;`
+- `pub use config::AdapterDescriptor;`
+- `pub use config::AdapterDescriptorSource;`
+- `pub use config::AdapterKind;`
+- `pub use config::AdapterRequirements;`
+- `pub use config::AdapterTelemetrySupport;`
+- `pub use config::CapabilityPlan;`
+- `pub use config::ControlLocation;`
+- `pub use config::EffectiveConfig;`
+- `pub use config::EnvironmentConfig;`
+- `pub use config::EnvironmentOwnership;`
+- `pub use config::EnvironmentPlan;`
+- `pub use config::FabricConfig;`
+- `pub use config::FabricDocument;`
+- `pub use config::HarnessConfig;`
+- `pub use config::McpConfig;`
+- `pub use config::McpExposure;`
+- `pub use config::McpServerPlan;`
+- `pub use config::MetadataConfig;`
+- `pub use config::ModelConfig;`
+- `pub use config::ProfileConfig;`
+- `pub use config::ResolutionStrategy;`
+- `pub use config::ResolveContext;`
+- `pub use config::ResolvedAdapterDescriptor;`
+- `pub use config::RunPlan;`
+- `pub use config::RuntimeConfig;`
+- `pub use config::RuntimeMode;`
+- `pub use config::SkillConfig;`
+- `pub use config::TelemetryConfig;`
+- `pub use config::TelemetryPlan;`
+- `pub use config::Transport;`
+- `pub use config::load_adapter_descriptor;`
+- `pub use config::load_fabric_document;`
+- `pub use config::resolve_effective_config;`
+- `pub use config::resolve_effective_config_from_config;`
+- `pub use config::resolve_effective_config_with_profiles;`
+- `pub use config::resolve_run_plan;`
+- `pub use config::resolve_run_plan_from_config;`
+- `pub use config::resolve_run_plan_from_effective_config;`
+- `pub use config::resolve_run_plan_with_profiles;`
+- `pub use config::validate_agent_directory;`
+- `pub use doctor::DoctorCheck;`
+- `pub use doctor::DoctorReport;`
+- `pub use doctor::DoctorStatus;`
+- `pub use doctor::doctor_plan;`
+- `pub use error::FabricError;`
+- `pub use error::Result;`
+- `pub use runtime::AdapterInvocation;`
+- `pub use runtime::ArtifactManifest;`
+- `pub use runtime::ArtifactRef;`
+- `pub use runtime::EnvironmentHandle;`
+- `pub use runtime::ErrorInfo;`
+- `pub use runtime::ErrorStage;`
+- `pub use runtime::FabricEvent;`
+- `pub use runtime::InvocationHandle;`
+- `pub use runtime::RunRequest;`
+- `pub use runtime::RunResult;`
+- `pub use runtime::RunStatus;`
+- `pub use runtime::RuntimeContext;`
+- `pub use runtime::RuntimeHandle;`
+- `pub use runtime::RuntimeTelemetryContext;`
+- `pub use runtime::TelemetryRef;`
+- `pub use runtime::invoke_runtime;`
+- `pub use runtime::prepare_environment;`
+- `pub use runtime::run_plan;`
+- `pub use runtime::start_runtime;`
+- `pub use runtime::stop_runtime;`
+- `pub use schema::SchemaName;`
+- `pub use schema::generate_all_schemas;`
+- `pub use schema::generate_schema;`
+- `pub use schema::generate_schema_json;`
+- `pub use schema::write_schema_snapshots;`
+
+## Modules
+
+- [config](/reference/api/rust-library-reference/fabric-core/config): Fabric config models and loading helpers.
+- [doctor](/reference/api/rust-library-reference/fabric-core/doctor): Plan diagnostics for Fabric.
+- [error](/reference/api/rust-library-reference/fabric-core/error): Error types for Fabric core.
+- [runtime](/reference/api/rust-library-reference/fabric-core/runtime): Runtime invocation helpers.
+- [schema](/reference/api/rust-library-reference/fabric-core/schema): JSON Schema generation for the public Fabric contract.
+
+## Functions
+
+- [version](/reference/api/rust-library-reference/fabric-core/fn-version): Returns the crate version compiled into this build.
