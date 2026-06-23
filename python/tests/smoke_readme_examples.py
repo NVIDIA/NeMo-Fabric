@@ -59,7 +59,7 @@ README_PLAN_CONFIG = {
 def readme_documents_each_example() -> None:
     """The README still contains every invocation this smoke mirrors."""
 
-    text = README.read_text()
+    text = README.read_text(encoding="utf-8")
     missing = [snippet for snippet in DOCUMENTED_SNIPPETS if snippet not in text]
     assert not missing, f"README no longer documents these examples verbatim: {missing}"
 

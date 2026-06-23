@@ -120,19 +120,35 @@ async def runs_without_an_agent_package(client: FabricClient) -> None:
     assert result["output"]["received"] == "hello typed"
 
 
-def typed_config_requires_native() -> None:
-    """The CLI fallback surfaces a clear error for typed-config methods."""
+async def typed_config_requires_native() -> None:
+    """The CLI fallback surfaces a clear error for every typed-config method."""
 
     cli_client = FabricClient(command=("fabric",))
+    config = _repository_adapter_config()
+
+    # plan_config is sync; doctor_config / run_config are async. All three are
+    # native-only, so each must raise rather than silently degrade over the CLI.
     try:
-        cli_client.plan_config(_repository_adapter_config())
+        cli_client.plan_config(config)
     except FabricNativeUnavailableError:
-        return
-    raise AssertionError("plan_config should require the native extension over the CLI path")
+        pass
+    else:
+        raise AssertionError("plan_config should require the native extension over the CLI path")
+
+    for name, coro in (
+        ("doctor_config", cli_client.doctor_config(config)),
+        ("run_config", cli_client.run_config(config)),
+    ):
+        try:
+            await coro
+        except FabricNativeUnavailableError:
+            pass
+        else:
+            raise AssertionError(f"{name} should require the native extension over the CLI path")
 
 
 async def main() -> None:
-    typed_config_requires_native()
+    await typed_config_requires_native()
     async with FabricClient() as client:
         await resolves_and_diagnoses_without_a_directory(client)
         await runs_without_an_agent_package(client)

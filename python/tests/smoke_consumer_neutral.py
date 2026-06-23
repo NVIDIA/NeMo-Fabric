@@ -24,9 +24,11 @@ from __future__ import annotations
 import ast
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 SDK_ROOT = Path(__file__).resolve().parents[2] / "python" / "src" / "nemo_fabric"
+PYPROJECT = Path(__file__).resolve().parents[2] / "python" / "pyproject.toml"
 ALLOWED = set(sys.stdlib_module_names) | {"nemo_fabric", "__future__"}
 # Consumer/harness packages that must never leak into a plain ``import nemo_fabric``.
 CONSUMER_SPECIFIC = [
@@ -77,6 +79,12 @@ def core_imports_only_stdlib_and_self() -> None:
         f"found third-party imports: {offenders}"
     )
 
+    # Pin the declared contract too: a dependency added to pyproject would slip
+    # past the import scan above if nothing in the core imports it yet.
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    deps = pyproject.get("project", {}).get("dependencies", [])
+    assert deps == [], f"SDK must stay zero-dependency; found dependencies={deps!r}"
+
 
 def importing_the_sdk_pulls_in_no_consumer_package() -> None:
     """Runtime: ``import nemo_fabric`` does not drag in a consumer/harness dep."""
@@ -89,7 +97,11 @@ def importing_the_sdk_pulls_in_no_consumer_package() -> None:
         "print(','.join(sorted(roots & set(forbidden))))\n"
     )
     result = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
     )
     leaked = result.stdout.strip()
     assert not leaked, f"`import nemo_fabric` leaked consumer packages: {leaked}"
