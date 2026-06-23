@@ -254,7 +254,7 @@ def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False)
         ),
         "agent": without_none(
             {
-                "max_turns": settings.get("max_turns"),
+                "max_turns": settings.get("max_iterations"),
                 "disabled_toolsets": settings.get("disabled_toolsets"),
             }
         ),
@@ -393,7 +393,7 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
             api_key=api_key,
             provider=settings.get("provider") or model_config.get("provider"),
             model=settings.get("model_name") or model_config.get("model", ""),
-            max_iterations=int(settings.get("max_turns", 1)),
+            max_iterations=int(settings.get("max_iterations", 1)),
             enabled_toolsets=enabled_toolsets,
             disabled_toolsets=settings.get("disabled_toolsets"),
             quiet_mode=True,

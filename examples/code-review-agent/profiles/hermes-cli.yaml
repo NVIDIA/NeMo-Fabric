@@ -12,7 +12,7 @@ harness:
     workspace: ./repos/my-service
     hermes_home: ./artifacts/hermes-cli/home
     base_url: https://integrate.api.nvidia.com/v1
-    max_turns: 1
+    max_iterations: 1
     terminal_timeout: 60
     enabled_toolsets: []
 
