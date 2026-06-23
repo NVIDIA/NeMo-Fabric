@@ -80,9 +80,14 @@ def core_imports_only_stdlib_and_self() -> None:
     )
 
     # Pin the declared contract too: a dependency added to pyproject would slip
-    # past the import scan above if nothing in the core imports it yet.
+    # past the import scan above if nothing in the core imports it yet. Assert the
+    # structure explicitly so a missing [project]/dependencies fails loudly
+    # instead of defaulting to an empty list and hiding a metadata regression.
     pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
-    deps = pyproject.get("project", {}).get("dependencies", [])
+    assert "project" in pyproject, f"{PYPROJECT} is missing the [project] table"
+    project = pyproject["project"]
+    assert "dependencies" in project, f"{PYPROJECT} [project] is missing 'dependencies'"
+    deps = project["dependencies"]
     assert deps == [], f"SDK must stay zero-dependency; found dependencies={deps!r}"
 
 
