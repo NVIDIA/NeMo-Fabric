@@ -77,3 +77,9 @@ jobs:
             "$py" "$s"
             echo "::endgroup::"
           done
+      
+      - name: Run pytest
+        run: |
+          set -euo pipefail
+          uv sync --group test --no-group dev
+          uv run pytest
