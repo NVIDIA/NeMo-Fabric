@@ -244,6 +244,51 @@ async def test_stop_rejects_in_flight_turn(monkeypatch: pytest.MonkeyPatch) -> N
     await first
 
 
+async def test_stop_blocks_new_turns_while_shutdown_is_in_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _blocking(func):  # type: ignore[no-untyped-def]
+        if session._closing:  # noqa: SLF001 - state-machine regression test
+            started.set()
+            await release.wait()
+        return func()
+
+    monkeypatch.setattr(client_mod, "_call_blocking", _blocking)
+    native = FakeNative()
+    session = _session(native)
+    stop_task = asyncio.create_task(session.stop())
+    await started.wait()
+
+    with pytest.raises(RuntimeError, match="shutdown is in progress"):
+        await session.invoke("too late")
+
+    release.set()
+    await stop_task
+    assert session.status is SessionStatus.STOPPED
+    assert native.stopped == 1
+
+
+async def test_stop_failure_clears_shutdown_guard_for_retry() -> None:
+    native = FakeNative()
+    native.fail_stop = True
+    session = _session(native)
+
+    with pytest.raises(RuntimeError, match="stop failed"):
+        await session.stop()
+
+    assert session.status is SessionStatus.ACTIVE
+    assert session._closing is False  # noqa: SLF001 - state-machine regression test
+
+    native.fail_stop = False
+    await session.stop()
+
+    assert session.status is SessionStatus.STOPPED
+    assert native.stopped == 2
+
+
 async def test_context_manager_auto_stops() -> None:
     native = FakeNative()
     async with _session(native) as session:
@@ -282,6 +327,33 @@ async def test_cancel_stop_failure_keeps_session_retryable() -> None:
 
     assert session.status is SessionStatus.CANCELLED
     assert native.stopped == 2
+
+
+async def test_cancel_blocks_new_turns_while_shutdown_is_in_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _blocking(func):  # type: ignore[no-untyped-def]
+        if session._closing:  # noqa: SLF001 - state-machine regression test
+            started.set()
+            await release.wait()
+        return func()
+
+    monkeypatch.setattr(client_mod, "_call_blocking", _blocking)
+    native = FakeNative()
+    session = _session(native)
+    cancel_task = asyncio.create_task(session.cancel())
+    await started.wait()
+
+    with pytest.raises(RuntimeError, match="shutdown is in progress"):
+        await session.invoke("too late")
+
+    release.set()
+    await cancel_task
+    assert session.status is SessionStatus.CANCELLED
+    assert native.stopped == 1
 
 
 async def test_cancel_aborts_in_flight_turn() -> None:

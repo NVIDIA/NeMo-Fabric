@@ -374,6 +374,7 @@ class Session:
         self._invocations: list[dict[str, Any]] = []
         self._status = SessionStatus.ACTIVE
         self._current_task: asyncio.Task[Any] | None = None
+        self._closing = False
 
     @property
     def status(self) -> SessionStatus:
@@ -441,6 +442,8 @@ class Session:
 
         if self._status is not SessionStatus.ACTIVE:
             raise RuntimeError(f"cannot invoke a {self._status.value} session")
+        if self._closing:
+            raise RuntimeError("cannot invoke while session shutdown is in progress")
         if self._current_task is not None:
             raise RuntimeError(
                 "session is already running a turn; turns are ordered (one at a time)"
@@ -519,11 +522,20 @@ class Session:
 
         if self._status is not SessionStatus.ACTIVE:
             return
+        if self._closing:
+            raise RuntimeError("session shutdown is already in progress")
+        self._closing = True
         task = self._current_task
         if task is not None and not task.done() and task is not asyncio.current_task():
             task.cancel()
-        await self._stop_runtime()
-        self._status = SessionStatus.CANCELLED
+        try:
+            await self._stop_runtime()
+        except Exception:
+            self._closing = False
+            raise
+        else:
+            self._status = SessionStatus.CANCELLED
+            self._closing = False
 
     async def stop(self) -> None:
         """Finalize the session. Idempotent."""
@@ -532,8 +544,17 @@ class Session:
             task = self._current_task
             if task is not None and not task.done() and task is not asyncio.current_task():
                 raise RuntimeError("cannot stop while a turn is in flight; use cancel()")
-            await self._stop_runtime()
-            self._status = SessionStatus.STOPPED
+            if self._closing:
+                raise RuntimeError("session shutdown is already in progress")
+            self._closing = True
+            try:
+                await self._stop_runtime()
+            except Exception:
+                self._closing = False
+                raise
+            else:
+                self._status = SessionStatus.STOPPED
+                self._closing = False
 
     async def _stop_runtime(self) -> None:
         native = self._client._require_native_module("stop")
