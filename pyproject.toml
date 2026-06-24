@@ -15,6 +15,7 @@ dependencies = []
 [project.optional-dependencies]
 harbor = ["harbor>=0.13.2; python_version >= '3.12'"]
 hermes = ["hermes-agent>=0.17.0; python_version >= '3.11' and python_version < '3.14'"]
+relay = ["nemo-relay~=0.4; python_version >= '3.11'"]
 
 [dependency-groups]
 dev = [
@@ -25,6 +26,7 @@ test = [
     "pytest>=8",
     "pytest-asyncio>=0.26",
     "pytest-cov~=7.0",
+    "pyyaml>=6.0",
 ]
 
 [tool.uv]

@@ -10,7 +10,6 @@ harness:
   resolution: preinstalled
   settings:
     mode: swebench_shim
-    agent_profile: code_reviewer
     workspace: ./repos/swebench-django-13741
     target_file: django/contrib/auth/forms.py
     expected_before: "        kwargs.setdefault(\"required\", False)\n        super().__init__(*args, **kwargs)"

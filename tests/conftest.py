@@ -1,5 +1,7 @@
 import os
 import shutil
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -49,3 +51,22 @@ def hermes_command_fixture(hermes_agent_dir: Path) -> Path:
     assert hermes_command.exists(
     ), f"Missing fake Hermes CLI: {hermes_command}"
     return hermes_command.resolve()
+
+@pytest.fixture(name="adapters_common_src_dir", scope="session")
+def adapters_common_src_dir_fixture() -> Path:
+    adapters_common_src_dir = CUR_DIR.parent / "adapters" / "common" / "src"
+    assert adapters_common_src_dir.exists(), f"Missing adapters common src directory: {adapters_common_src_dir}"
+    return adapters_common_src_dir.resolve()
+
+@pytest.fixture(name="adapters_common", scope="session")
+def adapters_common_fixture(adapters_common_src_dir: Path) -> str:
+    adapters_common = adapters_common_src_dir.as_posix()
+    if adapters_common not in sys.path:
+        sys.path.append(adapters_common)
+
+    return adapters_common
+
+@pytest.fixture(name="hermes_common", scope="session")
+def hermes_common_fixture(adapters_common: str) -> types.ModuleType:
+    import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
+    return hermes_common

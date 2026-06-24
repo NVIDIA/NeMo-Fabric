@@ -12,14 +12,13 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ADAPTER_PATH = ROOT / "adapters" / "hermes-sdk" / "src" / "nemo_fabric_adapters" / "hermes_sdk" / "adapter.py"
-
+ADAPTERS_COMMON = ROOT / "adapters" / "common" / "src" / "nemo_fabric_adapters" / "common" / "hermes.py"
 
 def main() -> None:
-    adapter = load_adapter()
+    common = load_common()
     with tempfile.TemporaryDirectory(prefix="fabric-hermes-config-") as tmpdir:
         hermes_home = Path(tmpdir) / "home"
-        config_path, config = adapter.write_hermes_config(
+        config_path, config = common.write_hermes_config(
             payload(tmpdir),
             hermes_home,
             relay_enabled=True,
@@ -47,13 +46,15 @@ def main() -> None:
     assert config["platform_toolsets"]["cli"] == []
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
 
-
-def load_adapter():
-    spec = importlib.util.spec_from_file_location("fabric_hermes_adapter", ADAPTER_PATH)
+def _load_module_from_path(name:str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+def load_common():
+    return _load_module_from_path("fabric_hermes_common", ADAPTERS_COMMON)
 
 
 def payload(tmpdir: str) -> dict:

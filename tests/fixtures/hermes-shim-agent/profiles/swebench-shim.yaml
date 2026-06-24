@@ -10,7 +10,6 @@ harness:
   resolution: preinstalled
   settings:
     mode: swebench_shim
-    agent_profile: code_reviewer
     workspace: ./repos/my-service
     target_file: calculator.py
     expected_before: "return 41"

@@ -72,7 +72,6 @@ def run_shim(payload: dict[str, Any]) -> dict[str, Any]:
         "harness": "hermes",
         "adapter": "test-shim",
         "mode": "shim",
-        "agent_profile": settings.get("agent_profile"),
         "received": request.get("input"),
         "workspace": environment.get("workspace") or settings.get("workspace"),
         "native_skill_paths": (capabilities.get("native") or {}).get("skill_paths", []),

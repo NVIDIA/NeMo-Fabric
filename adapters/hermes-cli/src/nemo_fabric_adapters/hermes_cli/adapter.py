@@ -17,6 +17,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+CUR_DIR = Path(__file__).parent
+ADAPTERS_DIR = CUR_DIR.parent.parent.parent.parent
+COMMON_DIR = (ADAPTERS_DIR / "common/src").resolve().as_posix()
+if COMMON_DIR not in sys.path:
+    sys.path.append(COMMON_DIR)
+
+import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
+
 
 def main() -> None:
     payload = load_payload()
@@ -35,49 +43,28 @@ def load_payload() -> dict[str, Any]:
     return json.load(sys.stdin)
 
 
-def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("effective_config") or {}
-
-
-def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return effective_config(payload).get("config") or {}
-
-
-def config_root_payload(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("config_root") or payload.get("config_root") or "."
-
-
-def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("runtime_context") or {}
-
-
-def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("request") or {}
-
-
-def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return runtime_context(payload).get("environment") or payload.get("environment") or {}
-
-
-def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    harness = (fabric_config(payload).get("harness") or {})
-    return harness.get("settings") or payload.get("settings") or {}
-
-
-def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return fabric_config(payload).get("models") or payload.get("models") or {}
-
-
-def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("capability_plan") or payload.get("capabilities") or {}
+def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, Any]) -> None:
+    api_key_env = settings.get("api_key_env") or model_config.get("api_key_env")
+    if api_key_env:
+        try:
+            os.environ[api_key_env]
+        except KeyError as exc:
+            raise RuntimeError(
+                f"api_key_env={api_key_env} is defined in the configuration but is not set in the "
+                "environment. Please set it to your API key."
+            ) from exc
 
 
 def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = settings_payload(payload)
-    request = request_payload(payload)
-    config_root = Path(config_root_payload(payload)).resolve()
-    environment = environment_payload(payload)
-    model_config = selected_model_config(payload)
+    settings = hermes_common.settings_payload(payload)
+    request = hermes_common.request_payload(payload)
+    config_root = Path(hermes_common.config_root(payload)).resolve()
+    environment = hermes_common.environment_payload(payload)
+    model_config = hermes_common.selected_model_config(payload)
+
+    relay_plugin_config = hermes_common.configure_hermes_relay(payload)
+
+    _api_key_preflight_check(settings, model_config)
 
     model_name = settings.get("model_name") or model_config.get("model")
 
@@ -86,20 +73,26 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         settings.get("hermes_home", "./artifacts/hermes-cli/home"),
     )
     hermes_home.mkdir(parents=True, exist_ok=True)
-    hermes_config_path, hermes_config = write_hermes_config(
-        payload, hermes_home)
+    hermes_config_path, hermes_config = hermes_common.write_hermes_config(
+        payload,
+        hermes_home,
+        relay_enabled=relay_plugin_config is not None,
+    )
 
     prompt = request_to_prompt(request)
-    toolsets = normalize_list(settings.get("enabled_toolsets"))
-    command = build_command(settings,
-                            config_root,
-                            model_config,
-                            model_name,
-                            prompt,
-                            toolsets=toolsets)
+    toolsets = hermes_common.normalize_list(settings.get("enabled_toolsets"))
+    command = build_command(
+        settings,
+        config_root,
+        model_config,
+        model_name,
+        prompt,
+        toolsets=toolsets,
+    )
     cwd = resolve_path(
         config_root,
-        settings.get("cwd") or environment.get("workspace") or ".")
+        settings.get("cwd") or environment.get("workspace") or ".",
+    )
     env = build_env(settings, hermes_home)
 
     completed = subprocess.run(
@@ -115,7 +108,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     output = {
         "harness": "hermes",
         "adapter": "cli",
-        "base_url": get_base_url(settings, model_config),
+        "base_url": hermes_common.get_base_url(settings, model_config),
         "mode": "hermes_cli_oneshot",
         "command": redact_command(command),
         "cwd": str(cwd),
@@ -131,8 +124,18 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         "failed": completed.returncode != 0,
         "hermes_home": str(hermes_home),
         "hermes_config_path": str(hermes_config_path),
-        "hermes_native_config": summarize_hermes_config(hermes_config),
+        "hermes_native_config": hermes_common.summarize_hermes_config(hermes_config),
     }
+
+    if relay_plugin_config is not None:
+        relay_artifacts = hermes_common.collect_relay_artifacts(relay_plugin_config)
+        output["relay_runtime"] = {
+            "enabled": True,
+            "mode": os.environ.get("FABRIC_RELAY_MODE"),
+            "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
+            "emitter": "hermes.observability/nemo_relay",
+        }
+        output["relay_artifacts"] = relay_artifacts
     return output
 
 
@@ -142,13 +145,13 @@ def build_command(
     model_config: dict[str, Any],
     model_name: str | None,
     prompt: str,
-    toolsets: list[str] | None = None
+    toolsets: list[str] | None = None,
 ) -> list[str]:
     command = resolve_command(
         config_root,
         settings.get("hermes_command") or settings.get("command", "hermes"),
     )
-    command_args = normalize_list(settings.get("hermes_args") or settings.get("command_args"))
+    command_args = hermes_common.normalize_list(settings.get("hermes_args") or settings.get("command_args"))
     provider = settings.get("provider") or model_config.get("provider")
 
     args = [command, *command_args, "-z", prompt]
@@ -169,100 +172,6 @@ def build_env(settings: dict[str, Any], hermes_home: Path) -> dict[str, str]:
     env.setdefault("HERMES_YOLO_MODE", "1")
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
     return env
-
-
-def write_hermes_config(payload: dict[str, Any], hermes_home: Path) -> tuple[Path, dict[str, Any]]:
-    hermes_home.mkdir(parents=True, exist_ok=True)
-    config = build_hermes_config(payload)
-    config_path = hermes_home / "config.yaml"
-    config_path.write_text(dump_yaml(config), encoding="utf-8")
-    return config_path, config
-
-def get_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
-    return (
-        settings.get("base_url")
-        or (model_config.get("settings") or {}).get("base_url")
-        or default_base_url(model_config.get("provider"))
-    )
-
-def build_hermes_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = settings_payload(payload)
-    model_config = selected_model_config(payload)
-    native = (capability_plan(payload)).get("native") or {}
-    environment = environment_payload(payload)
-
-    model_name = settings.get("model_name") or model_config.get("model", "")
-    provider = settings.get("provider") or model_config.get("provider")
-    base_url = get_base_url(settings, model_config)
-
-    config: dict[str, Any] = {
-        "model": without_none(
-            {
-                "provider": provider,
-                "default": model_name,
-                "base_url": base_url,
-            }
-        ),
-        "agent": without_none(
-            {
-                "max_turns": settings.get("max_iterations"),
-                "disabled_toolsets": settings.get("disabled_toolsets"),
-            }
-        ),
-        "terminal": without_none(
-            {
-                "backend": settings.get("terminal_backend", "local"),
-                "cwd": str(environment.get("workspace") or settings.get("workspace") or "."),
-                "timeout": settings.get("terminal_timeout", 60),
-            }
-        ),
-    }
-
-    skill_dirs = [str(path) for path in native.get("skill_paths", [])]
-    if skill_dirs:
-        config["skills"] = {"external_dirs": skill_dirs}
-
-    mcp_servers = native.get("mcp_servers") or {}
-    if mcp_servers:
-        config["mcp_servers"] = {
-            name: hermes_mcp_server_config(server)
-            for name, server in sorted(mcp_servers.items())
-        }
-
-    if "enabled_toolsets" in settings:
-        config["platform_toolsets"] = {
-            settings.get("toolset_platform", "cli"): normalize_list(
-                settings.get("enabled_toolsets")
-            )
-        }
-
-    plugins = normalize_list(settings.get("plugins_enabled"))
-    if plugins:
-        config["plugins"] = {"enabled": plugins}
-
-    return config
-
-
-def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
-    transport = str(server.get("transport") or "").strip().lower()
-    target = os.path.expandvars(str(server.get("url") or ""))
-    config: dict[str, Any] = {"enabled": True}
-    if transport in {"stdio", "command", "process"}:
-        config["command"] = target
-    else:
-        config["url"] = target
-        if transport:
-            config["transport"] = transport
-    return config
-
-
-def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = settings_payload(payload)
-    models = models_payload(payload)
-    model_config = models.get(settings.get("model", "default"), {})
-    if not isinstance(model_config, dict):
-        return {}
-    return model_config
 
 
 def request_to_prompt(request: dict[str, Any]) -> str:
@@ -287,39 +196,6 @@ def resolve_command(root: Path, value: Any) -> str:
     return command
 
 
-def normalize_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        value = [value]
-    if not isinstance(value, list):
-        value = [value]
-    return [str(item) for item in value if str(item)]
-
-
-def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in mapping.items() if value is not None}
-
-
-def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "model": config.get("model", {}),
-        "terminal": config.get("terminal", {}),
-        "skill_dirs": (config.get("skills") or {}).get("external_dirs", []),
-        "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),
-        "plugins": (config.get("plugins") or {}).get("enabled", []),
-        "platform_toolsets": config.get("platform_toolsets", {}),
-    }
-
-
-def dump_yaml(value: dict[str, Any]) -> str:
-    try:
-        import yaml
-    except ImportError:
-        return json.dumps(value, indent=2, sort_keys=False) + "\n"
-    return yaml.safe_dump(value, sort_keys=False)
-
-
 def redact_command(command: list[str]) -> list[str]:
     redacted: list[str] = []
     redact_next = False
@@ -335,12 +211,6 @@ def redact_command(command: list[str]) -> list[str]:
         if arg in {"-z", "--oneshot"}:
             redact_next = True
     return redacted
-
-
-def default_base_url(provider: str | None) -> str | None:
-    if provider == "nvidia":
-        return "https://integrate.api.nvidia.com/v1"
-    return None
 
 
 if __name__ == "__main__":

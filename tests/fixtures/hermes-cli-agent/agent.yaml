@@ -12,7 +12,6 @@ harness:
   resolution: preinstalled
   settings:
     hermes_command: ./bin/fake-hermes.py
-    agent_profile: code_reviewer
     workspace: ./repos/my-service
     hermes_home: ./artifacts/hermes-cli/home
     enabled_toolsets: []
