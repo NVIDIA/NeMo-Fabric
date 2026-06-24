@@ -27,8 +27,6 @@ if COMMON_DIR not in sys.path:
 import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
 
 
-SESSION_ID_RE = re.compile(r"^session_id:\s*(?P<session_id>\w+)$", re.MULTILINE)
-
 def main() -> None:
     payload = load_payload()
     output = run_hermes_cli(payload)
@@ -45,13 +43,6 @@ def load_payload() -> dict[str, Any]:
             return json.loads(path.read_text(encoding="utf-8"))
     return json.load(sys.stdin)
 
-def _extract_session_id_from_stderr(stderr: str) -> str | None:
-    """Extract a session_id from the stderr if present."""
-    match = SESSION_ID_RE.search(stderr)
-    if match:
-        session_id = match.group('session_id')
-        return session_id
-    return None
 
 def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, Any]) -> None:
     api_key_env = settings.get("api_key_env") or model_config.get("api_key_env")
@@ -76,17 +67,21 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     config_root = Path(hermes_common.config_root(payload)).resolve()
     environment = hermes_common.environment_payload(payload)
     model_config = hermes_common.selected_model_config(payload)
+    model_name = settings.get("model_name") or model_config.get("model")
     runtime_mode = get_runtime_mode(payload)
     use_session = runtime_mode == "session"
-    session_id = None
+    fabric_runtime_id = hermes_common.runtime_session_id(payload)
     if use_session:
-        session_id = request.get("context", {}).get("session_id")
+        if fabric_runtime_id is None:
+            raise RuntimeError(
+                "runtime.mode=session is set, but no session_id was provided in the payload. "
+                "Please provide a session_id to resume an existing session."
+            )
+        hermes_common.ensure_hermes_session(fabric_runtime_id, model_name, model_config)
 
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
 
     _api_key_preflight_check(settings, model_config)
-
-    model_name = settings.get("model_name") or model_config.get("model")
 
     hermes_home = resolve_path(
         config_root,
@@ -110,7 +105,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         prompt,
         toolsets=toolsets,
         use_session=use_session,
-        session_id=session_id,
+        fabric_runtime_id=fabric_runtime_id,
     )
     cwd = resolve_path(
         config_root,
@@ -129,20 +124,12 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
 
     # When use_session is True, session_id will be printed to stderr
     response = completed.stdout.strip()
-
     stderr_output = completed.stderr.strip()
-    if use_session:
-        # When a session is compressed hermes will return a new session_id, so we need to extract it on every call.
-        new_session_id = _extract_session_id_from_stderr(stderr_output)
-        if new_session_id is not None:
-            session_id = new_session_id
-
     return_code = completed.returncode
     if return_code != 0:
         error_message = stderr_output or f"hermes CLI exited with return code {return_code}"
     else:
         error_message = None
-
 
     output = {
         "harness": "hermes",
@@ -158,7 +145,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         "model": model_name,
         "returncode": return_code,
         "response": response,
-        "session_id": session_id,
+        "session_id": fabric_runtime_id,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
         "failed": return_code != 0,
@@ -187,11 +174,8 @@ def build_command(
     prompt: str,
     toolsets: list[str] | None = None,
     use_session: bool = False,
-    session_id: str | None = None,
+    fabric_runtime_id: str | None = None,
 ) -> list[str]:
-    # When use_session is True, on the first invocation, the session_id will be None, and the CLI will create a new
-    # session. After that the session_id will be provided, and the CLI will use the existing session.
-    assert use_session or session_id is None, "session_id should only be provided when use_session is True"
     command = resolve_command(
         config_root,
         settings.get("hermes_command") or settings.get("command", "hermes"),
@@ -201,9 +185,9 @@ def build_command(
 
     args = [command, *command_args]
     if use_session:
-        args.extend(["chat", "--quiet", "--query", prompt])
-        if session_id is not None:
-            args.extend(["--resume", session_id])
+        # On the first invocation, we create the session up-front, and use the `--continue` flag to resume it even
+        # though technically it's an empty session.
+        args.extend(["chat", "--quiet", "--continue", fabric_runtime_id, "--query", prompt])
     else:
         args.extend(["-z", prompt])
 
