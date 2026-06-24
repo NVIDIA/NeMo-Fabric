@@ -45,14 +45,13 @@ def load_payload() -> dict[str, Any]:
             return json.loads(path.read_text(encoding="utf-8"))
     return json.load(sys.stdin)
 
-def _separate_session_id_from_stdout(stdout: str) -> tuple[str, str | None]:
-    """Extract a session_id from the stdout if present, and return the remaining stdout."""
-    match = SESSION_ID_RE.search(stdout)
+def _extract_session_id_from_stderr(stderr: str) -> str | None:
+    """Extract a session_id from the stderr if present."""
+    match = SESSION_ID_RE.search(stderr)
     if match:
         session_id = match.group('session_id')
-        remaining_stdout = (stdout[:match.start()]+stdout[match.end():]).strip()
-        return remaining_stdout, session_id
-    return stdout, None
+        return session_id
+    return None
 
 def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, Any]) -> None:
     api_key_env = settings.get("api_key_env") or model_config.get("api_key_env")
@@ -81,7 +80,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     use_session = runtime_mode == "session"
     session_id = None
     if use_session:
-        session_id = request.get("session_id")       
+        session_id = request.get("context", {}).get("session_id")
 
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
 
@@ -128,10 +127,22 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         check=False,
     )
 
+    # When use_session is True, session_id will be printed to stderr
     response = completed.stdout.strip()
 
-    if use_session and session_id is None:
-        response, session_id = _separate_session_id_from_stdout(response)
+    stderr_output = completed.stderr.strip()
+    if use_session:
+        # When a session is compressed hermes will return a new session_id, so we need to extract it on every call.
+        new_session_id = _extract_session_id_from_stderr(stderr_output)
+        if new_session_id is not None:
+            session_id = new_session_id
+
+    return_code = completed.returncode
+    if return_code != 0:
+        error_message = stderr_output or f"hermes CLI exited with return code {return_code}"
+    else:
+        error_message = None
+
 
     output = {
         "harness": "hermes",
@@ -141,16 +152,16 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         "command": redact_command(command),
         "cwd": str(cwd),
         "enabled_toolsets": toolsets,
-        "error": completed.stderr or None,
+        "error": error_message,
         "fabric_home": os.environ.get("FABRIC_HOME"),
         "fabric_invocation": os.environ.get("FABRIC_INVOCATION"),
         "model": model_name,
-        "returncode": completed.returncode,
+        "returncode": return_code,
         "response": response,
         "session_id": session_id,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
-        "failed": completed.returncode != 0,
+        "failed": return_code != 0,
         "hermes_home": str(hermes_home),
         "hermes_config_path": str(hermes_config_path),
         "hermes_native_config": hermes_common.summarize_hermes_config(hermes_config),
@@ -189,13 +200,12 @@ def build_command(
     provider = settings.get("provider") or model_config.get("provider")
 
     args = [command, *command_args]
-    if use_session and session_id is None:
+    if use_session:
         args.extend(["chat", "--quiet", "--query", prompt])
+        if session_id is not None:
+            args.extend(["--resume", session_id])
     else:
         args.extend(["-z", prompt])
-
-    if session_id is not None:
-        args.extend(["--resume", session_id])
 
     if model_name:
         args.extend(["--model", str(model_name)])
@@ -250,7 +260,7 @@ def redact_command(command: list[str]) -> list[str]:
             redacted.append("<redacted>")
         else:
             redacted.append(arg)
-        if arg in {"-z", "--oneshot"}:
+        if arg in {"-z", "--oneshot", "--query"}:
             redact_next = True
     return redacted
 
