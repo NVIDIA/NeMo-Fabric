@@ -175,8 +175,8 @@ plan = client.plan_config(
 ```
 
 For multi-turn sessions, open a `Session` and invoke it repeatedly. The session
-replays the accumulated transcript as conversation history so the harness has access to
-prior turns:
+keeps one Fabric runtime handle active across turns; harness/adapter state is
+authoritative rather than reconstructed from a Python-side transcript:
 
 ```python
 import asyncio
@@ -189,23 +189,23 @@ async def chat():
     ) as session:
         await session.invoke("My name is Robin.")
         reply = await session.invoke("What's my name?")   # recalls "Robin"
-        print(session.id, session.status.value, len(session.messages))
+        print(session.runtime_id, session.status.value, len(session.messages))
         print(reply["output"]["response"])
 
 asyncio.run(chat())
 ```
 
-Sessions require the native binding and a session-capable (inline Python)
-adapter; `start_config(...)` is the typed-config equivalent. `stream(...)` yields
-events then the final result (buffered today); `cancel()` cooperatively aborts an
-in-flight turn. Sessions are SDK-only — there is no `fabric` CLI equivalent (the
-CLI runs one invocation per process). See `examples/session_quickstart.py`.
+Sessions require the native binding; `start_config(...)` is the typed-config
+equivalent. `stream(...)` yields events then the final result (buffered today);
+`cancel()` cooperatively aborts an in-flight turn. Sessions are SDK-only — there
+is no `fabric` CLI equivalent (the CLI runs one invocation per process). The
+real-Hermes integration check is `tests/smoke_hermes_session.py`.
 
 When installed from the repository root, `FabricClient()` uses the native Rust
-binding. If the selected Python adapter descriptor provides a `runner.module`
-and `runner.callable`, the SDK imports and invokes that adapter inline. The
-`fabric` CLI continues to use the adapter script/process path, which is useful
-for local debugging and environment-backed consumers.
+binding. SDK `run(...)`, `start(...)`, and their typed-config equivalents all
+drive the core Fabric runtime lifecycle (`start_runtime` / `invoke_runtime` /
+`stop_runtime`) so one-shot and session paths use the same adapter execution
+contract.
 
 For source-tree debugging, pass an explicit CLI command:
 

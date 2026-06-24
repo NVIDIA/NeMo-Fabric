@@ -6,8 +6,8 @@
 use std::path::PathBuf;
 
 use fabric_core::{
-    FabricConfig, ProfileConfig, ResolveContext, RunRequest, doctor_plan, load_fabric_document,
-    resolve_effective_config_with_profiles, resolve_run_plan_from_config,
+    FabricConfig, ProfileConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
+    load_fabric_document, resolve_effective_config_with_profiles, resolve_run_plan_from_config,
     resolve_run_plan_with_profiles, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
@@ -158,6 +158,44 @@ fn run_config(
     to_json(&result)
 }
 
+/// Start a runtime for a resolved run plan and return its RuntimeHandle JSON.
+#[pyfunction]
+fn start_runtime(py: Python<'_>, plan_json: String) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = py
+        .detach(|| fabric_core::start_runtime(&plan))
+        .map_err(to_py_error)?;
+    to_json(&runtime)
+}
+
+/// Invoke a previously started runtime and return RunResult JSON.
+#[pyfunction]
+fn invoke_runtime(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    request_json: String,
+) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let request = parse_run_request(request_json)?;
+    let result = py
+        .detach(|| fabric_core::invoke_runtime(&plan, &runtime, request))
+        .map_err(to_py_error)?;
+    to_json(&result)
+}
+
+/// Stop a previously started runtime and return FabricEvent list JSON.
+#[pyfunction]
+fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let events = py
+        .detach(|| fabric_core::stop_runtime(&plan, &runtime))
+        .map_err(to_py_error)?;
+    to_json(&events)
+}
+
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
@@ -169,6 +207,9 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
+    m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
+    m.add_function(wrap_pyfunction!(invoke_runtime, m)?)?;
+    m.add_function(wrap_pyfunction!(stop_runtime, m)?)?;
     Ok(())
 }
 
@@ -218,5 +259,13 @@ fn parse_profiles(contents: Option<String>) -> PyResult<Vec<ProfileConfig>> {
 }
 
 fn parse_run_request(contents: String) -> PyResult<RunRequest> {
+    serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
+fn parse_run_plan(contents: String) -> PyResult<RunPlan> {
+    serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
+fn parse_runtime_handle(contents: String) -> PyResult<RuntimeHandle> {
     serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
 }

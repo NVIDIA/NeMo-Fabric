@@ -9,12 +9,11 @@ This adapter runs Hermes through its Python SDK. It is the preferred Hermes path
 for Python consumers such as NeMo Platform, Gym-style agent servers, and direct
 Fabric SDK use.
 
-The adapter exposes two entrypoints:
-
-- `runner.module` + `runner.callable` in `fabric-adapter.json` point to the
-  inline SDK entrypoint used by `FabricClient`.
-- `runner.script` points to a thin executable wrapper used by `fabric run` and
-  process-style fallback paths.
+The adapter descriptor records both callable and script metadata, but Fabric's
+current SDK and CLI paths invoke the adapter through the core runtime lifecycle
+and its `runner.script` wrapper. Keep the callable and script pointing at the
+same `run(payload: dict) -> dict` implementation so future in-process adapter
+execution remains equivalent.
 
 ## What It Maps
 
@@ -33,10 +32,8 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
 
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
 - `adapter_kind` is `python` because Fabric can invoke it through Python.
-- `runner.module` and `runner.callable` define the inline SDK entrypoint with
-  the shape `run(payload: dict) -> dict`.
-- `runner.script` is the process fallback and must remain a thin wrapper around
-  the same callable.
+- `runner.module`, `runner.callable`, and `runner.script` must remain thin
+  routes to the same `run(payload: dict) -> dict` implementation.
 - `requirements` powers `fabric doctor`; keep required env vars, binaries, or
   packages current.
 - `config.accepts` must match the Fabric sections this adapter maps into Hermes.

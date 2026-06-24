@@ -37,7 +37,7 @@ def main() -> None:
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Inline Fabric adapter entrypoint used by the Python SDK."""
+    """Fabric adapter entrypoint used by script and native SDK runtime calls."""
 
     return run_hermes_sdk(payload)
 
@@ -51,20 +51,28 @@ def resolve_hermes_toolsets(settings: dict[str, Any], config: dict[str, Any]) ->
     platform = settings.get("toolset_platform", "cli")
     return sorted(_get_platform_tools(config, platform))
 
-def resolve_history(payload: dict[str, Any]) -> Any:
-    """Conversation history for this turn.
 
-    A per-invocation request context wins over static harness settings, so the
-    SDK can drive multi-turn sessions by passing accumulated messages in
-    ``request.context.history`` without mutating the agent config.
-    """
+def runtime_session_id(payload: dict[str, Any]) -> str | None:
+    runtime_id = hermes_common.runtime_context(payload).get("runtime_id")
+    if runtime_id:
+        return str(runtime_id)
+    return None
 
-    context = hermes_common.request_payload(payload).get("context") or {}
-    # Check key presence so an explicit empty history ([]) clears the conversation
-    # rather than falling back to static harness settings.
-    if isinstance(context, dict) and "history" in context:
-        return context["history"]
-    return hermes_common.settings_payload(payload).get("history")
+
+def load_runtime_history(session_db: Any, session_id: str | None) -> list[dict[str, Any]] | None:
+    if not session_id:
+        return None
+
+    resolved_id = session_id
+    resolve_session = getattr(session_db, "resolve_resume_session_id", None)
+    if resolve_session is not None:
+        resolved_id = resolve_session(session_id) or session_id
+    if session_db.get_session(resolved_id) is None:
+        return None
+
+    messages = session_db.get_messages_as_conversation(resolved_id)
+    messages = [message for message in messages if message.get("role") != "session_meta"]
+    return messages or None
 
 
 def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
@@ -79,6 +87,7 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     os.environ["HERMES_HOME"] = str(hermes_home)
     os.environ.setdefault("HERMES_YOLO_MODE", "1")
     os.environ.setdefault("HERMES_ACCEPT_HOOKS", "1")
+    os.environ["HERMES_SESSION_SOURCE"] = "fabric"
     os.environ.setdefault("TERMINAL_ENV", settings.get("terminal_backend", "local"))
     os.environ.setdefault("TERMINAL_TIMEOUT", str(settings.get("terminal_timeout", 60)))
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
@@ -105,11 +114,15 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     with redirect_stdout(hermes_stdout):
         from hermes_cli.config import load_config
         from hermes_cli.plugins import discover_plugins, invoke_hook
+        from hermes_state import SessionDB
         from run_agent import AIAgent
 
         discover_plugins(force=True)
         loaded_hermes_config = load_config()
         enabled_toolsets = resolve_hermes_toolsets(settings, loaded_hermes_config)
+        session_id = runtime_session_id(payload)
+        session_db = SessionDB()
+        conversation_history = load_runtime_history(session_db, session_id)
         agent = None
         agent = AIAgent(**filter_supported_kwargs(
             AIAgent,
@@ -128,12 +141,15 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
             temperature=settings.get("temperature", model_config.get("temperature", 0.0)),
             reasoning_config=settings.get("reasoning_config", {"effort": "none"}),
             insert_reasoning=bool(settings.get("insert_reasoning", False)),
+            platform="fabric",
+            session_id=session_id,
+            session_db=session_db,
         ))
         try:
             conversation_kwargs = filter_supported_call_kwargs(
                 agent.run_conversation,
                 system_message=settings.get("system_prompt"),
-                conversation_history=resolve_history(payload),
+                conversation_history=conversation_history,
                 sync_honcho=False,
                 dont_review=True,
             )
