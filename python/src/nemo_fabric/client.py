@@ -684,9 +684,20 @@ def _run_request_payload(
         raise TypeError("request context must be a JSON object")
     return payload
 
+def _get_descriptor(plan: dict[str, Any]) -> dict[str, Any]:
+    return ((plan.get("adapter_descriptor") or {}).get("descriptor") or {})
+
+def _get_adapter_kind(plan: dict[str, Any]) -> str:
+    descriptor = _get_descriptor(plan)
+    try:
+        kind = descriptor["adapter_kind"]
+    except KeyError as exc:
+        raise ValueError("plan is missing adapter_kind in adapter_descriptor.descriptor") from exc
+
+    return kind
 
 def _inline_adapter_entrypoint(plan: dict[str, Any]) -> tuple[str, str] | None:
-    descriptor = ((plan.get("adapter_descriptor") or {}).get("descriptor") or {})
+    descriptor = _get_descriptor(plan)
     if descriptor.get("adapter_kind") != "python":
         return None
     runner = descriptor.get("runner") or {}

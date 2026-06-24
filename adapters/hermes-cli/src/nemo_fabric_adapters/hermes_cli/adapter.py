@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,8 @@ if COMMON_DIR not in sys.path:
 
 import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
 
+
+SESSION_ID_RE = re.compile(r"^session_id:\s*(?P<session_id>\w+)$", re.MULTILINE)
 
 def main() -> None:
     payload = load_payload()
@@ -42,6 +45,14 @@ def load_payload() -> dict[str, Any]:
             return json.loads(path.read_text(encoding="utf-8"))
     return json.load(sys.stdin)
 
+def _separate_session_id_from_stdout(stdout: str) -> tuple[str, str | None]:
+    """Extract a session_id from the stdout if present, and return the remaining stdout."""
+    match = SESSION_ID_RE.search(stdout)
+    if match:
+        session_id = match.group('session_id')
+        remaining_stdout = (stdout[:match.start()]+stdout[match.end():]).strip()
+        return remaining_stdout, session_id
+    return stdout, None
 
 def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, Any]) -> None:
     api_key_env = settings.get("api_key_env") or model_config.get("api_key_env")
@@ -55,12 +66,22 @@ def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, A
             ) from exc
 
 
+def get_runtime_mode(payload: dict[str, Any]) -> str:
+    runtime = hermes_common.fabric_config(payload).get("runtime") or {}
+    return runtime.get("mode", "oneshot")
+
+
 def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     settings = hermes_common.settings_payload(payload)
     request = hermes_common.request_payload(payload)
     config_root = Path(hermes_common.config_root(payload)).resolve()
     environment = hermes_common.environment_payload(payload)
     model_config = hermes_common.selected_model_config(payload)
+    runtime_mode = get_runtime_mode(payload)
+    use_session = runtime_mode == "session"
+    session_id = None
+    if use_session:
+        session_id = request.get("session_id")       
 
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
 
@@ -81,6 +102,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
 
     prompt = request_to_prompt(request)
     toolsets = hermes_common.normalize_list(settings.get("enabled_toolsets"))
+
     command = build_command(
         settings,
         config_root,
@@ -88,6 +110,8 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         model_name,
         prompt,
         toolsets=toolsets,
+        use_session=use_session,
+        session_id=session_id,
     )
     cwd = resolve_path(
         config_root,
@@ -105,11 +129,15 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     response = completed.stdout.strip()
+
+    if use_session and session_id is None:
+        response, session_id = _separate_session_id_from_stdout(response)
+
     output = {
         "harness": "hermes",
         "adapter": "cli",
         "base_url": hermes_common.get_base_url(settings, model_config),
-        "mode": "hermes_cli_oneshot",
+        "mode": f"hermes_cli_{runtime_mode}",
         "command": redact_command(command),
         "cwd": str(cwd),
         "enabled_toolsets": toolsets,
@@ -119,6 +147,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         "model": model_name,
         "returncode": completed.returncode,
         "response": response,
+        "session_id": session_id,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
         "failed": completed.returncode != 0,
@@ -146,7 +175,12 @@ def build_command(
     model_name: str | None,
     prompt: str,
     toolsets: list[str] | None = None,
+    use_session: bool = False,
+    session_id: str | None = None,
 ) -> list[str]:
+    # When use_session is True, on the first invocation, the session_id will be None, and the CLI will create a new
+    # session. After that the session_id will be provided, and the CLI will use the existing session.
+    assert use_session or session_id is None, "session_id should only be provided when use_session is True"
     command = resolve_command(
         config_root,
         settings.get("hermes_command") or settings.get("command", "hermes"),
@@ -154,7 +188,15 @@ def build_command(
     command_args = hermes_common.normalize_list(settings.get("hermes_args") or settings.get("command_args"))
     provider = settings.get("provider") or model_config.get("provider")
 
-    args = [command, *command_args, "-z", prompt]
+    args = [command, *command_args]
+    if use_session and session_id is None:
+        args.extend(["chat", "--quiet", "--query", prompt])
+    else:
+        args.extend(["-z", prompt])
+
+    if session_id is not None:
+        args.extend(["--resume", session_id])
+
     if model_name:
         args.extend(["--model", str(model_name)])
     if provider and settings.get("pass_provider_flag", True):
