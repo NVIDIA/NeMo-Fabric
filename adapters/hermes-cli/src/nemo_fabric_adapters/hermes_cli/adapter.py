@@ -71,13 +71,6 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     runtime_mode = get_runtime_mode(payload)
     use_session = runtime_mode == "session"
     fabric_runtime_id = hermes_common.runtime_session_id(payload)
-    if use_session:
-        if fabric_runtime_id is None:
-            raise RuntimeError(
-                "runtime.mode=session is set, but no session_id was provided in the payload. "
-                "Please provide a session_id to resume an existing session."
-            )
-        hermes_common.ensure_hermes_session(fabric_runtime_id, model_name, model_config)
 
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
 
@@ -93,6 +86,14 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         hermes_home,
         relay_enabled=relay_plugin_config is not None,
     )
+
+    if use_session:
+        if fabric_runtime_id is None:
+            raise RuntimeError(
+                "runtime.mode=session is set, but no runtime_id was provided in the payload. "
+                "Please provide a runtime_id to resume an existing session."
+            )
+        hermes_common.ensure_hermes_session(fabric_runtime_id, model_name, model_config, hermes_home)
 
     prompt = request_to_prompt(request)
     toolsets = hermes_common.normalize_list(settings.get("enabled_toolsets"))
