@@ -95,7 +95,7 @@ def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False)
         ),
         "agent": without_none(
             {
-                "max_turns": settings.get("max_turns"),
+                "max_turns": settings.get("max_iterations"),
                 "disabled_toolsets": settings.get("disabled_toolsets"),
             }
         ),
