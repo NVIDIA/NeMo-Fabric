@@ -325,3 +325,19 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
             for path in sorted(directory.glob(pattern)):
                 artifacts.append({"kind": section_name, "path": str(path)})
     return artifacts
+
+
+def resolve_history(payload: dict[str, Any]) -> Any:
+    """Conversation history for this turn.
+
+    A per-invocation request context wins over static harness settings, so the
+    SDK can drive multi-turn sessions by passing accumulated messages in
+    ``request.context.history`` without mutating the agent config.
+    """
+
+    context = request_payload(payload).get("context") or {}
+    # Check key presence so an explicit empty history ([]) clears the conversation
+    # rather than falling back to static harness settings.
+    if isinstance(context, dict) and "history" in context:
+        return context["history"]
+    return settings_payload(payload).get("history")
