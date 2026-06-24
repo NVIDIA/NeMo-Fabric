@@ -16,6 +16,7 @@ harness:
     max_iterations: 1
     terminal_timeout: 60
     enabled_toolsets: []
+    system_prompt: You are a concise smoke test assistant.
 
 runtime:
   mode: session
