@@ -111,13 +111,20 @@ async def smoke(client: FabricClient) -> None:
         temp_agent = Path(tmpdir) / "hermes-shim-agent"
         copytree(fixture_agent, temp_agent)
         result = await client.run(temp_agent, profile="env_local", input_text="hello native")
+        async with await client.start(temp_agent, profile="env_local") as session:
+            first = await session.invoke("hello session one")
+            second = await session.invoke("hello session two")
 
     assert result["status"] == "succeeded"
     assert result["adapter_kind"] == "python"
-    assert result["metadata"]["adapter_runner"] == "python_inline"
+    assert result["metadata"]["adapter_runner"] == "python"
     assert result["output"]["received"] == "hello native"
     assert result["output"]["native_mcp_servers"] == ["github"]
-    assert not any(artifact["name"] == "stdout" for artifact in result["artifacts"]["artifacts"])
+    assert any(artifact["name"] == "stdout" for artifact in result["artifacts"]["artifacts"])
+    assert first["status"] == "succeeded"
+    assert second["status"] == "succeeded"
+    assert first["runtime_id"] == second["runtime_id"]
+    assert session.runtime["runtime_id"] == first["runtime_id"]
 
 
 if __name__ == "__main__":

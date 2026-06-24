@@ -7,7 +7,6 @@ from nemo_fabric.client import (
     FabricCliError,
     FabricClient,
     FabricNativeUnavailableError,
-    FabricSessionUnsupportedError,
     Session,
     SessionStatus,
 )
@@ -16,7 +15,6 @@ __all__ = [
     "FabricCliError",
     "FabricClient",
     "FabricNativeUnavailableError",
-    "FabricSessionUnsupportedError",
     "Session",
     "SessionStatus",
 ]

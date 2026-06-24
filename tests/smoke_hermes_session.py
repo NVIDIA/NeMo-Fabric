@@ -4,12 +4,13 @@
 """Opt-in integration smoke for the SDK multi-turn Session path (real Hermes).
 
 Drives ``FabricClient.start -> invoke -> invoke -> stop`` against the Hermes SDK
-adapter and asserts the session carries conversation memory across turns
-(stateless multi-turn via history replay).
+adapter and asserts the session carries conversation memory across turns through
+the same Fabric runtime handle.
 
 Unlike ``smoke_hermes_sdk.py`` (which shells out to the CLI), the session path is
-SDK-only and runs the inline adapter in-process, so this must be executed by an
-interpreter that has BOTH the nemo_fabric native extension and Hermes importable:
+SDK-only and runs through the native Fabric runtime lifecycle, so this must be
+executed by an interpreter that has BOTH the nemo_fabric native extension and
+Hermes importable:
 
     RUN_FABRIC_HERMES_INTEGRATION=1 NVIDIA_API_KEY=... \\
         <hermes-venv>/bin/python tests/smoke_hermes_session.py
@@ -62,7 +63,8 @@ async def _run() -> None:
 
         r2 = await session.invoke("What is my name? Reply with just the name.")
         assert r2["status"] == "succeeded", r2
-        # Transcript must grow (history accumulated across turns).
+        assert r2["runtime_id"] == r1["runtime_id"], (r1, r2)
+        # Hermes should return a transcript that includes the prior turn.
         assert len(session.messages) > len(after_turn1), session.messages
         # And the model must recall the name supplied in turn 1.
         response = (r2["output"].get("response") or "").lower()

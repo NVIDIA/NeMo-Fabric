@@ -1,31 +1,30 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Regression: the inline-path environment handle absolutizes the workspace.
-
-A relative workspace (config-root-relative) must be resolved to an absolute path
-so an adapter does not re-join it onto the absolute config_root and double it
-(e.g. examples/agent/examples/agent/...). Dependency-free; no native extension.
-"""
+"""Regression: started runtime handles absolutize the workspace path."""
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from nemo_fabric.client import _environment_handle
+from nemo_fabric import FabricClient
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
-def main() -> None:
-    plan = {
-        "environment_plan": {"workspace": "examples/code-review-agent/repos/my-service"},
-        "config": {"runtime": {}},
-        "agent_root": "examples/code-review-agent",
-    }
-    workspace = _environment_handle(plan)["workspace"]
+async def main() -> None:
+    async with FabricClient() as client:
+        session = await client.start(ROOT / "examples" / "code-review-agent", profile="env_local")
+        try:
+            workspace = session.runtime["environment"]["workspace"]
+        finally:
+            await session.stop()
+
     assert os.path.isabs(workspace), f"workspace not absolute: {workspace}"
     assert (
         "code-review-agent/examples/code-review-agent" not in workspace
@@ -35,4 +34,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

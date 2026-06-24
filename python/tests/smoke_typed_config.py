@@ -8,7 +8,7 @@ resolve, diagnose, and run it without an on-disk agent package:
 
 * ``plan_config`` / ``doctor_config`` resolve a maintained (repository) adapter
   with ``base_dir=None`` -- zero filesystem layout, no ``agent.yaml``.
-* ``run_config`` drives a real inline run using only a local adapter directory
+* ``run_config`` drives a real core runtime run using only a local adapter directory
   (still no agent package).
 * the ``*_config`` methods are native-only; the CLI fallback raises a clear,
   documented error rather than silently degrading.
@@ -27,7 +27,7 @@ from shutil import copytree
 from nemo_fabric import FabricClient, FabricNativeUnavailableError
 
 ROOT = Path(__file__).resolve().parents[2]
-# The inline test adapter (needs only python3, no secrets), shipped as a fixture.
+# The test adapter (needs only python3, no secrets), shipped as a fixture.
 SHIM_ADAPTERS = ROOT / "tests" / "fixtures" / "hermes-shim-agent" / "adapters"
 
 
@@ -61,7 +61,7 @@ def _repository_adapter_config() -> dict:
 
 
 def _shim_adapter_config() -> dict:
-    """Config referencing the inline test adapter (runs without secrets)."""
+    """Config referencing the test adapter (runs without secrets)."""
 
     config = _repository_adapter_config()
     config["metadata"] = {"name": "typed-only-run"}
@@ -103,7 +103,7 @@ async def resolves_and_diagnoses_without_a_directory(client: FabricClient) -> No
 
 
 async def runs_without_an_agent_package(client: FabricClient) -> None:
-    """run_config drives an inline run with only an adapter dir (no agent.yaml)."""
+    """run_config drives a core run with only an adapter dir (no agent.yaml)."""
 
     config = _shim_adapter_config()
     with tempfile.TemporaryDirectory(prefix="typed-run-") as tmpdir:
@@ -111,12 +111,13 @@ async def runs_without_an_agent_package(client: FabricClient) -> None:
         # Only the adapter lives here -- this is deliberately NOT an agent
         # package (no agent.yaml / profiles / repos / skills).
         copytree(SHIM_ADAPTERS, base / "adapters")
+        (base / "ws").mkdir()
         assert not (base / "agent.yaml").exists()
         result = await client.run_config(config, base_dir=base, input_text="hello typed")
 
     assert result["status"] == "succeeded", result.get("status")
     assert result["adapter_kind"] == "python"
-    assert result["metadata"]["adapter_runner"] == "python_inline"
+    assert result["metadata"]["adapter_runner"] == "python"
     assert result["output"]["received"] == "hello typed"
 
 
