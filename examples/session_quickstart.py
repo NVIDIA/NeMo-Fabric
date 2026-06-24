@@ -20,14 +20,15 @@ Hermes, no API key), run the unit smoke instead:
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 
 from nemo_fabric import FabricClient
 
 
-async def main() -> None:
+async def main(session_name: str) -> None:
     async with await FabricClient().start(
-        "examples/code-review-agent", profile="hermes_session"
+        "examples/code-review-agent", profile=session_name
     ) as session:
         print(f"session {session.id} [{session.status.value}]")
 
@@ -46,5 +47,16 @@ async def main() -> None:
     print(f"\nsession [{session.status.value}] after context exit")
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the Fabric session quickstart.")
+    parser.add_argument(
+        "--session-name",
+        default="hermes_session",
+        help="Fabric profile/session name to start.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    args = parse_args()
+    asyncio.run(main(args.session_name))
