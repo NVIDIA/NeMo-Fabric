@@ -123,9 +123,11 @@ async def stream_and_lifecycle() -> None:
 
 
 async def cancel_when_idle_marks_cancelled() -> None:
-    session = _session(FakeNative())
+    native = FakeNative()
+    session = _session(native)
     await session.cancel()
     assert session.status is SessionStatus.CANCELLED
+    assert native.stopped == 1
     try:
         await session.invoke("after cancel")
     except RuntimeError:

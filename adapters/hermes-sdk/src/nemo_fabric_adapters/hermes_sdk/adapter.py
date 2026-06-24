@@ -62,13 +62,13 @@ def runtime_session_id(payload: dict[str, Any]) -> str | None:
 def load_runtime_history(session_db: Any, session_id: str | None) -> list[dict[str, Any]] | None:
     if not session_id:
         return None
-    if session_db.get_session(session_id) is None:
-        return None
 
     resolved_id = session_id
     resolve_session = getattr(session_db, "resolve_resume_session_id", None)
     if resolve_session is not None:
         resolved_id = resolve_session(session_id) or session_id
+    if session_db.get_session(resolved_id) is None:
+        return None
 
     messages = session_db.get_messages_as_conversation(resolved_id)
     messages = [message for message in messages if message.get("role") != "session_meta"]

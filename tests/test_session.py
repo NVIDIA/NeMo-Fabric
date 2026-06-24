@@ -53,13 +53,18 @@ def _runtime() -> dict[str, Any]:
 
 class FakeNative:
     def __init__(self) -> None:
+        self.plans: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
         self.stopped = 0
         self.block_invoke = False
         self.fail_invoke = False
+        self.fail_stop = False
 
     def plan(self, path: str, profile: Any = None) -> str:
+        self.plans.append({"path": path, "profile": profile})
         assert path == "agent"
+        if profile is not None:
+            assert profile == "hermes_sdk"
         return json.dumps(_plan())
 
     def plan_config(
@@ -120,6 +125,8 @@ class FakeNative:
         assert json.loads(plan_json)["agent_name"] == "demo"
         assert json.loads(runtime_json)["runtime_id"] == "runtime-1"
         self.stopped += 1
+        if self.fail_stop:
+            raise RuntimeError("stop failed")
         return json.dumps([])
 
 
@@ -129,7 +136,7 @@ class NativeClient(FabricClient):
         self.native = native
 
     def plan(self, path, *, profile=None):  # type: ignore[no-untyped-def,override]
-        return _plan()
+        return json.loads(self.native.plan(str(path), profile))
 
     def _native_module(self) -> FakeNative:
         return self.native
@@ -151,6 +158,7 @@ async def test_start_creates_session_from_core_runtime_handle() -> None:
     native = FakeNative()
     session = await NativeClient(native).start("agent", profile="hermes_sdk")
 
+    assert native.plans == [{"path": "agent", "profile": "hermes_sdk"}]
     assert session.status is SessionStatus.ACTIVE
     assert session.runtime_id == "runtime-1"
     assert session.runtime["runtime_id"] == "runtime-1"
@@ -212,6 +220,30 @@ async def test_stop_is_idempotent_and_blocks_invoke() -> None:
         await session.invoke("too late")
 
 
+async def test_stop_rejects_in_flight_turn(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _blocking(func):  # type: ignore[no-untyped-def]
+        started.set()
+        await release.wait()
+        return func()
+
+    monkeypatch.setattr(client_mod, "_call_blocking", _blocking)
+    native = FakeNative()
+    session = _session(native)
+    first = asyncio.create_task(session.invoke("turn one"))
+    await started.wait()
+
+    with pytest.raises(RuntimeError, match="turn is in flight"):
+        await session.stop()
+    assert session.status is SessionStatus.ACTIVE
+    assert native.stopped == 0
+
+    release.set()
+    await first
+
+
 async def test_context_manager_auto_stops() -> None:
     native = FakeNative()
     async with _session(native) as session:
@@ -232,6 +264,24 @@ async def test_cancel_when_idle_marks_cancelled() -> None:
     assert native.stopped == 1
     with pytest.raises(RuntimeError):
         await session.invoke("after cancel")
+
+
+async def test_cancel_stop_failure_keeps_session_retryable() -> None:
+    native = FakeNative()
+    native.fail_stop = True
+    session = _session(native)
+
+    with pytest.raises(RuntimeError, match="stop failed"):
+        await session.cancel()
+
+    assert session.status is SessionStatus.ACTIVE
+    assert native.stopped == 1
+
+    native.fail_stop = False
+    await session.cancel()
+
+    assert session.status is SessionStatus.CANCELLED
+    assert native.stopped == 2
 
 
 async def test_cancel_aborts_in_flight_turn() -> None:
@@ -297,6 +347,32 @@ async def test_invoke_without_output_messages_keeps_transcript() -> None:
     assert len(session.invocations) == 1
 
 
+async def test_empty_output_messages_replaces_existing_transcript() -> None:
+    class EmptyMessageNative(FakeNative):
+        def invoke_runtime(self, plan_json, runtime_json, request_json):  # type: ignore[no-untyped-def]
+            if not self.requests:
+                return super().invoke_runtime(plan_json, runtime_json, request_json)
+            request = json.loads(request_json)
+            self.requests.append(request)
+            return json.dumps(
+                {
+                    "status": "succeeded",
+                    "runtime_id": "runtime-1",
+                    "invocation_id": f"invocation-{len(self.requests)}",
+                    "request_id": request["request_id"],
+                    "output": {"messages": []},
+                }
+            )
+
+    native = EmptyMessageNative()
+    session = _session(native)
+    await session.invoke("hi")
+    assert session.messages
+
+    await session.invoke("reset")
+    assert session.messages == []
+
+
 async def test_concurrent_invokes_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     started = asyncio.Event()
     release = asyncio.Event()
@@ -345,6 +421,27 @@ async def test_run_stops_runtime_when_invoke_raises() -> None:
     assert native.stopped == 1
 
 
+async def test_run_preserves_invoke_error_when_stop_also_raises() -> None:
+    native = FakeNative()
+    native.fail_invoke = True
+    native.fail_stop = True
+
+    with pytest.raises(RuntimeError, match="invoke failed"):
+        await NativeClient(native).run("agent", input_text="hello")
+
+    assert native.stopped == 1
+
+
+async def test_run_surfaces_stop_error_after_successful_invoke() -> None:
+    native = FakeNative()
+    native.fail_stop = True
+
+    with pytest.raises(RuntimeError, match="stop failed"):
+        await NativeClient(native).run("agent", input_text="hello")
+
+    assert native.stopped == 1
+
+
 async def test_run_config_collapses_through_core_runtime_lifecycle() -> None:
     native = FakeNative()
     config = {"schema_version": "fabric.agent/v1alpha1", "metadata": {"name": "demo"}}
@@ -355,3 +452,16 @@ async def test_run_config_collapses_through_core_runtime_lifecycle() -> None:
     assert result["runtime_id"] == "runtime-1"
     assert native.requests[0]["input"] == "hello typed"
     assert native.stopped == 1
+
+
+async def test_start_config_creates_session_from_core_runtime_handle() -> None:
+    native = FakeNative()
+    config = {"schema_version": "fabric.agent/v1alpha1", "metadata": {"name": "demo"}}
+
+    session = await NativeClient(native).start_config(config)
+    result = await session.invoke("hello typed session")
+
+    assert session.status is SessionStatus.ACTIVE
+    assert session.runtime_id == "runtime-1"
+    assert result["runtime_id"] == "runtime-1"
+    assert native.requests[0]["input"] == "hello typed session"

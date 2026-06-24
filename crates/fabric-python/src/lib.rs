@@ -160,15 +160,18 @@ fn run_config(
 
 /// Start a runtime for a resolved run plan and return its RuntimeHandle JSON.
 #[pyfunction]
-fn start_runtime(plan_json: String) -> PyResult<String> {
+fn start_runtime(py: Python<'_>, plan_json: String) -> PyResult<String> {
     let plan = parse_run_plan(plan_json)?;
-    let runtime = fabric_core::start_runtime(&plan).map_err(to_py_error)?;
+    let runtime = py
+        .detach(|| fabric_core::start_runtime(&plan))
+        .map_err(to_py_error)?;
     to_json(&runtime)
 }
 
 /// Invoke a previously started runtime and return RunResult JSON.
 #[pyfunction]
 fn invoke_runtime(
+    py: Python<'_>,
     plan_json: String,
     runtime_json: String,
     request_json: String,
@@ -176,16 +179,20 @@ fn invoke_runtime(
     let plan = parse_run_plan(plan_json)?;
     let runtime = parse_runtime_handle(runtime_json)?;
     let request = parse_run_request(request_json)?;
-    let result = fabric_core::invoke_runtime(&plan, &runtime, request).map_err(to_py_error)?;
+    let result = py
+        .detach(|| fabric_core::invoke_runtime(&plan, &runtime, request))
+        .map_err(to_py_error)?;
     to_json(&result)
 }
 
 /// Stop a previously started runtime and return FabricEvent list JSON.
 #[pyfunction]
-fn stop_runtime(plan_json: String, runtime_json: String) -> PyResult<String> {
+fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyResult<String> {
     let plan = parse_run_plan(plan_json)?;
     let runtime = parse_runtime_handle(runtime_json)?;
-    let events = fabric_core::stop_runtime(&plan, &runtime).map_err(to_py_error)?;
+    let events = py
+        .detach(|| fabric_core::stop_runtime(&plan, &runtime))
+        .map_err(to_py_error)?;
     to_json(&events)
 }
 

@@ -27,12 +27,14 @@ def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
 
     class FakeSessionDB:
         def get_session(self, session_id: str) -> dict[str, str] | None:
-            captured["db_get_session"] = session_id
-            return {"id": session_id}
+            captured.setdefault("db_get_session", []).append(session_id)
+            if session_id == "runtime-resolved-456":
+                return {"id": session_id}
+            return None
 
         def resolve_resume_session_id(self, session_id: str) -> str:
             captured["db_resolve_session"] = session_id
-            return session_id
+            return "runtime-resolved-456"
 
         def get_messages_as_conversation(self, session_id: str) -> list[dict[str, str]]:
             captured["db_get_messages"] = session_id
@@ -146,9 +148,9 @@ def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
 
     output = adapter.run_hermes_sdk(payload)
 
-    assert captured["db_get_session"] == "runtime-fabric-123"
     assert captured["db_resolve_session"] == "runtime-fabric-123"
-    assert captured["db_get_messages"] == "runtime-fabric-123"
+    assert captured["db_get_session"] == ["runtime-resolved-456"]
+    assert captured["db_get_messages"] == "runtime-resolved-456"
     assert captured["init"]["session_id"] == "runtime-fabric-123"
     assert isinstance(captured["init"]["session_db"], FakeSessionDB)
     assert captured["init"]["platform"] == "fabric"

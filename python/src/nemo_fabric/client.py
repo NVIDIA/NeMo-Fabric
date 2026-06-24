@@ -522,15 +522,16 @@ class Session:
         task = self._current_task
         if task is not None and not task.done() and task is not asyncio.current_task():
             task.cancel()
-        try:
-            await self._stop_runtime()
-        finally:
-            self._status = SessionStatus.CANCELLED
+        await self._stop_runtime()
+        self._status = SessionStatus.CANCELLED
 
     async def stop(self) -> None:
         """Finalize the session. Idempotent."""
 
         if self._status is SessionStatus.ACTIVE:
+            task = self._current_task
+            if task is not None and not task.done() and task is not asyncio.current_task():
+                raise RuntimeError("cannot stop while a turn is in flight; use cancel()")
             await self._stop_runtime()
             self._status = SessionStatus.STOPPED
 
@@ -558,7 +559,7 @@ class Session:
         if not isinstance(output, dict):
             return
         messages = output.get("messages")
-        if isinstance(messages, list) and messages:
+        if isinstance(messages, list):
             self._messages = deepcopy(messages)
 
     async def __aenter__(self) -> "Session":
@@ -656,13 +657,24 @@ async def _run_native_lifecycle(
         runtime = json.loads(native.start_runtime(plan_json))
         runtime_json = json.dumps(runtime)
         result: dict[str, Any] | None = None
+        invoke_error: Exception | None = None
         try:
-            result = json.loads(
-                native.invoke_runtime(plan_json, runtime_json, json.dumps(request))
-            )
+            try:
+                result = json.loads(
+                    native.invoke_runtime(plan_json, runtime_json, json.dumps(request))
+                )
+            except Exception as error:
+                invoke_error = error
+                raise
             return result
         finally:
-            stop_events = json.loads(native.stop_runtime(plan_json, runtime_json))
+            try:
+                stop_events = json.loads(native.stop_runtime(plan_json, runtime_json))
+            except Exception:
+                if invoke_error is not None:
+                    stop_events = []
+                else:
+                    raise
             if isinstance(result, dict) and isinstance(stop_events, list):
                 result.setdefault("events", []).extend(stop_events)
 
