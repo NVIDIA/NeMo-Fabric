@@ -102,7 +102,7 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
             api_key=api_key,
             provider=settings.get("provider") or model_config.get("provider"),
             model=settings.get("model_name") or model_config.get("model", ""),
-            max_iterations=int(settings.get("max_turns", 1)),
+            max_iterations=int(settings.get("max_iterations", 1)),
             enabled_toolsets=enabled_toolsets,
             disabled_toolsets=settings.get("disabled_toolsets"),
             quiet_mode=True,
@@ -118,7 +118,7 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
             conversation_kwargs = filter_supported_call_kwargs(
                 agent.run_conversation,
                 system_message=settings.get("system_prompt"),
-                conversation_history=settings.get("history"),
+                conversation_history=resolve_history(payload),
                 sync_honcho=False,
                 dont_review=True,
             )

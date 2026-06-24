@@ -21,9 +21,11 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
@@ -46,6 +48,10 @@ class FabricCliError(RuntimeError):
 
 class FabricNativeUnavailableError(RuntimeError):
     """Raised when a typed-config SDK method needs the native extension."""
+
+
+class FabricSessionUnsupportedError(RuntimeError):
+    """Raised when start()/start_config() resolve a non-session-capable adapter."""
 
 
 @dataclass(frozen=True)
@@ -241,6 +247,70 @@ class FabricClient:
             )
         )
 
+    async def start(
+        self,
+        path: str | Path,
+        *,
+        profile: str | Sequence[str] | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> "Session":
+        """Open a multi-turn session over a session-capable agent/profile.
+
+        Args:
+            path: Agent package directory or config file to resolve.
+            profile: Profile name, or several applied in order, layered onto the
+                base config.
+            overrides: Config overrides applied to every turn in the session; a
+                turn's own ``overrides`` merge over these.
+
+        Returns:
+            An active :class:`Session` bound to the resolved plan.
+
+        Raises:
+            FabricNativeUnavailableError: The native extension is unavailable
+                (sessions are not supported over the CLI fallback).
+            FabricSessionUnsupportedError: The resolved adapter is not
+                session-capable (no inline Python entrypoint).
+        """
+
+        self._require_native_module("start")
+        plan = self.plan(path, profile=profile)
+        return _make_session(self, plan, overrides)
+
+    async def start_config(
+        self,
+        config: Mapping[str, Any] | Any,
+        *,
+        profile_configs: Sequence[Mapping[str, Any] | Any] | None = None,
+        base_dir: str | Path | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> "Session":
+        """Open a multi-turn session over an in-memory typed config.
+
+        Args:
+            config: Typed Fabric config as a mapping or a Pydantic-like object
+                (``model_dump()``/``dict()``); no agent directory required.
+            profile_configs: Profile configs layered onto the base config, in order.
+            base_dir: Resolution root for relative paths and package-local
+                adapters. ``None`` resolves against the process working directory.
+            overrides: Config overrides applied to every turn; a turn's own
+                ``overrides`` merge over these.
+
+        Returns:
+            An active :class:`Session` bound to the resolved plan.
+
+        Raises:
+            FabricNativeUnavailableError: The native extension is unavailable.
+            FabricSessionUnsupportedError: The resolved adapter is not
+                session-capable.
+        """
+
+        self._require_native_module("start_config")
+        plan = self.plan_config(
+            config, profile_configs=profile_configs, base_dir=base_dir
+        )
+        return _make_session(self, plan, overrides)
+
     def _command(self) -> tuple[str, ...]:
         if self.command is not None:
             return self.command
@@ -304,6 +374,248 @@ class FabricClient:
                 "the CLI fallback only supports file-based agent configs"
             )
         return native
+
+
+class SessionStatus(str, Enum):
+    """Lifecycle state of a :class:`Session`."""
+
+    ACTIVE = "active"
+    STOPPED = "stopped"
+    CANCELLED = "cancelled"
+
+
+class Session:
+    """A multi-turn session over a session-capable Fabric adapter.
+
+    Created by :meth:`FabricClient.start` / :meth:`FabricClient.start_config`.
+    Each :meth:`invoke` runs one turn through the resolved plan, replaying the
+    accumulated transcript as conversation history so the harness sees prior
+    turns. The session is stateless on the Fabric side: the running transcript
+    lives in Python and is threaded back in via ``request.context.history``. A
+    persistent, harness-stateful session is a later phase.
+    """
+
+    def __init__(
+        self,
+        *,
+        client: "FabricClient",
+        plan: dict[str, Any],
+        entrypoint: tuple[str, str],
+        overrides: dict[str, Any] | None = None,
+    ) -> None:
+        self._client = client
+        self._plan = plan
+        self._entrypoint = entrypoint
+        self._overrides = overrides
+        self._messages: list[Any] = []
+        self._invocations: list[dict[str, Any]] = []
+        self._status = SessionStatus.ACTIVE
+        self._current_task: asyncio.Task[Any] | None = None
+        self.id = _new_id("session")
+
+    @property
+    def status(self) -> SessionStatus:
+        return self._status
+
+    @property
+    def messages(self) -> list[Any]:
+        """Read-only deep copy of the accumulated transcript."""
+
+        return deepcopy(self._messages)
+
+    @property
+    def invocations(self) -> list[dict[str, Any]]:
+        """Per-turn ``{request_id, runtime_id, invocation_id}`` for correlating the
+        session to its runtimes, telemetry, and artifacts.
+
+        A Fabric session may span multiple runtimes -- one per turn -- where the
+        harness exposes no resumable runtime (e.g. Hermes), so identity is tracked
+        per invocation rather than via a single stable ``runtime_id``.
+        """
+
+        return list(self._invocations)
+
+    @property
+    def info(self) -> dict[str, Any]:
+        """Summary handle: ``session_id``, ``agent_name``, ``profile``,
+        ``harness_type``, and ``adapter_kind``."""
+
+        return {
+            "session_id": self.id,
+            "agent_name": self._plan.get("agent_name"),
+            "profile": self._plan.get("profile"),
+            "harness_type": _harness_type(self._plan),
+            "adapter_kind": _adapter_kind(self._plan),
+        }
+
+    async def invoke(
+        self,
+        input_text: str | None = None,
+        *,
+        request: dict[str, Any] | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Run one turn, replaying the accumulated transcript as history.
+
+        Args:
+            input_text: Text input for the turn. Ignored when ``request`` is given.
+            request: A full ``RunRequest`` mapping for the turn, as an alternative
+                to ``input_text``.
+            overrides: Per-turn config overrides, merged over the session-level
+                overrides passed to :meth:`FabricClient.start`.
+
+        Returns:
+            The turn's normalized ``RunResult`` mapping. The transcript
+            (:attr:`messages`) and :attr:`invocations` advance as a side effect.
+
+        Raises:
+            RuntimeError: The session is not active (already stopped or cancelled).
+        """
+
+        if self._status is not SessionStatus.ACTIVE:
+            raise RuntimeError(f"cannot invoke a {self._status.value} session")
+        if self._current_task is not None:
+            raise RuntimeError(
+                "session is already running a turn; turns are ordered (one at a time)"
+            )
+        # Claim the turn before any await so concurrent invoke()/stream() calls
+        # cannot both replay the transcript and race _absorb().
+        self._current_task = asyncio.current_task()
+        try:
+            request_payload = _run_request_payload(
+                input_text=input_text or "",
+                input_file=None,
+                request=request,
+                request_file=None,
+            )
+            # The session transcript is authoritative: thread it (a deep copy, so
+            # the adapter cannot mutate our state) and override any history a caller
+            # passed via ``request``.
+            request_payload["context"]["history"] = deepcopy(self._messages)
+            # Merge overrides as session < request < per-turn; request-level
+            # overrides must not bypass the documented session/turn merge.
+            merged_overrides = _merge_overrides(self._overrides, request_payload.get("overrides"))
+            merged_overrides = _merge_overrides(merged_overrides, overrides)
+            if merged_overrides is not None:
+                request_payload["overrides"] = merged_overrides
+            result = await _run_inline_adapter(
+                self._plan, request_payload, self._entrypoint
+            )
+            self._absorb(result)
+            return result
+        finally:
+            self._current_task = None
+
+    async def stream(
+        self,
+        input_text: str | None = None,
+        *,
+        request: dict[str, Any] | None = None,
+        overrides: dict[str, Any] | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Run one turn and yield its events, then the final ``RunResult``.
+
+        Buffered: the turn runs to completion via :meth:`invoke`, then the
+        normalized ``events`` are yielded in order, followed by the terminal
+        ``RunResult`` (the last item). The async-iterator shape is
+        forward-compatible with live token streaming if a harness exposes one.
+
+        Args:
+            input_text: Text input for the turn. Ignored when ``request`` is given.
+            request: A full ``RunRequest`` mapping for the turn.
+            overrides: Per-turn config overrides, merged over the session-level
+                overrides.
+
+        Yields:
+            Each ``fabric-event`` mapping for the turn, in order, then the final
+            ``RunResult`` mapping as the terminal item.
+
+        Raises:
+            RuntimeError: The session is not active (already stopped or cancelled).
+        """
+
+        result = await self.invoke(input_text, request=request, overrides=overrides)
+        for event in result.get("events") or []:
+            yield event
+        yield result
+
+    async def cancel(self) -> None:
+        """Cancel the in-flight turn and close the session. Idempotent.
+
+        Cooperative: cancels the awaiting :meth:`invoke` / :meth:`stream`
+        coroutine and marks the session ``CANCELLED``. The inline adapter runs
+        in a worker thread that Python cannot hard-kill, so an already-dispatched
+        harness call may run to completion and its result is discarded; the
+        process-backed path can terminate the subprocess.
+        """
+
+        if self._status is not SessionStatus.ACTIVE:
+            return
+        self._status = SessionStatus.CANCELLED
+        task = self._current_task
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+
+    async def stop(self) -> None:
+        """Finalize the session. Idempotent."""
+
+        if self._status is SessionStatus.ACTIVE:
+            self._status = SessionStatus.STOPPED
+
+    def _absorb(self, result: Any) -> None:
+        """Record the turn's handles and advance the transcript from its ``RunResult``."""
+
+        if not isinstance(result, dict):
+            return
+        # Per-turn identity for correlation; runtime_id may differ each turn when
+        # the harness has no resumable runtime.
+        self._invocations.append(
+            {
+                "request_id": result.get("request_id"),
+                "runtime_id": result.get("runtime_id"),
+                "invocation_id": result.get("invocation_id"),
+            }
+        )
+        output = result.get("output")
+        if not isinstance(output, dict):
+            return
+        messages = output.get("messages")
+        if isinstance(messages, list) and messages:
+            self._messages = deepcopy(messages)
+        session_id = output.get("session_id")
+        if session_id:
+            self.id = str(session_id)
+
+    async def __aenter__(self) -> "Session":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        await self.stop()
+
+
+def _make_session(
+    client: "FabricClient",
+    plan: dict[str, Any],
+    overrides: dict[str, Any] | None,
+) -> "Session":
+    entrypoint = _inline_adapter_entrypoint(plan)
+    if entrypoint is None:
+        raise FabricSessionUnsupportedError(
+            "sessions require an inline Python adapter (adapter_kind='python'); "
+            f"resolved adapter_kind={_adapter_kind(plan)!r}"
+        )
+    return Session(client=client, plan=plan, entrypoint=entrypoint, overrides=overrides)
+
+
+def _merge_overrides(
+    base: dict[str, Any] | None, extra: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    merged: dict[str, Any] = {}
+    if isinstance(base, dict):
+        merged.update(base)
+    if isinstance(extra, dict):
+        merged.update(extra)
+    return merged or None
 
 
 def _profile_args(profile: str | Sequence[str] | None) -> list[str]:
