@@ -3,291 +3,355 @@
 
 """Unit tests for the SDK Session boundary: start / invoke / stream / cancel / stop.
 
-Dependency-free: the inline adapter is monkeypatched, so these exercise the
-Session orchestration (history replay, per-turn overrides, handle correlation,
-lifecycle, gating, errors) without the native extension or a real harness.
+Dependency-free: a fake native lifecycle module stands in for the Rust binding,
+so these exercise the Python orchestration without Hermes or a built extension.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
+import time
+from typing import Any
 
 import pytest
 
-from nemo_fabric import (
-    FabricClient,
-    FabricNativeUnavailableError,
-    FabricSessionUnsupportedError,
-    Session,
-    SessionStatus,
-)
+from nemo_fabric import FabricClient, FabricNativeUnavailableError, Session, SessionStatus
 from nemo_fabric import client as client_mod
 
 
-def _plan(adapter_kind: str = "python") -> dict:
+def _plan(adapter_kind: str = "python") -> dict[str, Any]:
     return {
         "agent_name": "demo",
         "profile": "hermes_sdk",
         "adapter_descriptor": {
-            "descriptor": {"adapter_kind": adapter_kind, "adapter_id": "test.fabric.shim"}
+            "descriptor": {
+                "adapter_kind": adapter_kind,
+                "adapter_id": "test.fabric.shim",
+                "runner": {"module": "fake.module", "callable": "run"},
+            }
         },
     }
 
 
-def _session(overrides: dict | None = None) -> Session:
+def _runtime() -> dict[str, Any]:
+    return {
+        "runtime_id": "runtime-1",
+        "agent_name": "demo",
+        "harness_type": "test.fabric.shim",
+        "mode": "session",
+        "adapter_kind": "python",
+        "adapter_id": "test.fabric.shim",
+        "environment": {
+            "environment_id": "environment-1",
+            "provider": "local",
+            "control_location": "external_control",
+            "ownership": "caller_owned",
+        },
+    }
+
+
+class FakeNative:
+    def __init__(self) -> None:
+        self.requests: list[dict[str, Any]] = []
+        self.stopped = 0
+        self.block_invoke = False
+        self.fail_invoke = False
+
+    def plan(self, path: str, profile: Any = None) -> str:
+        assert path == "agent"
+        return json.dumps(_plan())
+
+    def plan_config(
+        self,
+        config_json: str,
+        profiles_json: str | None = None,
+        base_dir: str | None = None,
+    ) -> str:
+        assert json.loads(config_json)["metadata"]["name"] == "demo"
+        return json.dumps(_plan())
+
+    def start_runtime(self, plan_json: str) -> str:
+        assert json.loads(plan_json)["agent_name"] == "demo"
+        return json.dumps(_runtime())
+
+    def invoke_runtime(
+        self, plan_json: str, runtime_json: str, request_json: str
+    ) -> str:
+        if self.block_invoke:
+            time.sleep(0.2)
+        if self.fail_invoke:
+            raise RuntimeError("invoke failed")
+        plan = json.loads(plan_json)
+        runtime = json.loads(runtime_json)
+        request = json.loads(request_json)
+        self.requests.append(request)
+        turn = len(self.requests)
+        return json.dumps(
+            {
+                "agent_name": plan["agent_name"],
+                "profile": plan.get("profile"),
+                "harness_type": "test.fabric.shim",
+                "adapter_kind": "python",
+                "adapter_id": "test.fabric.shim",
+                "runtime_id": runtime["runtime_id"],
+                "invocation_id": f"invocation-{turn}",
+                "request_id": request["request_id"],
+                "status": "succeeded",
+                "events": [
+                    {
+                        "event_id": f"evt-{turn}",
+                        "kind": "log",
+                        "message": f"turn {turn}",
+                    }
+                ],
+                "output": {
+                    "messages": [
+                        {"role": "user", "content": request.get("input")},
+                        {"role": "assistant", "content": f"reply-{turn}"},
+                    ],
+                    "response": f"reply-{turn}",
+                },
+                "artifacts": {"artifacts": []},
+            }
+        )
+
+    def stop_runtime(self, plan_json: str, runtime_json: str) -> str:
+        assert json.loads(plan_json)["agent_name"] == "demo"
+        assert json.loads(runtime_json)["runtime_id"] == "runtime-1"
+        self.stopped += 1
+        return json.dumps([])
+
+
+class NativeClient(FabricClient):
+    def __init__(self, native: FakeNative) -> None:
+        super().__init__()
+        self.native = native
+
+    def plan(self, path, *, profile=None):  # type: ignore[no-untyped-def,override]
+        return _plan()
+
+    def _native_module(self) -> FakeNative:
+        return self.native
+
+    def _require_native_module(self, method: str) -> FakeNative:
+        return self.native
+
+
+def _session(native: FakeNative | None = None, overrides: dict | None = None) -> Session:
     return Session(
-        client=FabricClient(),
+        client=NativeClient(native or FakeNative()),
         plan=_plan(),
-        entrypoint=("fake.module", "run"),
+        runtime=_runtime(),
         overrides=overrides,
     )
 
 
-@pytest.fixture(name="seen_history")
-def echo_adapter_fixture(monkeypatch: pytest.MonkeyPatch) -> list[list]:
-    """Patch _run_inline_adapter to echo history and emit per-turn handles.
+async def test_start_creates_session_from_core_runtime_handle() -> None:
+    native = FakeNative()
+    session = await NativeClient(native).start("agent", profile="hermes_sdk")
 
-    Returns the list of histories the adapter saw, one entry per turn.
-    """
-
-    seen: list[list] = []
-
-    async def _fake(plan, request, entrypoint):
-        history = (request.get("context") or {}).get("history") or []
-        seen.append(list(history))
-        turn = len(history) // 2 + 1
-        transcript = list(history) + [
-            {"role": "user", "content": request.get("input")},
-            {"role": "assistant", "content": f"reply-{turn}"},
-        ]
-        return {
-            "status": "succeeded",
-            "request_id": request.get("request_id"),
-            "runtime_id": f"runtime-{turn}",
-            "invocation_id": f"invocation-{turn}",
-            "events": [{"event_id": f"evt-{turn}", "kind": "log", "message": f"turn {turn}"}],
-            "output": {
-                "messages": transcript,
-                "response": f"reply-{turn}",
-                "session_id": "sess-1",
-            },
-        }
-
-    monkeypatch.setattr(client_mod, "_run_inline_adapter", _fake)
-    return seen
-
-
-async def test_new_session_is_active_and_empty(seen_history: list[list]) -> None:
-    session = _session()
     assert session.status is SessionStatus.ACTIVE
-    assert session.messages == []
-    assert session.invocations == []
+    assert session.runtime_id == "runtime-1"
+    assert session.runtime["runtime_id"] == "runtime-1"
+    assert session.info["runtime_id"] == "runtime-1"
+    assert "session_id" not in session.info
+    assert not hasattr(session, "id")
 
 
-async def test_invoke_threads_accumulated_history(seen_history: list[list]) -> None:
-    session = _session()
+async def test_invoke_uses_stable_runtime_and_does_not_replay_history() -> None:
+    native = FakeNative()
+    session = _session(native)
 
     await session.invoke("My name is Robin.")
-    assert seen_history[0] == []  # turn 1 sees no prior history
-    after_turn1 = session.messages
-    assert len(after_turn1) == 2
-
     await session.invoke("What's my name?")
-    assert seen_history[1] == after_turn1  # turn 2 sees turn 1's transcript
-    assert len(session.messages) == 4
+
+    assert [inv["runtime_id"] for inv in session.invocations] == [
+        "runtime-1",
+        "runtime-1",
+    ]
+    assert "history" not in native.requests[0]["context"]
+    assert "history" not in native.requests[1]["context"]
+    assert session.runtime_id == "runtime-1"
+    assert len(session.messages) == 2
 
 
-async def test_invoke_records_per_turn_handles(seen_history: list[list]) -> None:
-    session = _session()
-    await session.invoke("a")
-    await session.invoke("b")
+async def test_request_level_overrides_are_merged() -> None:
+    native = FakeNative()
+    session = _session(native, overrides={"a": "session"})
+    await session.invoke(
+        request={"input": "x", "overrides": {"b": "request"}},
+        overrides={"c": "turn"},
+    )
 
-    assert [inv["runtime_id"] for inv in session.invocations] == ["runtime-1", "runtime-2"]
-    assert session.invocations[0]["invocation_id"] == "invocation-1"
-    # A session may span multiple runtimes when the harness has no resumable one.
-    assert session.invocations[0]["runtime_id"] != session.invocations[1]["runtime_id"]
-
-
-async def test_invoke_adopts_session_id_from_output(seen_history: list[list]) -> None:
-    session = _session()
-    await session.invoke("hi")
-    assert session.id == "sess-1"
+    assert native.requests[0]["overrides"] == {
+        "a": "session",
+        "b": "request",
+        "c": "turn",
+    }
 
 
-async def test_invoke_merges_session_and_turn_overrides(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict = {}
-
-    async def _fake(plan, request, entrypoint):
-        captured["overrides"] = request.get("overrides")
-        return {"status": "succeeded", "output": {}}
-
-    monkeypatch.setattr(client_mod, "_run_inline_adapter", _fake)
-    session = _session(overrides={"model": "a"})
-    await session.invoke("x", overrides={"temperature": 0.0})
-
-    assert captured["overrides"] == {"model": "a", "temperature": 0.0}
-
-
-async def test_stream_yields_events_then_result(seen_history: list[list]) -> None:
+async def test_stream_yields_events_then_result() -> None:
     session = _session()
     items = [item async for item in session.stream("hi")]
 
-    assert items[-1]["status"] == "succeeded"  # RunResult is the terminal item
-    events = items[:-1]
-    assert events and all(event.get("kind") == "log" for event in events)
-    assert len(session.messages) == 2  # the streamed turn advanced the transcript
+    assert items[-1]["status"] == "succeeded"
+    assert items[:-1] and all(event.get("kind") == "log" for event in items[:-1])
 
 
-async def test_stop_is_idempotent_and_blocks_invoke(seen_history: list[list]) -> None:
-    session = _session()
+async def test_stop_is_idempotent_and_blocks_invoke() -> None:
+    native = FakeNative()
+    session = _session(native)
+
     await session.stop()
+    await session.stop()
+
     assert session.status is SessionStatus.STOPPED
-    await session.stop()  # idempotent
+    assert native.stopped == 1
     with pytest.raises(RuntimeError):
         await session.invoke("too late")
 
 
-async def test_context_manager_auto_stops(seen_history: list[list]) -> None:
-    async with _session() as session:
+async def test_context_manager_auto_stops() -> None:
+    native = FakeNative()
+    async with _session(native) as session:
         await session.invoke("hi")
         assert session.status is SessionStatus.ACTIVE
+
     assert session.status is SessionStatus.STOPPED
+    assert native.stopped == 1
 
 
-async def test_cancel_when_idle_marks_cancelled(seen_history: list[list]) -> None:
-    session = _session()
+async def test_cancel_when_idle_marks_cancelled() -> None:
+    native = FakeNative()
+    session = _session(native)
     await session.cancel()
+    await session.cancel()
+
     assert session.status is SessionStatus.CANCELLED
-    await session.cancel()  # idempotent
+    assert native.stopped == 1
     with pytest.raises(RuntimeError):
         await session.invoke("after cancel")
 
 
-async def test_cancel_aborts_in_flight_turn(monkeypatch: pytest.MonkeyPatch) -> None:
-    started = asyncio.Event()
-    release = asyncio.Event()
-
-    async def _blocking(plan, request, entrypoint):
-        started.set()
-        await release.wait()  # only cancellation unblocks this
-        return {"status": "succeeded", "output": {}}
-
-    monkeypatch.setattr(client_mod, "_run_inline_adapter", _blocking)
-    session = _session()
+async def test_cancel_aborts_in_flight_turn() -> None:
+    native = FakeNative()
+    native.block_invoke = True
+    session = _session(native)
     turn = asyncio.create_task(session.invoke("long running"))
-    await started.wait()
+    await asyncio.sleep(0)
 
     await session.cancel()
+
     assert session.status is SessionStatus.CANCELLED
+    assert native.stopped == 1
     with pytest.raises(asyncio.CancelledError):
         await turn
 
 
-async def test_info_summarizes_the_session(seen_history: list[list]) -> None:
+async def test_info_summarizes_the_session() -> None:
     session = _session()
     info = session.info
-    assert info["session_id"] == session.id
+
+    assert info["runtime_id"] == "runtime-1"
     assert info["agent_name"] == "demo"
     assert info["profile"] == "hermes_sdk"
     assert info["adapter_kind"] == "python"
     assert info["harness_type"] == "test.fabric.shim"
 
 
-async def test_messages_and_invocations_return_copies(seen_history: list[list]) -> None:
+async def test_messages_invocations_and_runtime_return_copies() -> None:
     session = _session()
     await session.invoke("hi")
 
-    snapshot = session.messages
-    snapshot.append({"role": "user", "content": "tampered"})
-    snapshot[0]["content"] = "mutated"  # deep mutation of a returned message object
+    messages = session.messages
+    messages[0]["content"] = "mutated"
     invocations = session.invocations
     invocations.clear()
+    runtime = session.runtime
+    runtime["runtime_id"] = "mutated"
 
-    # Mutating the returned lists or their items must not affect session state.
-    assert len(session.messages) == 2
-    assert session.messages[0]["content"] != "mutated"
+    assert session.messages[0]["content"] == "hi"
     assert len(session.invocations) == 1
+    assert session.runtime["runtime_id"] == "runtime-1"
 
 
-async def test_invoke_without_output_messages_keeps_transcript(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def _fake(plan, request, entrypoint):
-        return {"status": "succeeded", "runtime_id": "r1", "invocation_id": "i1", "output": {}}
+async def test_invoke_without_output_messages_keeps_transcript() -> None:
+    class NoMessageNative(FakeNative):
+        def invoke_runtime(self, plan_json, runtime_json, request_json):  # type: ignore[no-untyped-def]
+            self.requests.append(json.loads(request_json))
+            return json.dumps(
+                {
+                    "status": "succeeded",
+                    "runtime_id": "runtime-1",
+                    "invocation_id": "invocation-1",
+                    "request_id": self.requests[-1]["request_id"],
+                    "output": {},
+                }
+            )
 
-    monkeypatch.setattr(client_mod, "_run_inline_adapter", _fake)
-    session = _session()
+    session = _session(NoMessageNative())
     await session.invoke("hi")
 
-    assert session.messages == []  # no echoed messages -> transcript unchanged
-    assert len(session.invocations) == 1  # the turn is still recorded for correlation
-
-
-async def test_session_history_is_authoritative_over_request(
-    seen_history: list[list],
-) -> None:
-    session = _session()
-    await session.invoke("turn one")
-    transcript = session.messages
-
-    # A caller-supplied request carrying stale history must not override the
-    # session's accumulated transcript.
-    stale = {"input": "turn two", "context": {"history": [{"role": "user", "content": "stale"}]}}
-    await session.invoke(request=stale)
-
-    assert seen_history[1] == transcript
-
-
-async def test_request_level_overrides_are_merged(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict = {}
-
-    async def _fake(plan, request, entrypoint):
-        captured["overrides"] = request.get("overrides")
-        return {"status": "succeeded", "output": {}}
-
-    monkeypatch.setattr(client_mod, "_run_inline_adapter", _fake)
-    session = _session(overrides={"a": "session"})
-    await session.invoke(
-        request={"input": "x", "overrides": {"b": "request"}},
-        overrides={"c": "turn"},
-    )
-
-    # session < request < per-turn, all merged (none bypassed).
-    assert captured["overrides"] == {"a": "session", "b": "request", "c": "turn"}
+    assert session.messages == []
+    assert len(session.invocations) == 1
 
 
 async def test_concurrent_invokes_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def _blocking(plan, request, entrypoint):
+    async def _blocking(func):  # type: ignore[no-untyped-def]
         started.set()
         await release.wait()
-        return {"status": "succeeded", "output": {}}
+        return func()
 
-    monkeypatch.setattr(client_mod, "_run_inline_adapter", _blocking)
+    monkeypatch.setattr(client_mod, "_call_blocking", _blocking)
     session = _session()
     first = asyncio.create_task(session.invoke("turn one"))
-    await started.wait()  # first turn is in flight
+    await started.wait()
 
-    # A session is ordered/single-flight: a second concurrent turn is rejected.
     with pytest.raises(RuntimeError):
         await session.invoke("turn two")
 
     release.set()
-    await first  # the in-flight turn still completes cleanly
-
-
-async def test_make_session_rejects_non_session_adapter() -> None:
-    with pytest.raises(FabricSessionUnsupportedError):
-        client_mod._make_session(FabricClient(), _plan(adapter_kind="process"), None)
+    await first
 
 
 async def test_start_requires_native_extension() -> None:
-    # A CLI-pinned client has no native module, so the typed session path must
-    # fail loudly rather than silently degrade.
     client = FabricClient(command=("fabric",))
     with pytest.raises(FabricNativeUnavailableError):
         await client.start("any/agent")
+
+
+async def test_run_collapses_through_core_runtime_lifecycle() -> None:
+    native = FakeNative()
+
+    result = await NativeClient(native).run("agent", input_text="hello")
+
+    assert result["status"] == "succeeded"
+    assert result["runtime_id"] == "runtime-1"
+    assert native.requests[0]["input"] == "hello"
+    assert native.stopped == 1
+
+
+async def test_run_stops_runtime_when_invoke_raises() -> None:
+    native = FakeNative()
+    native.fail_invoke = True
+
+    with pytest.raises(RuntimeError, match="invoke failed"):
+        await NativeClient(native).run("agent", input_text="hello")
+
+    assert native.stopped == 1
+
+
+async def test_run_config_collapses_through_core_runtime_lifecycle() -> None:
+    native = FakeNative()
+    config = {"schema_version": "fabric.agent/v1alpha1", "metadata": {"name": "demo"}}
+
+    result = await NativeClient(native).run_config(config, input_text="hello typed")
+
+    assert result["status"] == "succeeded"
+    assert result["runtime_id"] == "runtime-1"
+    assert native.requests[0]["input"] == "hello typed"
+    assert native.stopped == 1

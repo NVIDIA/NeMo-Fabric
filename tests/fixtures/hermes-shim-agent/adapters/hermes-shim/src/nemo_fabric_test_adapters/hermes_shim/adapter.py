@@ -21,7 +21,7 @@ def main() -> None:
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Inline test adapter entrypoint used by SDK smoke tests."""
+    """Test adapter entrypoint used by SDK smoke tests."""
 
     return run_selected_mode(payload)
 
