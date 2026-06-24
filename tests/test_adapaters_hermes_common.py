@@ -145,7 +145,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config(
                 "harness": {
                     "settings": {
                         "model": "review",
-                        "max_turns": 4,
+                        "max_iterations": 4,
                         "disabled_toolsets": ["browser"],
                         "terminal_backend": "local",
                         "terminal_timeout": 90,

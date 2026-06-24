@@ -13,7 +13,7 @@ harness:
     workspace: ./repos/my-service
     hermes_home: ./artifacts/hermes-cli-relay/home
     base_url: https://integrate.api.nvidia.com/v1
-    max_turns: 1
+    max_iterations: 1
     max_tokens: 512
     temperature: 0.0
     reasoning_config:
