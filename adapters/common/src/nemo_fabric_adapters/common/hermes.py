@@ -31,6 +31,13 @@ def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("runtime_context") or {}
 
 
+def runtime_session_id(payload: dict[str, Any]) -> str | None:
+    runtime_id = runtime_context(payload).get("runtime_id")
+    if runtime_id:
+        return str(runtime_id)
+    return None
+
+
 def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("request") or {}
 

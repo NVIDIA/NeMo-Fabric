@@ -52,13 +52,6 @@ def resolve_hermes_toolsets(settings: dict[str, Any], config: dict[str, Any]) ->
     return sorted(_get_platform_tools(config, platform))
 
 
-def runtime_session_id(payload: dict[str, Any]) -> str | None:
-    runtime_id = hermes_common.runtime_context(payload).get("runtime_id")
-    if runtime_id:
-        return str(runtime_id)
-    return None
-
-
 def load_runtime_history(session_db: Any, session_id: str | None) -> list[dict[str, Any]] | None:
     if not session_id:
         return None
@@ -120,7 +113,7 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
         discover_plugins(force=True)
         loaded_hermes_config = load_config()
         enabled_toolsets = resolve_hermes_toolsets(settings, loaded_hermes_config)
-        session_id = runtime_session_id(payload)
+        session_id = hermes_common.runtime_session_id(payload)
         session_db = SessionDB()
         conversation_history = load_runtime_history(session_db, session_id)
         agent = None
