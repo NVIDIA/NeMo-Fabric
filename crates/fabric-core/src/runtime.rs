@@ -1225,8 +1225,9 @@ fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactMa
             continue;
         }
 
+        let name = unique_relay_artifact_name(manifest, kind);
         manifest.artifacts.push(ArtifactRef {
-            name: format!("relay_{kind}"),
+            name,
             kind: kind.to_string(),
             path,
             media_type: relay_artifact_media_type(kind).map(str::to_string),
@@ -1250,6 +1251,30 @@ fn relay_artifact_media_type(kind: &str) -> Option<&'static str> {
         "atof" => Some("application/x-ndjson"),
         "atif" => Some("application/json"),
         _ => None,
+    }
+}
+
+fn unique_relay_artifact_name(manifest: &ArtifactManifest, kind: &str) -> String {
+    let base = format!("relay_{kind}");
+    if !manifest
+        .artifacts
+        .iter()
+        .any(|artifact| artifact.name == base)
+    {
+        return base;
+    }
+
+    let mut index = 2;
+    loop {
+        let candidate = format!("{base}_{index}");
+        if !manifest
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.name == candidate)
+        {
+            return candidate;
+        }
+        index += 1;
     }
 }
 
@@ -1801,13 +1826,16 @@ harness:
         relay_dir.mkdir(parents=True, exist_ok=True)
         atof = relay_dir / "events.atof.jsonl"
         atif = relay_dir / "trajectory-runtime.atif.json"
+        atif_extra = relay_dir / "trajectory-child.atif.json"
         atof.write_text('{"kind":"scope"}\n', encoding="utf-8")
         atif.write_text('{"trajectory":true}', encoding="utf-8")
+        atif_extra.write_text('{"trajectory":"child"}', encoding="utf-8")
         print(json.dumps({
             "response": "ok",
             "relay_artifacts": [
                 {"kind": "atof", "path": str(atof)},
-                {"kind": "atif", "path": str(atif)}
+                {"kind": "atif", "path": str(atif)},
+                {"kind": "atif", "path": str(atif_extra)}
             ]
         }))
 models:
@@ -1845,10 +1873,18 @@ runtime:
             .iter()
             .find(|artifact| artifact.name == "relay_atif" && artifact.kind == "atif")
             .expect("ATIF artifact promoted to manifest");
+        let atif_extra = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "relay_atif_2" && artifact.kind == "atif")
+            .expect("second ATIF artifact promoted to manifest with unique name");
         assert!(atof.path.ends_with("events.atof.jsonl"));
         assert_eq!(atof.media_type.as_deref(), Some("application/x-ndjson"));
         assert!(atif.path.ends_with("trajectory-runtime.atif.json"));
         assert_eq!(atif.media_type.as_deref(), Some("application/json"));
+        assert!(atif_extra.path.ends_with("trajectory-child.atif.json"));
+        assert_eq!(atif_extra.media_type.as_deref(), Some("application/json"));
 
         let _ = fs::remove_dir_all(root);
     }
