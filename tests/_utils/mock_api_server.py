@@ -108,6 +108,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         log_level="warning",
         access_log=False,
         lifespan="off",
+        ws="none",
     )
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True)
