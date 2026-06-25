@@ -37,6 +37,12 @@ async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, h
 
 
 async def test_hermes_cli_multi_turn(hermes_agent_dir: Path, hermes_cli_session_profile: str, hermes_state: types.ModuleType):
+    """
+    Test that multi-turn sessions are tracked in the hermes session database when using the hermes_cli adapter.
+
+    This test calls the fake-hermes.py script rather than hermes itself, thus it doesn't require an API key, however
+    the hermes_cli adapter does use the hermes_state module, so we can test that the session is recorded propperly.
+    """
     async with await FabricClient().start(hermes_agent_dir,
                                           profile=hermes_cli_session_profile) as session:
         runtime_id = session.runtime["runtime_id"]
