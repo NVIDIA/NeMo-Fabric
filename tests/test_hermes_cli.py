@@ -67,6 +67,10 @@ async def test_hermes_cli_multi_turn(hermes_agent_dir: Path, hermes_cli_session_
 
 
 class TestHermesE2E:
+    """
+    E2E Hermes tests, which communicate with a mock API server not requiring an API key.
+    """
+
     @pytest.fixture(autouse=True)
     async def run_hermes_cli_relay(
         self,

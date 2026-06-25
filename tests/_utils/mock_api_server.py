@@ -14,6 +14,19 @@ import uvicorn
 
 @contextmanager
 def mock_api_server(port: int) -> Iterator[str]:
+    """
+    Context manager for a mock API server.
+
+    Use the /_requests endpoint to inspect captured chat-completion payloads after a test action.
+    Use the /_scenario endpoint to configure the server to return a specific status code for subsequent requests.
+
+    Args:
+        port (int): The port on which the server will listen.
+
+    Yields:
+        str: The base URL of the mock API server.
+    """
+
     app = FastAPI()
     app.state.requests = []
     app.state.status_code = 200
