@@ -60,7 +60,7 @@ def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
     source_dir = repo_root / "examples" / "code-review-agent"
     assert source_dir.exists(), f"Missing Hermes code review agent directory: {source_dir}"
     agent_dir = tmp_path / "code-review-agent"
-    shutil.copytree(source_dir, agent_dir)
+    shutil.copytree(source_dir, agent_dir, ignore=shutil.ignore_patterns("artifacts"))
     assert agent_dir.exists(), f"Missing Hermes code review agent directory: {agent_dir}"
     return agent_dir.resolve()
 
@@ -85,7 +85,7 @@ def hermes_command_fixture(hermes_agent_dir: Path) -> Path:
 
 @pytest.fixture(name="api_server")
 def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
-    from tests._utils.mock_api_server import mock_api_server
+    from _utils.mock_api_server import mock_api_server
     with mock_api_server(unused_tcp_port) as base_url:
         yield base_url
 
@@ -108,16 +108,16 @@ def hermes_common_fixture(adapters_common: str) -> types.ModuleType:
     import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
     return hermes_common
 
+@pytest.fixture(name="nemo_relay")
+def nemo_relay_fixture() -> types.ModuleType:
+    return pytest.importorskip("nemo_relay", reason="nemo-relay extra is required")
+
 @pytest.fixture(name="hermes_state", scope="session")
 def require_hermes_state_fixture() -> types.ModuleType:
     """
     Fixture to ensure that the hermes_state module is available for tests that require it.
     """
-    try:
-        import hermes_state
-        return hermes_state
-    except ImportError:
-        pytest.skip("Skipping test because hermes-agent is not installed.")
+    return pytest.importorskip("hermes_state", reason="hermes extra is required")
 
 @pytest.fixture(name="mock_nvidia_api_key")
 def mock_nvidia_api_key_fixture() -> str:

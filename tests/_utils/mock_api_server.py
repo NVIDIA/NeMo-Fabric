@@ -1,13 +1,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
 
 
@@ -50,7 +51,7 @@ def mock_api_server(port: int) -> Iterator[str]:
         return {"status_code": app.state.status_code}
 
     @app.post("/v1/chat/completions")
-    async def chat_completions(request: Request) -> JSONResponse:
+    async def chat_completions(request: Request):
         payload = await request.json()
         app.state.requests.append(payload)
         if app.state.status_code != 200:
@@ -72,6 +73,12 @@ def mock_api_server(port: int) -> Iterator[str]:
         ]
         latest = user_messages[-1].get("content", "") if user_messages else ""
         content = f"echo user_count={len(user_messages)} latest={latest}"
+        if payload.get("stream") is True:
+            return StreamingResponse(
+                _stream_chat_completion(payload, content),
+                media_type="text/event-stream",
+            )
+
         return JSONResponse(
             {
                 "id": "chatcmpl-fabric-test",
@@ -119,3 +126,52 @@ def mock_api_server(port: int) -> Iterator[str]:
     finally:
         server.should_exit = True
         thread.join(timeout=5)
+
+
+def _stream_chat_completion(payload: dict[str, object], content: str) -> Iterator[str]:
+    model = payload.get("model", "fabric-echo")
+    chunks = [
+        {
+            "id": "chatcmpl-fabric-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant"},
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-fabric-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"content": content},
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-fabric-test",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }
+            ],
+        },
+    ]
+
+    for chunk in chunks:
+        yield f"data: {json.dumps(chunk)}\n\n"
+    yield "data: [DONE]\n\n"

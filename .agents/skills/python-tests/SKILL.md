@@ -24,6 +24,7 @@ license: Apache-2.0
   Only specify the scope argument when the value is something other than "function".
 - Prefer `pytest.mark.parametrize` over creating individual tests for
   different input types.
+- If a fixture is needed for a test, but either does not return a value or the value is not used in the test, use the `@pytest.mark.usefixtures` decorator.
 
 ## Common Commands
 
