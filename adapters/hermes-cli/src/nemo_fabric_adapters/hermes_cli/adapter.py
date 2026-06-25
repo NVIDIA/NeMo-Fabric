@@ -55,18 +55,25 @@ def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, A
             ) from exc
 
 
+def get_runtime_mode(payload: dict[str, Any]) -> str:
+    runtime = hermes_common.fabric_config(payload).get("runtime") or {}
+    return runtime.get("mode", "oneshot")
+
+
 def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     settings = hermes_common.settings_payload(payload)
     request = hermes_common.request_payload(payload)
     config_root = Path(hermes_common.config_root(payload)).resolve()
     environment = hermes_common.environment_payload(payload)
     model_config = hermes_common.selected_model_config(payload)
+    model_name = settings.get("model_name") or model_config.get("model")
+    runtime_mode = get_runtime_mode(payload)
+    use_session = runtime_mode == "session"
+    fabric_runtime_id = hermes_common.runtime_session_id(payload)
 
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
 
     _api_key_preflight_check(settings, model_config)
-
-    model_name = settings.get("model_name") or model_config.get("model")
 
     hermes_home = resolve_path(
         config_root,
@@ -79,8 +86,17 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         relay_enabled=relay_plugin_config is not None,
     )
 
+    if use_session:
+        if fabric_runtime_id is None:
+            raise RuntimeError(
+                "runtime.mode=session is set, but no runtime_id was provided in the payload. "
+                "Please provide a runtime_id to resume an existing session."
+            )
+        hermes_common.ensure_hermes_session(fabric_runtime_id, model_name, model_config, hermes_home)
+
     prompt = request_to_prompt(request)
     toolsets = hermes_common.normalize_list(settings.get("enabled_toolsets"))
+
     command = build_command(
         settings,
         config_root,
@@ -88,6 +104,8 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         model_name,
         prompt,
         toolsets=toolsets,
+        use_session=use_session,
+        fabric_runtime_id=fabric_runtime_id,
     )
     cwd = resolve_path(
         config_root,
@@ -104,24 +122,33 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         check=False,
     )
 
+    # When use_session is True, session_id will be printed to stderr
     response = completed.stdout.strip()
+    stderr_output = completed.stderr.strip()
+    return_code = completed.returncode
+    if return_code != 0:
+        error_message = stderr_output or f"hermes CLI exited with return code {return_code}"
+    else:
+        error_message = None
+
     output = {
         "harness": "hermes",
         "adapter": "cli",
         "base_url": hermes_common.get_base_url(settings, model_config),
-        "mode": "hermes_cli_oneshot",
+        "mode": f"hermes_cli_{runtime_mode}",
         "command": redact_command(command),
         "cwd": str(cwd),
         "enabled_toolsets": toolsets,
-        "error": completed.stderr or None,
+        "error": error_message,
         "fabric_home": os.environ.get("FABRIC_HOME"),
         "fabric_invocation": os.environ.get("FABRIC_INVOCATION"),
         "model": model_name,
-        "returncode": completed.returncode,
+        "returncode": return_code,
         "response": response,
+        "session_id": fabric_runtime_id,
         "stdout": completed.stdout,
         "stderr": completed.stderr,
-        "failed": completed.returncode != 0,
+        "failed": return_code != 0,
         "hermes_home": str(hermes_home),
         "hermes_config_path": str(hermes_config_path),
         "hermes_native_config": hermes_common.summarize_hermes_config(hermes_config),
@@ -146,6 +173,8 @@ def build_command(
     model_name: str | None,
     prompt: str,
     toolsets: list[str] | None = None,
+    use_session: bool = False,
+    fabric_runtime_id: str | None = None,
 ) -> list[str]:
     command = resolve_command(
         config_root,
@@ -154,7 +183,14 @@ def build_command(
     command_args = hermes_common.normalize_list(settings.get("hermes_args") or settings.get("command_args"))
     provider = settings.get("provider") or model_config.get("provider")
 
-    args = [command, *command_args, "-z", prompt]
+    args = [command, *command_args]
+    if use_session:
+        # On the first invocation, we create the session up-front, and use the `--continue` flag to resume it even
+        # though technically it's an empty session.
+        args.extend(["chat", "--quiet", "--continue", fabric_runtime_id, "--query", prompt])
+    else:
+        args.extend(["-z", prompt])
+
     if model_name:
         args.extend(["--model", str(model_name)])
     if provider and settings.get("pass_provider_flag", True):
@@ -208,7 +244,7 @@ def redact_command(command: list[str]) -> list[str]:
             redacted.append("<redacted>")
         else:
             redacted.append(arg)
-        if arg in {"-z", "--oneshot"}:
+        if arg in {"-z", "--oneshot", "--query"}:
             redact_next = True
     return redacted
 

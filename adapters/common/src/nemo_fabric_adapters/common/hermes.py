@@ -31,6 +31,13 @@ def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("runtime_context") or {}
 
 
+def runtime_session_id(payload: dict[str, Any]) -> str | None:
+    runtime_id = runtime_context(payload).get("runtime_id")
+    if runtime_id:
+        return str(runtime_id)
+    return None
+
+
 def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("request") or {}
 
@@ -325,3 +332,28 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
             for path in sorted(directory.glob(pattern)):
                 artifacts.append({"kind": section_name, "path": str(path)})
     return artifacts
+
+def ensure_hermes_session(fabric_runtime_id: str, model_name: str, model_config: dict[str, Any], hermes_home: Path) -> dict[str, Any]:
+    """
+    Ensure that a session exists in the Hermes session database for the given fabric_runtime_id.
+    If the session does not exist, it will be created.
+
+    When creating a new session, Hermes allows us to provide our own session_id (as long as it's unique), which for
+    convenience will be set to the fabric_runtime_id.
+
+    However when Hermes compresses a session, it will return a new session_id, so we can't depend on the
+    fabric_runtime_id being the same as the session_id after a session has been compressed.
+
+    However looking up a session by title will always return the most recent session, so after creating the session
+    we will set the title to the fabric_runtime_id, and then we can always look up the session by title.
+    """
+    from hermes_state import SessionDB
+
+    session_db = SessionDB(db_path=hermes_home / "state.db")
+    session = session_db.get_session_by_title(fabric_runtime_id)
+    if session is None:
+        session_db.ensure_session(fabric_runtime_id, source="fabric", model=model_name, model_config=model_config)
+        session_db.set_session_title(session_id=fabric_runtime_id, title=fabric_runtime_id)
+        session = session_db.get_session_by_title(fabric_runtime_id)
+
+    return session

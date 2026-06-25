@@ -27,6 +27,10 @@ def restore_environ_fixture():
         if key not in orig_vars:
             del os.environ[key]
 
+@pytest.fixture(name="repo_root", scope="session")
+def repo_root_fixture() -> Path:
+    return CUR_DIR.parent.resolve()
+
 @pytest.fixture(name="hermes_cli_agent_dir_src", scope="session")
 def hermes_cli_agent_dir_fixture() -> Path:
     agent_dir = CUR_DIR / "fixtures" / "hermes-cli-agent"
@@ -35,6 +39,10 @@ def hermes_cli_agent_dir_fixture() -> Path:
 
 @pytest.fixture(name="hermes_agent_dir")
 def hermes_agent_dir_fixture(hermes_cli_agent_dir_src: Path, tmp_path: Path) -> Path:
+    """
+    Creates a temporary copy of the fake Hermes CLI agent directory for testing.
+    This mirrors the behavior of the smoke tests.
+    """
     agent_dir = tmp_path / "hermes-cli-agent"
     shutil.copytree(hermes_cli_agent_dir_src, agent_dir)
     assert agent_dir.exists(), f"Missing fake Hermes CLI agent directory: {agent_dir}"
@@ -43,6 +51,13 @@ def hermes_agent_dir_fixture(hermes_cli_agent_dir_src: Path, tmp_path: Path) -> 
 @pytest.fixture(name="hermes_cli_profile", scope="session")
 def hermes_cli_profile_fixture() -> str:
     return "env_local"
+
+@pytest.fixture(name="hermes_cli_session_profile")
+def hermes_cli_session_profile_fixture(repo_root: Path, hermes_agent_dir: Path) -> str:
+    src_yaml = repo_root / "examples/code-review-agent/profiles/hermes-cli-session.yaml"
+    assert src_yaml.exists(), f"Missing hermes-cli-session.yaml profile: {src_yaml}"
+    shutil.copy(src_yaml, hermes_agent_dir / "profiles/hermes-cli-session.yaml")
+    return "hermes_cli_session"
 
 
 @pytest.fixture(name="hermes_command")
@@ -70,3 +85,14 @@ def adapters_common_fixture(adapters_common_src_dir: Path) -> str:
 def hermes_common_fixture(adapters_common: str) -> types.ModuleType:
     import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
     return hermes_common
+
+@pytest.fixture(name="hermes_state", scope="session")
+def require_hermes_state_fixture() -> types.ModuleType:
+    """
+    Fixture to ensure that the hermes_state module is available for tests that require it.
+    """
+    try:
+        import hermes_state
+        return hermes_state
+    except ImportError:
+        pytest.skip("Skipping test because hermes-agent is not installed.")

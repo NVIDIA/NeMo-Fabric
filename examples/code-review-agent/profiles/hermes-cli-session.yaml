@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+name: hermes_cli_session
+description: Drive the Hermes CLI adapter as a multi-turn session (runtime mode session).
+
+harness:
+  adapter_id: nvidia.fabric.hermes.cli
+  resolution: preinstalled
+  settings:
+    python_env: HERMES_PYTHON
+    workspace: ./repos/my-service
+    hermes_home: ./artifacts/hermes-home
+    base_url: https://integrate.api.nvidia.com/v1
+    max_iterations: 1
+    terminal_timeout: 60
+    enabled_toolsets: []
+    system_prompt: You are a concise smoke test assistant.
+
+runtime:
+  mode: session
+  transport: cli
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts/hermes-cli-session
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/hermes-cli-session
+
+telemetry:
+  enabled: false
