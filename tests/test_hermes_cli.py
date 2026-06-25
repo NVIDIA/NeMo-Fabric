@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import types
 from pathlib import Path
 
 from nemo_fabric import FabricClient
@@ -33,3 +34,22 @@ async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, h
     for field in ('base_url', 'enabled_toolsets', 'error', 'response'):
         # Ensure these fields are present in the output, even if they are None
         assert field in output, f"Missing field in output: {field}"
+
+
+async def test_hermes_cli_multi_turn(hermes_agent_dir: Path, hermes_cli_session_profile: str, hermes_state: types.ModuleType):
+    async with await FabricClient().start(hermes_agent_dir,
+                                          profile=hermes_cli_session_profile) as session:
+        runtime_id = session.runtime["runtime_id"]
+        await session.invoke("prompt1")
+        await session.invoke("prompt2")
+
+    session_db_path = hermes_agent_dir / "artifacts/hermes-home/state.db"
+    assert session_db_path.exists(), f"Expected session DB at {session_db_path} does not exist"
+
+    session_db = hermes_state.SessionDB(db_path=session_db_path)
+    session = session_db.get_session_by_title(runtime_id)
+    assert session is not None
+    assert session['id'] == runtime_id
+    assert session['model'] == 'test-model'
+    assert session['source'] == 'fabric'
+    assert session['title'] == runtime_id
