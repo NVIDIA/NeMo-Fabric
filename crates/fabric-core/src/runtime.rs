@@ -751,6 +751,9 @@ fn run_process_adapter(
         None
     };
 
+    let parsed_output = parse_stdout_output(&stdout);
+    promote_relay_artifacts_to_manifest(&parsed_output, &mut artifacts);
+
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
         profile: plan.profile.clone(),
@@ -761,7 +764,7 @@ fn run_process_adapter(
         invocation_id: invocation.invocation_id,
         request_id: request.request_id,
         status,
-        output: parse_stdout_output(&stdout),
+        output: parsed_output,
         error,
         artifacts,
         telemetry: telemetry_ref(plan, relay_config.as_ref()),
@@ -959,6 +962,9 @@ fn run_python_adapter(
         None
     };
 
+    let parsed_output = parse_stdout_output(&stdout);
+    promote_relay_artifacts_to_manifest(&parsed_output, &mut artifacts);
+
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
         profile: plan.profile.clone(),
@@ -969,7 +975,7 @@ fn run_python_adapter(
         invocation_id: invocation.invocation_id,
         request_id: request.request_id,
         status,
-        output: parse_stdout_output(&stdout),
+        output: parsed_output,
         error,
         artifacts,
         telemetry: telemetry_ref(plan, relay_config.as_ref()),
@@ -1188,6 +1194,63 @@ fn absolute_path(path: PathBuf) -> Result<PathBuf> {
 
 fn parse_stdout_output(stdout: &str) -> Value {
     serde_json::from_str(stdout).unwrap_or_else(|_| Value::String(stdout.to_string()))
+}
+
+fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactManifest) {
+    let Some(relay_artifacts) = output.get("relay_artifacts").and_then(Value::as_array) else {
+        return;
+    };
+
+    for artifact in relay_artifacts {
+        let Some(kind) = artifact.get("kind").and_then(Value::as_str) else {
+            continue;
+        };
+        if !matches!(kind, "atof" | "atif") {
+            continue;
+        }
+        let Some(path) = artifact.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        if path.trim().is_empty() {
+            continue;
+        }
+
+        let path = resolve_relay_artifact_path(manifest, Path::new(path));
+        if !path.exists()
+            || manifest
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.path == path)
+        {
+            continue;
+        }
+
+        manifest.artifacts.push(ArtifactRef {
+            name: format!("relay_{kind}"),
+            kind: kind.to_string(),
+            path,
+            media_type: relay_artifact_media_type(kind).map(str::to_string),
+        });
+    }
+}
+
+fn resolve_relay_artifact_path(manifest: &ArtifactManifest, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    manifest
+        .root
+        .as_ref()
+        .map(|root| root.join(path))
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
+fn relay_artifact_media_type(kind: &str) -> Option<&'static str> {
+    match kind {
+        "atof" => Some("application/x-ndjson"),
+        "atif" => Some("application/json"),
+        _ => None,
+    }
 }
 
 fn process_command_args(plan: &RunPlan, settings: &ProcessAdapterSettings) -> Vec<String> {
@@ -1708,6 +1771,84 @@ environment:
         assert_eq!(result.output, Value::String("hello fabric".to_string()));
         assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
         assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn run_promotes_relay_artifacts_into_artifact_manifest() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-relay-artifact-manifest-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
+        fs::write(
+            root.join("agent.yaml"),
+            r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: relay-artifact-test-agent
+harness:
+  adapter_id: acme.fabric.process
+  settings:
+    command: python3
+    args:
+      - -c
+      - |
+        from pathlib import Path
+        import json
+        relay_dir = Path("artifacts/relay").resolve()
+        relay_dir.mkdir(parents=True, exist_ok=True)
+        atof = relay_dir / "events.atof.jsonl"
+        atif = relay_dir / "trajectory-runtime.atif.json"
+        atof.write_text('{"kind":"scope"}\n', encoding="utf-8")
+        atif.write_text('{"trajectory":true}', encoding="utf-8")
+        print(json.dumps({
+            "response": "ok",
+            "relay_artifacts": [
+                {"kind": "atof", "path": str(atof)},
+                {"kind": "atif", "path": str(atif)}
+            ]
+        }))
+models:
+  default:
+    provider: test
+    model: test-model
+runtime:
+  mode: oneshot
+  transport: cli
+  input_schema: text
+  output_schema: text
+  artifacts: ./artifacts
+"#,
+        )
+        .expect("write config");
+        fs::write(
+            root.join("adapters/process/fabric-adapter.json"),
+            process_adapter_descriptor(),
+        )
+        .expect("write adapter descriptor");
+
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let result = run_plan(&plan, RunRequest::text("collect relay")).expect("run result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        let atof = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "relay_atof" && artifact.kind == "atof")
+            .expect("ATOF artifact promoted to manifest");
+        let atif = result
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "relay_atif" && artifact.kind == "atif")
+            .expect("ATIF artifact promoted to manifest");
+        assert!(atof.path.ends_with("events.atof.jsonl"));
+        assert_eq!(atof.media_type.as_deref(), Some("application/x-ndjson"));
+        assert!(atif.path.ends_with("trajectory-runtime.atif.json"));
+        assert_eq!(atif.media_type.as_deref(), Some("application/json"));
 
         let _ = fs::remove_dir_all(root);
     }
