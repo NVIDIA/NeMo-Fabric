@@ -85,5 +85,5 @@ jobs:
       - name: Run pytest
         run: |
           set -euo pipefail
-          uv sync --group test --no-group dev
+          uv sync --group test --no-group dev --extra hermes
           uv run pytest
