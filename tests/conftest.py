@@ -52,6 +52,18 @@ def hermes_agent_dir_fixture(hermes_cli_agent_dir_src: Path, tmp_path: Path) -> 
     assert agent_dir.exists(), f"Missing fake Hermes CLI agent directory: {agent_dir}"
     return agent_dir.resolve()
 
+@pytest.fixture(name="code_review_agent_dir")
+def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
+    """
+    Creates a temporary copy of the example code review agent directory for testing.
+    """
+    source_dir = repo_root / "examples" / "code-review-agent"
+    assert source_dir.exists(), f"Missing Hermes code review agent directory: {source_dir}"
+    agent_dir = tmp_path / "code-review-agent"
+    shutil.copytree(source_dir, agent_dir)
+    assert agent_dir.exists(), f"Missing Hermes code review agent directory: {agent_dir}"
+    return agent_dir.resolve()
+
 @pytest.fixture(name="hermes_cli_profile", scope="session")
 def hermes_cli_profile_fixture() -> str:
     return "env_local"
@@ -106,3 +118,9 @@ def require_hermes_state_fixture() -> types.ModuleType:
         return hermes_state
     except ImportError:
         pytest.skip("Skipping test because hermes-agent is not installed.")
+
+@pytest.fixture(name="mock_nvidia_api_key")
+def mock_nvidia_api_key_fixture() -> str:
+    nak = "test123"
+    os.environ["NVIDIA_API_KEY"] = nak
+    return nak
