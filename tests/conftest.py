@@ -5,6 +5,7 @@ import os
 import shutil
 import sys
 import types
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,12 @@ def hermes_command_fixture(hermes_agent_dir: Path) -> Path:
     assert hermes_command.exists(
     ), f"Missing fake Hermes CLI: {hermes_command}"
     return hermes_command.resolve()
+
+@pytest.fixture(name="api_server")
+def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
+    from tests._utils.mock_api_server import mock_api_server
+    with mock_api_server(unused_tcp_port) as base_url:
+        yield base_url
 
 @pytest.fixture(name="adapters_common_src_dir", scope="session")
 def adapters_common_src_dir_fixture() -> Path:
