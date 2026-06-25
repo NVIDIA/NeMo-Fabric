@@ -333,7 +333,7 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
                 artifacts.append({"kind": section_name, "path": str(path)})
     return artifacts
 
-def ensure_hermes_session(fabric_runtime_id: str, model_name: str, model_config: dict[str, Any], hermes_home: Path) -> str:
+def ensure_hermes_session(fabric_runtime_id: str, model_name: str, model_config: dict[str, Any], hermes_home: Path) -> dict[str, Any]:
     """
     Ensure that a session exists in the Hermes session database for the given fabric_runtime_id.
     If the session does not exist, it will be created.
@@ -355,3 +355,5 @@ def ensure_hermes_session(fabric_runtime_id: str, model_name: str, model_config:
         session_db.ensure_session(fabric_runtime_id, source="fabric", model=model_name, model_config=model_config)
         session_db.set_session_title(session_id=fabric_runtime_id, title=fabric_runtime_id)
         session = session_db.get_session_by_title(fabric_runtime_id)
+
+    return session
