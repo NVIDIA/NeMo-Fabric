@@ -174,9 +174,17 @@ plan = client.plan_config(
 )
 ```
 
-For multi-turn sessions, open a `Session` and invoke it repeatedly. The session
-keeps one Fabric runtime handle active across turns; harness/adapter state is
-authoritative rather than reconstructed from a Python-side transcript:
+### Multi-Turn SDK Sessions
+
+Open a `Session` and invoke it repeatedly. The session keeps one Fabric runtime
+handle active across turns; harness/adapter state is authoritative rather than
+reconstructed from a Python-side transcript.
+
+Fabric separates runtime identity from conversation identity. Each
+`start(...)`/`start_config(...)` call creates a new `runtime_id` for that
+runtime lifecycle. `session_id` is the stable conversation key used for resume:
+if omitted, Fabric uses the generated `runtime_id`; if supplied, Fabric uses the
+caller-provided `session_id`.
 
 ```python
 import asyncio
@@ -185,11 +193,13 @@ from nemo_fabric import FabricClient
 
 async def chat():
     async with await FabricClient().start(
-        "examples/code-review-agent", profile="hermes_session"
+        "examples/code-review-agent",
+        profile="hermes_session",
+        session_id="review-session-123",
     ) as session:
         await session.invoke("My name is Robin.")
         reply = await session.invoke("What's my name?")   # recalls "Robin"
-        print(session.runtime_id, session.status.value, len(session.messages))
+        print(session.runtime_id, session.session_id, session.status.value)
         print(reply["output"]["response"])
 
 asyncio.run(chat())
@@ -197,9 +207,36 @@ asyncio.run(chat())
 
 Sessions require the native binding; `start_config(...)` is the typed-config
 equivalent. `stream(...)` yields events then the final result (buffered today);
-`cancel()` cooperatively aborts an in-flight turn. Sessions are SDK-only — there
-is no `fabric` CLI equivalent (the CLI runs one invocation per process). The
-real-Hermes integration check is `tests/smoke_hermes_session.py`.
+`cancel()` cooperatively aborts an in-flight turn. Session APIs require
+`runtime.mode: session`.
+
+### Interactive CLI Chat
+
+For local manual multi-turn testing, use `fabric chat` with a session-mode
+profile. It drives the same started runtime in an interactive loop:
+
+```bash
+fabric chat examples/code-review-agent \
+  --profile hermes_cli_session \
+  --session-id review-session-123 \
+  --verbose
+```
+
+`--session-id` is optional. Each `fabric chat` start creates a new `runtime_id`;
+the session id is the stable resume key. If `--session-id` is omitted, Fabric
+uses the generated `runtime_id` as the session id. If you want a later chat run
+to resume the same conversation, pass that prior session id explicitly.
+`fabric chat` prints a `NEMO FABRIC` session banner with the agent, profile,
+harness, runtime id, and session id at startup and from `/info`, then uses a
+`you[profile:session]>` prompt and `agent>` responses for the transcript.
+`/help` shows commands, `/verbose on|off` toggles a fenced per-turn metadata
+block after each agent response with request/invocation ids, status, artifact
+count, and telemetry details, and `/clear` clears the terminal. `fabric chat`
+requires `runtime.mode: session`; use `fabric run` for oneshot profiles and
+machine-readable stdout. Because `chat` is an interactive terminal UI, the
+transcript and metadata are written together on stderr.
+
+The real-Hermes integration check is `tests/smoke_hermes_session.py`.
 
 When installed from the repository root, `FabricClient()` uses the native Rust
 binding. SDK `run(...)`, `start(...)`, and their typed-config equivalents all

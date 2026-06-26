@@ -256,6 +256,9 @@ pub struct InvocationHandle {
 pub struct RuntimeContext {
     /// Runtime handle id.
     pub runtime_id: String,
+    /// Optional caller-provided harness conversation id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// Invocation handle id.
     pub invocation_id: String,
     /// Request id.
@@ -1103,6 +1106,7 @@ fn adapter_invocation(
         effective_config,
         runtime_context: RuntimeContext {
             runtime_id: runtime.runtime_id.clone(),
+            session_id: request_session_id(request),
             invocation_id: invocation.invocation_id.clone(),
             request_id: request.request_id.clone(),
             environment: runtime.environment.clone(),
@@ -1113,6 +1117,15 @@ fn adapter_invocation(
         capability_plan: plan.capability_plan.clone(),
         telemetry_plan: plan.telemetry_plan.clone(),
     })
+}
+
+fn request_session_id(request: &RunRequest) -> Option<String> {
+    request
+        .context
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|session_id| !session_id.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn runtime_telemetry_context(
@@ -1902,6 +1915,71 @@ print(json.dumps({
         assert_eq!(atif.media_type.as_deref(), Some("application/json"));
         assert!(atif_extra.path.ends_with("trajectory-child.atif.json"));
         assert_eq!(atif_extra.media_type.as_deref(), Some("application/json"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn adapter_runtime_context_includes_caller_session_id() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-session-context-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
+        fs::write(
+            root.join("agent.yaml"),
+            r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: session-context-agent
+harness:
+  adapter_id: acme.fabric.process
+  settings:
+    command: python3
+    args:
+      - -c
+      - |
+        import json
+        import sys
+        payload = json.load(sys.stdin)
+        print(json.dumps(payload["runtime_context"], sort_keys=True))
+    stdin_payload: fabric_request
+models:
+  default:
+    provider: test
+    model: test-model
+runtime:
+  mode: session
+  transport: cli
+  input_schema: text
+  output_schema: text
+  artifacts: ./artifacts
+"#,
+        )
+        .expect("write config");
+        fs::write(
+            root.join("adapters/process/fabric-adapter.json"),
+            process_adapter_descriptor(),
+        )
+        .expect("write adapter descriptor");
+
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let mut request = RunRequest::text("hello fabric");
+        request.context.insert(
+            "session_id".to_string(),
+            Value::String("caller-session-123".to_string()),
+        );
+        let result = run_plan(&plan, request).expect("run result");
+
+        assert_eq!(result.status, RunStatus::Succeeded);
+        assert_eq!(
+            result.output["session_id"],
+            Value::String("caller-session-123".to_string())
+        );
+        assert_eq!(
+            result.output["runtime_id"],
+            Value::String(result.runtime_id.clone())
+        );
 
         let _ = fs::remove_dir_all(root);
     }

@@ -94,6 +94,53 @@ def main() -> None:
         assert structured["request_id"] == "cli-structured-request"
         assert structured["output"]["received"] == "hello structured hermes"
 
+        chat = run_with_stdin(
+            "/help\n/verbose on\nhello chat\n/verbose off\n/clear\n/info\n/exit\n",
+            "chat",
+            temp_fixture,
+            "--profile",
+            "env_local",
+            "--session-id",
+            "cli-session-123",
+            "--verbose",
+        )
+        assert chat.stdout == ""
+        assert '"received": "hello chat"' in chat.stderr
+        assert '"session_id": "cli-session-123"' in chat.stderr
+        assert "NEMO FABRIC" in chat.stderr
+        assert "interactive runtime session" in chat.stderr
+        assert "agent: hermes-shim-agent" in chat.stderr
+        assert "profile: env_local" in chat.stderr
+        assert "harness: test.fabric.hermes_shim" in chat.stderr
+        assert "adapter: python" in chat.stderr
+        assert chat.stderr.count("session_id: cli-session-123 (provided)") >= 2
+        assert "you[env_local:cli-session-123]> " in chat.stderr
+        assert "you[env_local:cli-session-123]> \nagent> {" in chat.stderr
+        assert "agent> {" in chat.stderr
+        assert "runtime_id: runtime-" in chat.stderr
+        assert "/verbose on|off" in chat.stderr
+        assert "/clear" in chat.stderr
+        assert "verbose: on" in chat.stderr
+        assert "verbose: off" in chat.stderr
+        assert "\x1b[2J\x1b[H" in chat.stderr
+        assert "\n\n+-- turn 1 metadata" in chat.stderr
+        assert "+-- turn 1 metadata" in chat.stderr
+        assert "| status: succeeded" in chat.stderr
+        assert "| request_id: request-" in chat.stderr
+        assert "| invocation_id: invocation-" in chat.stderr
+        assert "| artifact_count:" in chat.stderr
+
+        rejected_chat = run_raw(
+            "",
+            "chat",
+            temp_example,
+            "--profile",
+            "hermes_sdk",
+        )
+        assert rejected_chat.returncode != 0
+        assert rejected_chat.stdout == ""
+        assert "fabric chat requires runtime.mode=session" in rejected_chat.stderr
+
 
 def call_text(*args: object) -> str:
     completed = run(*args)
@@ -118,6 +165,26 @@ def run(*args: object) -> subprocess.CompletedProcess[str]:
             f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
         )
     return completed
+
+
+def run_with_stdin(stdin: str, *args: object) -> subprocess.CompletedProcess[str]:
+    completed = run_raw(stdin, *args)
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+        )
+    return completed
+
+
+def run_raw(stdin: str, *args: object) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [*COMMAND, *(str(arg) for arg in args)],
+        cwd=ROOT,
+        input=stdin,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 if __name__ == "__main__":

@@ -32,7 +32,13 @@ def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def runtime_session_id(payload: dict[str, Any]) -> str | None:
-    runtime_id = runtime_context(payload).get("runtime_id")
+    """Return Fabric's session key for adapter-owned harness session mapping."""
+
+    context = runtime_context(payload)
+    session_id = context.get("session_id")
+    if session_id:
+        return str(session_id)
+    runtime_id = context.get("runtime_id")
     if runtime_id:
         return str(runtime_id)
     return None
@@ -339,27 +345,42 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
                 artifacts.append({"kind": section_name, "path": str(path)})
     return artifacts
 
-def ensure_hermes_session(fabric_runtime_id: str, model_name: str, model_config: dict[str, Any], hermes_home: Path) -> dict[str, Any]:
+def ensure_hermes_session(
+    fabric_session_id: str,
+    model_name: str,
+    model_config: dict[str, Any],
+    hermes_home: Path,
+) -> dict[str, Any]:
     """
-    Ensure that a session exists in the Hermes session database for the given fabric_runtime_id.
+    Ensure that Hermes has a session mapped from Fabric's session key.
+
+    Fabric chooses this key from runtime_context.session_id when the caller
+    supplies one, otherwise from runtime_context.runtime_id. The adapter maps
+    that Fabric-owned key onto Hermes' session id/title.
+
     If the session does not exist, it will be created.
 
     When creating a new session, Hermes allows us to provide our own session_id (as long as it's unique), which for
-    convenience will be set to the fabric_runtime_id.
+    convenience will be set to the Fabric session key.
 
     However when Hermes compresses a session, it will return a new session_id, so we can't depend on the
-    fabric_runtime_id being the same as the session_id after a session has been compressed.
+    Fabric session key being the same as the session_id after a session has been compressed.
 
     However looking up a session by title will always return the most recent session, so after creating the session
-    we will set the title to the fabric_runtime_id, and then we can always look up the session by title.
+    we will set the title to the Fabric session key, and then we can always look up the session by title.
     """
     from hermes_state import SessionDB
 
     session_db = SessionDB(db_path=hermes_home / "state.db")
-    session = session_db.get_session_by_title(fabric_runtime_id)
+    session = session_db.get_session_by_title(fabric_session_id)
     if session is None:
-        session_db.ensure_session(fabric_runtime_id, source="fabric", model=model_name, model_config=model_config)
-        session_db.set_session_title(session_id=fabric_runtime_id, title=fabric_runtime_id)
-        session = session_db.get_session_by_title(fabric_runtime_id)
+        session_db.ensure_session(
+            fabric_session_id,
+            source="fabric",
+            model=model_name,
+            model_config=model_config,
+        )
+        session_db.set_session_title(session_id=fabric_session_id, title=fabric_session_id)
+        session = session_db.get_session_by_title(fabric_session_id)
 
     return session

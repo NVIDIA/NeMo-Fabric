@@ -60,6 +60,8 @@ The repo already contains the core shape of the MVP:
   generation, and running.
 - Python package with native Rust bindings plus CLI fallback.
 - SDK support for both agent-package paths and typed/in-memory config.
+- Session-mode SDK lifecycle support with a stable `session_id` resume key for
+  both agent-package paths and typed/in-memory config.
 - Agent package examples with `agent.yaml`, `profiles/`, `skills/`, and
   workspace fixtures.
 - Ordered multi-profile resolution.
@@ -174,6 +176,10 @@ Status:
 - Fabric model, workspace, skills, MCP, tools, telemetry, and artifact config
   remains visible in generated Hermes-native config or launch settings.
 - Unsupported Hermes MCP mappings with no target fail before invocation.
+- Session-mode adapters receive Fabric's stable session key from
+  `runtime_context.session_id` when supplied, or `runtime_context.runtime_id`
+  as the default. Hermes CLI maps that Fabric key onto Hermes session id/title
+  for resume.
 
 Next steps:
 
@@ -224,6 +230,11 @@ Status:
 - Base Python SDK and CLI surfaces are in place.
 - SDK supports agent-package paths and typed/in-memory config.
 - CLI supports validate, inspect, plan, doctor, schema generation, and run.
+- SDK session APIs cover `start`, `start_config`, `invoke`, `stream`, `cancel`,
+  and `stop` for `runtime.mode: session`, including caller-provided
+  `session_id` propagation.
+- CLI includes `fabric chat` for local interactive session-mode debugging with
+  explicit `--session-id`, `/info`, `/verbose`, and oneshot-profile rejection.
 - SDK and CLI can plan and run Hermes without callers importing
   Hermes-specific code.
 - CLI and SDK smoke tests cover core planning and run paths.
@@ -235,8 +246,6 @@ Next steps:
 - Keep Python SDK as the primary API for consumers.
 - Keep CLI behavior aligned with SDK behavior for the same config/profile stack.
 - Keep plan/doctor/run examples in the README accurate.
-- Finish the async SDK boundary for start, invoke, stream, cancel, stop, and
-  run.
 - Keep typed config as a first-class SDK path so Platform can construct the
   Fabric agent slice from its own job/deployment config without materializing
   an agent directory.
@@ -310,6 +319,7 @@ Before calling the MVP complete:
 - `cargo fmt --check` passes.
 - Python SDK smoke passes.
 - CLI smoke passes.
+- CLI chat smoke passes for session-mode profiles.
 - real Hermes SDK smoke passes in a documented clean environment.
 - real Hermes CLI smoke passes in a documented clean environment.
 - Hermes config-variation matrix passes for supported profile combinations.

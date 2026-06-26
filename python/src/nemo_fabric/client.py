@@ -216,6 +216,7 @@ class FabricClient:
         *,
         profile: str | Sequence[str] | None = None,
         overrides: dict[str, Any] | None = None,
+        session_id: str | None = None,
     ) -> "Session":
         """Open a multi-turn session over an agent/profile runtime.
 
@@ -225,6 +226,8 @@ class FabricClient:
                 base config.
             overrides: Config overrides applied to every turn in the session; a
                 turn's own ``overrides`` merge over these.
+            session_id: Optional caller-provided harness conversation id.
+                Defaults to the Fabric runtime id.
 
         Returns:
             An active :class:`Session` bound to the resolved plan.
@@ -236,10 +239,17 @@ class FabricClient:
 
         native = self._require_native_module("start")
         plan = self.plan(path, profile=profile)
+        _require_session_runtime(plan, "start")
         runtime = await _call_blocking(
             lambda: json.loads(native.start_runtime(json.dumps(plan)))
         )
-        return Session(client=self, plan=plan, runtime=runtime, overrides=overrides)
+        return Session(
+            client=self,
+            plan=plan,
+            runtime=runtime,
+            overrides=overrides,
+            session_id=session_id,
+        )
 
     async def start_config(
         self,
@@ -248,6 +258,7 @@ class FabricClient:
         profile_configs: Sequence[Mapping[str, Any] | Any] | None = None,
         base_dir: str | Path | None = None,
         overrides: dict[str, Any] | None = None,
+        session_id: str | None = None,
     ) -> "Session":
         """Open a multi-turn session over an in-memory typed config.
 
@@ -259,6 +270,8 @@ class FabricClient:
                 adapters. ``None`` resolves against the process working directory.
             overrides: Config overrides applied to every turn; a turn's own
                 ``overrides`` merge over these.
+            session_id: Optional caller-provided harness conversation id.
+                Defaults to the Fabric runtime id.
 
         Returns:
             An active :class:`Session` bound to the resolved plan.
@@ -271,10 +284,17 @@ class FabricClient:
         plan = self.plan_config(
             config, profile_configs=profile_configs, base_dir=base_dir
         )
+        _require_session_runtime(plan, "start_config")
         runtime = await _call_blocking(
             lambda: json.loads(native.start_runtime(json.dumps(plan)))
         )
-        return Session(client=self, plan=plan, runtime=runtime, overrides=overrides)
+        return Session(
+            client=self,
+            plan=plan,
+            runtime=runtime,
+            overrides=overrides,
+            session_id=session_id,
+        )
 
     def _command(self) -> tuple[str, ...]:
         if self.command is not None:
@@ -365,11 +385,14 @@ class Session:
         plan: dict[str, Any],
         runtime: dict[str, Any],
         overrides: dict[str, Any] | None = None,
+        session_id: str | None = None,
     ) -> None:
+        _require_session_runtime(plan, "Session")
         self._client = client
         self._plan = plan
         self._runtime = runtime
         self._overrides = overrides
+        self._session_id = session_id
         self._messages: list[Any] = []
         self._invocations: list[dict[str, Any]] = []
         self._status = SessionStatus.ACTIVE
@@ -403,6 +426,12 @@ class Session:
         """Canonical Fabric runtime id for this session."""
 
         return str(self._runtime["runtime_id"])
+
+    @property
+    def session_id(self) -> str:
+        """Harness conversation id used for this session."""
+
+        return str(self._session_id or self.runtime_id)
 
     @property
     def info(self) -> dict[str, Any]:
@@ -458,6 +487,7 @@ class Session:
                 request=request,
                 request_file=None,
             )
+            request_payload["context"]["session_id"] = self.session_id
             # Merge overrides as session < request < per-turn; request-level
             # overrides must not bypass the documented session/turn merge.
             merged_overrides = _merge_overrides(self._overrides, request_payload.get("overrides"))
@@ -719,3 +749,13 @@ def _adapter_kind(plan: dict[str, Any]) -> str:
 def _harness_type(plan: dict[str, Any]) -> str:
     descriptor = ((plan.get("adapter_descriptor") or {}).get("descriptor") or {})
     return descriptor.get("adapter_id", "unknown")
+
+
+def _require_session_runtime(plan: dict[str, Any], method: str) -> None:
+    runtime = ((plan.get("config") or {}).get("runtime") or {})
+    mode = runtime.get("mode")
+    if mode != "session":
+        resolved = mode if isinstance(mode, str) else "unknown"
+        raise RuntimeError(
+            f"{method} requires runtime.mode=session; resolved runtime.mode={resolved}"
+        )
