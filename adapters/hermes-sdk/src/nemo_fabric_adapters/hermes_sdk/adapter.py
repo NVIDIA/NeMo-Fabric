@@ -26,6 +26,7 @@ if COMMON_DIR not in sys.path:
     sys.path.append(COMMON_DIR)
 
 import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
+import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
 
 
 def main() -> None:
@@ -44,7 +45,7 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
 
 def resolve_hermes_toolsets(settings: dict[str, Any], config: dict[str, Any]) -> list[str] | None:
     if "enabled_toolsets" in settings:
-        return hermes_common.normalize_list(settings.get("enabled_toolsets"))
+        return common_utils.normalize_list(settings.get("enabled_toolsets"))
 
     from hermes_cli.tools_config import _get_platform_tools
 
@@ -69,10 +70,10 @@ def load_runtime_history(session_db: Any, session_id: str | None) -> list[dict[s
 
 
 def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = hermes_common.settings_payload(payload)
+    settings = common_utils.settings_payload(payload)
     request = hermes_common.request_payload(payload)
     model_config = hermes_common.selected_model_config(payload)
-    hermes_home = Path(hermes_common.config_root(payload)).joinpath(
+    hermes_home = Path(common_utils.config_root(payload)).joinpath(
         settings.get("hermes_home", "./artifacts/hermes-home")
     )
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -88,8 +89,6 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
         payload,
         hermes_home,
         relay_enabled=relay_plugin_config is not None,
-        require_yaml=True,
-        missing_yaml_message="Hermes SDK mode requires PyYAML to write Hermes config",
     )
 
     api_key_env = settings.get("api_key_env") or model_config.get("api_key_env") or "NVIDIA_API_KEY"
@@ -158,7 +157,7 @@ def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
                     model=getattr(agent, "model", None) or hermes_common.relay_model_name(payload),
                     platform=getattr(agent, "platform", None) or "fabric",
                 )
-                relay_artifacts = hermes_common.collect_relay_artifacts(relay_plugin_config)
+                relay_artifacts = common_utils.collect_relay_artifacts(relay_plugin_config)
     response = result.get("response") or result.get("final_response")
     messages = result.get("messages") or []
     output = {

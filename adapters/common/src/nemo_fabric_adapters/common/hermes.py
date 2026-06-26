@@ -5,36 +5,15 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 from typing import Any
 
-from nemo_fabric_adapters.common.utils import write_relay_plugins_toml
-
-
-def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("effective_config") or {}
-
-
-def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return effective_config(payload).get("config") or {}
-
-
-def config_root(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("config_root") or payload.get("config_root") or "."
-
-
-def agent_name(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("agent_name") or payload.get("agent_name") or "fabric-agent"
-
-
-def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("runtime_context") or {}
+import nemo_fabric_adapters.common.utils as common_utils
 
 
 def runtime_session_id(payload: dict[str, Any]) -> str | None:
-    runtime_id = runtime_context(payload).get("runtime_id")
+    runtime_id = common_utils.runtime_context(payload).get("runtime_id")
     if runtime_id:
         return str(runtime_id)
     return None
@@ -42,23 +21,6 @@ def runtime_session_id(payload: dict[str, Any]) -> str | None:
 
 def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("request") or {}
-
-
-def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return runtime_context(payload).get("environment") or payload.get("environment") or {}
-
-
-def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    harness = fabric_config(payload).get("harness") or {}
-    return harness.get("settings") or payload.get("settings") or {}
-
-
-def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return fabric_config(payload).get("models") or payload.get("models") or {}
-
-
-def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("capability_plan") or payload.get("capabilities") or {}
 
 
 def default_base_url(provider: str | None) -> str | None:
@@ -76,8 +38,8 @@ def get_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str 
 
 
 def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = settings_payload(payload)
-    models = models_payload(payload)
+    settings = common_utils.settings_payload(payload)
+    models = common_utils.models_payload(payload)
     model_config = models.get(settings.get("model", "default"), {})
     if not isinstance(model_config, dict):
         return {}
@@ -85,10 +47,10 @@ def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False) -> dict[str, Any]:
-    settings = settings_payload(payload)
+    settings = common_utils.settings_payload(payload)
     model_config = selected_model_config(payload)
-    native = capability_plan(payload).get("native") or {}
-    environment = environment_payload(payload)
+    native = common_utils.capability_plan(payload).get("native") or {}
+    environment = common_utils.environment_payload(payload)
 
     model_name = settings.get("model_name") or model_config.get("model", "")
     provider = settings.get("provider") or model_config.get("provider")
@@ -130,10 +92,10 @@ def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False)
 
     if "enabled_toolsets" in settings:
         config["platform_toolsets"] = {
-            settings.get("toolset_platform", "cli"): normalize_list(settings.get("enabled_toolsets"))
+            settings.get("toolset_platform", "cli"): common_utils.normalize_list(settings.get("enabled_toolsets"))
         }
 
-    plugins = normalize_list(settings.get("plugins_enabled"))
+    plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
     if relay_enabled and "observability/nemo_relay" not in plugins:
         plugins.append("observability/nemo_relay")
     if plugins:
@@ -147,36 +109,12 @@ def write_hermes_config(
     hermes_home: Path,
     *,
     relay_enabled: bool = False,
-    require_yaml: bool = False,
-    missing_yaml_message: str = "PyYAML is required to write Hermes config",
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
     config = build_hermes_config(payload, relay_enabled=relay_enabled)
     config_path = hermes_home / "config.yaml"
-    config_path.write_text(
-        dump_yaml(
-            config,
-            require_yaml=require_yaml,
-            missing_yaml_message=missing_yaml_message,
-        ),
-        encoding="utf-8",
-    )
+    config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")
     return config_path, config
-
-
-def dump_yaml(
-    value: dict[str, Any],
-    *,
-    require_yaml: bool = False,
-    missing_yaml_message: str = "PyYAML is required to write Hermes config",
-) -> str:
-    try:
-        import yaml
-    except ImportError as exc:
-        if require_yaml:
-            raise RuntimeError(missing_yaml_message) from exc
-        return json.dumps(value, indent=2, sort_keys=False) + "\n"
-    return yaml.safe_dump(value, sort_keys=False)
 
 
 def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
@@ -190,16 +128,6 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
         if transport:
             config["transport"] = transport
     return config
-
-
-def normalize_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        value = [value]
-    if not isinstance(value, list):
-        value = [value]
-    return [str(item) for item in value if str(item)]
 
 
 def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
@@ -221,8 +149,8 @@ def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
     if os.environ.get("FABRIC_RELAY_ENABLED") != "true":
         return None
 
-    relay_plugin_config = load_relay_plugin_config(payload)
-    relay_plugins_toml_path = write_relay_plugins_toml(relay_plugin_config)
+    relay_plugin_config = common_utils.load_relay_plugin_config(payload)
+    relay_plugins_toml_path = common_utils.write_relay_plugins_toml(relay_plugin_config)
     if relay_plugins_toml_path is not None:
         os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = str(relay_plugins_toml_path)
 
@@ -250,7 +178,7 @@ def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
             atif.get("filename_template", "trajectory-{session_id}.atif.json")
         )
         os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_NAME"] = str(
-            atif.get("agent_name") or agent_name(payload)
+            atif.get("agent_name") or common_utils.agent_name(payload)
         )
         os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"] = str(atif.get("agent_version", "fabric-poc"))
         os.environ["HERMES_NEMO_RELAY_ATIF_MODEL_NAME"] = str(atif.get("model_name") or relay_model_name(payload))
@@ -258,85 +186,12 @@ def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
     return relay_plugin_config
 
 
-def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
-    config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
-    if not config_path:
-        raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
-
-    with Path(config_path).open(encoding="utf-8") as stream:
-        wrapper = json.load(stream)
-
-    relay = wrapper.get("relay", {})
-    plugin_config = relay.get("config") or {}
-    if "components" not in plugin_config:
-        plugin_config = {
-            "version": 1,
-            "components": [
-                {
-                    "kind": "observability",
-                    "enabled": True,
-                    "config": plugin_config or {"version": 1},
-                }
-            ],
-        }
-    plugin_config.setdefault("version", 1)
-    plugin_config.setdefault("components", [])
-    normalize_relay_output_dirs(plugin_config, payload)
-    return plugin_config
-
-def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
-    base = Path(config_root(payload)).resolve()
-    for component in plugin_config.get("components", []):
-        if component.get("kind") != "observability":
-            continue
-        config = component.setdefault("config", {})
-        config.setdefault("version", 1)
-        for section_name in ("atof", "atif"):
-            section = config.get(section_name)
-            if not isinstance(section, dict) or not section.get("enabled"):
-                continue
-            output_directory = section.get("output_directory")
-            if output_directory:
-                path = Path(output_directory)
-                if not path.is_absolute():
-                    section["output_directory"] = str(base / path)
-            else:
-                section["output_directory"] = str(base / "artifacts" / "relay")
-            if section_name == "atof":
-                section.setdefault("filename", "events.atof.jsonl")
-                section.setdefault("mode", "overwrite")
-            if section_name == "atif":
-                section.setdefault("filename_template", "trajectory-{session_id}.atif.json")
-                section.setdefault("agent_name", agent_name(payload))
-                section.setdefault("model_name", relay_model_name(payload))
-
-
 def relay_model_name(payload: dict[str, Any]) -> str:
-    settings = settings_payload(payload)
-    models = models_payload(payload)
+    settings = common_utils.settings_payload(payload)
+    models = common_utils.models_payload(payload)
     model_config = models.get(settings.get("model", "default"), {})
     return settings.get("model_name") or model_config.get("model") or "unknown"
 
-
-def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str]]:
-    artifacts: list[dict[str, str]] = []
-    for component in plugin_config.get("components", []):
-        if component.get("kind") != "observability":
-            continue
-        config = component.get("config") or {}
-        for section_name, pattern in (
-            ("atof", "*.jsonl"),
-            ("atif", "*.json"),
-        ):
-            section = config.get(section_name)
-            if not isinstance(section, dict) or not section.get("enabled"):
-                continue
-            directory = Path(section.get("output_directory") or ".")
-            if not directory.exists():
-                continue
-            for path in sorted(directory.glob(pattern)):
-                artifacts.append({"kind": section_name, "path": str(path)})
-    return artifacts
 
 def ensure_hermes_session(fabric_runtime_id: str, model_name: str, model_config: dict[str, Any], hermes_home: Path) -> dict[str, Any]:
     """

@@ -24,6 +24,7 @@ if COMMON_DIR not in sys.path:
     sys.path.append(COMMON_DIR)
 
 import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
+import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
 
 
 def main() -> None:
@@ -56,15 +57,15 @@ def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, A
 
 
 def get_runtime_mode(payload: dict[str, Any]) -> str:
-    runtime = hermes_common.fabric_config(payload).get("runtime") or {}
+    runtime = common_utils.fabric_config(payload).get("runtime") or {}
     return runtime.get("mode", "oneshot")
 
 
 def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = hermes_common.settings_payload(payload)
+    settings = common_utils.settings_payload(payload)
     request = hermes_common.request_payload(payload)
-    config_root = Path(hermes_common.config_root(payload)).resolve()
-    environment = hermes_common.environment_payload(payload)
+    config_root = Path(common_utils.config_root(payload)).resolve()
+    environment = common_utils.environment_payload(payload)
     model_config = hermes_common.selected_model_config(payload)
     model_name = settings.get("model_name") or model_config.get("model")
     runtime_mode = get_runtime_mode(payload)
@@ -95,7 +96,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         hermes_common.ensure_hermes_session(fabric_runtime_id, model_name, model_config, hermes_home)
 
     prompt = request_to_prompt(request)
-    toolsets = hermes_common.normalize_list(settings.get("enabled_toolsets"))
+    toolsets = common_utils.normalize_list(settings.get("enabled_toolsets"))
 
     command = build_command(
         settings,
@@ -155,7 +156,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
     if relay_plugin_config is not None:
-        relay_artifacts = hermes_common.collect_relay_artifacts(relay_plugin_config)
+        relay_artifacts = common_utils.collect_relay_artifacts(relay_plugin_config)
         output["relay_runtime"] = {
             "enabled": True,
             "mode": os.environ.get("FABRIC_RELAY_MODE"),
@@ -180,7 +181,7 @@ def build_command(
         config_root,
         settings.get("hermes_command") or settings.get("command", "hermes"),
     )
-    command_args = hermes_common.normalize_list(settings.get("hermes_args") or settings.get("command_args"))
+    command_args = common_utils.normalize_list(settings.get("hermes_args") or settings.get("command_args"))
     provider = settings.get("provider") or model_config.get("provider")
 
     args = [command, *command_args]
