@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from _utils.utils import update_hermes_cli_relay_base_url
+from _utils.utils import update_base_url
 from nemo_fabric import FabricClient
 
 
@@ -79,11 +79,12 @@ class TestHermesE2E:
         code_review_agent_dir: Path,
         api_server: str,
     ):
-        assert nemo_relay is not None
-        assert mock_nvidia_api_key == "test123"
         self.code_review_agent_dir = code_review_agent_dir
         self.api_server = api_server
-        update_hermes_cli_relay_base_url(code_review_agent_dir, api_server)
+        update_base_url(
+            code_review_agent_dir / "profiles" / "hermes-cli-relay.yaml",
+            api_server,
+        )
 
         async with FabricClient() as client:
             self.result = await client.run(
