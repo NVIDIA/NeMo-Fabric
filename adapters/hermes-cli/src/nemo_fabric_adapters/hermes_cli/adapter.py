@@ -184,13 +184,11 @@ def build_command(
     command_args = common_utils.normalize_list(settings.get("hermes_args") or settings.get("command_args"))
     provider = settings.get("provider") or model_config.get("provider")
 
-    args = [command, *command_args]
+    args = [command, *command_args, "chat", "--quiet", "--query", prompt]
     if use_session:
         # On the first invocation, we create the session up-front, and use the `--continue` flag to resume it even
         # though technically it's an empty session.
-        args.extend(["chat", "--quiet", "--continue", fabric_runtime_id, "--query", prompt])
-    else:
-        args.extend(["-z", prompt])
+        args.extend([ "--continue", fabric_runtime_id, ])
 
     if model_name:
         args.extend(["--model", str(model_name)])
