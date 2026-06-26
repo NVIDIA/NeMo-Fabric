@@ -176,11 +176,15 @@ plan = client.plan_config(
 
 ### Multi-Turn SDK Sessions
 
-Open a `Session` and invoke it repeatedly. The session
-keeps one Fabric runtime handle active across turns; harness/adapter state is
-authoritative rather than reconstructed from a Python-side transcript.
-Pass `session_id` when the caller already owns the harness conversation id;
-otherwise Fabric uses the generated runtime id:
+Open a `Session` and invoke it repeatedly. The session keeps one Fabric runtime
+handle active across turns; harness/adapter state is authoritative rather than
+reconstructed from a Python-side transcript.
+
+Fabric separates runtime identity from conversation identity. Each
+`start(...)`/`start_config(...)` call creates a new `runtime_id` for that
+runtime lifecycle. `session_id` is the stable conversation key used for resume:
+if omitted, Fabric uses the generated `runtime_id`; if supplied, Fabric uses the
+caller-provided `session_id`.
 
 ```python
 import asyncio
@@ -218,8 +222,10 @@ fabric chat examples/code-review-agent \
   --verbose
 ```
 
-`--session-id` is optional. Pass it when you want to resume or share a known
-harness conversation id; otherwise Fabric uses the generated runtime id.
+`--session-id` is optional. Each `fabric chat` start creates a new `runtime_id`;
+the session id is the stable resume key. If `--session-id` is omitted, Fabric
+uses the generated `runtime_id` as the session id. If you want a later chat run
+to resume the same conversation, pass that prior session id explicitly.
 `fabric chat` prints a `NEMO FABRIC` session banner with the agent, profile,
 harness, runtime id, and session id at startup and from `/info`, then uses a
 `you[profile:session]>` prompt and `agent>` responses for the transcript.
