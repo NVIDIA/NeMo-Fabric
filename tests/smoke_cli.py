@@ -11,6 +11,8 @@ import tempfile
 from pathlib import Path
 from shutil import copytree
 
+from _utils.utils import assert_relay_disabled_native_observability
+
 ROOT = Path(__file__).resolve().parents[1]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 
@@ -77,6 +79,8 @@ def main() -> None:
             assert telemetry_plan["relay_enabled"] is relay_enabled
             if relay_enabled:
                 assert telemetry_plan["relay_output_dir"]
+            else:
+                assert not telemetry_plan.get("relay_output_dir")
 
         multi_plan = call_json(
             "plan",
@@ -206,25 +210,6 @@ def run_raw(stdin: str, *args: object) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
     )
-
-
-def assert_relay_disabled_native_observability(result: dict) -> None:
-    artifact_by_name = {
-        artifact["name"]: artifact
-        for artifact in result["artifacts"]["artifacts"]
-    }
-    assert "stdout" in artifact_by_name
-    assert "relay_config" not in artifact_by_name
-    assert not any(name.startswith("relay_") for name in artifact_by_name)
-
-    stdout_path = Path(artifact_by_name["stdout"]["path"])
-    assert stdout_path.is_file()
-    assert stdout_path.read_text(encoding="utf-8").strip()
-
-    event_kinds = {event["kind"] for event in result["events"]}
-    assert {"runtime_start", "invocation_start", "invocation_end"} <= event_kinds
-
-    assert result["telemetry"]["relay_enabled"] is False
 
 
 if __name__ == "__main__":

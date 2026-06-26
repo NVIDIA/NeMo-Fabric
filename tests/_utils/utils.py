@@ -6,6 +6,37 @@ from pathlib import Path
 import yaml
 
 
+def assert_relay_disabled_native_observability(result: dict):
+    """Assert telemetry-off runs still surface native harness evidence."""
+
+    artifact_by_name = {
+        artifact["name"]: artifact
+        for artifact in result["artifacts"]["artifacts"]
+    }
+    assert "stdout" in artifact_by_name
+    assert "relay_config" not in artifact_by_name
+    assert not any(name.startswith("relay_") for name in artifact_by_name)
+
+    stdout_path = Path(artifact_by_name["stdout"]["path"])
+    assert stdout_path.is_file()
+    assert stdout_path.read_text(encoding="utf-8").strip()
+
+    event_kinds = {event["kind"] for event in result["events"]}
+    assert {"runtime_start", "invocation_start", "invocation_end"} <= event_kinds
+
+    telemetry = result["telemetry"]
+    assert telemetry is not None
+    assert telemetry["relay_enabled"] is False
+
+
+def assert_process_adapter_native_observability(result: dict):
+    """Assert process adapters preserve native evidence and clean process output."""
+
+    assert_relay_disabled_native_observability(result)
+    assert result["output"]["returncode"] == 0
+    assert result["output"]["stderr"] == ""
+
+
 def update_hermes_cli_relay_base_url(code_review_agent_dir: Path, api_server: str):
     """
     Update the base URL in the Hermes CLI relay profile.

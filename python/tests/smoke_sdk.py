@@ -15,7 +15,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python" / "src"))
+sys.path.insert(0, str(ROOT / "tests"))
 
+from _utils.utils import (  # noqa: E402
+    assert_process_adapter_native_observability,
+    assert_relay_disabled_native_observability,
+)
 from nemo_fabric import FabricClient
 
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
@@ -114,7 +119,7 @@ async def smoke(client: FabricClient) -> None:
             mode="hermes_cli_oneshot",
         )
         assert_relay_disabled_native_observability(hermes_result)
-        assert_relay_disabled_native_observability(process_result)
+        assert_process_adapter_native_observability(process_result)
 
     assert hermes_result["status"] == "succeeded"
     assert hermes_result["adapter_kind"] == "python"
@@ -171,27 +176,6 @@ def assert_sdk_cli_runresult_parity(
         assert isinstance(result["artifacts"]["artifacts"], list)
         assert isinstance(result["events"], list)
         assert result["events"], "RunResult events should not be empty"
-
-
-def assert_relay_disabled_native_observability(result: dict) -> None:
-    artifact_by_name = {
-        artifact["name"]: artifact
-        for artifact in result["artifacts"]["artifacts"]
-    }
-    assert "stdout" in artifact_by_name
-    assert "relay_config" not in artifact_by_name
-    assert not any(name.startswith("relay_") for name in artifact_by_name)
-
-    stdout_path = Path(artifact_by_name["stdout"]["path"])
-    assert stdout_path.is_file()
-    assert stdout_path.read_text(encoding="utf-8").strip()
-
-    event_kinds = {event["kind"] for event in result["events"]}
-    assert {"runtime_start", "invocation_start", "invocation_end"} <= event_kinds
-
-    telemetry = result["telemetry"]
-    assert telemetry is not None
-    assert telemetry["relay_enabled"] is False
 
 
 def call_json(*args: object) -> dict:
