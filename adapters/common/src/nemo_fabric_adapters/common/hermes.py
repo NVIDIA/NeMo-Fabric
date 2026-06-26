@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 from typing import Any
+
+from nemo_fabric_adapters.common.utils import write_relay_plugins_toml
 
 
 def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -282,24 +283,6 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
     plugin_config.setdefault("components", [])
     normalize_relay_output_dirs(plugin_config, payload)
     return plugin_config
-
-
-def write_relay_plugins_toml(plugin_config: dict[str, Any]) -> Path | None:
-    try:
-        import tomli_w
-
-        config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
-        if not config_path:
-            raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
-
-        path = Path(config_path).with_name("relay-plugins.toml")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
-        return path
-    except ImportError:
-        print("tomli_w is not installed, skipping writing relay plugins TOML", file=sys.stderr)
-        return None
-
 
 def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
     base = Path(config_root(payload)).resolve()
