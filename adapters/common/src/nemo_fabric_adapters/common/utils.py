@@ -122,6 +122,8 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
                     section["output_directory"] = str(base / path)
             else:
                 section["output_directory"] = str(base / "artifacts" / "relay")
+            
+            Path(section["output_directory"]).mkdir(parents=True, exist_ok=True)
             if section_name == "atof":
                 section.setdefault("filename", "events.atof.jsonl")
                 section.setdefault("mode", "overwrite")
