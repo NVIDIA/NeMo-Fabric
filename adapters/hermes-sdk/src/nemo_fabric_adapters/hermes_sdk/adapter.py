@@ -116,6 +116,7 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
         "user_message": user_message,
         "relay_plugin_config": relay_plugin_config,
     }
+
     if relay_enabled:
         relay_api_config = common_utils.relay_api_plugin_config(relay_plugin_config or {})
         from nemo_relay import plugin
@@ -126,6 +127,10 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
             )
     else:
         (result, enabled_toolsets, relay_artifacts, adapter_stdout) = _invoke_hermes(**hermes_kwargs)
+
+    if relay_plugin_config is not None:
+        relay_artifacts = common_utils.collect_relay_artifacts(relay_plugin_config)
+
     response = result.get("response") or result.get("final_response")
     messages = result.get("messages") or []
     output = {
@@ -226,7 +231,7 @@ def _invoke_hermes(
                     model=getattr(agent, "model", None) or hermes_common.relay_model_name(payload),
                     platform=getattr(agent, "platform", None) or "fabric",
                 )
-                relay_artifacts = common_utils.collect_relay_artifacts(relay_plugin_config)
+
     return result, enabled_toolsets, relay_artifacts, hermes_stdout.getvalue()
 
 
