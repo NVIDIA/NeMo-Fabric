@@ -102,14 +102,66 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(user_message, str):
         user_message = json.dumps(user_message, sort_keys=True)
 
-    hermes_stdout = StringIO()
-    relay_artifacts: list[dict[str, str]] = []
-    with redirect_stdout(hermes_stdout):
-        from hermes_cli.config import load_config
-        from hermes_cli.plugins import discover_plugins, invoke_hook
-        from hermes_state import SessionDB
-        from run_agent import AIAgent
+    hermes_kwargs = {
+        "payload": payload,
+        "settings": settings,
+        "model_config": model_config,
+        "base_url": base_url,
+        "api_key": api_key,
+        "user_message": user_message,
+        "relay_plugin_config": relay_plugin_config,
+    }
+    (result, enabled_toolsets, relay_artifacts, adapter_stdout) = _invoke_hermes(**hermes_kwargs)
+    response = result.get("response") or result.get("final_response")
+    messages = result.get("messages") or []
+    output = {
+        "harness": "hermes",
+        "adapter": "python",
+        "mode": "hermes_sdk",
+        "model": model_config.get("model"),
+        "base_url": base_url,
+        "response": response,
+        "completed": bool(result.get("completed")),
+        "failed": bool(result.get("failed")),
+        "api_calls": result.get("api_calls"),
+        "messages": messages,
+        "message_count": len(messages),
+        "error": result.get("error"),
+        "adapter_stdout": adapter_stdout,
+        "hermes_home": str(hermes_home),
+        "hermes_config_path": str(hermes_config_path),
+        "hermes_native_config": hermes_common.summarize_hermes_config(hermes_config),
+        "enabled_toolsets": enabled_toolsets,
+    }
+    if relay_plugin_config is not None:
+        output["relay_runtime"] = {
+            "enabled": True,
+            "mode": os.environ.get("FABRIC_RELAY_MODE"),
+            "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
+            "emitter": "hermes.observability/nemo_relay",
+        }
+        output["relay_artifacts"] = relay_artifacts
+    return output
 
+
+def _invoke_hermes(
+    *,
+    payload: dict[str, Any],
+    settings: dict[str, Any],
+    model_config: dict[str, Any],
+    base_url: str | None,
+    api_key: str,
+    user_message: str,
+    relay_plugin_config: dict[str, Any] | None,
+) -> tuple[dict[str, Any], list[str] | None, list[dict[str, str]], str]:
+    from hermes_cli.config import load_config
+    from hermes_cli.plugins import discover_plugins, invoke_hook
+    from hermes_state import SessionDB
+    from run_agent import AIAgent
+
+    relay_artifacts: list[dict[str, str]] = []
+    hermes_stdout = StringIO()
+    with redirect_stdout(hermes_stdout):
         discover_plugins(force=True)
         loaded_hermes_config = load_config()
         enabled_toolsets = resolve_hermes_toolsets(settings, loaded_hermes_config)
@@ -117,27 +169,29 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
         session_db = SessionDB()
         conversation_history = load_runtime_history(session_db, session_id)
         agent = None
-        agent = AIAgent(**filter_supported_kwargs(
-            AIAgent,
-            base_url=base_url,
-            api_key=api_key,
-            provider=settings.get("provider") or model_config.get("provider"),
-            model=settings.get("model_name") or model_config.get("model", ""),
-            max_iterations=int(settings.get("max_iterations", 1)),
-            enabled_toolsets=enabled_toolsets,
-            disabled_toolsets=settings.get("disabled_toolsets"),
-            quiet_mode=True,
-            skip_context_files=True,
-            skip_memory=True,
-            save_trajectories=bool(settings.get("save_trajectories", False)),
-            max_tokens=settings.get("max_tokens", 512),
-            temperature=settings.get("temperature", model_config.get("temperature", 0.0)),
-            reasoning_config=settings.get("reasoning_config", {"effort": "none"}),
-            insert_reasoning=bool(settings.get("insert_reasoning", False)),
-            platform="fabric",
-            session_id=session_id,
-            session_db=session_db,
-        ))
+        agent = AIAgent(
+            **filter_supported_kwargs(
+                AIAgent,
+                base_url=base_url,
+                api_key=api_key,
+                provider=settings.get("provider") or model_config.get("provider"),
+                model=settings.get("model_name") or model_config.get("model", ""),
+                max_iterations=int(settings.get("max_iterations", 1)),
+                enabled_toolsets=enabled_toolsets,
+                disabled_toolsets=settings.get("disabled_toolsets"),
+                quiet_mode=True,
+                skip_context_files=True,
+                skip_memory=True,
+                save_trajectories=bool(settings.get("save_trajectories", False)),
+                max_tokens=settings.get("max_tokens", 512),
+                temperature=settings.get("temperature", model_config.get("temperature", 0.0)),
+                reasoning_config=settings.get("reasoning_config", {"effort": "none"}),
+                insert_reasoning=bool(settings.get("insert_reasoning", False)),
+                platform="fabric",
+                session_id=session_id,
+                session_db=session_db,
+            )
+        )
         try:
             conversation_kwargs = filter_supported_call_kwargs(
                 agent.run_conversation,
@@ -159,36 +213,7 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
                     platform=getattr(agent, "platform", None) or "fabric",
                 )
                 relay_artifacts = common_utils.collect_relay_artifacts(relay_plugin_config)
-    response = result.get("response") or result.get("final_response")
-    messages = result.get("messages") or []
-    output = {
-        "harness": "hermes",
-        "adapter": "python",
-        "mode": "hermes_sdk",
-        "model": model_config.get("model"),
-        "base_url": base_url,
-        "response": response,
-        "completed": bool(result.get("completed")),
-        "failed": bool(result.get("failed")),
-        "api_calls": result.get("api_calls"),
-        "messages": messages,
-        "message_count": len(messages),
-        "error": result.get("error"),
-        "adapter_stdout": hermes_stdout.getvalue(),
-        "hermes_home": str(hermes_home),
-        "hermes_config_path": str(hermes_config_path),
-        "hermes_native_config": hermes_common.summarize_hermes_config(hermes_config),
-        "enabled_toolsets": enabled_toolsets,
-    }
-    if relay_plugin_config is not None:
-        output["relay_runtime"] = {
-            "enabled": True,
-            "mode": os.environ.get("FABRIC_RELAY_MODE"),
-            "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
-            "emitter": "hermes.observability/nemo_relay",
-        }
-        output["relay_artifacts"] = relay_artifacts
-    return output
+    return result, enabled_toolsets, relay_artifacts, hermes_stdout.getvalue()
 
 
 def filter_supported_kwargs(callable_obj: Any, **kwargs: Any) -> dict[str, Any]:
