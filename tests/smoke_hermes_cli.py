@@ -40,7 +40,9 @@ def main() -> None:
         response = json.loads(result["output"]["response"])
         assert response["fake_hermes"] is True
         assert response["prompt"] == "hello cli"
-        assert "-z" in response["argv"]
+        assert "chat" in response["argv"]
+        assert "--quiet" in response["argv"]
+        assert "--query" in response["argv"]
         assert "--model" in response["argv"]
         assert "test-model" in response["argv"]
 
