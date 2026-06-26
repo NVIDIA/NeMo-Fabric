@@ -253,17 +253,17 @@ Status:
 - Relay config pass-through exists for Hermes profiles.
 - Native harness outputs are preserved separately from Relay outputs.
 - SDK, CLI, and Harbor-facing paths expose ArtifactManifest data.
+- Relay artifact discovery is hardened for ATOF/ATIF outputs when telemetry is
+  enabled.
+- Relay-enabled profiles have tests for inspectable telemetry outputs or clear
+  telemetry references.
+- ArtifactManifest remains populated with output, logs, patch/status, native
+  harness artifacts, and telemetry references where available.
 
 Next steps:
 
-- Harden Relay artifact discovery for ATOF/ATIF outputs when telemetry is
-  enabled.
-- Add tests that verify Relay-enabled profiles produce inspectable telemetry
-  outputs or clear telemetry references.
 - Add tests that verify Relay-disabled profiles still produce native output,
   harness events where available, and logs.
-- Keep ArtifactManifest populated with output, logs, patch/status, native
-  harness artifacts, and telemetry references where available.
 - Confirm these artifacts are visible through SDK, CLI, and Harbor consumers.
 
 ### 6. Consumer Proof: Harbor
