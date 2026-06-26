@@ -174,7 +174,9 @@ plan = client.plan_config(
 )
 ```
 
-For multi-turn sessions, open a `Session` and invoke it repeatedly. The session
+### Multi-Turn SDK Sessions
+
+Open a `Session` and invoke it repeatedly. The session
 keeps one Fabric runtime handle active across turns; harness/adapter state is
 authoritative rather than reconstructed from a Python-side transcript.
 Pass `session_id` when the caller already owns the harness conversation id;
@@ -202,8 +204,12 @@ asyncio.run(chat())
 Sessions require the native binding; `start_config(...)` is the typed-config
 equivalent. `stream(...)` yields events then the final result (buffered today);
 `cancel()` cooperatively aborts an in-flight turn. Session APIs require
-`runtime.mode: session`. For local manual testing, the CLI can drive the same
-started runtime in an interactive loop:
+`runtime.mode: session`.
+
+### Interactive CLI Chat
+
+For local manual multi-turn testing, use `fabric chat` with a session-mode
+profile. It drives the same started runtime in an interactive loop:
 
 ```bash
 fabric chat examples/code-review-agent \
@@ -212,14 +218,17 @@ fabric chat examples/code-review-agent \
   --verbose
 ```
 
+`--session-id` is optional. Pass it when you want to resume or share a known
+harness conversation id; otherwise Fabric uses the generated runtime id.
 `fabric chat` prints a `NEMO FABRIC` session banner with the agent, profile,
 harness, runtime id, and session id at startup and from `/info`, then uses a
 `you[profile:session]>` prompt and `agent>` responses for the transcript.
 `/help` shows commands, `/verbose on|off` toggles a fenced per-turn metadata
 block after each agent response with request/invocation ids, status, artifact
-count, and telemetry details, and `/clear` clears the terminal. Because `chat`
-is an interactive terminal UI, the transcript and metadata are written together
-on stderr; use `fabric run` for machine-readable stdout.
+count, and telemetry details, and `/clear` clears the terminal. `fabric chat`
+requires `runtime.mode: session`; use `fabric run` for oneshot profiles and
+machine-readable stdout. Because `chat` is an interactive terminal UI, the
+transcript and metadata are written together on stderr.
 
 The real-Hermes integration check is `tests/smoke_hermes_session.py`.
 

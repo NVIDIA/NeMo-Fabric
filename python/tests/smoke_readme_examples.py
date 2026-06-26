@@ -33,11 +33,14 @@ DOCUMENTED_SNIPPETS = [
     "plan = client.plan_config(",
     '"harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},',
     'base_dir="examples/code-review-agent",',
+    "### Multi-Turn SDK Sessions",
+    "### Interactive CLI Chat",
     'session_id="review-session-123",',
     "fabric chat examples/code-review-agent \\",
     "--profile hermes_cli_session",
     "--session-id review-session-123",
     "--verbose",
+    "requires `runtime.mode: session`; use `fabric run`",
     'client = FabricClient(command=("cargo", "run", "-q", "-p", "fabric-cli", "--"))',
 ]
 
