@@ -10,7 +10,17 @@ from pathlib import Path
 import pytest
 
 
-def test_payload_accessors_prefer_effective_config(hermes_common: types.ModuleType) -> None:
+@pytest.fixture(name="common_utils", scope="session")
+def common_utils_fixture(adapters_common: str) -> types.ModuleType:
+    import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
+
+    return common_utils
+
+
+def test_payload_accessors_prefer_effective_config(
+    common_utils: types.ModuleType,
+    hermes_common: types.ModuleType,
+) -> None:
     payload = {
         "agent_name": "outer-agent",
         "config_root": "/outer",
@@ -33,16 +43,16 @@ def test_payload_accessors_prefer_effective_config(hermes_common: types.ModuleTy
         "capability_plan": {"native": {"skill_paths": ["skills"]}},
     }
 
-    assert hermes_common.effective_config(payload) == payload["effective_config"]
-    assert hermes_common.fabric_config(payload) == payload["effective_config"]["config"]
-    assert hermes_common.agent_name(payload) == "effective-agent"
-    assert hermes_common.config_root(payload) == "/effective"
-    assert hermes_common.runtime_context(payload) == payload["runtime_context"]
+    assert common_utils.effective_config(payload) == payload["effective_config"]
+    assert common_utils.fabric_config(payload) == payload["effective_config"]["config"]
+    assert common_utils.agent_name(payload) == "effective-agent"
+    assert common_utils.config_root(payload) == "/effective"
+    assert common_utils.runtime_context(payload) == payload["runtime_context"]
     assert hermes_common.request_payload(payload) == {"input": "hello"}
-    assert hermes_common.environment_payload(payload) == {"workspace": "/runtime-workspace"}
-    assert hermes_common.settings_payload(payload) == {"inner": True}
-    assert hermes_common.models_payload(payload) == {"inner": {"model": "inner-model"}}
-    assert hermes_common.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
+    assert common_utils.environment_payload(payload) == {"workspace": "/runtime-workspace"}
+    assert common_utils.settings_payload(payload) == {"inner": True}
+    assert common_utils.models_payload(payload) == {"inner": {"model": "inner-model"}}
+    assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
 
 
 @pytest.mark.parametrize(
@@ -218,7 +228,7 @@ def test_write_hermes_config_writes_file(hermes_common: types.ModuleType, tmp_pa
 
 
 def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
-    hermes_common: types.ModuleType,
+    common_utils: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     real_import = builtins.__import__
@@ -230,7 +240,7 @@ def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
-    assert hermes_common.dump_yaml({"model": {"default": "demo"}}) == json.dumps(
+    assert common_utils.dump_yaml({"model": {"default": "demo"}}) == json.dumps(
         {"model": {"default": "demo"}},
         indent=2,
         sort_keys=False,
@@ -275,8 +285,8 @@ def test_hermes_mcp_server_config(
         (42, ["42"]),
     ],
 )
-def test_normalize_list(hermes_common: types.ModuleType, value: object, expected: list[str]) -> None:
-    assert hermes_common.normalize_list(value) == expected
+def test_normalize_list(common_utils: types.ModuleType, value: object, expected: list[str]) -> None:
+    assert common_utils.normalize_list(value) == expected
 
 
 def test_without_none(hermes_common: types.ModuleType) -> None:
@@ -304,7 +314,7 @@ def test_summarize_hermes_config(hermes_common: types.ModuleType) -> None:
 
 
 def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config(
-    hermes_common: types.ModuleType,
+    common_utils: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -337,7 +347,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         }
     }
 
-    plugin_config = hermes_common.load_relay_plugin_config(payload)
+    plugin_config = common_utils.load_relay_plugin_config(payload)
     observability = plugin_config["components"][0]["config"]
 
     assert plugin_config["version"] == 1
@@ -426,7 +436,7 @@ def test_configure_hermes_relay_returns_none_when_disabled(
     assert hermes_common.configure_hermes_relay({}) is None
 
 
-def test_collect_relay_artifacts(hermes_common: types.ModuleType, tmp_path: Path) -> None:
+def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path) -> None:
     atof_dir = tmp_path / "atof"
     atif_dir = tmp_path / "atif"
     atof_dir.mkdir()
@@ -449,7 +459,7 @@ def test_collect_relay_artifacts(hermes_common: types.ModuleType, tmp_path: Path
         ]
     }
 
-    assert hermes_common.collect_relay_artifacts(plugin_config) == [
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
         {"kind": "atof", "path": str(atof_file)},
         {"kind": "atif", "path": str(atif_file)},
     ]
