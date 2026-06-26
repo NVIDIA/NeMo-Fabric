@@ -68,12 +68,6 @@ def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
         indent=2,
         sort_keys=False,
     ) + "\n"
-    with pytest.raises(RuntimeError, match="Need PyYAML"):
-        common_utils.dump_yaml(
-            {"model": {"default": "demo"}},
-            require_yaml=True,
-            missing_yaml_message="Need PyYAML",
-        )
 
 
 @pytest.mark.parametrize(

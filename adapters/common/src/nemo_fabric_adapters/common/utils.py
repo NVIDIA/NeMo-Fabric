@@ -59,19 +59,12 @@ def normalize_list(value: Any) -> list[str]:
     return [str(item) for item in value if str(item)]
 
 
-def dump_yaml(
-    value: dict[str, Any],
-    *,
-    require_yaml: bool = False,
-    missing_yaml_message: str = "PyYAML is required to write Hermes config",
-) -> str:
+def dump_yaml(value: dict[str, Any]) -> str:
     try:
         import yaml
-    except ImportError as exc:
-        if require_yaml:
-            raise RuntimeError(missing_yaml_message) from exc
+        return yaml.safe_dump(value, sort_keys=False)
+    except ImportError:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
-    return yaml.safe_dump(value, sort_keys=False)
 
 
 def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:

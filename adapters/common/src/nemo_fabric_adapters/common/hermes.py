@@ -115,20 +115,11 @@ def write_hermes_config(
     hermes_home: Path,
     *,
     relay_enabled: bool = False,
-    require_yaml: bool = False,
-    missing_yaml_message: str = "PyYAML is required to write Hermes config",
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
     config = build_hermes_config(payload, relay_enabled=relay_enabled)
     config_path = hermes_home / "config.yaml"
-    config_path.write_text(
-        common_utils.dump_yaml(
-            config,
-            require_yaml=require_yaml,
-            missing_yaml_message=missing_yaml_message,
-        ),
-        encoding="utf-8",
-    )
+    config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")
     return config_path, config
 
 
