@@ -64,6 +64,12 @@ def main() -> None:
         relay_artifacts = result["output"]["relay_artifacts"]
         kinds = {artifact["kind"] for artifact in relay_artifacts}
         assert {"atof", "atif"} <= kinds
+        manifest_relay_kinds = {
+            artifact["kind"]
+            for artifact in result["artifacts"]["artifacts"]
+            if artifact["name"].startswith("relay_")
+        }
+        assert {"atof", "atif"} <= manifest_relay_kinds
 
         atof_paths = [Path(artifact["path"]) for artifact in relay_artifacts if artifact["kind"] == "atof"]
         atif_paths = [Path(artifact["path"]) for artifact in relay_artifacts if artifact["kind"] == "atif"]
