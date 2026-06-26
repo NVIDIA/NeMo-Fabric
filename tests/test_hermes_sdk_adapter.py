@@ -18,7 +18,7 @@ if str(HERMES_SDK_SRC) not in sys.path:
 from nemo_fabric_adapters.hermes_sdk import adapter  # noqa: E402
 
 
-def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
+async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -146,7 +146,7 @@ def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
         "capability_plan": {"native": {}},
     }
 
-    output = adapter.run_hermes_sdk(payload)
+    output = await adapter.run_hermes_sdk(payload)
 
     assert captured["db_resolve_session"] == "runtime-fabric-123"
     assert captured["db_get_session"] == ["runtime-resolved-456"]

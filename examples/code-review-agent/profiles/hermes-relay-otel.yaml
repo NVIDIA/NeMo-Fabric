@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+name: hermes_relay_otel
+description: Run Hermes SDK with native NeMo Relay OpenTelemetry tracing enabled.
+
+harness:
+  adapter_id: nvidia.fabric.hermes.sdk
+  resolution: preinstalled
+  settings:
+    python_env: HERMES_PYTHON
+    workspace: ./repos/my-service
+    hermes_home: ./artifacts/hermes-relay-otel/home
+    base_url: https://integrate.api.nvidia.com/v1
+    max_iterations: 1
+    max_tokens: 512
+    temperature: 0.0
+    reasoning_config:
+      effort: none
+    enabled_toolsets: []
+    system_prompt: You are a concise smoke test assistant.
+
+runtime:
+  mode: oneshot
+  transport: library
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts/hermes-relay-otel
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/hermes-relay-otel
+
+telemetry:
+  enabled: true
+  mode: sdk
+  output_dir: ./artifacts/hermes-relay-otel/relay
+  config:
+    version: 1
+    components:
+      - kind: observability
+        enabled: true
+        config:
+          version: 1
+          atif:
+            enabled: true
+            output_directory: ./artifacts/hermes-relay-otel/relay
+            filename_template: "trajectory-{session_id}.atif.json"
+            agent_name: code-review-agent
+            agent_version: fabric-poc
+          atof:
+            enabled: true
+            output_directory: ./artifacts/hermes-relay-otel/relay
+            filename: events.atof.jsonl
+            mode: overwrite
+          opentelemetry:
+            enabled: true
+            transport: http_binary
+            endpoint: http://localhost:4318/v1/traces
+            service_name: code-review-agent
+            service_namespace: fabric
+            service_version: fabric-poc
+            instrumentation_scope: nemo-relay-otel
+            timeout_millis: 3000
+            resource_attributes:
+              deployment.environment: dev

@@ -1,0 +1,160 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+import builtins
+import json
+import types
+from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture(name="common_utils", scope="session")
+def common_utils_fixture(adapters_common: str) -> types.ModuleType:
+    import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
+
+    return common_utils
+
+
+def test_payload_accessors_prefer_effective_config(common_utils: types.ModuleType):
+    payload = {
+        "agent_name": "outer-agent",
+        "config_root": "/outer",
+        "request": {"input": "hello"},
+        "environment": {"workspace": "/outer-workspace"},
+        "settings": {"outer": True},
+        "models": {"outer": {"model": "outer-model"}},
+        "capabilities": {"outer": True},
+        "runtime_context": {
+            "environment": {"workspace": "/runtime-workspace"},
+        },
+        "effective_config": {
+            "agent_name": "effective-agent",
+            "config_root": "/effective",
+            "config": {
+                "harness": {"settings": {"inner": True}},
+                "models": {"inner": {"model": "inner-model"}},
+            },
+        },
+        "capability_plan": {"native": {"skill_paths": ["skills"]}},
+    }
+
+    assert common_utils.effective_config(payload) == payload["effective_config"]
+    assert common_utils.fabric_config(payload) == payload["effective_config"]["config"]
+    assert common_utils.agent_name(payload) == "effective-agent"
+    assert common_utils.config_root(payload) == "/effective"
+    assert common_utils.runtime_context(payload) == payload["runtime_context"]
+    assert common_utils.environment_payload(payload) == {"workspace": "/runtime-workspace"}
+    assert common_utils.settings_payload(payload) == {"inner": True}
+    assert common_utils.models_payload(payload) == {"inner": {"model": "inner-model"}}
+    assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
+
+
+def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
+    common_utils: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    real_import = builtins.__import__
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "yaml":
+            raise ImportError("No module named yaml")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    assert common_utils.dump_yaml({"model": {"default": "demo"}}) == json.dumps(
+        {"model": {"default": "demo"}},
+        indent=2,
+        sort_keys=False,
+    ) + "\n"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, []),
+        ("git", ["git"]),
+        (["git", 7, ""], ["git", "7"]),
+        (42, ["42"]),
+    ],
+)
+def test_normalize_list(common_utils: types.ModuleType, value: object, expected: list[str]):
+    assert common_utils.normalize_list(value) == expected
+
+
+def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config(
+    common_utils: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    config_path = tmp_path / "relay.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "atof": {
+                            "enabled": True,
+                            "output_directory": "custom-relay",
+                        },
+                        "atif": {"enabled": True},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(config_path))
+    payload = {
+        "effective_config": {
+            "agent_name": "review-agent",
+            "config_root": str(tmp_path),
+            "config": {
+                "harness": {"settings": {"model": "review"}},
+                "models": {"review": {"model": "nvidia/review-model"}},
+            },
+        }
+    }
+
+    plugin_config = common_utils.load_relay_plugin_config(payload)
+    observability = plugin_config["components"][0]["config"]
+
+    assert plugin_config["version"] == 1
+    assert plugin_config["components"][0]["kind"] == "observability"
+    assert observability["atof"]["output_directory"] == str(tmp_path / "custom-relay")
+    assert observability["atof"]["filename"] == "events.atof.jsonl"
+    assert observability["atof"]["mode"] == "overwrite"
+    assert observability["atif"]["output_directory"] == str(tmp_path / "artifacts" / "relay")
+    assert observability["atif"]["filename_template"] == "trajectory-{session_id}.atif.json"
+    assert observability["atif"]["agent_name"] == "review-agent"
+    assert observability["atif"]["model_name"] == "nvidia/review-model"
+
+
+def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atif_dir = tmp_path / "atif"
+    atof_dir.mkdir()
+    atif_dir.mkdir()
+    atof_file = atof_dir / "events.atof.jsonl"
+    atif_file = atif_dir / "trajectory-1.atif.json"
+    ignored_file = atif_dir / "ignored.txt"
+    atof_file.write_text("{}", encoding="utf-8")
+    atif_file.write_text("{}", encoding="utf-8")
+    ignored_file.write_text("ignored", encoding="utf-8")
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "atof": {"enabled": True, "output_directory": str(atof_dir)},
+                    "atif": {"enabled": True, "output_directory": str(atif_dir)},
+                },
+            }
+        ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "atof", "path": str(atof_file)},
+        {"kind": "atif", "path": str(atif_file)},
+    ]

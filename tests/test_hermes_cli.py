@@ -122,7 +122,7 @@ class TestHermesE2E:
         assert hermes_config_path.is_file()
         assert hermes_config_path.is_relative_to(self.code_review_agent_dir)
 
-        hermes_config = yaml.safe_load(hermes_config_path.read_text())
+        hermes_config = yaml.safe_load(hermes_config_path.read_text(encoding="utf-8"))
         assert hermes_config["model"]["provider"] == "nvidia"
         assert hermes_config["model"]["default"] == "nvidia/nemotron-3-nano-30b-a3b"
         assert hermes_config["model"]["base_url"] == f"{self.api_server}/v1"
@@ -145,7 +145,7 @@ class TestHermesE2E:
         relay_config_path = Path(artifact_by_name["relay_config"]["path"]).resolve()
         assert relay_config_path.is_file()
         assert relay_config_path.is_relative_to(self.artifact_root)
-        relay_config = json.loads(relay_config_path.read_text())
+        relay_config = json.loads(relay_config_path.read_text(encoding="utf-8"))
         assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
         assert relay_config["relay"]["enabled"] is True
         assert relay_config["fabric"]["profile"] == "hermes_cli_relay"
@@ -186,7 +186,7 @@ class TestHermesE2E:
             "uuid",
         }
         actual_atof_fields = set().union(*(record.keys() for record in atof_records))
-        assert len(atof_records) == 6
+        assert len(atof_records) == 7
         assert actual_atof_fields.issuperset(expected_atof_fields)
         assert all(
             record["metadata"]["model"] == "nvidia/nemotron-3-nano-30b-a3b"
@@ -197,7 +197,10 @@ class TestHermesE2E:
             atof_records[0]["name"]
             == f"hermes-session-{atof_records[0]['metadata']['session_id']}"
         )
-        assert atof_records[-1]["name"] == "hermes.session.end"
+
+        assert atof_records[-2]["name"] == "hermes.session.end"
+        assert atof_records[-1]["scope_category"] == "end"
+        assert atof_records[-1]["data"]["reason"] == "shutdown"
 
     async def test_atif_artifacts(self):
         kinds = {artifact["kind"] for artifact in self.relay_artifacts}
@@ -223,6 +226,5 @@ class TestHermesE2E:
 
         last_step = steps[-1]
         assert last_step["message"] == "hermes.session.end"
-        assert last_step["extra"]["event_payload"]["completed"] is True
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"

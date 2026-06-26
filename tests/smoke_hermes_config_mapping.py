@@ -5,20 +5,20 @@
 
 from __future__ import annotations
 
-import importlib.util
+import sys
 import tempfile
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ADAPTERS_COMMON = ROOT / "adapters" / "common" / "src" / "nemo_fabric_adapters" / "common" / "hermes.py"
+ADAPTERS_COMMON_SRC = ROOT / "adapters" / "common" / "src"
 
 def main() -> None:
-    common = load_common()
+    hermes_common, _common_utils = load_common()
     with tempfile.TemporaryDirectory(prefix="fabric-hermes-config-") as tmpdir:
         hermes_home = Path(tmpdir) / "home"
-        config_path, config = common.write_hermes_config(
+        config_path, config = hermes_common.write_hermes_config(
             payload(tmpdir),
             hermes_home,
             relay_enabled=True,
@@ -46,15 +46,15 @@ def main() -> None:
     assert config["platform_toolsets"]["cli"] == []
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
 
-def _load_module_from_path(name:str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
 def load_common():
-    return _load_module_from_path("fabric_hermes_common", ADAPTERS_COMMON)
+    common_src = ADAPTERS_COMMON_SRC.as_posix()
+    if common_src not in sys.path:
+        sys.path.insert(0, common_src)
+
+    import nemo_fabric_adapters.common.hermes as hermes_common
+    import nemo_fabric_adapters.common.utils as common_utils
+
+    return hermes_common, common_utils
 
 
 def payload(tmpdir: str) -> dict:
