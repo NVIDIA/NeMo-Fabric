@@ -9,6 +9,7 @@ import asyncio
 import json
 import sys
 import tempfile
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,13 +17,47 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python" / "src"))
 
+
+def install_harbor_stubs() -> None:
+    """Install minimal Harbor stubs for this smoke when Harbor is not present."""
+
+    class BaseAgent:
+        def __init__(self, logs_dir: Path, *args: Any, **kwargs: Any) -> None:
+            self.logs_dir = logs_dir
+            self.model_name = kwargs.get("model_name")
+            self.skills_dir = kwargs.get("skills_dir")
+            self.mcp_servers = kwargs.get("mcp_servers", [])
+
+    class BaseEnvironment:
+        pass
+
+    class AgentContext:
+        def __init__(self) -> None:
+            self.metadata: dict[str, Any] | None = None
+
+    modules = {
+        "harbor": types.ModuleType("harbor"),
+        "harbor.agents": types.ModuleType("harbor.agents"),
+        "harbor.agents.base": types.ModuleType("harbor.agents.base"),
+        "harbor.environments": types.ModuleType("harbor.environments"),
+        "harbor.environments.base": types.ModuleType("harbor.environments.base"),
+        "harbor.models": types.ModuleType("harbor.models"),
+        "harbor.models.agent": types.ModuleType("harbor.models.agent"),
+        "harbor.models.agent.context": types.ModuleType("harbor.models.agent.context"),
+    }
+    modules["harbor.agents.base"].BaseAgent = BaseAgent
+    modules["harbor.environments.base"].BaseEnvironment = BaseEnvironment
+    modules["harbor.models.agent.context"].AgentContext = AgentContext
+    sys.modules.update(modules)
+
+
 try:
     from nemo_fabric.integrations.harbor import FabricAgent
     from harbor.models.agent.context import AgentContext
-except ImportError as exc:
-    raise SystemExit(
-        "Install Harbor before running this smoke, for example: pip install -e ../harbor"
-    ) from exc
+except ImportError:
+    install_harbor_stubs()
+    from nemo_fabric.integrations.harbor import FabricAgent
+    from harbor.models.agent.context import AgentContext
 
 
 @dataclass
@@ -61,7 +96,23 @@ class FakeHarborEnvironment:
                     "profile": "env_local",
                     "harness_type": "hermes",
                     "adapter_id": "nvidia.fabric.hermes.sdk",
-                    "artifacts": {"artifacts": []},
+                    "artifacts": {
+                        "root": "/workspace/agent/artifacts",
+                        "artifacts": [
+                            {
+                                "name": "stdout",
+                                "kind": "log",
+                                "path": "/workspace/agent/artifacts/stdout.txt",
+                                "media_type": "text/plain",
+                            },
+                            {
+                                "name": "workspace_patch",
+                                "kind": "patch",
+                                "path": "/workspace/agent/artifacts/workspace.patch",
+                                "media_type": "text/x-diff",
+                            },
+                        ],
+                    },
                     "telemetry": None,
                 }
             )
@@ -98,6 +149,8 @@ async def main() -> None:
     assert context.metadata
     assert context.metadata["fabric"]["status"] == "succeeded"
     assert context.metadata["fabric"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
+    artifacts = context.metadata["fabric"]["artifacts"]["artifacts"]
+    assert {artifact["name"] for artifact in artifacts} == {"stdout", "workspace_patch"}
 
 
 if __name__ == "__main__":
