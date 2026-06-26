@@ -65,6 +65,7 @@ def run_selected_mode(payload: dict[str, Any]) -> dict[str, Any]:
 def run_shim(payload: dict[str, Any]) -> dict[str, Any]:
     settings = settings_payload(payload)
     request = request_payload(payload)
+    context = runtime_context(payload)
     environment = environment_payload(payload)
     capabilities = capability_plan(payload)
 
@@ -73,6 +74,7 @@ def run_shim(payload: dict[str, Any]) -> dict[str, Any]:
         "adapter": "test-shim",
         "mode": "shim",
         "received": request.get("input"),
+        "session_id": context.get("session_id") or context.get("runtime_id"),
         "workspace": environment.get("workspace") or settings.get("workspace"),
         "native_skill_paths": (capabilities.get("native") or {}).get("skill_paths", []),
         "native_mcp_servers": sorted((capabilities.get("native") or {}).get("mcp_servers", {}).keys()),

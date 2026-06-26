@@ -15,6 +15,22 @@ def test_request_payload(hermes_common: types.ModuleType):
 
 
 @pytest.mark.parametrize(
+    ("runtime_context", "expected"),
+    [
+        ({"session_id": "caller-session", "runtime_id": "runtime-1"}, "caller-session"),
+        ({"runtime_id": "runtime-1"}, "runtime-1"),
+        ({}, None),
+    ],
+)
+def test_runtime_session_id_prefers_caller_session_id(
+    hermes_common: types.ModuleType,
+    runtime_context: dict[str, object],
+    expected: str | None,
+) -> None:
+    assert hermes_common.runtime_session_id({"runtime_context": runtime_context}) == expected
+
+
+@pytest.mark.parametrize(
     ("provider", "expected"),
     [
         ("nvidia", "https://integrate.api.nvidia.com/v1"),
@@ -168,6 +184,102 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config(
     }
 
 
+def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
+    hermes_common: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import nemo_fabric_adapters.common.utils as common_utils
+
+    relay_config = tmp_path / "relay.json"
+    relay_config.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "atof": {"enabled": True, "output_directory": "relay/atof"},
+                        "atif": {"enabled": True, "output_directory": "relay/atif"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config))
+    payload = {
+        "runtime_context": {
+            "environment": {
+                "workspace": str(tmp_path / "workspace"),
+                "artifacts": str(tmp_path / "artifacts"),
+            },
+            "telemetry": {"relay_enabled": True},
+        },
+        "capability_plan": {
+            "native": {
+                "skill_paths": [tmp_path / "skills" / "review"],
+                "mcp_servers": {
+                    "github": {
+                        "transport": "stdio",
+                        "url": "github-mcp --stdio",
+                        "exposure": "harness_native",
+                    },
+                    "memory": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example/memory",
+                        "exposure": "harness_native",
+                    },
+                },
+            }
+        },
+        "effective_config": {
+            "agent_name": "matrix-agent",
+            "config_root": str(tmp_path),
+            "config": {
+                "harness": {
+                    "settings": {
+                        "model": "review",
+                        "enabled_toolsets": ["git", "shell"],
+                        "toolset_platform": "cli",
+                        "terminal_backend": "local",
+                    }
+                },
+                "models": {
+                    "review": {
+                        "provider": "nvidia",
+                        "model": "nvidia/review-model",
+                    }
+                },
+            },
+        },
+    }
+
+    config = hermes_common.build_hermes_config(payload, relay_enabled=True)
+    plugin_config = common_utils.load_relay_plugin_config(payload)
+    observability = plugin_config["components"][0]["config"]
+
+    assert config["model"] == {
+        "provider": "nvidia",
+        "default": "nvidia/review-model",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+    }
+    assert config["terminal"]["cwd"] == str(tmp_path / "workspace")
+    assert config["skills"]["external_dirs"] == [str(tmp_path / "skills" / "review")]
+    assert config["mcp_servers"] == {
+        "github": {"enabled": True, "command": "github-mcp --stdio"},
+        "memory": {
+            "enabled": True,
+            "url": "https://mcp.example/memory",
+            "transport": "streamable-http",
+        },
+    }
+    assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
+    assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
+    assert observability["atof"]["output_directory"] == str(tmp_path / "relay" / "atof")
+    assert observability["atif"]["output_directory"] == str(tmp_path / "relay" / "atif")
+    assert observability["atif"]["agent_name"] == "matrix-agent"
+    assert observability["atif"]["model_name"] == "nvidia/review-model"
+
+
 def test_write_hermes_config_writes_file(hermes_common: types.ModuleType, tmp_path: Path) -> None:
     payload = {
         "effective_config": {
@@ -194,8 +306,16 @@ def test_write_hermes_config_writes_file(hermes_common: types.ModuleType, tmp_pa
             {"enabled": True, "command": "server --stdio"},
         ),
         (
+            {"transport": "stdio", "command": "server --stdio"},
+            {"enabled": True, "command": "server --stdio"},
+        ),
+        (
             {"transport": "command", "url": "server --command"},
             {"enabled": True, "command": "server --command"},
+        ),
+        (
+            {"transport": "process", "command": "server --process"},
+            {"enabled": True, "command": "server --process"},
         ),
         (
             {"transport": "sse", "url": "http://localhost:9000/sse"},
@@ -205,6 +325,10 @@ def test_write_hermes_config_writes_file(hermes_common: types.ModuleType, tmp_pa
             {"url": "http://localhost:9000/default"},
             {"enabled": True, "url": "http://localhost:9000/default"},
         ),
+        (
+            {"transport": "websocket", "url": "ws://localhost:9000"},
+            {"enabled": True, "url": "ws://localhost:9000", "transport": "websocket"},
+        ),
     ],
 )
 def test_hermes_mcp_server_config(
@@ -213,6 +337,21 @@ def test_hermes_mcp_server_config(
     expected: dict[str, object],
 ) -> None:
     assert hermes_common.hermes_mcp_server_config(server) == expected
+
+
+@pytest.mark.parametrize(
+    "server",
+    [
+        {"transport": "stdio"},
+        {"transport": "stdio", "url": "   "},
+    ],
+)
+def test_hermes_mcp_server_config_rejects_unsupported_mappings(
+    hermes_common: types.ModuleType,
+    server: dict[str, str],
+) -> None:
+    with pytest.raises(ValueError, match="requires url or command"):
+        hermes_common.hermes_mcp_server_config(server)
 
 
 def test_without_none(hermes_common: types.ModuleType) -> None:

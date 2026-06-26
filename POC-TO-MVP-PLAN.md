@@ -60,6 +60,8 @@ The repo already contains the core shape of the MVP:
   generation, and running.
 - Python package with native Rust bindings plus CLI fallback.
 - SDK support for both agent-package paths and typed/in-memory config.
+- Session-mode SDK lifecycle support with a stable `session_id` resume key for
+  both agent-package paths and typed/in-memory config.
 - Agent package examples with `agent.yaml`, `profiles/`, `skills/`, and
   workspace fixtures.
 - Ordered multi-profile resolution.
@@ -171,6 +173,13 @@ Status:
   `FABRIC_INVOCATION` file. The launcher reads that invocation file, maps Fabric
   config into Hermes-native config, and then invokes the real `hermes` CLI.
 - Both paths return the normalized Fabric `RunResult` shape.
+- Fabric model, workspace, skills, MCP, tools, telemetry, and artifact config
+  remains visible in generated Hermes-native config or launch settings.
+- Unsupported Hermes MCP mappings with no target fail before invocation.
+- Session-mode adapters receive Fabric's stable session key from
+  `runtime_context.session_id` when supplied, or `runtime_context.runtime_id`
+  as the default. Hermes CLI maps that Fabric key onto Hermes session id/title
+  for resume.
 
 Next steps:
 
@@ -179,11 +188,8 @@ Next steps:
 - Test Hermes SDK and CLI paths with more representative inputs.
 - Add parity checks for normalized result fields shared by the inline SDK and
   process-backed CLI paths.
-- Fabric model, workspace, skills, MCP, tools, telemetry, and artifact config
-  should remain visible in generated Hermes-native config or launch settings.
 - Add testing for Relay artifacts such as ATOF/ATIF references.
 - Add testing for harness-native events, artifacts, and logs.
-- Ensure unsupported mappings fail before invocation with actionable errors.
 
 ### 3. Config Variation Matrix
 
@@ -195,6 +201,9 @@ Status:
 - CLI and SDK smoke tests cover profile resolution and multi-profile planning.
 - Hermes capability mapping exists for model, workspace, skills, MCP, tools,
   telemetry, and artifacts.
+- Generated Hermes config checks confirm enabled skills, tools, MCP, telemetry,
+  workspace, and artifact settings.
+- Negative tests cover unsupported mappings failing before invocation.
 
 Next steps:
 
@@ -202,13 +211,9 @@ Next steps:
 - Add missing profile variations where useful, including alternate model,
   toolset, workspace, artifact, and telemetry combinations.
 - Test both Hermes SDK and Hermes CLI against the applicable matrix.
-- Add tests to confirm generated Hermes config or launch settings contain
-  enabled skills, tools, MCP, telemetry, workspace, and artifact settings.
 - Add ATIF/ATOF checks that confirm enabled skills, tools, MCP, or telemetry
   appear in the emitted trajectory where the harness and adapter support it.
 - Add checks for harness-native events, artifacts, and logs.
-- Add negative tests where unsupported mappings fail before invocation with
-  actionable errors.
 
 Config mapping and actual runtime behavior are related but not identical.
 Fabric should prove that capability config is mapped into the harness-native
@@ -225,6 +230,11 @@ Status:
 - Base Python SDK and CLI surfaces are in place.
 - SDK supports agent-package paths and typed/in-memory config.
 - CLI supports validate, inspect, plan, doctor, schema generation, and run.
+- SDK session APIs cover `start`, `start_config`, `invoke`, `stream`, `cancel`,
+  and `stop` for `runtime.mode: session`, including caller-provided
+  `session_id` propagation.
+- CLI includes `fabric chat` for local interactive session-mode debugging with
+  explicit `--session-id`, `/info`, `/verbose`, and oneshot-profile rejection.
 - SDK and CLI can plan and run Hermes without callers importing
   Hermes-specific code.
 - CLI and SDK smoke tests cover core planning and run paths.
@@ -236,8 +246,6 @@ Next steps:
 - Keep Python SDK as the primary API for consumers.
 - Keep CLI behavior aligned with SDK behavior for the same config/profile stack.
 - Keep plan/doctor/run examples in the README accurate.
-- Finish the async SDK boundary for start, invoke, stream, cancel, stop, and
-  run.
 - Keep typed config as a first-class SDK path so Platform can construct the
   Fabric agent slice from its own job/deployment config without materializing
   an agent directory.
@@ -253,17 +261,17 @@ Status:
 - Relay config pass-through exists for Hermes profiles.
 - Native harness outputs are preserved separately from Relay outputs.
 - SDK, CLI, and Harbor-facing paths expose ArtifactManifest data.
+- Relay artifact discovery is hardened for ATOF/ATIF outputs when telemetry is
+  enabled.
+- Relay-enabled profiles have tests for inspectable telemetry outputs or clear
+  telemetry references.
+- ArtifactManifest remains populated with output, logs, patch/status, native
+  harness artifacts, and telemetry references where available.
 
 Next steps:
 
-- Harden Relay artifact discovery for ATOF/ATIF outputs when telemetry is
-  enabled.
-- Add tests that verify Relay-enabled profiles produce inspectable telemetry
-  outputs or clear telemetry references.
 - Add tests that verify Relay-disabled profiles still produce native output,
   harness events where available, and logs.
-- Keep ArtifactManifest populated with output, logs, patch/status, native
-  harness artifacts, and telemetry references where available.
 - Confirm these artifacts are visible through SDK, CLI, and Harbor consumers.
 
 ### 6. Consumer Proof: Harbor
@@ -311,6 +319,7 @@ Before calling the MVP complete:
 - `cargo fmt --check` passes.
 - Python SDK smoke passes.
 - CLI smoke passes.
+- CLI chat smoke passes for session-mode profiles.
 - real Hermes SDK smoke passes in a documented clean environment.
 - real Hermes CLI smoke passes in a documented clean environment.
 - Hermes config-variation matrix passes for supported profile combinations.
