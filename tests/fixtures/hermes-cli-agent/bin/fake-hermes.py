@@ -14,10 +14,10 @@ from pathlib import Path
 
 def main() -> int:
     args = sys.argv[1:]
-    if "-z" not in args:
-        print("fake hermes expected -z", file=sys.stderr)
+    if "--query" not in args:
+        print("fake hermes expected --query", file=sys.stderr)
         return 2
-    prompt = args[args.index("-z") + 1]
+    prompt = args[args.index("--query") + 1]
     hermes_home = os.environ.get("HERMES_HOME", "")
     config_path = Path(hermes_home) / "config.yaml"
     if not config_path.is_file():
