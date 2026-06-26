@@ -58,6 +58,26 @@ def main() -> None:
         assert direct_plan["profile"] == str(direct_profile)
         assert direct_plan["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
 
+        profile_plans = [
+            ("hermes_sdk", "nvidia.fabric.hermes.sdk", "python", False),
+            ("hermes_cli", "nvidia.fabric.hermes.cli", "process", False),
+            ("hermes_relay", "nvidia.fabric.hermes.sdk", "python", True),
+            ("hermes_cli_relay", "nvidia.fabric.hermes.cli", "process", True),
+        ]
+        for profile, adapter_id, adapter_kind, relay_enabled in profile_plans:
+            profile_plan = call_json("plan", temp_example, "--profile", profile)
+            assert profile_plan["profiles"] == [profile]
+            descriptor = profile_plan["adapter_descriptor"]["descriptor"]
+            assert descriptor["adapter_id"] == adapter_id
+            assert descriptor["adapter_kind"] == adapter_kind
+            assert profile_plan["config"]["runtime"]["mode"] == "oneshot"
+            assert profile_plan["capability_plan"]["native"]["skill_paths"]
+            assert "github" in profile_plan["capability_plan"]["native"]["mcp_servers"]
+            telemetry_plan = profile_plan["telemetry_plan"]
+            assert telemetry_plan["relay_enabled"] is relay_enabled
+            if relay_enabled:
+                assert telemetry_plan["relay_output_dir"]
+
         multi_plan = call_json(
             "plan",
             temp_fixture,
@@ -82,6 +102,7 @@ def main() -> None:
         assert hermes["output"]["native_mcp_servers"] == ["github"]
         assert hermes["output"]["managed_skill_paths"] == []
         assert hermes["output"]["managed_mcp_servers"] == []
+        assert_relay_disabled_native_observability(hermes)
 
         request = json.dumps(
             {
@@ -185,6 +206,25 @@ def run_raw(stdin: str, *args: object) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
     )
+
+
+def assert_relay_disabled_native_observability(result: dict) -> None:
+    artifact_by_name = {
+        artifact["name"]: artifact
+        for artifact in result["artifacts"]["artifacts"]
+    }
+    assert "stdout" in artifact_by_name
+    assert "relay_config" not in artifact_by_name
+    assert not any(name.startswith("relay_") for name in artifact_by_name)
+
+    stdout_path = Path(artifact_by_name["stdout"]["path"])
+    assert stdout_path.is_file()
+    assert stdout_path.read_text(encoding="utf-8").strip()
+
+    event_kinds = {event["kind"] for event in result["events"]}
+    assert {"runtime_start", "invocation_start", "invocation_end"} <= event_kinds
+
+    assert result["telemetry"]["relay_enabled"] is False
 
 
 if __name__ == "__main__":

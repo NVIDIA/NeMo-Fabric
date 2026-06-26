@@ -46,6 +46,7 @@ def main() -> None:
 
         config_path = Path(result["output"]["hermes_config_path"])
         assert config_path.is_file()
+        assert_relay_disabled_native_observability(result)
 
 
 def call_json(*args: object) -> dict:
@@ -61,6 +62,27 @@ def call_json(*args: object) -> dict:
             f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
         )
     return json.loads(completed.stdout)
+
+
+def assert_relay_disabled_native_observability(result: dict) -> None:
+    artifact_by_name = {
+        artifact["name"]: artifact
+        for artifact in result["artifacts"]["artifacts"]
+    }
+    assert "stdout" in artifact_by_name
+    assert "relay_config" not in artifact_by_name
+    assert not any(name.startswith("relay_") for name in artifact_by_name)
+
+    stdout_path = Path(artifact_by_name["stdout"]["path"])
+    assert stdout_path.is_file()
+    assert stdout_path.read_text(encoding="utf-8").strip()
+
+    event_kinds = {event["kind"] for event in result["events"]}
+    assert {"runtime_start", "invocation_start", "invocation_end"} <= event_kinds
+
+    assert result["telemetry"]["relay_enabled"] is False
+    assert result["output"]["returncode"] == 0
+    assert result["output"]["stderr"] == ""
 
 
 if __name__ == "__main__":
