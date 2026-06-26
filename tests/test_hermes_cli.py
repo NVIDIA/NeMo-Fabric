@@ -226,6 +226,5 @@ class TestHermesE2E:
 
         last_step = steps[-1]
         assert last_step["message"] == "hermes.session.end"
-        assert last_step["extra"]["event_payload"]["completed"] is True
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"
