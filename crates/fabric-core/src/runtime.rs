@@ -1196,26 +1196,35 @@ fn parse_stdout_output(stdout: &str) -> Value {
     serde_json::from_str(stdout).unwrap_or_else(|_| Value::String(stdout.to_string()))
 }
 
-fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactManifest) {
-    let Some(relay_artifacts) = output.get("relay_artifacts").and_then(Value::as_array) else {
-        return;
-    };
+#[derive(Debug, Default, Deserialize)]
+struct RelayArtifactOutput {
+    #[serde(default)]
+    relay_artifacts: Vec<Value>,
+}
 
-    for artifact in relay_artifacts {
-        let Some(kind) = artifact.get("kind").and_then(Value::as_str) else {
+#[derive(Debug, Deserialize)]
+struct RelayArtifactCandidate {
+    kind: String,
+    path: PathBuf,
+}
+
+fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactManifest) {
+    let relay_output: RelayArtifactOutput =
+        serde_json::from_value(output.clone()).unwrap_or_default();
+
+    for artifact in relay_output.relay_artifacts {
+        let Ok(artifact) = serde_json::from_value::<RelayArtifactCandidate>(artifact) else {
             continue;
         };
+        let kind = artifact.kind.as_str();
         if !matches!(kind, "atof" | "atif") {
             continue;
         }
-        let Some(path) = artifact.get("path").and_then(Value::as_str) else {
-            continue;
-        };
-        if path.trim().is_empty() {
+        if artifact.path.as_os_str().is_empty() {
             continue;
         }
 
-        let path = resolve_relay_artifact_path(manifest, Path::new(path));
+        let path = resolve_relay_artifact_path(manifest, &artifact.path);
         if !path.exists()
             || manifest
                 .artifacts
@@ -1808,47 +1817,55 @@ environment:
         ));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
+        let adapter_script = r#"
+from pathlib import Path
+import json
+relay_dir = Path("artifacts/relay").resolve()
+relay_dir.mkdir(parents=True, exist_ok=True)
+atof = relay_dir / "events.atof.jsonl"
+atif = relay_dir / "trajectory-runtime.atif.json"
+atif_extra = relay_dir / "trajectory-child.atif.json"
+atof.write_text('{"kind":"scope"}\n', encoding="utf-8")
+atif.write_text('{"trajectory":true}', encoding="utf-8")
+atif_extra.write_text('{"trajectory":"child"}', encoding="utf-8")
+print(json.dumps({
+    "response": "ok",
+    "relay_artifacts": [
+        {"kind": "atof", "path": str(atof)},
+        {"kind": "atif", "path": str(atif)},
+        {"kind": "atif", "path": str(atif_extra)}
+    ]
+}))
+"#;
+        let agent_config = serde_json::json!({
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {
+                "name": "relay-artifact-test-agent",
+            },
+            "harness": {
+                "adapter_id": "acme.fabric.process",
+                "settings": {
+                    "command": "python3",
+                    "args": ["-c", adapter_script],
+                },
+            },
+            "models": {
+                "default": {
+                    "provider": "test",
+                    "model": "test-model",
+                },
+            },
+            "runtime": {
+                "mode": "oneshot",
+                "transport": "cli",
+                "input_schema": "text",
+                "output_schema": "text",
+                "artifacts": "./artifacts",
+            },
+        });
         fs::write(
             root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: relay-artifact-test-agent
-harness:
-  adapter_id: acme.fabric.process
-  settings:
-    command: python3
-    args:
-      - -c
-      - |
-        from pathlib import Path
-        import json
-        relay_dir = Path("artifacts/relay").resolve()
-        relay_dir.mkdir(parents=True, exist_ok=True)
-        atof = relay_dir / "events.atof.jsonl"
-        atif = relay_dir / "trajectory-runtime.atif.json"
-        atif_extra = relay_dir / "trajectory-child.atif.json"
-        atof.write_text('{"kind":"scope"}\n', encoding="utf-8")
-        atif.write_text('{"trajectory":true}', encoding="utf-8")
-        atif_extra.write_text('{"trajectory":"child"}', encoding="utf-8")
-        print(json.dumps({
-            "response": "ok",
-            "relay_artifacts": [
-                {"kind": "atof", "path": str(atof)},
-                {"kind": "atif", "path": str(atif)},
-                {"kind": "atif", "path": str(atif_extra)}
-            ]
-        }))
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  mode: oneshot
-  transport: cli
-  input_schema: text
-  output_schema: text
-  artifacts: ./artifacts
-"#,
+            serde_yaml::to_string(&agent_config).expect("serialize agent config"),
         )
         .expect("write config");
         fs::write(
