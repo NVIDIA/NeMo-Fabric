@@ -10,6 +10,7 @@ surface and invokes the installed Hermes runtime.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import os
@@ -40,7 +41,7 @@ def main() -> None:
 def run(payload: dict[str, Any]) -> dict[str, Any]:
     """Fabric adapter entrypoint used by script and native SDK runtime calls."""
 
-    return run_hermes_sdk(payload)
+    return asyncio.run(run_hermes_sdk(payload))
 
 
 def resolve_hermes_toolsets(settings: dict[str, Any], config: dict[str, Any]) -> list[str] | None:
@@ -69,7 +70,7 @@ def load_runtime_history(session_db: Any, session_id: str | None) -> list[dict[s
     return messages or None
 
 
-def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
+async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     settings = common_utils.settings_payload(payload)
     request = hermes_common.request_payload(payload)
     model_config = hermes_common.selected_model_config(payload)
