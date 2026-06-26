@@ -171,6 +171,9 @@ Status:
   `FABRIC_INVOCATION` file. The launcher reads that invocation file, maps Fabric
   config into Hermes-native config, and then invokes the real `hermes` CLI.
 - Both paths return the normalized Fabric `RunResult` shape.
+- Fabric model, workspace, skills, MCP, tools, telemetry, and artifact config
+  remains visible in generated Hermes-native config or launch settings.
+- Unsupported Hermes MCP mappings with no target fail before invocation.
 
 Next steps:
 
@@ -179,11 +182,8 @@ Next steps:
 - Test Hermes SDK and CLI paths with more representative inputs.
 - Add parity checks for normalized result fields shared by the inline SDK and
   process-backed CLI paths.
-- Fabric model, workspace, skills, MCP, tools, telemetry, and artifact config
-  should remain visible in generated Hermes-native config or launch settings.
 - Add testing for Relay artifacts such as ATOF/ATIF references.
 - Add testing for harness-native events, artifacts, and logs.
-- Ensure unsupported mappings fail before invocation with actionable errors.
 
 ### 3. Config Variation Matrix
 
@@ -195,6 +195,9 @@ Status:
 - CLI and SDK smoke tests cover profile resolution and multi-profile planning.
 - Hermes capability mapping exists for model, workspace, skills, MCP, tools,
   telemetry, and artifacts.
+- Generated Hermes config checks confirm enabled skills, tools, MCP, telemetry,
+  workspace, and artifact settings.
+- Negative tests cover unsupported mappings failing before invocation.
 
 Next steps:
 
@@ -202,13 +205,9 @@ Next steps:
 - Add missing profile variations where useful, including alternate model,
   toolset, workspace, artifact, and telemetry combinations.
 - Test both Hermes SDK and Hermes CLI against the applicable matrix.
-- Add tests to confirm generated Hermes config or launch settings contain
-  enabled skills, tools, MCP, telemetry, workspace, and artifact settings.
 - Add ATIF/ATOF checks that confirm enabled skills, tools, MCP, or telemetry
   appear in the emitted trajectory where the harness and adapter support it.
 - Add checks for harness-native events, artifacts, and logs.
-- Add negative tests where unsupported mappings fail before invocation with
-  actionable errors.
 
 Config mapping and actual runtime behavior are related but not identical.
 Fabric should prove that capability config is mapped into the harness-native
