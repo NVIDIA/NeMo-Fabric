@@ -122,7 +122,7 @@ class TestHermesE2E:
         assert hermes_config_path.is_file()
         assert hermes_config_path.is_relative_to(self.code_review_agent_dir)
 
-        hermes_config = yaml.safe_load(hermes_config_path.read_text())
+        hermes_config = yaml.safe_load(hermes_config_path.read_text(encoding="utf-8"))
         assert hermes_config["model"]["provider"] == "nvidia"
         assert hermes_config["model"]["default"] == "nvidia/nemotron-3-nano-30b-a3b"
         assert hermes_config["model"]["base_url"] == f"{self.api_server}/v1"
@@ -145,7 +145,7 @@ class TestHermesE2E:
         relay_config_path = Path(artifact_by_name["relay_config"]["path"]).resolve()
         assert relay_config_path.is_file()
         assert relay_config_path.is_relative_to(self.artifact_root)
-        relay_config = json.loads(relay_config_path.read_text())
+        relay_config = json.loads(relay_config_path.read_text(encoding="utf-8"))
         assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
         assert relay_config["relay"]["enabled"] is True
         assert relay_config["fabric"]["profile"] == "hermes_cli_relay"
