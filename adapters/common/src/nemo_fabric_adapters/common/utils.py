@@ -176,7 +176,7 @@ def _relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConf
         )
 
     policy = plugin_config.get("policy") if isinstance(plugin_config.get("policy"), dict) else {}
-    return plugin.PluginConfig(
+    plugin_config = plugin.PluginConfig(
         version=int(plugin_config.get("version", 1)),
         components=components,
         policy=plugin.ConfigPolicy(
@@ -185,6 +185,12 @@ def _relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConf
             unsupported_value=policy.get("unsupported_value", "error"),
         ),
     )
+
+    report = plugin.validate(plugin_config)
+    if any(diagnostic["level"] == "error" for diagnostic in report["diagnostics"]):
+        raise RuntimeError(report["diagnostics"])
+
+    return plugin_config
 
 
 def _relay_api_atof_config(value: Any) -> AtofConfig | None:
