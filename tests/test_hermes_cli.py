@@ -186,7 +186,7 @@ class TestHermesE2E:
             "uuid",
         }
         actual_atof_fields = set().union(*(record.keys() for record in atof_records))
-        assert len(atof_records) == 6
+        assert len(atof_records) == 7
         assert actual_atof_fields.issuperset(expected_atof_fields)
         assert all(
             record["metadata"]["model"] == "nvidia/nemotron-3-nano-30b-a3b"
@@ -197,7 +197,10 @@ class TestHermesE2E:
             atof_records[0]["name"]
             == f"hermes-session-{atof_records[0]['metadata']['session_id']}"
         )
-        assert atof_records[-1]["name"] == "hermes.session.end"
+
+        assert atof_records[-2]["name"] == "hermes.session.end"
+        assert atof_records[-1]["scope_category"] == "end"
+        assert atof_records[-1]["data"]["reason"] == "shutdown"
 
     async def test_atif_artifacts(self):
         kinds = {artifact["kind"] for artifact in self.relay_artifacts}
