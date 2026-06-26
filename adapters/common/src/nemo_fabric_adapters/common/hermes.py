@@ -179,7 +179,10 @@ def dump_yaml(
 
 def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
     transport = str(server.get("transport") or "").strip().lower()
-    target = os.path.expandvars(str(server.get("url") or "")).strip()
+    raw_target = server.get("url")
+    if not raw_target and transport in {"stdio", "command", "process"}:
+        raw_target = server.get("command")
+    target = os.path.expandvars(str(raw_target or "")).strip()
     if not target:
         raise ValueError("MCP server mapping requires url or command")
 

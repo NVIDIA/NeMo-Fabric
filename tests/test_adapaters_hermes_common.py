@@ -345,8 +345,16 @@ def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
             {"enabled": True, "command": "server --stdio"},
         ),
         (
+            {"transport": "stdio", "command": "server --stdio"},
+            {"enabled": True, "command": "server --stdio"},
+        ),
+        (
             {"transport": "command", "url": "server --command"},
             {"enabled": True, "command": "server --command"},
+        ),
+        (
+            {"transport": "process", "command": "server --process"},
+            {"enabled": True, "command": "server --process"},
         ),
         (
             {"transport": "sse", "url": "http://localhost:9000/sse"},
