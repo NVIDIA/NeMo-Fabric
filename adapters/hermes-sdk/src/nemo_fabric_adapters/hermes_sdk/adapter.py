@@ -18,7 +18,17 @@ import sys
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nemo_relay import plugin
+    from nemo_relay.observability import (
+        AtifConfig,
+        AtofConfig,
+        HttpStorageConfig,
+        OtlpConfig,
+        S3StorageConfig,
+    )
 
 CUR_DIR = Path(__file__).parent
 ADAPTERS_DIR = CUR_DIR.parent.parent.parent.parent
@@ -85,11 +95,16 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     os.environ["HERMES_SESSION_SOURCE"] = "fabric"
     os.environ.setdefault("TERMINAL_ENV", settings.get("terminal_backend", "local"))
     os.environ.setdefault("TERMINAL_TIMEOUT", str(settings.get("terminal_timeout", 60)))
-    relay_plugin_config = hermes_common.configure_hermes_relay(payload)
+    relay_enabled = os.environ.get("FABRIC_RELAY_ENABLED", "").strip().lower() == "true"
+
+    relay_plugin_config = None
+    if relay_enabled:
+        relay_plugin_config = common_utils.load_relay_plugin_config(payload)
+
     hermes_config_path, hermes_config = hermes_common.write_hermes_config(
         payload,
         hermes_home,
-        relay_enabled=relay_plugin_config is not None,
+        relay_enabled=relay_enabled,
     )
 
     api_key_env = settings.get("api_key_env") or model_config.get("api_key_env") or "NVIDIA_API_KEY"
@@ -111,7 +126,16 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
         "user_message": user_message,
         "relay_plugin_config": relay_plugin_config,
     }
-    (result, enabled_toolsets, relay_artifacts, adapter_stdout) = _invoke_hermes(**hermes_kwargs)
+    if relay_enabled:
+        relay_api_config = _relay_api_plugin_config(relay_plugin_config or {})
+        from nemo_relay import plugin
+
+        async with plugin.plugin(relay_api_config):
+            (result, enabled_toolsets, relay_artifacts, adapter_stdout) = _invoke_hermes(
+                **hermes_kwargs
+            )
+    else:
+        (result, enabled_toolsets, relay_artifacts, adapter_stdout) = _invoke_hermes(**hermes_kwargs)
     response = result.get("response") or result.get("final_response")
     messages = result.get("messages") or []
     output = {
@@ -142,6 +166,158 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
         }
         output["relay_artifacts"] = relay_artifacts
     return output
+
+
+def _relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
+    from nemo_relay import plugin
+    from nemo_relay.observability import (
+        ComponentSpec,
+        ConfigPolicy,
+        ObservabilityConfig,
+    )
+
+    components: list[Any] = []
+    for component in plugin_config.get("components", []):
+        if not isinstance(component, dict):
+            continue
+        enabled = bool(component.get("enabled", True))
+        config = component.get("config") or {}
+        if component.get("kind") == "observability" and isinstance(config, dict):
+            policy = config.get("policy") if isinstance(config.get("policy"), dict) else {}
+            components.append(
+                ComponentSpec(
+                    ObservabilityConfig(
+                        version=int(config.get("version", 1)),
+                        atof=_relay_api_atof_config(config.get("atof")),
+                        atif=_relay_api_atif_config(
+                            config.get("atif"),
+                        ),
+                        opentelemetry=_relay_api_otlp_config(config.get("opentelemetry")),
+                        openinference=_relay_api_otlp_config(config.get("openinference")),
+                        policy=ConfigPolicy(
+                            unknown_component=policy.get("unknown_component", "warn"),
+                            unknown_field=policy.get("unknown_field", "warn"),
+                            unsupported_value=policy.get("unsupported_value", "error"),
+                        ),
+                    ),
+                    enabled=enabled,
+                )
+            )
+            continue
+        components.append(
+            plugin.ComponentSpec(
+                kind=str(component.get("kind") or ""),
+                enabled=enabled,
+                config=config if isinstance(config, dict) else {},
+            )
+        )
+
+    policy = plugin_config.get("policy") if isinstance(plugin_config.get("policy"), dict) else {}
+    return plugin.PluginConfig(
+        version=int(plugin_config.get("version", 1)),
+        components=components,
+        policy=plugin.ConfigPolicy(
+            unknown_component=policy.get("unknown_component", "warn"),
+            unknown_field=policy.get("unknown_field", "warn"),
+            unsupported_value=policy.get("unsupported_value", "error"),
+        ),
+    )
+
+
+def _relay_api_atof_config(value: Any) -> AtofConfig | None:
+    if not isinstance(value, dict):
+        return None
+    from nemo_relay.observability import AtofConfig, AtofEndpointConfig
+
+    endpoint_configs = value.get("endpoints")
+    endpoints = None
+    if isinstance(endpoint_configs, list):
+        endpoints = [
+            AtofEndpointConfig(
+                url=str(endpoint.get("url", "")),
+                transport=endpoint.get("transport", "http_post"),
+                headers=endpoint.get("headers", {}),
+                timeout_millis=int(endpoint.get("timeout_millis", 3000)),
+            )
+            for endpoint in endpoint_configs
+            if isinstance(endpoint, dict)
+        ]
+    return AtofConfig(
+        enabled=bool(value.get("enabled", False)),
+        output_directory=value.get("output_directory"),
+        filename=value.get("filename"),
+        mode=value.get("mode", "append"),
+        endpoints=endpoints,
+    )
+
+
+def _relay_api_atif_config(value: Any) -> AtifConfig | None:
+    if not isinstance(value, dict):
+        return None
+    from nemo_relay.observability import AtifConfig
+
+    storage_configs = value.get("storage")
+    storage = None
+    if isinstance(storage_configs, list):
+        storage = [
+            _relay_api_storage_config(item)
+            for item in storage_configs
+            if isinstance(item, dict)
+        ]
+    return AtifConfig(
+        enabled=bool(value.get("enabled", False)),
+        agent_name=value.get("agent_name", "NeMo Relay"),
+        agent_version=value.get("agent_version"),
+        model_name=value.get("model_name", "unknown"),
+        tool_definitions=value.get("tool_definitions"),
+        extra=value.get("extra"),
+        output_directory=value.get("output_directory"),
+        filename_template=value.get("filename_template", "nemo-relay-atif-{session_id}.json"),
+        storage=storage,
+    )
+
+
+def _relay_api_storage_config(value: dict[str, Any]) -> HttpStorageConfig | S3StorageConfig:
+    if value.get("type") == "s3":
+        from nemo_relay.observability import S3StorageConfig
+
+        return S3StorageConfig(
+            bucket=value.get("bucket", ""),
+            key_prefix=value.get("key_prefix"),
+            access_key_id=value.get("access_key_id"),
+            secret_access_key_var=value.get("secret_access_key_var"),
+            session_token_var=value.get("session_token_var"),
+            region=value.get("region"),
+            endpoint_url=value.get("endpoint_url"),
+            allow_http=value.get("allow_http"),
+        )
+    from nemo_relay.observability import HttpStorageConfig
+
+    return HttpStorageConfig(
+        endpoint=value.get("endpoint", ""),
+        headers=value.get("headers", {}),
+        header_env=value.get("header_env", {}),
+        timeout_millis=int(value.get("timeout_millis", 3000)),
+    )
+
+
+def _relay_api_otlp_config(value: Any) -> OtlpConfig | None:
+    if not isinstance(value, dict):
+        return None
+    from nemo_relay.observability import OtlpConfig
+
+    return OtlpConfig(
+        enabled=bool(value.get("enabled", False)),
+        transport=value.get("transport", "http_binary"),
+        endpoint=value.get("endpoint"),
+        headers=value.get("headers", {}),
+        resource_attributes=value.get("resource_attributes", {}),
+        service_name=value.get("service_name", "nemo-relay"),
+        service_namespace=value.get("service_namespace"),
+        service_version=value.get("service_version"),
+        instrumentation_scope=value.get("instrumentation_scope"),
+        timeout_millis=int(value.get("timeout_millis", 3000)),
+    )
 
 
 def _invoke_hermes(
