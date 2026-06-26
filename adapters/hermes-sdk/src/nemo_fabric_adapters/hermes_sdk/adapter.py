@@ -117,7 +117,7 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
         "relay_plugin_config": relay_plugin_config,
     }
     if relay_enabled:
-        relay_api_config = common_utils._relay_api_plugin_config(relay_plugin_config or {})
+        relay_api_config = common_utils.relay_api_plugin_config(relay_plugin_config or {})
         from nemo_relay import plugin
 
         async with plugin.plugin(relay_api_config):

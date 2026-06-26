@@ -131,7 +131,7 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
                 section.setdefault("model_name", _relay_model_name(payload))
 
 
-def _relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
+def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
     from nemo_relay import plugin
     from nemo_relay.observability import (
         ComponentSpec,
