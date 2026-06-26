@@ -20,6 +20,14 @@ def _plan() -> dict[str, Any]:
     return {
         "agent_name": "demo",
         "profile": "hermes_sdk",
+        "config": {
+            "runtime": {
+                "mode": "session",
+                "transport": "library",
+                "input_schema": "chat",
+                "output_schema": "message",
+            },
+        },
         "adapter_descriptor": {
             "descriptor": {"adapter_kind": "python", "adapter_id": "test.fabric.shim"}
         },
@@ -91,6 +99,7 @@ async def stable_runtime_across_turns() -> None:
     session = _session(native)
     assert session.status is SessionStatus.ACTIVE
     assert session.runtime_id == "runtime-1"
+    assert session.session_id == "runtime-1"
     assert "session_id" not in session.info
     assert not hasattr(session, "id")
 
@@ -98,6 +107,8 @@ async def stable_runtime_across_turns() -> None:
     await session.invoke("What's my name?")
 
     assert [inv["runtime_id"] for inv in session.invocations] == ["runtime-1", "runtime-1"]
+    assert native.requests[0]["context"]["session_id"] == "runtime-1"
+    assert native.requests[1]["context"]["session_id"] == "runtime-1"
     assert "history" not in native.requests[0]["context"]
     assert "history" not in native.requests[1]["context"]
     assert session.runtime_id == "runtime-1"

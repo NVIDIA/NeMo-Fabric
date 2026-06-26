@@ -20,10 +20,18 @@ from nemo_fabric import FabricClient, FabricNativeUnavailableError, Session, Ses
 from nemo_fabric import client as client_mod
 
 
-def _plan(adapter_kind: str = "python") -> dict[str, Any]:
+def _plan(adapter_kind: str = "python", runtime_mode: str = "session") -> dict[str, Any]:
     return {
         "agent_name": "demo",
         "profile": "hermes_sdk",
+        "config": {
+            "runtime": {
+                "mode": runtime_mode,
+                "transport": "library",
+                "input_schema": "chat",
+                "output_schema": "message",
+            },
+        },
         "adapter_descriptor": {
             "descriptor": {
                 "adapter_kind": adapter_kind,
@@ -52,7 +60,8 @@ def _runtime() -> dict[str, Any]:
 
 
 class FakeNative:
-    def __init__(self) -> None:
+    def __init__(self, runtime_mode: str = "session") -> None:
+        self.runtime_mode = runtime_mode
         self.plans: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
         self.stopped = 0
@@ -65,7 +74,7 @@ class FakeNative:
         assert path == "agent"
         if profile is not None:
             assert profile == "hermes_sdk"
-        return json.dumps(_plan())
+        return json.dumps(_plan(runtime_mode=self.runtime_mode))
 
     def plan_config(
         self,
@@ -74,7 +83,7 @@ class FakeNative:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
-        return json.dumps(_plan())
+        return json.dumps(_plan(runtime_mode=self.runtime_mode))
 
     def start_runtime(self, plan_json: str) -> str:
         assert json.loads(plan_json)["agent_name"] == "demo"
@@ -154,6 +163,15 @@ def _session(native: FakeNative | None = None, overrides: dict | None = None) ->
     )
 
 
+def test_session_constructor_rejects_non_session_runtime_mode():
+    with pytest.raises(RuntimeError, match="requires runtime.mode=session"):
+        Session(
+            client=NativeClient(FakeNative()),
+            plan=_plan(runtime_mode="oneshot"),
+            runtime=_runtime(),
+        )
+
+
 async def test_start_creates_session_from_core_runtime_handle() -> None:
     native = FakeNative()
     session = await NativeClient(native).start("agent", profile="hermes_sdk")
@@ -165,6 +183,41 @@ async def test_start_creates_session_from_core_runtime_handle() -> None:
     assert session.info["runtime_id"] == "runtime-1"
     assert "session_id" not in session.info
     assert not hasattr(session, "id")
+
+
+async def test_start_accepts_caller_session_id_and_propagates_to_turn_context():
+    native = FakeNative()
+    session = await NativeClient(native).start(
+        "agent",
+        profile="hermes_sdk",
+        session_id="caller-session-123",
+    )
+
+    result = await session.invoke("hello session")
+
+    assert session.session_id == "caller-session-123"
+    assert result["runtime_id"] == "runtime-1"
+    assert native.requests[0]["context"]["session_id"] == "caller-session-123"
+
+
+async def test_start_rejects_non_session_runtime_mode():
+    native = FakeNative(runtime_mode="oneshot")
+
+    with pytest.raises(RuntimeError, match="requires runtime.mode=session"):
+        await NativeClient(native).start("agent", profile="hermes_sdk")
+
+    assert native.stopped == 0
+    assert native.requests == []
+
+
+async def test_session_id_defaults_to_runtime_id_for_adapter_context():
+    native = FakeNative()
+    session = _session(native)
+
+    await session.invoke("hello default session")
+
+    assert session.session_id == "runtime-1"
+    assert native.requests[0]["context"]["session_id"] == "runtime-1"
 
 
 async def test_invoke_uses_stable_runtime_and_does_not_replay_history() -> None:
@@ -537,3 +590,28 @@ async def test_start_config_creates_session_from_core_runtime_handle() -> None:
     assert session.runtime_id == "runtime-1"
     assert result["runtime_id"] == "runtime-1"
     assert native.requests[0]["input"] == "hello typed session"
+
+
+async def test_start_config_accepts_caller_session_id():
+    native = FakeNative()
+    config = {"schema_version": "fabric.agent/v1alpha1", "metadata": {"name": "demo"}}
+
+    session = await NativeClient(native).start_config(
+        config,
+        session_id="typed-session-123",
+    )
+    await session.invoke("hello typed session")
+
+    assert session.session_id == "typed-session-123"
+    assert native.requests[0]["context"]["session_id"] == "typed-session-123"
+
+
+async def test_start_config_rejects_non_session_runtime_mode():
+    native = FakeNative(runtime_mode="oneshot")
+    config = {"schema_version": "fabric.agent/v1alpha1", "metadata": {"name": "demo"}}
+
+    with pytest.raises(RuntimeError, match="requires runtime.mode=session"):
+        await NativeClient(native).start_config(config)
+
+    assert native.stopped == 0
+    assert native.requests == []

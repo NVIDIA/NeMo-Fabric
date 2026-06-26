@@ -7,8 +7,8 @@ Drives ``FabricClient.start -> invoke -> invoke -> stop`` against the Hermes SDK
 and CLI adapters and asserts the session carries conversation memory across
 turns through the same Fabric runtime handle.
 
-Unlike ``smoke_hermes_sdk.py`` (which shells out to the CLI), the session path is
-SDK-only and runs through the native Fabric runtime lifecycle, so this must be
+Unlike ``smoke_hermes_sdk.py`` (which shells out to the CLI), this exercises the
+SDK session APIs through the native Fabric runtime lifecycle, so this must be
 executed by an interpreter that has BOTH the nemo_fabric native extension and
 Hermes importable:
 
@@ -105,7 +105,7 @@ async def _run_cli_session() -> None:
         r1 = await session.invoke("My name is Robin. Please remember it for later.")
         assert r1["status"] == "succeeded", r1
         assert r1["output"]["mode"] == "hermes_cli_session", r1
-        assert r1["output"]["session_id"] == session.runtime_id, r1
+        assert r1["output"]["session_id"] == session.session_id, r1
 
         r2 = await session.invoke("What is my name? Reply with just the name.")
         assert r2["status"] == "succeeded", r2
