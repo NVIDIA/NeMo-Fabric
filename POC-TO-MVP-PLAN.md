@@ -182,14 +182,14 @@ Status:
   for resume.
 - Relay-backed Hermes CLI tests now cover ATOF/ATIF artifact references and
   generated Relay config in the process-backed path.
+- SDK and CLI smoke coverage asserts normalized `RunResult` parity for shared
+  fields across both inline Python and process-backed adapter paths.
 
 Next steps:
 
 - Review the Hermes adapter implementations for maintainability and alignment
   with the minimal descriptor fields Fabric currently uses.
 - Test Hermes SDK and CLI paths with more representative inputs.
-- Add parity checks for normalized result fields shared by the inline SDK and
-  process-backed CLI paths.
 - Add testing for harness-native events, artifacts, and logs.
 
 ### 3. Config Variation Matrix
@@ -239,6 +239,12 @@ Status:
 - SDK and CLI can plan and run Hermes without callers importing
   Hermes-specific code.
 - CLI and SDK smoke tests cover core planning and run paths.
+- README examples for plan, doctor, typed config, SDK sessions, and CLI chat are
+  mirrored by executable smoke tests to prevent documented API drift.
+- Typed config is a first-class SDK path and is covered without requiring an
+  agent directory.
+- The core SDK is covered as consumer-neutral and dependency-free; Harbor,
+  Hermes, Relay, and adapter packages stay out of a plain `import nemo_fabric`.
 
 Next steps:
 
@@ -246,12 +252,6 @@ Next steps:
   for each API.
 - Keep Python SDK as the primary API for consumers.
 - Keep CLI behavior aligned with SDK behavior for the same config/profile stack.
-- Keep plan/doctor/run examples in the README accurate.
-- Keep typed config as a first-class SDK path so Platform can construct the
-  Fabric agent slice from its own job/deployment config without materializing
-  an agent directory.
-- Keep the SDK API consumer-neutral. Consider consumers such as Harbor while
-  defining the API so it does not become Platform-specific.
 
 ### 5. Telemetry And Artifacts
 
@@ -279,10 +279,16 @@ Status: optional/stretch goal.
 Goal: validate the SDK/CLI contract through one real evaluation consumer after
 the SDK/CLI and Hermes paths are stable.
 
-Next steps:
+Current status:
 
 - Keep `nemo_fabric.integrations.harbor:FabricAgent` as the Harbor entrypoint.
 - Keep Harbor-specific usage in `integrations/harbor/README.md`.
+- Lightweight Harbor integration smoke coverage validates command construction,
+  Fabric metadata propagation, and ArtifactManifest handoff with a fake Harbor
+  environment.
+
+Next steps:
+
 - Run the lightweight Harbor smoke in a clean environment.
 - Run one Harbor SWE-Bench Verified task through Fabric.
 - Run the Harbor verifier against the Fabric-produced patch.
