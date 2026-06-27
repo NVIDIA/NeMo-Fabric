@@ -1070,7 +1070,8 @@ fn resolve_capability_plan(
         .unwrap_or_default();
     let tools_are_native = config.tools.is_some() && accepts("tools");
     let mut native = CapabilityTargetPlan::default();
-    let mut managed = CapabilityTargetPlan::default();
+    let managed = CapabilityTargetPlan::default();
+    let mut unsupported = CapabilityTargetPlan::default();
     let mut routes = Vec::new();
 
     if config.tools.is_some() {
@@ -1083,12 +1084,12 @@ fn resolve_capability_plan(
                 reason: "selected adapter accepts Fabric tools config".to_string(),
             });
         } else {
-            managed.tools_configured = true;
+            unsupported.tools_configured = true;
             routes.push(CapabilityRoute {
                 kind: CapabilityKind::Tools,
                 name: "tools".to_string(),
-                target: CapabilityTarget::FabricManaged,
-                reason: "selected adapter does not declare native tools support".to_string(),
+                target: CapabilityTarget::Unsupported,
+                reason: "selected adapter does not declare native tools support and Fabric-managed tools are not implemented".to_string(),
             });
         }
     }
@@ -1103,12 +1104,12 @@ fn resolve_capability_plan(
                 reason: "selected adapter accepts Fabric skills config".to_string(),
             });
         } else {
-            managed.skill_paths = skill_paths.clone();
+            unsupported.skill_paths = skill_paths.clone();
             routes.push(CapabilityRoute {
                 kind: CapabilityKind::Skills,
                 name: "skills".to_string(),
-                target: CapabilityTarget::FabricManaged,
-                reason: "selected adapter does not declare native skills support".to_string(),
+                target: CapabilityTarget::Unsupported,
+                reason: "selected adapter does not declare native skills support and Fabric-managed skills are not implemented".to_string(),
             });
         }
     }
@@ -1128,16 +1129,16 @@ fn resolve_capability_plan(
                 ),
             });
         } else {
-            managed.mcp_servers.insert(name.clone(), server.clone());
+            unsupported.mcp_servers.insert(name.clone(), server.clone());
             routes.push(CapabilityRoute {
                 kind: CapabilityKind::Mcp,
                 name: name.clone(),
-                target: CapabilityTarget::FabricManaged,
+                target: CapabilityTarget::Unsupported,
                 reason: match server.exposure {
                     McpExposure::FabricManaged => {
-                        "MCP server explicitly requests Fabric-managed exposure".to_string()
+                        "MCP server explicitly requests Fabric-managed exposure but Fabric-managed MCP is not implemented".to_string()
                     }
-                    _ => "selected adapter does not declare native MCP support".to_string(),
+                    _ => "selected adapter does not declare native MCP support and Fabric-managed MCP is not implemented".to_string(),
                 },
             });
         }
@@ -1149,6 +1150,7 @@ fn resolve_capability_plan(
         mcp_servers,
         native,
         managed,
+        unsupported,
         routes,
     }
 }
@@ -1295,6 +1297,9 @@ pub struct CapabilityPlan {
     /// Capabilities that Fabric must expose or manage outside the native harness config.
     #[serde(default)]
     pub managed: CapabilityTargetPlan,
+    /// Capabilities that are configured but not executable by this Fabric build.
+    #[serde(default)]
+    pub unsupported: CapabilityTargetPlan,
     /// Routing decisions made while resolving the effective config.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<CapabilityRoute>,
@@ -1347,6 +1352,8 @@ pub enum CapabilityTarget {
     HarnessNative,
     /// Fabric exposes or manages the capability around the harness.
     FabricManaged,
+    /// Capability is configured but no executable surface exists.
+    Unsupported,
 }
 
 /// Resolved MCP server exposure.
@@ -1559,18 +1566,17 @@ environment:
             Some(1)
         );
         assert!(plan.capability_plan.native.mcp_servers.is_empty());
+        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
         assert!(
-            plan.capability_plan
-                .managed
-                .mcp_servers
-                .contains_key("github")
+            plan.capability_plan.routes.iter().any(
+                |route| route.name == "github" && route.target == CapabilityTarget::Unsupported
+            )
         );
         assert!(
             plan.capability_plan
-                .routes
-                .iter()
-                .any(|route| route.name == "github"
-                    && route.target == CapabilityTarget::FabricManaged)
+                .unsupported
+                .mcp_servers
+                .contains_key("github")
         );
     }
 
@@ -1594,9 +1600,10 @@ environment:
                 .map(|telemetry| telemetry.relay_enabled),
             Some(true)
         );
+        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
         assert!(
             plan.capability_plan
-                .managed
+                .unsupported
                 .mcp_servers
                 .contains_key("github")
         );
@@ -1620,13 +1627,87 @@ environment:
         assert_eq!(plan.profiles, vec!["mcp_github"]);
         assert!(plan.config_path.ends_with("agent.yaml"));
         assert!(plan.config.profiles.directories.is_empty());
+        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
         assert!(
             plan.capability_plan
-                .managed
+                .unsupported
                 .mcp_servers
                 .contains_key("github")
         );
         assert_eq!(plan.config_root, root);
+    }
+
+    #[test]
+    fn unsupported_capabilities_do_not_claim_fabric_managed_execution() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-unsupported-capability-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("adapters/minimal")).expect("create adapters");
+        std::fs::create_dir_all(root.join("skills/review")).expect("create skills");
+        std::fs::write(
+            root.join("agent.yaml"),
+            r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: unsupported-capability-agent
+harness:
+  adapter_id: acme.fabric.minimal
+models:
+  default:
+    provider: test
+    model: test-model
+runtime:
+  mode: oneshot
+  transport: cli
+  input_schema: text
+  output_schema: text
+tools:
+  - name: shell
+skills:
+  paths:
+    - ./skills/review
+mcp:
+  servers:
+    github:
+      transport: streamable-http
+      url: http://example.invalid/mcp
+      exposure: fabric_managed
+"#,
+        )
+        .expect("write agent config");
+        std::fs::write(
+            root.join("adapters/minimal/fabric-adapter.json"),
+            r#"{
+  "adapter_id": "acme.fabric.minimal",
+  "adapter_kind": "process"
+}"#,
+        )
+        .expect("write adapter descriptor");
+
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+
+        assert!(!plan.capability_plan.managed.tools_configured);
+        assert!(plan.capability_plan.managed.skill_paths.is_empty());
+        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
+        assert!(plan.capability_plan.unsupported.tools_configured);
+        assert_eq!(plan.capability_plan.unsupported.skill_paths.len(), 1);
+        assert!(
+            plan.capability_plan
+                .unsupported
+                .mcp_servers
+                .contains_key("github")
+        );
+        assert!(
+            plan.capability_plan
+                .routes
+                .iter()
+                .all(|route| route.target == CapabilityTarget::Unsupported),
+            "{:?}",
+            plan.capability_plan.routes
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

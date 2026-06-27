@@ -214,6 +214,13 @@
           "default": false,
           "description": "Whether tool configuration was provided.",
           "type": "boolean"
+        },
+        "unsupported": {
+          "$ref": "#/$defs/CapabilityTargetPlan",
+          "default": {
+            "tools_configured": false
+          },
+          "description": "Capabilities that are configured but not executable by this Fabric build."
         }
       },
       "type": "object"
@@ -257,6 +264,11 @@
         {
           "const": "fabric_managed",
           "description": "Fabric exposes or manages the capability around the harness.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported",
+          "description": "Capability is configured but no executable surface exists.",
           "type": "string"
         }
       ]
@@ -999,7 +1011,10 @@
         "native": {
           "tools_configured": false
         },
-        "tools_configured": false
+        "tools_configured": false,
+        "unsupported": {
+          "tools_configured": false
+        }
       },
       "description": "Resolved capability configuration."
     },

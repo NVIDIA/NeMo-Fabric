@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+#[cfg(test)]
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,6 +23,8 @@ use crate::config::{
 use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+#[cfg(test)]
+static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// A request passed to a Fabric-managed harness runtime.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
@@ -328,7 +332,13 @@ struct RelayRuntimeConfig {
 /// Invoke a Fabric run plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     let runtime = start_runtime(plan)?;
-    let mut result = invoke_runtime(plan, &runtime, request)?;
+    let mut result = match invoke_runtime(plan, &runtime, request) {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = stop_runtime(plan, &runtime);
+            return Err(error);
+        }
+    };
     result.events.extend(stop_runtime(plan, &runtime)?);
     Ok(result)
 }
@@ -417,6 +427,7 @@ pub fn invoke_runtime(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
+    validate_runtime_handle(plan, runtime)?;
     match adapter_kind(plan) {
         AdapterKind::Process => ProcessAdapter.invoke(plan, runtime, request),
         AdapterKind::Python => PythonAdapter.invoke(plan, runtime, request),
@@ -428,7 +439,8 @@ pub fn invoke_runtime(
 }
 
 /// Stop or detach from a harness runtime.
-pub fn stop_runtime(_plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+    validate_runtime_handle(plan, runtime)?;
     match runtime.adapter_kind {
         AdapterKind::Process => ProcessAdapter.stop(runtime),
         AdapterKind::Python => PythonAdapter.stop(runtime),
@@ -437,6 +449,77 @@ pub fn stop_runtime(_plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabr
             adapter_kind,
         }),
     }
+}
+
+fn validate_runtime_handle(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<()> {
+    expect_runtime_field(
+        plan,
+        runtime,
+        "agent_name",
+        &plan.agent_name,
+        &runtime.agent_name,
+    )?;
+    expect_runtime_field(
+        plan,
+        runtime,
+        "harness_type",
+        &harness_type(plan),
+        &runtime.harness_type,
+    )?;
+    expect_runtime_field(
+        plan,
+        runtime,
+        "runtime.mode",
+        &runtime_mode_name(plan.config.runtime.mode),
+        &runtime_mode_name(runtime.mode),
+    )?;
+    expect_runtime_field(
+        plan,
+        runtime,
+        "adapter_kind",
+        &adapter_kind_name(adapter_kind(plan)),
+        &adapter_kind_name(runtime.adapter_kind),
+    )?;
+    expect_runtime_field(
+        plan,
+        runtime,
+        "adapter_id",
+        &optional_runtime_value(adapter_id(plan).as_deref()),
+        &optional_runtime_value(runtime.adapter_id.as_deref()),
+    )?;
+    expect_runtime_field(
+        plan,
+        runtime,
+        "environment.provider",
+        &expected_environment_provider(plan),
+        &runtime.environment.provider,
+    )?;
+    expect_runtime_field(
+        plan,
+        runtime,
+        "environment.control_location",
+        &control_location_name(expected_control_location(plan)),
+        &control_location_name(runtime.environment.control_location),
+    )?;
+    Ok(())
+}
+
+fn expect_runtime_field(
+    _plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    field: &'static str,
+    expected: &str,
+    actual: &str,
+) -> Result<()> {
+    if expected == actual {
+        return Ok(());
+    }
+    Err(FabricError::RuntimeHandleMismatch {
+        field,
+        expected: expected.to_string(),
+        actual: actual.to_string(),
+        runtime_id: runtime.runtime_id.clone(),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -506,6 +589,11 @@ impl RuntimeAdapter for ProcessAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+        #[cfg(test)]
+        TEST_STOPPED_AGENTS
+            .lock()
+            .expect("stop tracker")
+            .push(runtime.agent_name.clone());
         Ok(vec![event_with_metadata(
             "runtime_stop",
             format!("stopped runtime {}", runtime.runtime_id),
@@ -546,6 +634,11 @@ impl RuntimeAdapter for PythonAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+        #[cfg(test)]
+        TEST_STOPPED_AGENTS
+            .lock()
+            .expect("stop tracker")
+            .push(runtime.agent_name.clone());
         Ok(vec![event_with_metadata(
             "runtime_stop",
             format!("stopped runtime {}", runtime.runtime_id),
@@ -1014,6 +1107,51 @@ fn adapter_kind(plan: &RunPlan) -> AdapterKind {
         .as_ref()
         .map(|adapter| adapter.descriptor.adapter_kind)
         .unwrap_or(AdapterKind::Process)
+}
+
+fn adapter_kind_name(adapter_kind: AdapterKind) -> String {
+    match adapter_kind {
+        AdapterKind::Process => "process",
+        AdapterKind::Http => "http",
+        AdapterKind::Python => "python",
+        AdapterKind::NativePlugin => "native_plugin",
+    }
+    .to_string()
+}
+
+fn runtime_mode_name(mode: RuntimeMode) -> String {
+    match mode {
+        RuntimeMode::Oneshot => "oneshot",
+        RuntimeMode::Service => "service",
+        RuntimeMode::Session => "session",
+    }
+    .to_string()
+}
+
+fn control_location_name(control_location: ControlLocation) -> String {
+    match control_location {
+        ControlLocation::ExternalControl => "external_control",
+        ControlLocation::InEnvControl => "in_env_control",
+    }
+    .to_string()
+}
+
+fn expected_environment_provider(plan: &RunPlan) -> String {
+    plan.environment_plan
+        .as_ref()
+        .map(|environment| environment.provider.clone())
+        .unwrap_or_else(|| "local".to_string())
+}
+
+fn expected_control_location(plan: &RunPlan) -> ControlLocation {
+    plan.environment_plan
+        .as_ref()
+        .map(|environment| environment.control_location)
+        .unwrap_or(ControlLocation::ExternalControl)
+}
+
+fn optional_runtime_value(value: Option<&str>) -> String {
+    value.unwrap_or("<none>").to_string()
 }
 
 fn adapter_exit_error(
@@ -1684,10 +1822,7 @@ mod tests {
     }
 
     fn temp_process_agent_dir() -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-process-adapter-test-{}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(new_id("fabric-process-adapter-test"));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create agent dir");
         fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
@@ -1726,6 +1861,10 @@ runtime:
   "adapter_id": "acme.fabric.process",
   "adapter_kind": "process"
 }"#
+    }
+
+    fn stopped_agents() -> Vec<String> {
+        TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
     }
 
     #[test]
@@ -1818,6 +1957,74 @@ environment:
         assert_eq!(result.output, Value::String("hello fabric".to_string()));
         assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
         assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn run_plan_stops_runtime_after_invoke_error() {
+        let root = temp_process_agent_dir();
+        let mut plan = resolve_run_plan(&root, None).expect("run plan");
+        plan.agent_name = new_id("invoke-error-agent");
+        plan.effective_config.agent_name = plan.agent_name.clone();
+        plan.config.harness.settings.remove("command");
+        let agent_name = plan.agent_name.clone();
+
+        let error = run_plan(&plan, RunRequest::text("hello fabric")).expect_err("invoke error");
+
+        assert!(
+            error
+                .to_string()
+                .contains("invalid process adapter settings"),
+            "{error}"
+        );
+        assert!(
+            stopped_agents().contains(&agent_name),
+            "run_plan must stop the started runtime for {agent_name}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invoke_runtime_rejects_runtime_handle_from_different_plan() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+        let mut other_plan = plan.clone();
+        other_plan.agent_name = "other-agent".to_string();
+        other_plan.effective_config.agent_name = "other-agent".to_string();
+
+        let error = invoke_runtime(&other_plan, &runtime, RunRequest::text("hello fabric"))
+            .expect_err("runtime mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("runtime handle does not match run plan"),
+            "{error}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stop_runtime_rejects_runtime_handle_from_different_plan() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+        let mut other_plan = plan.clone();
+        other_plan.agent_name = "other-agent".to_string();
+        other_plan.effective_config.agent_name = "other-agent".to_string();
+
+        let error = stop_runtime(&other_plan, &runtime).expect_err("runtime mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("runtime handle does not match run plan"),
+            "{error}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }
