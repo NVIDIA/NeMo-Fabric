@@ -138,7 +138,7 @@ The repo layout separates Fabric-owned concepts:
 
 Status:
 
-- Mostly complete.
+- Base MVP contract is mostly complete.
 - Schema snapshots, profile resolution, ordered profile stacking, typed SDK
   config, YAML package config, adapter descriptor validation, planning, doctor
   checks, and CLI/SDK smoke coverage are already present.
@@ -180,6 +180,8 @@ Status:
   `runtime_context.session_id` when supplied, or `runtime_context.runtime_id`
   as the default. Hermes CLI maps that Fabric key onto Hermes session id/title
   for resume.
+- Relay-backed Hermes CLI tests now cover ATOF/ATIF artifact references and
+  generated Relay config in the process-backed path.
 
 Next steps:
 
@@ -188,7 +190,6 @@ Next steps:
 - Test Hermes SDK and CLI paths with more representative inputs.
 - Add parity checks for normalized result fields shared by the inline SDK and
   process-backed CLI paths.
-- Add testing for Relay artifacts such as ATOF/ATIF references.
 - Add testing for harness-native events, artifacts, and logs.
 
 ### 3. Config Variation Matrix
@@ -204,6 +205,8 @@ Status:
 - Generated Hermes config checks confirm enabled skills, tools, MCP, telemetry,
   workspace, and artifact settings.
 - Negative tests cover unsupported mappings failing before invocation.
+- Relay-enabled Hermes CLI runs now assert emitted ATOF/ATIF artifact files and
+  manifest visibility where the harness and adapter support it.
 
 Next steps:
 
@@ -211,8 +214,6 @@ Next steps:
 - Add missing profile variations where useful, including alternate model,
   toolset, workspace, artifact, and telemetry combinations.
 - Test both Hermes SDK and Hermes CLI against the applicable matrix.
-- Add ATIF/ATOF checks that confirm enabled skills, tools, MCP, or telemetry
-  appear in the emitted trajectory where the harness and adapter support it.
 - Add checks for harness-native events, artifacts, and logs.
 
 Config mapping and actual runtime behavior are related but not identical.
@@ -267,12 +268,9 @@ Status:
   telemetry references.
 - ArtifactManifest remains populated with output, logs, patch/status, native
   harness artifacts, and telemetry references where available.
-
-Next steps:
-
-- Add tests that verify Relay-disabled profiles still produce native output,
-  harness events where available, and logs.
-- Confirm these artifacts are visible through SDK, CLI, and Harbor consumers.
+- Relay-disabled smoke coverage verifies native output and native observability
+  stay available without Relay.
+- SDK, CLI, and Harbor-facing smoke paths cover ArtifactManifest visibility.
 
 ### 6. Consumer Proof: Harbor
 
@@ -300,11 +298,11 @@ Success criteria:
 ## Execution Order
 
 1. Keep core contract/schema tests green while making small contract fixes.
-2. Finish SDK and CLI behavior for typed config and agent-package config.
-3. Finish Hermes SDK and CLI reproducibility in clean environments.
+2. Done: SDK and CLI behavior for typed config and agent-package config.
+3. In progress: finish Hermes SDK and CLI reproducibility in clean environments.
 4. Run the Hermes config-variation matrix across model, runtime, skills, tools,
    MCP, telemetry, workspace, artifacts, and harness adapter profiles.
-5. Harden Relay telemetry and ArtifactManifest discovery for Hermes runs.
+5. Done: harden Relay telemetry and ArtifactManifest discovery for Hermes runs.
 6. After the SDK/CLI and Hermes path are stable, split follow-up work into
    adapter, consumer API, and telemetry/artifact readiness tracks.
 7. Stretch: run the Harbor lightweight smoke from a clean install.
