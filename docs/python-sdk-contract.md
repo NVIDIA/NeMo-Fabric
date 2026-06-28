@@ -181,7 +181,7 @@ fields.
 ```python
 class AdapterInfo:
     adapter_id: str
-    harness_type: str
+    harness: str
     adapter_kind: str
     metadata: Mapping[str, JSONValue]
 
@@ -222,8 +222,9 @@ class DoctorReport:
     checks: Sequence[DoctorCheck]
 ```
 
-`harness_type`, `adapter_id`, and `adapter_kind` identify the harness family,
-implementation, and execution mechanism respectively.
+`harness` is the stable machine-readable harness identifier. `adapter_id`
+identifies its Fabric adapter implementation, while `adapter_kind` identifies
+the execution mechanism.
 
 ## Client API
 
@@ -341,7 +342,7 @@ class SessionInfo:
     runtime_id: str
     agent_name: str
     profiles: Sequence[str]
-    harness_type: str
+    harness: str
     adapter_id: str
     adapter_kind: str
     status: Literal["active", "stopped", "failed"]
@@ -396,7 +397,7 @@ class ServiceInfo:
     runtime_id: str
     agent_name: str
     profiles: Sequence[str]
-    harness_type: str
+    harness: str
     adapter_id: str
     adapter_kind: str
     status: Literal["active", "stopped", "failed"]
@@ -503,7 +504,7 @@ class FabricEvent:
 class RunResult:
     agent_name: str
     profiles: Sequence[str]
-    harness_type: str
+    harness: str
     adapter_kind: str
     adapter_id: str
     runtime_id: str

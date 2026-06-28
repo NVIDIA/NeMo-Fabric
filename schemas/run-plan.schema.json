@@ -38,8 +38,8 @@
           "default": {},
           "description": "Fabric config areas this adapter consumes or generates."
         },
-        "harness_type": {
-          "description": "Harness family implemented by this adapter.",
+        "harness": {
+          "description": "Stable machine-readable harness identifier implemented by this adapter.",
           "type": "string"
         },
         "requirements": {
@@ -60,7 +60,7 @@
       },
       "required": [
         "adapter_id",
-        "harness_type",
+        "harness",
         "adapter_kind"
       ],
       "type": "object"

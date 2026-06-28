@@ -129,7 +129,7 @@ def test_inspection_models_are_typed_read_only_mappings():
             "adapter_descriptor": {
                 "descriptor": {
                     "adapter_id": "test.fabric.shim",
-                    "harness_type": "hermes",
+                    "harness": "hermes",
                     "adapter_kind": "python",
                     "future": "value",
                 }
@@ -150,7 +150,8 @@ def test_inspection_models_are_typed_read_only_mappings():
     assert isinstance(plan.adapter, AdapterInfo)
     assert isinstance(plan.capabilities, RuntimeCapabilities)
     assert plan.profiles == ("runtime", "telemetry")
-    assert plan.adapter.harness_type == "hermes"
+    assert plan.adapter.harness == "hermes"
+    assert "harness_type" not in plan.adapter
     assert plan.adapter.extra_fields["future"] == "value"
     assert plan.capabilities.extra_fields["future_capability"] == "declared"
     with pytest.raises(TypeError):
@@ -163,7 +164,7 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
             "runtime_id": "runtime-1",
             "runtime_binding": "binding-1",
             "agent_name": "demo",
-            "harness_type": "hermes",
+            "harness": "hermes",
             "mode": "session",
             "adapter_kind": "python",
             "adapter_id": "test.fabric.shim",
@@ -236,7 +237,7 @@ def _plan() -> dict[str, Any]:
             "descriptor": {
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
-                "harness_type": "hermes",
+                "harness": "hermes",
             }
         },
         "capabilities": {
@@ -255,7 +256,7 @@ def _runtime() -> dict[str, Any]:
         "runtime_id": "runtime-1",
         "runtime_binding": "fabric-runtime-binding-test",
         "agent_name": "demo",
-        "harness_type": "hermes",
+        "harness": "hermes",
         "mode": "session",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
@@ -325,7 +326,7 @@ class NativeRecorder:
             {
                 "agent_name": "demo",
                 "profiles": ["typed"],
-                "harness_type": "hermes",
+                "harness": "hermes",
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
                 "runtime_id": json.loads(runtime_json)["runtime_id"],
@@ -624,7 +625,7 @@ async def test_session_info_stream_and_capability_errors_are_typed():
 
     assert isinstance(session.info, SessionInfo)
     assert session.info.profiles == ("typed",)
-    assert session.info.harness_type == "hermes"
+    assert session.info.harness == "hermes"
     assert session.info.adapter_id == "test.fabric.shim"
 
     streamed = [item async for item in session.stream(input="hello")]

@@ -1,6 +1,6 @@
 {
   "adapter_id": "nvidia.fabric.hermes.sdk",
-  "harness_type": "hermes",
+  "harness": "hermes",
   "adapter_kind": "python",
   "runner": {
     "module": "nemo_fabric_adapters.hermes_sdk.adapter",

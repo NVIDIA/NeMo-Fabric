@@ -52,7 +52,7 @@ def _plan(runtime_mode: str = "session") -> dict[str, Any]:
         "adapter_descriptor": {
             "descriptor": {
                 "adapter_id": "test.fabric.shim",
-                "harness_type": "hermes",
+                "harness": "hermes",
                 "adapter_kind": "python",
             }
         },
@@ -72,7 +72,7 @@ def _runtime() -> dict[str, Any]:
         "runtime_id": "runtime-1",
         "runtime_binding": "fabric-runtime-binding-test",
         "agent_name": "demo",
-        "harness_type": "hermes",
+        "harness": "hermes",
         "mode": "session",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
@@ -111,7 +111,7 @@ def mock_native_fixture() -> MagicMock:
             {
                 "agent_name": "demo",
                 "profiles": ["typed"],
-                "harness_type": "hermes",
+                "harness": "hermes",
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
                 "runtime_id": "runtime-1",

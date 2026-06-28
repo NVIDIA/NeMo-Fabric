@@ -119,8 +119,8 @@ pub struct HarnessConfig {
 pub struct AdapterDescriptor {
     /// Unique id for this adapter implementation.
     pub adapter_id: String,
-    /// Harness family implemented by this adapter.
-    pub harness_type: String,
+    /// Stable machine-readable harness identifier implemented by this adapter.
+    pub harness: String,
     /// Adapter implementation kind.
     pub adapter_kind: AdapterKind,
     /// Generic runner defaults consumed by the selected runtime adapter.
@@ -1048,8 +1048,8 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     if descriptor.adapter_id.trim().is_empty() {
         return invalid_adapter_descriptor(path, "adapter_id must not be empty");
     }
-    if descriptor.harness_type.trim().is_empty() {
-        return invalid_adapter_descriptor(path, "harness_type must not be empty");
+    if descriptor.harness.trim().is_empty() {
+        return invalid_adapter_descriptor(path, "harness must not be empty");
     }
     Ok(())
 }
@@ -1606,12 +1606,14 @@ runtime:
             load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
 
         assert_eq!(descriptor.adapter_id, "nvidia.fabric.hermes.sdk");
+        assert_eq!(descriptor.harness, "hermes");
         assert_eq!(descriptor.adapter_kind, AdapterKind::Python);
         let descriptor_json = serde_json::to_value(&descriptor).expect("descriptor json");
         assert_eq!(
-            descriptor_json.get("harness_type").and_then(Value::as_str),
+            descriptor_json.get("harness").and_then(Value::as_str),
             Some("hermes")
         );
+        assert!(descriptor_json.get("harness_type").is_none());
         assert_eq!(
             descriptor.runner.get("module").and_then(Value::as_str),
             Some("nemo_fabric_adapters.hermes_sdk.adapter")
@@ -1735,7 +1737,7 @@ environment:
             root.join("adapters/reviewer-process/fabric-adapter.json"),
             r#"{
   "adapter_id": "acme.fabric.reviewer.process",
-  "harness_type": "reviewer",
+  "harness": "reviewer",
   "adapter_kind": "process"
 }"#,
         )
@@ -1897,7 +1899,7 @@ mcp:
             root.join("adapters/minimal/fabric-adapter.json"),
             r#"{
   "adapter_id": "acme.fabric.minimal",
-  "harness_type": "minimal",
+  "harness": "minimal",
   "adapter_kind": "process"
 }"#,
         )
@@ -2070,7 +2072,7 @@ environment:
             root.join("adapters/invalid-process/fabric-adapter.json"),
             r#"{
   "adapter_id": "   ",
-  "harness_type": "invalid",
+  "harness": "invalid",
   "adapter_kind": "process"
 }"#,
         )
@@ -2099,7 +2101,7 @@ environment:
             &descriptor_path,
             r#"{
   "adapter_id": "",
-  "harness_type": "invalid",
+  "harness": "invalid",
   "adapter_kind": "process"
 }"#,
         )

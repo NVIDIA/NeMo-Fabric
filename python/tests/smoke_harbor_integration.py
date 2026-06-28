@@ -94,7 +94,7 @@ class FakeHarborEnvironment:
                     "invocation_id": "invocation-1",
                     "request_id": "harbor-request-1",
                     "profiles": ["env_local", "mcp_github"],
-                    "harness_type": "hermes",
+                    "harness": "hermes",
                     "adapter_id": "nvidia.fabric.hermes.sdk",
                     "artifacts": {
                         "root": "/workspace/agent/artifacts",

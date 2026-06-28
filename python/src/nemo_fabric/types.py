@@ -515,15 +515,15 @@ class FabricMapping(Mapping[str, Any]):
 
 class AdapterInfo(FabricMapping):
     adapter_id: str
-    harness_type: str
+    harness: str
     adapter_kind: str
     metadata: Mapping[str, Any]
-    _fields = frozenset({"adapter_id", "harness_type", "adapter_kind", "metadata"})
+    _fields = frozenset({"adapter_id", "harness", "adapter_kind", "metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
         data["adapter_id"] = _required_text(data.get("adapter_id"), "adapter_id")
-        data["harness_type"] = _required_text(data.get("harness_type"), "harness_type")
+        data["harness"] = _required_text(data.get("harness"), "harness")
         data["adapter_kind"] = _required_text(data.get("adapter_kind"), "adapter_kind")
         data["metadata"] = _mapping(data.get("metadata", {}), "adapter metadata")
         return data
@@ -763,7 +763,7 @@ class RuntimeHandle(FabricMapping):
     runtime_id: str
     runtime_binding: str
     agent_name: str
-    harness_type: str
+    harness: str
     mode: str
     adapter_kind: str
     adapter_id: str | None
@@ -772,7 +772,7 @@ class RuntimeHandle(FabricMapping):
             "runtime_id",
             "runtime_binding",
             "agent_name",
-            "harness_type",
+            "harness",
             "mode",
             "adapter_kind",
             "adapter_id",
@@ -783,7 +783,7 @@ class RuntimeHandle(FabricMapping):
 class RunResult(FabricMapping):
     agent_name: str
     profiles: Sequence[str]
-    harness_type: str
+    harness: str
     adapter_kind: str
     adapter_id: str
     runtime_id: str
@@ -800,7 +800,7 @@ class RunResult(FabricMapping):
         {
             "agent_name",
             "profiles",
-            "harness_type",
+            "harness",
             "adapter_kind",
             "adapter_id",
             "runtime_id",
@@ -846,7 +846,7 @@ class SessionInfo(FabricMapping):
     runtime_id: str
     agent_name: str
     profiles: Sequence[str]
-    harness_type: str
+    harness: str
     adapter_id: str
     adapter_kind: str
     status: str
@@ -857,7 +857,7 @@ class SessionInfo(FabricMapping):
             "runtime_id",
             "agent_name",
             "profiles",
-            "harness_type",
+            "harness",
             "adapter_id",
             "adapter_kind",
             "status",

@@ -98,7 +98,7 @@ class Session:
                 "runtime_id": self.runtime_id,
                 "agent_name": self._runtime.agent_name,
                 "profiles": self._plan.profiles,
-                "harness_type": self._runtime.harness_type,
+                "harness": self._runtime.harness,
                 "adapter_id": self._runtime.adapter_id,
                 "adapter_kind": self._runtime.adapter_kind,
                 "status": self._status.value,

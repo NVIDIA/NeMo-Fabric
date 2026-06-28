@@ -50,7 +50,7 @@ def _plan() -> dict[str, Any]:
             "descriptor": {
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
-                "harness_type": "hermes",
+                "harness": "hermes",
             }
         },
         "capabilities": {
@@ -69,7 +69,7 @@ def _runtime() -> dict[str, Any]:
         "runtime_id": "runtime-1",
         "runtime_binding": "fabric-runtime-binding-test",
         "agent_name": "demo",
-        "harness_type": "hermes",
+        "harness": "hermes",
         "mode": "session",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
@@ -95,7 +95,7 @@ class MockNative:
             {
                 "agent_name": "demo",
                 "profiles": ["hermes_sdk"],
-                "harness_type": "hermes",
+                "harness": "hermes",
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
                 "status": "failed" if request.get("input") == "fail" else "succeeded",

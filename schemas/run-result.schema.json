@@ -268,8 +268,8 @@
       },
       "type": "array"
     },
-    "harness_type": {
-      "description": "Harness type used for this run.",
+    "harness": {
+      "description": "Stable machine-readable harness identifier used for this run.",
       "type": "string"
     },
     "invocation_id": {
@@ -319,7 +319,7 @@
   "required": [
     "agent_name",
     "profiles",
-    "harness_type",
+    "harness",
     "adapter_kind",
     "runtime_id",
     "invocation_id",

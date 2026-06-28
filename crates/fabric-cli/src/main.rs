@@ -378,7 +378,7 @@ fn print_chat_info(
     eprintln!("+----------------------------------------------------------------+");
     eprintln!("| agent: {}", plan.agent_name);
     eprintln!("| profile: {}", profile_label(plan));
-    eprintln!("| harness: {}", runtime.harness_type);
+    eprintln!("| harness: {}", runtime.harness);
     eprintln!("| adapter: {}", adapter_kind_label(runtime.adapter_kind));
     eprintln!("| runtime_id: {}", runtime.runtime_id);
     eprintln!(
