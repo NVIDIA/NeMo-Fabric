@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+ROOT_README = ROOT / "README.md"
 DEMO_README = ROOT / "integrations" / "harbor" / "demo" / "README.md"
 INTEGRATION_README = ROOT / "integrations" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
@@ -136,3 +137,14 @@ def test_harbor_sdk_package_documents_execution_boundary():
     assert "nemo_fabric.integrations.harbor:FabricAgent" in readme
     assert "nemo_fabric.integrations.harbor.runner" in readme
     assert "does not invoke the Fabric CLI" in readme
+
+
+def test_root_readme_documents_sdk_contract_and_harbor_example():
+    readme = ROOT_README.read_text(encoding="utf-8")
+
+    assert "runtime execution layer" in readme
+    assert "docs/python-sdk-contract.md" in readme
+    assert "## Harbor Integration" in readme
+    assert "uv run --extra harbor harbor run" in readme
+    assert "nemo_fabric.integrations.harbor:FabricAgent" in readme
+    assert "integrations/harbor/demo/README.md" in readme
