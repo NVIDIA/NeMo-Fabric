@@ -136,7 +136,7 @@ def fabric_runner_command(
     parts = [
         shlex.quote(fabric_python),
         "-m",
-        "nemo_fabric.integrations.harbor_runner",
+        "nemo_fabric.integrations.harbor.runner",
         "--spec",
         shlex.quote(spec_path),
         "--result",

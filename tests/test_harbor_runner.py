@@ -10,6 +10,15 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_README = ROOT / "integrations" / "harbor" / "demo" / "README.md"
 INTEGRATION_README = ROOT / "integrations" / "harbor" / "README.md"
+SDK_INTEGRATION_README = (
+    ROOT
+    / "python"
+    / "src"
+    / "nemo_fabric"
+    / "integrations"
+    / "harbor"
+    / "README.md"
+)
 
 
 def load_codex_adapter():
@@ -22,7 +31,7 @@ def load_codex_adapter():
 
 
 def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
-    from nemo_fabric.integrations.harbor_runner import load_sources
+    from nemo_fabric.integrations.harbor.runner import load_sources
 
     config_path = tmp_path / "agent.yaml"
     profile_path = tmp_path / "profiles" / "codex.yaml"
@@ -116,3 +125,14 @@ def test_harbor_demo_documents_explicit_cli_commands():
     assert demo.count("uv run --extra harbor harbor run") == 4
     for flag in ("--path", "--agent", "--ak", "--ae", "--model", "--job-name"):
         assert flag in demo
+
+
+def test_harbor_sdk_package_documents_execution_boundary():
+    from nemo_fabric.integrations.harbor import FabricAgent
+
+    readme = SDK_INTEGRATION_README.read_text(encoding="utf-8")
+
+    assert FabricAgent.name() == "fabric"
+    assert "nemo_fabric.integrations.harbor:FabricAgent" in readme
+    assert "nemo_fabric.integrations.harbor.runner" in readme
+    assert "does not invoke the Fabric CLI" in readme

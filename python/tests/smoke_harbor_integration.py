@@ -89,7 +89,7 @@ class FakeHarborEnvironment:
             contents = contents.removesuffix("\nFABRIC_JSON")
             self.files[path] = contents
             return ExecResult()
-        if "nemo_fabric.integrations.harbor_runner" in command:
+        if "nemo_fabric.integrations.harbor.runner" in command:
             self.files["/logs/agent/fabric-result.json"] = json.dumps(
                 {
                     "status": "succeeded",
@@ -158,10 +158,10 @@ async def main() -> None:
     fabric_commands = [
         command
         for command in environment.commands
-        if "nemo_fabric.integrations.harbor_runner" in command
+        if "nemo_fabric.integrations.harbor.runner" in command
     ]
     assert len(fabric_commands) == 1
-    assert "python3 -m nemo_fabric.integrations.harbor_runner" in fabric_commands[0]
+    assert "python3 -m nemo_fabric.integrations.harbor.runner" in fabric_commands[0]
     assert environment.environments[environment.commands.index(fabric_commands[0])] == {
         "NVIDIA_API_KEY": "test-key"
     }
