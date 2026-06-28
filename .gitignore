@@ -18,6 +18,7 @@ build/
 
 examples/*/artifacts/
 tests/fixtures/*/artifacts/
+integrations/harbor/demo/runs/
 
 .DS_Store
 
@@ -27,4 +28,3 @@ tests/fixtures/*/artifacts/
 # UV Lock
 # TBD if we want to track this in git
 uv.lock
-

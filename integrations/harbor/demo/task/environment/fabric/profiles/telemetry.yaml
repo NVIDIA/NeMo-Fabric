@@ -1,0 +1,32 @@
+schema_version: fabric.profile/v1alpha1
+name: telemetry
+description: Add Relay ATOF and ATIF telemetry to the selected Hermes run.
+
+runtime:
+  artifacts: /logs/agent/fabric-artifacts/hermes-relay
+
+environment:
+  artifacts: /logs/agent/fabric-artifacts/hermes-relay
+
+telemetry:
+  enabled: true
+  mode: sdk
+  output_dir: /logs/agent/fabric-artifacts/hermes-relay/relay
+  config:
+    version: 1
+    components:
+      - kind: observability
+        enabled: true
+        config:
+          version: 1
+          atif:
+            enabled: true
+            output_directory: /logs/agent/fabric-artifacts/hermes-relay/relay
+            filename_template: trajectory-{session_id}.atif.json
+            agent_name: harbor-calculator-demo
+            agent_version: fabric-mvp
+          atof:
+            enabled: true
+            output_directory: /logs/agent/fabric-artifacts/hermes-relay/relay
+            filename: events.atof.jsonl
+            mode: overwrite

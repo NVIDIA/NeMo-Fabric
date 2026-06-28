@@ -30,7 +30,7 @@ Fabric owns:
 The integration shape is:
 
 ```text
-Harbor task/env -> FabricAgent -> fabric run -> harness runtime -> Fabric result -> Harbor metadata/verifier
+Harbor task/env -> FabricAgent -> Fabric SDK runner -> harness runtime -> Fabric result -> Harbor metadata/verifier
 ```
 
 ## Install
@@ -50,32 +50,44 @@ python3 -m pip install -e ../harbor
 
 ## Using FabricAgent
 
-`FabricAgent` is selected like any other custom Harbor agent:
+`FabricAgent` follows Harbor 0.16's external-agent contract. The runner and
+config files must be installed or copied into the task environment:
 
 ```bash
 harbor run --path <dataset-or-task-dir> \
-  --agent-import-path nemo_fabric.integrations.harbor:FabricAgent \
+  --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
-  --ak fabric_agent_path=/workspace/code-review-agent \
-  --ak fabric_profiles=hermes_sdk \
-  --ak fabric_cli=fabric
+  --ak fabric_config_path=/opt/fabric/agent.yaml \
+  --ak 'fabric_profile_paths=["/opt/fabric/profiles/hermes.yaml"]' \
+  --ae NVIDIA_API_KEY="$NVIDIA_API_KEY"
 ```
 
 Important kwargs:
 
-- `fabric_agent_path`: path to the Fabric agent package or `agent.yaml` visible
-  inside the Harbor environment.
-- `fabric_profiles`: profile name or profile list applied in order.
-- `fabric_cli`: Fabric CLI command visible inside the Harbor environment.
+- `fabric_config_path`: YAML config path visible inside the Harbor environment.
+- `fabric_profile_paths`: YAML profile path or ordered profile-path list.
+- `fabric_python`: Python command used for the sandbox-local SDK runner.
 - `fabric_cwd`: optional working directory for Fabric commands.
 - `fabric_install_command`: optional explicit install/bootstrap command.
 - `fabric_timeout_sec`: optional timeout for Fabric install/run commands.
 
 Harbor passes the task instruction to Fabric as `RunRequest.input`. Harbor
 metadata such as model name, skills directory, and MCP server definitions are
-included under `RunRequest.context`. Fabric writes the normalized result to the
-Harbor logs directory as `fabric-result.json`, and summary fields are copied into
-`context.metadata["fabric"]`.
+included under `RunRequest.context`. The sandbox-local runner loads YAML into
+`FabricConfig` and `FabricProfileConfig`, then calls `FabricClient.run()`.
+The normalized result is saved as `fabric-result.json`, and summary fields are
+copied into `context.metadata["fabric"]`.
+
+## Multi-Harness Demo
+
+The runnable MVP demo includes a credential-free pipeline check plus real
+Hermes, Hermes-with-Relay, and Codex variants:
+
+```bash
+integrations/harbor/demo/run.sh smoke
+```
+
+See [`demo/README.md`](demo/README.md) for the recording flow.
 
 ## Local Smoke
 

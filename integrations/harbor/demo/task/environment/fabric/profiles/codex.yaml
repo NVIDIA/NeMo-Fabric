@@ -1,0 +1,21 @@
+schema_version: fabric.profile/v1alpha1
+name: codex
+description: Run Codex CLI against the Harbor task workspace.
+
+harness:
+  adapter_id: nvidia.fabric.codex.cli
+  resolution: preinstalled
+  settings:
+    cwd: /app
+    sandbox: workspace-write
+
+runtime:
+  transport: cli
+  artifacts: /logs/agent/fabric-artifacts/codex
+
+environment:
+  workspace: /app
+  artifacts: /logs/agent/fabric-artifacts/codex
+
+telemetry:
+  enabled: false

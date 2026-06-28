@@ -71,22 +71,25 @@ class FakeHarborEnvironment:
     def __init__(self) -> None:
         self.files: dict[str, str] = {}
         self.commands: list[str] = []
+        self.environments: list[dict[str, str] | None] = []
 
     async def exec(
         self,
         command: str,
         cwd: str | None = None,
         timeout_sec: int | None = None,
+        env: dict[str, str] | None = None,
         **_: Any,
     ) -> ExecResult:
         self.commands.append(command)
+        self.environments.append(env)
         if command.startswith("cat > "):
             path, contents = command.split(" <<'FABRIC_JSON'\n", maxsplit=1)
             path = path.removeprefix("cat > ").strip()
             contents = contents.removesuffix("\nFABRIC_JSON")
             self.files[path] = contents
             return ExecResult()
-        if "fabric run" in command and "> /logs/agent/fabric-result.json" in command:
+        if "nemo_fabric.integrations.harbor_runner" in command:
             self.files["/logs/agent/fabric-result.json"] = json.dumps(
                 {
                     "status": "succeeded",
@@ -127,10 +130,13 @@ async def main() -> None:
     with tempfile.TemporaryDirectory(prefix="fabric-harbor-integration-") as tmpdir:
         agent = FabricAgent(
             logs_dir=Path(tmpdir),
-            fabric_agent_path="/workspace/agent",
-            fabric_profiles=["env_local", "mcp_github"],
-            fabric_cli="fabric",
+            fabric_config_path="/opt/fabric-demo/agent.yaml",
+            fabric_profile_paths=[
+                "/opt/fabric-demo/profiles/hermes.yaml",
+                "/opt/fabric-demo/profiles/telemetry.yaml",
+            ],
             model_name="nvidia/test-model",
+            extra_env={"NVIDIA_API_KEY": "test-key"},
         )
         environment = FakeHarborEnvironment()
         context = AgentContext()
@@ -138,14 +144,27 @@ async def main() -> None:
         await agent.setup(environment)  # type: ignore[arg-type]
         await agent.run("fix the bug", environment, context)  # type: ignore[arg-type]
 
-    request = json.loads(environment.files["/tmp/fabric-request.json"])
+    spec = json.loads(environment.files["/tmp/fabric-run.json"])
+    request = spec["request"]
     assert request["input"] == "fix the bug"
     assert request["context"]["source"] == "harbor"
     assert request["context"]["model_name"] == "nvidia/test-model"
+    assert spec["config_path"] == "/opt/fabric-demo/agent.yaml"
+    assert spec["profile_paths"] == [
+        "/opt/fabric-demo/profiles/hermes.yaml",
+        "/opt/fabric-demo/profiles/telemetry.yaml",
+    ]
 
-    fabric_commands = [command for command in environment.commands if "fabric run" in command]
+    fabric_commands = [
+        command
+        for command in environment.commands
+        if "nemo_fabric.integrations.harbor_runner" in command
+    ]
     assert len(fabric_commands) == 1
-    assert "--profile env_local --profile mcp_github" in fabric_commands[0]
+    assert "python3 -m nemo_fabric.integrations.harbor_runner" in fabric_commands[0]
+    assert environment.environments[environment.commands.index(fabric_commands[0])] == {
+        "NVIDIA_API_KEY": "test-key"
+    }
     assert context.metadata
     assert context.metadata["fabric"]["status"] == "succeeded"
     assert context.metadata["fabric"]["profiles"] == ["env_local", "mcp_github"]
