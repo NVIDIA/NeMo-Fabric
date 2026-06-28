@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Agent source normalization for the Fabric Python SDK."""
+
+from __future__ import annotations
+
+import json
+import os
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from nemo_fabric.errors import FabricConfigError
+from nemo_fabric.types import FabricConfig, FabricProfileConfig
+
+PathSource = str | os.PathLike[str]
+AgentSource = PathSource | FabricConfig
+ProfileSource = str | FabricProfileConfig
+
+
+def is_config_source(value: Any) -> bool:
+    return isinstance(value, FabricConfig)
+
+
+def path_arg(value: Any) -> str:
+    if isinstance(value, (str, os.PathLike)):
+        return os.fspath(value)
+    if isinstance(value, Mapping):
+        raise FabricConfigError(
+            "agent mappings are not accepted directly; "
+            "use FabricConfig.from_mapping(...) first"
+        )
+    raise FabricConfigError("agent must be a path-like source or FabricConfig")
+
+
+def path_profiles(profiles: Sequence[str] | None) -> list[str]:
+    if profiles is None:
+        return []
+    if isinstance(profiles, (str, bytes)):
+        raise FabricConfigError("profiles must be an ordered sequence of profile names")
+    values = list(profiles)
+    if not all(isinstance(profile, str) and profile for profile in values):
+        raise FabricConfigError("path profiles must contain only non-empty strings")
+    return values
+
+
+def config_profiles(
+    profiles: Sequence[FabricProfileConfig] | None,
+) -> list[FabricProfileConfig]:
+    if profiles is None:
+        return []
+    if isinstance(profiles, (str, bytes)):
+        raise FabricConfigError(
+            "FabricConfig profiles must contain FabricProfileConfig values"
+        )
+    values = list(profiles)
+    if not all(isinstance(profile, FabricProfileConfig) for profile in values):
+        raise FabricConfigError(
+            "FabricConfig profiles must contain FabricProfileConfig values; "
+            "use FabricProfileConfig.from_mapping(...) for mappings"
+        )
+    return values
+
+
+def validate_base_dir(agent: AgentSource, base_dir: PathSource | None) -> str | None:
+    if not isinstance(agent, FabricConfig):
+        if base_dir is not None:
+            raise FabricConfigError("base_dir is only valid with a FabricConfig source")
+        return None
+    return None if base_dir is None else os.fspath(base_dir)
+
+
+def config_json(config: FabricConfig) -> str:
+    if not isinstance(config, FabricConfig):
+        raise FabricConfigError("config must be a FabricConfig")
+    return json.dumps(config.to_mapping())
+
+
+def profiles_json(profiles: Sequence[FabricProfileConfig]) -> str | None:
+    if not profiles:
+        return None
+    return json.dumps([profile.to_mapping() for profile in profiles])

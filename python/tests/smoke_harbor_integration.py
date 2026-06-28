@@ -93,7 +93,7 @@ class FakeHarborEnvironment:
                     "runtime_id": "runtime-1",
                     "invocation_id": "invocation-1",
                     "request_id": "harbor-request-1",
-                    "profile": "env_local",
+                    "profiles": ["env_local", "mcp_github"],
                     "harness_type": "hermes",
                     "adapter_id": "nvidia.fabric.hermes.sdk",
                     "artifacts": {
@@ -148,6 +148,7 @@ async def main() -> None:
     assert "--profile env_local --profile mcp_github" in fabric_commands[0]
     assert context.metadata
     assert context.metadata["fabric"]["status"] == "succeeded"
+    assert context.metadata["fabric"]["profiles"] == ["env_local", "mcp_github"]
     assert context.metadata["fabric"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
     artifacts = context.metadata["fabric"]["artifacts"]["artifacts"]
     assert {artifact["name"] for artifact in artifacts} == {"stdout", "workspace_patch"}

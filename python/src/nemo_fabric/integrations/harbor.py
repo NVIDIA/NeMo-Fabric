@@ -168,7 +168,7 @@ def populate_context_from_result(context: AgentContext, path: Path) -> None:
         "runtime_id": result.get("runtime_id"),
         "invocation_id": result.get("invocation_id"),
         "request_id": result.get("request_id"),
-        "profile": result.get("profile"),
+        "profiles": result.get("profiles", []),
         "harness_type": result.get("harness_type"),
         "adapter_id": result.get("adapter_id"),
         "artifacts": result.get("artifacts", {}),

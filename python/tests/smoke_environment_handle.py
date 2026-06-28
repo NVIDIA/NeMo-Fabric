@@ -19,7 +19,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 async def main() -> None:
     async with FabricClient() as client:
-        session = await client.start(ROOT / "examples" / "code-review-agent", profile="env_local")
+        session = await client.start_session(
+            ROOT / "examples" / "code-review-agent",
+            profiles=["env_local"],
+        )
         try:
             workspace = session.runtime["environment"]["workspace"]
         finally:

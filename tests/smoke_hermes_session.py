@@ -75,15 +75,18 @@ async def _run_sdk_session() -> None:
     from nemo_fabric import FabricClient, SessionStatus
 
     agent = str(ROOT / "examples" / "code-review-agent")
-    async with await FabricClient().start(agent, profile="hermes_session") as session:
+    async with await FabricClient().start_session(
+        agent,
+        profiles=["hermes_session"],
+    ) as session:
         assert session.status is SessionStatus.ACTIVE, session.status
 
-        r1 = await session.invoke("My name is Robin. Please remember it for later.")
+        r1 = await session.invoke(input="My name is Robin. Please remember it for later.")
         assert r1["status"] == "succeeded", r1
         after_turn1 = session.messages
         assert len(after_turn1) >= 2, after_turn1
 
-        r2 = await session.invoke("What is my name? Reply with just the name.")
+        r2 = await session.invoke(input="What is my name? Reply with just the name.")
         assert r2["status"] == "succeeded", r2
         assert r2["runtime_id"] == r1["runtime_id"], (r1, r2)
         # Hermes should return a transcript that includes the prior turn.
@@ -99,15 +102,18 @@ async def _run_cli_session() -> None:
     from nemo_fabric import FabricClient, SessionStatus
 
     agent = str(ROOT / "examples" / "code-review-agent")
-    async with await FabricClient().start(agent, profile="hermes_cli_session") as session:
+    async with await FabricClient().start_session(
+        agent,
+        profiles=["hermes_cli_session"],
+    ) as session:
         assert session.status is SessionStatus.ACTIVE, session.status
 
-        r1 = await session.invoke("My name is Robin. Please remember it for later.")
+        r1 = await session.invoke(input="My name is Robin. Please remember it for later.")
         assert r1["status"] == "succeeded", r1
         assert r1["output"]["mode"] == "hermes_cli_session", r1
         assert r1["output"]["session_id"] == session.session_id, r1
 
-        r2 = await session.invoke("What is my name? Reply with just the name.")
+        r2 = await session.invoke(input="What is my name? Reply with just the name.")
         assert r2["status"] == "succeeded", r2
         assert r2["runtime_id"] == r1["runtime_id"], (r1, r2)
         assert r2["output"]["session_id"] == r1["output"]["session_id"], (r1, r2)

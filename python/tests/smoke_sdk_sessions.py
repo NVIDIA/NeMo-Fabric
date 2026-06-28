@@ -13,23 +13,53 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from nemo_fabric import FabricClient, Session, SessionStatus
+from nemo_fabric import (
+    FabricCapabilityError,
+    FabricClient,
+    RunRequest,
+    RunResult,
+    Session,
+    SessionStatus,
+)
 
 
 def _plan() -> dict[str, Any]:
+    config = {
+        "metadata": {"name": "demo"},
+        "harness": {"adapter_id": "test.fabric.shim"},
+        "runtime": {
+            "mode": "session",
+            "transport": "library",
+            "input_schema": "chat",
+            "output_schema": "message",
+        },
+    }
     return {
         "agent_name": "demo",
-        "profile": "hermes_sdk",
-        "config": {
-            "runtime": {
-                "mode": "session",
-                "transport": "library",
-                "input_schema": "chat",
-                "output_schema": "message",
-            },
+        "profiles": ["hermes_sdk"],
+        "effective_config": {
+            "agent_name": "demo",
+            "profiles": ["hermes_sdk"],
+            "agent_root": ".",
+            "config_path": "agent.yaml",
+            "config_root": ".",
+            "config": config,
         },
+        "config": config,
         "adapter_descriptor": {
-            "descriptor": {"adapter_kind": "python", "adapter_id": "test.fabric.shim"}
+            "descriptor": {
+                "adapter_kind": "python",
+                "adapter_id": "test.fabric.shim",
+                "harness_type": "hermes",
+            }
+        },
+        "capabilities": {
+            "session": True,
+            "service": False,
+            "streaming": False,
+            "updates": False,
+            "cancellation": False,
+            "concurrent_invocations": False,
         },
     }
 
@@ -37,8 +67,9 @@ def _plan() -> dict[str, Any]:
 def _runtime() -> dict[str, Any]:
     return {
         "runtime_id": "runtime-1",
+        "runtime_binding": "fabric-runtime-binding-test",
         "agent_name": "demo",
-        "harness_type": "test.fabric.shim",
+        "harness_type": "hermes",
         "mode": "session",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
@@ -51,7 +82,7 @@ def _runtime() -> dict[str, Any]:
     }
 
 
-class FakeNative:
+class MockNative:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self.stopped = 0
@@ -62,17 +93,38 @@ class FakeNative:
         turn = len(self.requests)
         return json.dumps(
             {
-                "status": "succeeded",
+                "agent_name": "demo",
+                "profiles": ["hermes_sdk"],
+                "harness_type": "hermes",
+                "adapter_kind": "python",
+                "adapter_id": "test.fabric.shim",
+                "status": "failed" if request.get("input") == "fail" else "succeeded",
                 "request_id": request["request_id"],
                 "runtime_id": json.loads(runtime_json)["runtime_id"],
                 "invocation_id": f"invocation-{turn}",
-                "events": [{"event_id": f"evt-{turn}", "kind": "log", "message": "ok"}],
+                "events": [
+                    {
+                        "event_id": f"evt-{turn}",
+                        "timestamp_millis": turn,
+                        "kind": "log",
+                        "message": "ok",
+                    }
+                ],
+                "artifacts": {"artifacts": []},
                 "output": {
                     "messages": [
                         {"role": "user", "content": request.get("input")},
                         {"role": "assistant", "content": f"reply-{turn}"},
                     ],
                 },
+                "error": {
+                    "stage": "invoke",
+                    "code": "adapter_failed",
+                    "message": "adapter failed",
+                    "retryable": False,
+                }
+                if request.get("input") == "fail"
+                else None,
             }
         )
 
@@ -82,31 +134,41 @@ class FakeNative:
 
 
 class NativeClient(FabricClient):
-    def __init__(self, native: FakeNative) -> None:
+    def __init__(self, native: MockNative) -> None:
         super().__init__()
         self.native = native
 
-    def _require_native_module(self, method: str) -> FakeNative:
+    def _require_native_module(self, method: str) -> MockNative:
         return self.native
 
 
-def _session(native: FakeNative) -> Session:
+def _session(native: MockNative) -> Session:
     return Session(client=NativeClient(native), plan=_plan(), runtime=_runtime())
 
 
 async def stable_runtime_across_turns() -> None:
-    native = FakeNative()
+    native = MockNative()
     session = _session(native)
     assert session.status is SessionStatus.ACTIVE
     assert session.runtime_id == "runtime-1"
     assert session.session_id == "runtime-1"
-    assert "session_id" not in session.info
+    assert session.info["session_id"] == "runtime-1"
     assert not hasattr(session, "id")
 
-    await session.invoke("My name is Robin.")
-    await session.invoke("What's my name?")
+    first = await session.invoke(
+        request=RunRequest(
+            input="My name is Robin.",
+            request_id="session-request-1",
+            context={"job_id": "job-1", "turn_id": "turn-1"},
+        ),
+    )
+    await session.invoke(input="What's my name?")
 
+    assert isinstance(first, RunResult)
+    assert first.request_id == "session-request-1"
     assert [inv["runtime_id"] for inv in session.invocations] == ["runtime-1", "runtime-1"]
+    assert native.requests[0]["context"]["job_id"] == "job-1"
+    assert native.requests[0]["context"]["turn_id"] == "turn-1"
     assert native.requests[0]["context"]["session_id"] == "runtime-1"
     assert native.requests[1]["context"]["session_id"] == "runtime-1"
     assert "history" not in native.requests[0]["context"]
@@ -115,42 +177,54 @@ async def stable_runtime_across_turns() -> None:
 
 
 async def stream_and_lifecycle() -> None:
-    native = FakeNative()
+    native = MockNative()
     session = _session(native)
-    items = [item async for item in session.stream("hello")]
-    assert items[-1]["status"] == "succeeded"
-    assert items[:-1] and all(e.get("kind") == "log" for e in items[:-1])
+    items = [item async for item in session.stream(input="hello")]
+    assert items[-1].status == "succeeded"
+    assert items[:-1] and all(event.kind == "log" for event in items[:-1])
 
     await session.stop()
     await session.stop()
     assert session.status is SessionStatus.STOPPED
     assert native.stopped == 1
     try:
-        await session.invoke("too late")
+        await session.invoke(input="too late")
     except RuntimeError:
         pass
     else:
         raise AssertionError("invoke after stop should raise")
 
 
-async def cancel_when_idle_marks_cancelled() -> None:
-    native = FakeNative()
+async def unsupported_cancel_leaves_session_active() -> None:
+    native = MockNative()
     session = _session(native)
-    await session.cancel()
-    assert session.status is SessionStatus.CANCELLED
-    assert native.stopped == 1
     try:
-        await session.invoke("after cancel")
-    except RuntimeError:
+        await session.cancel()
+    except FabricCapabilityError:
         pass
     else:
-        raise AssertionError("invoke after cancel should raise")
+        raise AssertionError("unsupported cancellation should raise")
+    assert session.status is SessionStatus.ACTIVE
+    await session.stop()
+
+
+async def failed_result_exposes_structured_error() -> None:
+    native = MockNative()
+    session = _session(native)
+    result = await session.invoke(input="fail")
+
+    assert isinstance(result, RunResult)
+    assert result.status == "failed"
+    assert result.error.stage == "invoke"
+    assert result.error.code == "adapter_failed"
+    assert result.error.retryable is False
 
 
 async def main() -> None:
     await stable_runtime_across_turns()
     await stream_and_lifecycle()
-    await cancel_when_idle_marks_cancelled()
+    await unsupported_cancel_leaves_session_active()
+    await failed_result_exposes_structured_error()
     print("smoke_sdk_sessions ok")
 
 

@@ -15,9 +15,11 @@ from nemo_fabric import FabricClient
 async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, hermes_cli_profile: str):
     # Ensure the hermes_cli adapter returns expected fields
     async with FabricClient() as client:
-        result = await client.run(hermes_agent_dir,
-                                  profile=hermes_cli_profile,
-                                  input_text="who are you?")
+        result = await client.run(
+            hermes_agent_dir,
+            profiles=[hermes_cli_profile],
+            input="who are you?",
+        )
 
     assert result["status"] == "succeeded"
     assert result["adapter_kind"] == "process"
@@ -48,11 +50,13 @@ async def test_hermes_cli_multi_turn(hermes_agent_dir: Path, hermes_cli_session_
     This test calls the fake-hermes.py script rather than hermes itself, thus it doesn't require an API key, however
     the hermes_cli adapter does use the hermes_state module, so we can test that the session is recorded propperly.
     """
-    async with await FabricClient().start(hermes_agent_dir,
-                                          profile=hermes_cli_session_profile) as session:
+    async with await FabricClient().start_session(
+        hermes_agent_dir,
+        profiles=[hermes_cli_session_profile],
+    ) as session:
         runtime_id = session.runtime["runtime_id"]
-        await session.invoke("prompt1")
-        await session.invoke("prompt2")
+        await session.invoke(input="prompt1")
+        await session.invoke(input="prompt2")
 
     session_db_path = hermes_agent_dir / "artifacts/hermes-home/state.db"
     assert session_db_path.exists(), f"Expected session DB at {session_db_path} does not exist"
@@ -88,8 +92,8 @@ class TestHermesE2E:
         async with FabricClient() as client:
             self.result = await client.run(
                 code_review_agent_dir,
-                profile="hermes_cli_relay",
-                input_text="Reply with exactly: relay ok",
+                profiles=["hermes_cli_relay"],
+                input="Reply with exactly: relay ok",
             )
 
         self.output = self.result["output"]
@@ -101,8 +105,10 @@ class TestHermesE2E:
         assert self.result["status"] == "succeeded"
         assert self.result["adapter_kind"] == "process"
         assert self.result["metadata"]["adapter_runner"] == "process"
-        assert self.result["telemetry"]["relay_enabled"] is True
-        assert self.result["telemetry"]["metadata"]["relay_mode"] == "sdk"
+        assert len(self.result.telemetry) == 1
+        assert self.result.telemetry[0].provider == "relay"
+        assert self.result.telemetry[0].metadata["relay_enabled"] is True
+        assert self.result.telemetry[0].metadata["relay_mode"] == "sdk"
 
         output = self.output
         assert output["adapter"] == "cli"
@@ -148,7 +154,7 @@ class TestHermesE2E:
         relay_config = json.loads(relay_config_path.read_text(encoding="utf-8"))
         assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
         assert relay_config["relay"]["enabled"] is True
-        assert relay_config["fabric"]["profile"] == "hermes_cli_relay"
+        assert relay_config["fabric"]["profiles"] == ["hermes_cli_relay"]
 
         fabric_invocation_path = Path(output["fabric_invocation"]).resolve()
         assert fabric_invocation_path.is_file()
