@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from nemo_fabric import (
     FabricCapabilityError,
     FabricClient,
+    FabricStateError,
     RunRequest,
     RunResult,
     Session,
@@ -189,7 +190,7 @@ async def stream_and_lifecycle() -> None:
     assert native.stopped == 1
     try:
         await session.invoke(input="too late")
-    except RuntimeError:
+    except FabricStateError:
         pass
     else:
         raise AssertionError("invoke after stop should raise")
@@ -218,6 +219,9 @@ async def failed_result_exposes_structured_error() -> None:
     assert result.error.stage == "invoke"
     assert result.error.code == "adapter_failed"
     assert result.error.retryable is False
+    await session.stop()
+    assert session.status is SessionStatus.STOPPED
+    assert native.stopped == 1
 
 
 async def main() -> None:

@@ -205,7 +205,8 @@ async def run(raw_config):
                 request=request,
             )
     except FabricError as error:
-        raise RuntimeError(f"Fabric invocation failed: {error}") from error
+        print(error.stage, error.code, error.retryable)
+        raise
 
     print(result.status)
     print(result["runtime_id"])

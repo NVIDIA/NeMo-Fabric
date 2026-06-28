@@ -332,6 +332,19 @@ async def test_run_stops_runtime_after_success_and_failure(
     assert mock_native.stop_runtime.call_count == 2
 
 
+async def test_run_surfaces_cleanup_failure_after_success(
+    native_client: FabricClient,
+    mock_native: MagicMock,
+):
+    mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
+
+    with pytest.raises(FabricRuntimeError, match="stop failed") as caught:
+        await native_client.run("agent", input="hello")
+
+    assert caught.value.stage == "run"
+    assert mock_native.stop_runtime.call_count == 1
+
+
 async def test_run_cancellation_keeps_event_loop_responsive_until_cleanup(
     native_client: FabricClient,
     mock_native: MagicMock,

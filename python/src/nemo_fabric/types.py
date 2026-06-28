@@ -494,6 +494,7 @@ class FabricMapping(Mapping[str, Any]):
 
     _fields: frozenset[str] = frozenset()
     _json_fields: frozenset[str] = frozenset()
+    _omit_if_empty: frozenset[str] = frozenset()
 
     def __init__(self, mapping: Mapping[str, Any]) -> None:
         data = self._normalize(_mapping(mapping, type(self).__name__))
@@ -539,7 +540,11 @@ class FabricMapping(Mapping[str, Any]):
         )
 
     def to_mapping(self) -> dict[str, Any]:
-        return _thaw(self._data)
+        data = _thaw(self._data)
+        for key in self._omit_if_empty:
+            if data.get(key) in ({}, []):
+                data.pop(key, None)
+        return data
 
     def to_dict(self) -> dict[str, Any]:
         return self.to_mapping()
@@ -582,6 +587,7 @@ class RuntimeCapabilities(FabricMapping):
         }
     )
     _json_fields = frozenset({"metadata"})
+    _omit_if_empty = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:

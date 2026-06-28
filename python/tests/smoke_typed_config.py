@@ -169,6 +169,8 @@ def sdk_and_cli_profile_stacks_match(client: FabricClient) -> None:
     sdk_mapping = sdk_plan.to_mapping()
     assert sdk_mapping["config"] == cli_plan["config"]
     assert sdk_mapping["effective_config"]["config"] == cli_plan["effective_config"]["config"]
+    assert sdk_mapping["adapter_descriptor"] == cli_plan["adapter_descriptor"]
+    assert sdk_mapping["capabilities"] == cli_plan["capabilities"]
     assert sdk_mapping["capability_plan"] == cli_plan["capability_plan"]
     assert sdk_mapping["environment_plan"] == cli_plan["environment_plan"]
     assert sdk_mapping["telemetry_plan"] == cli_plan["telemetry_plan"]
