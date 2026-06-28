@@ -80,14 +80,10 @@ copied into `context.metadata["fabric"]`.
 
 ## Multi-Harness Demo
 
-The runnable MVP demo includes a credential-free pipeline check plus real
-Hermes, Hermes-with-Relay, and Codex variants:
-
-```bash
-integrations/harbor/demo/run.sh smoke
-```
-
-See [`demo/README.md`](demo/README.md) for the recording flow.
+The runnable MVP demo includes explicit Harbor CLI commands for a
+credential-free pipeline check plus real Hermes, Hermes-with-Relay, and Codex
+variants. See [`demo/README.md`](demo/README.md) for the commands and recording
+flow.
 
 ## Local Smoke
 

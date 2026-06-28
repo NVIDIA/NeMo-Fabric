@@ -8,6 +8,8 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+DEMO_README = ROOT / "integrations" / "harbor" / "demo" / "README.md"
+INTEGRATION_README = ROOT / "integrations" / "harbor" / "README.md"
 
 
 def load_codex_adapter():
@@ -103,3 +105,14 @@ def test_codex_adapter_maps_fabric_request_to_cli(monkeypatch, tmp_path):
         "-",
     ]
     assert cwd == tmp_path
+
+
+def test_harbor_demo_documents_explicit_cli_commands():
+    demo = DEMO_README.read_text(encoding="utf-8")
+    integration = INTEGRATION_README.read_text(encoding="utf-8")
+
+    assert "run.sh" not in demo
+    assert "demo/run.sh" not in integration
+    assert demo.count("uv run --extra harbor harbor run") == 4
+    for flag in ("--path", "--agent", "--ak", "--ae", "--model", "--job-name"):
+        assert flag in demo

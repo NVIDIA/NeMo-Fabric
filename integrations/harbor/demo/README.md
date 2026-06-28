@@ -1,52 +1,167 @@
 # Harbor Multi-Harness Demo
 
-This demo runs one Harbor task through one `FabricAgent` import path while
-Fabric selects the execution harness from an ordered profile stack.
+This demo keeps one Harbor external-agent surface while Fabric selects the
+execution harness from an ordered profile stack. Harbor owns the task,
+container, verifier, reward, and run layout. `FabricAgent` invokes the Fabric
+Python SDK inside the task container; it does not invoke the Fabric CLI.
 
-## Variants
+## Requirements
 
-| Command | Fabric profiles | Purpose |
-| --- | --- | --- |
-| `./run.sh smoke` | `smoke` | Credential-free Harbor, Fabric SDK, workspace, and verifier check |
-| `./run.sh hermes` | `hermes` | Real Hermes CLI coding-agent run |
-| `./run.sh hermes-relay` | `hermes`, `telemetry` | Same Hermes run with Relay ATOF/ATIF enabled |
-| `./run.sh codex` | `codex` | Real Codex CLI coding-agent run |
+- Python 3.12+
+- `uv`
+- Docker
+- this repository checkout, with the changes to test committed
 
-Harbor owns the task container and verifier. `FabricAgent` launches
-`nemo_fabric.integrations.harbor_runner` inside that container; the runner loads
-the YAML files into typed Fabric config objects and invokes `FabricClient`.
+The first image build can take several minutes.
 
-## Run
+## Prepare the Build Context
 
-Requirements: Python 3.12+, `uv`, Docker, and this checkout. The first run builds
-the demo image and can take several minutes. The launcher exports committed
-`HEAD` into the Docker build context, so commit local changes before testing them.
+Harbor builds `task/environment/Dockerfile` with the environment directory as
+its Docker context. Export committed `HEAD` there so the image installs the
+exact Fabric revision under test:
 
 ```bash
-chmod +x integrations/harbor/demo/run.sh
-FABRIC_DEMO_FORCE_BUILD=1 integrations/harbor/demo/run.sh smoke
+DEMO_DIR="$PWD/integrations/harbor/demo"
+TASK_DIR="$DEMO_DIR/task"
+RUNS_DIR="$DEMO_DIR/runs"
+VENDOR_DIR="$TASK_DIR/environment/vendor/nemo-fabric"
+
+rm -rf "$TASK_DIR/environment/vendor"
+mkdir -p "$VENDOR_DIR"
+git archive HEAD | tar -x -C "$VENDOR_DIR"
 ```
 
-For the real harnesses:
+Keep this shell open for the commands below. Use a new `--job-name`, or remove
+the matching generated directory under `$RUNS_DIR`, before repeating a run.
+
+## Harbor Arguments
+
+| Argument | Meaning |
+| --- | --- |
+| `--path` | Harbor task directory containing `task.toml`, environment, and verifier |
+| `--agent` | Harbor external agent class imported from the local Fabric package |
+| `--ak` | Constructor argument passed by Harbor to `FabricAgent` |
+| `fabric_config_path` | Base Fabric YAML path inside the task container |
+| `fabric_profile_paths` | Ordered Fabric profile YAML paths inside the task container |
+| `--model` | Harbor model selection; Fabric applies it after the file-backed profiles |
+| `--ae` | Environment variable passed to the Harbor agent inside the container |
+| `--job-name` | Stable Harbor output directory name for this variant |
+| `--force-build` | Rebuild the Harbor task image from the prepared context |
+
+The JSON array passed to `fabric_profile_paths` is one Harbor `--ak` value. It
+is not a Fabric CLI argument.
+
+## 1. Credential-Free Smoke
+
+This proves Harbor task setup, the external agent import, sandbox-local SDK
+execution, Fabric profile resolution, workspace mutation, and verification:
 
 ```bash
-NVIDIA_API_KEY=... integrations/harbor/demo/run.sh hermes
-NVIDIA_API_KEY=... integrations/harbor/demo/run.sh hermes-relay
-OPENAI_API_KEY=... integrations/harbor/demo/run.sh codex
+uv run --extra harbor harbor run \
+  --path "$TASK_DIR" \
+  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --ak fabric_config_path=/opt/fabric-demo/agent.yaml \
+  --ak 'fabric_profile_paths=["/opt/fabric-demo/profiles/smoke.yaml"]' \
+  --job-name fabric-smoke \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --n-attempts 1 \
+  --force-build
 ```
 
-Set `FABRIC_CODEX_MODEL` only when you want to override the Codex CLI default.
+Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
+
+## 2. Hermes CLI
+
+The Harbor command is unchanged except for model selection, the credential,
+and the Fabric profile path:
+
+```bash
+export NVIDIA_API_KEY=...
+
+uv run --extra harbor harbor run \
+  --path "$TASK_DIR" \
+  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --ak fabric_config_path=/opt/fabric-demo/agent.yaml \
+  --ak 'fabric_profile_paths=["/opt/fabric-demo/profiles/hermes.yaml"]' \
+  --model nvidia/nemotron-3-nano-30b-a3b \
+  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --job-name fabric-hermes \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --n-attempts 1 \
+  --force-build
+```
+
+## 3. Hermes with Relay Telemetry
+
+This composes two ordered Fabric profiles. The first selects Hermes; the second
+adds ATOF and ATIF telemetry without changing the Harbor agent:
+
+```bash
+uv run --extra harbor harbor run \
+  --path "$TASK_DIR" \
+  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --ak fabric_config_path=/opt/fabric-demo/agent.yaml \
+  --ak 'fabric_profile_paths=["/opt/fabric-demo/profiles/hermes.yaml","/opt/fabric-demo/profiles/telemetry.yaml"]' \
+  --model nvidia/nemotron-3-nano-30b-a3b \
+  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --job-name fabric-hermes-relay \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --n-attempts 1 \
+  --force-build
+```
+
+## 4. Codex CLI
+
+Codex uses the same Harbor agent and task. Only the profile and credential
+change:
+
+```bash
+export OPENAI_API_KEY=...
+
+uv run --extra harbor harbor run \
+  --path "$TASK_DIR" \
+  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --ak fabric_config_path=/opt/fabric-demo/agent.yaml \
+  --ak 'fabric_profile_paths=["/opt/fabric-demo/profiles/codex.yaml"]' \
+  --ae "OPENAI_API_KEY=$OPENAI_API_KEY" \
+  --job-name fabric-codex \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --n-attempts 1 \
+  --force-build
+```
+
+Codex uses its configured CLI default model. Add `--model openai/<model>` when
+you want Harbor to provide an explicit model override.
+
+## Inspect the Result
+
+Harbor records Fabric's normalized result in the trial's agent logs. For the
+smoke variant:
+
+```bash
+find "$RUNS_DIR/fabric-smoke" -path '*/agent/fabric-result.json' -print -exec cat {} \;
+cat "$RUNS_DIR/fabric-smoke/result.json"
+uv run --extra harbor harbor view "$RUNS_DIR"
+```
+
+Check `status`, `profiles`, `harness`, `adapter_id`, runtime and invocation IDs,
+artifacts, telemetry, Harbor exceptions, and reward. A successful smoke run has
+Fabric status `succeeded` and Harbor mean reward `1.0`.
+
+After the demo, remove the generated build-context copy:
+
+```bash
+rm -rf "$TASK_DIR/environment/vendor"
+```
 
 ## Recording Flow
 
-1. Show the single Harbor agent import path in `run.sh`.
-2. Run `hermes`, then `codex`; only the Fabric profile and credential change.
-3. Run `hermes-relay` to show telemetry as an additive profile.
-4. Open all results with:
-
-```bash
-uv run --extra harbor harbor view integrations/harbor/demo/runs
-```
-
-Each trial keeps `fabric-result.json` plus Fabric artifacts under the Harbor
-agent logs.
+1. Show the common `--agent` and `fabric_config_path` values.
+2. Run the credential-free smoke and inspect `fabric-result.json`.
+3. Run Hermes, then Codex, changing only profile, model, and credential flags.
+4. Run Hermes plus telemetry to show ordered profile composition.
+5. Open all four jobs with `harbor view`.
