@@ -153,7 +153,7 @@ async def smoke(client: FabricClient) -> None:
     assert result["adapter_kind"] == "python"
     assert result["metadata"]["adapter_runner"] == "python"
     assert result["output"]["received"] == "hello native"
-    assert result.output["native_mcp_servers"] == ("github",)
+    assert result.output["native_mcp_servers"] == ["github"]
     assert any(artifact.name == "stdout" for artifact in result.artifacts.artifacts)
     assert first["status"] == "succeeded"
     assert second["status"] == "succeeded"

@@ -275,8 +275,23 @@ def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:
         return {}
     if not isinstance(value, Mapping):
         raise FabricConfigError(f"{name} must be a JSON object")
+    pending: list[Any] = [value]
+    seen: set[int] = set()
+    while pending:
+        item = pending.pop()
+        if isinstance(item, (Mapping, list, tuple)):
+            identity = id(item)
+            if identity in seen:
+                continue
+            seen.add(identity)
+        if isinstance(item, Mapping):
+            if any(not isinstance(key, str) for key in item):
+                raise FabricConfigError(f"{name} keys must be strings")
+            pending.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            pending.extend(item)
     try:
-        return json.loads(json.dumps(dict(value)))
+        return json.loads(json.dumps(dict(value), allow_nan=False))
     except (TypeError, ValueError) as error:
         raise FabricConfigError(f"{name} must contain JSON-compatible values") from error
 

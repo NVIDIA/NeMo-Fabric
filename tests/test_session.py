@@ -17,6 +17,7 @@ from nemo_fabric import (
     FabricCapabilityError,
     FabricClient,
     FabricConfig,
+    FabricConfigError,
     FabricNativeUnavailableError,
     FabricRuntimeError,
     FabricStateError,
@@ -180,6 +181,44 @@ async def test_start_session_rejects_non_session_capability(
 
     with pytest.raises(FabricCapabilityError, match="session capability"):
         await native_client.start_session("agent")
+
+
+async def test_start_session_preserves_start_stage(
+    native_client: FabricClient,
+    mock_native: MagicMock,
+):
+    mock_native.start_runtime.side_effect = RuntimeError("start failed")
+
+    with pytest.raises(FabricRuntimeError, match="start failed") as caught:
+        await native_client.start_session("agent")
+
+    assert caught.value.stage == "start"
+
+
+async def test_start_session_rejects_invalid_overrides_before_start(
+    native_client: FabricClient,
+    mock_native: MagicMock,
+):
+    with pytest.raises(FabricConfigError, match="keys must be strings"):
+        await native_client.start_session(
+            "agent",
+            overrides={"nested": {1: "invalid"}},  # type: ignore[dict-item]
+        )
+
+    mock_native.start_runtime.assert_not_called()
+
+
+async def test_start_session_rejects_cyclic_overrides_before_start(
+    native_client: FabricClient,
+    mock_native: MagicMock,
+):
+    overrides: dict[str, Any] = {}
+    overrides["cycle"] = overrides
+
+    with pytest.raises(FabricConfigError, match="JSON-compatible"):
+        await native_client.start_session("agent", overrides=overrides)
+
+    mock_native.start_runtime.assert_not_called()
 
 
 async def test_session_reuses_runtime_and_orders_turns(mock_native: MagicMock):

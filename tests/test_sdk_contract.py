@@ -17,6 +17,7 @@ from nemo_fabric import (
     AdapterInfo,
     DoctorReport,
     EffectiveConfig,
+    EnvironmentConfig,
     FabricClient,
     FabricCapabilityError,
     FabricConfig,
@@ -92,6 +93,27 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
         HarnessConfig(adapter_id="")
     with pytest.raises(FabricConfigError, match="runtime mode"):
         RuntimeConfig(mode="invalid")
+    with pytest.raises(FabricConfigError, match="harness settings"):
+        HarnessConfig(
+            adapter_id="test.fabric.shim",
+            settings=[],  # type: ignore[arg-type]
+        )
+    with pytest.raises(FabricConfigError, match="extra_fields"):
+        MetadataConfig(name="demo", extra_fields=[])  # type: ignore[arg-type]
+    with pytest.raises(FabricConfigError, match="environment settings"):
+        EnvironmentConfig(settings=[])  # type: ignore[arg-type]
+    with pytest.raises(FabricConfigError, match="runtime must be"):
+        FabricConfig(
+            metadata=MetadataConfig(name="demo"),
+            harness=HarnessConfig(adapter_id="test.fabric.shim"),
+            runtime=[],  # type: ignore[arg-type]
+        )
+    with pytest.raises(FabricConfigError, match="models"):
+        FabricConfig(
+            metadata=MetadataConfig(name="demo"),
+            harness=HarnessConfig(adapter_id="test.fabric.shim"),
+            models=[],  # type: ignore[arg-type]
+        )
 
 
 def test_typed_profile_preserves_partial_overlay_sections():
@@ -154,6 +176,9 @@ def test_inspection_models_are_typed_read_only_mappings():
     assert "harness_type" not in plan.adapter
     assert plan.adapter.extra_fields["future"] == "value"
     assert plan.capabilities.extra_fields["future_capability"] == "declared"
+    resolved = plan.to_mapping()
+    plan.effective_config.config.metadata.name = "mutated"
+    assert plan.to_mapping() == resolved
     with pytest.raises(TypeError):
         plan["agent_name"] = "mutated"  # type: ignore[index]
 
@@ -423,6 +448,12 @@ def test_run_request_constructor_validates_context_and_overrides():
     with pytest.raises(FabricConfigError, match="request overrides"):
         RunRequest(input="bad", overrides="not-a-mapping")  # type: ignore[arg-type]
 
+    with pytest.raises(FabricConfigError, match="request context"):
+        RunRequest(input="bad", context=[])  # type: ignore[arg-type]
+
+    with pytest.raises(FabricConfigError, match="request extra_fields"):
+        RunRequest(input="bad", extra_fields=[])  # type: ignore[arg-type]
+
     with pytest.raises(FabricConfigError, match="finite"):
         RunRequest(input=float("nan"))
 
@@ -459,6 +490,35 @@ def test_run_result_wraps_nested_error_and_keeps_mapping_access():
     assert result.artifacts.artifacts == ()
     assert result.events[0].kind == "log"
     assert result.to_dict()["error"]["code"] == "adapter_failed"
+
+
+def test_run_result_exposes_detached_json_values():
+    result = RunResult.from_mapping(
+        {
+            "status": "succeeded",
+            "output": {"plugins": ["observability/nemo_relay"]},
+            "metadata": {"labels": ["sdk"]},
+            "artifacts": {"artifacts": []},
+            "events": [],
+            "future": {"values": [1]},
+        }
+    )
+
+    output = result.output
+    metadata = result.metadata
+    future = result.extra_fields["future"]
+
+    assert output["plugins"] == ["observability/nemo_relay"]
+    assert metadata["labels"] == ["sdk"]
+    assert future["values"] == [1]
+
+    output["plugins"].append("mutated")
+    metadata["labels"].append("mutated")
+    future["values"].append(2)
+
+    assert result.output == {"plugins": ["observability/nemo_relay"]}
+    assert result.metadata == {"labels": ["sdk"]}
+    assert result.extra_fields["future"] == {"values": [1]}
 
 
 def test_run_result_normalizes_core_telemetry_reference():

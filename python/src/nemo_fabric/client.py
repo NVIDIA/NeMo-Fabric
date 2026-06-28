@@ -32,6 +32,7 @@ from nemo_fabric.errors import (
 from nemo_fabric.session import (
     Session,
     _call_blocking,
+    _json_mapping,
     _require_session_runtime,
     _run_native_lifecycle,
     _run_request_payload,
@@ -302,6 +303,7 @@ class FabricClient:
     ) -> Session:
         """Create a session runtime from a path-backed or typed source."""
 
+        session_overrides = _json_mapping(overrides, "session overrides")
         plan = self.plan(agent, profiles=profiles, base_dir=base_dir)  # type: ignore[arg-type]
         _require_session_runtime(plan, "start_session")
         native = self._require_native_module("start_session")
@@ -312,12 +314,12 @@ class FabricClient:
         except FabricError:
             raise
         except Exception as error:
-            raise FabricRuntimeError(str(error)) from error
+            raise FabricRuntimeError(str(error), stage="start") from error
         return Session(
             client=self,
             plan=plan,
             runtime=runtime,
-            overrides=overrides,
+            overrides=session_overrides,
             session_id=session_id,
         )
 

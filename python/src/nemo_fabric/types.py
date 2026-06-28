@@ -83,7 +83,7 @@ class _ConfigMapping(dict[str, Any]):
         *,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        extras = _mapping(extra_fields or {}, "extra_fields")
+        extras = _mapping({} if extra_fields is None else extra_fields, "extra_fields")
         overlap = self._fields.intersection(extras)
         if overlap:
             raise FabricConfigError(
@@ -170,7 +170,10 @@ class HarnessConfig(_ConfigMapping):
     ) -> None:
         values: dict[str, Any] = {
             "adapter_id": _required_text(adapter_id, "adapter_id"),
-            "settings": _mapping(settings or {}, "harness settings"),
+            "settings": _mapping(
+                {} if settings is None else settings,
+                "harness settings",
+            ),
         }
         if resolution is not None:
             values["resolution"] = resolution
@@ -250,8 +253,14 @@ class EnvironmentConfig(_ConfigMapping):
     ) -> None:
         values: dict[str, Any] = {
             "provider": _required_text(provider, "environment provider"),
-            "settings": _mapping(settings or {}, "environment settings"),
-            "metadata": _mapping(metadata or {}, "environment metadata"),
+            "settings": _mapping(
+                {} if settings is None else settings,
+                "environment settings",
+            ),
+            "metadata": _mapping(
+                {} if metadata is None else metadata,
+                "environment metadata",
+            ),
         }
         if workspace is not None:
             values["workspace"] = workspace
@@ -310,7 +319,11 @@ class FabricConfig(_ConfigMapping):
     ) -> None:
         metadata_value = _coerce(MetadataConfig, metadata, "metadata")
         harness_value = _coerce(HarnessConfig, harness, "harness")
-        runtime_value = _coerce(RuntimeConfig, runtime or RuntimeConfig(), "runtime")
+        runtime_value = _coerce(
+            RuntimeConfig,
+            RuntimeConfig() if runtime is None else runtime,
+            "runtime",
+        )
         environment_value = (
             None
             if environment is None
@@ -321,7 +334,7 @@ class FabricConfig(_ConfigMapping):
             "metadata": metadata_value,
             "harness": harness_value,
             "runtime": runtime_value,
-            "models": _mapping(models or {}, "models"),
+            "models": _mapping({} if models is None else models, "models"),
         }
         for key, item in (
             ("environment", environment_value),
@@ -468,10 +481,19 @@ def _thaw(value: Any) -> Any:
     return deepcopy(value)
 
 
+def _snapshot_value(value: Any, *, json_value: bool) -> Any:
+    if isinstance(value, _ConfigMapping):
+        return deepcopy(value)
+    if json_value:
+        return _thaw(value)
+    return value
+
+
 class FabricMapping(Mapping[str, Any]):
     """Immutable mapping-compatible base for SDK snapshots and results."""
 
     _fields: frozenset[str] = frozenset()
+    _json_fields: frozenset[str] = frozenset()
 
     def __init__(self, mapping: Mapping[str, Any]) -> None:
         data = self._normalize(_mapping(mapping, type(self).__name__))
@@ -486,7 +508,10 @@ class FabricMapping(Mapping[str, Any]):
         return data
 
     def __getitem__(self, key: str) -> Any:
-        return self._data[key]
+        return _snapshot_value(
+            self._data[key],
+            json_value=key in self._json_fields or key not in self._fields,
+        )
 
     def __iter__(self) -> Iterator[str]:
         return iter(self._data)
@@ -496,14 +521,21 @@ class FabricMapping(Mapping[str, Any]):
 
     def __getattr__(self, name: str) -> Any:
         try:
-            return self._data[name]
+            return _snapshot_value(
+                self._data[name],
+                json_value=name in self._json_fields or name not in self._fields,
+            )
         except KeyError as error:
             raise AttributeError(name) from error
 
     @property
     def extra_fields(self) -> Mapping[str, Any]:
         return MappingProxyType(
-            {key: value for key, value in self._data.items() if key not in self._fields}
+            {
+                key: _thaw(value)
+                for key, value in self._data.items()
+                if key not in self._fields
+            }
         )
 
     def to_mapping(self) -> dict[str, Any]:
@@ -519,6 +551,7 @@ class AdapterInfo(FabricMapping):
     adapter_kind: str
     metadata: Mapping[str, Any]
     _fields = frozenset({"adapter_id", "harness", "adapter_kind", "metadata"})
+    _json_fields = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -548,6 +581,7 @@ class RuntimeCapabilities(FabricMapping):
             "metadata",
         }
     )
+    _json_fields = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -608,6 +642,7 @@ class DoctorCheck(FabricMapping):
     message: str
     metadata: Mapping[str, Any]
     _fields = frozenset({"name", "status", "message", "metadata"})
+    _json_fields = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -637,6 +672,7 @@ class RunRequest(FabricMapping):
     context: Mapping[str, Any]
     overrides: Mapping[str, Any] | None
     _fields = frozenset({"input", "request_id", "context", "overrides"})
+    _json_fields = frozenset({"input", "context", "overrides"})
 
     def __init__(
         self,
@@ -650,11 +686,17 @@ class RunRequest(FabricMapping):
         data: dict[str, Any] = {
             "input": "" if input is _UNSET or input is None else input,
             "request_id": request_id or f"request-{uuid.uuid4().hex}",
-            "context": _mapping(context or {}, "request context"),
+            "context": _mapping(
+                {} if context is None else context,
+                "request context",
+            ),
         }
         if overrides is not None:
             data["overrides"] = _mapping(overrides, "request overrides")
-        extras = _mapping(extra_fields or {}, "request extra_fields")
+        extras = _mapping(
+            {} if extra_fields is None else extra_fields,
+            "request extra_fields",
+        )
         overlap = self._fields.intersection(extras)
         if overlap:
             raise FabricConfigError(
@@ -682,6 +724,7 @@ class ErrorInfo(FabricMapping):
     retryable: bool
     metadata: Mapping[str, Any]
     _fields = frozenset({"stage", "code", "message", "retryable", "metadata"})
+    _json_fields = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -696,6 +739,7 @@ class ArtifactRef(FabricMapping):
     media_type: str | None
     metadata: Mapping[str, Any]
     _fields = frozenset({"name", "kind", "path", "media_type", "metadata"})
+    _json_fields = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -725,6 +769,7 @@ class TelemetryRef(FabricMapping):
     trace_id: str | None
     metadata: Mapping[str, Any]
     _fields = frozenset({"provider", "kind", "uri", "trace_id", "metadata"})
+    _json_fields = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -752,6 +797,7 @@ class FabricEvent(FabricMapping):
     message: str
     metadata: Mapping[str, Any]
     _fields = frozenset({"event_id", "timestamp_millis", "kind", "message", "metadata"})
+    _json_fields = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -815,6 +861,7 @@ class RunResult(FabricMapping):
             "metadata",
         }
     )
+    _json_fields = frozenset({"output", "metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -876,6 +923,7 @@ class RuntimeUpdate(FabricMapping):
     overrides: Mapping[str, Any]
     metadata: Mapping[str, Any]
     _fields = frozenset({"overrides", "metadata"})
+    _json_fields = frozenset({"overrides", "metadata"})
 
 
 class RuntimeUpdateResult(FabricMapping):
@@ -884,3 +932,4 @@ class RuntimeUpdateResult(FabricMapping):
     rejected: Mapping[str, Any]
     reason: str | None
     _fields = frozenset({"status", "applied", "rejected", "reason"})
+    _json_fields = frozenset({"applied", "rejected"})

@@ -1072,14 +1072,17 @@ fn resolve_runtime_capabilities(
     config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
 ) -> RuntimeCapabilities {
-    let implemented_adapter = descriptor.is_some_and(|descriptor| {
+    let implemented_runtime = descriptor.is_some_and(|descriptor| {
         matches!(
             descriptor.adapter_kind,
             AdapterKind::Process | AdapterKind::Python
         )
-    });
+    }) && matches!(
+        config.runtime.transport,
+        Transport::Library | Transport::Cli
+    );
     RuntimeCapabilities {
-        session: implemented_adapter && config.runtime.mode == RuntimeMode::Session,
+        session: implemented_runtime && config.runtime.mode == RuntimeMode::Session,
         service: false,
         streaming: false,
         updates: false,
@@ -1598,6 +1601,30 @@ runtime:
         assert_eq!(config.runtime.transport, Transport::Library);
         assert_eq!(config.runtime.input_schema, "text");
         assert_eq!(config.runtime.output_schema, "text");
+    }
+
+    #[test]
+    fn unsupported_transports_do_not_claim_session_capability() {
+        let mut config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.hermes.sdk
+runtime:
+  mode: session
+"#,
+        )
+        .expect("session config");
+        let descriptor =
+            load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
+
+        assert!(resolve_runtime_capabilities(&config, Some(&descriptor)).session);
+        for transport in [Transport::Http, Transport::NativePlugin] {
+            config.runtime.transport = transport;
+            assert!(!resolve_runtime_capabilities(&config, Some(&descriptor)).session);
+        }
     }
 
     #[test]
