@@ -1,5 +1,6 @@
 {
   "adapter_id": "nvidia.fabric.hermes.cli",
+  "harness_type": "hermes",
   "adapter_kind": "process",
   "runner": {
     "command": "python3",

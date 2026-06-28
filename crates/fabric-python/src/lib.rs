@@ -7,7 +7,8 @@ use std::path::PathBuf;
 
 use fabric_core::{
     FabricConfig, ProfileConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
-    load_fabric_document, resolve_effective_config_with_profiles, resolve_run_plan_from_config,
+    load_fabric_document, resolve_effective_config_from_config,
+    resolve_effective_config_with_profiles, resolve_run_plan_from_config,
     resolve_run_plan_with_profiles, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
@@ -34,6 +35,22 @@ fn inspect(py: Python<'_>, path: String, profile: Option<Py<PyAny>>) -> PyResult
     let effective_config =
         resolve_effective_config_with_profiles(path, &profiles).map_err(to_py_error)?;
     to_json(&effective_config)
+}
+
+/// Resolve typed config/profile JSON into effective config and return JSON.
+#[pyfunction]
+#[pyo3(signature = (config_json, profiles_json=None, base_dir=None))]
+fn resolve_config(
+    config_json: String,
+    profiles_json: Option<String>,
+    base_dir: Option<String>,
+) -> PyResult<String> {
+    let config = parse_config(config_json)?;
+    let profiles = parse_profiles(profiles_json)?;
+    let effective =
+        resolve_effective_config_from_config(config, &profiles, resolve_context(base_dir))
+            .map_err(to_py_error)?;
+    to_json(&effective)
 }
 
 /// Resolve an agent/profile into a runnable plan and return JSON.
@@ -201,6 +218,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
     m.add_function(wrap_pyfunction!(validate, m)?)?;
     m.add_function(wrap_pyfunction!(inspect, m)?)?;
+    m.add_function(wrap_pyfunction!(resolve_config, m)?)?;
     m.add_function(wrap_pyfunction!(plan, m)?)?;
     m.add_function(wrap_pyfunction!(plan_config, m)?)?;
     m.add_function(wrap_pyfunction!(doctor, m)?)?;

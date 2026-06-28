@@ -1,5 +1,6 @@
 {
   "adapter_id": "test.fabric.hermes_shim",
+  "harness_type": "hermes",
   "adapter_kind": "python",
   "runner": {
     "module": "nemo_fabric_test_adapters.hermes_shim.adapter",

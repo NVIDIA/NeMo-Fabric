@@ -285,12 +285,12 @@
       "default": null,
       "description": "Primary output."
     },
-    "profile": {
-      "description": "Selected profile name when loaded through an agent manifest.",
-      "type": [
-        "string",
-        "null"
-      ]
+    "profiles": {
+      "description": "Ordered profiles applied to this run.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "request_id": {
       "description": "Request id.",
@@ -318,6 +318,7 @@
   },
   "required": [
     "agent_name",
+    "profiles",
     "harness_type",
     "adapter_kind",
     "runtime_id",

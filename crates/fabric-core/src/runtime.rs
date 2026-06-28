@@ -59,9 +59,8 @@ impl RunRequest {
 pub struct RunResult {
     /// Stable agent name.
     pub agent_name: String,
-    /// Selected profile name when loaded through an agent manifest.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<String>,
+    /// Ordered profiles applied to this run.
+    pub profiles: Vec<String>,
     /// Harness type used for this run.
     pub harness_type: String,
     /// Adapter used for this run.
@@ -899,7 +898,7 @@ fn run_process_adapter(
 
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
-        profile: plan.profile.clone(),
+        profiles: plan.profiles.clone(),
         harness_type: harness_type(plan),
         adapter_kind: adapter_kind(plan),
         adapter_id: adapter_id(plan),
@@ -1110,7 +1109,7 @@ fn run_python_adapter(
 
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
-        profile: plan.profile.clone(),
+        profiles: plan.profiles.clone(),
         harness_type: harness_type(plan),
         adapter_kind: adapter_kind(plan),
         adapter_id: adapter_id(plan),
@@ -1146,7 +1145,10 @@ fn write_child_stdin(stdin: &mut impl Write, payload: &str, command: &str) -> Re
 }
 
 fn harness_type(plan: &RunPlan) -> String {
-    adapter_id(plan).unwrap_or_else(|| "unknown".to_string())
+    plan.adapter_descriptor
+        .as_ref()
+        .map(|adapter| adapter.descriptor.harness_type.clone())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn adapter_kind(plan: &RunPlan) -> AdapterKind {
@@ -1716,7 +1718,7 @@ fn prepare_relay_runtime_config(
         },
         "fabric": {
             "agent_name": plan.agent_name.clone(),
-            "profile": plan.profile.clone(),
+            "profiles": plan.profiles.clone(),
             "harness_type": harness_type(plan),
             "adapter_id": adapter_id(plan),
             "runtime_id": runtime.runtime_id.clone(),
@@ -1888,6 +1890,7 @@ runtime:
     fn process_adapter_descriptor() -> &'static str {
         r#"{
   "adapter_id": "acme.fabric.process",
+  "harness_type": "process",
   "adapter_kind": "process"
 }"#
     }
@@ -1979,12 +1982,19 @@ environment:
     #[test]
     fn process_adapter_passes_input_to_stdin() {
         let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let mut plan = resolve_run_plan(&root, None).expect("run plan");
+        plan.profiles = vec!["runtime".to_string(), "telemetry".to_string()];
         let result = run_plan(&plan, RunRequest::text("hello fabric")).expect("run result");
 
         assert_eq!(result.status, RunStatus::Succeeded);
         assert_eq!(result.output, Value::String("hello fabric".to_string()));
         assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
+        let result_json = serde_json::to_value(&result).expect("result json");
+        assert!(result_json.get("profile").is_none());
+        assert_eq!(
+            result_json["profiles"],
+            serde_json::json!(["runtime", "telemetry"])
+        );
         assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
 
         let _ = fs::remove_dir_all(root);

@@ -1,6 +1,7 @@
 {
   "$defs": {
     "AdapterConfigSupport": {
+      "additionalProperties": true,
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
@@ -21,6 +22,7 @@
       "type": "object"
     },
     "AdapterDescriptor": {
+      "additionalProperties": true,
       "description": "Language-neutral adapter descriptor for a harness integration.",
       "properties": {
         "adapter_id": {
@@ -35,6 +37,10 @@
           "$ref": "#/$defs/AdapterConfigSupport",
           "default": {},
           "description": "Fabric config areas this adapter consumes or generates."
+        },
+        "harness_type": {
+          "description": "Harness family implemented by this adapter.",
+          "type": "string"
         },
         "requirements": {
           "$ref": "#/$defs/AdapterRequirements",
@@ -54,6 +60,7 @@
       },
       "required": [
         "adapter_id",
+        "harness_type",
         "adapter_kind"
       ],
       "type": "object"
@@ -99,6 +106,7 @@
       ]
     },
     "AdapterRequirements": {
+      "additionalProperties": true,
       "description": "Adapter runtime requirements.",
       "properties": {
         "binaries": {
@@ -140,6 +148,7 @@
       "type": "object"
     },
     "AdapterTelemetrySupport": {
+      "additionalProperties": true,
       "description": "Adapter telemetry support.",
       "properties": {
         "supports": {
@@ -336,13 +345,6 @@
           "description": "Root used to resolve config-local paths.",
           "type": "string"
         },
-        "profile": {
-          "description": "Selected profile when exactly one profile is applied.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "profiles": {
           "description": "Ordered selected profiles.",
           "items": {
@@ -353,6 +355,7 @@
       },
       "required": [
         "agent_name",
+        "profiles",
         "agent_root",
         "config_path",
         "config_root",
@@ -361,6 +364,7 @@
       "type": "object"
     },
     "EnvironmentConfig": {
+      "additionalProperties": true,
       "description": "Execution environment configuration.",
       "properties": {
         "artifacts": {
@@ -480,6 +484,7 @@
       "type": "object"
     },
     "FabricConfig": {
+      "additionalProperties": true,
       "description": "Versioned Fabric agent config.",
       "properties": {
         "environment": {
@@ -566,6 +571,7 @@
       "type": "object"
     },
     "HarnessConfig": {
+      "additionalProperties": true,
       "description": "Harness selection.",
       "properties": {
         "adapter_id": {
@@ -595,6 +601,7 @@
       "type": "object"
     },
     "McpConfig": {
+      "additionalProperties": true,
       "description": "MCP capability configuration.",
       "properties": {
         "servers": {
@@ -623,6 +630,7 @@
       ]
     },
     "McpServerConfig": {
+      "additionalProperties": true,
       "description": "MCP server configuration.",
       "properties": {
         "exposure": {
@@ -669,6 +677,7 @@
       "type": "object"
     },
     "MetadataConfig": {
+      "additionalProperties": true,
       "description": "Human-readable metadata.",
       "properties": {
         "description": {
@@ -689,6 +698,7 @@
       "type": "object"
     },
     "ModelConfig": {
+      "additionalProperties": true,
       "description": "Model configuration.",
       "properties": {
         "api_key_env": {
@@ -727,6 +737,7 @@
       "type": "object"
     },
     "ProfileRegistryConfig": {
+      "additionalProperties": true,
       "description": "Profile discovery config for curated package profiles.",
       "properties": {
         "directories": {
@@ -807,7 +818,51 @@
       ],
       "type": "object"
     },
+    "RuntimeCapabilities": {
+      "description": "Lifecycle behavior implemented by a resolved runtime path.",
+      "properties": {
+        "cancellation": {
+          "description": "Whether an in-flight invocation can be cancelled.",
+          "type": "boolean"
+        },
+        "concurrent_invocations": {
+          "description": "Whether the runtime accepts concurrent invocations.",
+          "type": "boolean"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Additional adapter-specific capability metadata.",
+          "type": "object"
+        },
+        "service": {
+          "description": "Whether the selected runtime supports service lifecycle operations.",
+          "type": "boolean"
+        },
+        "session": {
+          "description": "Whether the selected runtime supports session lifecycle operations.",
+          "type": "boolean"
+        },
+        "streaming": {
+          "description": "Whether invocations can emit progressive output.",
+          "type": "boolean"
+        },
+        "updates": {
+          "description": "Whether a running runtime can accept config updates.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session",
+        "service",
+        "streaming",
+        "updates",
+        "cancellation",
+        "concurrent_invocations"
+      ],
+      "type": "object"
+    },
     "RuntimeConfig": {
+      "additionalProperties": true,
       "description": "Runtime mode and input/output contract.",
       "properties": {
         "artifacts": {
@@ -818,6 +873,7 @@
           ]
         },
         "input_schema": {
+          "default": "text",
           "description": "Input schema label.",
           "type": "string"
         },
@@ -826,19 +882,18 @@
           "description": "Runtime mode."
         },
         "output_schema": {
+          "default": "text",
           "description": "Output schema label.",
           "type": "string"
         },
         "transport": {
           "$ref": "#/$defs/Transport",
+          "default": "library",
           "description": "Transport used to operate the harness."
         }
       },
       "required": [
-        "mode",
-        "transport",
-        "input_schema",
-        "output_schema"
+        "mode"
       ],
       "type": "object"
     },
@@ -863,6 +918,7 @@
       ]
     },
     "SkillConfig": {
+      "additionalProperties": true,
       "description": "Skill capability configuration.",
       "properties": {
         "paths": {
@@ -876,6 +932,7 @@
       "type": "object"
     },
     "TelemetryConfig": {
+      "additionalProperties": true,
       "description": "Telemetry configuration.",
       "properties": {
         "config": {
@@ -1002,6 +1059,10 @@
       "description": "Root used to resolve agent package paths.",
       "type": "string"
     },
+    "capabilities": {
+      "$ref": "#/$defs/RuntimeCapabilities",
+      "description": "Lifecycle behavior implemented by the selected runtime path."
+    },
     "capability_plan": {
       "$ref": "#/$defs/CapabilityPlan",
       "default": {
@@ -1045,13 +1106,6 @@
       ],
       "description": "Resolved environment plan."
     },
-    "profile": {
-      "description": "Selected profile when exactly one profile is applied.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "profiles": {
       "description": "Ordered selected profiles.",
       "items": {
@@ -1085,6 +1139,8 @@
   "required": [
     "effective_config",
     "agent_name",
+    "profiles",
+    "capabilities",
     "agent_root",
     "config_path",
     "config_root",

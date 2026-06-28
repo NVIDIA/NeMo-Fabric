@@ -449,9 +449,7 @@ fn profile_label(plan: &RunPlan) -> String {
     if !plan.profiles.is_empty() {
         return plan.profiles.join(", ");
     }
-    plan.profile
-        .clone()
-        .unwrap_or_else(|| "default".to_string())
+    "default".to_string()
 }
 
 fn adapter_kind_label(adapter_kind: AdapterKind) -> &'static str {

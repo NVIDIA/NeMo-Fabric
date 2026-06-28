@@ -46,9 +46,8 @@ pub struct DoctorCheck {
 pub struct DoctorReport {
     /// Agent name.
     pub agent_name: String,
-    /// Selected profile.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<String>,
+    /// Ordered profiles applied to the inspected plan.
+    pub profiles: Vec<String>,
     /// Overall status.
     pub status: DoctorStatus,
     /// Checks.
@@ -69,7 +68,7 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
     });
     DoctorReport {
         agent_name: plan.agent_name.clone(),
-        profile: plan.profile.clone(),
+        profiles: plan.profiles.clone(),
         status,
         checks,
     }
@@ -534,6 +533,12 @@ mod tests {
         let report = doctor_plan(&plan);
 
         assert_eq!(report.status, DoctorStatus::Warn);
+        let report_json = serde_json::to_value(&report).expect("doctor report json");
+        assert!(report_json.get("profile").is_none());
+        assert_eq!(
+            report_json["profiles"],
+            serde_json::json!(["env_opensandbox"])
+        );
         assert!(report.checks.iter().any(|check| {
             check.name == "requirements.environment" && check.message.contains("opensandbox")
         }));
