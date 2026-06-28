@@ -19,7 +19,8 @@ the YAML files into typed Fabric config objects and invokes `FabricClient`.
 ## Run
 
 Requirements: Python 3.12+, `uv`, Docker, and this checkout. The first run builds
-the demo image and can take several minutes.
+the demo image and can take several minutes. The launcher exports committed
+`HEAD` into the Docker build context, so commit local changes before testing them.
 
 ```bash
 chmod +x integrations/harbor/demo/run.sh

@@ -38,6 +38,13 @@ case "$variant" in
     ;;
 esac
 
+repo_root="$(git -C "$demo_dir" rev-parse --show-toplevel)"
+vendor_dir="$task_dir/environment/vendor"
+rm -rf "$vendor_dir"
+mkdir -p "$vendor_dir/nemo-fabric"
+git -C "$repo_root" archive HEAD | tar -x -C "$vendor_dir/nemo-fabric"
+trap 'rm -rf "$vendor_dir"' EXIT
+
 harbor_args=(
   run
   --path "$task_dir"
@@ -60,6 +67,23 @@ if [[ "${FABRIC_DEMO_FORCE_BUILD:-0}" == "1" ]]; then
 fi
 
 uv run --extra harbor harbor "${harbor_args[@]}"
+
+python3 - "$runs_dir/fabric-$variant/result.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+stats = json.loads(path.read_text())["stats"]
+means = [
+    metric["mean"]
+    for evaluation in stats["evals"].values()
+    for metric in evaluation["metrics"]
+    if "mean" in metric
+]
+if stats["n_errored_trials"] or means != [1.0]:
+    raise SystemExit(f"Harbor demo failed; inspect {path}")
+PY
 
 echo
 echo "Inspect all variants with: uv run --extra harbor harbor view $runs_dir"
