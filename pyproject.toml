@@ -13,6 +13,8 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
+codex = ["tomli-w~=1.2"]
+
 harbor = ["harbor>=0.13.2; python_version >= '3.12'"]
 
 hermes = [
@@ -36,6 +38,8 @@ test = [
     "pytest-asyncio>=0.26",
     "pytest-cov~=7.0",
     "pyyaml>=6.0",
+    "tomli>=2; python_version < '3.11'",
+    "tomli-w~=1.2",
     "uvicorn~=0.49",
 ]
 
