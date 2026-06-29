@@ -179,9 +179,15 @@ def resolve_command(payload: dict[str, Any], value: Any) -> str:
 
 
 def toml_value(value: Any) -> str:
-    if isinstance(value, float):
-        if not math.isfinite(value):
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, float) and not math.isfinite(item):
             raise ValueError("Codex config overrides require finite numbers")
+        if isinstance(item, Mapping):
+            pending.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            pending.extend(item)
     try:
         document = tomli_w.dumps({"value": value})
     except TypeError as error:

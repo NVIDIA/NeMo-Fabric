@@ -4,6 +4,7 @@
 import importlib.util
 import json
 import subprocess
+import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -191,9 +192,18 @@ def test_config_override_values_use_tomli_writer():
     adapter = load_codex_adapter()
 
     assert adapter.toml_value("café") == '"café"'
-    assert adapter.toml_value([1, "two"]) == '[\n    1,\n    "two",\n]'
+    encoded = adapter.toml_value([1, "two"])
+    assert tomllib.loads(f"value = {encoded}")["value"] == [1, "two"]
     with pytest.raises(ValueError, match="scalar or array"):
         adapter.toml_value({"nested": True})
+
+
+@pytest.mark.parametrize("value", [[float("nan")], [1, [float("inf")]]])
+def test_config_override_values_reject_nested_non_finite_numbers(value):
+    adapter = load_codex_adapter()
+
+    with pytest.raises(ValueError, match="finite numbers"):
+        adapter.toml_value(value)
 
 
 def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypatch):
