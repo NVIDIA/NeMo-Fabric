@@ -12,6 +12,7 @@ import math
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -247,7 +248,11 @@ def resolve_cwd(payload: dict[str, Any]) -> Path:
 
 def build_env(payload: dict[str, Any]) -> dict[str, str]:
     env = {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
-    configured = common_utils.settings_payload(payload).get("env") or {}
+    configured = common_utils.settings_payload(payload).get("env")
+    if configured is None:
+        configured = {}
+    if not isinstance(configured, Mapping):
+        raise ValueError("env must be a mapping of variable names to values")
     env.update({str(key): str(value) for key, value in configured.items()})
     return env
 

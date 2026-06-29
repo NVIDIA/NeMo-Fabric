@@ -285,6 +285,16 @@ def test_adapter_rejects_structured_input_until_chat_is_supported(codex_payload)
         adapter.request_to_prompt(codex_payload)
 
 
+@pytest.mark.parametrize("env", [[], "CODEX_FLAG=1"])
+def test_adapter_rejects_non_mapping_env(codex_payload, env):
+    adapter = load_codex_adapter()
+    settings = codex_payload["effective_config"]["config"]["harness"]["settings"]
+    settings["env"] = env
+
+    with pytest.raises(ValueError, match="env must be a mapping"):
+        adapter.build_env(codex_payload)
+
+
 @pytest.mark.parametrize(
     ("error", "message", "returncode"),
     [
