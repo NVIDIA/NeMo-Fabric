@@ -125,10 +125,12 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     assert observability["atof"]["output_directory"] == str(tmp_path / "custom-relay")
     assert observability["atof"]["filename"] == "events.atof.jsonl"
     assert observability["atof"]["mode"] == "overwrite"
+    assert Path(observability["atof"]["output_directory"]).is_dir()
     assert observability["atif"]["output_directory"] == str(tmp_path / "artifacts" / "relay")
     assert observability["atif"]["filename_template"] == "trajectory-{session_id}.atif.json"
     assert observability["atif"]["agent_name"] == "review-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
+    assert Path(observability["atif"]["output_directory"]).is_dir()
 
 
 def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path):

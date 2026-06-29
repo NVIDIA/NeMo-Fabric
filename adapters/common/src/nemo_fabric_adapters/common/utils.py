@@ -122,6 +122,8 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
                     section["output_directory"] = str(base / path)
             else:
                 section["output_directory"] = str(base / "artifacts" / "relay")
+            
+            Path(section["output_directory"]).mkdir(parents=True, exist_ok=True)
             if section_name == "atof":
                 section.setdefault("filename", "events.atof.jsonl")
                 section.setdefault("mode", "overwrite")
@@ -131,7 +133,7 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
                 section.setdefault("model_name", _relay_model_name(payload))
 
 
-def _relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
+def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
     from nemo_relay import plugin
     from nemo_relay.observability import (
         ComponentSpec,

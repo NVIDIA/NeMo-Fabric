@@ -37,17 +37,16 @@ def assert_process_adapter_native_observability(result: dict):
     assert result["output"]["stderr"] == ""
 
 
-def update_hermes_cli_relay_base_url(code_review_agent_dir: Path, api_server: str):
+def update_base_url(profile_path: Path, api_server: str):
     """
-    Update the base URL in the Hermes CLI relay profile.
+    Update the base URL in a profile.
 
     Since the api_server uses a random available TCP port, the base_url needs to be updated for each test.
 
     Args:
-        code_review_agent_dir (Path): The path to the code review agent directory.
+        profile_path (Path): The absolute path to the profile YAML file.
         api_server (str): The API server URL.
     """
-    profile_path = code_review_agent_dir / "profiles" / "hermes-cli-relay.yaml"
-    profile = yaml.safe_load(profile_path.read_text())
+    profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
     profile["harness"]["settings"]["base_url"] = f"{api_server}/v1"
-    profile_path.write_text(yaml.safe_dump(profile, sort_keys=False))
+    profile_path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")
