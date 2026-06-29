@@ -7,7 +7,7 @@ harness:
   resolution: preinstalled
   settings:
     cwd: /app
-    sandbox: workspace-write
+    sandbox: danger-full-access
     skip_git_repo_check: true
     config_overrides:
       model_reasoning_effort: high

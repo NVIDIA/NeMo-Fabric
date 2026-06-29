@@ -147,9 +147,11 @@ uv run --extra harbor harbor run \
 
 The image pins Codex CLI `0.142.3`. Harbor passes the selected model to the
 Fabric SDK as the final typed profile, and the Codex profile pins a compatible
-reasoning effort. The auth mount grants the trusted task container access to
-your Codex account for this run. For automation, omit the mount and copy command
-and pass a provisioned `CODEX_API_KEY` with `--ae` instead.
+reasoning effort. The profile uses Codex `danger-full-access` because Harbor's
+task container is the outer sandbox and nested Linux namespace creation is not
+available there. The auth mount grants that trusted container access to your
+Codex account for this run. For automation, omit the mount and copy command and
+pass a provisioned `CODEX_API_KEY` with `--ae` instead.
 
 ## Inspect the Result
 

@@ -139,6 +139,7 @@ def test_codex_demo_uses_current_adapter_contract():
     settings = profile["harness"]["settings"]
 
     assert profile["runtime"]["mode"] == "oneshot"
+    assert settings["sandbox"] == "danger-full-access"
     assert settings["skip_git_repo_check"] is True
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"
     dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
