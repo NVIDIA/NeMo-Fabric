@@ -20,16 +20,13 @@ from nemo_fabric import FabricClient
 async def run_copy(client: FabricClient, fixture_agent: Path, root: Path, name: str) -> dict:
     agent = root / name
     copytree(fixture_agent, agent)
-    return await client.run(agent, profile="env_local", input_text=f"hello from {name}")
+    return await client.run(agent, profiles=["env_local"], input=f"hello from {name}")
 
 
 async def main() -> None:
     fixture_agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
 
-    async with FabricClient(
-        command=("cargo", "run", "-q", "-p", "fabric-cli", "--"),
-        cwd=ROOT,
-    ) as client:
+    async with FabricClient() as client:
         with tempfile.TemporaryDirectory(prefix="fabric-sdk-concurrency-") as tmpdir:
             temp_root = Path(tmpdir)
             first, second = await asyncio.gather(

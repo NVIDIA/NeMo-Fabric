@@ -150,8 +150,8 @@
       "$ref": "#/$defs/EnvironmentHandle",
       "description": "Prepared environment."
     },
-    "harness_type": {
-      "description": "Harness type.",
+    "harness": {
+      "description": "Stable machine-readable harness identifier.",
       "type": "string"
     },
     "mode": {
@@ -171,7 +171,7 @@
     "runtime_id",
     "runtime_binding",
     "agent_name",
-    "harness_type",
+    "harness",
     "mode",
     "adapter_kind",
     "environment"

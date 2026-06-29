@@ -57,7 +57,7 @@ def main() -> None:
 
         direct_profile = temp_example / "profiles" / "hermes-sdk.yaml"
         direct_plan = call_json("plan", temp_example, "--profile", direct_profile)
-        assert direct_plan["profile"] == str(direct_profile)
+        assert direct_plan["profiles"] == [str(direct_profile)]
         assert direct_plan["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
 
         profile_plans = [
@@ -136,7 +136,7 @@ def main() -> None:
         assert "interactive runtime session" in chat.stderr
         assert "agent: hermes-shim-agent" in chat.stderr
         assert "profile: env_local" in chat.stderr
-        assert "harness: test.fabric.hermes_shim" in chat.stderr
+        assert "harness: hermes" in chat.stderr
         assert "adapter: python" in chat.stderr
         assert chat.stderr.count("session_id: cli-session-123 (provided)") >= 2
         assert "you[env_local:cli-session-123]> " in chat.stderr

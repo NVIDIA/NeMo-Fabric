@@ -16,6 +16,7 @@
       ]
     },
     "EnvironmentConfig": {
+      "additionalProperties": true,
       "description": "Execution environment configuration.",
       "properties": {
         "artifacts": {
@@ -83,6 +84,7 @@
       ]
     },
     "FabricConfig": {
+      "additionalProperties": true,
       "description": "Versioned Fabric agent config.",
       "properties": {
         "environment": {
@@ -169,6 +171,7 @@
       "type": "object"
     },
     "HarnessConfig": {
+      "additionalProperties": true,
       "description": "Harness selection.",
       "properties": {
         "adapter_id": {
@@ -198,6 +201,7 @@
       "type": "object"
     },
     "McpConfig": {
+      "additionalProperties": true,
       "description": "MCP capability configuration.",
       "properties": {
         "servers": {
@@ -226,6 +230,7 @@
       ]
     },
     "McpServerConfig": {
+      "additionalProperties": true,
       "description": "MCP server configuration.",
       "properties": {
         "exposure": {
@@ -249,6 +254,7 @@
       "type": "object"
     },
     "MetadataConfig": {
+      "additionalProperties": true,
       "description": "Human-readable metadata.",
       "properties": {
         "description": {
@@ -269,6 +275,7 @@
       "type": "object"
     },
     "ModelConfig": {
+      "additionalProperties": true,
       "description": "Model configuration.",
       "properties": {
         "api_key_env": {
@@ -307,6 +314,7 @@
       "type": "object"
     },
     "ProfileRegistryConfig": {
+      "additionalProperties": true,
       "description": "Profile discovery config for curated package profiles.",
       "properties": {
         "directories": {
@@ -360,6 +368,7 @@
       ]
     },
     "RuntimeConfig": {
+      "additionalProperties": true,
       "description": "Runtime mode and input/output contract.",
       "properties": {
         "artifacts": {
@@ -370,6 +379,7 @@
           ]
         },
         "input_schema": {
+          "default": "text",
           "description": "Input schema label.",
           "type": "string"
         },
@@ -378,19 +388,18 @@
           "description": "Runtime mode."
         },
         "output_schema": {
+          "default": "text",
           "description": "Output schema label.",
           "type": "string"
         },
         "transport": {
           "$ref": "#/$defs/Transport",
+          "default": "library",
           "description": "Transport used to operate the harness."
         }
       },
       "required": [
-        "mode",
-        "transport",
-        "input_schema",
-        "output_schema"
+        "mode"
       ],
       "type": "object"
     },
@@ -415,6 +424,7 @@
       ]
     },
     "SkillConfig": {
+      "additionalProperties": true,
       "description": "Skill capability configuration.",
       "properties": {
         "paths": {
@@ -428,6 +438,7 @@
       "type": "object"
     },
     "TelemetryConfig": {
+      "additionalProperties": true,
       "description": "Telemetry configuration.",
       "properties": {
         "config": {
@@ -511,13 +522,6 @@
       "description": "Root used to resolve config-local paths.",
       "type": "string"
     },
-    "profile": {
-      "description": "Selected profile when exactly one profile is applied.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "profiles": {
       "description": "Ordered selected profiles.",
       "items": {
@@ -528,6 +532,7 @@
   },
   "required": [
     "agent_name",
+    "profiles",
     "agent_root",
     "config_path",
     "config_root",

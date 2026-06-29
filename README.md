@@ -139,8 +139,8 @@ async def main():
     agent = Path("examples/code-review-agent")
 
     async with FabricClient() as client:
-        plan = client.plan(agent, profile="hermes_sdk")
-        report = await client.doctor(agent, profile="hermes_sdk")
+        plan = client.plan(agent, profiles=["hermes_sdk"])
+        report = await client.doctor(agent, profiles=["hermes_sdk"])
 
     print(plan["agent_name"])
     print(report["checks"])
@@ -152,7 +152,9 @@ Consumers that already own a top-level job config can construct the Fabric slice
 in code instead of materializing an agent directory:
 
 ```python
-plan = client.plan_config(
+from nemo_fabric import FabricClient, FabricConfig
+
+config = FabricConfig.from_mapping(
     {
         "schema_version": "fabric.agent/v1alpha1",
         "metadata": {"name": "code-review-agent"},
@@ -170,9 +172,53 @@ plan = client.plan_config(
             "output_schema": "message",
         },
     },
+)
+
+client = FabricClient()
+plan = client.plan(
+    config,
     base_dir="examples/code-review-agent",
 )
 ```
+
+For runtime invocation, callers can either pass simple text or construct the
+request explicitly. Results remain dict-compatible while exposing stable fields
+as attributes:
+
+```python
+from nemo_fabric import FabricClient, FabricConfig, FabricError, RunRequest
+
+request = RunRequest(
+    input="Review the workspace changes.",
+    request_id="job-123-turn-1",
+    context={"job_id": "job-123"},
+    overrides={"max_iterations": 1},
+)
+
+async def run(raw_config):
+    config = FabricConfig.from_mapping(raw_config)
+    try:
+        async with FabricClient() as client:
+            result = await client.run(
+                config,
+                base_dir="examples/code-review-agent",
+                request=request,
+            )
+    except FabricError as error:
+        print(error.stage, error.code, error.retryable)
+        raise
+
+    print(result.status)
+    print(result["runtime_id"])
+```
+
+`RunRequest.from_mapping(...)` accepts JSON-shaped request dictionaries when
+callers load or compose requests outside the SDK. Per-request `context` is
+caller-owned metadata; `overrides` are
+request-scoped config changes applied only where the selected harness adapter
+supports them. Failed runs expose structured `result.error.stage`,
+`result.error.code`, and `result.error.retryable` when the adapter returns a
+normalized failure.
 
 ### Multi-Turn SDK Sessions
 
@@ -181,10 +227,10 @@ handle active across turns; harness/adapter state is authoritative rather than
 reconstructed from a Python-side transcript.
 
 Fabric separates runtime identity from conversation identity. Each
-`start(...)`/`start_config(...)` call creates a new `runtime_id` for that
-runtime lifecycle. `session_id` is the stable conversation key used for resume:
-if omitted, Fabric uses the generated `runtime_id`; if supplied, Fabric uses the
-caller-provided `session_id`.
+`start_session(...)` call creates a new `runtime_id` for that runtime lifecycle.
+`session_id` is the stable conversation key used for resume: if omitted, Fabric
+uses the generated `runtime_id`; if supplied, Fabric uses the caller-provided
+`session_id`.
 
 ```python
 import asyncio
@@ -192,23 +238,25 @@ import asyncio
 from nemo_fabric import FabricClient
 
 async def chat():
-    async with await FabricClient().start(
+    async with await FabricClient().start_session(
         "examples/code-review-agent",
-        profile="hermes_session",
+        profiles=["hermes_session"],
         session_id="review-session-123",
     ) as session:
-        await session.invoke("My name is Robin.")
-        reply = await session.invoke("What's my name?")   # recalls "Robin"
+        await session.invoke(input="My name is Robin.")
+        reply = await session.invoke(input="What's my name?")   # recalls "Robin"
         print(session.runtime_id, session.session_id, session.status.value)
         print(reply["output"]["response"])
 
 asyncio.run(chat())
 ```
 
-Sessions require the native binding; `start_config(...)` is the typed-config
-equivalent. `stream(...)` yields events then the final result (buffered today);
-`cancel()` cooperatively aborts an in-flight turn. Session APIs require
-`runtime.mode: session`.
+`start_session(...)` accepts either an agent path with named profiles or a
+`FabricConfig` with typed profiles. `stream(...)` is the stable streaming API;
+current adapters may buffer internally before yielding events and the final
+result. Runtime updates and cancellation are capability-gated and raise
+`FabricCapabilityError` when the selected runtime does not support them.
+Session APIs require `runtime.mode: session`.
 
 ### Interactive CLI Chat
 
@@ -238,17 +286,12 @@ transcript and metadata are written together on stderr.
 
 The real-Hermes integration check is `tests/smoke_hermes_session.py`.
 
-When installed from the repository root, `FabricClient()` uses the native Rust
-binding. SDK `run(...)`, `start(...)`, and their typed-config equivalents all
-drive the core Fabric runtime lifecycle (`start_runtime` / `invoke_runtime` /
-`stop_runtime`) so one-shot and session paths use the same adapter execution
-contract.
-
-For source-tree debugging, pass an explicit CLI command:
-
-```python
-client = FabricClient(command=("cargo", "run", "-q", "-p", "fabric-cli", "--"))
-```
+`FabricClient()` uses the native Rust binding. SDK `run(...)` and
+`start_session(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
+`invoke_runtime` / `stop_runtime`) so one-shot and session paths use the same
+adapter execution contract. The CLI is a separate interface over the same Rust
+core. For source-tree development, install the package with
+`python3 -m pip install -e .` before using the SDK.
 
 ## Other Runs
 

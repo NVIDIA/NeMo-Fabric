@@ -1,376 +1,6 @@
 {
-  "$defs": {
-    "ControlLocation": {
-      "description": "Where Fabric control code runs relative to the environment.",
-      "oneOf": [
-        {
-          "const": "external_control",
-          "description": "Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
-          "type": "string"
-        },
-        {
-          "const": "in_env_control",
-          "description": "Fabric runs inside the prepared environment with the harness.",
-          "type": "string"
-        }
-      ]
-    },
-    "EnvironmentConfig": {
-      "description": "Execution environment configuration.",
-      "properties": {
-        "artifacts": {
-          "description": "Artifact path inside or outside the provider.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "connection": {
-          "additionalProperties": true,
-          "description": "Provider connection metadata, such as server URL, session id, or namespace.",
-          "type": "object"
-        },
-        "control_location": {
-          "$ref": "#/$defs/ControlLocation",
-          "default": "in_env_control",
-          "description": "Where Fabric control code runs relative to the environment."
-        },
-        "metadata": {
-          "additionalProperties": true,
-          "description": "Consumer-provided environment metadata.",
-          "type": "object"
-        },
-        "ownership": {
-          "$ref": "#/$defs/EnvironmentOwnership",
-          "default": "caller_owned",
-          "description": "Whether Fabric owns the environment resource."
-        },
-        "provider": {
-          "description": "Environment provider, for example `local`, `docker`, `opensandbox`, or `k8s`.",
-          "type": "string"
-        },
-        "settings": {
-          "additionalProperties": true,
-          "description": "Provider-specific settings.",
-          "type": "object"
-        },
-        "workspace": {
-          "description": "Workspace path inside or outside the provider.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "provider"
-      ],
-      "type": "object"
-    },
-    "EnvironmentOwnership": {
-      "description": "Whether Fabric owns the underlying environment resource.",
-      "oneOf": [
-        {
-          "const": "caller_owned",
-          "description": "The caller or a surrounding system owns the environment resource.",
-          "type": "string"
-        },
-        {
-          "const": "fabric_owned",
-          "description": "Fabric created or leased the environment resource and may release it.",
-          "type": "string"
-        }
-      ]
-    },
-    "HarnessConfig": {
-      "description": "Harness selection.",
-      "properties": {
-        "adapter_id": {
-          "description": "Adapter implementation id.",
-          "type": "string"
-        },
-        "resolution": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ResolutionStrategy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Selected install or availability strategy."
-        },
-        "settings": {
-          "additionalProperties": true,
-          "description": "Harness-specific settings.",
-          "type": "object"
-        }
-      },
-      "required": [
-        "adapter_id"
-      ],
-      "type": "object"
-    },
-    "McpConfig": {
-      "description": "MCP capability configuration.",
-      "properties": {
-        "servers": {
-          "additionalProperties": {
-            "$ref": "#/$defs/McpServerConfig"
-          },
-          "description": "Named MCP servers.",
-          "type": "object"
-        }
-      },
-      "type": "object"
-    },
-    "McpExposure": {
-      "description": "MCP exposure strategy.",
-      "oneOf": [
-        {
-          "const": "harness_native",
-          "description": "Map into harness-native MCP config through the selected adapter.",
-          "type": "string"
-        },
-        {
-          "const": "fabric_managed",
-          "description": "Fabric manages MCP and exposes basic tools/actions.",
-          "type": "string"
-        }
-      ]
-    },
-    "McpServerConfig": {
-      "description": "MCP server configuration.",
-      "properties": {
-        "exposure": {
-          "$ref": "#/$defs/McpExposure",
-          "description": "How Fabric exposes the MCP capability to the harness."
-        },
-        "transport": {
-          "description": "MCP transport.",
-          "type": "string"
-        },
-        "url": {
-          "description": "MCP server URL or process command, depending on transport.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "transport",
-        "url",
-        "exposure"
-      ],
-      "type": "object"
-    },
-    "ModelConfig": {
-      "description": "Model configuration.",
-      "properties": {
-        "api_key_env": {
-          "description": "Optional environment variable containing an API key.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "model": {
-          "description": "Provider model identifier.",
-          "type": "string"
-        },
-        "provider": {
-          "description": "Model provider name.",
-          "type": "string"
-        },
-        "settings": {
-          "additionalProperties": true,
-          "description": "Provider-specific settings.",
-          "type": "object"
-        },
-        "temperature": {
-          "description": "Optional temperature.",
-          "format": "double",
-          "type": [
-            "number",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "provider",
-        "model"
-      ],
-      "type": "object"
-    },
-    "ResolutionStrategy": {
-      "description": "Adapter install or availability strategy.",
-      "oneOf": [
-        {
-          "const": "preinstalled",
-          "description": "Harness is already available in the prepared environment.",
-          "type": "string"
-        },
-        {
-          "const": "image_provided",
-          "description": "Environment image already contains the harness and dependencies.",
-          "type": "string"
-        },
-        {
-          "const": "pip_uv",
-          "description": "Adapter may install a Python package with pip or uv.",
-          "type": "string"
-        },
-        {
-          "const": "npm",
-          "description": "Adapter may install a Node package.",
-          "type": "string"
-        },
-        {
-          "const": "source",
-          "description": "Adapter may install from source.",
-          "type": "string"
-        },
-        {
-          "const": "service",
-          "description": "Adapter connects to an already-running service.",
-          "type": "string"
-        },
-        {
-          "const": "native_plugin",
-          "description": "Adapter is installed through a harness-native plugin manager.",
-          "type": "string"
-        }
-      ]
-    },
-    "RuntimeConfig": {
-      "description": "Runtime mode and input/output contract.",
-      "properties": {
-        "artifacts": {
-          "description": "Artifact directory.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "input_schema": {
-          "description": "Input schema label.",
-          "type": "string"
-        },
-        "mode": {
-          "$ref": "#/$defs/RuntimeMode",
-          "description": "Runtime mode."
-        },
-        "output_schema": {
-          "description": "Output schema label.",
-          "type": "string"
-        },
-        "transport": {
-          "$ref": "#/$defs/Transport",
-          "description": "Transport used to operate the harness."
-        }
-      },
-      "required": [
-        "mode",
-        "transport",
-        "input_schema",
-        "output_schema"
-      ],
-      "type": "object"
-    },
-    "RuntimeMode": {
-      "description": "Runtime lifecycle mode.",
-      "oneOf": [
-        {
-          "const": "oneshot",
-          "description": "Request is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "service",
-          "description": "Long-running process or service is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "session",
-          "description": "Session is the lifecycle boundary.",
-          "type": "string"
-        }
-      ]
-    },
-    "SkillConfig": {
-      "description": "Skill capability configuration.",
-      "properties": {
-        "paths": {
-          "description": "Skill paths relative to the agent root.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "TelemetryConfig": {
-      "description": "Telemetry configuration.",
-      "properties": {
-        "config": {
-          "description": "Pass-through telemetry backend config."
-        },
-        "enabled": {
-          "default": false,
-          "description": "Whether telemetry is enabled for this run. Relay is the Phase 1 telemetry path.",
-          "type": "boolean"
-        },
-        "mode": {
-          "description": "Telemetry mode, for example `sdk`, `gateway`, or `external`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "output_dir": {
-          "description": "Optional telemetry output directory.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "project": {
-          "description": "Optional project name for telemetry backends.",
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "Transport": {
-      "description": "Runtime transport.",
-      "oneOf": [
-        {
-          "const": "library",
-          "description": "In-process library/SDK call.",
-          "type": "string"
-        },
-        {
-          "const": "cli",
-          "description": "CLI process.",
-          "type": "string"
-        },
-        {
-          "const": "http",
-          "description": "HTTP service.",
-          "type": "string"
-        },
-        {
-          "const": "native_plugin",
-          "description": "Harness-native plugin surface.",
-          "type": "string"
-        }
-      ]
-    }
-  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Profile config applied on top of a Fabric config.",
+  "additionalProperties": true,
   "properties": {
     "description": {
       "description": "Optional profile description.",
@@ -380,44 +10,36 @@
       ]
     },
     "environment": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/EnvironmentConfig"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Environment override."
+      "additionalProperties": true,
+      "description": "Partial environment overlay.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "harness": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/HarnessConfig"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Harness overrides."
+      "additionalProperties": true,
+      "description": "Partial harness overlay.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "mcp": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/McpConfig"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "MCP capability override."
+      "additionalProperties": true,
+      "description": "Partial MCP overlay.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "models": {
-      "additionalProperties": {
-        "$ref": "#/$defs/ModelConfig"
-      },
-      "description": "Model aliases to add or replace.",
-      "type": "object"
+      "additionalProperties": true,
+      "description": "Partial model overlays by alias.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "name": {
       "description": "Optional profile name used for directory discovery.",
@@ -427,15 +49,12 @@
       ]
     },
     "runtime": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/RuntimeConfig"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Runtime override."
+      "additionalProperties": true,
+      "description": "Partial runtime overlay.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "schema_version": {
       "description": "Optional profile schema version.",
@@ -445,29 +64,23 @@
       ]
     },
     "skills": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/SkillConfig"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Skill capability override."
+      "additionalProperties": true,
+      "description": "Partial skill overlay.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "telemetry": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/TelemetryConfig"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Telemetry override."
+      "additionalProperties": true,
+      "description": "Partial telemetry overlay.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "tools": {
-      "description": "Tool capability override."
+      "description": "Tool capability overlay."
     }
   },
   "title": "ProfileConfig",

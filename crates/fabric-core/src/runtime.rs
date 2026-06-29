@@ -59,11 +59,10 @@ impl RunRequest {
 pub struct RunResult {
     /// Stable agent name.
     pub agent_name: String,
-    /// Selected profile name when loaded through an agent manifest.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile: Option<String>,
-    /// Harness type used for this run.
-    pub harness_type: String,
+    /// Ordered profiles applied to this run.
+    pub profiles: Vec<String>,
+    /// Stable machine-readable harness identifier used for this run.
+    pub harness: String,
     /// Adapter used for this run.
     pub adapter_kind: AdapterKind,
     /// Adapter implementation id when an adapter descriptor was resolved.
@@ -233,8 +232,8 @@ pub struct RuntimeHandle {
     pub runtime_binding: String,
     /// Agent name.
     pub agent_name: String,
-    /// Harness type.
-    pub harness_type: String,
+    /// Stable machine-readable harness identifier.
+    pub harness: String,
     /// Runtime mode.
     pub mode: RuntimeMode,
     /// Adapter kind.
@@ -417,7 +416,7 @@ pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
         AdapterKind::Process => ProcessAdapter.start(plan, environment),
         AdapterKind::Python => PythonAdapter.start(plan, environment),
         adapter_kind => Err(FabricError::UnsupportedRuntimeAdapter {
-            harness: harness_type(plan),
+            harness: harness(plan),
             adapter_kind,
         }),
     }
@@ -434,7 +433,7 @@ pub fn invoke_runtime(
         AdapterKind::Process => ProcessAdapter.invoke(plan, runtime, request),
         AdapterKind::Python => PythonAdapter.invoke(plan, runtime, request),
         adapter_kind => Err(FabricError::UnsupportedRuntimeAdapter {
-            harness: harness_type(plan),
+            harness: harness(plan),
             adapter_kind,
         }),
     }
@@ -447,7 +446,7 @@ pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabri
         AdapterKind::Process => ProcessAdapter.stop(runtime),
         AdapterKind::Python => PythonAdapter.stop(runtime),
         adapter_kind => Err(FabricError::UnsupportedRuntimeAdapter {
-            harness: runtime.harness_type.clone(),
+            harness: runtime.harness.clone(),
             adapter_kind,
         }),
     }
@@ -462,12 +461,7 @@ fn validate_runtime_handle(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<()
         &runtime.runtime_binding,
     )?;
     expect_runtime_field(runtime, "agent_name", &plan.agent_name, &runtime.agent_name)?;
-    expect_runtime_field(
-        runtime,
-        "harness_type",
-        &harness_type(plan),
-        &runtime.harness_type,
-    )?;
+    expect_runtime_field(runtime, "harness", &harness(plan), &runtime.harness)?;
     expect_runtime_field(
         runtime,
         "runtime.mode",
@@ -615,7 +609,7 @@ impl RuntimeAdapter for ProcessAdapter {
             runtime_id,
             runtime_binding,
             agent_name: plan.agent_name.clone(),
-            harness_type: harness_type(plan),
+            harness: harness(plan),
             mode: plan.config.runtime.mode,
             adapter_kind: adapter_kind(plan),
             adapter_id: adapter_id(plan),
@@ -663,7 +657,7 @@ impl RuntimeAdapter for PythonAdapter {
             runtime_id,
             runtime_binding,
             agent_name: plan.agent_name.clone(),
-            harness_type: harness_type(plan),
+            harness: harness(plan),
             mode: plan.config.runtime.mode,
             adapter_kind: adapter_kind(plan),
             adapter_id: adapter_id(plan),
@@ -772,7 +766,7 @@ fn run_process_adapter(
     )];
     events.push(event_with_metadata(
         "invocation_start",
-        format!("starting process adapter for {}", harness_type(plan)),
+        format!("starting process adapter for {}", harness(plan)),
         BTreeMap::from([
             (
                 "runtime_id".to_string(),
@@ -899,8 +893,8 @@ fn run_process_adapter(
 
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
-        profile: plan.profile.clone(),
-        harness_type: harness_type(plan),
+        profiles: plan.profiles.clone(),
+        harness: harness(plan),
         adapter_kind: adapter_kind(plan),
         adapter_id: adapter_id(plan),
         runtime_id: invocation.runtime_id,
@@ -977,7 +971,7 @@ fn run_python_adapter(
     )];
     events.push(event_with_metadata(
         "invocation_start",
-        format!("starting python adapter for {}", harness_type(plan)),
+        format!("starting python adapter for {}", harness(plan)),
         BTreeMap::from([
             (
                 "runtime_id".to_string(),
@@ -1110,8 +1104,8 @@ fn run_python_adapter(
 
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
-        profile: plan.profile.clone(),
-        harness_type: harness_type(plan),
+        profiles: plan.profiles.clone(),
+        harness: harness(plan),
         adapter_kind: adapter_kind(plan),
         adapter_id: adapter_id(plan),
         runtime_id: invocation.runtime_id,
@@ -1145,8 +1139,11 @@ fn write_child_stdin(stdin: &mut impl Write, payload: &str, command: &str) -> Re
     }
 }
 
-fn harness_type(plan: &RunPlan) -> String {
-    adapter_id(plan).unwrap_or_else(|| "unknown".to_string())
+fn harness(plan: &RunPlan) -> String {
+    plan.adapter_descriptor
+        .as_ref()
+        .map(|adapter| adapter.descriptor.harness.clone())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn adapter_kind(plan: &RunPlan) -> AdapterKind {
@@ -1716,8 +1713,8 @@ fn prepare_relay_runtime_config(
         },
         "fabric": {
             "agent_name": plan.agent_name.clone(),
-            "profile": plan.profile.clone(),
-            "harness_type": harness_type(plan),
+            "profiles": plan.profiles.clone(),
+            "harness": harness(plan),
             "adapter_id": adapter_id(plan),
             "runtime_id": runtime.runtime_id.clone(),
             "invocation_id": invocation.invocation_id.clone(),
@@ -1888,6 +1885,7 @@ runtime:
     fn process_adapter_descriptor() -> &'static str {
         r#"{
   "adapter_id": "acme.fabric.process",
+  "harness": "process",
   "adapter_kind": "process"
 }"#
     }
@@ -1979,12 +1977,19 @@ environment:
     #[test]
     fn process_adapter_passes_input_to_stdin() {
         let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let mut plan = resolve_run_plan(&root, None).expect("run plan");
+        plan.profiles = vec!["runtime".to_string(), "telemetry".to_string()];
         let result = run_plan(&plan, RunRequest::text("hello fabric")).expect("run result");
 
         assert_eq!(result.status, RunStatus::Succeeded);
         assert_eq!(result.output, Value::String("hello fabric".to_string()));
         assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
+        let result_json = serde_json::to_value(&result).expect("result json");
+        assert!(result_json.get("profile").is_none());
+        assert_eq!(
+            result_json["profiles"],
+            serde_json::json!(["runtime", "telemetry"])
+        );
         assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
 
         let _ = fs::remove_dir_all(root);
@@ -2157,7 +2162,7 @@ environment:
         let root = temp_process_agent_dir();
         let plan = resolve_run_plan(&root, None).expect("run plan");
         let mut runtime = start_runtime(&plan).expect("runtime");
-        runtime.harness_type = "other-harness".to_string();
+        runtime.harness = "other-harness".to_string();
 
         let error = invoke_runtime(&plan, &runtime, RunRequest::text("hello fabric"))
             .expect_err("runtime mismatch");
