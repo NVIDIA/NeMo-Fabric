@@ -1,6 +1,6 @@
 schema_version: fabric.profile/v1alpha1
 name: telemetry
-description: Add Relay ATOF and ATIF telemetry to the selected Hermes run.
+description: Add Relay OpenInference, ATOF, and ATIF telemetry to the selected Hermes run.
 
 runtime:
   artifacts: /logs/agent/fabric-artifacts/hermes-relay
@@ -30,3 +30,7 @@ telemetry:
             output_directory: /logs/agent/fabric-artifacts/hermes-relay/relay
             filename: events.atof.jsonl
             mode: overwrite
+          openinference:
+            enabled: true
+            transport: http_binary
+            endpoint: http://host.docker.internal:6006/v1/traces

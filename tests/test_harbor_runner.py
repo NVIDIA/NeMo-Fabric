@@ -20,6 +20,14 @@ CODEX_PROFILE = (
     / "profiles"
     / "codex.yaml"
 )
+TELEMETRY_PROFILE = (
+    DEMO_ROOT
+    / "task"
+    / "environment"
+    / "fabric"
+    / "profiles"
+    / "telemetry.yaml"
+)
 INTEGRATION_README = ROOT / "integrations" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
     ROOT
@@ -143,8 +151,8 @@ def test_codex_demo_uses_current_adapter_contract():
     assert settings["skip_git_repo_check"] is True
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"
     dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
-    assert 'nemo-fabric[harbor,hermes,relay]' in dockerfile
-    assert "@openai/codex@0.142.3" in dockerfile
+    assert 'nemo-fabric[codex,harbor,hermes,relay]' in dockerfile
+    assert "@openai/codex@0.142.4" in dockerfile
 
 
 def test_harbor_demo_documents_explicit_cli_commands():
@@ -165,7 +173,26 @@ def test_harbor_demo_documents_explicit_cli_commands():
     ):
         assert flag in demo
     assert "OPENAI_API_KEY" not in demo
+    assert "CODEX_API_KEY" not in demo
     assert "CODEX_HOME" in demo
+
+
+def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
+    profile = yaml.safe_load(TELEMETRY_PROFILE.read_text(encoding="utf-8"))
+    observability = profile["telemetry"]["config"]["components"][0]["config"]
+    demo = DEMO_README.read_text(encoding="utf-8")
+
+    assert observability["openinference"] == {
+        "enabled": True,
+        "transport": "http_binary",
+        "endpoint": "http://host.docker.internal:6006/v1/traces",
+    }
+    assert observability["atof"]["enabled"] is True
+    assert observability["atif"]["enabled"] is True
+    assert "arizephoenix/phoenix" in demo
+    assert "http://localhost:6006" in demo
+    assert "events.atof.jsonl" in demo
+    assert "*.atif.json" in demo
 
 
 def test_harbor_sdk_package_documents_execution_boundary():

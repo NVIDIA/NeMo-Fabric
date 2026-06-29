@@ -50,7 +50,7 @@ python3 -m pip install -e ../harbor
 
 ## Using FabricAgent
 
-`FabricAgent` follows Harbor 0.16's external-agent contract. The runner and
+`FabricAgent` follows Harbor 0.16.1's external-agent contract. The runner and
 config files must be installed or copied into the task environment:
 
 ```bash

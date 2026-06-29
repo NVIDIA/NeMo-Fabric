@@ -98,7 +98,22 @@ uv run --extra harbor harbor run \
 ## 3. Hermes with Relay Telemetry
 
 This composes two ordered Fabric profiles. The first selects Hermes; the second
-adds ATOF and ATIF telemetry without changing the Harbor agent:
+adds Relay OpenInference traces, ATOF events, and an ATIF trajectory without
+changing the Harbor agent. Start Phoenix on the host before the Harbor run:
+
+```bash
+docker rm -f fabric-phoenix 2>/dev/null || true
+docker run --rm --detach \
+  --name fabric-phoenix \
+  --publish 6006:6006 \
+  arizephoenix/phoenix:latest
+
+until curl --fail --silent http://localhost:6006 >/dev/null; do sleep 1; done
+open http://localhost:6006
+```
+
+The telemetry profile sends OTLP/HTTP traces from the Harbor task container to
+Phoenix through Docker Desktop's `host.docker.internal` bridge. Then run:
 
 ```bash
 uv run --extra harbor harbor run \
@@ -113,6 +128,20 @@ uv run --extra harbor harbor run \
   --n-concurrent 1 \
   --n-attempts 1 \
   --force-build
+```
+
+Keep Phoenix open. The completed run appears as an OpenInference trace in its
+Traces view. Relay also writes the portable ATOF and ATIF records into Harbor's
+collected agent logs:
+
+```bash
+find "$RUNS_DIR/fabric-hermes-relay" \
+  -path '*/agent/fabric-artifacts/hermes-relay/relay/events.atof.jsonl' \
+  -print -exec sed -n '1,5p' {} \;
+
+find "$RUNS_DIR/fabric-hermes-relay" \
+  -path '*/agent/fabric-artifacts/hermes-relay/relay/*.atif.json' \
+  -print -exec python -m json.tool {} \;
 ```
 
 ## 4. Codex CLI
@@ -145,13 +174,12 @@ uv run --extra harbor harbor run \
   --force-build
 ```
 
-The image pins Codex CLI `0.142.3`. Harbor passes the selected model to the
+The image pins Codex CLI `0.142.4`. Harbor passes the selected model to the
 Fabric SDK as the final typed profile, and the Codex profile pins a compatible
 reasoning effort. The profile uses Codex `danger-full-access` because Harbor's
 task container is the outer sandbox and nested Linux namespace creation is not
 available there. The auth mount grants that trusted container access to your
-Codex account for this run. For automation, omit the mount and copy command and
-pass a provisioned `CODEX_API_KEY` with `--ae` instead.
+Codex account for this run.
 
 ## Inspect the Result
 
@@ -180,5 +208,7 @@ rm -rf "$TASK_DIR/environment/vendor"
 2. Run the credential-free smoke and inspect `fabric-result.json`.
 3. Run Hermes, then Codex, changing only profile, model, and credential
    provisioning.
-4. Run Hermes plus telemetry to show ordered profile composition.
-5. Open all four jobs with `harbor view`.
+4. Start Phoenix, run Hermes plus telemetry, and open the resulting
+   OpenInference trace.
+5. Show the same run's ATOF events and ATIF trajectory from Harbor's logs.
+6. Open all four jobs with `harbor view`.
