@@ -344,6 +344,25 @@ def _runtime() -> dict[str, Any]:
     }
 
 
+def _run_result(**updates: Any) -> dict[str, Any]:
+    result = {
+        "agent_name": "demo",
+        "profiles": [],
+        "harness": "hermes",
+        "adapter_kind": "python",
+        "adapter_id": "test.fabric.shim",
+        "runtime_id": "runtime-1",
+        "invocation_id": "invocation-1",
+        "request_id": "request-1",
+        "status": "succeeded",
+        "output": None,
+        "artifacts": {"artifacts": []},
+        "events": [],
+    }
+    result.update(updates)
+    return result
+
+
 def _fabric_config() -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="demo"),
@@ -519,20 +538,17 @@ def test_run_request_constructor_generates_request_metadata():
 
 def test_run_result_wraps_nested_error_and_keeps_mapping_access():
     result = RunResult.from_mapping(
-        {
-            "profiles": [],
-            "request_id": "request-1",
-            "status": "failed",
-            "output": {},
-            "error": {
+        _run_result(
+            status="failed",
+            output={},
+            error={
                 "stage": "invoke",
                 "code": "adapter_failed",
                 "message": "adapter failed",
                 "retryable": False,
             },
-            "artifacts": {"artifacts": []},
-            "events": [{"kind": "log", "message": "hello"}],
-        }
+            events=[{"kind": "log", "message": "hello"}],
+        )
     )
 
     assert result["status"] == "failed"
@@ -546,15 +562,11 @@ def test_run_result_wraps_nested_error_and_keeps_mapping_access():
 
 def test_run_result_exposes_detached_json_values():
     result = RunResult.from_mapping(
-        {
-            "profiles": [],
-            "status": "succeeded",
-            "output": {"plugins": ["observability/nemo_relay"]},
-            "metadata": {"labels": ["sdk"]},
-            "artifacts": {"artifacts": []},
-            "events": [],
-            "future": {"values": [1]},
-        }
+        _run_result(
+            output={"plugins": ["observability/nemo_relay"]},
+            metadata={"labels": ["sdk"]},
+            future={"values": [1]},
+        )
     )
 
     output = result.output
@@ -576,26 +588,41 @@ def test_run_result_exposes_detached_json_values():
 
 def test_run_result_normalizes_core_telemetry_reference():
     result = RunResult.from_mapping(
-        {
-            "profiles": [],
-            "status": "succeeded",
-            "output": None,
-            "artifacts": {"artifacts": []},
-            "events": [],
-            "telemetry": {
+        _run_result(
+            telemetry={
                 "relay_enabled": True,
                 "metadata": {
                     "relay_output_dir": "/tmp/relay",
                     "trace_id": "trace-1",
                 },
             },
-        }
+        )
     )
 
     assert result.telemetry[0].provider == "relay"
     assert result.telemetry[0].kind == "trace"
     assert result.telemetry[0].uri == "/tmp/relay"
     assert result.telemetry[0].trace_id == "trace-1"
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "agent_name",
+        "harness",
+        "adapter_kind",
+        "runtime_id",
+        "invocation_id",
+        "request_id",
+        "status",
+    ),
+)
+def test_run_result_requires_schema_identity_fields(field):
+    raw = _run_result()
+    del raw[field]
+
+    with pytest.raises(FabricConfigError, match=field.replace("_", " ")):
+        RunResult.from_mapping(raw)
 
 
 async def test_run_accepts_full_run_request_on_native_path():
@@ -687,6 +714,16 @@ async def test_start_service_reports_capability_failure_contract():
     assert caught.value.stage == "start"
     assert caught.value.code == "service_not_supported"
     assert caught.value.details == {"service": False, "service_id": "service-1"}
+
+
+async def test_start_service_validates_overrides_before_planning():
+    native = NativeRecorder()
+    client = NativeClient(native)
+
+    with pytest.raises(FabricConfigError, match="service overrides"):
+        await client.start_service("agent", overrides=[])  # type: ignore[arg-type]
+
+    assert native.path_profile_calls == []
 
 
 def test_public_sdk_exceptions_share_a_common_base():
@@ -832,6 +869,18 @@ def test_path_source_accepts_single_profile_name():
     NativeClient(native).plan("agent", profiles="hermes_session")
 
     assert native.path_profile_calls == [["hermes_session"]]
+
+
+def test_path_source_rejects_mapping_profiles_before_native_planning():
+    native = NativeRecorder()
+
+    with pytest.raises(FabricConfigError, match="profile names"):
+        NativeClient(native).plan(
+            "agent",
+            profiles={"name": "hermes_session"},  # type: ignore[arg-type]
+        )
+
+    assert native.path_profile_calls == []
 
 
 def test_fabric_config_constructors_emit_schema_shaped_mappings():

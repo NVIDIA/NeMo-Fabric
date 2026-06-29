@@ -365,6 +365,7 @@ class FabricClient:
     ) -> Any:
         """Reject service creation until the selected runtime declares support."""
 
+        _json_mapping(overrides, "service overrides")
         plan = await _call_blocking(
             lambda: self.plan(  # type: ignore[arg-type]
                 agent, profiles=profiles, base_dir=base_dir

@@ -41,6 +41,8 @@ def path_profiles(profiles: PathProfiles | None) -> list[str]:
         values = [profiles]
     elif isinstance(profiles, bytes):
         raise FabricConfigError("profiles must be profile names, not bytes")
+    elif isinstance(profiles, Mapping):
+        raise FabricConfigError("profiles must be profile names, not a mapping")
     else:
         values = list(profiles)
     if not all(isinstance(profile, str) and profile for profile in values):

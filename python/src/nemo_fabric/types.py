@@ -900,6 +900,16 @@ class RunResult(FabricMapping):
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
         data["profiles"] = _required_profiles(data, "RunResult")
+        for field in (
+            "agent_name",
+            "harness",
+            "adapter_kind",
+            "runtime_id",
+            "invocation_id",
+            "request_id",
+            "status",
+        ):
+            data[field] = _required_text(data.get(field), field.replace("_", " "))
         data["error"] = (
             None if data.get("error") is None else ErrorInfo.from_mapping(data["error"])
         )
