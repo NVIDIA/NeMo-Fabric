@@ -3,6 +3,12 @@
 Runs an installed Codex CLI through Fabric's process-adapter lifecycle. The
 same adapter supports one-shot and session runtime modes.
 
+Install Fabric with the adapter dependency before running it:
+
+```bash
+python3 -m pip install -e ".[codex]"
+```
+
 ## Authentication and Codex Config
 
 The adapter does not read, copy, or rewrite Codex credentials. The child Codex
@@ -21,7 +27,8 @@ Fabric adds only explicitly configured invocation overrides:
   `danger-full-access`.
 - `harness.settings.codex_profile` selects a Codex profile.
 - `harness.settings.config_overrides` emits repeated `--config key=value`
-  arguments.
+  arguments. Values may be TOML scalars or arrays; use dotted keys for nested
+  Codex settings.
 - `harness.settings.codex_args` is an escape hatch for additional CLI flags.
 - `harness.settings.timeout_seconds` bounds each invocation and defaults to 1800.
 

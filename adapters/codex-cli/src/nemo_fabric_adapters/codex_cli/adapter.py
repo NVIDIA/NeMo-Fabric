@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import tomli_w
+
 CUR_DIR = Path(__file__).parent
 ADAPTERS_DIR = CUR_DIR.parent.parent.parent.parent
 COMMON_DIR = (ADAPTERS_DIR / "common/src").resolve().as_posix()
@@ -176,25 +178,19 @@ def resolve_command(payload: dict[str, Any], value: Any) -> str:
 
 
 def toml_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return str(value).lower()
-    if isinstance(value, str):
-        return json.dumps(value)
-    if isinstance(value, int):
-        return str(value)
     if isinstance(value, float):
         if not math.isfinite(value):
             raise ValueError("Codex config overrides require finite numbers")
-        return repr(value)
-    if isinstance(value, list):
-        return f"[{','.join(toml_value(item) for item in value)}]"
-    if isinstance(value, dict):
-        fields = ",".join(
-            f"{json.dumps(str(key))}={toml_value(item)}"
-            for key, item in sorted(value.items())
-        )
-        return f"{{{fields}}}"
-    raise ValueError(f"unsupported Codex config override value: {value!r}")
+    try:
+        document = tomli_w.dumps({"value": value})
+    except TypeError as error:
+        raise ValueError(
+            "Codex config override values must be a TOML scalar or array"
+        ) from error
+    prefix = "value = "
+    if not document.startswith(prefix):
+        raise ValueError("Codex config override values must be a TOML scalar or array")
+    return document.removeprefix(prefix).rstrip()
 
 
 def parse_events(contents: str) -> dict[str, Any]:

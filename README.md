@@ -320,6 +320,7 @@ Run the real one-shot and session smoke after installing Fabric with its native
 extension:
 
 ```bash
+python3 -m pip install -e ".[codex]"
 RUN_FABRIC_CODEX_INTEGRATION=1 python3 tests/smoke_codex_cli.py
 ```
 

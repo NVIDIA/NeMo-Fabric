@@ -187,6 +187,15 @@ def test_reported_command_redacts_secret_config_overrides():
     assert command[-2] == 'provider.api_key="secret"'
 
 
+def test_config_override_values_use_tomli_writer():
+    adapter = load_codex_adapter()
+
+    assert adapter.toml_value("café") == '"café"'
+    assert adapter.toml_value([1, "two"]) == '[\n    1,\n    "two",\n]'
+    with pytest.raises(ValueError, match="scalar or array"):
+        adapter.toml_value({"nested": True})
+
+
 def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypatch):
     adapter = load_codex_adapter()
     codex_payload["effective_config"]["config"]["runtime"]["mode"] = "session"
