@@ -4,11 +4,15 @@
 import importlib.util
 import json
 import subprocess
-import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
+    import tomli as tomllib
 
 from nemo_fabric import FabricClient, FabricConfig
 
