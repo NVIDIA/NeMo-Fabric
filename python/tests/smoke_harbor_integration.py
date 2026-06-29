@@ -27,6 +27,7 @@ def install_harbor_stubs() -> None:
             self.model_name = kwargs.get("model_name")
             self.skills_dir = kwargs.get("skills_dir")
             self.mcp_servers = kwargs.get("mcp_servers", [])
+            self.extra_env = kwargs.get("extra_env")
 
     class BaseEnvironment:
         pass
