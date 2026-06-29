@@ -24,6 +24,36 @@ if COMMON_DIR not in sys.path:
 import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
 
 SANDBOXES = {"read-only", "workspace-write", "danger-full-access"}
+DEFAULT_TIMEOUT_SECONDS = 1800
+INHERITED_ENV_NAMES = {
+    "APPDATA",
+    "CODEX_HOME",
+    "COMSPEC",
+    "HOME",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LOCALAPPDATA",
+    "NO_PROXY",
+    "PATH",
+    "PATHEXT",
+    "SHELL",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "USERPROFILE",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+}
 
 
 def load_payload() -> dict[str, Any]:
@@ -206,7 +236,9 @@ def parse_events(contents: str) -> dict[str, Any]:
 
 def request_to_prompt(payload: dict[str, Any]) -> str:
     value = (payload.get("request") or {}).get("input", "")
-    return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
+    if not isinstance(value, str):
+        raise ValueError("Codex CLI adapter requires text input")
+    return value
 
 
 def resolve_cwd(payload: dict[str, Any]) -> Path:
@@ -217,6 +249,33 @@ def resolve_cwd(payload: dict[str, Any]) -> Path:
     return path.resolve() if path.is_absolute() else (config_root / path).resolve()
 
 
+def build_env(payload: dict[str, Any]) -> dict[str, str]:
+    env = {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
+    configured = common_utils.settings_payload(payload).get("env") or {}
+    env.update({str(key): str(value) for key, value in configured.items()})
+    return env
+
+
+def process_timeout(payload: dict[str, Any]) -> float:
+    value = common_utils.settings_payload(payload).get(
+        "timeout_seconds", DEFAULT_TIMEOUT_SECONDS
+    )
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError("timeout_seconds must be a positive finite number")
+    return float(value)
+
+
+def exception_output(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    return value.decode(errors="replace") if isinstance(value, bytes) else value
+
+
 def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     mode = runtime_mode(payload)
     session_id = fabric_session_id(payload) if mode == "session" else None
@@ -225,25 +284,33 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
     command = build_command(payload, thread_id=prior_thread_id)
     cwd = resolve_cwd(payload)
-    env = os.environ.copy()
-    env.update(
-        {
-            str(key): str(value)
-            for key, value in (common_utils.settings_payload(payload).get("env") or {}).items()
-        }
-    )
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        input=request_to_prompt(payload),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    timeout = process_timeout(payload)
+    launch_error = None
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env=build_env(payload),
+            input=request_to_prompt(payload),
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        completed = subprocess.CompletedProcess(
+            command,
+            124,
+            exception_output(error.stdout),
+            exception_output(error.stderr),
+        )
+        launch_error = f"Codex CLI timed out after {timeout:g} seconds"
+    except OSError as error:
+        completed = subprocess.CompletedProcess(command, 127, "", str(error))
+        launch_error = f"Codex CLI could not start: {error}"
     parsed = parse_events(completed.stdout)
     thread_id = parsed["thread_id"] or prior_thread_id
-    error = parsed["error"]
+    error = launch_error or parsed["error"]
     if completed.returncode != 0:
         error = error or completed.stderr.strip() or "Codex CLI exited with a non-zero status"
     if parsed["response"] is None:
@@ -268,10 +335,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         "thread_id": thread_id,
         "response": parsed["response"],
         "usage": parsed["usage"],
-        "events": parsed["events"],
         "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
         "error": error,
         "failed": error is not None,
         "state_dir": str(state_dir(payload)),

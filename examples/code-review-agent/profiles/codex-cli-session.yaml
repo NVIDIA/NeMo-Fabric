@@ -28,7 +28,7 @@ mcp: null
 runtime:
   mode: session
   transport: cli
-  input_schema: chat
+  input_schema: text
   output_schema: message
   artifacts: ./artifacts/codex-cli
 

@@ -210,6 +210,10 @@ def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setenv("CODEX_HOME", "/tmp/codex-home")
+    monkeypatch.setenv("FABRIC_UNRELATED_SECRET", "do-not-forward")
+    codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
+        "CODEX_EXPLICIT": "forward-me"
+    }
 
     first = adapter.run_codex(codex_payload)
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
@@ -226,8 +230,12 @@ def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     assert second["session_id"] == "review-session"
     assert second["thread_id"] == "thread-123"
     assert second["usage"]["cached_input_tokens"] == 2
-    assert mock_run.call_args_list[0].kwargs["env"]["CODEX_HOME"] == "/tmp/codex-home"
-    assert "OPENAI_API_KEY" not in mock_run.call_args_list[0].kwargs["env"]
+    child_env = mock_run.call_args_list[0].kwargs["env"]
+    assert child_env["CODEX_HOME"] == "/tmp/codex-home"
+    assert child_env["CODEX_EXPLICIT"] == "forward-me"
+    assert "OPENAI_API_KEY" not in child_env
+    assert "FABRIC_UNRELATED_SECRET" not in child_env
+    assert mock_run.call_args_list[0].kwargs["timeout"] == 1800
 
     state_path = adapter.session_state_path(codex_payload, "review-session")
     assert json.loads(state_path.read_text(encoding="utf-8")) == {
@@ -252,7 +260,56 @@ def test_oneshot_does_not_persist_codex_thread(codex_payload, monkeypatch):
 
     assert output["thread_id"] == "thread-ephemeral"
     assert output["response"] == "done"
+    assert "events" not in output
+    assert "stdout" not in output
+    assert "stderr" not in output
     assert not (Path(output["state_dir"]) / "sessions").exists()
+
+
+def test_adapter_rejects_structured_input_until_chat_is_supported(codex_payload):
+    adapter = load_codex_adapter()
+    codex_payload["request"]["input"] = {
+        "messages": [{"role": "user", "content": "Inspect the change."}]
+    }
+
+    with pytest.raises(ValueError, match="requires text input"):
+        adapter.request_to_prompt(codex_payload)
+
+
+@pytest.mark.parametrize(
+    ("error", "message", "returncode"),
+    [
+        (FileNotFoundError("codex not found"), "codex not found", 127),
+        (
+            subprocess.TimeoutExpired(["codex"], 1800),
+            "timed out after 1800 seconds",
+            124,
+        ),
+    ],
+)
+def test_process_launch_failures_return_structured_results(
+    codex_payload, monkeypatch, error, message, returncode
+):
+    adapter = load_codex_adapter()
+    monkeypatch.setattr(adapter.subprocess, "run", MagicMock(side_effect=error))
+
+    output = adapter.run_codex(codex_payload)
+
+    assert output["failed"] is True
+    assert output["returncode"] == returncode
+    assert message in output["error"]
+    assert "stdout" not in output
+    assert "stderr" not in output
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("inf"), "30"])
+def test_adapter_rejects_invalid_timeout(codex_payload, timeout):
+    adapter = load_codex_adapter()
+    settings = codex_payload["effective_config"]["config"]["harness"]["settings"]
+    settings["timeout_seconds"] = timeout
+
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        adapter.run_codex(codex_payload)
 
 
 def test_adapter_rejects_unsupported_runtime_mode(codex_payload):
@@ -322,6 +379,7 @@ async def test_fabric_session_invokes_codex_then_resumes(tmp_path):
         base_dir=tmp_path,
         session_id="fabric-session",
     ) as session:
+        assert session.session_id == "fabric-session"
         first = await session.invoke(input="first")
         second = await session.invoke(input="second")
 
@@ -376,6 +434,7 @@ def test_codex_profiles_resolve_runtime_mode(profile, mode, session_capability):
     assert plan.adapter.adapter_id == "nvidia.fabric.codex.cli"
     assert plan.adapter.harness == "codex"
     assert plan.effective_config.config.runtime.mode == mode
+    assert plan.effective_config.config.runtime.input_schema == "text"
     assert plan.capabilities.session is session_capability
     settings = plan.effective_config.config.harness.settings
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"

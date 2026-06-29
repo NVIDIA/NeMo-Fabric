@@ -6,9 +6,10 @@ same adapter supports one-shot and session runtime modes.
 ## Authentication and Codex Config
 
 The adapter does not read, copy, or rewrite Codex credentials. The child Codex
-process inherits `HOME`, `CODEX_HOME`, and its environment, so an existing
-`codex login` session remains authoritative. Automation may provide
-`CODEX_API_KEY` directly to the Codex process.
+process inherits `HOME`, `CODEX_HOME`, platform runtime variables, and proxy or
+certificate settings, so an existing `codex login` session remains
+authoritative. Additional variables must be provided through
+`harness.settings.env`.
 
 Codex continues to load its system, user, profile, and trusted project config.
 Fabric adds only explicitly configured invocation overrides:
@@ -22,6 +23,7 @@ Fabric adds only explicitly configured invocation overrides:
 - `harness.settings.config_overrides` emits repeated `--config key=value`
   arguments.
 - `harness.settings.codex_args` is an escape hatch for additional CLI flags.
+- `harness.settings.timeout_seconds` bounds each invocation and defaults to 1800.
 
 `codex_command`, `codex_state_dir`, `cwd`, `env`, and
 `skip_git_repo_check` are available for prepared environments and tests.
@@ -29,12 +31,13 @@ Fabric adds only explicitly configured invocation overrides:
 ## Runtime Modes
 
 One-shot mode runs `codex exec --json --ephemeral` and returns the final agent
-message, usage, thread ID, and Codex events in the normalized Fabric result.
+message, usage, and thread ID in the normalized Fabric result.
 
 Session mode omits `--ephemeral`. The first invocation records Codex's generated
 thread ID against Fabric's session ID; later invocations use
 `codex exec resume <thread-id>`. Codex owns its transcript and authentication;
 Fabric owns the lifecycle and the session-to-thread correlation record.
+Both modes accept text input; Codex owns conversation history for session runs.
 
 Use the `codex_cli` and `codex_cli_session` profiles under
 `examples/code-review-agent/profiles/` for local one-shot and `fabric chat`
