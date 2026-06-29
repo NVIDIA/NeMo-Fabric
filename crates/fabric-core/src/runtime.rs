@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+#[cfg(test)]
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,6 +23,8 @@ use crate::config::{
 use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+#[cfg(test)]
+static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// A request passed to a Fabric-managed harness runtime.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
@@ -225,6 +229,8 @@ pub struct EnvironmentHandle {
 pub struct RuntimeHandle {
     /// Runtime handle id.
     pub runtime_id: String,
+    /// Fabric-owned opaque binding for this runtime handle.
+    pub runtime_binding: String,
     /// Agent name.
     pub agent_name: String,
     /// Harness type.
@@ -328,7 +334,13 @@ struct RelayRuntimeConfig {
 /// Invoke a Fabric run plan.
 pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
     let runtime = start_runtime(plan)?;
-    let mut result = invoke_runtime(plan, &runtime, request)?;
+    let mut result = match invoke_runtime(plan, &runtime, request) {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = stop_runtime(plan, &runtime);
+            return Err(error);
+        }
+    };
     result.events.extend(stop_runtime(plan, &runtime)?);
     Ok(result)
 }
@@ -417,6 +429,7 @@ pub fn invoke_runtime(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
+    validate_runtime_handle(plan, runtime)?;
     match adapter_kind(plan) {
         AdapterKind::Process => ProcessAdapter.invoke(plan, runtime, request),
         AdapterKind::Python => PythonAdapter.invoke(plan, runtime, request),
@@ -428,7 +441,8 @@ pub fn invoke_runtime(
 }
 
 /// Stop or detach from a harness runtime.
-pub fn stop_runtime(_plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+    validate_runtime_handle(plan, runtime)?;
     match runtime.adapter_kind {
         AdapterKind::Process => ProcessAdapter.stop(runtime),
         AdapterKind::Python => PythonAdapter.stop(runtime),
@@ -437,6 +451,116 @@ pub fn stop_runtime(_plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabr
             adapter_kind,
         }),
     }
+}
+
+fn validate_runtime_handle(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<()> {
+    let expected_binding = runtime_binding(&runtime.runtime_id, plan, &runtime.environment)?;
+    expect_runtime_field(
+        runtime,
+        "runtime_binding",
+        &expected_binding,
+        &runtime.runtime_binding,
+    )?;
+    expect_runtime_field(runtime, "agent_name", &plan.agent_name, &runtime.agent_name)?;
+    expect_runtime_field(
+        runtime,
+        "harness_type",
+        &harness_type(plan),
+        &runtime.harness_type,
+    )?;
+    expect_runtime_field(
+        runtime,
+        "runtime.mode",
+        &runtime_mode_name(plan.config.runtime.mode),
+        &runtime_mode_name(runtime.mode),
+    )?;
+    expect_runtime_field(
+        runtime,
+        "adapter_kind",
+        &adapter_kind_name(adapter_kind(plan)),
+        &adapter_kind_name(runtime.adapter_kind),
+    )?;
+    expect_runtime_field(
+        runtime,
+        "adapter_id",
+        &optional_runtime_value(adapter_id(plan).as_deref()),
+        &optional_runtime_value(runtime.adapter_id.as_deref()),
+    )?;
+    Ok(())
+}
+
+fn expect_runtime_field(
+    runtime: &RuntimeHandle,
+    field: &'static str,
+    expected: &str,
+    actual: &str,
+) -> Result<()> {
+    if expected == actual {
+        return Ok(());
+    }
+    Err(FabricError::RuntimeHandleMismatch {
+        field,
+        expected: expected.to_string(),
+        actual: actual.to_string(),
+        runtime_id: runtime.runtime_id.clone(),
+    })
+}
+
+#[derive(Serialize)]
+struct RuntimeBindingMaterial<'a> {
+    runtime_id: &'a str,
+    environment_id: &'a str,
+    plan: &'a RunPlan,
+    environment: RuntimeEnvironmentBinding<'a>,
+}
+
+#[derive(Serialize)]
+struct RuntimeEnvironmentBinding<'a> {
+    provider: &'a str,
+    control_location: ControlLocation,
+    workspace: &'a Option<PathBuf>,
+    artifacts: &'a Option<PathBuf>,
+    ownership: EnvironmentOwnership,
+    connection: &'a BTreeMap<String, Value>,
+    metadata: &'a BTreeMap<String, Value>,
+}
+
+fn runtime_environment_binding(environment: &EnvironmentHandle) -> RuntimeEnvironmentBinding<'_> {
+    RuntimeEnvironmentBinding {
+        provider: &environment.provider,
+        control_location: environment.control_location,
+        workspace: &environment.workspace,
+        artifacts: &environment.artifacts,
+        ownership: environment.ownership,
+        connection: &environment.connection,
+        metadata: &environment.metadata,
+    }
+}
+
+fn runtime_binding(
+    runtime_id: &str,
+    plan: &RunPlan,
+    environment: &EnvironmentHandle,
+) -> Result<String> {
+    stable_hash(
+        "fabric-runtime-binding",
+        &RuntimeBindingMaterial {
+            runtime_id,
+            environment_id: &environment.environment_id,
+            plan,
+            environment: runtime_environment_binding(environment),
+        },
+    )
+}
+
+fn stable_hash<T: Serialize>(prefix: &str, value: &T) -> Result<String> {
+    let bytes = serde_json::to_vec(value).map_err(FabricError::SerializeJson)?;
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    Ok(format!("{prefix}-{hash:016x}"))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -485,8 +609,11 @@ impl RuntimeAdapter for ProcessAdapter {
                 adapter_kind: AdapterKind::Process,
             });
         }
+        let runtime_id = new_id("runtime");
+        let runtime_binding = runtime_binding(&runtime_id, plan, &environment)?;
         Ok(RuntimeHandle {
-            runtime_id: new_id("runtime"),
+            runtime_id,
+            runtime_binding,
             agent_name: plan.agent_name.clone(),
             harness_type: harness_type(plan),
             mode: plan.config.runtime.mode,
@@ -506,6 +633,11 @@ impl RuntimeAdapter for ProcessAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+        #[cfg(test)]
+        TEST_STOPPED_AGENTS
+            .lock()
+            .expect("stop tracker")
+            .push(runtime.agent_name.clone());
         Ok(vec![event_with_metadata(
             "runtime_stop",
             format!("stopped runtime {}", runtime.runtime_id),
@@ -525,8 +657,11 @@ impl RuntimeAdapter for PythonAdapter {
                 adapter_kind: AdapterKind::Python,
             });
         }
+        let runtime_id = new_id("runtime");
+        let runtime_binding = runtime_binding(&runtime_id, plan, &environment)?;
         Ok(RuntimeHandle {
-            runtime_id: new_id("runtime"),
+            runtime_id,
+            runtime_binding,
             agent_name: plan.agent_name.clone(),
             harness_type: harness_type(plan),
             mode: plan.config.runtime.mode,
@@ -546,6 +681,11 @@ impl RuntimeAdapter for PythonAdapter {
     }
 
     fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+        #[cfg(test)]
+        TEST_STOPPED_AGENTS
+            .lock()
+            .expect("stop tracker")
+            .push(runtime.agent_name.clone());
         Ok(vec![event_with_metadata(
             "runtime_stop",
             format!("stopped runtime {}", runtime.runtime_id),
@@ -1014,6 +1154,29 @@ fn adapter_kind(plan: &RunPlan) -> AdapterKind {
         .as_ref()
         .map(|adapter| adapter.descriptor.adapter_kind)
         .unwrap_or(AdapterKind::Process)
+}
+
+fn adapter_kind_name(adapter_kind: AdapterKind) -> String {
+    match adapter_kind {
+        AdapterKind::Process => "process",
+        AdapterKind::Http => "http",
+        AdapterKind::Python => "python",
+        AdapterKind::NativePlugin => "native_plugin",
+    }
+    .to_string()
+}
+
+fn runtime_mode_name(mode: RuntimeMode) -> String {
+    match mode {
+        RuntimeMode::Oneshot => "oneshot",
+        RuntimeMode::Service => "service",
+        RuntimeMode::Session => "session",
+    }
+    .to_string()
+}
+
+fn optional_runtime_value(value: Option<&str>) -> String {
+    value.unwrap_or("<none>").to_string()
 }
 
 fn adapter_exit_error(
@@ -1684,10 +1847,11 @@ mod tests {
     }
 
     fn temp_process_agent_dir() -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-process-adapter-test-{}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(new_id("fabric-process-adapter-test"));
+        process_agent_dir(root)
+    }
+
+    fn process_agent_dir(root: PathBuf) -> PathBuf {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("create agent dir");
         fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
@@ -1726,6 +1890,10 @@ runtime:
   "adapter_id": "acme.fabric.process",
   "adapter_kind": "process"
 }"#
+    }
+
+    fn stopped_agents() -> Vec<String> {
+        TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
     }
 
     #[test]
@@ -1818,6 +1986,209 @@ environment:
         assert_eq!(result.output, Value::String("hello fabric".to_string()));
         assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
         assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn run_plan_stops_runtime_after_invoke_error() {
+        let root = temp_process_agent_dir();
+        let mut plan = resolve_run_plan(&root, None).expect("run plan");
+        plan.agent_name = new_id("invoke-error-agent");
+        plan.effective_config.agent_name = plan.agent_name.clone();
+        plan.config.harness.settings.remove("command");
+        let agent_name = plan.agent_name.clone();
+
+        let error = run_plan(&plan, RunRequest::text("hello fabric")).expect_err("invoke error");
+
+        assert!(
+            error
+                .to_string()
+                .contains("invalid process adapter settings"),
+            "{error}"
+        );
+        assert!(
+            stopped_agents().contains(&agent_name),
+            "run_plan must stop the started runtime for {agent_name}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_handle_exposes_single_opaque_binding() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+
+        let value = serde_json::to_value(&runtime).expect("runtime json");
+        assert!(value.get("runtime_binding").is_some());
+        assert!(value.get("plan_fingerprint").is_none());
+        assert!(value.get("environment_fingerprint").is_none());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_handle_without_binding_is_rejected_during_deserialization() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+        let mut value = serde_json::to_value(&runtime).expect("runtime json");
+        value
+            .as_object_mut()
+            .expect("runtime object")
+            .remove("runtime_binding");
+        let error = serde_json::from_value::<RuntimeHandle>(value)
+            .expect_err("runtime binding must be required");
+
+        assert!(
+            error
+                .to_string()
+                .contains("missing field `runtime_binding`"),
+            "{error}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_handle_validation_is_independent_of_current_directory() {
+        const CHILD_ENV: &str = "FABRIC_TEST_RUNTIME_HANDLE_CWD_CHILD";
+        if std::env::var_os(CHILD_ENV).is_none() {
+            let output = Command::new(std::env::current_exe().expect("current test executable"))
+                .arg("runtime_handle_validation_is_independent_of_current_directory")
+                .arg("--nocapture")
+                .env(CHILD_ENV, "1")
+                .output()
+                .expect("run isolated cwd test");
+            assert!(
+                output.status.success(),
+                "isolated cwd test failed\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+
+        let parent = std::env::temp_dir().join(new_id("fabric-runtime-cwd-test"));
+        let root = process_agent_dir(parent.join("agent"));
+        fs::create_dir_all(parent.join("elsewhere")).expect("create alternate cwd");
+        std::env::set_current_dir(&parent).expect("enter fixture parent");
+        let plan = resolve_run_plan(Path::new("agent"), None).expect("relative run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+
+        std::env::set_current_dir(parent.join("elsewhere")).expect("change cwd");
+        validate_runtime_handle(&plan, &runtime).expect("valid runtime handle");
+
+        std::env::set_current_dir(std::env::temp_dir()).expect("leave fixture");
+        let _ = fs::remove_dir_all(root.parent().expect("fixture parent"));
+    }
+
+    #[test]
+    fn invoke_runtime_rejects_runtime_handle_from_different_plan() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+        let mut other_plan = plan.clone();
+        other_plan.agent_name = "other-agent".to_string();
+        other_plan.effective_config.agent_name = "other-agent".to_string();
+
+        let error = invoke_runtime(&other_plan, &runtime, RunRequest::text("hello fabric"))
+            .expect_err("runtime mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("runtime handle does not match run plan"),
+            "{error}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invoke_runtime_rejects_runtime_handle_from_mutated_adapter_settings() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+        let mut other_plan = plan.clone();
+        other_plan
+            .config
+            .harness
+            .settings
+            .insert("command".to_string(), Value::String("printf".to_string()));
+
+        let error = invoke_runtime(&other_plan, &runtime, RunRequest::text("hello fabric"))
+            .expect_err("runtime mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("runtime handle does not match run plan"),
+            "{error}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invoke_runtime_rejects_mutated_runtime_environment() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let mut runtime = start_runtime(&plan).expect("runtime");
+        runtime.environment.workspace = Some(root.join("other-workspace"));
+
+        let error = invoke_runtime(&plan, &runtime, RunRequest::text("hello fabric"))
+            .expect_err("runtime mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("runtime handle does not match run plan"),
+            "{error}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invoke_runtime_rejects_mutated_runtime_identity() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let mut runtime = start_runtime(&plan).expect("runtime");
+        runtime.harness_type = "other-harness".to_string();
+
+        let error = invoke_runtime(&plan, &runtime, RunRequest::text("hello fabric"))
+            .expect_err("runtime mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("runtime handle does not match run plan"),
+            "{error}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stop_runtime_rejects_runtime_handle_from_different_plan() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+        let mut other_plan = plan.clone();
+        other_plan.agent_name = "other-agent".to_string();
+        other_plan.effective_config.agent_name = "other-agent".to_string();
+
+        let error = stop_runtime(&other_plan, &runtime).expect_err("runtime mismatch");
+
+        assert!(
+            error
+                .to_string()
+                .contains("runtime handle does not match run plan"),
+            "{error}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }

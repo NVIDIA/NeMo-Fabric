@@ -11,6 +11,8 @@ import tempfile
 from pathlib import Path
 from shutil import copytree
 
+from _utils.utils import assert_process_adapter_native_observability
+
 ROOT = Path(__file__).resolve().parents[1]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 
@@ -48,6 +50,7 @@ def main() -> None:
 
         config_path = Path(result["output"]["hermes_config_path"])
         assert config_path.is_file()
+        assert_process_adapter_native_observability(result)
 
 
 def call_json(*args: object) -> dict:

@@ -54,9 +54,9 @@ jobs:
           uv pip install --python .venv/bin/python -e . "pyyaml>=6"
 
       # Dependency-free smokes only: the gated integration smokes
-      # (smoke_hermes_sdk, smoke_relay_integration, smoke_harbor_*) need an
-      # NVIDIA_API_KEY / a running Hermes / a sibling harbor checkout, so they
-      # are excluded.
+      # (smoke_hermes_sdk, smoke_relay_integration, and the Docker-backed
+      # smoke_harbor_swebench_task) need an NVIDIA_API_KEY / a running Hermes /
+      # a sibling harbor checkout, so they are excluded.
       - name: Run dependency-free smokes
         run: |
           set -euo pipefail
@@ -68,6 +68,7 @@ jobs:
             python/tests/smoke_native_sdk.py
             python/tests/smoke_typed_config.py
             python/tests/smoke_consumer_neutral.py
+            python/tests/smoke_harbor_integration.py
             python/tests/smoke_readme_examples.py
             python/tests/smoke_sdk_sessions.py
             tests/smoke_cli.py

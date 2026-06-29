@@ -158,6 +158,10 @@
       "$ref": "#/$defs/RuntimeMode",
       "description": "Runtime mode."
     },
+    "runtime_binding": {
+      "description": "Fabric-owned opaque binding for this runtime handle.",
+      "type": "string"
+    },
     "runtime_id": {
       "description": "Runtime handle id.",
       "type": "string"
@@ -165,6 +169,7 @@
   },
   "required": [
     "runtime_id",
+    "runtime_binding",
     "agent_name",
     "harness_type",
     "mode",

@@ -10,7 +10,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::config::{ControlLocation, EnvironmentOwnership, ResolutionStrategy, RunPlan};
+use crate::config::{
+    AdapterKind, CapabilityTarget, ControlLocation, EnvironmentOwnership, ResolutionStrategy,
+    RunPlan, RuntimeMode, Transport,
+};
 
 /// Diagnostic status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -57,7 +60,9 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
     let mut checks = Vec::new();
     checks.push(check_adapter_descriptor(plan));
     checks.push(check_resolution(plan));
+    checks.extend(check_runtime_execution_surface(plan));
     checks.push(check_environment_context(plan));
+    checks.extend(check_capability_routes(plan));
     checks.extend(check_requirements(plan));
     let status = checks.iter().fold(DoctorStatus::Pass, |status, check| {
         worst(status, check.status)
@@ -113,12 +118,55 @@ fn check_resolution(plan: &RunPlan) -> DoctorCheck {
     };
     let message = match status {
         DoctorStatus::Pass => format!("selected resolution strategy `{resolution:?}`"),
+        DoctorStatus::Warn if matches!(resolution, ResolutionStrategy::Service) => {
+            "selected resolution strategy `service` is modeled but not implemented by Fabric runtime execution".to_string()
+        }
         DoctorStatus::Warn => format!(
             "selected resolution strategy `{resolution:?}` is declared but not executed by this POC"
         ),
         DoctorStatus::Fail => unreachable!("resolution check never fails directly"),
     };
     check("resolution", status, message)
+}
+
+fn check_runtime_execution_surface(plan: &RunPlan) -> Vec<DoctorCheck> {
+    let mut checks = Vec::new();
+    match plan.config.runtime.mode {
+        RuntimeMode::Service => checks.push(check(
+            "runtime.mode",
+            DoctorStatus::Warn,
+            "runtime mode `service` is modeled but not implemented by Fabric runtime dispatch",
+        )),
+        RuntimeMode::Oneshot | RuntimeMode::Session => {}
+    }
+    match plan.config.runtime.transport {
+        Transport::Http => checks.push(check(
+            "runtime.transport",
+            DoctorStatus::Warn,
+            "runtime transport `http` is modeled but not implemented by Fabric runtime dispatch",
+        )),
+        Transport::NativePlugin => checks.push(check(
+            "runtime.transport",
+            DoctorStatus::Warn,
+            "runtime transport `native_plugin` is modeled but not implemented by Fabric runtime dispatch",
+        )),
+        Transport::Library | Transport::Cli => {}
+    }
+    let Some(adapter) = &plan.adapter_descriptor else {
+        return checks;
+    };
+    match adapter.descriptor.adapter_kind {
+        AdapterKind::Http | AdapterKind::NativePlugin => checks.push(check(
+            "runtime.adapter",
+            DoctorStatus::Warn,
+            format!(
+                "`{}` adapter runtime dispatch is not implemented",
+                adapter_kind_name(adapter.descriptor.adapter_kind)
+            ),
+        )),
+        AdapterKind::Process | AdapterKind::Python => {}
+    }
+    checks
 }
 
 fn check_environment_context(plan: &RunPlan) -> DoctorCheck {
@@ -152,6 +200,24 @@ fn check_environment_context(plan: &RunPlan) -> DoctorCheck {
         ),
         metadata,
     )
+}
+
+fn check_capability_routes(plan: &RunPlan) -> Vec<DoctorCheck> {
+    plan.capability_plan
+        .routes
+        .iter()
+        .filter(|route| route.target == CapabilityTarget::Unsupported)
+        .map(|route| {
+            check(
+                "capability.unsupported",
+                DoctorStatus::Warn,
+                format!(
+                    "{:?} capability `{}` is configured but not executable: {}",
+                    route.kind, route.name, route.reason
+                ),
+            )
+        })
+        .collect()
 }
 
 fn check_requirements(plan: &RunPlan) -> Vec<DoctorCheck> {
@@ -310,6 +376,15 @@ fn resolution_name(resolution: Option<ResolutionStrategy>) -> &'static str {
     }
 }
 
+fn adapter_kind_name(adapter_kind: AdapterKind) -> &'static str {
+    match adapter_kind {
+        AdapterKind::Process => "process",
+        AdapterKind::Http => "http",
+        AdapterKind::Python => "python",
+        AdapterKind::NativePlugin => "native_plugin",
+    }
+}
+
 fn command_available(binary: &str) -> bool {
     let path = Path::new(binary);
     if path.components().count() > 1 {
@@ -416,7 +491,9 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use crate::config::{ResolutionStrategy, resolve_run_plan};
+    use crate::config::{
+        AdapterKind, ResolutionStrategy, RuntimeMode, Transport, resolve_run_plan,
+    };
 
     fn example_agent_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/code-review-agent")
@@ -482,6 +559,49 @@ mod tests {
             check.name == "requirement.binary"
                 && check.status == DoctorStatus::Pass
                 && check.message.contains("hermes_command")
+        }));
+    }
+
+    #[test]
+    fn doctor_reports_service_and_http_execution_as_modeled_not_implemented() {
+        let mut plan = resolve_run_plan(example_agent_dir(), None).expect("run plan");
+        plan.config.runtime.mode = RuntimeMode::Service;
+        plan.config.runtime.transport = Transport::Http;
+        plan.resolution = Some(ResolutionStrategy::Service);
+        plan.adapter_descriptor
+            .as_mut()
+            .expect("adapter descriptor")
+            .descriptor
+            .adapter_kind = AdapterKind::Http;
+
+        let report = doctor_plan(&plan);
+
+        assert_eq!(report.status, DoctorStatus::Warn);
+        assert!(report.checks.iter().any(|check| {
+            check.name == "runtime.mode"
+                && check.status == DoctorStatus::Warn
+                && check.message.contains("modeled but not implemented")
+                && check.message.contains("service")
+        }));
+        assert!(report.checks.iter().any(|check| {
+            check.name == "runtime.transport"
+                && check.status == DoctorStatus::Warn
+                && check.message.contains("modeled but not implemented")
+                && check.message.contains("http")
+        }));
+        assert!(report.checks.iter().any(|check| {
+            check.name == "runtime.adapter"
+                && check.status == DoctorStatus::Warn
+                && check
+                    .message
+                    .contains("runtime dispatch is not implemented")
+                && check.message.contains("http")
+        }));
+        assert!(report.checks.iter().any(|check| {
+            check.name == "resolution"
+                && check.status == DoctorStatus::Warn
+                && check.message.contains("modeled but not implemented")
+                && check.message.contains("service")
         }));
     }
 }

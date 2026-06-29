@@ -109,6 +109,20 @@ pub enum FabricError {
         /// Adapter kind.
         adapter_kind: AdapterKind,
     },
+    /// A runtime handle was used with a different run plan than the one that created it.
+    #[error(
+        "runtime handle does not match run plan for `{field}`: expected `{expected}` but found `{actual}` (runtime `{runtime_id}`)"
+    )]
+    RuntimeHandleMismatch {
+        /// Mismatched runtime handle field.
+        field: &'static str,
+        /// Expected value from the run plan.
+        expected: String,
+        /// Actual value from the runtime handle.
+        actual: String,
+        /// Runtime handle id.
+        runtime_id: String,
+    },
     /// An environment provider is not runnable for the selected adapter in this POC.
     #[error("environment provider `{provider}` is not implemented for adapter `{adapter_kind:?}`")]
     UnsupportedEnvironmentProvider {

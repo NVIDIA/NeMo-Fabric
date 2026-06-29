@@ -138,7 +138,7 @@ The repo layout separates Fabric-owned concepts:
 
 Status:
 
-- Mostly complete.
+- Base MVP contract is mostly complete.
 - Schema snapshots, profile resolution, ordered profile stacking, typed SDK
   config, YAML package config, adapter descriptor validation, planning, doctor
   checks, and CLI/SDK smoke coverage are already present.
@@ -180,15 +180,16 @@ Status:
   `runtime_context.session_id` when supplied, or `runtime_context.runtime_id`
   as the default. Hermes CLI maps that Fabric key onto Hermes session id/title
   for resume.
+- Relay-backed Hermes CLI tests now cover ATOF/ATIF artifact references and
+  generated Relay config in the process-backed path.
+- SDK and CLI smoke coverage asserts normalized `RunResult` parity for shared
+  fields across both inline Python and process-backed adapter paths.
 
 Next steps:
 
 - Review the Hermes adapter implementations for maintainability and alignment
   with the minimal descriptor fields Fabric currently uses.
 - Test Hermes SDK and CLI paths with more representative inputs.
-- Add parity checks for normalized result fields shared by the inline SDK and
-  process-backed CLI paths.
-- Add testing for Relay artifacts such as ATOF/ATIF references.
 - Add testing for harness-native events, artifacts, and logs.
 
 ### 3. Config Variation Matrix
@@ -204,6 +205,8 @@ Status:
 - Generated Hermes config checks confirm enabled skills, tools, MCP, telemetry,
   workspace, and artifact settings.
 - Negative tests cover unsupported mappings failing before invocation.
+- Relay-enabled Hermes CLI runs now assert emitted ATOF/ATIF artifact files and
+  manifest visibility where the harness and adapter support it.
 
 Next steps:
 
@@ -211,8 +214,6 @@ Next steps:
 - Add missing profile variations where useful, including alternate model,
   toolset, workspace, artifact, and telemetry combinations.
 - Test both Hermes SDK and Hermes CLI against the applicable matrix.
-- Add ATIF/ATOF checks that confirm enabled skills, tools, MCP, or telemetry
-  appear in the emitted trajectory where the harness and adapter support it.
 - Add checks for harness-native events, artifacts, and logs.
 
 Config mapping and actual runtime behavior are related but not identical.
@@ -238,6 +239,12 @@ Status:
 - SDK and CLI can plan and run Hermes without callers importing
   Hermes-specific code.
 - CLI and SDK smoke tests cover core planning and run paths.
+- README examples for plan, doctor, typed config, SDK sessions, and CLI chat are
+  mirrored by executable smoke tests to prevent documented API drift.
+- Typed config is a first-class SDK path and is covered without requiring an
+  agent directory.
+- The core SDK is covered as consumer-neutral and dependency-free; Harbor,
+  Hermes, Relay, and adapter packages stay out of a plain `import nemo_fabric`.
 
 Next steps:
 
@@ -245,12 +252,6 @@ Next steps:
   for each API.
 - Keep Python SDK as the primary API for consumers.
 - Keep CLI behavior aligned with SDK behavior for the same config/profile stack.
-- Keep plan/doctor/run examples in the README accurate.
-- Keep typed config as a first-class SDK path so Platform can construct the
-  Fabric agent slice from its own job/deployment config without materializing
-  an agent directory.
-- Keep the SDK API consumer-neutral. Consider consumers such as Harbor while
-  defining the API so it does not become Platform-specific.
 
 ### 5. Telemetry And Artifacts
 
@@ -267,12 +268,9 @@ Status:
   telemetry references.
 - ArtifactManifest remains populated with output, logs, patch/status, native
   harness artifacts, and telemetry references where available.
-
-Next steps:
-
-- Add tests that verify Relay-disabled profiles still produce native output,
-  harness events where available, and logs.
-- Confirm these artifacts are visible through SDK, CLI, and Harbor consumers.
+- Relay-disabled smoke coverage verifies native output and native observability
+  stay available without Relay.
+- SDK, CLI, and Harbor-facing smoke paths cover ArtifactManifest visibility.
 
 ### 6. Consumer Proof: Harbor
 
@@ -281,10 +279,16 @@ Status: optional/stretch goal.
 Goal: validate the SDK/CLI contract through one real evaluation consumer after
 the SDK/CLI and Hermes paths are stable.
 
-Next steps:
+Current status:
 
 - Keep `nemo_fabric.integrations.harbor:FabricAgent` as the Harbor entrypoint.
 - Keep Harbor-specific usage in `integrations/harbor/README.md`.
+- Lightweight Harbor integration smoke coverage validates command construction,
+  Fabric metadata propagation, and ArtifactManifest handoff with a fake Harbor
+  environment.
+
+Next steps:
+
 - Run the lightweight Harbor smoke in a clean environment.
 - Run one Harbor SWE-Bench Verified task through Fabric.
 - Run the Harbor verifier against the Fabric-produced patch.
@@ -300,11 +304,11 @@ Success criteria:
 ## Execution Order
 
 1. Keep core contract/schema tests green while making small contract fixes.
-2. Finish SDK and CLI behavior for typed config and agent-package config.
-3. Finish Hermes SDK and CLI reproducibility in clean environments.
+2. Done: SDK and CLI behavior for typed config and agent-package config.
+3. In progress: finish Hermes SDK and CLI reproducibility in clean environments.
 4. Run the Hermes config-variation matrix across model, runtime, skills, tools,
    MCP, telemetry, workspace, artifacts, and harness adapter profiles.
-5. Harden Relay telemetry and ArtifactManifest discovery for Hermes runs.
+5. Done: harden Relay telemetry and ArtifactManifest discovery for Hermes runs.
 6. After the SDK/CLI and Hermes path are stable, split follow-up work into
    adapter, consumer API, and telemetry/artifact readiness tracks.
 7. Stretch: run the Harbor lightweight smoke from a clean install.
