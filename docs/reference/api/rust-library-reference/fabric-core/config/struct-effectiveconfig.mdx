@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct EffectiveConfig &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub profile: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub profiles: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub agent_root: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_path: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_root: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct EffectiveConfig &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub profiles: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub agent_root: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_path: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_root: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n&#125;"}} /></pre>
 
 Merged Fabric config after applying selected profiles.
 
@@ -18,10 +18,6 @@ Merged Fabric config after applying selected profiles.
 ### `agent_name: String`
 
 Stable agent name.
-
-### `profile: Option<String>`
-
-Selected profile when exactly one profile is applied.
 
 ### `profiles: Vec<String>`
 

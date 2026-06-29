@@ -2,14 +2,14 @@
 title: "Struct Doctor Report"
 sidebar-title: "DoctorReport"
 description: "Diagnostic report for a resolved run plan."
-position: 43
+position: 44
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct DoctorReport &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub profile: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub status: <a href=\"enum-doctorstatus\">DoctorStatus</a>,\n    pub checks: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-doctorcheck\">DoctorCheck</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct DoctorReport &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub profiles: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub status: <a href=\"enum-doctorstatus\">DoctorStatus</a>,\n    pub checks: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-doctorcheck\">DoctorCheck</a>&gt;,\n&#125;"}} /></pre>
 
 Diagnostic report for a resolved run plan.
 
@@ -19,9 +19,9 @@ Diagnostic report for a resolved run plan.
 
 Agent name.
 
-### `profile: Option<String>`
+### `profiles: Vec<String>`
 
-Selected profile.
+Ordered profiles applied to the inspected plan.
 
 ### `status: DoctorStatus`
 

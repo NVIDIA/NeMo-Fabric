@@ -26,30 +26,38 @@ import asyncio
 from nemo_fabric import FabricClient
 
 async def main():
-    client = FabricClient()
-    result = await client.run(
-        "examples/code-review-agent",
-        profile="hermes_sdk",
-        input_text="review this diff",
-    )
-    print(result["status"])
+    async with FabricClient() as client:
+        result = await client.run(
+            "examples/code-review-agent",
+            profiles=["hermes_sdk"],
+            input="review this diff",
+        )
+    print(result.status)
 
 asyncio.run(main())
 ```
 
-Or build the Fabric slice from a typed config in code, with no agent directory:
+Or build the Fabric slice from a typed config instead of materializing an agent
+package:
 
 ```python
-result = await client.run_config(
+from nemo_fabric import FabricConfig
+
+config = FabricConfig.from_mapping(
     {
         "schema_version": "fabric.agent/v1alpha1",
         "metadata": {"name": "code-review-agent"},
         "harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},
         "models": {"default": {"provider": "nvidia", "model": "nvidia/nemotron-3-nano-30b-a3b"}},
-    },
-    input_text="review this diff",
+    }
+)
+
+result = await client.run(
+    config,
+    base_dir="examples/code-review-agent",
+    input="review this diff",
 )
 ```
 
-The full method-by-method reference is under **Python SDK → API Reference**, generated
-from the SDK docstrings.
+The full method-by-method reference is under **Reference → APIs → Python Library
+Reference**, generated from the SDK docstrings.

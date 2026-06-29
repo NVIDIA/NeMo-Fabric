@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeHandle &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub harness_type: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub mode: <a href=\"../config/enum-runtimemode\">RuntimeMode</a>,\n    pub adapter_kind: <a href=\"../config/enum-adapterkind\">AdapterKind</a>,\n    pub adapter_id: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub environment: <a href=\"struct-environmenthandle\">EnvironmentHandle</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeHandle &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub runtime_binding: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub mode: <a href=\"../config/enum-runtimemode\">RuntimeMode</a>,\n    pub adapter_kind: <a href=\"../config/enum-adapterkind\">AdapterKind</a>,\n    pub adapter_id: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub environment: <a href=\"struct-environmenthandle\">EnvironmentHandle</a>,\n&#125;"}} /></pre>
 
 Active or resumable harness runtime.
 
@@ -19,13 +19,17 @@ Active or resumable harness runtime.
 
 Runtime handle id.
 
+### `runtime_binding: String`
+
+Fabric-owned opaque binding for this runtime handle.
+
 ### `agent_name: String`
 
 Agent name.
 
-### `harness_type: String`
+### `harness: String`
 
-Harness type.
+Stable machine-readable harness identifier.
 
 ### `mode: RuntimeMode`
 

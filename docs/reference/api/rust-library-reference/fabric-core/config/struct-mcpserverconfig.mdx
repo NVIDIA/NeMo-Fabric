@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct McpServerConfig &#123;\n    pub transport: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub url: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub exposure: <a href=\"enum-mcpexposure\">McpExposure</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct McpServerConfig &#123;\n    pub transport: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub url: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub exposure: <a href=\"enum-mcpexposure\">McpExposure</a>,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
 MCP server configuration.
 
@@ -26,6 +26,10 @@ MCP server URL or process command, depending on transport.
 ### `exposure: McpExposure`
 
 How Fabric exposes the MCP capability to the harness.
+
+### `extensions: BTreeMap<String, Value>`
+
+Additive MCP server fields.
 
 ## Trait Implementations
 

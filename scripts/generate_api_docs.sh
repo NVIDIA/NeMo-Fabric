@@ -26,8 +26,10 @@ PYTHONPATH="python/src" lazydocs \
 # Make the lazydocs output MDX-safe for Fern (Fern parses .md as MDX):
 #  - drop source badges (relative links don't resolve on the site)
 #  - strip HTML comments (<!-- ... -->), which are invalid in MDX
+#  - remove trailing whitespace emitted by lazydocs
 perl -ni -e 'print unless m{img\.shields\.io/badge/-source}' "$out"/*.md
 perl -0pi -e 's/<!--.*?-->//gs' "$out"/*.md
+perl -pi -e 's/[ \t]+$//' "$out"/*.md
 
 # Drop the mkdocs-specific .pages file lazydocs emits; Fern does not use it.
 rm -f "$out"/.pages

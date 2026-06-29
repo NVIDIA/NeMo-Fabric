@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct ProfileConfig &#123;\n    pub schema_version: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub name: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub description: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-harnessconfig\">HarnessConfig</a>&gt;,\n    pub models: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-modelconfig\">ModelConfig</a>&gt;,\n    pub runtime: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-runtimeconfig\">RuntimeConfig</a>&gt;,\n    pub environment: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentconfig\">EnvironmentConfig</a>&gt;,\n    pub tools: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub skills: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-skillconfig\">SkillConfig</a>&gt;,\n    pub mcp: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-mcpconfig\">McpConfig</a>&gt;,\n    pub telemetry: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryconfig\">TelemetryConfig</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct ProfileConfig &#123;\n    pub schema_version: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub name: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub description: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub overlay: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
 Profile config applied on top of a Fabric config.
 
@@ -27,37 +27,9 @@ Optional profile name used for directory discovery.
 
 Optional profile description.
 
-### `harness: Option<HarnessConfig>`
+### `overlay: BTreeMap<String, Value>`
 
-Harness overrides.
-
-### `models: BTreeMap<String, ModelConfig>`
-
-Model aliases to add or replace.
-
-### `runtime: Option<RuntimeConfig>`
-
-Runtime override.
-
-### `environment: Option<EnvironmentConfig>`
-
-Environment override.
-
-### `tools: Option<Value>`
-
-Tool capability override.
-
-### `skills: Option<SkillConfig>`
-
-Skill capability override.
-
-### `mcp: Option<McpConfig>`
-
-MCP capability override.
-
-### `telemetry: Option<TelemetryConfig>`
-
-Telemetry override.
+Raw config fields recursively merged over the base config.
 
 ## Trait Implementations
 
@@ -105,10 +77,6 @@ Telemetry override.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_name() -&gt; <a href=\"https://doc.rust-lang.org/1.93.0/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.93.0/std/primitive.str.html\">str</a>&gt;"}} /></pre>
 
-#### `schema_id`
-
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_id() -&gt; <a href=\"https://doc.rust-lang.org/1.93.0/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.93.0/std/primitive.str.html\">str</a>&gt;"}} /></pre>
-
 #### `json_schema`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn json_schema(generator: &amp;mut SchemaGenerator) -&gt; Schema"}} /></pre>
@@ -116,6 +84,10 @@ Telemetry override.
 #### `inline_schema`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn inline_schema() -&gt; <a href=\"https://doc.rust-lang.org/1.93.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+#### `schema_id`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_id() -&gt; <a href=\"https://doc.rust-lang.org/1.93.0/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.93.0/std/primitive.str.html\">str</a>&gt;"}} /></pre>
 
 ### `impl PartialEq for ProfileConfig`
 

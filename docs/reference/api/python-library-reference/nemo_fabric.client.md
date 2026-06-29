@@ -2,45 +2,7 @@
 
 
 # <kbd>module</kbd> `nemo_fabric.client`
-Python client for NeMo Fabric. 
-
-The SDK uses the native Rust binding when the package is installed with maturin. It falls back to the Fabric CLI when the native extension is not available or when a CLI command is configured explicitly. 
-
-
-
----
-
-
-## <kbd>class</kbd> `FabricCliError`
-Raised when the Fabric CLI exits unsuccessfully. 
-
-
-### <kbd>method</kbd> `__init__`
-
-```python
-__init__(
-    command: 'Sequence[str]',
-    returncode: 'int',
-    stdout: 'str',
-    stderr: 'str'
-) → None
-```
-
-
-
-
-
-
-
-
-
----
-
-
-## <kbd>class</kbd> `FabricNativeUnavailableError`
-Raised when a typed-config SDK method needs the native extension. 
-
-
+Native Python client for resolving and running NeMo Fabric agents.
 
 
 
@@ -48,32 +10,15 @@ Raised when a typed-config SDK method needs the native extension.
 
 
 ## <kbd>class</kbd> `FabricClient`
-Primary Python entrypoint for NeMo Fabric. 
+Primary Python entrypoint for NeMo Fabric.
 
-Resolve an agent's configuration, plan it, diagnose it, and run it through a harness, returning normalized results -- without importing harness-specific code. Every method accepts either an agent-package directory (``agent.yaml`` plus ``profiles/``) or, via the ``*_config`` methods, an in-memory typed config, so a consumer can build the Fabric slice from its own job/deployment config without materializing an agent directory. 
+The client accepts either a path-backed agent package or a typed ``FabricConfig``. Path-backed sources select profiles by name; typed sources accept ordered ``FabricProfileConfig`` values and may use ``base_dir`` to resolve relative paths. All inspection and execution APIs return typed, read-only mapping models.
 
-The client uses the native Rust binding when installed and otherwise falls back to the ``fabric`` CLI; pass ``command`` to force a specific CLI invocation. See the Getting Started overview for a runnable quickstart. 
+``FabricClient`` is native-only. The ``fabric`` CLI is a separate public surface over the same Rust core; SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
+The client is also an asynchronous context manager. Leaving the context does not stop independently created sessions; use each ``Session`` as an asynchronous context manager or call ``Session.stop()`` explicitly.
 
-
-**Attributes:**
- 
- - <b>`command`</b>:  Explicit CLI command to use instead of the native binding,  e.g. ``("cargo", "run", "-q", "-p", "fabric-cli", "--")``. 
- - <b>`cwd`</b>:  Working directory for CLI invocations. 
-
-
-### <kbd>method</kbd> `__init__`
-
-```python
-__init__(
-    command: 'tuple[str, ] | None' = None,
-    cwd: 'Path | None' = None
-) → None
-```
-
-
-
-
+See the Getting Started overview for runnable one-shot, typed-config, and multi-turn examples.
 
 
 
@@ -85,89 +30,35 @@ __init__(
 
 ```python
 doctor(
-    path: 'str | Path',
-    profile: 'str | Sequence[str] | None' = None
-) → dict[str, Any]
+    agent: 'AgentSource',
+    profiles: 'PathProfiles | Sequence[FabricProfileConfig] | None' = None,
+    base_dir: 'PathSource | None' = None
+) → DoctorReport
 ```
 
-Diagnose a run plan without installing or running the harness. 
+Diagnose a planned agent without starting its runtime.
 
-Checks adapter availability, capability mappings, and requirements. 
+Doctor checks the resolved adapter, capability mappings, and declared environment requirements. Blocking native work runs off the event loop.
 
 
 
 **Args:**
- 
- - <b>`path`</b>:  Agent package directory or config file. 
- - <b>`profile`</b>:  A profile name or an ordered sequence of profile names. 
+
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
+ - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
 
 
 
 **Returns:**
- 
- - <b>`A diagnostics report dict (e.g. ``{"checks"`</b>:  [...]}``). 
-
----
-
-
-### <kbd>method</kbd> `doctor_config`
-
-```python
-doctor_config(
-    config: 'Mapping[str, Any] | Any',
-    profile_configs: 'Sequence[Mapping[str, Any] | Any] | None' = None,
-    base_dir: 'str | Path | None' = None
-) → dict[str, Any]
-```
-
-Diagnose an in-memory typed config without running the harness. 
-
-Requires the native binding. 
-
-
-
-**Args:**
- 
- - <b>`config`</b>:  A mapping or Pydantic-like object describing the agent config. 
- - <b>`profile_configs`</b>:  Ordered profile-config overrides applied in order. 
- - <b>`base_dir`</b>:  Directory used to resolve relative paths the config references. 
-
-
-
-**Returns:**
- A diagnostics report dict. 
+ A ``DoctorReport`` with aggregate status and ordered checks.
 
 
 
 **Raises:**
- 
- - <b>`FabricNativeUnavailableError`</b>:  If the native binding is not installed. 
 
----
-
-
-### <kbd>method</kbd> `inspect`
-
-```python
-inspect(
-    path: 'str | Path',
-    profile: 'str | Sequence[str] | None' = None
-) → dict[str, Any]
-```
-
-Resolve and return the effective config after applying profiles. 
-
-
-
-**Args:**
- 
- - <b>`path`</b>:  Agent package directory or config file. 
- - <b>`profile`</b>:  A profile name or an ordered sequence of profile names. 
-
-
-
-**Returns:**
- The effective config as a dict (``effective-config`` schema). 
+ - <b>`FabricConfigError`</b>:  If inputs or native diagnostic output are  invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
 
 ---
 
@@ -176,62 +67,72 @@ Resolve and return the effective config after applying profiles.
 
 ```python
 plan(
-    path: 'str | Path',
-    profile: 'str | Sequence[str] | None' = None
-) → dict[str, Any]
+    agent: 'AgentSource',
+    profiles: 'PathProfiles | Sequence[FabricProfileConfig] | None' = None,
+    base_dir: 'PathSource | None' = None
+) → RunPlan
 ```
 
-Resolve an agent and profiles into an executable run plan. 
+Resolve an agent source into an immutable execution plan.
 
-Does not run the harness. 
+Planning applies profiles, resolves the selected adapter, and reports the runtime capabilities that gate session, service, streaming, update, cancellation, and concurrency APIs. It does not start the runtime.
 
 
 
 **Args:**
- 
- - <b>`path`</b>:  Agent package directory or config file. 
- - <b>`profile`</b>:  A profile name or an ordered sequence of profile names. 
+
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``. Raw mappings are not accepted.
+ - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
 
 
 
 **Returns:**
- A run plan dict (``run-plan`` schema). 
-
----
-
-
-### <kbd>method</kbd> `plan_config`
-
-```python
-plan_config(
-    config: 'Mapping[str, Any] | Any',
-    profile_configs: 'Sequence[Mapping[str, Any] | Any] | None' = None,
-    base_dir: 'str | Path | None' = None
-) → dict[str, Any]
-```
-
-Resolve an in-memory typed config into a run plan. 
-
-The typed-config path lets a consumer build the Fabric slice in code, with no agent directory on disk. Requires the native binding. 
-
-
-
-**Args:**
- 
- - <b>`config`</b>:  A mapping or Pydantic-like object (exposing ``model_dump()``  or ``dict()``) describing the agent config. 
- - <b>`profile_configs`</b>:  Ordered profile-config overrides applied in order. 
- - <b>`base_dir`</b>:  Directory used to resolve any relative paths the config  references (skills, repos); omit for self-contained configs. 
-
-
-
-**Returns:**
- A run plan dict (``run-plan`` schema). 
+ A ``RunPlan`` containing the effective config, adapter, and declared runtime capabilities.
 
 
 
 **Raises:**
- 
- - <b>`FabricNativeUnavailableError`</b>:  If the native binding is not installed. 
+
+ - <b>`FabricConfigError`</b>:  If the source, profile stack, config, or adapter  resolution is invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
+
+---
+
+
+### <kbd>method</kbd> `resolve`
+
+```python
+resolve(
+    agent: 'AgentSource',
+    profiles: 'PathProfiles | Sequence[FabricProfileConfig] | None' = None,
+    base_dir: 'PathSource | None' = None
+) → EffectiveConfig
+```
+
+Resolve an agent source and its ordered profile overlays.
+
+Resolution validates and normalizes configuration but does not resolve an adapter or compute runtime capabilities. Use ``plan()`` when those execution details are required.
+
+
+
+**Args:**
+
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``. Raw mappings are not accepted; convert  them with ``FabricConfig.from_mapping()``.
+ - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+
+
+
+**Returns:**
+ The normalized ``EffectiveConfig`` snapshot.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If the source, profile stack, or resolved config  is invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
 
 ---
 
@@ -240,106 +141,130 @@ The typed-config path lets a consumer build the Fabric slice in code, with no ag
 
 ```python
 run(
-    path: 'str | Path',
-    profile: 'str | Sequence[str] | None' = None,
-    input_text: 'str' = '',
+    agent: 'AgentSource',
+    profiles: 'PathProfiles | Sequence[FabricProfileConfig] | None' = None,
+    base_dir: 'PathSource | None' = None,
+    input: 'Any' = None,
     input_file: 'str | Path | None' = None,
-    request: 'dict[str, Any] | None' = None,
-    request_file: 'str | Path | None' = None
-) → dict[str, Any]
+    request: 'RunRequest | Mapping[str, Any] | None' = None,
+    request_file: 'str | Path | None' = None,
+    request_id: 'str | None' = None,
+    context: 'Mapping[str, Any] | None' = None,
+    overrides: 'Mapping[str, Any] | None' = None
+) → RunResult
 ```
 
-Run an agent/profile through the selected adapter. 
+Execute one complete start, invoke, and stop lifecycle.
 
-The per-invocation request is shaped by the ``run-request`` schema; supply it through ``input_text``, ``input_file``, a ``request`` dict, or ``request_file`` (in increasing precedence). 
+Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_file`` may be supplied. Omitting all four produces an empty text input. A complete ``request`` or ``request_file`` cannot be mixed with separate ``request_id``, ``context``, or ``overrides`` fields. Blocking native lifecycle calls run off the event loop, and Fabric attempts to stop a started runtime even when invocation fails.
 
 
 
 **Args:**
- 
- - <b>`path`</b>:  Agent package directory or config file. 
- - <b>`profile`</b>:  A profile name or an ordered sequence of profile names. 
- - <b>`input_text`</b>:  Text input for the harness. 
- - <b>`input_file`</b>:  Path to a file whose contents are used as the input. 
- - <b>`request`</b>:  A full request dict (``run-request`` schema). 
- - <b>`request_file`</b>:  Path to a JSON file containing the request. 
+
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
+ - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+ - <b>`input`</b>:  JSON-compatible invocation input.
+ - <b>`input_file`</b>:  UTF-8 file whose contents become the invocation input.
+ - <b>`request`</b>:  Complete ``RunRequest`` or compatible mapping.
+ - <b>`request_file`</b>:  UTF-8 JSON file containing a complete request.
+ - <b>`request_id`</b>:  Caller-owned request identifier. Fabric generates one  when omitted.
+ - <b>`context`</b>:  Caller-owned, JSON-compatible request metadata.
+ - <b>`overrides`</b>:  JSON-compatible invocation-scoped config overrides.
 
 
 
 **Returns:**
- A normalized result dict (``run-result`` schema). 
-
----
-
-
-### <kbd>method</kbd> `run_config`
-
-```python
-run_config(
-    config: 'Mapping[str, Any] | Any',
-    profile_configs: 'Sequence[Mapping[str, Any] | Any] | None' = None,
-    base_dir: 'str | Path | None' = None,
-    input_text: 'str' = '',
-    input_file: 'str | Path | None' = None,
-    request: 'dict[str, Any] | None' = None,
-    request_file: 'str | Path | None' = None
-) → dict[str, Any]
-```
-
-Run an in-memory typed config through the selected adapter. 
-
-The typed-config path for consumers that build the Fabric slice in code with no agent directory. Requires the native binding. 
-
-
-
-**Args:**
- 
- - <b>`config`</b>:  A mapping or Pydantic-like object describing the agent config. 
- - <b>`profile_configs`</b>:  Ordered profile-config overrides applied in order. 
- - <b>`base_dir`</b>:  Directory used to resolve relative paths the config references. 
- - <b>`input_text`</b>:  Text input for the harness. 
- - <b>`input_file`</b>:  Path to a file whose contents are used as the input. 
- - <b>`request`</b>:  A full request dict (``run-request`` schema). 
- - <b>`request_file`</b>:  Path to a JSON file containing the request. 
-
-
-
-**Returns:**
- A normalized result dict (``run-result`` schema). 
+ The normalized ``RunResult``, including output, artifacts, telemetry references, lifecycle events, and structured error data.
 
 
 
 **Raises:**
- 
- - <b>`FabricNativeUnavailableError`</b>:  If the native binding is not installed. 
+
+ - <b>`FabricConfigError`</b>:  If sources are combined, request data is not  JSON-compatible, or config resolution fails.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
+ - <b>`FabricRuntimeError`</b>:  If the native runtime lifecycle fails before a  normalized result can be returned.
 
 ---
 
 
-### <kbd>method</kbd> `validate`
+### <kbd>method</kbd> `start_service`
 
 ```python
-validate(path: 'str | Path') → str
+start_service(
+    agent: 'AgentSource',
+    profiles: 'PathProfiles | Sequence[FabricProfileConfig] | None' = None,
+    base_dir: 'PathSource | None' = None,
+    service_id: 'str | None' = None,
+    overrides: 'Mapping[str, Any] | None' = None
+) → Any
 ```
 
-Validate an agent directory or config file. 
+Validate a service request and report the unsupported operation.
+
+Service handles are part of the reserved SDK contract, but the current Fabric runtime does not implement service creation. This method validates inputs and resolves the plan before raising ``FabricCapabilityError`` with code ``service_not_supported``.
 
 
 
 **Args:**
- 
- - <b>`path`</b>:  Agent package directory or config file. 
 
-
-
-**Returns:**
- A human-readable validation status message. 
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
+ - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+ - <b>`service_id`</b>:  Reserved caller-owned service identifier.
+ - <b>`overrides`</b>:  JSON-compatible service-scoped config overrides.
 
 
 
 **Raises:**
- 
- - <b>`FabricCliError`</b>:  If validation fails (CLI backend). 
+
+ - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
+ - <b>`FabricCapabilityError`</b>:  Always, because service creation is not yet  implemented.
+
+---
+
+
+### <kbd>method</kbd> `start_session`
+
+```python
+start_session(
+    agent: 'AgentSource',
+    profiles: 'PathProfiles | Sequence[FabricProfileConfig] | None' = None,
+    base_dir: 'PathSource | None' = None,
+    session_id: 'str | None' = None,
+    overrides: 'Mapping[str, Any] | None' = None
+) → Session
+```
+
+Start a stateful, multi-turn session runtime.
+
+The resolved plan must declare the session capability. Each call starts a new runtime. ``session_id`` is the stable conversation identifier; if omitted, the new runtime identifier is used. Session-scoped overrides are recursively merged below invocation-scoped overrides.
+
+
+
+**Args:**
+
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
+ - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+ - <b>`session_id`</b>:  Stable caller-owned conversation identifier. Defaults  to the generated runtime identifier.
+ - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the session unless superseded by invocation overrides.
+
+
+
+**Returns:**
+ An active ``Session``. Use it as an asynchronous context manager to guarantee runtime shutdown.
+
+
+
+**Raises:**
+
+ - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid.
+ - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
+ - <b>`FabricCapabilityError`</b>:  If the resolved runtime does not support  sessions.
+ - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 
 
 

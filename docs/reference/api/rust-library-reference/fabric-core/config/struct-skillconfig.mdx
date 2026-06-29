@@ -2,14 +2,14 @@
 title: "Struct Skill Config"
 sidebar-title: "SkillConfig"
 description: "Skill capability configuration."
-position: 28
+position: 29
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct SkillConfig &#123;\n    pub paths: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct SkillConfig &#123;\n    pub paths: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
 Skill capability configuration.
 
@@ -18,6 +18,10 @@ Skill capability configuration.
 ### `paths: Vec<PathBuf>`
 
 Skill paths relative to the agent root.
+
+### `extensions: BTreeMap<String, Value>`
+
+Additive skill fields.
 
 ## Trait Implementations
 

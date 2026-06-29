@@ -4,13 +4,11 @@
 
 ## Modules
 
-- [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Python client for NeMo Fabric.
+- [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NeMo Fabric agents.
 
 ## Classes
 
-- [`client.FabricCliError`](./nemo_fabric.client.md#class-fabricclierror): Raised when the Fabric CLI exits unsuccessfully.
 - [`client.FabricClient`](./nemo_fabric.client.md#class-fabricclient): Primary Python entrypoint for NeMo Fabric.
-- [`client.FabricNativeUnavailableError`](./nemo_fabric.client.md#class-fabricnativeunavailableerror): Raised when a typed-config SDK method needs the native extension.
 
 ## Functions
 

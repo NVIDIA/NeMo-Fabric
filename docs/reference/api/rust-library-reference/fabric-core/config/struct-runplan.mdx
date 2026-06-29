@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RunPlan &#123;Show 13 fields\n    pub effective_config: <a href=\"struct-effectiveconfig\">EffectiveConfig</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub profile: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub profiles: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub adapter_descriptor: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-resolvedadapterdescriptor\">ResolvedAdapterDescriptor</a>&gt;,\n    pub resolution: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-resolutionstrategy\">ResolutionStrategy</a>&gt;,\n    pub environment_plan: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentplan\">EnvironmentPlan</a>&gt;,\n    pub capability_plan: <a href=\"struct-capabilityplan\">CapabilityPlan</a>,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryplan\">TelemetryPlan</a>&gt;,\n    pub agent_root: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_path: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_root: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RunPlan &#123;Show 13 fields\n    pub effective_config: <a href=\"struct-effectiveconfig\">EffectiveConfig</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>,\n    pub profiles: <a href=\"https://doc.rust-lang.org/1.93.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.93.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub adapter_descriptor: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-resolvedadapterdescriptor\">ResolvedAdapterDescriptor</a>&gt;,\n    pub resolution: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-resolutionstrategy\">ResolutionStrategy</a>&gt;,\n    pub environment_plan: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentplan\">EnvironmentPlan</a>&gt;,\n    pub capability_plan: <a href=\"struct-capabilityplan\">CapabilityPlan</a>,\n    pub capabilities: <a href=\"struct-runtimecapabilities\">RuntimeCapabilities</a>,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.93.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryplan\">TelemetryPlan</a>&gt;,\n    pub agent_root: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_path: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_root: <a href=\"https://doc.rust-lang.org/1.93.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n&#125;"}} /></pre>
 
 Resolved Fabric run plan.
 
@@ -22,10 +22,6 @@ Merged config and provenance used as the base for this plan.
 ### `agent_name: String`
 
 Stable agent name.
-
-### `profile: Option<String>`
-
-Selected profile when exactly one profile is applied.
 
 ### `profiles: Vec<String>`
 
@@ -46,6 +42,10 @@ Resolved environment plan.
 ### `capability_plan: CapabilityPlan`
 
 Resolved capability configuration.
+
+### `capabilities: RuntimeCapabilities`
+
+Lifecycle behavior implemented by the selected runtime path.
 
 ### `telemetry_plan: Option<TelemetryPlan>`
 
