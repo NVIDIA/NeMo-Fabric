@@ -66,8 +66,10 @@ class BaseTestHermesE2E:
         assert self.result["status"] == "succeeded"
         assert self.result["adapter_kind"] == self.adapter_kind
         assert self.result["metadata"]["adapter_runner"] == self.adapter_runner
-        assert self.result["telemetry"]["relay_enabled"] is True
-        assert self.result["telemetry"]["metadata"]["relay_mode"] == "sdk"
+        assert len(self.result.telemetry) == 1
+        assert self.result.telemetry[0].provider == "relay"
+        assert self.result.telemetry[0].metadata["relay_enabled"] is True
+        assert self.result.telemetry[0].metadata["relay_mode"] == "sdk"
 
         output = self.output
         assert output["adapter"] == self.output_adapter
@@ -116,7 +118,7 @@ class BaseTestHermesE2E:
         relay_config = json.loads(relay_config_path.read_text(encoding="utf-8"))
         assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
         assert relay_config["relay"]["enabled"] is True
-        assert relay_config["fabric"]["profile"] == self.profile_name
+        assert relay_config["fabric"]["profiles"] == [self.profile_name]
         
         await self._additional_artifact_tests(artifact_by_name)
 
