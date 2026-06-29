@@ -122,6 +122,8 @@ class _ConfigMapping(dict[str, Any]):
 
     @property
     def extra_fields(self) -> dict[str, Any]:
+        """Return preserved schema-extension fields as a deep copy."""
+
         return {
             key: _plain(value)
             for key, value in self.items()
@@ -129,6 +131,8 @@ class _ConfigMapping(dict[str, Any]):
         }
 
     def to_mapping(self) -> dict[str, Any]:
+        """Return a detached, JSON-compatible mapping for serialization."""
+
         data = _plain(dict(self))
         for key in self._omit_if_empty:
             if data.get(key) in ({}, []):
@@ -137,7 +141,13 @@ class _ConfigMapping(dict[str, Any]):
 
 
 class MetadataConfig(_ConfigMapping):
-    """Agent identity and human-readable metadata."""
+    """Agent identity and human-readable metadata.
+
+    Attributes:
+        name: Stable, non-empty agent name.
+        description: Optional human-readable description.
+        extra_fields: Preserved extension fields not recognized by this SDK.
+    """
 
     _fields = frozenset({"name", "description"})
 
@@ -155,6 +165,8 @@ class MetadataConfig(_ConfigMapping):
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "MetadataConfig":
+        """Validate a metadata mapping and preserve unknown extension fields."""
+
         data = _mapping(value, "metadata")
         return cls(
             name=data.get("name"),
@@ -164,7 +176,14 @@ class MetadataConfig(_ConfigMapping):
 
 
 class HarnessConfig(_ConfigMapping):
-    """Harness adapter selection and adapter-owned settings."""
+    """Harness adapter selection and adapter-owned settings.
+
+    Attributes:
+        adapter_id: Stable identifier of the Fabric adapter to resolve.
+        resolution: Optional adapter resolution strategy.
+        settings: JSON-compatible settings owned by the selected adapter.
+        extra_fields: Preserved extension fields not recognized by this SDK.
+    """
 
     _fields = frozenset({"adapter_id", "resolution", "settings"})
     _omit_if_empty = frozenset({"settings"})
@@ -190,6 +209,8 @@ class HarnessConfig(_ConfigMapping):
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "HarnessConfig":
+        """Validate a harness mapping and preserve unknown extension fields."""
+
         data = _mapping(value, "harness")
         return cls(
             adapter_id=data.get("adapter_id"),
@@ -200,7 +221,16 @@ class HarnessConfig(_ConfigMapping):
 
 
 class RuntimeConfig(_ConfigMapping):
-    """Runtime lifecycle mode and input/output contract."""
+    """Runtime lifecycle mode and input/output contract.
+
+    Attributes:
+        mode: Lifecycle mode: ``oneshot``, ``session``, or ``service``.
+        transport: Optional adapter transport such as ``library`` or ``stdio``.
+        input_schema: Optional logical input contract identifier.
+        output_schema: Optional logical output contract identifier.
+        artifacts: Optional artifact-root path.
+        extra_fields: Preserved extension fields not recognized by this SDK.
+    """
 
     _fields = frozenset(
         {"mode", "transport", "input_schema", "output_schema", "artifacts"}
@@ -231,6 +261,8 @@ class RuntimeConfig(_ConfigMapping):
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "RuntimeConfig":
+        """Validate a runtime mapping and apply stable constructor defaults."""
+
         data = _mapping(value, "runtime")
         return cls(
             mode=data.get("mode", "oneshot"),
@@ -243,7 +275,16 @@ class RuntimeConfig(_ConfigMapping):
 
 
 class EnvironmentConfig(_ConfigMapping):
-    """Execution environment configuration."""
+    """Execution environment configuration.
+
+    Attributes:
+        provider: Environment provider identifier; defaults to ``local``.
+        workspace: Optional workspace path visible to the harness.
+        artifacts: Optional environment-specific artifact path.
+        settings: JSON-compatible provider settings.
+        metadata: JSON-compatible caller metadata.
+        extra_fields: Preserved extension fields not recognized by this SDK.
+    """
 
     _fields = frozenset(
         {"provider", "workspace", "artifacts", "settings", "metadata"}
@@ -279,6 +320,8 @@ class EnvironmentConfig(_ConfigMapping):
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "EnvironmentConfig":
+        """Validate an environment mapping and preserve extension fields."""
+
         data = _mapping(value, "environment")
         return cls(
             provider=data.get("provider", "local"),
@@ -291,7 +334,26 @@ class EnvironmentConfig(_ConfigMapping):
 
 
 class FabricConfig(_ConfigMapping):
-    """Mutable typed SDK object for a Fabric agent config."""
+    """Mutable typed representation of a Fabric agent configuration.
+
+    The object follows the same schema as ``agent.yaml``. It is mutable while
+    callers compose a job, then copied into immutable resolution and plan
+    snapshots. Unknown fields survive round trips through ``extra_fields``.
+
+    Attributes:
+        schema_version: Agent schema identifier.
+        metadata: Required ``MetadataConfig`` agent identity.
+        harness: Required ``HarnessConfig`` adapter selection.
+        runtime: Runtime lifecycle configuration; defaults to oneshot.
+        environment: Optional execution environment configuration.
+        models: Named, JSON-compatible model configurations.
+        mcp: Optional MCP configuration.
+        skills: Optional skill configuration.
+        telemetry: Optional telemetry configuration.
+        profiles: Optional profile-discovery configuration.
+        tools: Optional harness-neutral tool configuration.
+        extra_fields: Preserved extension fields not recognized by this SDK.
+    """
 
     _fields = frozenset(
         {
@@ -359,6 +421,8 @@ class FabricConfig(_ConfigMapping):
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "FabricConfig":
+        """Build a typed agent config from the ``agent.yaml`` mapping shape."""
+
         data = _mapping(value, "FabricConfig")
         if "metadata" not in data:
             raise FabricConfigError("FabricConfig metadata is required")
@@ -381,7 +445,26 @@ class FabricConfig(_ConfigMapping):
 
 
 class FabricProfileConfig(_ConfigMapping):
-    """Mutable typed SDK object for an in-memory Fabric profile."""
+    """Mutable, partial overlay applied to a typed ``FabricConfig``.
+
+    Profile sections recursively overlay the base config in caller order. A
+    profile may omit fields required by a complete agent config because Fabric
+    validates only after all overlays have been applied.
+
+    Attributes:
+        schema_version: Profile schema identifier.
+        name: Stable, non-empty profile name.
+        description: Optional human-readable description.
+        harness: Optional partial harness overlay.
+        runtime: Optional partial runtime overlay.
+        environment: Optional partial environment overlay.
+        models: Optional partial model overlay.
+        mcp: Optional partial MCP overlay.
+        skills: Optional partial skill overlay.
+        telemetry: Optional partial telemetry overlay.
+        tools: Optional tool overlay.
+        extra_fields: Preserved extension fields not recognized by this SDK.
+    """
 
     _fields = frozenset(
         {
@@ -445,6 +528,8 @@ class FabricProfileConfig(_ConfigMapping):
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "FabricProfileConfig":
+        """Build a typed, partial profile overlay from a mapping."""
+
         data = _mapping(value, "FabricProfileConfig")
         return cls(
             schema_version=data.get("schema_version", "fabric.profile/v1alpha1"),
@@ -499,7 +584,10 @@ def _snapshot_value(value: Any, *, json_value: bool) -> Any:
 
 
 class FabricMapping(Mapping[str, Any]):
-    """Immutable mapping-compatible base for SDK snapshots and results."""
+    """Immutable mapping-compatible base for SDK snapshots and results.
+
+    lazydocs: ignore
+    """
 
     _fields: frozenset[str] = frozenset()
     _json_fields: frozenset[str] = frozenset()
@@ -511,6 +599,8 @@ class FabricMapping(Mapping[str, Any]):
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, Any]) -> "FabricMapping":
+        """Validate and copy a mapping into the requested typed model."""
+
         return cls(mapping)
 
     @classmethod
@@ -540,6 +630,8 @@ class FabricMapping(Mapping[str, Any]):
 
     @property
     def extra_fields(self) -> Mapping[str, Any]:
+        """Return an immutable view of preserved extension fields."""
+
         return MappingProxyType(
             {
                 key: _thaw(value)
@@ -549,6 +641,8 @@ class FabricMapping(Mapping[str, Any]):
         )
 
     def to_mapping(self) -> dict[str, Any]:
+        """Return a detached, JSON-compatible mapping for serialization."""
+
         data = _thaw(self._data)
         for key in self._omit_if_empty:
             if data.get(key) in ({}, []):
@@ -556,10 +650,21 @@ class FabricMapping(Mapping[str, Any]):
         return data
 
     def to_dict(self) -> dict[str, Any]:
+        """Return the same detached representation as ``to_mapping()``."""
+
         return self.to_mapping()
 
 
 class AdapterInfo(FabricMapping):
+    """Resolved adapter identity attached to a run plan.
+
+    Attributes:
+        adapter_id: Stable identifier of the Fabric adapter implementation.
+        harness: Stable machine-readable harness identifier.
+        adapter_kind: Execution mechanism used by the adapter.
+        metadata: Adapter-specific, JSON-compatible metadata.
+    """
+
     adapter_id: str
     harness: str
     adapter_kind: str
@@ -577,6 +682,22 @@ class AdapterInfo(FabricMapping):
 
 
 class RuntimeCapabilities(FabricMapping):
+    """Operations declared by the resolved runtime and adapter.
+
+    Capabilities describe what the selected runtime can support; callers should
+    still expect a capability-specific error when a transport is modeled but
+    not implemented.
+
+    Attributes:
+        session: Whether stateful multi-turn sessions are supported.
+        service: Whether long-lived service handles are supported.
+        streaming: Whether event streaming is supported.
+        updates: Whether runtime configuration updates are supported.
+        cancellation: Whether in-flight cancellation is supported.
+        concurrent_invocations: Whether invocations may overlap safely.
+        metadata: Additional capability details.
+    """
+
     session: bool
     service: bool
     streaming: bool
@@ -607,6 +728,17 @@ class RuntimeCapabilities(FabricMapping):
 
 
 class EffectiveConfig(FabricMapping):
+    """Immutable result of config loading and ordered profile application.
+
+    Attributes:
+        agent_name: Resolved agent name.
+        profiles: Applied profile names in caller order.
+        agent_root: Root directory of the path-backed agent source.
+        config_path: Source config path, or ``None`` for typed configs.
+        config_root: Base directory used to resolve relative paths.
+        config: Fully resolved typed ``FabricConfig``.
+    """
+
     agent_name: str
     profiles: Sequence[str]
     agent_root: Path
@@ -630,6 +762,16 @@ class EffectiveConfig(FabricMapping):
 
 
 class RunPlan(FabricMapping):
+    """Immutable execution plan produced before a runtime is started.
+
+    Attributes:
+        effective_config: Resolved configuration snapshot.
+        agent_name: Resolved agent name.
+        profiles: Applied profile names in caller order.
+        adapter: Resolved adapter identity.
+        capabilities: Operations declared by the resolved runtime.
+    """
+
     effective_config: EffectiveConfig
     agent_name: str
     profiles: Sequence[str]
@@ -652,6 +794,15 @@ class RunPlan(FabricMapping):
 
 
 class DoctorCheck(FabricMapping):
+    """One diagnostic check in a ``DoctorReport``.
+
+    Attributes:
+        name: Stable check identifier.
+        status: Check outcome: ``pass``, ``warn``, or ``fail``.
+        message: Human-readable result.
+        metadata: Structured check details.
+    """
+
     name: str
     status: str
     message: str
@@ -666,6 +817,15 @@ class DoctorCheck(FabricMapping):
 
 
 class DoctorReport(FabricMapping):
+    """Aggregate preflight diagnostics for a resolved run plan.
+
+    Attributes:
+        agent_name: Resolved agent name.
+        profiles: Applied profile names in caller order.
+        status: Aggregate outcome: ``pass``, ``warn``, or ``fail``.
+        checks: Ordered ``DoctorCheck`` results.
+    """
+
     agent_name: str
     profiles: Sequence[str]
     status: str
@@ -682,6 +842,20 @@ class DoctorReport(FabricMapping):
 
 
 class RunRequest(FabricMapping):
+    """One normalized invocation request.
+
+    ``input`` and all mapping fields must be JSON-compatible. Fabric generates
+    a request identifier when callers omit one and preserves unknown mapping
+    fields for forward compatibility.
+
+    Attributes:
+        input: Harness input; defaults to an empty string.
+        request_id: Caller-provided or generated request identifier.
+        context: Caller-owned metadata propagated with the invocation.
+        overrides: Optional invocation-scoped config overrides.
+        extra_fields: Preserved extension fields not recognized by this SDK.
+    """
+
     input: Any
     request_id: str
     context: Mapping[str, Any]
@@ -733,6 +907,16 @@ class RunRequest(FabricMapping):
 
 
 class ErrorInfo(FabricMapping):
+    """Structured failure returned inside a normalized ``RunResult``.
+
+    Attributes:
+        stage: Lifecycle stage that failed.
+        code: Stable machine-readable error code.
+        message: Human-readable failure description.
+        retryable: Whether retrying may succeed without changing the request.
+        metadata: Adapter- or runtime-specific details.
+    """
+
     stage: str
     code: str
     message: str
@@ -748,6 +932,16 @@ class ErrorInfo(FabricMapping):
 
 
 class ArtifactRef(FabricMapping):
+    """Reference to one artifact produced by a run.
+
+    Attributes:
+        name: Stable artifact name.
+        kind: Artifact category.
+        path: Artifact path under the manifest root or workspace.
+        media_type: Optional MIME type.
+        metadata: Artifact-specific details.
+    """
+
     name: str
     kind: str
     path: Path
@@ -764,6 +958,13 @@ class ArtifactRef(FabricMapping):
 
 
 class ArtifactManifest(FabricMapping):
+    """Normalized collection of artifacts produced by a run.
+
+    Attributes:
+        root: Optional common artifact root.
+        artifacts: Ordered ``ArtifactRef`` entries.
+    """
+
     root: Path | None
     artifacts: Sequence[ArtifactRef]
     _fields = frozenset({"root", "artifacts"})
@@ -778,6 +979,16 @@ class ArtifactManifest(FabricMapping):
 
 
 class TelemetryRef(FabricMapping):
+    """Reference to external or persisted telemetry for a run.
+
+    Attributes:
+        provider: Telemetry provider, such as Relay.
+        kind: Reference kind, such as ``trace``.
+        uri: Optional location of persisted telemetry.
+        trace_id: Optional provider trace identifier.
+        metadata: Provider-specific details.
+    """
+
     provider: str
     kind: str
     uri: str | None
@@ -806,6 +1017,16 @@ class TelemetryRef(FabricMapping):
 
 
 class FabricEvent(FabricMapping):
+    """One normalized lifecycle or invocation event.
+
+    Attributes:
+        event_id: Stable event identifier.
+        timestamp_millis: Event time as Unix epoch milliseconds.
+        kind: Machine-readable event kind.
+        message: Human-readable event description.
+        metadata: Event-specific structured details.
+    """
+
     event_id: str
     timestamp_millis: int
     kind: str
@@ -821,6 +1042,22 @@ class FabricEvent(FabricMapping):
 
 
 class RuntimeHandle(FabricMapping):
+    """Opaque identity and binding for one started runtime.
+
+    Applications should treat ``runtime_binding`` as opaque. Fabric validates
+    the handle against the run plan before invocation or shutdown.
+
+    Attributes:
+        runtime_id: Unique identifier for this runtime lifecycle.
+        runtime_binding: Opaque integrity-bound runtime binding.
+        agent_name: Resolved agent name.
+        harness: Stable harness identifier.
+        mode: Runtime lifecycle mode.
+        adapter_kind: Adapter execution mechanism.
+        adapter_id: Optional Fabric adapter identifier.
+        environment: Prepared environment snapshot.
+    """
+
     runtime_id: str
     runtime_binding: str
     agent_name: str
@@ -861,6 +1098,30 @@ class RuntimeHandle(FabricMapping):
 
 
 class RunResult(FabricMapping):
+    """Normalized terminal result from one Fabric invocation.
+
+    The model is both attribute-accessible and mapping-compatible. A harness
+    failure can be represented by ``status`` and ``error`` without raising when
+    the adapter successfully returns a normalized result.
+
+    Attributes:
+        agent_name: Resolved agent name.
+        profiles: Applied profile names.
+        harness: Stable harness identifier.
+        adapter_kind: Adapter execution mechanism.
+        adapter_id: Fabric adapter identifier.
+        runtime_id: Runtime lifecycle identifier.
+        invocation_id: Identifier for this invocation.
+        request_id: Correlated request identifier.
+        status: Terminal invocation status.
+        output: JSON-compatible harness output.
+        error: Structured failure, or ``None`` on success.
+        artifacts: Normalized artifact manifest.
+        telemetry: Ordered telemetry references.
+        events: Ordered lifecycle and invocation events.
+        metadata: Result-specific structured details.
+    """
+
     agent_name: str
     profiles: Sequence[str]
     harness: str
@@ -933,6 +1194,20 @@ class RunResult(FabricMapping):
 
 
 class SessionInfo(FabricMapping):
+    """Read-only metadata snapshot for an active or stopped session.
+
+    Attributes:
+        session_id: Stable conversation identifier.
+        runtime_id: Runtime lifecycle identifier.
+        agent_name: Resolved agent name.
+        profiles: Applied profile names.
+        harness: Stable harness identifier.
+        adapter_id: Fabric adapter identifier.
+        adapter_kind: Adapter execution mechanism.
+        status: Current session lifecycle state.
+        capabilities: Operations declared by the runtime.
+    """
+
     session_id: str
     runtime_id: str
     agent_name: str
@@ -964,6 +1239,13 @@ class SessionInfo(FabricMapping):
 
 
 class RuntimeUpdate(FabricMapping):
+    """Capability-gated update requested for a running session.
+
+    Attributes:
+        overrides: Config overrides to apply to the runtime.
+        metadata: Caller-owned update metadata.
+    """
+
     overrides: Mapping[str, Any]
     metadata: Mapping[str, Any]
     _fields = frozenset({"overrides", "metadata"})
@@ -971,6 +1253,15 @@ class RuntimeUpdate(FabricMapping):
 
 
 class RuntimeUpdateResult(FabricMapping):
+    """Normalized outcome of a runtime update request.
+
+    Attributes:
+        status: Terminal update status.
+        applied: Overrides accepted by the runtime.
+        rejected: Overrides rejected by the runtime.
+        reason: Optional explanation for partial or complete rejection.
+    """
+
     status: str
     applied: Mapping[str, Any]
     rejected: Mapping[str, Any]

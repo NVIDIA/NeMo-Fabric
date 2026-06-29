@@ -21,7 +21,10 @@ mkdir -p "$out"
 PYTHONPATH="python/src" lazydocs \
   --output-path "$out" \
   --overview-file "index.md" \
-  "nemo_fabric.client"
+  "nemo_fabric.client" \
+  "nemo_fabric.session" \
+  "nemo_fabric.types" \
+  "nemo_fabric.errors"
 
 # Make the lazydocs output MDX-safe for Fern (Fern parses .md as MDX):
 #  - drop source badges (relative links don't resolve on the site)
@@ -29,7 +32,52 @@ PYTHONPATH="python/src" lazydocs \
 #  - remove trailing whitespace emitted by lazydocs
 perl -ni -e 'print unless m{img\.shields\.io/badge/-source}' "$out"/*.md
 perl -0pi -e 's/<!--.*?-->//gs' "$out"/*.md
+perl -pi -e 's/<object object at 0x[0-9A-Fa-f]+>/.../g' "$out"/*.md
 perl -pi -e 's/[ \t]+$//' "$out"/*.md
+perl -0pi -e 's/\A\s+//' "$out"/*.md
+
+add_frontmatter() {
+  local file="$1"
+  local title="$2"
+  local description="$3"
+  local slug="$4"
+  local temporary="${file}.tmp"
+
+  {
+    printf -- '---\ntitle: "%s"\nslug: "%s"\ndescription: "%s"\n---\n' \
+      "$title" "$slug" "$description"
+    printf '%s\n' '{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.'
+    printf '%s\n\n' 'SPDX-License-Identifier: Apache-2.0 */}'
+    command cat "$file"
+  } > "$temporary"
+  mv "$temporary" "$file"
+}
+
+add_frontmatter \
+  "$out/index.md" \
+  "Python SDK Reference" \
+  "Complete reference for the public NeMo Fabric Python SDK." \
+  "/reference/api/python-library-reference"
+add_frontmatter \
+  "$out/nemo_fabric.client.md" \
+  "Client" \
+  "Resolve, plan, diagnose, and run agents with FabricClient." \
+  "/reference/api/python-library-reference/client"
+add_frontmatter \
+  "$out/nemo_fabric.session.md" \
+  "Sessions" \
+  "Drive stateful multi-turn runtimes through the Session API." \
+  "/reference/api/python-library-reference/sessions"
+add_frontmatter \
+  "$out/nemo_fabric.types.md" \
+  "Types" \
+  "Typed config, request, plan, result, artifact, telemetry, and runtime contracts." \
+  "/reference/api/python-library-reference/types"
+add_frontmatter \
+  "$out/nemo_fabric.errors.md" \
+  "Errors" \
+  "Structured exception hierarchy for config, capability, state, and runtime failures." \
+  "/reference/api/python-library-reference/errors"
 
 # Drop the mkdocs-specific .pages file lazydocs emits; Fern does not use it.
 rm -f "$out"/.pages

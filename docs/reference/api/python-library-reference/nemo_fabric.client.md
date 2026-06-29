@@ -1,5 +1,10 @@
-
-
+---
+title: "Client"
+slug: "/reference/api/python-library-reference/client"
+description: "Resolve, plan, diagnose, and run agents with FabricClient."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
 
 # <kbd>module</kbd> `nemo_fabric.client`
 Native Python client for resolving and running NeMo Fabric agents.
