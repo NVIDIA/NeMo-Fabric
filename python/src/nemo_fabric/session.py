@@ -143,17 +143,24 @@ class Session:
                 payload["overrides"] = merged
             else:
                 payload.pop("overrides", None)
-            native = self._client._require_native_module("invoke")
-            result = await _call_blocking(
-                lambda: json.loads(
-                    native.invoke_runtime(
-                        json.dumps(self._plan.to_mapping()),
-                        json.dumps(self._runtime.to_mapping()),
-                        json.dumps(payload),
+            try:
+                native = self._client._require_native_module("invoke")
+                result = await _call_blocking(
+                    lambda: json.loads(
+                        native.invoke_runtime(
+                            json.dumps(self._plan.to_mapping()),
+                            json.dumps(self._runtime.to_mapping()),
+                            json.dumps(payload),
+                        )
                     )
                 )
-            )
-            typed_result = RunResult.from_mapping(result)
+                typed_result = RunResult.from_mapping(result)
+            except FabricError:
+                self._status = SessionStatus.FAILED
+                raise
+            except Exception as error:
+                self._status = SessionStatus.FAILED
+                raise FabricRuntimeError(str(error), stage="invoke") from error
             self._absorb(typed_result)
             return typed_result
         except FabricError:
@@ -261,13 +268,14 @@ class Session:
         output = result.output
         messages = output.get("messages") if isinstance(output, Mapping) else None
         if isinstance(messages, Sequence) and not isinstance(messages, (str, bytes)):
-            self._messages = [dict(message) for message in messages]
+            self._messages = deepcopy(list(messages))
 
     async def __aenter__(self) -> "Session":
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
-        await self.stop()
+        if self._status is not SessionStatus.FAILED:
+            await self.stop()
 
 
 def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:

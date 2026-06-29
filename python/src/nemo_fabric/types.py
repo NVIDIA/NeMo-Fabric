@@ -57,6 +57,15 @@ def _required_text(value: Any, name: str) -> str:
     return value
 
 
+def _required_profiles(data: Mapping[str, Any], owner: str) -> tuple[str, ...]:
+    if "profiles" not in data:
+        raise FabricConfigError(f"{owner} profiles is required")
+    profiles = data["profiles"]
+    if isinstance(profiles, (str, bytes)) or not isinstance(profiles, Sequence):
+        raise FabricConfigError(f"{owner} profiles must be an ordered sequence of strings")
+    return tuple(_required_text(profile, f"{owner} profile") for profile in profiles)
+
+
 def _boolean(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
         raise FabricConfigError(f"{name} must be a boolean")
@@ -610,7 +619,7 @@ class EffectiveConfig(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data["profiles"] = tuple(data.get("profiles", []))
+        data["profiles"] = _required_profiles(data, "EffectiveConfig")
         data["agent_root"] = Path(data.get("agent_root", "."))
         data["config_root"] = Path(data.get("config_root", "."))
         data["config_path"] = (
@@ -636,7 +645,7 @@ class RunPlan(FabricMapping):
         if descriptor is None:
             descriptor = (data.get("adapter_descriptor") or {}).get("descriptor", {})
         data["effective_config"] = EffectiveConfig.from_mapping(data["effective_config"])
-        data["profiles"] = tuple(data.get("profiles", []))
+        data["profiles"] = _required_profiles(data, "RunPlan")
         data["adapter"] = AdapterInfo.from_mapping(descriptor)
         data["capabilities"] = RuntimeCapabilities.from_mapping(data.get("capabilities", {}))
         return data
@@ -665,7 +674,7 @@ class DoctorReport(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data["profiles"] = tuple(data.get("profiles", []))
+        data["profiles"] = _required_profiles(data, "DoctorReport")
         data["checks"] = tuple(
             DoctorCheck.from_mapping(check) for check in data.get("checks", [])
         )
@@ -819,6 +828,7 @@ class RuntimeHandle(FabricMapping):
     mode: str
     adapter_kind: str
     adapter_id: str | None
+    environment: Mapping[str, Any]
     _fields = frozenset(
         {
             "runtime_id",
@@ -828,8 +838,26 @@ class RuntimeHandle(FabricMapping):
             "mode",
             "adapter_kind",
             "adapter_id",
+            "environment",
         }
     )
+    _json_fields = frozenset({"environment"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        for field in (
+            "runtime_id",
+            "runtime_binding",
+            "agent_name",
+            "harness",
+            "mode",
+            "adapter_kind",
+        ):
+            data[field] = _required_text(data.get(field), field.replace("_", " "))
+        if data.get("adapter_id") is not None:
+            data["adapter_id"] = _required_text(data["adapter_id"], "adapter id")
+        data["environment"] = _mapping(data.get("environment"), "environment")
+        return data
 
 
 class RunResult(FabricMapping):
@@ -871,7 +899,7 @@ class RunResult(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data["profiles"] = tuple(data.get("profiles", []))
+        data["profiles"] = _required_profiles(data, "RunResult")
         data["error"] = (
             None if data.get("error") is None else ErrorInfo.from_mapping(data["error"])
         )
@@ -920,7 +948,7 @@ class SessionInfo(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data["profiles"] = tuple(data.get("profiles", []))
+        data["profiles"] = _required_profiles(data, "SessionInfo")
         data["capabilities"] = RuntimeCapabilities.from_mapping(data.get("capabilities", {}))
         return data
 

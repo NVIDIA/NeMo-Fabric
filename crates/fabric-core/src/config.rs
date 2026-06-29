@@ -118,8 +118,10 @@ pub struct HarnessConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterDescriptor {
     /// Unique id for this adapter implementation.
+    #[schemars(length(min = 1))]
     pub adapter_id: String,
     /// Stable machine-readable harness identifier implemented by this adapter.
+    #[schemars(length(min = 1))]
     pub harness: String,
     /// Adapter implementation kind.
     pub adapter_kind: AdapterKind,

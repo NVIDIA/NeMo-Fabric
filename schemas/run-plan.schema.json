@@ -27,6 +27,7 @@
       "properties": {
         "adapter_id": {
           "description": "Unique id for this adapter implementation.",
+          "minLength": 1,
           "type": "string"
         },
         "adapter_kind": {
@@ -40,6 +41,7 @@
         },
         "harness": {
           "description": "Stable machine-readable harness identifier implemented by this adapter.",
+          "minLength": 1,
           "type": "string"
         },
         "requirements": {

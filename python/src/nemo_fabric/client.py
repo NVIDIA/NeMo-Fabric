@@ -13,6 +13,7 @@ from typing import Any, overload
 
 from nemo_fabric._config_sources import (
     AgentSource,
+    PathProfiles,
     PathSource,
     config_json,
     config_profiles,
@@ -67,7 +68,7 @@ class FabricClient:
         self,
         agent: PathSource,
         *,
-        profiles: Sequence[str] | None = None,
+        profiles: PathProfiles | None = None,
         base_dir: None = None,
     ) -> EffectiveConfig: ...
 
@@ -84,7 +85,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
     ) -> EffectiveConfig:
         """Resolve config and ordered profiles without planning execution."""
@@ -114,7 +115,7 @@ class FabricClient:
         self,
         agent: PathSource,
         *,
-        profiles: Sequence[str] | None = None,
+        profiles: PathProfiles | None = None,
         base_dir: None = None,
     ) -> RunPlan: ...
 
@@ -131,7 +132,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
     ) -> RunPlan:
         """Resolve a source into an immutable execution plan."""
@@ -161,7 +162,7 @@ class FabricClient:
         self,
         agent: PathSource,
         *,
-        profiles: Sequence[str] | None = None,
+        profiles: PathProfiles | None = None,
         base_dir: None = None,
     ) -> DoctorReport: ...
 
@@ -178,7 +179,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
     ) -> DoctorReport:
         """Diagnose a resolved plan without starting a runtime."""
@@ -212,7 +213,7 @@ class FabricClient:
         self,
         agent: PathSource,
         *,
-        profiles: Sequence[str] | None = None,
+        profiles: PathProfiles | None = None,
         base_dir: None = None,
         input: Any = None,
         input_file: str | Path | None = None,
@@ -243,7 +244,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
         input: Any = None,
         input_file: str | Path | None = None,
@@ -255,7 +256,11 @@ class FabricClient:
     ) -> RunResult:
         """Execute one complete runtime lifecycle."""
 
-        plan = self.plan(agent, profiles=profiles, base_dir=base_dir)  # type: ignore[arg-type]
+        plan = await _call_blocking(
+            lambda: self.plan(  # type: ignore[arg-type]
+                agent, profiles=profiles, base_dir=base_dir
+            )
+        )
         request_payload = _run_request_payload(
             input=input,
             input_file=input_file,
@@ -275,7 +280,7 @@ class FabricClient:
         self,
         agent: PathSource,
         *,
-        profiles: Sequence[str] | None = None,
+        profiles: PathProfiles | None = None,
         base_dir: None = None,
         session_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -296,7 +301,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
         session_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -304,7 +309,11 @@ class FabricClient:
         """Create a session runtime from a path-backed or typed source."""
 
         session_overrides = _json_mapping(overrides, "session overrides")
-        plan = self.plan(agent, profiles=profiles, base_dir=base_dir)  # type: ignore[arg-type]
+        plan = await _call_blocking(
+            lambda: self.plan(  # type: ignore[arg-type]
+                agent, profiles=profiles, base_dir=base_dir
+            )
+        )
         _require_session_runtime(plan, "start_session")
         native = self._require_native_module("start_session")
         try:
@@ -328,7 +337,7 @@ class FabricClient:
         self,
         agent: PathSource,
         *,
-        profiles: Sequence[str] | None = None,
+        profiles: PathProfiles | None = None,
         base_dir: None = None,
         service_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -349,14 +358,18 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
         service_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> Any:
         """Reject service creation until the selected runtime declares support."""
 
-        plan = self.plan(agent, profiles=profiles, base_dir=base_dir)  # type: ignore[arg-type]
+        plan = await _call_blocking(
+            lambda: self.plan(  # type: ignore[arg-type]
+                agent, profiles=profiles, base_dir=base_dir
+            )
+        )
         raise FabricCapabilityError(
             "service mode is not implemented by this Fabric runtime",
             stage="start",

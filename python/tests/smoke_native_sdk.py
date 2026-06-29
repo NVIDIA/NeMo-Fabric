@@ -150,6 +150,8 @@ async def smoke(client: FabricClient) -> None:
             second = await session.invoke(input="hello session two")
 
     assert result["status"] == "succeeded"
+    assert result.profiles == ("env_local",)
+    assert result.harness == "hermes"
     assert result["adapter_kind"] == "python"
     assert result["metadata"]["adapter_runner"] == "python"
     assert result["output"]["received"] == "hello native"
@@ -157,6 +159,8 @@ async def smoke(client: FabricClient) -> None:
     assert any(artifact.name == "stdout" for artifact in result.artifacts.artifacts)
     assert first["status"] == "succeeded"
     assert second["status"] == "succeeded"
+    assert first.profiles == ("env_local",)
+    assert first.harness == "hermes"
     assert first["runtime_id"] == second["runtime_id"]
     assert session.runtime["runtime_id"] == first["runtime_id"]
 

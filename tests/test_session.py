@@ -234,6 +234,48 @@ async def test_session_reuses_runtime_and_orders_turns(mock_native: MagicMock):
     assert len(session.invocations) == 2
 
 
+async def test_native_invoke_failure_marks_session_failed(mock_native: MagicMock):
+    mock_native.invoke_runtime.side_effect = RuntimeError("invoke failed")
+    session = _session(mock_native)
+
+    with pytest.raises(FabricRuntimeError, match="invoke failed"):
+        await session.invoke(input="hello")
+
+    assert session.status is SessionStatus.FAILED
+    with pytest.raises(FabricStateError, match="failed"):
+        await session.invoke(input="too late")
+
+
+async def test_failed_invoke_is_not_masked_by_context_cleanup(mock_native: MagicMock):
+    mock_native.invoke_runtime.side_effect = RuntimeError("invoke failed")
+    session = _session(mock_native)
+
+    with pytest.raises(FabricRuntimeError, match="invoke failed"):
+        async with session:
+            await session.invoke(input="hello")
+
+    assert session.status is SessionStatus.FAILED
+    mock_native.stop_runtime.assert_not_called()
+
+
+async def test_session_preserves_non_mapping_message_values(mock_native: MagicMock):
+    result = json.loads(
+        mock_native.invoke_runtime.side_effect(
+            "",
+            "",
+            json.dumps({"input": "hello", "request_id": "request-1"}),
+        )
+    )
+    result["output"]["messages"] = ["notice", {"role": "assistant", "content": "ok"}, 1]
+    mock_native.invoke_runtime.side_effect = None
+    mock_native.invoke_runtime.return_value = json.dumps(result)
+    session = _session(mock_native)
+
+    await session.invoke(input="hello")
+
+    assert session.messages == ["notice", {"role": "assistant", "content": "ok"}, 1]
+
+
 async def test_session_recursively_merges_overrides(mock_native: MagicMock):
     session = _session(
         mock_native,
@@ -330,6 +372,30 @@ async def test_run_stops_runtime_after_success_and_failure(
     with pytest.raises(FabricRuntimeError, match="invoke failed"):
         await native_client.run("agent", input="hello")
     assert mock_native.stop_runtime.call_count == 2
+
+
+async def test_async_lifecycle_methods_offload_planning(
+    native_client: FabricClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    event_loop_thread = threading.get_ident()
+    planning_threads: list[int] = []
+    original_plan = native_client.plan
+
+    def record_plan(*args: Any, **kwargs: Any):
+        planning_threads.append(threading.get_ident())
+        return original_plan(*args, **kwargs)
+
+    monkeypatch.setattr(native_client, "plan", record_plan)
+
+    await native_client.run("agent", input="hello")
+    session = await native_client.start_session("agent")
+    await session.stop()
+    with pytest.raises(FabricCapabilityError, match="service mode"):
+        await native_client.start_service("agent")
+
+    assert len(planning_threads) == 3
+    assert all(thread != event_loop_thread for thread in planning_threads)
 
 
 async def test_run_surfaces_cleanup_failure_after_success(

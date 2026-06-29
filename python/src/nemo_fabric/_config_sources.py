@@ -16,6 +16,7 @@ from nemo_fabric.types import FabricConfig, FabricProfileConfig
 PathSource = str | os.PathLike[str]
 AgentSource = PathSource | FabricConfig
 ProfileSource = str | FabricProfileConfig
+PathProfiles = str | Sequence[str]
 
 
 def is_config_source(value: Any) -> bool:
@@ -33,12 +34,15 @@ def path_arg(value: Any) -> str:
     raise FabricConfigError("agent must be a path-like source or FabricConfig")
 
 
-def path_profiles(profiles: Sequence[str] | None) -> list[str]:
+def path_profiles(profiles: PathProfiles | None) -> list[str]:
     if profiles is None:
         return []
-    if isinstance(profiles, (str, bytes)):
-        raise FabricConfigError("profiles must be an ordered sequence of profile names")
-    values = list(profiles)
+    if isinstance(profiles, str):
+        values = [profiles]
+    elif isinstance(profiles, bytes):
+        raise FabricConfigError("profiles must be profile names, not bytes")
+    else:
+        values = list(profiles)
     if not all(isinstance(profile, str) and profile for profile in values):
         raise FabricConfigError("path profiles must contain only non-empty strings")
     return values

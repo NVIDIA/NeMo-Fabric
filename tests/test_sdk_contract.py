@@ -69,6 +69,8 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
     assert config.environment is None
     assert config.metadata.name == "demo"
     assert config.metadata.description is None
+    assert config.runtime.transport is None
+    assert "transport" not in config.runtime.to_mapping()
     assert config.metadata.extra_fields == {"owner": "sdk"}
     assert config.harness.extra_fields == {"future": True}
     assert config.extra_fields == {"future_top_level": {"enabled": True}}
@@ -193,11 +195,59 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
             "mode": "session",
             "adapter_kind": "python",
             "adapter_id": "test.fabric.shim",
+            "environment": {
+                "environment_id": "environment-1",
+                "provider": "local",
+                "control_location": "external_control",
+                "ownership": "caller_owned",
+            },
             "future_handle_field": "value",
         }
     )
 
     assert handle.extra_fields == {"future_handle_field": "value"}
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "runtime_id",
+        "runtime_binding",
+        "agent_name",
+        "harness",
+        "mode",
+        "adapter_kind",
+        "environment",
+    ),
+)
+def test_runtime_handle_requires_native_contract_fields(field):
+    raw = _runtime()
+    del raw[field]
+
+    with pytest.raises(FabricConfigError, match=field.replace("_", " ")):
+        RuntimeHandle.from_mapping(raw)
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    (
+        (EffectiveConfig, {"config": {}}),
+        (DoctorReport, {}),
+        (RunResult, {}),
+        (SessionInfo, {}),
+    ),
+)
+def test_snapshot_models_require_profiles(model, payload):
+    with pytest.raises(FabricConfigError, match="profiles is required"):
+        model.from_mapping(payload)
+
+
+def test_run_plan_requires_profiles():
+    raw = _plan()
+    del raw["profiles"]
+
+    with pytest.raises(FabricConfigError, match="RunPlan profiles is required"):
+        RunPlan.from_mapping(raw)
 
 
 def test_runtime_capabilities_reject_non_boolean_values():
@@ -305,17 +355,18 @@ def _fabric_config() -> FabricConfig:
 class NativeRecorder:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
+        self.path_profile_calls: list[Any] = []
         self.stopped = 0
         self.fail_invoke = False
 
     def plan(self, path: str, profile: Any = None) -> str:
         assert path == "agent"
-        assert profile == []
+        self.path_profile_calls.append(profile)
         return json.dumps(_plan())
 
     def inspect(self, path: str, profile: Any = None) -> str:
         assert path == "agent"
-        assert profile == []
+        self.path_profile_calls.append(profile)
         return json.dumps(_plan()["effective_config"])
 
     def resolve_config(
@@ -469,6 +520,7 @@ def test_run_request_constructor_generates_request_metadata():
 def test_run_result_wraps_nested_error_and_keeps_mapping_access():
     result = RunResult.from_mapping(
         {
+            "profiles": [],
             "request_id": "request-1",
             "status": "failed",
             "output": {},
@@ -495,6 +547,7 @@ def test_run_result_wraps_nested_error_and_keeps_mapping_access():
 def test_run_result_exposes_detached_json_values():
     result = RunResult.from_mapping(
         {
+            "profiles": [],
             "status": "succeeded",
             "output": {"plugins": ["observability/nemo_relay"]},
             "metadata": {"labels": ["sdk"]},
@@ -625,6 +678,17 @@ async def test_native_runtime_errors_use_typed_exception_and_stop_runtime():
     assert native.stopped == 1
 
 
+async def test_start_service_reports_capability_failure_contract():
+    client = NativeClient(NativeRecorder())
+
+    with pytest.raises(FabricCapabilityError) as caught:
+        await client.start_service("agent", service_id="service-1")
+
+    assert caught.value.stage == "start"
+    assert caught.value.code == "service_not_supported"
+    assert caught.value.details == {"service": False, "service_id": "service-1"}
+
+
 def test_public_sdk_exceptions_share_a_common_base():
     assert issubclass(FabricConfigError, FabricError)
     assert issubclass(FabricRuntimeError, FabricError)
@@ -752,11 +816,22 @@ def test_config_methods_reject_raw_mappings_and_pydantic_like_objects():
 def test_profile_configs_require_explicit_profile_config_conversion():
     client = NativeClient(NativeRecorder())
 
+    with pytest.raises(FabricConfigError, match="FabricProfileConfig values"):
+        client.plan(_fabric_config(), profiles="typed_relay")  # type: ignore[arg-type]
+
     with pytest.raises(FabricConfigError, match="FabricProfileConfig.from_mapping"):
         client.plan(
             _fabric_config(),
             profiles=[{"name": "typed_relay"}],
         )
+
+
+def test_path_source_accepts_single_profile_name():
+    native = NativeRecorder()
+
+    NativeClient(native).plan("agent", profiles="hermes_session")
+
+    assert native.path_profile_calls == [["hermes_session"]]
 
 
 def test_fabric_config_constructors_emit_schema_shaped_mappings():

@@ -54,7 +54,7 @@ Profile types follow the agent source:
 def plan(
     agent: PathSource,
     *,
-    profiles: Sequence[str] | None = None,
+    profiles: str | Sequence[str] | None = None,
 ) -> RunPlan: ...
 
 @overload
@@ -69,9 +69,9 @@ def plan(
 The same overload pattern applies to `resolve`, `doctor`, `run`,
 `start_session`, and `start_service`.
 
-- Strings are paths, never raw config, adapter IDs, or agent names.
-- Paths use ordered profile names; `FabricConfig` uses ordered
-  `FabricProfileConfig` objects. Mixed stacks and bare strings are rejected.
+- Agent strings are paths, never raw config, adapter IDs, or agent names.
+- Paths accept one profile name or an ordered sequence of names. `FabricConfig`
+  uses ordered `FabricProfileConfig` objects; mixed stacks are rejected.
 - `base_dir` applies only to `FabricConfig`.
 - Raw mappings require explicit `from_mapping(...)` conversion.
 - Equivalent file and typed sources produce equivalent configs and plans.
@@ -155,9 +155,9 @@ class FabricProfileConfig:
 
 - `metadata` and `harness` are required; names, adapter IDs, and runtime mode
   are validated.
-- Defaults are the v1alpha1 schemas, `oneshot`, and local environment.
-  Omitted runtime transport and schemas resolve to `library`, `text`, and
-  `text`.
+- Mutable configs default to the v1alpha1 schemas and `oneshot`; omitted
+  environment, runtime transport, and schemas remain unset until resolution,
+  which applies local, `library`, `text`, and `text` defaults.
 - Constructors reject unknown keywords. Mapping conversion preserves unknown
   fields through `extra_fields` and returns deep copies.
 - Profile sections are partial recursive overlays. They are validated as a
@@ -236,7 +236,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
     ) -> EffectiveConfig: ...
 
@@ -244,7 +244,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
     ) -> RunPlan: ...
 
@@ -252,7 +252,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
     ) -> DoctorReport: ...
 
@@ -260,7 +260,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
         input: JSONValue = None,
         input_file: str | Path | None = None,
@@ -275,7 +275,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
         session_id: str | None = None,
         overrides: Mapping[str, JSONValue] | None = None,
@@ -285,7 +285,7 @@ class FabricClient:
         self,
         agent: AgentSource,
         *,
-        profiles: Sequence[str] | Sequence[FabricProfileConfig] | None = None,
+        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
         base_dir: PathSource | None = None,
         service_id: str | None = None,
         overrides: Mapping[str, JSONValue] | None = None,
@@ -448,8 +448,8 @@ Direct service calls are stateless. IDs are correlation, not authorization.
 
 ## Streaming and Updates
 
-`stream()` yields events and one terminal result. Adapters may buffer; callers
-must not depend on buffering. Event kinds and metadata are additive.
+`stream()` yields events and one terminal result. Adapters may buffer, so callers
+must not assume immediate event delivery. Event kinds and metadata are additive.
 
 ```python
 class RuntimeUpdate:
