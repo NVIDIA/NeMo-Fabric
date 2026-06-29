@@ -11,6 +11,7 @@ Python SDK inside the task container; it does not invoke the Fabric CLI.
 - `uv`
 - Docker
 - this repository checkout, with the changes to test committed
+- a host `codex login` for the real Codex variant
 
 The first image build can take several minutes.
 
@@ -45,6 +46,7 @@ the matching generated directory under `$RUNS_DIR`, before repeating a run.
 | `fabric_profile_paths` | Ordered Fabric profile YAML paths inside the task container |
 | `--model` | Harbor model selection; Fabric applies it after the file-backed profiles |
 | `--ae` | Environment variable passed to the Harbor agent inside the container |
+| `--mounts` | Host-to-container mounts managed by Harbor |
 | `--job-name` | Stable Harbor output directory name for this variant |
 | `--force-build` | Rebuild the Harbor task image from the prepared context |
 
@@ -115,18 +117,27 @@ uv run --extra harbor harbor run \
 
 ## 4. Codex CLI
 
-Codex uses the same Harbor agent and task. Only the profile and credential
-change:
+Codex uses the same Harbor agent and task. For this local Docker demo, Harbor
+mounts the host Codex login as a read-only secret. The setup command copies it
+into a writable container-local `CODEX_HOME`; Fabric only inherits that
+environment and never reads the credential.
 
 ```bash
-export OPENAI_API_KEY=...
+codex login status
+
+CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+test -f "$CODEX_HOME_DIR/auth.json"
+CODEX_AUTH_MOUNT="[{\"type\":\"bind\",\"source\":\"$CODEX_HOME_DIR/auth.json\",\"target\":\"/run/secrets/codex-auth.json\",\"read_only\":true}]"
 
 uv run --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_config_path=/opt/fabric-demo/agent.yaml \
   --ak 'fabric_profile_paths=["/opt/fabric-demo/profiles/codex.yaml"]' \
-  --ae "OPENAI_API_KEY=$OPENAI_API_KEY" \
+  --ak 'fabric_install_command=mkdir -p "$CODEX_HOME" && cp /run/secrets/codex-auth.json "$CODEX_HOME/auth.json"' \
+  --model openai/gpt-5.4 \
+  --ae CODEX_HOME=/tmp/fabric-codex-home \
+  --mounts "$CODEX_AUTH_MOUNT" \
   --job-name fabric-codex \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
@@ -134,8 +145,11 @@ uv run --extra harbor harbor run \
   --force-build
 ```
 
-Codex uses its configured CLI default model. Add `--model openai/<model>` when
-you want Harbor to provide an explicit model override.
+The image pins Codex CLI `0.142.3`. Harbor passes the selected model to the
+Fabric SDK as the final typed profile, and the Codex profile pins a compatible
+reasoning effort. The auth mount grants the trusted task container access to
+your Codex account for this run. For automation, omit the mount and copy command
+and pass a provisioned `CODEX_API_KEY` with `--ae` instead.
 
 ## Inspect the Result
 
@@ -162,6 +176,7 @@ rm -rf "$TASK_DIR/environment/vendor"
 
 1. Show the common `--agent` and `fabric_config_path` values.
 2. Run the credential-free smoke and inspect `fabric-result.json`.
-3. Run Hermes, then Codex, changing only profile, model, and credential flags.
+3. Run Hermes, then Codex, changing only profile, model, and credential
+   provisioning.
 4. Run Hermes plus telemetry to show ordered profile composition.
 5. Open all four jobs with `harbor view`.

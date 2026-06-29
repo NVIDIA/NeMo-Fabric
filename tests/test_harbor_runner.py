@@ -9,7 +9,17 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ROOT_README = ROOT / "README.md"
-DEMO_README = ROOT / "integrations" / "harbor" / "demo" / "README.md"
+DEMO_ROOT = ROOT / "integrations" / "harbor" / "demo"
+DEMO_README = DEMO_ROOT / "README.md"
+DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
+CODEX_PROFILE = (
+    DEMO_ROOT
+    / "task"
+    / "environment"
+    / "fabric"
+    / "profiles"
+    / "codex.yaml"
+)
 INTEGRATION_README = ROOT / "integrations" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
     ROOT
@@ -62,7 +72,7 @@ def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
         {
             "config_path": str(config_path),
             "profile_paths": [str(profile_path)],
-            "request": {"context": {"model_name": "openai/gpt-5-codex"}},
+            "request": {"context": {"model_name": "openai/gpt-5.4"}},
         }
     )
 
@@ -72,49 +82,66 @@ def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
     }
     assert profiles[-1].models["default"] == {
         "provider": "openai",
-        "model": "openai/gpt-5-codex",
+        "model": "openai/gpt-5.4",
     }
     assert [profile.name for profile in profiles] == ["codex", "harbor_model"]
     assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == "harbor-demo"
 
 
-def test_codex_adapter_maps_fabric_request_to_cli(monkeypatch, tmp_path):
+def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
     adapter = load_codex_adapter()
 
-    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     payload = {
         "effective_config": {
             "config_root": str(tmp_path),
             "config": {
-                "harness": {"settings": {"sandbox": "workspace-write"}},
+                "harness": {
+                    "settings": {
+                        "sandbox": "workspace-write",
+                        "skip_git_repo_check": True,
+                        "config_overrides": {"model_reasoning_effort": "high"},
+                    }
+                },
                 "models": {
                     "default": {
                         "provider": "openai",
-                        "model": "openai/gpt-5-codex",
+                        "model": "openai/gpt-5.4",
                     }
                 },
-                "environment": {"workspace": str(tmp_path)},
+                "runtime": {"mode": "oneshot"},
             },
         },
+        "runtime_context": {"environment": {"workspace": str(tmp_path)}},
         "request": {"input": "Fix the calculator."},
     }
 
-    command, cwd = adapter.build_command(payload)
+    command = adapter.build_command(payload)
 
     assert command == [
         "codex",
         "exec",
+        "--json",
+        "--ephemeral",
         "--sandbox",
         "workspace-write",
-        "--skip-git-repo-check",
-        "--ephemeral",
-        "--color",
-        "never",
+        "--config",
+        'model_reasoning_effort="high"',
         "--model",
-        "gpt-5-codex",
+        "gpt-5.4",
+        "--skip-git-repo-check",
         "-",
     ]
-    assert cwd == tmp_path
+    assert adapter.resolve_cwd(payload) == tmp_path
+
+
+def test_codex_demo_uses_current_adapter_contract():
+    profile = yaml.safe_load(CODEX_PROFILE.read_text(encoding="utf-8"))
+    settings = profile["harness"]["settings"]
+
+    assert profile["runtime"]["mode"] == "oneshot"
+    assert settings["skip_git_repo_check"] is True
+    assert settings["config_overrides"]["model_reasoning_effort"] == "high"
+    assert "@openai/codex@0.142.3" in DEMO_DOCKERFILE.read_text(encoding="utf-8")
 
 
 def test_harbor_demo_documents_explicit_cli_commands():
@@ -124,8 +151,18 @@ def test_harbor_demo_documents_explicit_cli_commands():
     assert "run.sh" not in demo
     assert "demo/run.sh" not in integration
     assert demo.count("uv run --extra harbor harbor run") == 4
-    for flag in ("--path", "--agent", "--ak", "--ae", "--model", "--job-name"):
+    for flag in (
+        "--path",
+        "--agent",
+        "--ak",
+        "--ae",
+        "--model",
+        "--mounts",
+        "--job-name",
+    ):
         assert flag in demo
+    assert "OPENAI_API_KEY" not in demo
+    assert "CODEX_HOME" in demo
 
 
 def test_harbor_sdk_package_documents_execution_boundary():

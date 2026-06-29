@@ -11,7 +11,7 @@ ENV PATH=/root/.cargo/bin:$PATH
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
 RUN pip install --no-cache-dir -e "/opt/nemo-fabric[hermes,relay]" \
-    && npm install --global @openai/codex@0.134.0
+    && npm install --global @openai/codex@0.142.3
 
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-demo
