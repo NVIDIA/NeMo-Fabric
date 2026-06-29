@@ -10,7 +10,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
 ENV PATH=/root/.cargo/bin:$PATH
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
-RUN pip install --no-cache-dir -e "/opt/nemo-fabric[hermes,relay]" \
+RUN pip install --no-cache-dir -e "/opt/nemo-fabric[harbor,hermes,relay]" \
     && npm install --global @openai/codex@0.142.3
 
 COPY calculator.py /app/calculator.py

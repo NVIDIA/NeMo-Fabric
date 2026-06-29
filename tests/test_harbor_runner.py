@@ -141,7 +141,9 @@ def test_codex_demo_uses_current_adapter_contract():
     assert profile["runtime"]["mode"] == "oneshot"
     assert settings["skip_git_repo_check"] is True
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"
-    assert "@openai/codex@0.142.3" in DEMO_DOCKERFILE.read_text(encoding="utf-8")
+    dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
+    assert 'nemo-fabric[harbor,hermes,relay]' in dockerfile
+    assert "@openai/codex@0.142.3" in dockerfile
 
 
 def test_harbor_demo_documents_explicit_cli_commands():
