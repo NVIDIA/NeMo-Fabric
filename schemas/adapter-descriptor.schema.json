@@ -1,6 +1,7 @@
 {
   "$defs": {
     "AdapterConfigSupport": {
+      "additionalProperties": true,
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
@@ -46,6 +47,7 @@
       ]
     },
     "AdapterRequirements": {
+      "additionalProperties": true,
       "description": "Adapter runtime requirements.",
       "properties": {
         "binaries": {
@@ -87,6 +89,7 @@
       "type": "object"
     },
     "AdapterTelemetrySupport": {
+      "additionalProperties": true,
       "description": "Adapter telemetry support.",
       "properties": {
         "supports": {
@@ -101,10 +104,12 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
   "description": "Language-neutral adapter descriptor for a harness integration.",
   "properties": {
     "adapter_id": {
       "description": "Unique id for this adapter implementation.",
+      "minLength": 1,
       "type": "string"
     },
     "adapter_kind": {
@@ -115,6 +120,11 @@
       "$ref": "#/$defs/AdapterConfigSupport",
       "default": {},
       "description": "Fabric config areas this adapter consumes or generates."
+    },
+    "harness": {
+      "description": "Stable machine-readable harness identifier implemented by this adapter.",
+      "minLength": 1,
+      "type": "string"
     },
     "requirements": {
       "$ref": "#/$defs/AdapterRequirements",
@@ -134,6 +144,7 @@
   },
   "required": [
     "adapter_id",
+    "harness",
     "adapter_kind"
   ],
   "title": "AdapterDescriptor",

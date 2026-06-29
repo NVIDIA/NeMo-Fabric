@@ -378,7 +378,7 @@ fn print_chat_info(
     eprintln!("+----------------------------------------------------------------+");
     eprintln!("| agent: {}", plan.agent_name);
     eprintln!("| profile: {}", profile_label(plan));
-    eprintln!("| harness: {}", runtime.harness_type);
+    eprintln!("| harness: {}", runtime.harness);
     eprintln!("| adapter: {}", adapter_kind_label(runtime.adapter_kind));
     eprintln!("| runtime_id: {}", runtime.runtime_id);
     eprintln!(
@@ -449,9 +449,7 @@ fn profile_label(plan: &RunPlan) -> String {
     if !plan.profiles.is_empty() {
         return plan.profiles.join(", ");
     }
-    plan.profile
-        .clone()
-        .unwrap_or_else(|| "default".to_string())
+    "default".to_string()
 }
 
 fn adapter_kind_label(adapter_kind: AdapterKind) -> &'static str {

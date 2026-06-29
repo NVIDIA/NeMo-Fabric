@@ -1,22 +1,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Smoke test: the README "Use Fabric" examples stay accurate and runnable.
-
-WS4 guardrail. The documented Python SDK examples (``plan`` / ``doctor`` /
-``plan_config`` and the source-tree CLI-command form) are mirrored here and run
-against the real example agent, so an API change breaks this test instead of
-silently rotting the README. A drift guard additionally asserts the README still
-contains each documented invocation verbatim, keeping the prose and the
-executable mirror in sync. The CLI snippets are exercised by ``tests/smoke_cli.py``.
-"""
+"""Smoke test: the README "Use Fabric" examples stay accurate and runnable."""
 
 from __future__ import annotations
 
 import asyncio
 from pathlib import Path
 
-from nemo_fabric import FabricClient
+from nemo_fabric import FabricClient, FabricConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
@@ -28,23 +20,27 @@ DOCUMENTED_SNIPPETS = [
     "fabric plan examples/code-review-agent --profile hermes_sdk",
     "fabric plan examples/code-review-agent --profile env_local --profile mcp_github",
     "fabric doctor examples/code-review-agent --profile hermes_sdk",
-    'plan = client.plan(agent, profile="hermes_sdk")',
-    'report = await client.doctor(agent, profile="hermes_sdk")',
-    "plan = client.plan_config(",
+    'plan = client.plan(agent, profiles=["hermes_sdk"])',
+    'report = await client.doctor(agent, profiles=["hermes_sdk"])',
+    "config = FabricConfig.from_mapping(",
+    "plan = client.plan(",
+    "result = await client.run(",
     '"harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},',
     'base_dir="examples/code-review-agent",',
     "### Multi-Turn SDK Sessions",
     "### Interactive CLI Chat",
+    "FabricClient().start_session(",
+    'profiles=["hermes_session"],',
     'session_id="review-session-123",',
     "fabric chat examples/code-review-agent \\",
     "--profile hermes_cli_session",
     "--session-id review-session-123",
     "--verbose",
     "requires `runtime.mode: session`; use `fabric run`",
-    'client = FabricClient(command=("cargo", "run", "-q", "-p", "fabric-cli", "--"))',
+    "The CLI is a separate interface over the same Rust",
 ]
 
-# The exact typed-config dict shown in the README "plan_config" example.
+# The exact typed-config dict shown in the README example.
 README_PLAN_CONFIG = {
     "schema_version": "fabric.agent/v1alpha1",
     "metadata": {"name": "code-review-agent"},
@@ -77,22 +73,18 @@ async def readme_python_examples_run() -> None:
 
     agent = EXAMPLE_AGENT
     async with FabricClient() as client:
-        plan = client.plan(agent, profile="hermes_sdk")
-        report = await client.doctor(agent, profile="hermes_sdk")
-        typed_plan = client.plan_config(README_PLAN_CONFIG, base_dir=agent)
+        plan = client.plan(agent, profiles=["hermes_sdk"])
+        report = await client.doctor(agent, profiles=["hermes_sdk"])
+        typed_plan = client.plan(
+            FabricConfig.from_mapping(README_PLAN_CONFIG),
+            base_dir=agent,
+        )
 
     # README prints plan["agent_name"] and report["checks"].
     assert plan["agent_name"] == "code-review-agent", plan["agent_name"]
     assert report["checks"], "doctor returned no checks"
     assert typed_plan["agent_name"] == "code-review-agent"
-    assert (
-        typed_plan["adapter_descriptor"]["descriptor"]["adapter_id"]
-        == "nvidia.fabric.hermes.sdk"
-    )
-
-    # The documented source-tree form selects the CLI command path.
-    cli_client = FabricClient(command=("cargo", "run", "-q", "-p", "fabric-cli", "--"))
-    assert cli_client.command == ("cargo", "run", "-q", "-p", "fabric-cli", "--")
+    assert typed_plan.adapter.adapter_id == "nvidia.fabric.hermes.sdk"
 
 
 def main() -> None:

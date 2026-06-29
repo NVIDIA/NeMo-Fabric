@@ -28,9 +28,11 @@ async def test_preflight_api_key_e2e(hermes_agent_dir: Path, hermes_cli_profile:
     
 
     async with FabricClient() as client:
-        result = await client.run(hermes_agent_dir,
-                                    profile=hermes_cli_profile,
-                                    input_text="who are you?")
+        result = await client.run(
+            hermes_agent_dir,
+            profiles=[hermes_cli_profile],
+            input="who are you?",
+        )
     if api_key_set:
         assert result["status"] == "succeeded"
     else:

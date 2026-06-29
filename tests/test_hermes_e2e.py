@@ -52,8 +52,8 @@ class BaseTestHermesE2E:
         async with FabricClient() as client:
             self.result = await client.run(
                 code_review_agent_dir,
-                profile=self.profile_name,
-                input_text="Reply with exactly: relay ok",
+                profiles=[self.profile_name],
+                input="Reply with exactly: relay ok",
             )
 
         self.output = self.result["output"]

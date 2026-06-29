@@ -231,8 +231,8 @@ Status:
 - Base Python SDK and CLI surfaces are in place.
 - SDK supports agent-package paths and typed/in-memory config.
 - CLI supports validate, inspect, plan, doctor, schema generation, and run.
-- SDK session APIs cover `start`, `start_config`, `invoke`, `stream`, `cancel`,
-  and `stop` for `runtime.mode: session`, including caller-provided
+- SDK session APIs cover `start_session`, `invoke`, `stream`, `cancel`, and
+  `stop` for `runtime.mode: session`, including caller-provided
   `session_id` propagation.
 - CLI includes `fabric chat` for local interactive session-mode debugging with
   explicit `--session-id`, `/info`, `/verbose`, and oneshot-profile rejection.
