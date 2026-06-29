@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+name: codex_cli_session
+description: Reuse one Codex thread across a Fabric runtime session.
+
+harness:
+  adapter_id: nvidia.fabric.codex.cli
+  resolution: preinstalled
+  settings:
+    sandbox: workspace-write
+    skip_git_repo_check: true
+    codex_state_dir: ./artifacts/codex-cli/session-state
+    config_overrides:
+      model_reasoning_effort: high
+
+models:
+  default:
+    provider: openai
+    model: openai/gpt-5.4
+    api_key_env: null
+    temperature: null
+
+skills: null
+mcp: null
+
+runtime:
+  mode: session
+  transport: cli
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts/codex-cli
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/codex-cli
+
+telemetry:
+  enabled: false

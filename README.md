@@ -32,8 +32,8 @@ flowchart TB
   Consumer["Consumer\nCLI | Python SDK | integrations"]
   Config["Agent package\nagent.yaml + profiles"]
   Core["Fabric Rust core\nvalidate | resolve | plan | run"]
-  Adapter["Selected Hermes adapter\nSDK | CLI"]
-  Harness["Agent harness runtime\nHermes"]
+  Adapter["Selected harness adapter\nHermes SDK | Hermes CLI | Codex CLI"]
+  Harness["Agent harness runtime\nHermes | Codex"]
   Artifacts["Artifact manifest\noutput | logs | patches | telemetry refs"]
   Relay["NeMo Relay\nATOF / ATIF when enabled"]
 
@@ -111,7 +111,8 @@ under `examples/code-review-agent/artifacts/hermes-sdk/`.
   editing `agent.yaml`.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
   The Hermes SDK and CLI adapters live under `adapters/hermes-sdk/` and
-  `adapters/hermes-cli/`.
+  `adapters/hermes-cli/`; the Codex CLI adapter lives under
+  `adapters/codex-cli/`.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
 
@@ -270,6 +271,14 @@ fabric chat examples/code-review-agent \
   --verbose
 ```
 
+The same session flow works with an existing Codex CLI login:
+
+```bash
+fabric chat examples/code-review-agent \
+  --profile codex_cli_session \
+  --session-id review-session-123
+```
+
 `--session-id` is optional. Each `fabric chat` start creates a new `runtime_id`;
 the session id is the stable resume key. If `--session-id` is omitted, Fabric
 uses the generated `runtime_id` as the session id. If you want a later chat run
@@ -284,7 +293,8 @@ requires `runtime.mode: session`; use `fabric run` for oneshot profiles and
 machine-readable stdout. Because `chat` is an interactive terminal UI, the
 transcript and metadata are written together on stderr.
 
-The real-Hermes integration check is `tests/smoke_hermes_session.py`.
+The opt-in real integration checks are `tests/smoke_hermes_session.py` and
+`tests/smoke_codex_cli.py`.
 
 `FabricClient()` uses the native Rust binding. SDK `run(...)` and
 `start_session(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
@@ -294,6 +304,24 @@ core. For source-tree development, install the package with
 `python3 -m pip install -e .` before using the SDK.
 
 ## Other Runs
+
+Run one isolated Codex CLI turn using Codex's existing authentication and
+configuration:
+
+```bash
+codex login status
+fabric doctor examples/code-review-agent --profile codex_cli
+fabric run examples/code-review-agent \
+  --profile codex_cli \
+  --input "Review the workspace and summarize the highest-risk issue."
+```
+
+Run the real one-shot and session smoke after installing Fabric with its native
+extension:
+
+```bash
+RUN_FABRIC_CODEX_INTEGRATION=1 python3 tests/smoke_codex_cli.py
+```
 
 Run the Hermes CLI adapter:
 
