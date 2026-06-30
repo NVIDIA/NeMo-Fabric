@@ -13,6 +13,7 @@ ROOT_README = ROOT / "README.md"
 DEMO_ROOT = ROOT / "integrations" / "harbor" / "demo"
 DEMO_README = DEMO_ROOT / "README.md"
 DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
+DEMO_HOST_GATEWAY = DEMO_ROOT / "host-gateway.compose.yaml"
 DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
 CODEX_PROFILE = (
     DEMO_ROOT
@@ -225,6 +226,7 @@ def test_harbor_demo_setup_and_solution_fail_fast():
 
 def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
     profile = yaml.safe_load(TELEMETRY_PROFILE.read_text(encoding="utf-8"))
+    host_gateway = yaml.safe_load(DEMO_HOST_GATEWAY.read_text(encoding="utf-8"))
     observability = profile["telemetry"]["config"]["components"][0]["config"]
     demo = DEMO_README.read_text(encoding="utf-8")
 
@@ -235,6 +237,15 @@ def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
     }
     assert observability["atof"]["enabled"] is True
     assert observability["atif"]["enabled"] is True
+    assert host_gateway == {
+        "services": {
+            "main": {
+                "extra_hosts": ["host.docker.internal=host-gateway"],
+            }
+        }
+    }
+    assert '--extra-docker-compose "$DEMO_DIR/host-gateway.compose.yaml"' in demo
+    assert "Docker Desktop's" not in demo
     assert "arizephoenix/phoenix" in demo
     assert "http://localhost:6006" in demo
     assert "events.atof.jsonl" in demo

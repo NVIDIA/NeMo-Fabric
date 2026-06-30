@@ -47,6 +47,7 @@ the matching generated directory under `$RUNS_DIR`, before repeating a run.
 | `--model` | Harbor model selection; Fabric applies it after the file-backed profiles |
 | `--ae` | Environment variable passed to the Harbor agent inside the container |
 | `--mounts` | Host-to-container mounts managed by Harbor |
+| `--extra-docker-compose` | Compose overlay applied to the Harbor task environment |
 | `--job-name` | Stable Harbor output directory name for this variant |
 | `--force-build` | Rebuild the Harbor task image from the prepared context |
 
@@ -114,7 +115,8 @@ until curl --fail --silent http://localhost:6006 >/dev/null; do sleep 1; done
 Visit `http://localhost:6006` in a browser.
 
 The telemetry profile sends OTLP/HTTP traces from the Harbor task container to
-Phoenix through Docker Desktop's `host.docker.internal` bridge. Then run:
+Phoenix at `host.docker.internal`. The checked-in Compose overlay maps that name
+to Docker's host gateway, including on Linux. Then run:
 
 ```bash
 uv run --extra harbor harbor run \
@@ -124,6 +126,7 @@ uv run --extra harbor harbor run \
   --ak 'fabric_profile_paths=["/opt/fabric-demo/profiles/hermes.yaml","/opt/fabric-demo/profiles/telemetry.yaml"]' \
   --model nvidia/nemotron-3-nano-30b-a3b \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --extra-docker-compose "$DEMO_DIR/host-gateway.compose.yaml" \
   --job-name fabric-hermes-relay \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
