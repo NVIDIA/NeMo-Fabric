@@ -139,7 +139,6 @@ def build_command(
     *,
     thread_id: str | None = None,
     relay_config_path: Path | None = None,
-    relay_plugin_config_path: Path | None = None,
 ) -> list[str]:
     settings = common_utils.settings_payload(payload)
     command = resolve_command(payload, settings.get("codex_command") or "codex")
@@ -151,17 +150,22 @@ def build_command(
         )
 
     args = []
-    if relay_config_path is not None or relay_plugin_config_path is not None:
+    if relay_config_path is not None:
         relay_command = resolve_command(payload, settings.get("nemo_relay_command") or "nemo-relay")
         args.append(relay_command)
         if relay_config_path is not None:
             args.extend(("--config", str(relay_config_path)))
-        if relay_plugin_config_path is not None:
-            args.extend(("--plugin-config", str(relay_plugin_config_path)))
+
         args.extend(("codex", "--"))
 
     else:
         args.append(command)
+
+    # The --config flag needs to occur before the exec subcommand
+    # Placing it after will cause conflicts with Relay, as any --config flags placed prior to exec are merged
+    # However any --config flags after the exec subcommand are not merged, and instead override the flags prior to exec
+    for key, value in sorted((settings.get("config_overrides") or {}).items()):
+        args.extend(["--config", f"{key}={toml_value(value)}"])
 
     args.extend(("exec", "--json"))
 
@@ -172,8 +176,7 @@ def build_command(
     codex_profile = settings.get("codex_profile")
     if codex_profile:
         args.extend(["--profile", str(codex_profile)])
-    for key, value in sorted((settings.get("config_overrides") or {}).items()):
-        args.extend(["--config", f"{key}={toml_value(value)}"])
+
     model = selected_model(payload)
     if model:
         args.extend(["--model", model])
@@ -310,10 +313,10 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
     use_relay = os.environ.get("FABRIC_RELAY_ENABLED") == "true"
     relay_config_path = None
-    relay_plugin_config_path = None
     if use_relay:
+        # nemo-relay infers the location of the plugin config based upon the location of the relay config
         relay_plugin_config = common_utils.load_relay_plugin_config(payload)
-        (relay_config_path, relay_plugin_config_path) = common_utils.write_relay_configs(
+        (relay_config_path, _) = common_utils.write_relay_configs(
             relay_config={"agents": {"codex": {"command": "codex"}}},
             plugin_config=relay_plugin_config
         )
@@ -322,7 +325,6 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         payload,
         thread_id=prior_thread_id,
         relay_config_path=relay_config_path,
-        relay_plugin_config_path=relay_plugin_config_path,
     )
     cwd = resolve_cwd(payload)
     timeout = process_timeout(payload)
