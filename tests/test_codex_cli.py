@@ -163,12 +163,18 @@ def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(codex_payloa
 
     command = adapter.build_command(codex_payload)
 
-    assert command[:4] == ["codex", "exec", "--json", "--ephemeral"]
-    assert ["--sandbox", "read-only"] == command[4:6]
-    assert ["--profile", "team"] == command[6:8]
+    exec_index = command.index("exec")
+    assert command[0] == "codex"
+    assert command[1:exec_index] == [
+        "--config",
+        "features.web_search=false",
+        "--config",
+        'model_reasoning_effort="high"',
+    ]
+    assert command[exec_index : exec_index + 3] == ["exec", "--json", "--ephemeral"]
+    assert ["--sandbox", "read-only"] == command[exec_index + 3 : exec_index + 5]
+    assert ["--profile", "team"] == command[exec_index + 5 : exec_index + 7]
     assert ["--model", "gpt-5.4"] == command[-3:-1]
-    assert 'features.web_search=false' in command
-    assert 'model_reasoning_effort="high"' in command
     assert command[-1] == "-"
 
 
@@ -185,22 +191,22 @@ def test_relative_codex_command_resolves_from_config_root(codex_payload):
 
 def test_relay_wraps_codex_command(codex_payload, tmp_path):
     adapter = load_codex_adapter()
-    relay_plugin_config_path = tmp_path / "relay-plugins.toml"
+    relay_config_path = tmp_path / "relay-config" / "config.toml"
 
     command = adapter.build_command(
         codex_payload,
-        relay_plugin_config_path=relay_plugin_config_path,
+        relay_config_path=relay_config_path,
     )
 
-    assert command[:7] == [
+    assert command[:5] == [
         "nemo-relay",
-        "--plugin-config",
-        str(relay_plugin_config_path),
+        "--config",
+        str(relay_config_path),
         "codex",
         "--",
-        "exec",
-        "--json",
     ]
+    assert "--plugin-config" not in command
+    assert command.index("--config", 3) < command.index("exec")
 
 
 def test_relay_requires_exact_true(codex_payload, monkeypatch):
@@ -231,8 +237,8 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     adapter = load_codex_adapter()
     relay_config = {"agents": {"codex": {"command": "codex"}}}
     relay_plugin_config = {"version": 1, "components": []}
-    relay_config_path = tmp_path / "relay-config.toml"
-    relay_plugin_config_path = tmp_path / "relay-plugins.toml"
+    relay_config_path = tmp_path / "relay-config" / "config.toml"
+    relay_plugin_config_path = tmp_path / "relay-config" / "plugins.toml"
     mock_load_config = MagicMock(return_value=relay_plugin_config)
     mock_write_config = MagicMock(
         return_value=(relay_config_path, relay_plugin_config_path)
@@ -256,12 +262,10 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
 
     adapter.run_codex(codex_payload)
 
-    assert mock_run.call_args.args[0][:7] == [
+    assert mock_run.call_args.args[0][:5] == [
         "nemo-relay",
         "--config",
         str(relay_config_path),
-        "--plugin-config",
-        str(relay_plugin_config_path),
         "codex",
         "--",
     ]

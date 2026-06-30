@@ -170,12 +170,12 @@ def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path)
 @pytest.mark.parametrize(
     ("relay_config", "plugin_config", "expected_names"),
     [
-        ({"agents": {"codex": {"command": "codex"}}}, None, ("relay-config.toml", None)),
-        (None, {"version": 1, "components": []}, (None, "relay-plugins.toml")),
+        ({"agents": {"codex": {"command": "codex"}}}, None, ("config.toml", None)),
+        (None, {"version": 1, "components": []}, (None, "plugins.toml")),
         (
             {"agents": {"codex": {"command": "codex"}}},
             {"version": 1, "components": []},
-            ("relay-config.toml", "relay-plugins.toml"),
+            ("config.toml", "plugins.toml"),
         ),
     ],
 )
@@ -199,5 +199,6 @@ def test_write_relay_configs(
     assert tuple(path.name if path else None for path in paths) == expected_names
     for path, config in zip(paths, (relay_config, plugin_config), strict=True):
         if path is not None:
+            assert path.parent.name == "relay-config"
             with path.open("rb") as stream:
                 assert tomllib.load(stream) == config
