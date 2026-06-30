@@ -8,6 +8,11 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
+    import tomli as tomllib
+
 
 @pytest.fixture(name="common_utils", scope="session")
 def common_utils_fixture(adapters_common: str) -> types.ModuleType:
@@ -160,3 +165,39 @@ def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path)
         {"kind": "atof", "path": str(atof_file)},
         {"kind": "atif", "path": str(atif_file)},
     ]
+
+
+@pytest.mark.parametrize(
+    ("relay_config", "plugin_config", "expected_names"),
+    [
+        ({"agents": {"codex": {"command": "codex"}}}, None, ("relay-config.toml", None)),
+        (None, {"version": 1, "components": []}, (None, "relay-plugins.toml")),
+        (
+            {"agents": {"codex": {"command": "codex"}}},
+            {"version": 1, "components": []},
+            ("relay-config.toml", "relay-plugins.toml"),
+        ),
+    ],
+)
+def test_write_relay_configs(
+    common_utils: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    relay_config: dict[str, object] | None,
+    plugin_config: dict[str, object] | None,
+    expected_names: tuple[str | None, str | None],
+):
+    monkeypatch.setenv(
+        "FABRIC_RELAY_CONFIG_PATH", str(tmp_path / "nested" / "relay.json")
+    )
+
+    paths = common_utils.write_relay_configs(
+        relay_config=relay_config,
+        plugin_config=plugin_config,
+    )
+
+    assert tuple(path.name if path else None for path in paths) == expected_names
+    for path, config in zip(paths, (relay_config, plugin_config), strict=True):
+        if path is not None:
+            with path.open("rb") as stream:
+                assert tomllib.load(stream) == config
