@@ -135,7 +135,11 @@ def selected_model(payload: dict[str, Any]) -> str | None:
 
 
 def build_command(
-    payload: dict[str, Any], *, thread_id: str | None = None
+    payload: dict[str, Any],
+    *,
+    thread_id: str | None = None,
+    relay_config_path: Path | None = None,
+    relay_plugin_config_path: Path | None = None,
 ) -> list[str]:
     settings = common_utils.settings_payload(payload)
     command = resolve_command(payload, settings.get("codex_command") or "codex")
@@ -146,7 +150,21 @@ def build_command(
             f"unsupported Codex sandbox {sandbox!r}; expected one of {sorted(SANDBOXES)}"
         )
 
-    args = [command, "exec", "--json"]
+    args = []
+    if relay_config_path is not None or relay_plugin_config_path is not None:
+        relay_command = resolve_command(payload, settings.get("nemo_relay_command") or "nemo-relay")
+        args.append(relay_command)
+        if relay_config_path is not None:
+            args.extend(("--config", str(relay_config_path)))
+        if relay_plugin_config_path is not None:
+            args.extend(("--plugin-config", str(relay_plugin_config_path)))
+        args.extend(("codex", "--"))
+
+    else:
+        args.append(command)
+
+    args.extend(("exec", "--json"))
+
     if mode == "oneshot":
         args.append("--ephemeral")
     args.extend(["--sandbox", sandbox])
@@ -167,6 +185,7 @@ def build_command(
         args.extend(["resume", thread_id, "-"])
     else:
         args.append("-")
+
     return args
 
 
@@ -289,7 +308,22 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     if mode == "session" and not session_id:
         raise RuntimeError("runtime.mode=session requires a session_id or runtime_id")
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
-    command = build_command(payload, thread_id=prior_thread_id)
+    use_relay = os.environ.get("FABRIC_RELAY_ENABLED") == "true"
+    relay_config_path = None
+    relay_plugin_config_path = None
+    if use_relay:
+        relay_plugin_config = common_utils.load_relay_plugin_config(payload)
+        (relay_config_path, relay_plugin_config_path) = common_utils.write_relay_configs(
+            relay_config={"agents": {"codex": {"command": "codex"}}},
+            plugin_config=relay_plugin_config
+        )
+
+    command = build_command(
+        payload,
+        thread_id=prior_thread_id,
+        relay_config_path=relay_config_path,
+        relay_plugin_config_path=relay_plugin_config_path,
+    )
     cwd = resolve_cwd(payload)
     timeout = process_timeout(payload)
     launch_error = None

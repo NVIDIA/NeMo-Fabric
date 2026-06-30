@@ -162,7 +162,7 @@ def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     relay_plugin_config = common_utils.load_relay_plugin_config(payload)
-    relay_plugins_toml_path = common_utils.write_relay_plugins_toml(relay_plugin_config)
+    (_, relay_plugins_toml_path) = common_utils.write_relay_configs(plugin_config=relay_plugin_config)
     if relay_plugins_toml_path is not None:
         os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = str(relay_plugins_toml_path)
 

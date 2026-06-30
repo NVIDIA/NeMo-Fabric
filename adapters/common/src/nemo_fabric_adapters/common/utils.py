@@ -312,7 +312,7 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
     return artifacts
 
 
-def write_relay_plugins_toml(plugin_config: dict[str, Any]) -> Path | None:
+def write_relay_configs(*, relay_config: dict[str, Any] | None = None, plugin_config: dict[str, Any] | None = None) -> tuple[Path | None, Path | None]:
     try:
         import tomli_w
 
@@ -320,13 +320,22 @@ def write_relay_plugins_toml(plugin_config: dict[str, Any]) -> Path | None:
         if not config_path:
             raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
 
-        path = Path(config_path).with_name("relay-plugins.toml")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
-        return path
+        config_path = Path(config_path)
+
+        if relay_config is not None:
+            relay_config_path = config_path.with_name("relay-config.toml")
+            relay_config_path.write_text(tomli_w.dumps(relay_config), encoding="utf-8")
+
+        if plugin_config is not None:
+            plugin_config_path = config_path.with_name("relay-plugins.toml")
+            plugin_config_path.parent.mkdir(parents=True, exist_ok=True)
+            plugin_config_path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
+            relay_config_path = None
+
+        return (relay_config_path, plugin_config_path)
     except ImportError:
         print("tomli_w is not installed, skipping writing relay plugins TOML", file=sys.stderr)
-        return None
+        return None, None
 
 
 def _relay_model_name(payload: dict[str, Any]) -> str:

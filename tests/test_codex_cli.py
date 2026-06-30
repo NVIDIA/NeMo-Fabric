@@ -183,6 +183,88 @@ def test_relative_codex_command_resolves_from_config_root(codex_payload):
     assert command[0] == str(config_root / "tools" / "codex")
 
 
+def test_relay_wraps_codex_command(codex_payload, tmp_path):
+    adapter = load_codex_adapter()
+    relay_plugin_config_path = tmp_path / "relay-plugins.toml"
+
+    command = adapter.build_command(
+        codex_payload,
+        relay_plugin_config_path=relay_plugin_config_path,
+    )
+
+    assert command[:7] == [
+        "nemo-relay",
+        "--plugin-config",
+        str(relay_plugin_config_path),
+        "codex",
+        "--",
+        "exec",
+        "--json",
+    ]
+
+
+def test_relay_requires_exact_true(codex_payload, monkeypatch):
+    adapter = load_codex_adapter()
+    monkeypatch.setenv("FABRIC_RELAY_ENABLED", "TRUE")
+    mock_load_config = MagicMock()
+    mock_run = MagicMock(
+        return_value=subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=codex_jsonl("thread-123", "done"),
+            stderr="",
+        )
+    )
+    monkeypatch.setattr(
+        adapter.common_utils, "load_relay_plugin_config", mock_load_config
+    )
+    monkeypatch.setattr(adapter.subprocess, "run", mock_run)
+
+    adapter.run_codex(codex_payload)
+
+    command = mock_run.call_args.args[0]
+    assert command[0] == "codex"
+    mock_load_config.assert_not_called()
+
+
+def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
+    adapter = load_codex_adapter()
+    relay_plugin_config = {"version": 1, "components": []}
+    relay_plugin_config_path = tmp_path / "relay-plugins.toml"
+    mock_load_config = MagicMock(return_value=relay_plugin_config)
+    mock_write_config = MagicMock(return_value=relay_plugin_config_path)
+    mock_run = MagicMock(
+        return_value=subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=codex_jsonl("thread-123", "done"),
+            stderr="",
+        )
+    )
+    monkeypatch.setenv("FABRIC_RELAY_ENABLED", "true")
+    monkeypatch.setattr(
+        adapter.common_utils, "load_relay_plugin_config", mock_load_config
+    )
+    monkeypatch.setattr(
+        adapter.common_utils, "write_relay_plugins_toml", mock_write_config
+    )
+    monkeypatch.setattr(adapter.subprocess, "run", mock_run)
+
+    adapter.run_codex(codex_payload)
+
+    assert mock_run.call_args.args[0][:5] == [
+        "nemo-relay",
+        "--plugin-config",
+        str(relay_plugin_config_path),
+        "codex",
+        "--",
+    ]
+    with relay_plugin_config_path.with_name("relay-config.toml").open("rb") as stream:
+        assert tomllib.load(stream) == {"agents": {"codex": {"command": "codex"}}}
+    mock_load_config.assert_called_once_with(codex_payload)
+    mock_write_config.assert_called_once_with(relay_plugin_config)
+
+
 def test_reported_command_redacts_secret_config_overrides():
     adapter = load_codex_adapter()
 
