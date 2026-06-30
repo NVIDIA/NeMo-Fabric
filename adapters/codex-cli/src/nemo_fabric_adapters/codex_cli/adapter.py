@@ -313,6 +313,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
     use_relay = os.environ.get("FABRIC_RELAY_ENABLED") == "true"
     relay_config_path = None
+    relay_plugin_config = None
     if use_relay:
         # nemo-relay infers the location of the plugin config based upon the location of the relay config
         relay_plugin_config = common_utils.load_relay_plugin_config(payload)
