@@ -4,6 +4,7 @@
 import builtins
 import json
 import types
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -53,6 +54,31 @@ def test_payload_accessors_prefer_effective_config(common_utils: types.ModuleTyp
     assert common_utils.settings_payload(payload) == {"inner": True}
     assert common_utils.models_payload(payload) == {"inner": {"model": "inner-model"}}
     assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
+
+
+def test_load_payload_reads_fabric_invocation(
+    common_utils: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    invocation_path = tmp_path / "invocation.json"
+    invocation_path.write_text(
+        json.dumps({"request": {"input": "from file"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FABRIC_INVOCATION", str(invocation_path))
+
+    assert common_utils.load_payload() == {"request": {"input": "from file"}}
+
+
+def test_load_payload_falls_back_to_stdin(
+    common_utils: types.ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delenv("FABRIC_INVOCATION", raising=False)
+    monkeypatch.setattr("sys.stdin", StringIO('{"request": {"input": "from stdin"}}'))
+
+    assert common_utils.load_payload() == {"request": {"input": "from stdin"}}
 
 
 @pytest.mark.parametrize(

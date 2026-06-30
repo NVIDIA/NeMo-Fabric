@@ -38,6 +38,15 @@ def agent_name(payload: dict[str, Any]) -> str:
     return effective_config(payload).get("agent_name") or payload.get("agent_name") or "fabric-agent"
 
 
+def load_payload() -> dict[str, Any]:
+    invocation_path = os.environ.get("FABRIC_INVOCATION")
+    if invocation_path:
+        path = Path(invocation_path)
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return json.load(sys.stdin)
+
+
 def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("runtime_context") or {}
 

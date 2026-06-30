@@ -59,13 +59,6 @@ INHERITED_ENV_NAMES = {
 }
 
 
-def load_payload() -> dict[str, Any]:
-    invocation_path = os.environ.get("FABRIC_INVOCATION")
-    if invocation_path and Path(invocation_path).is_file():
-        return json.loads(Path(invocation_path).read_text(encoding="utf-8"))
-    return json.load(sys.stdin)
-
-
 def runtime_mode(payload: dict[str, Any]) -> str:
     runtime = common_utils.fabric_config(payload).get("runtime") or {}
     mode = str(runtime.get("mode") or "oneshot")
@@ -404,7 +397,7 @@ def redact_command(command: list[str]) -> list[str]:
 
 
 def main() -> None:
-    output = run_codex(load_payload())
+    output = run_codex(common_utils.load_payload())
     print(json.dumps(output, sort_keys=True))
     if output["failed"]:
         raise SystemExit(2)
