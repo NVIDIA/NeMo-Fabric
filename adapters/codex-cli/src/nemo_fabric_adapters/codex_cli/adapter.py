@@ -74,12 +74,6 @@ def runtime_mode(payload: dict[str, Any]) -> str:
     return mode
 
 
-def fabric_session_id(payload: dict[str, Any]) -> str | None:
-    context = common_utils.runtime_context(payload)
-    value = context.get("session_id") or context.get("runtime_id")
-    return str(value) if value else None
-
-
 def state_dir(payload: dict[str, Any]) -> Path:
     settings = common_utils.settings_payload(payload)
     config_root = Path(common_utils.config_root(payload)).resolve()
@@ -307,7 +301,7 @@ def exception_output(value: str | bytes | None) -> str:
 
 def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     mode = runtime_mode(payload)
-    session_id = fabric_session_id(payload) if mode == "session" else None
+    session_id = common_utils.runtime_session_id(payload) if mode == "session" else None
     if mode == "session" and not session_id:
         raise RuntimeError("runtime.mode=session requires a session_id or runtime_id")
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None

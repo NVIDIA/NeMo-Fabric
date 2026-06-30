@@ -15,22 +15,6 @@ def test_request_payload(hermes_common: types.ModuleType):
 
 
 @pytest.mark.parametrize(
-    ("runtime_context", "expected"),
-    [
-        ({"session_id": "caller-session", "runtime_id": "runtime-1"}, "caller-session"),
-        ({"runtime_id": "runtime-1"}, "runtime-1"),
-        ({}, None),
-    ],
-)
-def test_runtime_session_id_prefers_caller_session_id(
-    hermes_common: types.ModuleType,
-    runtime_context: dict[str, object],
-    expected: str | None,
-) -> None:
-    assert hermes_common.runtime_session_id({"runtime_context": runtime_context}) == expected
-
-
-@pytest.mark.parametrize(
     ("provider", "expected"),
     [
         ("nvidia", "https://integrate.api.nvidia.com/v1"),

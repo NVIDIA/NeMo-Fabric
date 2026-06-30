@@ -42,6 +42,19 @@ def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("runtime_context") or {}
 
 
+def runtime_session_id(payload: dict[str, Any]) -> str | None:
+    """Return Fabric's session key for adapter-owned harness session mapping."""
+
+    context = runtime_context(payload)
+    session_id = context.get("session_id")
+    if session_id:
+        return str(session_id)
+    runtime_id = context.get("runtime_id")
+    if runtime_id:
+        return str(runtime_id)
+    return None
+
+
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return runtime_context(payload).get("environment") or payload.get("environment") or {}
 

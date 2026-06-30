@@ -55,6 +55,22 @@ def test_payload_accessors_prefer_effective_config(common_utils: types.ModuleTyp
     assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
 
 
+@pytest.mark.parametrize(
+    ("runtime_context", "expected"),
+    [
+        ({"session_id": "caller-session", "runtime_id": "runtime-1"}, "caller-session"),
+        ({"runtime_id": "runtime-1"}, "runtime-1"),
+        ({}, None),
+    ],
+)
+def test_runtime_session_id_prefers_caller_session_id(
+    common_utils: types.ModuleType,
+    runtime_context: dict[str, object],
+    expected: str | None,
+):
+    assert common_utils.runtime_session_id({"runtime_context": runtime_context}) == expected
+
+
 def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
     common_utils: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,

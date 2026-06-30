@@ -70,7 +70,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     model_name = settings.get("model_name") or model_config.get("model")
     runtime_mode = get_runtime_mode(payload)
     use_session = runtime_mode == "session"
-    fabric_session_id = hermes_common.runtime_session_id(payload)
+    fabric_session_id = common_utils.runtime_session_id(payload)
 
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
 
