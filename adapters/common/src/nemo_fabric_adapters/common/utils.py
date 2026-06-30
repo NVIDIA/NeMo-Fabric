@@ -325,16 +325,17 @@ def write_relay_configs(
             raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
 
         config_path = Path(config_path)
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_dir = config_path.parent / "relay-config"
+        config_dir.mkdir(parents=True, exist_ok=True)
         relay_config_path = None
         plugin_config_path = None
 
         if relay_config is not None:
-            relay_config_path = config_path.with_name("relay-config.toml")
+            relay_config_path = config_dir / "config.toml"
             relay_config_path.write_text(tomli_w.dumps(relay_config), encoding="utf-8")
 
         if plugin_config is not None:
-            plugin_config_path = config_path.with_name("relay-plugins.toml")
+            plugin_config_path = config_dir / "plugins.toml"
             plugin_config_path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
 
         return relay_config_path, plugin_config_path
