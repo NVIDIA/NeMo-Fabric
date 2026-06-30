@@ -21,7 +21,7 @@ class BaseTestHermesE2E:
     Shared E2E Hermes relay assertions for adapter-specific subclasses.
     """
 
-    profile_name: str
+    profile_names: tuple[str, ...]
     profile_file: str
     adapter_kind: str
     adapter_runner: str
@@ -52,13 +52,16 @@ class BaseTestHermesE2E:
         async with FabricClient() as client:
             self.result = await client.run(
                 code_review_agent_dir,
-                profiles=[self.profile_name],
+                profiles=list(self.profile_names),
                 input="Reply with exactly: relay ok",
             )
 
         self.output = self.result["output"]
         self.artifacts = self.result["artifacts"]
         self.artifact_root = Path(self.artifacts["root"]).resolve()
+        self.relay_artifact_root = (
+            self.code_review_agent_dir / "artifacts" / "relay"
+        ).resolve()
         self.relay_artifacts = self.output["relay_artifacts"]
 
 
@@ -118,7 +121,7 @@ class BaseTestHermesE2E:
         relay_config = json.loads(relay_config_path.read_text(encoding="utf-8"))
         assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
         assert relay_config["relay"]["enabled"] is True
-        assert relay_config["fabric"]["profiles"] == [self.profile_name]
+        assert relay_config["fabric"]["profiles"] == list(self.profile_names)
         
         await self._additional_artifact_tests(artifact_by_name)
 
@@ -139,7 +142,9 @@ class BaseTestHermesE2E:
         ]
         assert atof_paths
         assert all(path.exists() for path in atof_paths)
-        assert all(path.is_relative_to(self.artifact_root) for path in atof_paths)
+        assert all(
+            path.is_relative_to(self.relay_artifact_root) for path in atof_paths
+        )
 
         atof_records = [
             json.loads(line)
@@ -184,7 +189,9 @@ class BaseTestHermesE2E:
         ]
         assert atif_paths
         assert all(path.exists() for path in atif_paths)
-        assert all(path.is_relative_to(self.artifact_root) for path in atif_paths)
+        assert all(
+            path.is_relative_to(self.relay_artifact_root) for path in atif_paths
+        )
 
         trajectory = json.loads(atif_paths[0].read_text())
         assert trajectory["agent"]["name"] in {"code-review-agent", "Hermes Agent"}
@@ -202,13 +209,13 @@ class BaseTestHermesE2E:
         
 
 class TestHermesCliE2E(BaseTestHermesE2E):
-    profile_name = "hermes_cli_relay"
-    profile_file = "hermes-cli-relay.yaml"
+    profile_names = ("hermes_cli", "relay")
+    profile_file = "hermes-cli.yaml"
     adapter_kind = "process"
     adapter_runner = "process"
     output_adapter = "cli"
     mode = "hermes_cli_oneshot"
-    artifact_dir = "hermes-cli-relay"
+    artifact_dir = "hermes-cli"
     atof_platform = "cli"
 
     async def _additional_artifact_tests(self, artifact_by_name: dict[str, dict[str, str]]):
@@ -220,15 +227,15 @@ class TestHermesCliE2E(BaseTestHermesE2E):
         assert fabric_invocation_path.name == "adapter-invocation.json"
 
         relay_config_path = Path(artifact_by_name["relay_config"]["path"]).resolve()
-        assert relay_config_path.with_name("relay-plugins.toml").exists()
+        assert (relay_config_path.parent / "relay-config" / "plugins.toml").exists()
 
 
 class TestHermesSdkE2E(BaseTestHermesE2E):
-    profile_name = "hermes_relay"
-    profile_file = "hermes-relay.yaml"
+    profile_names = ("hermes_sdk", "relay")
+    profile_file = "hermes-sdk.yaml"
     adapter_kind = "python"
     adapter_runner = "python"
     output_adapter = "python"
     mode = "hermes_sdk"
-    artifact_dir = "hermes-relay"
+    artifact_dir = "hermes-sdk"
     atof_platform = "fabric"
