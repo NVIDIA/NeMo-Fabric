@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+name: codex_cli_relay_openinference
+description: Run Codex CLI with NeMo Relay OpenInference tracing enabled.
+
+harness:
+  adapter_id: nvidia.fabric.codex.cli
+  resolution: preinstalled
+  settings:
+    sandbox: workspace-write
+    skip_git_repo_check: true
+    config_overrides:
+      model_reasoning_effort: high
+
+models:
+  default:
+    provider: openai
+    model: openai/gpt-5.4
+    api_key_env: null
+    temperature: null
+
+skills: null
+mcp: null
+
+runtime:
+  mode: oneshot
+  transport: cli
+  input_schema: text
+  output_schema: message
+  artifacts: ./artifacts/codex-cli-relay-openinference
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/codex-cli-relay-openinference
+
+telemetry:
+  enabled: true
+  mode: sdk
+  output_dir: ./artifacts/codex-cli-relay-openinference/relay
+  config:
+    version: 1
+    components:
+      - kind: observability
+        enabled: true
+        config:
+          version: 1
+          atif:
+            enabled: true
+            output_directory: ./artifacts/codex-cli-relay-openinference/relay
+            filename_template: "trajectory-{session_id}.atif.json"
+            agent_name: code-review-agent
+            agent_version: fabric-poc
+          atof:
+            enabled: true
+            output_directory: ./artifacts/codex-cli-relay-openinference/relay
+            filename: events.atof.jsonl
+            mode: overwrite
+          openinference:
+            enabled: true
+            transport: http_binary
+            endpoint: http://localhost:6006/v1/traces
