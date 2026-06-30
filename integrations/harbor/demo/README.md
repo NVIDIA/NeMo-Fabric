@@ -109,8 +109,9 @@ docker run --rm --detach \
   arizephoenix/phoenix:latest
 
 until curl --fail --silent http://localhost:6006 >/dev/null; do sleep 1; done
-open http://localhost:6006
 ```
+
+Visit `http://localhost:6006` in a browser.
 
 The telemetry profile sends OTLP/HTTP traces from the Harbor task container to
 Phoenix through Docker Desktop's `host.docker.internal` bridge. Then run:

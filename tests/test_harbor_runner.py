@@ -5,6 +5,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +13,7 @@ ROOT_README = ROOT / "README.md"
 DEMO_ROOT = ROOT / "integrations" / "harbor" / "demo"
 DEMO_README = DEMO_ROOT / "README.md"
 DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
+DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
 CODEX_PROFILE = (
     DEMO_ROOT
     / "task"
@@ -96,6 +98,39 @@ def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
     assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == "harbor-demo"
 
 
+def test_runner_rejects_missing_config(tmp_path):
+    from nemo_fabric.integrations.harbor.runner import load_sources
+
+    with pytest.raises(FileNotFoundError):
+        load_sources({"config_path": str(tmp_path / "missing.yaml")})
+
+
+def test_runner_rejects_malformed_profile(tmp_path):
+    from nemo_fabric.integrations.harbor.runner import load_sources
+
+    config_path = tmp_path / "agent.yaml"
+    profile_path = tmp_path / "profile.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "metadata": {"name": "harbor-demo"},
+                "harness": {"adapter_id": "demo.fabric.smoke"},
+                "runtime": {"mode": "oneshot"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    profile_path.write_text("harness: [", encoding="utf-8")
+
+    with pytest.raises(yaml.YAMLError):
+        load_sources(
+            {
+                "config_path": str(config_path),
+                "profile_paths": [str(profile_path)],
+            }
+        )
+
+
 def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
     adapter = load_codex_adapter()
 
@@ -175,6 +210,17 @@ def test_harbor_demo_documents_explicit_cli_commands():
     assert "OPENAI_API_KEY" not in demo
     assert "CODEX_API_KEY" not in demo
     assert "CODEX_HOME" in demo
+    assert "open http://localhost:6006" not in demo
+
+
+def test_harbor_demo_setup_and_solution_fail_fast():
+    dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
+    solution = DEMO_SOLUTION.read_text(encoding="utf-8")
+
+    assert "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |" not in dockerfile
+    assert "-o /tmp/rustup-init.sh" in dockerfile
+    assert "if updated == source:" in solution
+    assert "raise SystemExit" in solution
 
 
 def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
