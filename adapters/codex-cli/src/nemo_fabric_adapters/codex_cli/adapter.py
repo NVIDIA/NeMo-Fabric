@@ -367,7 +367,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     if session_id and thread_id and not error:
         save_thread_id(payload, session_id, thread_id)
 
-    return {
+    output = {
         "harness": "codex",
         "adapter": "cli",
         "mode": f"codex_cli_{mode}",
@@ -383,6 +383,18 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         "failed": error is not None,
         "state_dir": str(state_dir(payload)),
     }
+
+    if relay_plugin_config is not None:
+        relay_artifacts = common_utils.collect_relay_artifacts(relay_plugin_config)
+        output["relay_runtime"] = {
+            "enabled": True,
+            "mode": os.environ.get("FABRIC_RELAY_MODE"),
+            "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
+            "emitter": "nemo-relay",
+        }
+        output["relay_artifacts"] = relay_artifacts
+
+    return output
 
 
 def redact_command(command: list[str]) -> list[str]:
