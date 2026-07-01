@@ -153,7 +153,8 @@ def build_command(
     *,
     thread_id: str | None = None,
     relay_gateway_url: str | None = None,
-    codex_home: Path | None = None,
+    relay_profile_name: str | None = None,
+    relay_profile_path: Path | None = None,
 ) -> list[str]:
     settings = common_utils.settings_payload(payload)
     command = resolve_command(payload, settings.get("codex_command") or "codex")
@@ -166,12 +167,12 @@ def build_command(
 
     args = [command]
     if relay_gateway_url is not None:
-        if codex_home is None:
-            raise RuntimeError("codex_home is required when Relay is enabled")
-        write_relay_codex_config(
+        if relay_profile_name is None or relay_profile_path is None:
+            raise RuntimeError("a Codex profile is required when Relay is enabled")
+        write_relay_codex_profile(
             payload,
             relay_gateway_url,
-            codex_home,
+            relay_profile_path,
         )
 
     # The --config flag needs to occur before the exec subcommand
@@ -186,9 +187,12 @@ def build_command(
         args.append("--ephemeral")
     args.extend(["--sandbox", sandbox])
 
-    codex_profile = settings.get("codex_profile")
+    codex_profile = relay_profile_name or settings.get("codex_profile")
     if codex_profile:
-        args.extend(["--profile", str(codex_profile)])
+        # By default Codex will not enable hooks for profiles that are not trusted until the user explicitly enables them.
+        # This is a problem for Fabric, because we want to be able to use hooks in a non-interactive way.
+        # So we add the --dangerously-bypass-hook-trust flag to bypass this check.
+        args.extend(["--profile", str(codex_profile), "--dangerously-bypass-hook-trust"])
 
     model = selected_model(payload)
     if model:
@@ -205,10 +209,10 @@ def build_command(
     return args
 
 
-def write_relay_codex_config(
+def write_relay_codex_profile(
     payload: dict[str, Any],
     gateway_url: str,
-    codex_home: Path,
+    profile_path: Path,
 ):
     settings = common_utils.settings_payload(payload)
     relay_command = resolve_command(
@@ -245,18 +249,24 @@ def write_relay_codex_config(
         "features": {"hooks": True},
         "hooks": hooks,
     }
-    codex_home.mkdir(parents=True, exist_ok=True)
-    (codex_home / "config.toml").write_text(
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    profile_path.write_text(
         tomli_w.dumps(config),
         encoding="utf-8",
     )
 
 
-def codex_relay_home() -> Path:
-    config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
-    if not config_path:
-        raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
-    return Path(config_path).parent / "codex-relay"
+def codex_home() -> Path:
+    configured = os.environ.get("CODEX_HOME")
+    return Path(configured).expanduser() if configured else Path.home() / ".codex"
+
+
+def relay_codex_profile(payload: dict[str, Any], home: Path) -> tuple[str, Path]:
+    runtime_id = common_utils.runtime_context(payload).get("runtime_id")
+    if not runtime_id:
+        raise RuntimeError("runtime_context.runtime_id is required when Relay is enabled")
+    name = f"fabric-{runtime_id}"
+    return name, home / f"{name}.config.toml"
 
 
 def resolve_command(payload: dict[str, Any], value: Any) -> str:
@@ -345,7 +355,6 @@ def build_env(
     payload: dict[str, Any],
     *,
     relay_gateway_url: str | None = None,
-    codex_home: Path | None = None,
 ) -> dict[str, str]:
     env = {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     configured = common_utils.settings_payload(payload).get("env")
@@ -355,10 +364,7 @@ def build_env(
         raise ValueError("env must be a mapping of variable names to values")
     env.update({str(key): str(value) for key, value in configured.items()})
     if relay_gateway_url is not None:
-        if codex_home is None:
-            raise RuntimeError("codex_home is required when Relay is enabled")
         env["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
-        env["CODEX_HOME"] = str(codex_home)
     return env
 
 
@@ -475,7 +481,13 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("runtime.mode=session requires a session_id or runtime_id")
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
     use_relay = os.environ.get("FABRIC_RELAY_ENABLED") == "true"
-    codex_home = codex_relay_home() if use_relay else None
+    relay_profile_name = None
+    relay_profile_path = None
+    if use_relay:
+        relay_profile_name, relay_profile_path = relay_codex_profile(
+            payload,
+            codex_home(),
+        )
     relay_plugin_config = None
     relay_gateway = None
     relay_gateway_url = None
@@ -500,7 +512,8 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
             payload,
             thread_id=prior_thread_id,
             relay_gateway_url=relay_gateway_url,
-            codex_home=codex_home,
+            relay_profile_name=relay_profile_name,
+            relay_profile_path=relay_profile_path,
         )
 
         timeout = process_timeout(payload)
@@ -512,7 +525,6 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
                 env=build_env(
                     payload,
                     relay_gateway_url=relay_gateway_url,
-                    codex_home=codex_home,
                 ),
                 input=request_to_prompt(payload),
                 text=True,
@@ -532,8 +544,14 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
             completed = subprocess.CompletedProcess(command, 127, "", str(error))
             launch_error = f"Codex CLI could not start: {error}"
     finally:
+        if relay_profile_path is not None:
+            relay_profile_path.unlink(missing_ok=True)
+
         if relay_gateway is not None:
+            # Work-around for RELAY-399, wait for subscribed events to be flushed before stopping nemo-relay
+            time.sleep(5)
             stop_relay_gateway(relay_gateway)
+
     parsed = parse_events(completed.stdout)
     thread_id = parsed["thread_id"] or prior_thread_id
     error = launch_error or parsed["error"]
