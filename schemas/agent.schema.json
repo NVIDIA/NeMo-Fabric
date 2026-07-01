@@ -359,7 +359,7 @@
         },
         "enabled": {
           "default": false,
-          "description": "Whether telemetry is enabled for this run. Relay is the Phase 1 telemetry path.",
+          "description": "Whether telemetry is enabled for this run.",
           "type": "boolean"
         },
         "mode": {
@@ -382,9 +382,29 @@
             "string",
             "null"
           ]
+        },
+        "provider": {
+          "$ref": "#/$defs/TelemetryProvider",
+          "default": "relay",
+          "description": "Telemetry provider responsible for runtime integration."
         }
       },
       "type": "object"
+    },
+    "TelemetryProvider": {
+      "description": "Telemetry runtime provider.",
+      "oneOf": [
+        {
+          "const": "relay",
+          "description": "Use NeMo Relay for telemetry integration.",
+          "type": "string"
+        },
+        {
+          "const": "native",
+          "description": "Let the selected adapter handle telemetry natively.",
+          "type": "string"
+        }
+      ]
     },
     "Transport": {
       "description": "Runtime transport.",

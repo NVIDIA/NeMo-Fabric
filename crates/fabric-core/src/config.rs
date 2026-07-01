@@ -631,9 +631,12 @@ pub enum McpExposure {
 /// Telemetry configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TelemetryConfig {
-    /// Whether telemetry is enabled for this run. Relay is the Phase 1 telemetry path.
+    /// Whether telemetry is enabled for this run.
     #[serde(default)]
     pub enabled: bool,
+    /// Telemetry provider responsible for runtime integration.
+    #[serde(default)]
+    pub provider: TelemetryProvider,
     /// Telemetry mode, for example `sdk`, `gateway`, or `external`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
@@ -649,6 +652,27 @@ pub struct TelemetryConfig {
     /// Additive telemetry fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+/// Telemetry runtime provider.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TelemetryProvider {
+    /// Use NeMo Relay for telemetry integration.
+    #[default]
+    Relay,
+    /// Let the selected adapter handle telemetry natively.
+    Native,
+}
+
+impl TelemetryProvider {
+    /// Return the stable configuration value for this provider.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Relay => "relay",
+            Self::Native => "native",
+        }
+    }
 }
 
 /// Load a Fabric document from an agent directory or single agent config.
@@ -1270,7 +1294,8 @@ fn resolve_telemetry_plan(
 ) -> Option<TelemetryPlan> {
     let telemetry = config.telemetry.as_ref()?;
     Some(TelemetryPlan {
-        relay_enabled: telemetry.enabled,
+        provider: telemetry.provider,
+        relay_enabled: telemetry.enabled && telemetry.provider == TelemetryProvider::Relay,
         relay_mode: telemetry.mode.clone(),
         relay_project: telemetry.project.clone(),
         relay_output_dir: telemetry.output_dir.clone(),
@@ -1486,6 +1511,8 @@ pub struct McpServerPlan {
 /// Resolved telemetry plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TelemetryPlan {
+    /// Telemetry provider selected for this run.
+    pub provider: TelemetryProvider,
     /// Whether Relay is enabled.
     pub relay_enabled: bool,
     /// Relay mode, when configured.
@@ -1603,6 +1630,79 @@ runtime:
         assert_eq!(config.runtime.transport, Transport::Library);
         assert_eq!(config.runtime.input_schema, "text");
         assert_eq!(config.runtime.output_schema, "text");
+    }
+
+    #[test]
+    fn telemetry_provider_defaults_to_relay() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.hermes.sdk
+runtime:
+  mode: oneshot
+telemetry:
+  enabled: true
+  config:
+    exporter: test
+"#,
+        )
+        .expect("config with default telemetry provider");
+
+        let telemetry = config.telemetry.as_ref().expect("telemetry config");
+        let plan = resolve_telemetry_plan(&config, None).expect("telemetry plan");
+
+        assert_eq!(telemetry.provider, TelemetryProvider::Relay);
+        assert_eq!(plan.provider, TelemetryProvider::Relay);
+        assert!(plan.relay_enabled);
+        assert_eq!(
+            plan.relay_config,
+            Some(serde_json::json!({"exporter": "test"}))
+        );
+    }
+
+    #[test]
+    fn native_telemetry_provider_skips_relay_and_preserves_config() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.hermes.sdk
+runtime:
+  mode: oneshot
+telemetry:
+  enabled: true
+  provider: native
+  config:
+    exporter: test
+"#,
+        )
+        .expect("config with native telemetry provider");
+
+        let plan = resolve_telemetry_plan(&config, None).expect("telemetry plan");
+
+        assert_eq!(plan.provider, TelemetryProvider::Native);
+        assert!(!plan.relay_enabled);
+        assert_eq!(
+            plan.relay_config,
+            Some(serde_json::json!({"exporter": "test"}))
+        );
+    }
+
+    #[test]
+    fn telemetry_provider_rejects_unknown_values() {
+        let result = serde_yaml::from_str::<TelemetryConfig>(
+            r#"
+enabled: true
+provider: unsupported
+"#,
+        );
+
+        assert!(result.is_err());
     }
 
     #[test]
