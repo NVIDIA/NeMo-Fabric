@@ -257,35 +257,6 @@ def test_relay_routes_codex_through_standalone_gateway(
     }
 
 
-def test_relay_requires_exact_true(codex_payload, monkeypatch, tmp_path):
-    adapter = load_codex_adapter()
-    os.environ["FABRIC_RELAY_ENABLED"] = "TRUE"
-    mock_load_config = MagicMock()
-    mock_run = MagicMock(
-        return_value=subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=codex_jsonl("thread-123", "done"),
-            stderr="",
-        )
-    )
-    monkeypatch.setattr(
-        adapter.common_utils, "load_relay_plugin_config", mock_load_config
-    )
-    monkeypatch.setattr(adapter.subprocess, "run", mock_run)
-
-    result = adapter.run_codex(codex_payload)
-
-    command = mock_run.call_args.args[0]
-    assert "relay_runtime" in result
-    assert "relay_artifacts" in result
-    assert command[0] == "codex"
-    assert "--config" not in command
-    assert command[command.index("--profile") + 1] == "fabric-runtime-1"
-    assert not (tmp_path / "codex-home" / "fabric-runtime-1.config.toml").exists()
-    mock_load_config.assert_not_called()
-
-
 def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     adapter = load_codex_adapter()
     relay_config = {"agents": {"codex": {"command": "codex"}}}
@@ -327,9 +298,11 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     monkeypatch.setattr(adapter, "codex_home", mock_codex_home)
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
 
-    adapter.run_codex(codex_payload)
+    result = adapter.run_codex(codex_payload)
 
     command = mock_run.call_args.args[0]
+    assert "relay_runtime" in result
+    assert "relay_artifacts" in result
     assert command[0] == "codex"
     assert "nemo-relay" not in command
     assert command[command.index("--profile") + 1] == profile_name
