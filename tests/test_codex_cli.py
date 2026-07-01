@@ -423,7 +423,7 @@ def test_config_override_values_reject_nested_non_finite_numbers(value):
         adapter.toml_value(value)
 
 
-def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypatch):
+def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypatch, tmp_path):
     adapter = load_codex_adapter()
     codex_payload["effective_config"]["config"]["runtime"]["mode"] = "session"
     codex_payload["runtime_context"]["session_id"] = "review-session"
@@ -445,7 +445,7 @@ def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     )
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
     os.environ.pop("OPENAI_API_KEY", None)
-    os.environ["CODEX_HOME"] = "/tmp/codex-home"
+    os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
     os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
     codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
         "CODEX_EXPLICIT": "forward-me"
@@ -467,7 +467,7 @@ def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     assert second["thread_id"] == "thread-123"
     assert second["usage"]["cached_input_tokens"] == 2
     child_env = mock_run.call_args_list[0].kwargs["env"]
-    assert child_env["CODEX_HOME"] == "/tmp/codex-home"
+    assert child_env["CODEX_HOME"] == str(tmp_path / "codex-home")
     assert child_env["CODEX_EXPLICIT"] == "forward-me"
     assert "OPENAI_API_KEY" not in child_env
     assert "FABRIC_UNRELATED_SECRET" not in child_env
