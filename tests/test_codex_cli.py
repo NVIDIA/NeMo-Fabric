@@ -189,34 +189,41 @@ def test_relative_codex_command_resolves_from_config_root(codex_payload):
     assert command[0] == str(config_root / "tools" / "codex")
 
 
-def test_relay_routes_codex_through_standalone_gateway(codex_payload):
+def test_relay_routes_codex_through_standalone_gateway(
+    codex_payload,
+    tmp_path,
+):
     adapter = load_codex_adapter()
     gateway_url = "http://127.0.0.1:43210"
+    codex_home = tmp_path / "codex-relay"
 
     command = adapter.build_command(
         codex_payload,
         relay_gateway_url=gateway_url,
+        codex_home=codex_home,
     )
 
     assert command[0] == "codex"
     assert "nemo-relay" not in command
-    assert command[1:13] == [
-        "--config",
-        "features.hooks=true",
-        "--config",
-        'model_provider="nemo-relay-openai"',
-        "--config",
-        'model_providers.nemo-relay-openai.name="NeMo Relay OpenAI"',
-        "--config",
-        f'model_providers.nemo-relay-openai.base_url="{gateway_url}"',
-        "--config",
-        'model_providers.nemo-relay-openai.wire_api="responses"',
-        "--config",
-        "model_providers.nemo-relay-openai.requires_openai_auth=true",
-    ]
-    assert any(value.startswith("hooks.SessionStart=") for value in command)
-    assert any(value.startswith("hooks.UserPromptSubmit=") for value in command)
+    assert not any(value.startswith("hooks.") for value in command)
     assert command.index("--config") < command.index("exec")
+
+    config_path = codex_home / "config.toml"
+    config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    assert config["model_provider"] == "nemo-relay-openai"
+    assert config["model_providers"]["nemo-relay-openai"] == {
+        "name": "NeMo Relay OpenAI",
+        "base_url": gateway_url,
+        "wire_api": "responses",
+        "requires_openai_auth": True,
+        "supports_websockets": False,
+    }
+    assert config["features"]["hooks"] is True
+    assert config["hooks"]["SessionStart"][0]["hooks"][0] == {
+        "type": "command",
+        "command": "nemo-relay hook-forward codex",
+        "timeout": 30,
+    }
 
 
 def test_relay_requires_exact_true(codex_payload, monkeypatch):
@@ -257,6 +264,8 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     gateway_url = "http://127.0.0.1:43210"
     mock_start_gateway = MagicMock(return_value=(mock_gateway, gateway_url))
     mock_stop_gateway = MagicMock()
+    codex_home = tmp_path / "codex-relay"
+    mock_codex_relay_home = MagicMock(return_value=codex_home)
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
             args=[],
@@ -266,6 +275,10 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
         )
     )
     monkeypatch.setenv("FABRIC_RELAY_ENABLED", "true")
+    monkeypatch.setenv(
+        "FABRIC_RELAY_CONFIG_PATH",
+        str(tmp_path / "relay-config.json"),
+    )
     monkeypatch.setattr(
         adapter.common_utils, "load_relay_plugin_config", mock_load_config
     )
@@ -274,6 +287,7 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(adapter, "start_relay_gateway", mock_start_gateway)
     monkeypatch.setattr(adapter, "stop_relay_gateway", mock_stop_gateway)
+    monkeypatch.setattr(adapter, "codex_relay_home", mock_codex_relay_home)
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
 
     adapter.run_codex(codex_payload)
@@ -281,8 +295,10 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     command = mock_run.call_args.args[0]
     assert command[0] == "codex"
     assert "nemo-relay" not in command
-    assert f'model_providers.nemo-relay-openai.base_url="{gateway_url}"' in command
     assert mock_run.call_args.kwargs["env"]["NEMO_RELAY_GATEWAY_URL"] == gateway_url
+    assert mock_run.call_args.kwargs["env"]["CODEX_HOME"] == str(codex_home)
+    assert (codex_home / "config.toml").is_file()
+    mock_codex_relay_home.assert_called_once_with()
     mock_load_config.assert_called_once_with(codex_payload)
     mock_write_config.assert_called_once_with(
         relay_config=relay_config,

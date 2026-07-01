@@ -153,6 +153,7 @@ def build_command(
     *,
     thread_id: str | None = None,
     relay_gateway_url: str | None = None,
+    codex_home: Path | None = None,
 ) -> list[str]:
     settings = common_utils.settings_payload(payload)
     command = resolve_command(payload, settings.get("codex_command") or "codex")
@@ -165,7 +166,13 @@ def build_command(
 
     args = [command]
     if relay_gateway_url is not None:
-        args.extend(relay_codex_config_args(payload, relay_gateway_url))
+        if codex_home is None:
+            raise RuntimeError("codex_home is required when Relay is enabled")
+        write_relay_codex_config(
+            payload,
+            relay_gateway_url,
+            codex_home,
+        )
 
     # The --config flag needs to occur before the exec subcommand
     # Placing it after will cause conflicts with Relay, as any --config flags placed prior to exec are merged
@@ -198,40 +205,58 @@ def build_command(
     return args
 
 
-def relay_codex_config_args(payload: dict[str, Any], gateway_url: str) -> list[str]:
+def write_relay_codex_config(
+    payload: dict[str, Any],
+    gateway_url: str,
+    codex_home: Path,
+):
     settings = common_utils.settings_payload(payload)
     relay_command = resolve_command(
         payload,
         settings.get("nemo_relay_command") or "nemo-relay",
     )
-    hook_command = toml_value(f"{relay_command} hook-forward codex")
-    args = [
-        "--config",
-        "features.hooks=true",
-        "--config",
-        'model_provider="nemo-relay-openai"',
-        "--config",
-        'model_providers.nemo-relay-openai.name="NeMo Relay OpenAI"',
-        "--config",
-        f"model_providers.nemo-relay-openai.base_url={toml_value(gateway_url)}",
-        "--config",
-        'model_providers.nemo-relay-openai.wire_api="responses"',
-        "--config",
-        "model_providers.nemo-relay-openai.requires_openai_auth=true",
-        "--config",
-        "model_providers.nemo-relay-openai.supports_websockets=false",
-    ]
+    hook_command = f"{relay_command} hook-forward codex"
+    hooks = {}
     for event in RELAY_HOOK_EVENTS:
-        matcher = 'matcher="*",' if event in RELAY_HOOK_MATCHER_EVENTS else ""
-        value = (
-            "["
-            + matcher
-            + 'hooks=[{type="command",command='
-            + hook_command
-            + ",timeout=30}]}]"
-        )
-        args.extend(("--config", f"hooks.{event}={value}"))
-    return args
+        hook_group: dict[str, Any] = {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": hook_command,
+                    "timeout": 30,
+                }
+            ]
+        }
+        if event in RELAY_HOOK_MATCHER_EVENTS:
+            hook_group["matcher"] = "*"
+        hooks[event] = [hook_group]
+
+    config = {
+        "model_provider": "nemo-relay-openai",
+        "model_providers": {
+            "nemo-relay-openai": {
+                "name": "NeMo Relay OpenAI",
+                "base_url": gateway_url,
+                "wire_api": "responses",
+                "requires_openai_auth": True,
+                "supports_websockets": False,
+            }
+        },
+        "features": {"hooks": True},
+        "hooks": hooks,
+    }
+    codex_home.mkdir(parents=True, exist_ok=True)
+    (codex_home / "config.toml").write_text(
+        tomli_w.dumps(config),
+        encoding="utf-8",
+    )
+
+
+def codex_relay_home() -> Path:
+    config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
+    if not config_path:
+        raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
+    return Path(config_path).parent / "codex-relay"
 
 
 def resolve_command(payload: dict[str, Any], value: Any) -> str:
@@ -320,6 +345,7 @@ def build_env(
     payload: dict[str, Any],
     *,
     relay_gateway_url: str | None = None,
+    codex_home: Path | None = None,
 ) -> dict[str, str]:
     env = {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     configured = common_utils.settings_payload(payload).get("env")
@@ -329,7 +355,10 @@ def build_env(
         raise ValueError("env must be a mapping of variable names to values")
     env.update({str(key): str(value) for key, value in configured.items()})
     if relay_gateway_url is not None:
+        if codex_home is None:
+            raise RuntimeError("codex_home is required when Relay is enabled")
         env["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
+        env["CODEX_HOME"] = str(codex_home)
     return env
 
 
@@ -446,6 +475,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("runtime.mode=session requires a session_id or runtime_id")
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
     use_relay = os.environ.get("FABRIC_RELAY_ENABLED") == "true"
+    codex_home = codex_relay_home() if use_relay else None
     relay_plugin_config = None
     relay_gateway = None
     relay_gateway_url = None
@@ -470,15 +500,8 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
             payload,
             thread_id=prior_thread_id,
             relay_gateway_url=relay_gateway_url,
+            codex_home=codex_home,
         )
-
-        # TODO: Remove
-        with open("/tmp/codex_command.txt", "w", encoding="utf-8") as f:
-            f.write(" ".join(command))
-            f.write(f"\ncwd={cwd}\n")
-            f.write(f"relay_gateway_url={relay_gateway_url}\n")
-            f.write(f"relay_process={relay_gateway.pid}\n")
-            f.write(f"{' '.join(relay_gateway.args)}\n")
 
         timeout = process_timeout(payload)
         launch_error = None
@@ -486,7 +509,11 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
             completed = subprocess.run(
                 command,
                 cwd=cwd,
-                env=build_env(payload, relay_gateway_url=relay_gateway_url),
+                env=build_env(
+                    payload,
+                    relay_gateway_url=relay_gateway_url,
+                    codex_home=codex_home,
+                ),
                 input=request_to_prompt(payload),
                 text=True,
                 capture_output=True,
