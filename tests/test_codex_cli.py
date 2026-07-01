@@ -274,9 +274,11 @@ def test_relay_requires_exact_true(codex_payload, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
 
-    adapter.run_codex(codex_payload)
+    result = adapter.run_codex(codex_payload)
 
     command = mock_run.call_args.args[0]
+    assert "relay_runtime" in result
+    assert "relay_artifacts" in result
     assert command[0] == "codex"
     assert "--config" not in command
     assert command[command.index("--profile") + 1] == "fabric-runtime-1"
