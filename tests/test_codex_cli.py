@@ -37,9 +37,10 @@ def load_codex_adapter():
 
 
 @pytest.fixture(name="codex_payload")
-def codex_payload_fixture(tmp_path):
+def codex_payload_fixture(tmp_path, monkeypatch):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     return {
         "effective_config": {
             "agent_name": "codex-test",
@@ -158,30 +159,40 @@ def fabric_config(tmp_path, mock_codex, *, mode):
     )
 
 
-def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(codex_payload):
+def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(
+    codex_payload,
+    tmp_path,
+):
     adapter = load_codex_adapter()
+    profile_name = "fabric-runtime-1"
+    profile_path = tmp_path / f"{profile_name}.config.toml"
 
-    command = adapter.build_command(codex_payload)
+    command = adapter.build_command(
+        codex_payload,
+        generated_profile_name=profile_name,
+        generated_profile_path=profile_path,
+    )
 
     exec_index = command.index("exec")
     assert command[0] == "codex"
-    assert command[1:exec_index] == [
-        "--config",
-        "features.web_search=false",
-        "--config",
-        'model_reasoning_effort="high"',
-    ]
+    assert command[1:exec_index] == []
     assert command[exec_index : exec_index + 3] == ["exec", "--json", "--ephemeral"]
     assert ["--sandbox", "read-only"] == command[exec_index + 3 : exec_index + 5]
-    assert ["--profile", "team"] == command[exec_index + 5 : exec_index + 7]
+    assert ["--profile", profile_name] == command[exec_index + 5 : exec_index + 7]
+    assert command[exec_index + 7] == "--dangerously-bypass-hook-trust"
     assert ["--model", "gpt-5.4"] == command[-3:-1]
     assert command[-1] == "-"
+    assert tomllib.loads(profile_path.read_text(encoding="utf-8")) == {
+        "features": {"web_search": False},
+        "model_reasoning_effort": "high",
+    }
 
 
 def test_relative_codex_command_resolves_from_config_root(codex_payload):
     adapter = load_codex_adapter()
     settings = codex_payload["effective_config"]["config"]["harness"]["settings"]
     settings["codex_command"] = "./tools/codex"
+    settings["config_overrides"] = {}
 
     command = adapter.build_command(codex_payload)
 
@@ -215,15 +226,15 @@ def test_relay_routes_codex_through_standalone_gateway(
     command = adapter.build_command(
         codex_payload,
         relay_gateway_url=gateway_url,
-        relay_profile_name=profile_name,
-        relay_profile_path=profile_path,
+        generated_profile_name=profile_name,
+        generated_profile_path=profile_path,
     )
 
     assert command[0] == "codex"
     assert "nemo-relay" not in command
-    assert command[1] == "--dangerously-bypass-hook-trust"
+    assert "--dangerously-bypass-hook-trust" in command
     assert not any(value.startswith("hooks.") for value in command)
-    assert command.index("--config") < command.index("exec")
+    assert "--config" not in command
     assert command[command.index("--profile") + 1] == profile_name
 
     config = tomllib.loads(profile_path.read_text(encoding="utf-8"))
@@ -236,6 +247,8 @@ def test_relay_routes_codex_through_standalone_gateway(
         "supports_websockets": False,
     }
     assert config["features"]["hooks"] is True
+    assert config["features"]["web_search"] is False
+    assert config["model_reasoning_effort"] == "high"
     assert config["hooks"]["SessionStart"][0]["hooks"][0] == {
         "type": "command",
         "command": "nemo-relay hook-forward codex",
@@ -243,7 +256,7 @@ def test_relay_routes_codex_through_standalone_gateway(
     }
 
 
-def test_relay_requires_exact_true(codex_payload, monkeypatch):
+def test_relay_requires_exact_true(codex_payload, monkeypatch, tmp_path):
     adapter = load_codex_adapter()
     monkeypatch.setenv("FABRIC_RELAY_ENABLED", "TRUE")
     mock_load_config = MagicMock()
@@ -264,6 +277,9 @@ def test_relay_requires_exact_true(codex_payload, monkeypatch):
 
     command = mock_run.call_args.args[0]
     assert command[0] == "codex"
+    assert "--config" not in command
+    assert command[command.index("--profile") + 1] == "fabric-runtime-1"
+    assert not (tmp_path / "codex-home" / "fabric-runtime-1.config.toml").exists()
     mock_load_config.assert_not_called()
 
 
@@ -307,6 +323,7 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(adapter, "start_relay_gateway", mock_start_gateway)
     monkeypatch.setattr(adapter, "stop_relay_gateway", mock_stop_gateway)
+    monkeypatch.setattr(adapter.time, "sleep", MagicMock())
     monkeypatch.setattr(adapter, "codex_home", mock_codex_home)
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
 
