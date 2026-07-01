@@ -461,7 +461,6 @@ def start_relay_gateway(
             f"127.0.0.1:{port}",
         ],
         cwd=cwd,
-        env={**os.environ, **build_env(payload)},
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         start_new_session=True,
