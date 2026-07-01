@@ -5,7 +5,7 @@ import importlib.util
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
@@ -399,18 +399,28 @@ def test_wait_for_relay_gateway_times_out(monkeypatch):
         adapter.wait_for_relay_gateway(mock_process, health_url, timeout=0)
 
 
-def test_stop_relay_gateway_terminates_process_group(monkeypatch):
+def test_stop_relay_gateway_terminates_process():
     adapter = load_codex_adapter()
     mock_process = MagicMock()
-    mock_process.pid = 1234
     mock_process.poll.return_value = None
-    mock_killpg = MagicMock()
-    monkeypatch.setattr(adapter.os, "killpg", mock_killpg)
 
     adapter.stop_relay_gateway(mock_process)
 
-    mock_killpg.assert_called_once_with(1234, adapter.signal.SIGTERM)
+    mock_process.terminate.assert_called_once_with()
     mock_process.wait.assert_called_once_with(timeout=5)
+
+
+def test_stop_relay_gateway_kills_process_after_timeout():
+    adapter = load_codex_adapter()
+    mock_process = MagicMock()
+    mock_process.poll.return_value = None
+    mock_process.wait.side_effect = [subprocess.TimeoutExpired("nemo-relay", 5), None]
+
+    adapter.stop_relay_gateway(mock_process)
+
+    mock_process.terminate.assert_called_once_with()
+    mock_process.kill.assert_called_once_with()
+    assert mock_process.wait.call_args_list == [call(timeout=5), call(timeout=5)]
 
 
 def test_reported_command_redacts_secret_config_overrides():

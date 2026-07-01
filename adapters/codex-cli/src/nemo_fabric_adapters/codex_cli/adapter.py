@@ -10,7 +10,6 @@ import hashlib
 import json
 import math
 import os
-import signal
 import socket
 import subprocess
 import sys
@@ -433,23 +432,11 @@ def wait_for_relay_gateway(
 def stop_relay_gateway(process: subprocess.Popen[Any]) -> None:
     if process.poll() is not None:
         return
-    if os.name == "posix":
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    else:  # pragma: no cover - Windows is not used by the adapter test suite
-        process.terminate()
+    process.terminate()
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
-        if os.name == "posix":
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                return
-        else:  # pragma: no cover - Windows is not used by the adapter test suite
-            process.kill()
+        process.kill()
         process.wait(timeout=5)
 
 
