@@ -389,7 +389,7 @@ def test_start_relay_gateway_waits_for_health_and_starts_process_group(
     mock_wait.assert_called_once_with(mock_process, f"{gateway_url}/healthz")
 
 
-def test_wait_for_relay_gateway_times_out(monkeypatch):
+def test_wait_for_relay_gateway_times_out():
     adapter = load_codex_adapter()
     mock_process = MagicMock()
     mock_process.poll.return_value = None
