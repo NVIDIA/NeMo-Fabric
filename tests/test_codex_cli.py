@@ -3,6 +3,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, call
@@ -37,10 +38,10 @@ def load_codex_adapter():
 
 
 @pytest.fixture(name="codex_payload")
-def codex_payload_fixture(tmp_path, monkeypatch):
+def codex_payload_fixture(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
     return {
         "effective_config": {
             "agent_name": "codex-test",
@@ -200,16 +201,16 @@ def test_relative_codex_command_resolves_from_config_root(codex_payload):
     assert command[0] == str(config_root / "tools" / "codex")
 
 
-def test_codex_home_uses_environment(monkeypatch, tmp_path):
+def test_codex_home_uses_environment(tmp_path):
     adapter = load_codex_adapter()
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "custom-codex-home"))
+    os.environ["CODEX_HOME"] = str(tmp_path / "custom-codex-home")
 
     assert adapter.codex_home() == tmp_path / "custom-codex-home"
 
 
-def test_codex_home_defaults_to_user_codex_directory(monkeypatch):
+def test_codex_home_defaults_to_user_codex_directory():
     adapter = load_codex_adapter()
-    monkeypatch.delenv("CODEX_HOME", raising=False)
+    os.environ.pop("CODEX_HOME", None)
 
     assert adapter.codex_home() == Path.home() / ".codex"
 
@@ -258,7 +259,7 @@ def test_relay_routes_codex_through_standalone_gateway(
 
 def test_relay_requires_exact_true(codex_payload, monkeypatch, tmp_path):
     adapter = load_codex_adapter()
-    monkeypatch.setenv("FABRIC_RELAY_ENABLED", "TRUE")
+    os.environ["FABRIC_RELAY_ENABLED"] = "TRUE"
     mock_load_config = MagicMock()
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
@@ -309,12 +310,9 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
             stderr="",
         )
     )
-    monkeypatch.setenv("FABRIC_RELAY_ENABLED", "true")
-    monkeypatch.delenv("CODEX_HOME", raising=False)
-    monkeypatch.setenv(
-        "FABRIC_RELAY_CONFIG_PATH",
-        str(tmp_path / "relay-config.json"),
-    )
+    os.environ["FABRIC_RELAY_ENABLED"] = "true"
+    os.environ.pop("CODEX_HOME", None)
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay-config.json")
     monkeypatch.setattr(
         adapter.common_utils, "load_relay_plugin_config", mock_load_config
     )
@@ -471,9 +469,9 @@ def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypat
         ]
     )
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.setenv("CODEX_HOME", "/tmp/codex-home")
-    monkeypatch.setenv("FABRIC_UNRELATED_SECRET", "do-not-forward")
+    os.environ.pop("OPENAI_API_KEY", None)
+    os.environ["CODEX_HOME"] = "/tmp/codex-home"
+    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
     codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
         "CODEX_EXPLICIT": "forward-me"
     }
@@ -664,13 +662,11 @@ async def test_fabric_session_invokes_codex_then_resumes(tmp_path):
     assert second.output["command"][-3:] == ["resume", "thread-fake", "-"]
 
 
-async def test_fabric_oneshot_is_ephemeral_and_uses_cached_codex_auth(
-    tmp_path, monkeypatch
-):
+async def test_fabric_oneshot_is_ephemeral_and_uses_cached_codex_auth(tmp_path):
     mock_codex = tmp_path / "codex"
     write_mock_codex(mock_codex)
     config = fabric_config(tmp_path, mock_codex, mode="oneshot")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    os.environ.pop("OPENAI_API_KEY", None)
 
     async with FabricClient() as client:
         report = await client.doctor(config, base_dir=tmp_path)
