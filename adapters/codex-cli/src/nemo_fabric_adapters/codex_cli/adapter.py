@@ -184,11 +184,13 @@ def build_command(
         args.append("--ephemeral")
     args.extend(["--sandbox", sandbox])
 
-    if relay_gateway_url is not None and generated_profile_name is not None:
-        # By default Codex will not enable hooks for profiles that are not trusted until the user explicitly enables them.
-        # This is a problem for Fabric, because we want to be able to use hooks in a non-interactive way.
-        # So we add the --dangerously-bypass-hook-trust flag to bypass this check.
-        args.extend(["--profile", generated_profile_name, "--dangerously-bypass-hook-trust"])
+    if generated_profile_name is not None:
+        args.extend(("--profile", generated_profile_name))
+        if relay_gateway_url is not None:
+            # By default Codex will not enable hooks for profiles that are not trusted until the user explicitly
+            # enables them. This is a problem for Fabric, because we want to be able to use hooks in a non-interactive
+            # way.So we add the --dangerously-bypass-hook-trust flag to bypass this check.
+            args.append("--dangerously-bypass-hook-trust")
 
     model = selected_model(payload)
     if model:

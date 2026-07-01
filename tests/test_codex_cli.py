@@ -179,7 +179,7 @@ def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(
     assert command[exec_index : exec_index + 3] == ["exec", "--json", "--ephemeral"]
     assert ["--sandbox", "read-only"] == command[exec_index + 3 : exec_index + 5]
     assert ["--profile", profile_name] == command[exec_index + 5 : exec_index + 7]
-    assert command[exec_index + 7] == "--dangerously-bypass-hook-trust"
+    assert "--dangerously-bypass-hook-trust" not in command
     assert ["--model", "gpt-5.4"] == command[-3:-1]
     assert command[-1] == "-"
     assert tomllib.loads(profile_path.read_text(encoding="utf-8")) == {
