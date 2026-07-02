@@ -77,6 +77,15 @@ def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return fabric_config(payload).get("models") or payload.get("models") or {}
 
 
+def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    telemetry = fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    return telemetry if isinstance(telemetry, dict) else {}
+
+
+def telemetry_provider(payload: dict[str, Any]) -> str:
+    return str(telemetry_payload(payload).get("provider") or "relay")
+
+
 def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("capability_plan") or payload.get("capabilities") or {}
 
