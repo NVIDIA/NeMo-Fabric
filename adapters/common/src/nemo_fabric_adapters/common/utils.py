@@ -370,9 +370,9 @@ def write_relay_configs(
             plugin_config_path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
 
         return relay_config_path, plugin_config_path
-    except ImportError:
-        print("tomli_w is not installed, skipping writing Relay TOML", file=sys.stderr)
-        return None, None
+    except ImportError as e:
+        raise RuntimeError("tomli_w is not installed") from e
+
 
 
 def _relay_model_name(payload: dict[str, Any]) -> str:
