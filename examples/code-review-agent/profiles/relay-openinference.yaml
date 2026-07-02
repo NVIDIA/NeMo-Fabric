@@ -7,7 +7,10 @@ description: Enable NeMo Relay OpenInference tracing.
 
 telemetry:
   enabled: true
+<<<<<<< HEAD
   provider: relay
+=======
+>>>>>>> 40870d09ea61e2f234283cc31f0d875c1f4740b8
   mode: sdk
   output_dir: ./artifacts/relay-openinference
   config:
