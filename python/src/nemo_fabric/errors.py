@@ -11,7 +11,17 @@ from typing import Any
 
 
 class FabricError(RuntimeError):
-    """Base class for SDK-level Fabric errors."""
+    """Base class for structured SDK-level Fabric errors.
+
+    Catch this type to handle any SDK failure while preserving machine-readable
+    stage, code, retryability, and detail fields.
+
+    Attributes:
+        stage: Lifecycle stage that failed, when known.
+        code: Stable machine-readable error code, when available.
+        retryable: Whether retrying may succeed without changing the request.
+        details: Detached structured error details.
+    """
 
     def __init__(
         self,
@@ -22,6 +32,17 @@ class FabricError(RuntimeError):
         retryable: bool = False,
         details: Mapping[str, Any] | None = None,
     ) -> None:
+        """Initialize a structured Fabric exception.
+
+        Args:
+            message: Human-readable failure description.
+            stage: Optional lifecycle stage that failed.
+            code: Optional stable machine-readable error code.
+            retryable: Whether callers may safely retry unchanged input.
+            details: Optional structured diagnostic context. The exception
+                stores a deep copy.
+        """
+
         super().__init__(message)
         self.stage = stage
         self.code = code
@@ -30,20 +51,20 @@ class FabricError(RuntimeError):
 
 
 class FabricConfigError(FabricError):
-    """Raised when SDK input or resolved config is invalid for the requested API."""
+    """Invalid SDK input, request shape, profile stack, or resolved config."""
 
 
 class FabricRuntimeError(FabricError):
-    """Raised when a runtime lifecycle call fails."""
+    """Failure while starting, invoking, stopping, or otherwise driving a runtime."""
 
 
 class FabricStateError(FabricRuntimeError):
-    """Raised when a local SDK handle is used in an invalid lifecycle state."""
+    """Operation rejected because a local session handle is in the wrong state."""
 
 
 class FabricCapabilityError(FabricRuntimeError):
-    """Raised when the resolved runtime does not support the requested operation."""
+    """Operation rejected by resolved runtime capabilities or implementation status."""
 
 
 class FabricNativeUnavailableError(FabricRuntimeError):
-    """Raised when an SDK method requires the native extension."""
+    """SDK call requires the PyO3 extension, but it is not installed or importable."""

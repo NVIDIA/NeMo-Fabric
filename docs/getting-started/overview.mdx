@@ -1,0 +1,170 @@
+---
+title: "NeMo Fabric"
+description: "Configure, plan, run, and observe agent harnesses through one typed execution contract."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+# One contract for agent harnesses
+
+NeMo Fabric is the harness-management layer that turns multiple agent runtimes
+into one configurable, observable execution surface. Applications use the same
+versioned config, lifecycle, result, artifact, and telemetry contracts whether
+the selected harness is Hermes SDK, Hermes CLI, Codex CLI, or a custom adapter.
+
+Fabric owns the seam between an application and its harness. It resolves
+configuration and profiles, selects an adapter, drives the runtime lifecycle,
+and returns normalized evidence without leaking harness-specific control code
+into the caller.
+
+## What Fabric gives you
+
+<CardGroup cols={2}>
+  <Card title="Portable configuration">
+    Use a versioned `agent.yaml` package or construct the same typed
+    `FabricConfig` in Python. Ordered profiles make evaluation and ablation
+    variants explicit and reproducible.
+  </Card>
+  <Card title="Harness-neutral execution">
+    Plan and invoke different harnesses through one Rust core, CLI, and Python
+    SDK instead of embedding harness launch logic in every consumer.
+  </Card>
+  <Card title="Typed lifecycle contracts">
+    Resolve configs, inspect capabilities, run one-shot jobs, and hold
+    multi-turn sessions with typed requests, plans, handles, and results.
+  </Card>
+  <Card title="Normalized evidence">
+    Collect output, errors, lifecycle events, artifact manifests, and telemetry
+    references in stable contracts suitable for platforms and evaluations.
+  </Card>
+</CardGroup>
+
+## How Fabric fits
+
+```text
+Application or evaluation harness
+        |
+        |  Python SDK or fabric CLI
+        v
+NeMo Fabric Rust core
+  config -> profiles -> plan -> lifecycle
+        |
+        |  resolved adapter contract
+        v
+Hermes SDK | Hermes CLI | Codex CLI | custom harness
+        |
+        v
+RunResult + artifacts + events + telemetry references
+```
+
+The CLI and Python SDK are separate interfaces over the same core. File-backed
+and typed configs converge on the same resolved config and run-plan contracts.
+Adapters own harness-specific preparation and invocation; consumers own the
+request and the use of returned evidence.
+
+## Quick start
+
+Install the Python SDK with its native binding and the CLI from a source
+checkout:
+
+```bash
+python3 -m pip install -e .
+cargo install --path crates/fabric-cli --locked --force
+```
+
+Inspect and diagnose an agent package before running it:
+
+```bash
+fabric plan examples/code-review-agent --profile hermes_sdk
+fabric doctor examples/code-review-agent --profile hermes_sdk
+fabric run examples/code-review-agent \
+  --profile hermes_sdk \
+  --input "Reply with exactly: fabric works"
+```
+
+Use the same package through the typed Python SDK:
+
+```python
+import asyncio
+from pathlib import Path
+
+from nemo_fabric import FabricClient
+
+
+async def main() -> None:
+    agent = Path("examples/code-review-agent")
+    async with FabricClient() as client:
+        plan = client.plan(agent, profiles=["hermes_sdk"])
+        report = await client.doctor(agent, profiles=["hermes_sdk"])
+        result = await client.run(
+            agent,
+            profiles=["hermes_sdk"],
+            input="Reply with exactly: fabric works",
+        )
+
+    print(plan.adapter.harness, report.status, result.status)
+
+
+asyncio.run(main())
+```
+
+Harness installation and credential requirements differ by adapter. The
+[repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-sdk)
+contains the complete Hermes environment recipe.
+
+## Choose your interface
+
+| Interface | Use it when | Start with |
+| --- | --- | --- |
+| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
+| Session API | You need multiple ordered turns over one live harness runtime | [Sessions](/reference/api/python-library-reference/sessions) |
+| `fabric` CLI | You are validating packages, debugging profiles, or running reproducible local/CI jobs | `fabric validate`, `plan`, `doctor`, `run`, and `chat` |
+| JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
+
+Use `agent.yaml` when the agent package is the portable artifact. Use
+`FabricConfig` when a platform already owns a larger job or deployment object
+and wants to pass only its Fabric slice in memory.
+
+## Core workflow
+
+1. **Configure** an agent package or typed `FabricConfig` with a harness adapter,
+   runtime mode, environment, models, tools, skills, MCP, and telemetry.
+2. **Apply profiles** in caller order to vary harness, model, environment, or
+   observability settings without mutating the base config.
+3. **Plan and diagnose** to resolve the adapter and check capabilities and
+   requirements before spending work on a runtime.
+4. **Run or start a session** through the shared start, invoke, and stop
+   lifecycle contract.
+5. **Consume evidence** from `RunResult`: output, structured failure details,
+   artifacts, events, and telemetry references.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Client API"
+    href="/reference/api/python-library-reference/client"
+  >
+    Resolve, plan, diagnose, run, and start stateful runtimes.
+  </Card>
+  <Card
+    title="Sessions"
+    href="/reference/api/python-library-reference/sessions"
+  >
+    Invoke multiple turns, inspect identity and history, stream events, and
+    stop runtime handles safely.
+  </Card>
+  <Card
+    title="Types"
+    href="/reference/api/python-library-reference/types"
+  >
+    Explore all mutable config objects and immutable request, plan, result,
+    artifact, telemetry, and runtime models.
+  </Card>
+  <Card
+    title="Errors"
+    href="/reference/api/python-library-reference/errors"
+  >
+    Handle config, capability, lifecycle, state, and native-extension failures.
+  </Card>
+</CardGroup>

@@ -1,0 +1,110 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Fern Docs
+
+# Push-only: copy-pr-bot mirrors each fork PR to an in-repo pull-request/<n>
+# branch (which receives secrets), so preview/publish can authenticate. Using
+# push-only (not pull_request) avoids a duplicate run per PR.
+on:
+  push:
+    branches:
+      - main
+      - 'pull-request/**'
+
+concurrency:
+  group: fern-docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  docs:
+    name: Build and publish docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+
+      # The Rust library reference is built from rustdoc (cargo doc -> MDX), so a
+      # Rust toolchain is required here in addition to uv/Node.
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          cache: false
+
+      # The Python reference is generated from the SDK docstrings (lazydocs) and
+      # the Rust reference from rustdoc (cargo doc --no-deps -p fabric-core),
+      # so the published docs never drift from the code.
+      - name: Generate API reference (Python docstrings + Rust rustdoc)
+        run: |
+          uv sync --extra docs
+          PATH="$PWD/.venv/bin:$PATH" bash scripts/generate_api_docs.sh
+          .venv/bin/python scripts/docs/generate_rust_library_reference.py
+
+      - name: Set up Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: "20"
+
+      - name: Install Fern CLI
+        run: npm install -g fern-api@5.37.10
+
+      - name: Validate docs config
+        run: fern check
+
+      # Publish to the (internal-by-default) Fern site on merge to main.
+      - name: Publish docs
+        if: github.ref_name == 'main'
+        env:
+          FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
+        run: fern generate --docs
+
+      # Build a preview deployment for the PR and capture its URL.
+      - name: Preview docs
+        id: preview
+        if: startsWith(github.ref_name, 'pull-request/')
+        env:
+          FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
+        run: |
+          set -euo pipefail
+          pr_number="${GITHUB_REF_NAME#pull-request/}"
+          if output="$(fern generate --docs --preview --id "pull-request-${pr_number}" 2>&1)"; then
+            fern_exit=0
+          else
+            fern_exit=$?
+          fi
+          printf '%s\n' "$output"
+          if [ "$fern_exit" -ne 0 ]; then
+            echo "::error::Fern docs preview generation failed"
+            exit "$fern_exit"
+          fi
+          line="$(printf '%s\n' "$output" | sed -n 's/^.*Published docs to //p' | tail -n 1)"
+          # Extract just the URL: Fern appends a zero-width space (and may add
+          # ANSI codes); a strict charset drops them so the link is clean.
+          url="$(printf '%s' "$line" | grep -oE 'https?://[A-Za-z0-9._~:/?#@!$&()*+,;=%-]+' | head -n 1)"
+          if [ -n "$url" ]; then
+            printf 'url=%s\n' "$url" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Post (or update) the preview link as a comment on the originating PR.
+      - name: Comment preview URL on PR
+        if: ${{ steps.preview.outputs.url != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          pr_number="${GITHUB_REF_NAME#pull-request/}"
+          gh pr comment "https://github.com/${{ github.repository }}/pull/${pr_number}" \
+            --edit-last \
+            --create-if-none \
+            --body "📖 Fern docs preview: ${{ steps.preview.outputs.url }}"
