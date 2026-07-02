@@ -47,10 +47,9 @@ jobs:
       # so the published docs never drift from the code.
       - name: Generate API reference (Python docstrings + Rust rustdoc)
         run: |
-          uv venv .docs-venv
-          uv pip install --python .docs-venv/bin/python "lazydocs>=0.4" beautifulsoup4
-          PATH="$PWD/.docs-venv/bin:$PATH" bash scripts/generate_api_docs.sh
-          .docs-venv/bin/python scripts/docs/generate_rust_library_reference.py
+          uv sync --extra docs
+          PATH="$PWD/.venv/bin:$PATH" bash scripts/generate_api_docs.sh
+          .venv/bin/python scripts/docs/generate_rust_library_reference.py
 
       - name: Set up Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
