@@ -42,7 +42,10 @@ def load_codex_adapter():
 def codex_payload_fixture(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "team.toml").write_text("", encoding="utf-8")
+    os.environ["CODEX_HOME"] = str(codex_home)
     return {
         "effective_config": {
             "agent_name": "codex-test",
@@ -187,6 +190,44 @@ def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(
     ) == {
         "features": {"web_search": False},
         "model_reasoning_effort": "high",
+    }
+
+
+def test_configured_codex_profile_is_base_for_generated_profile(codex_payload):
+    adapter = load_codex_adapter()
+    codex_home = Path(os.environ["CODEX_HOME"])
+    source_profile = codex_home / "team.toml"
+    source_profile.write_text(
+        """approval_policy = "never"
+model_reasoning_effort = "medium"
+
+[features]
+web_search = true
+shell_snapshot = true
+""",
+        encoding="utf-8",
+    )
+
+    codex_settings = adapter.write_config_files(codex_payload)
+
+    assert codex_settings.codex_profile_name == "fabric-runtime-1"
+    assert tomllib.loads(
+        codex_settings.codex_profile_path.read_text(encoding="utf-8")
+    ) == {
+        "approval_policy": "never",
+        "model_reasoning_effort": "high",
+        "features": {
+            "web_search": False,
+            "shell_snapshot": True,
+        },
+    }
+    assert tomllib.loads(source_profile.read_text(encoding="utf-8")) == {
+        "approval_policy": "never",
+        "model_reasoning_effort": "medium",
+        "features": {
+            "web_search": True,
+            "shell_snapshot": True,
+        },
     }
 
 

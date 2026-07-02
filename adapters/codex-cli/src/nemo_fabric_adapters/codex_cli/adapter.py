@@ -22,6 +22,11 @@ from typing import Any, NamedTuple
 
 import tomli_w
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
+    import tomli as tomllib
+
 CUR_DIR = Path(__file__).parent
 ADAPTERS_DIR = CUR_DIR.parent.parent.parent.parent
 COMMON_DIR = (ADAPTERS_DIR / "common/src").resolve().as_posix()
@@ -282,6 +287,31 @@ def apply_config_overrides(
         target[parts[-1]] = value
 
 
+def merge_config(config: dict[str, Any], layer: Mapping[str, Any]) -> None:
+    for key, value in layer.items():
+        existing = config.get(key)
+        if isinstance(existing, dict) and isinstance(value, Mapping):
+            merge_config(existing, value)
+        else:
+            config[key] = value
+
+
+def codex_home() -> Path:
+    configured = os.environ.get("CODEX_HOME")
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".codex"
+
+
+def load_codex_profile(settings: dict[str, Any]) -> dict[str, Any]:
+    profile = settings.get("codex_profile")
+    if not profile:
+        return {}
+    path = codex_home() / f"{profile}.toml"
+    with path.open("rb") as profile_file:
+        return tomllib.load(profile_file)
+
+
 def write_config_files(payload: dict[str, Any]) -> CodexSettings:
     settings = common_utils.settings_payload(payload)
     telemetry_provider = common_utils.telemetry_provider(payload)
@@ -290,9 +320,9 @@ def write_config_files(payload: dict[str, Any]) -> CodexSettings:
         and os.environ.get("FABRIC_RELAY_ENABLED") == "true"
     )
     overrides = config_overrides(settings)
-    config = {}
+    config = load_codex_profile(settings)
     if telemetry_provider == "native":
-        config.update(native_codex_telemetry_config(payload))
+        merge_config(config, native_codex_telemetry_config(payload))
 
     codex_profile_name = None
     codex_profile_path = None
@@ -340,7 +370,8 @@ def write_config_files(payload: dict[str, Any]) -> CodexSettings:
                     hook_group["matcher"] = "*"
                 hooks[event] = [hook_group]
 
-            config.update(
+            merge_config(
+                config,
                 {
                     "model_provider": "nemo-relay-openai",
                     "model_providers": {
@@ -378,12 +409,6 @@ def write_config_files(payload: dict[str, Any]) -> CodexSettings:
 
 
 def get_codex_profile_path(payload: dict[str, Any]) -> tuple[str, Path]:
-    codex_home_env = os.environ.get("CODEX_HOME")
-    if codex_home_env:
-        codex_home = Path(codex_home_env).expanduser()
-    else:
-        codex_home = Path.home() / ".codex"
-
     runtime_id = common_utils.runtime_context(payload).get("runtime_id")
     if not runtime_id:
         raise RuntimeError(
@@ -391,7 +416,7 @@ def get_codex_profile_path(payload: dict[str, Any]) -> tuple[str, Path]:
         )
 
     name = f"fabric-{runtime_id}"
-    return name, codex_home / f"{name}.config.toml"
+    return name, codex_home() / f"{name}.config.toml"
 
 
 def resolve_command(payload: dict[str, Any], value: Any) -> str:
