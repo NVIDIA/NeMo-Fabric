@@ -171,8 +171,8 @@ def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(
 
     command = adapter.build_command(
         codex_payload,
-        generated_profile_name=profile_name,
-        generated_profile_path=profile_path,
+        codex_profile_name=profile_name,
+        codex_profile_path=profile_path,
     )
 
     exec_index = command.index("exec")
@@ -206,14 +206,24 @@ def test_codex_home_uses_environment(tmp_path):
     adapter = load_codex_adapter()
     os.environ["CODEX_HOME"] = str(tmp_path / "custom-codex-home")
 
-    assert adapter.codex_home() == tmp_path / "custom-codex-home"
+    name, path = adapter.get_codex_profile_path(
+        {"runtime_context": {"runtime_id": "runtime-1"}}
+    )
+
+    assert name == "fabric-runtime-1"
+    assert path == tmp_path / "custom-codex-home" / "fabric-runtime-1.config.toml"
 
 
 def test_codex_home_defaults_to_user_codex_directory():
     adapter = load_codex_adapter()
     os.environ.pop("CODEX_HOME", None)
 
-    assert adapter.codex_home() == Path.home() / ".codex"
+    name, path = adapter.get_codex_profile_path(
+        {"runtime_context": {"runtime_id": "runtime-1"}}
+    )
+
+    assert name == "fabric-runtime-1"
+    assert path == Path.home() / ".codex" / "fabric-runtime-1.config.toml"
 
 
 def test_relay_routes_codex_through_standalone_gateway(
@@ -228,8 +238,8 @@ def test_relay_routes_codex_through_standalone_gateway(
     command = adapter.build_command(
         codex_payload,
         relay_gateway_url=gateway_url,
-        generated_profile_name=profile_name,
-        generated_profile_path=profile_path,
+        codex_profile_name=profile_name,
+        codex_profile_path=profile_path,
     )
 
     assert command[0] == "codex"
@@ -273,8 +283,9 @@ def test_native_otel_profile_writes_codex_telemetry_config(codex_payload, tmp_pa
 
     command = adapter.build_command(
         codex_payload,
-        generated_profile_name=profile_name,
-        generated_profile_path=profile_path,
+        codex_profile_name=profile_name,
+        codex_profile_path=profile_path,
+        native_telemetry_config=adapter.native_codex_telemetry_config(codex_payload),
     )
 
     assert command[command.index("--profile") + 1] == profile_name
@@ -309,7 +320,9 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     codex_home = tmp_path / "codex-home"
     profile_name = "fabric-runtime-1"
     profile_path = codex_home / f"{profile_name}.config.toml"
-    mock_codex_home = MagicMock(return_value=codex_home)
+    mock_get_codex_profile_path = MagicMock(
+        return_value=(profile_name, profile_path)
+    )
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
             args=[],
@@ -330,7 +343,11 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     monkeypatch.setattr(adapter, "start_relay_gateway", mock_start_gateway)
     monkeypatch.setattr(adapter, "stop_relay_gateway", mock_stop_gateway)
     monkeypatch.setattr(adapter.time, "sleep", MagicMock())
-    monkeypatch.setattr(adapter, "codex_home", mock_codex_home)
+    monkeypatch.setattr(
+        adapter,
+        "get_codex_profile_path",
+        mock_get_codex_profile_path,
+    )
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
 
     result = adapter.run_codex(codex_payload)
@@ -344,7 +361,7 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     assert mock_run.call_args.kwargs["env"]["NEMO_RELAY_GATEWAY_URL"] == gateway_url
     assert "CODEX_HOME" not in mock_run.call_args.kwargs["env"]
     assert not profile_path.exists()
-    mock_codex_home.assert_called_once_with()
+    mock_get_codex_profile_path.assert_called_once_with(codex_payload)
     mock_load_config.assert_called_once_with(codex_payload)
     mock_write_config.assert_called_once_with(
         relay_config=relay_config,
