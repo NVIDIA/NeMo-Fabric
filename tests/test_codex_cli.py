@@ -333,8 +333,9 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     relay_plugin_config = {"version": 1, "components": []}
     relay_config_path = tmp_path / "relay-config" / "config.toml"
     mock_gateway = MagicMock()
+    gateway_host = "127.0.0.1:43210"
     gateway_url = "http://127.0.0.1:43210"
-    mock_start_gateway = MagicMock(return_value=(mock_gateway, gateway_url))
+    mock_start_gateway = MagicMock(return_value=mock_gateway)
     mock_stop_gateway = MagicMock()
     codex_home = tmp_path / "codex-home"
     profile_name = "fabric-runtime-1"
@@ -344,6 +345,7 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
         relay_enabled=True,
         codex_profile_name=profile_name,
         codex_profile_path=profile_path,
+        relay_gateway_host=gateway_host,
         relay_gateway_url=gateway_url,
         relay_gateway_port=43210,
         relay_config_path=relay_config_path,
@@ -385,9 +387,8 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     mock_write_config_files.assert_called_once_with(codex_payload)
     mock_start_gateway.assert_called_once_with(
         codex_payload,
-        relay_config_path,
         Path(codex_payload["runtime_context"]["environment"]["workspace"]),
-        port=43210,
+        codex_settings,
     )
     mock_stop_gateway.assert_called_once_with(mock_gateway)
 
@@ -404,24 +405,35 @@ def test_start_relay_gateway_waits_for_health_and_starts_process_group(
     mock_process = MagicMock()
     mock_popen = MagicMock(return_value=mock_process)
     mock_wait = MagicMock()
+    gateway_host = "127.0.0.1:43210"
+    gateway_url = f"http://{gateway_host}"
+    codex_settings = adapter.CodexSettings(
+        telemetry_provider="relay",
+        relay_enabled=True,
+        codex_profile_name="fabric-runtime-1",
+        codex_profile_path=tmp_path / "fabric-runtime-1.config.toml",
+        relay_gateway_host=gateway_host,
+        relay_gateway_url=gateway_url,
+        relay_gateway_port=43210,
+        relay_config_path=relay_config_path,
+        relay_plugin_config={"version": 1, "components": []},
+    )
     monkeypatch.setattr(adapter, "wait_for_relay_gateway", mock_wait)
     monkeypatch.setattr(adapter.subprocess, "Popen", mock_popen)
 
-    process, gateway_url = adapter.start_relay_gateway(
+    process = adapter.start_relay_gateway(
         codex_payload,
-        relay_config_path,
         tmp_path,
-        port=43210,
+        codex_settings,
     )
 
     assert process is mock_process
-    assert gateway_url == "http://127.0.0.1:43210"
     assert mock_popen.call_args.args[0] == [
         "nemo-relay",
         "--config",
         str(relay_config_path),
         "--bind",
-        "127.0.0.1:43210",
+        gateway_host,
     ]
     assert mock_popen.call_args.kwargs["start_new_session"] is True
     mock_wait.assert_called_once_with(mock_process, f"{gateway_url}/healthz")
