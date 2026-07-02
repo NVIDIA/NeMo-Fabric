@@ -10,8 +10,12 @@ import hashlib
 import json
 import math
 import os
+import socket
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -28,6 +32,28 @@ import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
 
 SANDBOXES = {"read-only", "workspace-write", "danger-full-access"}
 DEFAULT_TIMEOUT_SECONDS = 1800
+RELAY_HEALTH_TIMEOUT_SECONDS = 30
+RELAY_HOOK_EVENTS = (
+    "Notification",
+    "PermissionRequest",
+    "PostCompact",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PreCompact",
+    "PreToolUse",
+    "SessionEnd",
+    "SessionStart",
+    "Stop",
+    "SubagentStart",
+    "SubagentStop",
+    "UserPromptSubmit",
+)
+RELAY_HOOK_MATCHER_EVENTS = {
+    "PermissionRequest",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PreToolUse",
+}
 INHERITED_ENV_NAMES = {
     "APPDATA",
     "CODEX_HOME",
@@ -59,25 +85,12 @@ INHERITED_ENV_NAMES = {
 }
 
 
-def load_payload() -> dict[str, Any]:
-    invocation_path = os.environ.get("FABRIC_INVOCATION")
-    if invocation_path and Path(invocation_path).is_file():
-        return json.loads(Path(invocation_path).read_text(encoding="utf-8"))
-    return json.load(sys.stdin)
-
-
 def runtime_mode(payload: dict[str, Any]) -> str:
     runtime = common_utils.fabric_config(payload).get("runtime") or {}
     mode = str(runtime.get("mode") or "oneshot")
     if mode not in {"oneshot", "session"}:
         raise ValueError("Codex CLI adapter supports only oneshot and session modes")
     return mode
-
-
-def fabric_session_id(payload: dict[str, Any]) -> str | None:
-    context = common_utils.runtime_context(payload)
-    value = context.get("session_id") or context.get("runtime_id")
-    return str(value) if value else None
 
 
 def state_dir(payload: dict[str, Any]) -> Path:
@@ -135,7 +148,12 @@ def selected_model(payload: dict[str, Any]) -> str | None:
 
 
 def build_command(
-    payload: dict[str, Any], *, thread_id: str | None = None
+    payload: dict[str, Any],
+    *,
+    thread_id: str | None = None,
+    relay_gateway_url: str | None = None,
+    generated_profile_name: str | None = None,
+    generated_profile_path: Path | None = None,
 ) -> list[str]:
     settings = common_utils.settings_payload(payload)
     command = resolve_command(payload, settings.get("codex_command") or "codex")
@@ -146,16 +164,33 @@ def build_command(
             f"unsupported Codex sandbox {sandbox!r}; expected one of {sorted(SANDBOXES)}"
         )
 
-    args = [command, "exec", "--json"]
+    args = [command]
+    overrides = config_overrides(settings)
+    if relay_gateway_url is not None or overrides:
+        if generated_profile_name is None or generated_profile_path is None:
+            raise RuntimeError(
+                "a generated Codex profile is required for Relay or config overrides"
+            )
+        write_codex_profile(
+            payload,
+            generated_profile_path,
+            relay_gateway_url=relay_gateway_url,
+        )
+
+    args.extend(("exec", "--json"))
+
     if mode == "oneshot":
         args.append("--ephemeral")
     args.extend(["--sandbox", sandbox])
 
-    codex_profile = settings.get("codex_profile")
-    if codex_profile:
-        args.extend(["--profile", str(codex_profile)])
-    for key, value in sorted((settings.get("config_overrides") or {}).items()):
-        args.extend(["--config", f"{key}={toml_value(value)}"])
+    if generated_profile_name is not None:
+        args.extend(("--profile", generated_profile_name))
+        if relay_gateway_url is not None:
+            # By default Codex will not enable hooks for profiles that are not trusted until the user explicitly
+            # enables them. This is a problem for Fabric, because we want to be able to use hooks in a non-interactive
+            # way.So we add the --dangerously-bypass-hook-trust flag to bypass this check.
+            args.append("--dangerously-bypass-hook-trust")
+
     model = selected_model(payload)
     if model:
         args.extend(["--model", model])
@@ -167,7 +202,103 @@ def build_command(
         args.extend(["resume", thread_id, "-"])
     else:
         args.append("-")
+
     return args
+
+
+def config_overrides(settings: dict[str, Any]) -> Mapping[str, Any]:
+    overrides = settings.get("config_overrides")
+    if overrides is None:
+        return {}
+    if not isinstance(overrides, Mapping):
+        raise ValueError("config_overrides must be a mapping")
+    return overrides
+
+
+def apply_config_overrides(
+    config: dict[str, Any],
+    overrides: Mapping[str, Any],
+) -> None:
+    for dotted_key, value in sorted(overrides.items()):
+        toml_value(value)
+        parts = str(dotted_key).split(".")
+        if any(not part for part in parts):
+            raise ValueError(f"invalid Codex config override key {dotted_key!r}")
+        target = config
+        for part in parts[:-1]:
+            existing = target.setdefault(part, {})
+            if not isinstance(existing, dict):
+                raise ValueError(
+                    f"Codex config override {dotted_key!r} conflicts with {part!r}"
+                )
+            target = existing
+        target[parts[-1]] = value
+
+
+def write_codex_profile(
+    payload: dict[str, Any],
+    profile_path: Path,
+    *,
+    relay_gateway_url: str | None = None,
+):
+    settings = common_utils.settings_payload(payload)
+    config: dict[str, Any] = {}
+    if relay_gateway_url is not None:
+        relay_command = resolve_command(
+            payload,
+            settings.get("nemo_relay_command") or "nemo-relay",
+        )
+        hook_command = f"{relay_command} hook-forward codex"
+        hooks = {}
+        for event in RELAY_HOOK_EVENTS:
+            hook_group: dict[str, Any] = {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": hook_command,
+                        "timeout": 30,
+                    }
+                ]
+            }
+            if event in RELAY_HOOK_MATCHER_EVENTS:
+                hook_group["matcher"] = "*"
+            hooks[event] = [hook_group]
+
+        config = {
+            "model_provider": "nemo-relay-openai",
+            "model_providers": {
+                "nemo-relay-openai": {
+                    "name": "NeMo Relay OpenAI",
+                    "base_url": relay_gateway_url,
+                    "wire_api": "responses",
+                    "requires_openai_auth": True,
+                    "supports_websockets": False,
+                }
+            },
+            "features": {"hooks": True},
+            "hooks": hooks,
+        }
+    apply_config_overrides(config, config_overrides(settings))
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    profile_path.write_text(
+        tomli_w.dumps(config),
+        encoding="utf-8",
+    )
+
+
+def codex_home() -> Path:
+    configured = os.environ.get("CODEX_HOME")
+    return Path(configured).expanduser() if configured else Path.home() / ".codex"
+
+
+def generated_codex_profile(payload: dict[str, Any], home: Path) -> tuple[str, Path]:
+    runtime_id = common_utils.runtime_context(payload).get("runtime_id")
+    if not runtime_id:
+        raise RuntimeError(
+            "runtime_context.runtime_id is required for generated Codex profiles"
+        )
+    name = f"fabric-{runtime_id}"
+    return name, home / f"{name}.config.toml"
 
 
 def resolve_command(payload: dict[str, Any], value: Any) -> str:
@@ -252,7 +383,11 @@ def resolve_cwd(payload: dict[str, Any]) -> Path:
     return path.resolve() if path.is_absolute() else (config_root / path).resolve()
 
 
-def build_env(payload: dict[str, Any]) -> dict[str, str]:
+def build_env(
+    payload: dict[str, Any],
+    *,
+    relay_gateway_url: str | None = None,
+) -> dict[str, str]:
     env = {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     configured = common_utils.settings_payload(payload).get("env")
     if configured is None:
@@ -260,7 +395,82 @@ def build_env(payload: dict[str, Any]) -> dict[str, str]:
     if not isinstance(configured, Mapping):
         raise ValueError("env must be a mapping of variable names to values")
     env.update({str(key): str(value) for key, value in configured.items()})
+    if relay_gateway_url is not None:
+        env["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
     return env
+
+
+def find_available_tcp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        return int(listener.getsockname()[1])
+
+
+def wait_for_relay_gateway(
+    process: subprocess.Popen[Any],
+    health_url: str,
+    *,
+    timeout: float = RELAY_HEALTH_TIMEOUT_SECONDS,
+) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        returncode = process.poll()
+        if returncode is not None:
+            raise RuntimeError(
+                f"NeMo Relay gateway exited with status {returncode} before becoming ready"
+            )
+        try:
+            with urllib.request.urlopen(health_url, timeout=1) as response:
+                if 200 <= response.status < 300:
+                    return
+        except (OSError, urllib.error.URLError):
+            pass
+        time.sleep(0.1)
+    raise RuntimeError(f"NeMo Relay gateway did not become ready at {health_url}")
+
+
+def stop_relay_gateway(process: subprocess.Popen[Any]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
+def start_relay_gateway(
+    payload: dict[str, Any],
+    relay_config_path: Path,
+    cwd: Path,
+) -> tuple[subprocess.Popen[Any], str]:
+    settings = common_utils.settings_payload(payload)
+    relay_command = resolve_command(
+        payload,
+        settings.get("nemo_relay_command") or "nemo-relay",
+    )
+    port = find_available_tcp_port()
+    gateway_url = f"http://127.0.0.1:{port}"
+    process = subprocess.Popen(
+        [
+            relay_command,
+            "--config",
+            str(relay_config_path),
+            "--bind",
+            f"127.0.0.1:{port}",
+        ],
+        cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    try:
+        wait_for_relay_gateway(process, f"{gateway_url}/healthz")
+    except BaseException:
+        stop_relay_gateway(process)
+        raise
+    return process, gateway_url
 
 
 def process_timeout(payload: dict[str, Any]) -> float:
@@ -285,36 +495,83 @@ def exception_output(value: str | bytes | None) -> str:
 
 def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     mode = runtime_mode(payload)
-    session_id = fabric_session_id(payload) if mode == "session" else None
+    session_id = common_utils.runtime_session_id(payload) if mode == "session" else None
     if mode == "session" and not session_id:
         raise RuntimeError("runtime.mode=session requires a session_id or runtime_id")
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
-    command = build_command(payload, thread_id=prior_thread_id)
+    use_relay = os.environ.get("FABRIC_RELAY_ENABLED") == "true"
+    overrides = config_overrides(common_utils.settings_payload(payload))
+    generated_profile_name = None
+    generated_profile_path = None
+    if use_relay or overrides:
+        generated_profile_name, generated_profile_path = generated_codex_profile(
+            payload,
+            codex_home(),
+        )
+    relay_plugin_config = None
+    relay_gateway = None
+    relay_gateway_url = None
     cwd = resolve_cwd(payload)
-    timeout = process_timeout(payload)
-    launch_error = None
+    if use_relay:
+        # nemo-relay infers the location of the plugin config based upon the location of the relay config
+        relay_plugin_config = common_utils.load_relay_plugin_config(payload)
+        (relay_config_path, _) = common_utils.write_relay_configs(
+            relay_config={"agents": {"codex": {"command": "codex"}}},
+            plugin_config=relay_plugin_config,
+        )
+        if relay_config_path is None:
+            raise RuntimeError("NeMo Relay configuration did not produce a gateway config")
+        relay_gateway, relay_gateway_url = start_relay_gateway(
+            payload,
+            relay_config_path,
+            cwd,
+        )
+
     try:
-        completed = subprocess.run(
-            command,
-            cwd=cwd,
-            env=build_env(payload),
-            input=request_to_prompt(payload),
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
+        command = build_command(
+            payload,
+            thread_id=prior_thread_id,
+            relay_gateway_url=relay_gateway_url,
+            generated_profile_name=generated_profile_name,
+            generated_profile_path=generated_profile_path,
         )
-    except subprocess.TimeoutExpired as error:
-        completed = subprocess.CompletedProcess(
-            command,
-            124,
-            exception_output(error.stdout),
-            exception_output(error.stderr),
-        )
-        launch_error = f"Codex CLI timed out after {timeout:g} seconds"
-    except OSError as error:
-        completed = subprocess.CompletedProcess(command, 127, "", str(error))
-        launch_error = f"Codex CLI could not start: {error}"
+
+        timeout = process_timeout(payload)
+        launch_error = None
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=cwd,
+                env=build_env(
+                    payload,
+                    relay_gateway_url=relay_gateway_url,
+                ),
+                input=request_to_prompt(payload),
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            completed = subprocess.CompletedProcess(
+                command,
+                124,
+                exception_output(error.stdout),
+                exception_output(error.stderr),
+            )
+            launch_error = f"Codex CLI timed out after {timeout:g} seconds"
+        except OSError as error:
+            completed = subprocess.CompletedProcess(command, 127, "", str(error))
+            launch_error = f"Codex CLI could not start: {error}"
+    finally:
+        if generated_profile_path is not None:
+            generated_profile_path.unlink(missing_ok=True)
+
+        if relay_gateway is not None:
+            # Work-around for RELAY-399, wait for subscribed events to be flushed before stopping nemo-relay
+            time.sleep(5)
+            stop_relay_gateway(relay_gateway)
+
     parsed = parse_events(completed.stdout)
     thread_id = parsed["thread_id"] or prior_thread_id
     error = launch_error or parsed["error"]
@@ -331,7 +588,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     if session_id and thread_id and not error:
         save_thread_id(payload, session_id, thread_id)
 
-    return {
+    output = {
         "harness": "codex",
         "adapter": "cli",
         "mode": f"codex_cli_{mode}",
@@ -348,6 +605,18 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         "state_dir": str(state_dir(payload)),
     }
 
+    if relay_plugin_config is not None:
+        relay_artifacts = common_utils.collect_relay_artifacts(relay_plugin_config)
+        output["relay_runtime"] = {
+            "enabled": True,
+            "mode": os.environ.get("FABRIC_RELAY_MODE"),
+            "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
+            "emitter": "nemo-relay",
+        }
+        output["relay_artifacts"] = relay_artifacts
+
+    return output
+
 
 def redact_command(command: list[str]) -> list[str]:
     redacted = list(command)
@@ -361,7 +630,7 @@ def redact_command(command: list[str]) -> list[str]:
 
 
 def main() -> None:
-    output = run_codex(load_payload())
+    output = run_codex(common_utils.load_payload())
     print(json.dumps(output, sort_keys=True))
     if output["failed"]:
         raise SystemExit(2)

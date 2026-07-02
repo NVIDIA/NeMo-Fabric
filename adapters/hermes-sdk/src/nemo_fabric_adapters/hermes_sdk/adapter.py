@@ -184,7 +184,7 @@ def _invoke_hermes(
         discover_plugins(force=True)
         loaded_hermes_config = load_config()
         enabled_toolsets = resolve_hermes_toolsets(settings, loaded_hermes_config)
-        session_id = hermes_common.runtime_session_id(payload)
+        session_id = common_utils.runtime_session_id(payload)
         session_db = SessionDB()
         conversation_history = load_runtime_history(session_db, session_id)
         agent = None

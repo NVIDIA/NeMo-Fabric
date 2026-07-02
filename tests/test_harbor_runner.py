@@ -3,6 +3,7 @@
 
 import importlib.util
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -159,7 +160,13 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
         "request": {"input": "Fix the calculator."},
     }
 
-    command = adapter.build_command(payload)
+    profile_name = "fabric-harbor-test"
+    profile_path = tmp_path / f"{profile_name}.config.toml"
+    command = adapter.build_command(
+        payload,
+        generated_profile_name=profile_name,
+        generated_profile_path=profile_path,
+    )
 
     assert command == [
         "codex",
@@ -168,13 +175,16 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
         "--ephemeral",
         "--sandbox",
         "workspace-write",
-        "--config",
-        'model_reasoning_effort="high"',
+        "--profile",
+        profile_name,
         "--model",
         "gpt-5.4",
         "--skip-git-repo-check",
         "-",
     ]
+    assert tomllib.loads(profile_path.read_text(encoding="utf-8")) == {
+        "model_reasoning_effort": "high"
+    }
     assert adapter.resolve_cwd(payload) == tmp_path
 
 

@@ -12,19 +12,6 @@ from typing import Any
 import nemo_fabric_adapters.common.utils as common_utils
 
 
-def runtime_session_id(payload: dict[str, Any]) -> str | None:
-    """Return Fabric's session key for adapter-owned harness session mapping."""
-
-    context = common_utils.runtime_context(payload)
-    session_id = context.get("session_id")
-    if session_id:
-        return str(session_id)
-    runtime_id = context.get("runtime_id")
-    if runtime_id:
-        return str(runtime_id)
-    return None
-
-
 def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("request") or {}
 
@@ -162,7 +149,7 @@ def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     relay_plugin_config = common_utils.load_relay_plugin_config(payload)
-    relay_plugins_toml_path = common_utils.write_relay_plugins_toml(relay_plugin_config)
+    (_, relay_plugins_toml_path) = common_utils.write_relay_configs(plugin_config=relay_plugin_config)
     if relay_plugins_toml_path is not None:
         os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = str(relay_plugins_toml_path)
 

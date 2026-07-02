@@ -25,6 +25,7 @@ license: Apache-2.0
 - Prefer `pytest.mark.parametrize` over creating individual tests for
   different input types.
 - If a fixture is needed for a test, but either does not return a value or the value is not used in the test, use the `@pytest.mark.usefixtures` decorator.
+- `tests/conftest.py` contains a `restore_environ_fixture` fixture that restores the environment variables to their original state after each test, it is defined with `autouse=True` so it is automatically applied to all tests. If you need to modify the environment variables in a test, do so using `os.environ` and the fixture will restore them after the test completes. There is no need to use `monkeypatch.setenv` to modify environment variables in tests.
 
 ## Common Commands
 

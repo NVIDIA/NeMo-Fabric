@@ -38,8 +38,30 @@ def agent_name(payload: dict[str, Any]) -> str:
     return effective_config(payload).get("agent_name") or payload.get("agent_name") or "fabric-agent"
 
 
+def load_payload() -> dict[str, Any]:
+    invocation_path = os.environ.get("FABRIC_INVOCATION")
+    if invocation_path:
+        path = Path(invocation_path)
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+    return json.load(sys.stdin)
+
+
 def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("runtime_context") or {}
+
+
+def runtime_session_id(payload: dict[str, Any]) -> str | None:
+    """Return Fabric's session key for adapter-owned harness session mapping."""
+
+    context = runtime_context(payload)
+    session_id = context.get("session_id")
+    if session_id:
+        return str(session_id)
+    runtime_id = context.get("runtime_id")
+    if runtime_id:
+        return str(runtime_id)
+    return None
 
 
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -106,6 +128,7 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
     base = Path(config_root(payload)).resolve()
+    runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":
             continue
@@ -115,14 +138,16 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
             section = config.get(section_name)
             if not isinstance(section, dict) or not section.get("enabled"):
                 continue
+
             output_directory = section.get("output_directory")
             if output_directory:
                 path = Path(output_directory)
                 if not path.is_absolute():
-                    section["output_directory"] = str(base / path)
+                    path = base / path
             else:
-                section["output_directory"] = str(base / "artifacts" / "relay")
-            
+                path = base / "artifacts" / "relay"
+
+            section["output_directory"] = str(path / str(runtime_id))
             Path(section["output_directory"]).mkdir(parents=True, exist_ok=True)
             if section_name == "atof":
                 section.setdefault("filename", "events.atof.jsonl")
@@ -312,7 +337,11 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
     return artifacts
 
 
-def write_relay_plugins_toml(plugin_config: dict[str, Any]) -> Path | None:
+def write_relay_configs(
+    *,
+    relay_config: dict[str, Any] | None = None,
+    plugin_config: dict[str, Any] | None = None,
+) -> tuple[Path | None, Path | None]:
     try:
         import tomli_w
 
@@ -320,13 +349,24 @@ def write_relay_plugins_toml(plugin_config: dict[str, Any]) -> Path | None:
         if not config_path:
             raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
 
-        path = Path(config_path).with_name("relay-plugins.toml")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
-        return path
+        config_path = Path(config_path)
+        config_dir = config_path.parent / "relay-config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        relay_config_path = None
+        plugin_config_path = None
+
+        if relay_config is not None:
+            relay_config_path = config_dir / "config.toml"
+            relay_config_path.write_text(tomli_w.dumps(relay_config), encoding="utf-8")
+
+        if plugin_config is not None:
+            plugin_config_path = config_dir / "plugins.toml"
+            plugin_config_path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
+
+        return relay_config_path, plugin_config_path
     except ImportError:
-        print("tomli_w is not installed, skipping writing relay plugins TOML", file=sys.stderr)
-        return None
+        print("tomli_w is not installed, skipping writing Relay TOML", file=sys.stderr)
+        return None, None
 
 
 def _relay_model_name(payload: dict[str, Any]) -> str:

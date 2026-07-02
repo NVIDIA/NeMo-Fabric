@@ -28,20 +28,11 @@ import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
 
 
 def main() -> None:
-    payload = load_payload()
+    payload = common_utils.load_payload()
     output = run_hermes_cli(payload)
     print(json.dumps(output, sort_keys=True))
     if output.get("failed"):
         raise SystemExit(2)
-
-
-def load_payload() -> dict[str, Any]:
-    invocation_path = os.environ.get("FABRIC_INVOCATION")
-    if invocation_path:
-        path = Path(invocation_path)
-        if path.is_file():
-            return json.loads(path.read_text(encoding="utf-8"))
-    return json.load(sys.stdin)
 
 
 def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, Any]) -> None:
@@ -70,7 +61,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     model_name = settings.get("model_name") or model_config.get("model")
     runtime_mode = get_runtime_mode(payload)
     use_session = runtime_mode == "session"
-    fabric_session_id = hermes_common.runtime_session_id(payload)
+    fabric_session_id = common_utils.runtime_session_id(payload)
 
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
 

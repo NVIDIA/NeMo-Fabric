@@ -61,14 +61,17 @@ def main() -> None:
         assert direct_plan["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
 
         profile_plans = [
-            ("hermes_sdk", "nvidia.fabric.hermes.sdk", "python", False),
-            ("hermes_cli", "nvidia.fabric.hermes.cli", "process", False),
-            ("hermes_relay", "nvidia.fabric.hermes.sdk", "python", True),
-            ("hermes_cli_relay", "nvidia.fabric.hermes.cli", "process", True),
+            (("hermes_sdk",), "nvidia.fabric.hermes.sdk", "python", False),
+            (("hermes_cli",), "nvidia.fabric.hermes.cli", "process", False),
+            (("hermes_sdk", "relay"), "nvidia.fabric.hermes.sdk", "python", True),
+            (("hermes_cli", "relay"), "nvidia.fabric.hermes.cli", "process", True),
         ]
-        for profile, adapter_id, adapter_kind, relay_enabled in profile_plans:
-            profile_plan = call_json("plan", temp_example, "--profile", profile)
-            assert profile_plan["profiles"] == [profile]
+        for profiles, adapter_id, adapter_kind, relay_enabled in profile_plans:
+            profile_args = [
+                arg for profile in profiles for arg in ("--profile", profile)
+            ]
+            profile_plan = call_json("plan", temp_example, *profile_args)
+            assert profile_plan["profiles"] == list(profiles)
             descriptor = profile_plan["adapter_descriptor"]["descriptor"]
             assert descriptor["adapter_id"] == adapter_id
             assert descriptor["adapter_kind"] == adapter_kind
