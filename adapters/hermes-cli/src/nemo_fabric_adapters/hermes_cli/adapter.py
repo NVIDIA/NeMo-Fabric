@@ -53,6 +53,7 @@ def get_runtime_mode(payload: dict[str, Any]) -> str:
 
 
 def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
+    hermes_common.validate_hermes_telemetry_provider(payload)
     settings = common_utils.settings_payload(payload)
     request = hermes_common.request_payload(payload)
     config_root = Path(common_utils.config_root(payload)).resolve()
