@@ -152,8 +152,9 @@ def build_command(
     *,
     thread_id: str | None = None,
     relay_gateway_url: str | None = None,
-    generated_profile_name: str | None = None,
-    generated_profile_path: Path | None = None,
+    codex_profile_name: str | None = None,
+    codex_profile_path: Path | None = None,
+    native_telemetry_config: dict[str, Any] | None = None,
 ) -> list[str]:
     settings = common_utils.settings_payload(payload)
     command = resolve_command(payload, settings.get("codex_command") or "codex")
@@ -166,15 +167,16 @@ def build_command(
 
     args = [command]
     overrides = config_overrides(settings)
-    if relay_gateway_url is not None or overrides:
-        if generated_profile_name is None or generated_profile_path is None:
+    if relay_gateway_url is not None or overrides or native_telemetry_config is not None:
+        if codex_profile_name is None or codex_profile_path is None:
             raise RuntimeError(
                 "a generated Codex profile is required for Relay or config overrides"
             )
         write_codex_profile(
             payload,
-            generated_profile_path,
+            codex_profile_path,
             relay_gateway_url=relay_gateway_url,
+            native_telemetry_config=native_telemetry_config,
         )
 
     args.extend(("exec", "--json"))
@@ -183,8 +185,8 @@ def build_command(
         args.append("--ephemeral")
     args.extend(["--sandbox", sandbox])
 
-    if generated_profile_name is not None:
-        args.extend(("--profile", generated_profile_name))
+    if codex_profile_name is not None:
+        args.extend(("--profile", codex_profile_name))
         if relay_gateway_url is not None:
             # By default Codex will not enable hooks for profiles that are not trusted until the user explicitly
             # enables them. This is a problem for Fabric, because we want to be able to use hooks in a non-interactive
@@ -215,6 +217,54 @@ def config_overrides(settings: dict[str, Any]) -> Mapping[str, Any]:
     return overrides
 
 
+def native_codex_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
+    telemetry = common_utils.telemetry_payload(payload)
+    if not telemetry.get("enabled") or common_utils.telemetry_provider(payload) != "native":
+        return {}
+
+    telemetry_config = telemetry.get("config") or {}
+    components = telemetry_config.get("components") or []
+    for component in components:
+        if (
+            not isinstance(component, dict)
+            or component.get("kind") != "observability"
+            or not component.get("enabled", True)
+        ):
+            continue
+        component_config = component.get("config") or {}
+        opentelemetry = component_config.get("opentelemetry") or {}
+        if not isinstance(opentelemetry, dict) or not opentelemetry.get("enabled"):
+            continue
+
+        otel: dict[str, Any] = {}
+        resource_attributes = opentelemetry.get("resource_attributes") or {}
+        environment = resource_attributes.get("deployment.environment")
+        if environment is not None:
+            otel["environment"] = environment
+
+        endpoint = opentelemetry.get("endpoint")
+        if endpoint:
+            transport = opentelemetry.get("transport", "http_binary")
+            if transport == "http_binary":
+                exporter = "otlp-http"
+                protocol = "binary"
+            elif transport == "http_json":
+                exporter = "otlp-http"
+                protocol = "json"
+            else:
+                raise ValueError(
+                    f"unsupported Codex native OpenTelemetry transport {transport!r}"
+                )
+            otel["trace_exporter"] = {
+                exporter: {
+                    "endpoint": endpoint,
+                    "protocol": protocol,
+                }
+            }
+        return {"otel": otel}
+    return {}
+
+
 def apply_config_overrides(
     config: dict[str, Any],
     overrides: Mapping[str, Any],
@@ -240,9 +290,10 @@ def write_codex_profile(
     profile_path: Path,
     *,
     relay_gateway_url: str | None = None,
+    native_telemetry_config: dict[str, Any] | None = None,
 ):
     settings = common_utils.settings_payload(payload)
-    config: dict[str, Any] = {}
+    config = native_telemetry_config or {}
     if relay_gateway_url is not None:
         relay_command = resolve_command(
             payload,
@@ -285,20 +336,21 @@ def write_codex_profile(
         encoding="utf-8",
     )
 
+def get_codex_profile_path(payload: dict[str, Any]) -> tuple[str, Path]:
+    codex_home_env = os.environ.get("CODEX_HOME")
+    if codex_home_env:
+        codex_home = Path(codex_home_env).expanduser()
+    else:
+        codex_home = Path.home() / ".codex"
 
-def codex_home() -> Path:
-    configured = os.environ.get("CODEX_HOME")
-    return Path(configured).expanduser() if configured else Path.home() / ".codex"
-
-
-def generated_codex_profile(payload: dict[str, Any], home: Path) -> tuple[str, Path]:
     runtime_id = common_utils.runtime_context(payload).get("runtime_id")
     if not runtime_id:
         raise RuntimeError(
             "runtime_context.runtime_id is required for generated Codex profiles"
         )
+
     name = f"fabric-{runtime_id}"
-    return name, home / f"{name}.config.toml"
+    return name, codex_home / f"{name}.config.toml"
 
 
 def resolve_command(payload: dict[str, Any], value: Any) -> str:
@@ -499,15 +551,22 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     if mode == "session" and not session_id:
         raise RuntimeError("runtime.mode=session requires a session_id or runtime_id")
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
-    use_relay = os.environ.get("FABRIC_RELAY_ENABLED") == "true"
+    telemetry_provider = common_utils.telemetry_provider(payload)
+    use_relay = (
+        telemetry_provider == "relay"
+        and os.environ.get("FABRIC_RELAY_ENABLED") == "true"
+    )
+
+    native_telemetry_config = None
+    if telemetry_provider == "native":
+        native_telemetry_config = native_codex_telemetry_config(payload)
+    
     overrides = config_overrides(common_utils.settings_payload(payload))
-    generated_profile_name = None
-    generated_profile_path = None
-    if use_relay or overrides:
-        generated_profile_name, generated_profile_path = generated_codex_profile(
-            payload,
-            codex_home(),
-        )
+    codex_profile_name = None
+    codex_profile_path = None
+    if use_relay or native_telemetry_config or overrides:
+        codex_profile_name, codex_profile_path = get_codex_profile_path(payload)
+
     relay_plugin_config = None
     relay_gateway = None
     relay_gateway_url = None
@@ -532,8 +591,9 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
             payload,
             thread_id=prior_thread_id,
             relay_gateway_url=relay_gateway_url,
-            generated_profile_name=generated_profile_name,
-            generated_profile_path=generated_profile_path,
+            codex_profile_name=codex_profile_name,
+            codex_profile_path=codex_profile_path,
+            native_telemetry_config=native_telemetry_config,
         )
 
         timeout = process_timeout(payload)
@@ -564,8 +624,8 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
             completed = subprocess.CompletedProcess(command, 127, "", str(error))
             launch_error = f"Codex CLI could not start: {error}"
     finally:
-        if generated_profile_path is not None:
-            generated_profile_path.unlink(missing_ok=True)
+        if codex_profile_path is not None:
+            codex_profile_path.unlink(missing_ok=True)
 
         if relay_gateway is not None:
             # Work-around for RELAY-399, wait for subscribed events to be flushed before stopping nemo-relay

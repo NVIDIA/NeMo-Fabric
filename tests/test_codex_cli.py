@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, call
 
 import pytest
+import yaml
 
 try:
     import tomllib
@@ -254,6 +255,40 @@ def test_relay_routes_codex_through_standalone_gateway(
         "type": "command",
         "command": "nemo-relay hook-forward codex",
         "timeout": 30,
+    }
+
+
+def test_native_otel_profile_writes_codex_telemetry_config(codex_payload, tmp_path):
+    adapter = load_codex_adapter()
+    profile = yaml.safe_load(
+        (ROOT / "examples/code-review-agent/profiles/native-otel.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    config = codex_payload["effective_config"]["config"]
+    config["telemetry"] = profile["telemetry"]
+    config["harness"]["settings"]["config_overrides"] = {}
+    profile_name = "fabric-runtime-1"
+    profile_path = tmp_path / f"{profile_name}.config.toml"
+
+    command = adapter.build_command(
+        codex_payload,
+        generated_profile_name=profile_name,
+        generated_profile_path=profile_path,
+    )
+
+    assert command[command.index("--profile") + 1] == profile_name
+    assert "--dangerously-bypass-hook-trust" not in command
+    assert tomllib.loads(profile_path.read_text(encoding="utf-8")) == {
+        "otel": {
+            "environment": "dev",
+            "trace_exporter": {
+                "otlp-http": {
+                    "endpoint": "http://localhost:4318/v1/traces",
+                    "protocol": "binary",
+                }
+            },
+        }
     }
 
 
