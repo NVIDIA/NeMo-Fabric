@@ -1,0 +1,25 @@
+schema_version: fabric.agent/v1alpha1
+
+metadata:
+  name: harbor-calculator-demo
+  description: One Harbor agent surface with Fabric-selected harnesses.
+
+harness:
+  adapter_id: demo.fabric.scripted
+  resolution: preinstalled
+
+runtime:
+  mode: oneshot
+  transport: cli
+  input_schema: text
+  output_schema: message
+  artifacts: /logs/agent/fabric-artifacts/smoke
+
+environment:
+  provider: local
+  workspace: /app
+  artifacts: /logs/agent/fabric-artifacts/smoke
+
+profiles:
+  directories:
+    - ./profiles

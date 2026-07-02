@@ -33,7 +33,11 @@ from nemo_fabric.types import (
 
 
 class SessionStatus(str, Enum):
-    """Lifecycle state of a session runtime."""
+    """Lifecycle state of a session runtime.
+
+    ``ACTIVE`` accepts invocations, ``STOPPED`` has released its runtime, and
+    ``FAILED`` records a lifecycle failure that prevents further use.
+    """
 
     ACTIVE = "active"
     STOPPED = "stopped"
@@ -41,7 +45,18 @@ class SessionStatus(str, Enum):
 
 
 class Session:
-    """One ordered multi-turn conversation over a Fabric runtime."""
+    """One ordered multi-turn conversation over a Fabric runtime.
+
+    Create sessions with ``FabricClient.start_session()`` rather than calling
+    the constructor. A session owns one started runtime, serializes invocations,
+    and preserves harness state across turns. Use it as an asynchronous context
+    manager to stop the runtime on exit.
+
+    Session-scoped overrides are recursively merged with invocation overrides;
+    invocation values win. Runtime identity and conversation identity are
+    distinct: ``runtime_id`` identifies this lifecycle, while ``session_id`` is
+    the stable caller-owned resume key.
+    """
 
     def __init__(
         self,
@@ -52,6 +67,8 @@ class Session:
         overrides: Mapping[str, Any] | None = None,
         session_id: str | None = None,
     ) -> None:
+        """lazydocs: ignore"""
+
         self._plan = plan if isinstance(plan, RunPlan) else RunPlan.from_mapping(plan)
         _require_session_runtime(self._plan, "Session")
         self._runtime = (
@@ -68,30 +85,44 @@ class Session:
 
     @property
     def status(self) -> SessionStatus:
+        """Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state."""
+
         return self._status
 
     @property
     def messages(self) -> list[Any]:
+        """Return a deep copy of the latest harness-provided message history."""
+
         return deepcopy(self._messages)
 
     @property
     def invocations(self) -> list[dict[str, Any]]:
+        """Return copied request, runtime, and invocation IDs for completed turns."""
+
         return deepcopy(self._invocations)
 
     @property
     def runtime(self) -> RuntimeHandle:
+        """Return a detached snapshot of the underlying runtime handle."""
+
         return RuntimeHandle.from_mapping(self._runtime.to_mapping())
 
     @property
     def runtime_id(self) -> str:
+        """Return the unique identifier for this started runtime lifecycle."""
+
         return self._runtime.runtime_id
 
     @property
     def session_id(self) -> str:
+        """Return the stable conversation ID, defaulting to ``runtime_id``."""
+
         return self._session_id or self.runtime_id
 
     @property
     def info(self) -> SessionInfo:
+        """Return a typed snapshot of session identity, status, and capabilities."""
+
         return SessionInfo.from_mapping(
             {
                 "session_id": self.session_id,
@@ -115,7 +146,32 @@ class Session:
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> RunResult:
-        """Run one turn; turns are serialized for non-concurrent runtimes."""
+        """Run one turn on the session's existing runtime.
+
+        A complete ``request`` cannot be combined with separate ``request_id``,
+        ``context``, or ``overrides`` fields. The session identifier is injected
+        into request context, and session overrides are merged below invocation
+        overrides. Concurrent turns on the same handle are rejected.
+
+        Args:
+            input: JSON-compatible turn input.
+            request: Complete ``RunRequest`` or compatible mapping.
+            request_id: Caller-owned request identifier; generated when omitted.
+            context: Caller-owned, JSON-compatible request metadata.
+            overrides: JSON-compatible invocation-scoped config overrides.
+
+        Returns:
+            The normalized ``RunResult`` for this turn.
+
+        Raises:
+            FabricConfigError: If request fields conflict or are not
+                JSON-compatible.
+            FabricStateError: If the session is not active, is stopping, or is
+                already running a turn.
+            FabricNativeUnavailableError: If the native extension is missing.
+            FabricRuntimeError: If native invocation fails before returning a
+                normalized result.
+        """
 
         if self._status is not SessionStatus.ACTIVE:
             raise FabricStateError(f"cannot invoke a {self._status.value} session")
@@ -179,7 +235,22 @@ class Session:
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> AsyncIterator[FabricEvent | RunResult]:
-        """Yield buffered events followed by one terminal result."""
+        """Yield buffered events followed by one terminal result.
+
+        Current adapters may buffer internally; this API does not promise that
+        events arrive in real time. Request validation and failure behavior are
+        identical to ``invoke()``.
+
+        Args:
+            input: JSON-compatible turn input.
+            request: Complete ``RunRequest`` or compatible mapping.
+            request_id: Caller-owned request identifier; generated when omitted.
+            context: Caller-owned, JSON-compatible request metadata.
+            overrides: JSON-compatible invocation-scoped config overrides.
+
+        Yields:
+            Each normalized ``FabricEvent``, then the terminal ``RunResult``.
+        """
 
         result = await self.invoke(
             input=input,
@@ -193,7 +264,16 @@ class Session:
         yield result
 
     async def update(self, update: RuntimeUpdate) -> RuntimeUpdateResult:
-        """Apply a capability-gated runtime update."""
+        """Validate a runtime update and report transport availability.
+
+        Args:
+            update: Typed update containing overrides and caller metadata.
+
+        Raises:
+            FabricConfigError: If ``update`` is not a ``RuntimeUpdate``.
+            FabricCapabilityError: If updates are unsupported or the update
+                transport is not yet implemented.
+        """
 
         if not isinstance(update, RuntimeUpdate):
             raise FabricConfigError("update must be a RuntimeUpdate")
@@ -210,7 +290,12 @@ class Session:
         )
 
     async def cancel(self) -> None:
-        """Cancel the current invocation when the runtime declares support."""
+        """Report whether runtime cancellation is available.
+
+        Raises:
+            FabricCapabilityError: If cancellation is unsupported or the
+                cancellation transport is not yet implemented.
+        """
 
         if not self._plan.capabilities.cancellation:
             raise FabricCapabilityError(
@@ -225,7 +310,18 @@ class Session:
         )
 
     async def stop(self) -> None:
-        """Destroy an idle runtime exactly once."""
+        """Destroy an idle runtime exactly once.
+
+        Repeated calls after a successful stop are no-ops. A failed session or
+        an in-flight invocation must reach a terminal state before cleanup can
+        proceed.
+
+        Raises:
+            FabricStateError: If the session failed, is already stopping, or
+                has an invocation in flight.
+            FabricNativeUnavailableError: If the native extension is missing.
+            FabricRuntimeError: If native runtime shutdown fails.
+        """
 
         if self._status is SessionStatus.STOPPED:
             return

@@ -1,0 +1,30 @@
+schema_version: fabric.profile/v1alpha1
+name: hermes
+description: Run Hermes CLI against the Harbor task workspace.
+
+harness:
+  adapter_id: nvidia.fabric.hermes.cli
+  resolution: preinstalled
+  settings:
+    cwd: /app
+    hermes_home: /tmp/fabric-hermes
+    base_url: https://integrate.api.nvidia.com/v1
+    max_iterations: 4
+    terminal_timeout: 120
+
+models:
+  default:
+    provider: nvidia
+    model: nvidia/nemotron-3-nano-30b-a3b
+    temperature: 0.0
+
+runtime:
+  transport: cli
+  artifacts: /logs/agent/fabric-artifacts/hermes
+
+environment:
+  workspace: /app
+  artifacts: /logs/agent/fabric-artifacts/hermes
+
+telemetry:
+  enabled: false

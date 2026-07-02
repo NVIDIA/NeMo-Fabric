@@ -1,0 +1,16 @@
+---
+title: "Function resolve_run_plan_from_config"
+sidebar-title: "resolve_run_plan_from_config"
+description: "Resolve a typed Fabric config and typed profile overlays into a runnable plan."
+position: 39
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn resolve_run_plan_from_config(\n    config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n    profiles: &amp;[<a href=\"struct-profileconfig\">ProfileConfig</a>],\n    context: <a href=\"struct-resolvecontext\">ResolveContext</a>,\n) -&gt; <a href=\"../error/type-result\">Result</a>&lt;<a href=\"struct-runplan\">RunPlan</a>&gt;"}} /></pre>
+
+Resolve a typed Fabric config and typed profile overlays into a runnable plan.
+
+This is the SDK-facing entrypoint. File and YAML loading stays outside this function; callers provide already-typed configs and the path context used for resolving relative paths.
