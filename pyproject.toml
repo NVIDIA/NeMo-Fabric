@@ -15,7 +15,10 @@ dependencies = []
 [project.optional-dependencies]
 codex = ["tomli-w~=1.2"]
 
-harbor = ["harbor>=0.13.2; python_version >= '3.12'"]
+harbor = [
+  "harbor>=0.16.1; python_version >= '3.12'",
+  "pyyaml>=6.0",
+]
 docs = [
   "lazydocs>=0.4",
   "beautifulsoup4>=4.12",

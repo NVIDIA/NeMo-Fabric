@@ -6,6 +6,10 @@ navigation:
     contents:
       - page: Overview
         path: ./getting-started/overview.mdx
+  - section: Guides
+    contents:
+      - page: Evaluate agents with Harbor
+        path: ./guides/harbor-evaluation.mdx
   - section: Reference
     contents:
       - section: API
