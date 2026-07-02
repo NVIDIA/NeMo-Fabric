@@ -38,6 +38,33 @@ async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, h
         assert field in output, f"Missing field in output: {field}"
 
 
+async def test_hermes_cli_rejects_native_telemetry(
+    hermes_agent_dir: Path,
+    hermes_cli_profile: str,
+):
+    profile_path = hermes_agent_dir / "profiles/native-telemetry.yaml"
+    profile_path.write_text(
+        """schema_version: fabric.profile/v1alpha1
+name: native_telemetry
+telemetry:
+  enabled: true
+  provider: native
+  config: {}
+""",
+        encoding="utf-8",
+    )
+
+    async with FabricClient() as client:
+        result = await client.run(
+            hermes_agent_dir,
+            profiles=[hermes_cli_profile, "native_telemetry"],
+            input="who are you?",
+        )
+
+    assert result["status"] == "failed"
+    assert "only relay telemetry is supported for Hermes" in result["error"]["message"]
+
+
 async def test_hermes_cli_multi_turn(
     hermes_agent_dir: Path,
     hermes_cli_session_profile: str,

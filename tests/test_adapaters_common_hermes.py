@@ -93,6 +93,32 @@ def test_selected_model_config(
     assert hermes_common.selected_model_config(payload) == expected
 
 
+@pytest.mark.parametrize("provider", [None, "relay"])
+def test_validate_hermes_telemetry_provider_accepts_relay(
+    hermes_common: types.ModuleType,
+    provider: str | None,
+) -> None:
+    telemetry = {"enabled": True}
+    if provider is not None:
+        telemetry["provider"] = provider
+    payload = {"effective_config": {"config": {"telemetry": telemetry}}}
+
+    hermes_common.validate_hermes_telemetry_provider(payload)
+
+
+def test_validate_hermes_telemetry_provider_rejects_native(
+    hermes_common: types.ModuleType,
+) -> None:
+    payload = {
+        "effective_config": {
+            "config": {"telemetry": {"enabled": True, "provider": "native"}}
+        }
+    }
+
+    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+        hermes_common.validate_hermes_telemetry_provider(payload)
+
+
 def test_build_hermes_config_maps_fabric_config_to_hermes_config(
     hermes_common: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
