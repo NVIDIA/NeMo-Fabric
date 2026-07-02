@@ -218,6 +218,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config))
     payload = {
         "runtime_context": {
+            "runtime_id": "runtime-matrix",
             "environment": {
                 "workspace": str(tmp_path / "workspace"),
                 "artifacts": str(tmp_path / "artifacts"),
@@ -284,8 +285,12 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     }
     assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
-    assert observability["atof"]["output_directory"] == str(tmp_path / "relay" / "atof")
-    assert observability["atif"]["output_directory"] == str(tmp_path / "relay" / "atif")
+    assert observability["atof"]["output_directory"] == str(
+        tmp_path / "relay" / "atof" / "runtime-matrix"
+    )
+    assert observability["atif"]["output_directory"] == str(
+        tmp_path / "relay" / "atif" / "runtime-matrix"
+    )
     assert observability["atif"]["agent_name"] == "matrix-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
@@ -429,6 +434,7 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
     monkeypatch.setenv("FABRIC_RELAY_ENABLED", "true")
     monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(config_path))
     payload = {
+        "runtime_context": {"runtime_id": "runtime-relay"},
         "effective_config": {
             "agent_name": "review-agent",
             "config_root": str(tmp_path),
@@ -443,11 +449,15 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
 
     assert plugin_config is not None
     assert os.environ["HERMES_NEMO_RELAY_ATOF_ENABLED"] == "1"
-    assert os.environ["HERMES_NEMO_RELAY_ATOF_OUTPUT_DIRECTORY"] == str(tmp_path / "atof")
+    assert os.environ["HERMES_NEMO_RELAY_ATOF_OUTPUT_DIRECTORY"] == str(
+        tmp_path / "atof" / "runtime-relay"
+    )
     assert os.environ["HERMES_NEMO_RELAY_ATOF_FILENAME"] == "custom.atof.jsonl"
     assert os.environ["HERMES_NEMO_RELAY_ATOF_MODE"] == "append"
     assert os.environ["HERMES_NEMO_RELAY_ATIF_ENABLED"] == "1"
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] == str(tmp_path / "atif")
+    assert os.environ["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] == str(
+        tmp_path / "atif" / "runtime-relay"
+    )
     assert os.environ["HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE"] == "trace-{session_id}.atif.json"
     assert os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_NAME"] == "review-agent"
     assert os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"] == "1.2.3"

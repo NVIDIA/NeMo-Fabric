@@ -137,6 +137,7 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
     base = Path(config_root(payload)).resolve()
+    runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":
             continue
@@ -146,14 +147,16 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
             section = config.get(section_name)
             if not isinstance(section, dict) or not section.get("enabled"):
                 continue
+
             output_directory = section.get("output_directory")
             if output_directory:
                 path = Path(output_directory)
                 if not path.is_absolute():
-                    section["output_directory"] = str(base / path)
+                    path = base / path
             else:
-                section["output_directory"] = str(base / "artifacts" / "relay")
-            
+                path = base / "artifacts" / "relay"
+
+            section["output_directory"] = str(path / str(runtime_id))
             Path(section["output_directory"]).mkdir(parents=True, exist_ok=True)
             if section_name == "atof":
                 section.setdefault("filename", "events.atof.jsonl")

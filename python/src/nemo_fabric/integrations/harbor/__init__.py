@@ -27,10 +27,10 @@ class FabricAgent(BaseAgent):
     def __init__(
         self,
         logs_dir: Path,
-        fabric_agent_path: str,
-        fabric_profiles: str | Sequence[str] | None = None,
-        fabric_cli: str = "fabric",
-        fabric_request_path: str = "/tmp/fabric-request.json",
+        fabric_config_path: str,
+        fabric_profile_paths: str | Sequence[str] | None = None,
+        fabric_python: str = "python3",
+        fabric_spec_path: str = "/tmp/fabric-run.json",
         fabric_result_path: str = "/logs/agent/fabric-result.json",
         fabric_install_command: str | None = None,
         fabric_cwd: str | None = None,
@@ -39,10 +39,10 @@ class FabricAgent(BaseAgent):
         **kwargs: Any,
     ) -> None:
         super().__init__(logs_dir=logs_dir, *args, **kwargs)
-        self.fabric_agent_path = fabric_agent_path
-        self.fabric_profiles = normalize_profiles(fabric_profiles)
-        self.fabric_cli = fabric_cli
-        self.fabric_request_path = fabric_request_path
+        self.fabric_config_path = fabric_config_path
+        self.fabric_profile_paths = normalize_paths(fabric_profile_paths)
+        self.fabric_python = fabric_python
+        self.fabric_spec_path = fabric_spec_path
         self.fabric_result_path = fabric_result_path
         self.fabric_install_command = fabric_install_command
         self.fabric_cwd = fabric_cwd
@@ -62,6 +62,7 @@ class FabricAgent(BaseAgent):
             result = await environment.exec(
                 self.fabric_install_command,
                 cwd=self.fabric_cwd,
+                env=self.extra_env,
                 timeout_sec=self.fabric_timeout_sec,
             )
             ensure_success("Fabric install command failed", result)
@@ -72,23 +73,26 @@ class FabricAgent(BaseAgent):
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        request = self._build_request(instruction)
+        spec = {
+            "config_path": self.fabric_config_path,
+            "profile_paths": self.fabric_profile_paths,
+            "request": self._build_request(instruction),
+        }
         result = await environment.exec(
-            write_json_command(self.fabric_request_path, request),
+            write_json_command(self.fabric_spec_path, spec),
             cwd=self.fabric_cwd,
             timeout_sec=30,
         )
-        ensure_success("Fabric request write failed", result)
+        ensure_success("Fabric run specification write failed", result)
 
         result = await environment.exec(
-            fabric_run_command(
-                fabric_cli=self.fabric_cli,
-                fabric_agent_path=self.fabric_agent_path,
-                fabric_profiles=self.fabric_profiles,
-                request_path=self.fabric_request_path,
+            fabric_runner_command(
+                fabric_python=self.fabric_python,
+                spec_path=self.fabric_spec_path,
                 result_path=self.fabric_result_path,
             ),
             cwd=self.fabric_cwd,
+            env=self.extra_env,
             timeout_sec=self.fabric_timeout_sec,
         )
         ensure_success("Fabric run failed", result)
@@ -110,12 +114,12 @@ class FabricAgent(BaseAgent):
         }
 
 
-def normalize_profiles(profiles: str | Sequence[str] | None) -> list[str]:
-    if profiles is None:
+def normalize_paths(paths: str | Sequence[str] | None) -> list[str]:
+    if paths is None:
         return []
-    if isinstance(profiles, str):
-        return [profiles]
-    return [profile for profile in profiles if profile]
+    if isinstance(paths, str):
+        return [paths]
+    return [path for path in paths if path]
 
 
 def write_json_command(path: str, payload: dict[str, Any]) -> str:
@@ -123,24 +127,22 @@ def write_json_command(path: str, payload: dict[str, Any]) -> str:
     return f"cat > {shlex.quote(path)} <<'FABRIC_JSON'\n{encoded}\nFABRIC_JSON"
 
 
-def fabric_run_command(
+def fabric_runner_command(
     *,
-    fabric_cli: str,
-    fabric_agent_path: str,
-    fabric_profiles: Sequence[str],
-    request_path: str,
+    fabric_python: str,
+    spec_path: str,
     result_path: str,
 ) -> str:
     parts = [
-        shlex.quote(fabric_cli),
-        "run",
-        shlex.quote(fabric_agent_path),
-        "--request-file",
-        shlex.quote(request_path),
+        shlex.quote(fabric_python),
+        "-m",
+        "nemo_fabric.integrations.harbor.runner",
+        "--spec",
+        shlex.quote(spec_path),
+        "--result",
+        shlex.quote(result_path),
     ]
-    for profile in fabric_profiles:
-        parts.extend(["--profile", shlex.quote(profile)])
-    return f"{' '.join(parts)} > {shlex.quote(result_path)}"
+    return " ".join(parts)
 
 
 def ensure_success(message: str, result: Any) -> None:

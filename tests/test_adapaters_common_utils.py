@@ -153,6 +153,14 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         encoding="utf-8",
     )
     monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(config_path))
+    previous_atof_dir = tmp_path / "custom-relay" / "runtime-previous"
+    previous_atif_dir = tmp_path / "artifacts" / "relay" / "runtime-previous"
+    previous_atof_dir.mkdir(parents=True)
+    previous_atif_dir.mkdir(parents=True)
+    (previous_atof_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
+    (previous_atif_dir / "trajectory-old.atif.json").write_text(
+        "{}", encoding="utf-8"
+    )
     payload = {
         "effective_config": {
             "agent_name": "review-agent",
@@ -161,7 +169,8 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
                 "harness": {"settings": {"model": "review"}},
                 "models": {"review": {"model": "nvidia/review-model"}},
             },
-        }
+        },
+        "runtime_context": {"runtime_id": "runtime-current"},
     }
 
     plugin_config = common_utils.load_relay_plugin_config(payload)
@@ -169,15 +178,32 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
 
     assert plugin_config["version"] == 1
     assert plugin_config["components"][0]["kind"] == "observability"
-    assert observability["atof"]["output_directory"] == str(tmp_path / "custom-relay")
+    assert observability["atof"]["output_directory"] == str(
+        tmp_path / "custom-relay" / "runtime-current"
+    )
     assert observability["atof"]["filename"] == "events.atof.jsonl"
     assert observability["atof"]["mode"] == "overwrite"
     assert Path(observability["atof"]["output_directory"]).is_dir()
-    assert observability["atif"]["output_directory"] == str(tmp_path / "artifacts" / "relay")
+    assert observability["atif"]["output_directory"] == str(
+        tmp_path / "artifacts" / "relay" / "runtime-current"
+    )
     assert observability["atif"]["filename_template"] == "trajectory-{session_id}.atif.json"
     assert observability["atif"]["agent_name"] == "review-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
     assert Path(observability["atif"]["output_directory"]).is_dir()
+
+    atof_file = Path(observability["atof"]["output_directory"]) / "events.atof.jsonl"
+    atif_file = (
+        Path(observability["atif"]["output_directory"])
+        / "trajectory-current.atif.json"
+    )
+    atof_file.write_text("{}", encoding="utf-8")
+    atif_file.write_text("{}", encoding="utf-8")
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "atof", "path": str(atof_file)},
+        {"kind": "atif", "path": str(atif_file)},
+    ]
 
 
 def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path):
