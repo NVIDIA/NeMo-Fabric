@@ -13,7 +13,10 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.optional-dependencies]
-codex = ["tomli-w~=1.2"]
+codex = [
+  "tomli>=2; python_version < '3.11'",
+  "tomli-w~=1.2",
+]
 
 harbor = [
   "harbor>=0.16.1; python_version >= '3.12'",

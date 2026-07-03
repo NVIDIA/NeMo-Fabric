@@ -71,6 +71,7 @@ def load_runtime_history(session_db: Any, session_id: str | None) -> list[dict[s
 
 
 async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
+    hermes_common.validate_hermes_telemetry_provider(payload)
     settings = common_utils.settings_payload(payload)
     request = hermes_common.request_payload(payload)
     model_config = hermes_common.selected_model_config(payload)

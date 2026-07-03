@@ -1003,7 +1003,7 @@ class TelemetryRef(FabricMapping):
         if "relay_enabled" in data:
             metadata.setdefault("relay_enabled", data["relay_enabled"])
             data = {
-                "provider": "relay",
+                "provider": metadata.get("telemetry_provider", "relay"),
                 "kind": "trace",
                 "uri": metadata.get("relay_output_dir"),
                 "trace_id": metadata.get("trace_id"),

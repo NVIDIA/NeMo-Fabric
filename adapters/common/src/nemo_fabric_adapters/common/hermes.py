@@ -39,6 +39,11 @@ def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
     return model_config
 
 
+def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
+    if common_utils.telemetry_provider(payload) != "relay":
+        raise ValueError("only relay telemetry is supported for Hermes")
+
+
 def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False) -> dict[str, Any]:
     settings = common_utils.settings_payload(payload)
     model_config = selected_model_config(payload)

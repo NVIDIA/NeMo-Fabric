@@ -605,6 +605,20 @@ def test_run_result_normalizes_core_telemetry_reference():
     assert result.telemetry[0].trace_id == "trace-1"
 
 
+def test_run_result_preserves_native_telemetry_provider():
+    result = RunResult.from_mapping(
+        _run_result(
+            telemetry={
+                "relay_enabled": False,
+                "metadata": {"telemetry_provider": "native"},
+            },
+        )
+    )
+
+    assert result.telemetry[0].provider == "native"
+    assert result.telemetry[0].metadata["relay_enabled"] is False
+
+
 @pytest.mark.parametrize(
     "field",
     (

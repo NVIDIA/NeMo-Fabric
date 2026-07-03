@@ -3,6 +3,7 @@
 
 import importlib.util
 import json
+import os
 import tomllib
 from pathlib import Path
 
@@ -156,16 +157,20 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
                 "runtime": {"mode": "oneshot"},
             },
         },
-        "runtime_context": {"environment": {"workspace": str(tmp_path)}},
+        "runtime_context": {
+            "runtime_id": "harbor-test",
+            "environment": {"workspace": str(tmp_path)},
+        },
         "request": {"input": "Fix the calculator."},
     }
 
+    os.environ["CODEX_HOME"] = str(tmp_path)
     profile_name = "fabric-harbor-test"
     profile_path = tmp_path / f"{profile_name}.config.toml"
+    codex_settings = adapter.write_config_files(payload)
     command = adapter.build_command(
         payload,
-        generated_profile_name=profile_name,
-        generated_profile_path=profile_path,
+        codex_settings=codex_settings,
     )
 
     assert command == [

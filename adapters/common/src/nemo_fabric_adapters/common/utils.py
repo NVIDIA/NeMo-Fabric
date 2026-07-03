@@ -77,6 +77,15 @@ def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return fabric_config(payload).get("models") or payload.get("models") or {}
 
 
+def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    telemetry = fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    return telemetry if isinstance(telemetry, dict) else {}
+
+
+def telemetry_provider(payload: dict[str, Any]) -> str:
+    return str(telemetry_payload(payload).get("provider") or "relay")
+
+
 def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("capability_plan") or payload.get("capabilities") or {}
 
@@ -364,9 +373,9 @@ def write_relay_configs(
             plugin_config_path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
 
         return relay_config_path, plugin_config_path
-    except ImportError:
-        print("tomli_w is not installed, skipping writing Relay TOML", file=sys.stderr)
-        return None, None
+    except ImportError as e:
+        raise RuntimeError("tomli_w is not installed") from e
+
 
 
 def _relay_model_name(payload: dict[str, Any]) -> str:

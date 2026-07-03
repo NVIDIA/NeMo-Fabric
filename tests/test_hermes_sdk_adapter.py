@@ -10,12 +10,25 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 HERMES_SDK_SRC = ROOT / "adapters" / "hermes-sdk" / "src"
 if str(HERMES_SDK_SRC) not in sys.path:
     sys.path.insert(0, str(HERMES_SDK_SRC))
 
 from nemo_fabric_adapters.hermes_sdk import adapter  # noqa: E402
+
+
+async def test_hermes_sdk_rejects_native_telemetry():
+    payload = {
+        "effective_config": {
+            "config": {"telemetry": {"enabled": True, "provider": "native"}}
+        }
+    }
+
+    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+        await adapter.run_hermes_sdk(payload)
 
 
 async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(

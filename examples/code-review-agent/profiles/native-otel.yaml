@@ -2,14 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 schema_version: fabric.profile/v1alpha1
-name: relay_otel
-description: Enable NeMo Relay OpenTelemetry tracing.
+name: native_otel
+description: Enable Native OpenTelemetry tracing.
 
 telemetry:
   enabled: true
-  provider: relay
+  provider: native
   mode: sdk
-  output_dir: ./artifacts/relay-otel
   config:
     version: 1
     components:
@@ -21,10 +20,5 @@ telemetry:
             enabled: true
             transport: http_binary
             endpoint: http://localhost:4318/v1/traces
-            service_name: code-review-agent
-            service_namespace: fabric
-            service_version: fabric-poc
-            instrumentation_scope: nemo-relay-otel
-            timeout_millis: 3000
             resource_attributes:
               deployment.environment: dev

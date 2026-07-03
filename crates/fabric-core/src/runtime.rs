@@ -1294,6 +1294,10 @@ fn runtime_telemetry_context(
 ) -> Option<RuntimeTelemetryContext> {
     let telemetry = plan.telemetry_plan.as_ref()?;
     let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "telemetry_provider".to_string(),
+        Value::String(telemetry.provider.as_str().to_string()),
+    );
     if let Some(mode) = &telemetry.relay_mode {
         metadata.insert("relay_mode".to_string(), Value::String(mode.clone()));
     }
@@ -1763,6 +1767,10 @@ fn telemetry_ref(
 ) -> Option<TelemetryRef> {
     let telemetry = plan.telemetry_plan.as_ref()?;
     let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "telemetry_provider".to_string(),
+        Value::String(telemetry.provider.as_str().to_string()),
+    );
     if let Some(mode) = &telemetry.relay_mode {
         metadata.insert("relay_mode".to_string(), Value::String(mode.clone()));
     }
@@ -1991,6 +1999,67 @@ environment:
             serde_json::json!(["runtime", "telemetry"])
         );
         assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn native_telemetry_skips_relay_and_reaches_adapter_payload() {
+        let root = temp_process_agent_dir();
+        let config_path = root.join("agent.yaml");
+        let mut config = fs::read_to_string(&config_path).expect("read agent config");
+        config.push_str(
+            r#"
+telemetry:
+  enabled: true
+  provider: native
+  config:
+    exporter: test
+"#,
+        );
+        fs::write(&config_path, config).expect("write native telemetry config");
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("runtime");
+        let request = RunRequest::text("hello fabric");
+        let invocation = InvocationHandle {
+            invocation_id: "invocation-native-telemetry".to_string(),
+            request_id: request.request_id.clone(),
+            runtime_id: runtime.runtime_id.clone(),
+        };
+        let mut artifacts = artifact_manifest(&plan).expect("artifact manifest");
+
+        let relay =
+            prepare_relay_runtime_config(&plan, &runtime, &invocation, &request, &mut artifacts)
+                .expect("prepare telemetry");
+        let payload = adapter_invocation(
+            &plan,
+            &runtime,
+            &invocation,
+            &request,
+            &artifacts,
+            relay.as_ref(),
+        )
+        .expect("adapter invocation");
+        let payload = serde_json::to_value(payload).expect("adapter payload json");
+
+        assert!(relay.is_none());
+        assert!(
+            !artifacts
+                .artifacts
+                .iter()
+                .any(|artifact| artifact.name == "relay_config")
+        );
+        assert_eq!(payload["telemetry_plan"]["provider"], "native");
+        assert_eq!(payload["telemetry_plan"]["relay_enabled"], false);
+        assert_eq!(
+            payload["effective_config"]["config"]["telemetry"]["config"],
+            serde_json::json!({"exporter": "test"})
+        );
+        assert!(payload["runtime_context"]["telemetry"].get("env").is_none());
+        assert_eq!(
+            payload["runtime_context"]["telemetry"]["metadata"]["telemetry_provider"],
+            "native"
+        );
 
         let _ = fs::remove_dir_all(root);
     }
