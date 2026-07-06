@@ -57,6 +57,7 @@ Prerequisites:
 - Rust and Cargo
 - Python 3.10+ for Fabric
 - Python 3.11-3.13 for Hermes
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - `just` 1.50.0+
 - `NVIDIA_API_KEY` for NVIDIA-hosted model access
 
