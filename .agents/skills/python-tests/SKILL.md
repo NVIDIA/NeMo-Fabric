@@ -26,6 +26,15 @@ license: Apache-2.0
   different input types.
 - If a fixture is needed for a test, but either does not return a value or the value is not used in the test, use the `@pytest.mark.usefixtures` decorator.
 - `tests/conftest.py` contains a `restore_environ_fixture` fixture that restores the environment variables to their original state after each test, it is defined with `autouse=True` so it is automatically applied to all tests. If you need to modify the environment variables in a test, do so using `os.environ` and the fixture will restore them after the test completes. There is no need to use `monkeypatch.setenv` to modify environment variables in tests.
+- Avoid defensive programming in tests. If a test fails, it should fail loudly and clearly, rather than silently passing due to defensive checks. For example
+  ```python
+  data = results["data"]
+  ```
+  is preferred over
+  ```python
+  data = results.get("data")
+  ```
+  Simply allow the resulting KeyError to be raised if the "data" key is not present in the results dictionary, as this will provide a clear indication of what went wrong in the test.
 
 ## Common Commands
 
