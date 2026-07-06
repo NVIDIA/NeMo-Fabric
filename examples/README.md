@@ -19,11 +19,14 @@ The first example focuses on the shared Fabric contract:
 Start with:
 
 ```bash
-cargo run -p fabric-cli -- validate examples/code-review-agent
-cargo run -p fabric-cli -- inspect examples/code-review-agent
-cargo run -p fabric-cli -- plan examples/code-review-agent
-cargo run -p fabric-cli -- plan examples/code-review-agent --profile env_local --profile mcp_github
-cargo run -p fabric-cli -- plan examples/code-review-agent --profile hermes_cli
+just build-rust
+export PATH="$HOME/.cargo/bin:$PATH"
+
+fabric validate examples/code-review-agent
+fabric inspect examples/code-review-agent
+fabric plan examples/code-review-agent
+fabric plan examples/code-review-agent --profile env_local --profile mcp_github
+fabric plan examples/code-review-agent --profile hermes_cli
 ```
 
 The dependency-free Hermes shim used by smoke tests lives under
