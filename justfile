@@ -22,6 +22,7 @@ clean:
         **/*.so \
         **/coverage.xml \
         **/dist \
+        docs/node_modules \
         target/
 
 # Build the Rust workspace using the locked dependency set.
@@ -49,9 +50,10 @@ docs:
     if [[ "{{ no_uv }}" != "true" ]]; then
         uv sync --extra docs
     fi
+    npm ci --prefix docs --ignore-scripts
     PATH="{{ REPO_ROOT }}/.venv/bin:$PATH" bash scripts/generate_api_docs.sh
     uv run --no-sync python scripts/docs/generate_rust_library_reference.py
-    npx --yes fern-api@5.37.10 check
+    npx --prefix docs --no-install fern check
 
 # Run the Python test suite with the same optional integrations used by CI.
 # --set [no_uv=true|false]

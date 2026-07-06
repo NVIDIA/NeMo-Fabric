@@ -52,11 +52,6 @@ jobs:
         with:
           node-version: "20"
 
-      # Publishing and previews call `fern` directly in later steps, so keep a
-      # globally available CLI in addition to the validation run by `just docs`.
-      - name: Install Fern CLI
-        run: npm install -g fern-api@5.37.10
-
       # Generate the Python reference from SDK docstrings and the Rust reference
       # from rustdoc, then validate the Fern configuration.
       - name: Generate API references and validate docs
@@ -67,7 +62,7 @@ jobs:
         if: github.ref_name == 'main'
         env:
           FERN_TOKEN: ${{ secrets.FERN_TOKEN }}
-        run: fern generate --docs
+        run: npx --prefix docs --no-install fern generate --docs
 
       # Build a preview deployment for the PR and capture its URL.
       - name: Preview docs
@@ -78,7 +73,7 @@ jobs:
         run: |
           set -euo pipefail
           pr_number="${GITHUB_REF_NAME#pull-request/}"
-          if output="$(fern generate --docs --preview --id "pull-request-${pr_number}" 2>&1)"; then
+          if output="$(npx --prefix docs --no-install fern generate --docs --preview --id "pull-request-${pr_number}" 2>&1)"; then
             fern_exit=0
           else
             fern_exit=$?
