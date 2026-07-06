@@ -31,6 +31,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install just
+        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        with:
+          tool: just@1.50.0
+
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
@@ -42,25 +47,20 @@ jobs:
           toolchain: stable
           cache: false
 
-      # The Python reference is generated from the SDK docstrings (lazydocs) and
-      # the Rust reference from rustdoc (cargo doc --no-deps -p fabric-core),
-      # so the published docs never drift from the code.
-      - name: Generate API reference (Python docstrings + Rust rustdoc)
-        run: |
-          uv sync --extra docs
-          PATH="$PWD/.venv/bin:$PATH" bash scripts/generate_api_docs.sh
-          .venv/bin/python scripts/docs/generate_rust_library_reference.py
-
       - name: Set up Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: "20"
 
+      # Publishing and previews call `fern` directly in later steps, so keep a
+      # globally available CLI in addition to the validation run by `just docs`.
       - name: Install Fern CLI
         run: npm install -g fern-api@5.37.10
 
-      - name: Validate docs config
-        run: fern check
+      # Generate the Python reference from SDK docstrings and the Rust reference
+      # from rustdoc, then validate the Fern configuration.
+      - name: Generate API references and validate docs
+        run: just docs
 
       # Publish to the (internal-by-default) Fern site on merge to main.
       - name: Publish docs
