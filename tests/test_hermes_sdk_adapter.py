@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -125,7 +126,7 @@ async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
     monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
     monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
     monkeypatch.setitem(sys.modules, "run_agent", run_agent)
-    monkeypatch.setenv("TEST_API_KEY", "secret")
+    os.environ["TEST_API_KEY"] = "secret"
 
     payload = {
         "effective_config": {

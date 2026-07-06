@@ -3,6 +3,7 @@
 
 import builtins
 import json
+import os
 import types
 from io import StringIO
 from pathlib import Path
@@ -58,7 +59,6 @@ def test_payload_accessors_prefer_effective_config(common_utils: types.ModuleTyp
 
 def test_load_payload_reads_fabric_invocation(
     common_utils: types.ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
     invocation_path = tmp_path / "invocation.json"
@@ -66,7 +66,7 @@ def test_load_payload_reads_fabric_invocation(
         json.dumps({"request": {"input": "from file"}}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FABRIC_INVOCATION", str(invocation_path))
+    os.environ["FABRIC_INVOCATION"] = str(invocation_path)
 
     assert common_utils.load_payload() == {"request": {"input": "from file"}}
 
@@ -75,7 +75,7 @@ def test_load_payload_falls_back_to_stdin(
     common_utils: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.delenv("FABRIC_INVOCATION", raising=False)
+    os.environ.pop("FABRIC_INVOCATION", None)
     monkeypatch.setattr("sys.stdin", StringIO('{"request": {"input": "from stdin"}}'))
 
     assert common_utils.load_payload() == {"request": {"input": "from stdin"}}
@@ -132,7 +132,6 @@ def test_normalize_list(common_utils: types.ModuleType, value: object, expected:
 
 def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config(
     common_utils: types.ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
     config_path = tmp_path / "relay.json"
@@ -152,7 +151,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(config_path))
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(config_path)
     previous_atof_dir = tmp_path / "custom-relay" / "runtime-previous"
     previous_atif_dir = tmp_path / "artifacts" / "relay" / "runtime-previous"
     previous_atof_dir.mkdir(parents=True)
@@ -249,15 +248,12 @@ def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path)
 )
 def test_write_relay_configs(
     common_utils: types.ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     relay_config: dict[str, object] | None,
     plugin_config: dict[str, object] | None,
     expected_names: tuple[str | None, str | None],
 ):
-    monkeypatch.setenv(
-        "FABRIC_RELAY_CONFIG_PATH", str(tmp_path / "nested" / "relay.json")
-    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "nested" / "relay.json")
 
     paths = common_utils.write_relay_configs(
         relay_config=relay_config,
