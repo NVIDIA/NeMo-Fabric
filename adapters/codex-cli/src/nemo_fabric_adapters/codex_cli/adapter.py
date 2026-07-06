@@ -670,8 +670,6 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
             codex_settings.codex_profile_path.unlink(missing_ok=True)
 
         if relay_gateway_process is not None:
-            # Work-around for RELAY-399, wait for subscribed events to be flushed before stopping nemo-relay
-            time.sleep(5)
             stop_relay_gateway(relay_gateway_process)
 
     parsed = parse_events(completed.stdout)
