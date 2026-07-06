@@ -9,39 +9,37 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from shutil import copytree
 
 import yaml
+import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 
 
-def main() -> None:
+def test_hermes_sdk(tmp_path: Path):
     if os.environ.get("RUN_FABRIC_HERMES_INTEGRATION") != "1":
-        print("skipping: set RUN_FABRIC_HERMES_INTEGRATION=1 to run")
-        return
+        pytest.skip("set RUN_FABRIC_HERMES_INTEGRATION=1 to run")
     if not os.environ.get("NVIDIA_API_KEY"):
-        raise SystemExit("NVIDIA_API_KEY is required")
+        pytest.fail("NVIDIA_API_KEY is required")
     env = os.environ.copy()
     env["HERMES_PYTHON"] = resolve_hermes_python(env)
 
     agent = ROOT / "examples" / "code-review-agent"
-    with tempfile.TemporaryDirectory(prefix="fabric-hermes-sdk-") as tmpdir:
-        temp_agent = Path(tmpdir) / "code-review-agent"
-        copytree(agent, temp_agent)
-        result = call_json(
-            "run",
-            temp_agent,
-            "--profile",
-            "hermes_sdk",
-            "--input",
-            "Reply with exactly: hermes ok",
-            env=env,
-        )
-        assert_hermes_config_mapping(result["output"])
+    temp_agent = tmp_path / "code-review-agent"
+    copytree(agent, temp_agent)
+    result = call_json(
+        "run",
+        temp_agent,
+        "--profile",
+        "hermes_sdk",
+        "--input",
+        "Reply with exactly: hermes ok",
+        env=env,
+    )
+    assert_hermes_config_mapping(result["output"])
 
     assert result["status"] == "succeeded", result
     assert result["adapter_kind"] == "python"
@@ -105,7 +103,3 @@ def call_json(*args: object, env: dict[str, str] | None = None) -> dict:
             f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
         )
     return json.loads(completed.stdout)
-
-
-if __name__ == "__main__":
-    main()

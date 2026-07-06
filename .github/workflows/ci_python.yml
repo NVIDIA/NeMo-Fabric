@@ -51,43 +51,13 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
-      # PyYAML is not a project dependency, but smoke_hermes_config_mapping
-      # imports it to read Hermes config fixtures, so install it for the smokes.
+      # PyYAML is not a project dependency, but test_hermes_config_mapping
+      # imports it to read Hermes config fixtures, so install it for the tests.
       - name: Build SDK with native extension
         run: |
           uv venv --python 3.12 .venv
           uv sync --group test --no-group dev --extra harbor --extra hermes --extra relay
 
-      # Dependency-free smokes only: the gated integration smokes
-      # (smoke_hermes_sdk, smoke_relay_integration, and the Docker-backed
-      # smoke_harbor_swebench_task) need an NVIDIA_API_KEY / a running Hermes /
-      # a sibling harbor checkout, so they are excluded.
-      - name: Run dependency-free smokes
-        run: |
-          set -euo pipefail
-          py=.venv/bin/python
-          smokes=(
-            python/tests/smoke_environment_handle.py
-            python/tests/smoke_sdk.py
-            python/tests/smoke_sdk_concurrency.py
-            python/tests/smoke_native_sdk.py
-            python/tests/smoke_typed_config.py
-            python/tests/smoke_consumer_neutral.py
-            python/tests/smoke_harbor_integration.py
-            python/tests/smoke_readme_examples.py
-            python/tests/smoke_sdk_sessions.py
-            tests/smoke_cli.py
-            tests/smoke_hermes_cli.py
-            tests/smoke_hermes_config_mapping.py
-            tests/smoke_swebench_style.py
-            tests/smoke_local_env_e2e.py
-          )
-          for s in "${smokes[@]}"; do
-            echo "::group::$s"
-            "$py" "$s"
-            echo "::endgroup::"
-          done
-      
       - name: Run pytest
         run: |
           set -euo pipefail

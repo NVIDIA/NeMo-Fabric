@@ -313,8 +313,8 @@ requires `runtime.mode: session`; use `fabric run` for oneshot profiles and
 machine-readable stdout. Because `chat` is an interactive terminal UI, the
 transcript and metadata are written together on stderr.
 
-The opt-in real integration checks are `tests/smoke_hermes_session.py` and
-`tests/smoke_codex_cli.py`.
+The opt-in real integration checks are `tests/e2e/test_hermes_session.py` and
+`tests/e2e/test_codex_cli.py`.
 
 `FabricClient()` uses the native Rust binding. SDK `run(...)` and
 `start_session(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
@@ -372,7 +372,7 @@ extension:
 
 ```bash
 python3 -m pip install -e ".[codex]"
-RUN_FABRIC_CODEX_INTEGRATION=1 python3 tests/smoke_codex_cli.py
+RUN_FABRIC_CODEX_INTEGRATION=1 pytest tests/e2e/test_codex_cli.py
 ```
 
 Run the Hermes CLI adapter:
@@ -396,5 +396,5 @@ uv pip install --python .tmp/fabric-hermes-relay-venv/bin/python \
 
 export NVIDIA_API_KEY=...
 export HERMES_PYTHON="$PWD/.tmp/fabric-hermes-relay-venv/bin/python"
-RUN_FABRIC_RELAY_INTEGRATION=1 python3 tests/smoke_relay_integration.py
+RUN_FABRIC_RELAY_INTEGRATION=1 pytest tests/e2e/test_relay_integration.py
 ```

@@ -112,11 +112,6 @@ def importing_the_sdk_pulls_in_no_consumer_package() -> None:
     assert not leaked, f"`import nemo_fabric` leaked consumer packages: {leaked}"
 
 
-def main() -> None:
+def test_consumer_neutral():
     core_imports_only_stdlib_and_self()
     importing_the_sdk_pulls_in_no_consumer_package()
-    print("smoke_consumer_neutral ok")
-
-
-if __name__ == "__main__":
-    main()

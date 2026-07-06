@@ -14,77 +14,87 @@ from pathlib import Path
 from shutil import copytree
 
 import yaml
+import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 
 
-def main() -> None:
+def test_relay_integration(tmp_path: Path):
     if os.environ.get("RUN_FABRIC_RELAY_INTEGRATION") != "1":
-        print("skipped: set RUN_FABRIC_RELAY_INTEGRATION=1 to run Relay integration smoke")
-        return
+        pytest.skip("set RUN_FABRIC_RELAY_INTEGRATION=1 to run")
     if not os.environ.get("NVIDIA_API_KEY"):
-        raise SystemExit("NVIDIA_API_KEY is required")
+        pytest.fail("NVIDIA_API_KEY is required")
 
     env = os.environ.copy()
     env["HERMES_PYTHON"] = resolve_hermes_python(env)
 
     agent = ROOT / "examples" / "code-review-agent"
-    with tempfile.TemporaryDirectory(prefix="fabric-relay-smoke-") as tmpdir:
-        temp_agent = Path(tmpdir) / "code-review-agent"
-        copytree(agent, temp_agent)
+    temp_agent = tmp_path / "code-review-agent"
+    copytree(agent, temp_agent)
 
-        result = call_json(
-            "run",
-            temp_agent,
-            "--profile",
-            "hermes_sdk",
-            "--profile",
-            "relay",
-            "--input",
-            "Reply with exactly: relay ok",
-            env=env,
-        )
-        assert result["status"] == "succeeded"
-        assert result["telemetry"]["relay_enabled"] is True
-        assert result["telemetry"]["metadata"]["relay_mode"] == "sdk"
-        assert result["output"]["mode"] == "hermes_sdk"
-        assert result["output"]["relay_runtime"]["emitter"] == "hermes.observability/nemo_relay"
-        assert_hermes_config_mapping(result["output"])
+    result = call_json(
+        "run",
+        temp_agent,
+        "--profile",
+        "hermes_sdk",
+        "--profile",
+        "relay",
+        "--input",
+        "Reply with exactly: relay ok",
+        env=env,
+    )
+    assert result["status"] == "succeeded"
+    assert result["telemetry"]["relay_enabled"] is True
+    assert result["telemetry"]["metadata"]["relay_mode"] == "sdk"
+    assert result["output"]["mode"] == "hermes_sdk"
+    assert (
+        result["output"]["relay_runtime"]["emitter"]
+        == "hermes.observability/nemo_relay"
+    )
+    assert_hermes_config_mapping(result["output"])
 
-        relay_config_artifacts = [
-            artifact
-            for artifact in result["artifacts"]["artifacts"]
-            if artifact["name"] == "relay_config"
-        ]
-        assert len(relay_config_artifacts) == 1
-        relay_config_path = Path(relay_config_artifacts[0]["path"])
-        relay_config = json.loads(relay_config_path.read_text())
-        assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
-        assert relay_config["relay"]["enabled"] is True
+    relay_config_artifacts = [
+        artifact
+        for artifact in result["artifacts"]["artifacts"]
+        if artifact["name"] == "relay_config"
+    ]
+    assert len(relay_config_artifacts) == 1
+    relay_config_path = Path(relay_config_artifacts[0]["path"])
+    relay_config = json.loads(relay_config_path.read_text())
+    assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
+    assert relay_config["relay"]["enabled"] is True
 
-        relay_artifacts = result["output"]["relay_artifacts"]
-        kinds = {artifact["kind"] for artifact in relay_artifacts}
-        assert {"atof", "atif"} <= kinds
-        manifest_relay_kinds = {
-            artifact["kind"]
-            for artifact in result["artifacts"]["artifacts"]
-            if artifact["name"].startswith("relay_")
-        }
-        assert {"atof", "atif"} <= manifest_relay_kinds
+    relay_artifacts = result["output"]["relay_artifacts"]
+    kinds = {artifact["kind"] for artifact in relay_artifacts}
+    assert {"atof", "atif"} <= kinds
+    manifest_relay_kinds = {
+        artifact["kind"]
+        for artifact in result["artifacts"]["artifacts"]
+        if artifact["name"].startswith("relay_")
+    }
+    assert {"atof", "atif"} <= manifest_relay_kinds
 
-        atof_paths = [Path(artifact["path"]) for artifact in relay_artifacts if artifact["kind"] == "atof"]
-        atif_paths = [Path(artifact["path"]) for artifact in relay_artifacts if artifact["kind"] == "atif"]
-        assert atof_paths and atif_paths
-        assert all(path.exists() for path in atof_paths + atif_paths)
+    atof_paths = [
+        Path(artifact["path"])
+        for artifact in relay_artifacts
+        if artifact["kind"] == "atof"
+    ]
+    atif_paths = [
+        Path(artifact["path"])
+        for artifact in relay_artifacts
+        if artifact["kind"] == "atif"
+    ]
+    assert atof_paths and atif_paths
+    assert all(path.exists() for path in atof_paths + atif_paths)
 
-        atof_lines = atof_paths[0].read_text().strip().splitlines()
-        assert len(atof_lines) >= 3
-        assert any("hermes" in json.loads(line).get("name", "") for line in atof_lines)
+    atof_lines = atof_paths[0].read_text().strip().splitlines()
+    assert len(atof_lines) >= 3
+    assert any("hermes" in json.loads(line).get("name", "") for line in atof_lines)
 
-        trajectory = json.loads(atif_paths[0].read_text())
-        assert trajectory["agent"]["name"] in {"code-review-agent", "Hermes Agent"}
-        assert trajectory["steps"]
+    trajectory = json.loads(atif_paths[0].read_text())
+    assert trajectory["agent"]["name"] in {"code-review-agent", "Hermes Agent"}
+    assert trajectory["steps"]
 
 
 def assert_hermes_config_mapping(output: dict) -> None:
@@ -147,7 +157,3 @@ def call_json(*args: object, env: dict[str, str] | None = None) -> dict:
             f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
         )
     return json.loads(completed.stdout)
-
-
-if __name__ == "__main__":
-    main()

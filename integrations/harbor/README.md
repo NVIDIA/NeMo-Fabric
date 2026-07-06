@@ -91,7 +91,7 @@ The lightweight smoke uses a fake Harbor environment and validates command
 construction plus metadata propagation:
 
 ```bash
-python3 python/tests/smoke_harbor_integration.py
+pytest tests/python/test_harbor_integration.py
 ```
 
 ## SWE-Bench Smoke
@@ -102,7 +102,7 @@ materialization and verification; Fabric only invokes the configured harness and
 captures artifacts.
 
 ```bash
-RUN_FABRIC_HARBOR_SWEBENCH_DOCKER=1 python3 tests/smoke_harbor_swebench_task.py
+RUN_FABRIC_HARBOR_SWEBENCH_DOCKER=1 pytest tests/e2e/test_harbor_swebench_task.py
 ```
 
 To run the verifier path as well:
@@ -110,5 +110,5 @@ To run the verifier path as well:
 ```bash
 RUN_FABRIC_HARBOR_SWEBENCH_DOCKER=1 \
 RUN_FABRIC_HARBOR_SWEBENCH_VERIFY=1 \
-python3 tests/smoke_harbor_swebench_task.py
+pytest tests/e2e/test_harbor_swebench_task.py
 ```

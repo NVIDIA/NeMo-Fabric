@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import tempfile
 from pathlib import Path
 from shutil import copytree
@@ -16,7 +15,7 @@ from nemo_fabric import FabricClient, FabricConfig, FabricProfileConfig
 ROOT = Path(__file__).resolve().parents[2]
 
 
-async def main() -> None:
+async def test_native_sdk():
     assert native.version()
 
     async with FabricClient() as client:
@@ -34,7 +33,10 @@ async def smoke(client: FabricClient) -> None:
 
     plan = client.plan(example_agent, profiles=["env_local"])
     assert plan["agent_name"] == "code-review-agent"
-    assert plan["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
+    assert (
+        plan["adapter_descriptor"]["descriptor"]["adapter_id"]
+        == "nvidia.fabric.hermes.sdk"
+    )
     assert plan["capability_plan"]["native"]["mcp_servers"]["github"]
     assert plan["capability_plan"]["native"]["skill_paths"]
 
@@ -163,7 +165,3 @@ async def smoke(client: FabricClient) -> None:
     assert first.harness == "hermes"
     assert first["runtime_id"] == second["runtime_id"]
     assert session.runtime["runtime_id"] == first["runtime_id"]
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

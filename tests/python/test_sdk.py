@@ -8,6 +8,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python" / "src"))
 
@@ -23,7 +25,7 @@ from nemo_fabric import (  # noqa: E402
 from nemo_fabric import client as client_mod  # noqa: E402
 
 
-def main() -> None:
+def test_sdk(monkeypatch: pytest.MonkeyPatch):
     config = FabricConfig(
         metadata=MetadataConfig(name="demo"),
         harness=HarnessConfig(
@@ -44,14 +46,10 @@ def main() -> None:
     assert config.to_mapping()["future_config"] == {"enabled": True}
     assert request.to_mapping()["context"] == {"job_id": "job-1"}
 
-    client_mod._native = None
+    monkeypatch.setattr(client_mod, "_native", None)
     try:
         FabricClient().plan(config)
     except FabricNativeUnavailableError:
         pass
     else:
         raise AssertionError("native-only FabricClient must reject a missing extension")
-
-
-if __name__ == "__main__":
-    main()

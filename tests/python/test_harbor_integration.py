@@ -5,10 +5,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import sys
-import tempfile
 import types
 from dataclasses import dataclass
 from pathlib import Path
@@ -127,23 +125,22 @@ class FakeHarborEnvironment:
         host_path.write_text(self.files[remote_path], encoding="utf-8")
 
 
-async def main() -> None:
-    with tempfile.TemporaryDirectory(prefix="fabric-harbor-integration-") as tmpdir:
-        agent = FabricAgent(
-            logs_dir=Path(tmpdir),
-            fabric_config_path="/opt/fabric-demo/agent.yaml",
-            fabric_profile_paths=[
-                "/opt/fabric-demo/profiles/hermes.yaml",
-                "/opt/fabric-demo/profiles/telemetry.yaml",
-            ],
-            model_name="nvidia/test-model",
-            extra_env={"NVIDIA_API_KEY": "test-key"},
-        )
-        environment = FakeHarborEnvironment()
-        context = AgentContext()
+async def test_harbor_integration(tmp_path: Path):
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_config_path="/opt/fabric-demo/agent.yaml",
+        fabric_profile_paths=[
+            "/opt/fabric-demo/profiles/hermes.yaml",
+            "/opt/fabric-demo/profiles/telemetry.yaml",
+        ],
+        model_name="nvidia/test-model",
+        extra_env={"NVIDIA_API_KEY": "test-key"},
+    )
+    environment = FakeHarborEnvironment()
+    context = AgentContext()
 
-        await agent.setup(environment)  # type: ignore[arg-type]
-        await agent.run("fix the bug", environment, context)  # type: ignore[arg-type]
+    await agent.setup(environment)  # type: ignore[arg-type]
+    await agent.run("fix the bug", environment, context)  # type: ignore[arg-type]
 
     spec = json.loads(environment.files["/tmp/fabric-run.json"])
     request = spec["request"]
@@ -172,7 +169,3 @@ async def main() -> None:
     assert context.metadata["fabric"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
     artifacts = context.metadata["fabric"]["artifacts"]["artifacts"]
     assert {artifact["name"] for artifact in artifacts} == {"stdout", "workspace_patch"}
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
