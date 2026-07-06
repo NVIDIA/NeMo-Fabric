@@ -15,6 +15,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+/docs/node_modules/
 
 examples/*/artifacts/
 tests/fixtures/*/artifacts/

@@ -57,15 +57,20 @@ Prerequisites:
 - Rust and Cargo
 - Python 3.10+ for Fabric
 - Python 3.11-3.13 for Hermes
+- `just` 1.50.0+
 - `NVIDIA_API_KEY` for NVIDIA-hosted model access
 
-Install Fabric and the `fabric` CLI:
+Install `just` if not already installed.
+```bash
+cargo install just --locked
+```
+
+Refer to the [official installation guide](https://just.systems/man/en/installation.html) for more details.
+
+Install Fabric and the `fabric` CLI from the source checkout:
 
 ```bash
-python3 -m venv .tmp/fabric-venv
-.tmp/fabric-venv/bin/python -m pip install -e .
-
-cargo install --path crates/fabric-cli --locked --force
+just build-all
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
@@ -314,8 +319,8 @@ The opt-in real integration checks are `tests/smoke_hermes_session.py` and
 `start_session(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
 `invoke_runtime` / `stop_runtime`) so one-shot and session paths use the same
 adapter execution contract. The CLI is a separate interface over the same Rust
-core. For source-tree development, install the package with
-`python3 -m pip install -e .` before using the SDK.
+core. For source-tree development, run `just build-python` before using the
+SDK.
 
 ## Harbor Integration
 
