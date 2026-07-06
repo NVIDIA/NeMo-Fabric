@@ -30,6 +30,7 @@ build-rust:
     cargo install --path crates/fabric-cli --locked --force
 
 # Build and install the Python package and native extension in the project environment.
+# --set [no_uv=true|false]
 build-python:
     #!/usr/bin/env bash
     if [[ "{{ no_uv }}" == "true" ]]; then
@@ -42,6 +43,7 @@ build-python:
 build-all: build-rust build-python
 
 # Generate the Python and Rust API references and validate the Fern configuration.
+# --set [no_uv=true|false]
 docs:
     #!/usr/bin/env bash
     if [[ "{{ no_uv }}" != "true" ]]; then
@@ -52,6 +54,7 @@ docs:
     npx --yes fern-api@5.37.10 check
 
 # Run the Python test suite with the same optional integrations used by CI.
+# --set [no_uv=true|false]
 test-python:
     #!/usr/bin/env bash
     if [[ "{{ no_uv }}" != "true" ]]; then
