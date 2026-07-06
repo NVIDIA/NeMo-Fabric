@@ -34,6 +34,7 @@ build-rust:
 # --set [no_uv=true|false]
 build-python:
     #!/usr/bin/env bash
+    set -euo pipefail
     if [[ "{{ no_uv }}" == "true" ]]; then
         uv pip install --python .venv/bin/python --no-deps --reinstall --editable .
     else
@@ -47,6 +48,7 @@ build-all: build-rust build-python
 # --set [no_uv=true|false]
 docs:
     #!/usr/bin/env bash
+    set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
         uv sync --extra docs
     fi
@@ -59,6 +61,7 @@ docs:
 # --set [no_uv=true|false]
 test-python:
     #!/usr/bin/env bash
+    set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
         uv sync --group test --no-group dev --extra harbor --extra hermes --extra relay
     fi
