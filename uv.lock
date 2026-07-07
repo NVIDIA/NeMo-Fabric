@@ -407,7 +407,7 @@ name = "concurrent-log-handler"
 version = "0.9.29"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "portalocker" },
+    { name = "portalocker", marker = "python_full_version < '3.12' or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9c/2c/ba185acc438cff6b58cd8f8dec27e7f4fcabf6968a1facbb6d0cacbde7fe/concurrent_log_handler-0.9.29.tar.gz", hash = "sha256:bc37a76d3f384cbf4a98f693ebd770543edc0f4cd5c6ab6bc70e9e1d7d582265", size = 42114, upload-time = "2026-02-22T18:18:25.758Z" }
 wheels = [
@@ -1595,6 +1595,18 @@ version = "0.1.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
+adapters-codex-cli = [
+    { name = "nemo-fabric-adapters-codex-cli" },
+]
+adapters-common = [
+    { name = "nemo-fabric-adapters-common" },
+]
+adapters-hermes-cli = [
+    { name = "nemo-fabric-adapters-hermes-cli" },
+]
+adapters-hermes-sdk = [
+    { name = "nemo-fabric-adapters-hermes-sdk" },
+]
 codex = [
     { name = "tomli-w" },
 ]
@@ -1635,13 +1647,17 @@ requires-dist = [
     { name = "harbor", marker = "python_full_version >= '3.12' and extra == 'harbor'", specifier = ">=0.16.1" },
     { name = "hermes-agent", marker = "extra == 'hermes'", specifier = ">=0.17.0" },
     { name = "lazydocs", marker = "extra == 'docs'", specifier = ">=0.4" },
+    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'adapters-codex-cli'", directory = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-common", marker = "extra == 'adapters-common'", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'adapters-hermes-cli'", directory = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'adapters-hermes-sdk'", directory = "adapters/hermes-sdk" },
     { name = "nemo-relay", marker = "python_full_version >= '3.11' and extra == 'relay'", specifier = "~=0.4" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
     { name = "pyyaml", marker = "extra == 'hermes'", specifier = ">=6.0" },
     { name = "tomli-w", marker = "extra == 'codex'", specifier = "~=1.2" },
     { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
 ]
-provides-extras = ["codex", "harbor", "docs", "hermes", "relay"]
+provides-extras = ["adapters-common", "adapters-codex-cli", "adapters-hermes-cli", "adapters-hermes-sdk", "codex", "harbor", "docs", "hermes", "relay"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ipython", specifier = "~=8.20" }]
@@ -1654,6 +1670,40 @@ test = [
     { name = "tomli-w", specifier = "~=1.2" },
     { name = "uvicorn", specifier = "~=0.49" },
 ]
+
+[[package]]
+name = "nemo-fabric-adapters-codex-cli"
+source = { directory = "adapters/codex-cli" }
+dependencies = [
+    { name = "nemo-fabric-adapters-common" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "nemo-fabric-adapters-common", specifier = "==0.1.dev155+g01ebeb1f3.d20260707" }]
+
+[[package]]
+name = "nemo-fabric-adapters-common"
+source = { directory = "adapters/common" }
+
+[[package]]
+name = "nemo-fabric-adapters-hermes-cli"
+source = { directory = "adapters/hermes-cli" }
+dependencies = [
+    { name = "nemo-fabric-adapters-common" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "nemo-fabric-adapters-common", specifier = "==0.1.dev155+g01ebeb1f3.d20260707" }]
+
+[[package]]
+name = "nemo-fabric-adapters-hermes-sdk"
+source = { directory = "adapters/hermes-sdk" }
+dependencies = [
+    { name = "nemo-fabric-adapters-common" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "nemo-fabric-adapters-common", specifier = "==0.1.dev155+g01ebeb1f3.d20260707" }]
 
 [[package]]
 name = "nemo-relay"
@@ -1829,7 +1879,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "(python_full_version < '3.12' and sys_platform == 'emscripten') or (python_full_version < '3.12' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [

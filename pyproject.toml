@@ -13,6 +13,22 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
+adapters-common = [
+  "nemo-fabric-adapters-common",
+]
+
+adapters-codex-cli = [
+  "nemo-fabric-adapters-codex-cli",
+]
+
+adapters-hermes-cli = [
+  "nemo-fabric-adapters-hermes-cli",
+]
+
+adapters-hermes-sdk = [
+  "nemo-fabric-adapters-hermes-sdk",
+]
+
 codex = [
   "tomli-w~=1.2",
 ]
@@ -53,6 +69,12 @@ test = [
 
 [tool.uv]
 default-groups = ["dev", "test"]
+
+[tool.uv.sources]
+nemo-fabric-adapters-common = { path = "adapters/common" }
+nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli" }
+nemo-fabric-adapters-hermes-cli = { path = "adapters/hermes-cli" }
+nemo-fabric-adapters-hermes-sdk = { path = "adapters/hermes-sdk" }
 
 [tool.maturin]
 manifest-path = "crates/fabric-python/Cargo.toml"
