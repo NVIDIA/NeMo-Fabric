@@ -35,7 +35,7 @@ def _plan(*, session_capability: bool = True) -> dict[str, Any]:
     config = {
         "metadata": {"name": "demo"},
         "harness": {"adapter_id": "test.fabric.shim"},
-        "runtime": {"transport": "library"},
+        "runtime": {},
     }
     return {
         "agent_name": "demo",
@@ -279,7 +279,7 @@ async def test_session_preserves_non_mapping_message_values(mock_native: MagicMo
 async def test_session_recursively_merges_overrides(mock_native: MagicMock):
     session = _session(
         mock_native,
-        overrides={"limits": {"turns": 2, "tokens": 10}, "mode": "session"},
+        overrides={"limits": {"turns": 2, "tokens": 10}, "phase": "session"},
     )
 
     await session.invoke(
@@ -289,6 +289,7 @@ async def test_session_recursively_merges_overrides(mock_native: MagicMock):
 
     assert mock_native.requests[0]["overrides"] == {
         "limits": {"turns": 2, "tokens": 20},
+        "phase": "session",
         "mode": None,
     }
 

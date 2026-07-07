@@ -1855,7 +1855,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  transport: cli
   input_schema: text
   output_schema: text
   artifacts: ./artifacts
@@ -1902,7 +1901,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  transport: cli
   input_schema: text
   output_schema: text
   artifacts: ./artifacts
@@ -2293,8 +2291,6 @@ print(json.dumps({
                 },
             },
             "runtime": {
-                "mode": "oneshot",
-                "transport": "cli",
                 "input_schema": "text",
                 "output_schema": "text",
                 "artifacts": "./artifacts",
@@ -2373,7 +2369,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  transport: cli
   input_schema: text
   output_schema: text
   artifacts: ./artifacts
@@ -2434,7 +2429,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  transport: cli
   input_schema: text
   output_schema: text
   artifacts: ./artifacts
@@ -2519,7 +2513,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  transport: cli
   input_schema: text
   output_schema: text
   artifacts: ./artifacts

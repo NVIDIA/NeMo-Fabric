@@ -489,9 +489,6 @@ pub struct ModelConfig {
 /// Runtime input/output contract.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeConfig {
-    /// Transport used to operate the harness.
-    #[serde(default = "default_runtime_transport")]
-    pub transport: Transport,
     /// Input schema label.
     #[serde(default = "default_input_schema")]
     pub input_schema: String,
@@ -506,30 +503,12 @@ pub struct RuntimeConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-fn default_runtime_transport() -> Transport {
-    Transport::Library
-}
-
 fn default_input_schema() -> String {
     "text".to_string()
 }
 
 fn default_output_schema() -> String {
     "text".to_string()
-}
-
-/// Runtime transport.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Transport {
-    /// In-process library/SDK call.
-    Library,
-    /// CLI process.
-    Cli,
-    /// HTTP service.
-    Http,
-    /// Harness-native plugin surface.
-    NativePlugin,
 }
 
 /// Execution environment configuration.
@@ -1084,7 +1063,7 @@ fn validate_control_location(
 }
 
 fn resolve_runtime_capabilities(
-    config: &FabricConfig,
+    _config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
 ) -> RuntimeCapabilities {
     let implemented_runtime = descriptor.is_some_and(|descriptor| {
@@ -1092,10 +1071,7 @@ fn resolve_runtime_capabilities(
             descriptor.adapter_kind,
             AdapterKind::Process | AdapterKind::Python
         )
-    }) && matches!(
-        config.runtime.transport,
-        Transport::Library | Transport::Cli
-    );
+    });
     let descriptor_capabilities = descriptor
         .map(|descriptor| descriptor.capabilities.clone())
         .unwrap_or_default();
@@ -1555,7 +1531,6 @@ harness:
   settings:
     workspace: ./workspace
 runtime:
-  transport: library
   input_schema: chat
   output_schema: message
 tools:
@@ -1598,7 +1573,6 @@ future_top_level:
         let value = serde_json::to_value(&effective.config).expect("config json");
 
         assert_eq!(effective.profiles, ["session"]);
-        assert_eq!(value["runtime"]["transport"], "library");
         assert_eq!(value["runtime"]["input_schema"], "prompt");
         assert_eq!(value["harness"]["settings"]["workspace"], "./workspace");
         assert_eq!(value["harness"]["settings"]["timeout_seconds"], 30);
@@ -1624,7 +1598,6 @@ runtime:
         )
         .expect("minimal config");
 
-        assert_eq!(config.runtime.transport, Transport::Library);
         assert_eq!(config.runtime.input_schema, "text");
         assert_eq!(config.runtime.output_schema, "text");
     }
@@ -1701,8 +1674,8 @@ provider: unsupported
     }
 
     #[test]
-    fn unsupported_transports_do_not_claim_session_capability() {
-        let mut config: FabricConfig = serde_yaml::from_str(
+    fn unsupported_adapter_kinds_do_not_claim_session_capability() {
+        let config: FabricConfig = serde_yaml::from_str(
             r#"
 schema_version: fabric.agent/v1alpha1
 metadata:
@@ -1717,8 +1690,9 @@ runtime:
             load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
 
         assert!(resolve_runtime_capabilities(&config, Some(&descriptor)).session);
-        for transport in [Transport::Http, Transport::NativePlugin] {
-            config.runtime.transport = transport;
+        for adapter_kind in [AdapterKind::Http, AdapterKind::NativePlugin] {
+            let mut descriptor = descriptor.clone();
+            descriptor.adapter_kind = adapter_kind;
             assert!(!resolve_runtime_capabilities(&config, Some(&descriptor)).session);
         }
     }
@@ -1847,7 +1821,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  transport: cli
   input_schema: text
   output_schema: message
 environment:
@@ -1999,7 +1972,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  transport: cli
   input_schema: text
   output_schema: text
 tools:
@@ -2180,7 +2152,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  transport: cli
   input_schema: text
   output_schema: message
 environment:

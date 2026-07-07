@@ -25,7 +25,6 @@ skills: null
 mcp: null
 
 runtime:
-  transport: cli
   input_schema: text
   output_schema: message
   artifacts: ./artifacts/codex-cli

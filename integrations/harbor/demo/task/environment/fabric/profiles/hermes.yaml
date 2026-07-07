@@ -19,7 +19,6 @@ models:
     temperature: 0.0
 
 runtime:
-  transport: cli
   artifacts: /logs/agent/fabric-artifacts/hermes
 
 environment:

@@ -49,7 +49,6 @@ async def smoke(client: Fabric) -> None:
         }
     )
     minimal_resolved = client.resolve(minimal)
-    assert minimal_resolved.config.runtime.transport == "library"
     assert minimal_resolved.config.runtime.input_schema == "text"
     assert minimal_resolved.config.runtime.output_schema == "text"
 
@@ -70,7 +69,6 @@ async def smoke(client: Fabric) -> None:
                 }
             },
             "runtime": {
-                "transport": "library",
                 "input_schema": "chat",
                 "output_schema": "message",
                 "artifacts": "./artifacts",

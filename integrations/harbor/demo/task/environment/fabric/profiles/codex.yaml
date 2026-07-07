@@ -13,7 +13,6 @@ harness:
       model_reasoning_effort: high
 
 runtime:
-  transport: cli
   artifacts: /logs/agent/fabric-artifacts/codex
 
 environment:

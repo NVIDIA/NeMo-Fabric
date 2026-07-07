@@ -16,7 +16,6 @@ harness:
     replacement: "        kwargs.setdefault(\"required\", False)\n        kwargs.setdefault('disabled', True)\n        super().__init__(*args, **kwargs)"
 
 runtime:
-  transport: library
   input_schema: harbor_swe_bench_task
   output_schema: patch_result
   artifacts: ./artifacts/harbor-swebench-django-13741

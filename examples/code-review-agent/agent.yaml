@@ -21,7 +21,6 @@ models:
     api_key_env: NVIDIA_API_KEY
 
 runtime:
-  transport: library
   input_schema: chat
   output_schema: message
   artifacts: ./artifacts

@@ -29,8 +29,6 @@ def _plan() -> dict[str, Any]:
         "metadata": {"name": "demo"},
         "harness": {"adapter_id": "test.fabric.shim"},
         "runtime": {
-            "mode": "session",
-            "transport": "library",
             "input_schema": "chat",
             "output_schema": "message",
         },
@@ -71,7 +69,6 @@ def _runtime() -> dict[str, Any]:
         "runtime_binding": "fabric-runtime-binding-test",
         "agent_name": "demo",
         "harness": "hermes",
-        "mode": "session",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
         "environment": {

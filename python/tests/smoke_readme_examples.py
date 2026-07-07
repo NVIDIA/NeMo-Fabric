@@ -53,7 +53,6 @@ README_PLAN_CONFIG = {
         }
     },
     "runtime": {
-        "transport": "library",
         "input_schema": "chat",
         "output_schema": "message",
     },

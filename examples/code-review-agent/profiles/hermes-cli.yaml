@@ -17,7 +17,6 @@ harness:
     enabled_toolsets: []
 
 runtime:
-  transport: cli
   input_schema: chat
   output_schema: message
   artifacts: ./artifacts/hermes-cli

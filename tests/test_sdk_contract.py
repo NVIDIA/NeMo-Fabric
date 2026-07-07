@@ -69,7 +69,6 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
     assert config.environment is None
     assert config.metadata.name == "demo"
     assert config.metadata.description is None
-    assert config.runtime.transport is None
     assert "transport" not in config.runtime.to_mapping()
     assert config.metadata.extra_fields == {"owner": "sdk"}
     assert config.harness.extra_fields == {"future": True}
@@ -77,7 +76,7 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
     assert config.to_mapping()["future_top_level"] == {"enabled": True}
     assert "models" not in config.to_mapping()
 
-    runtime = RuntimeConfig(transport="http")
+    runtime = RuntimeConfig(input_schema="http")
     config.runtime = runtime
     config["future_runtime"] = {"enabled": True}
     assert isinstance(config.runtime, RuntimeConfig)
@@ -123,14 +122,14 @@ def test_typed_profile_preserves_partial_overlay_sections():
         {
             "name": "session",
             "harness": {"settings": {"timeout_seconds": 30}},
-            "runtime": {"mode": "session"},
+            "runtime": {"input_schema": "chat"},
         }
     )
 
     assert profile.to_mapping()["harness"] == {
         "settings": {"timeout_seconds": 30}
     }
-    assert profile.to_mapping()["runtime"] == {"mode": "session"}
+    assert profile.to_mapping()["runtime"] == {"input_schema": "chat"}
 
 
 def test_inspection_models_are_typed_read_only_mappings():
@@ -147,7 +146,7 @@ def test_inspection_models_are_typed_read_only_mappings():
                 "config": {
                     "metadata": {"name": "demo"},
                     "harness": {"adapter_id": "test.fabric.shim"},
-                    "runtime": {"mode": "session"},
+                    "runtime": {"input_schema": "chat"},
                 },
             },
             "adapter_descriptor": {
@@ -261,7 +260,7 @@ def test_doctor_report_and_errors_expose_typed_contract_fields():
             "status": "warn",
             "checks": [
                 {
-                    "name": "runtime.transport",
+                    "name": "runtime.adapter",
                     "status": "warn",
                     "message": "not implemented",
                 }
@@ -276,7 +275,7 @@ def test_doctor_report_and_errors_expose_typed_contract_fields():
         details={"adapter_id": "test.fabric.shim"},
     )
 
-    assert report.checks[0].name == "runtime.transport"
+    assert report.checks[0].name == "runtime.adapter"
     assert error.stage == "invoke"
     assert error.code == "adapter_failed"
     assert error.retryable is True
@@ -288,7 +287,6 @@ def _plan() -> dict[str, Any]:
         "metadata": {"name": "demo"},
         "harness": {"adapter_id": "test.fabric.shim"},
         "runtime": {
-            "transport": "library",
             "input_schema": "chat",
             "output_schema": "message",
         },
@@ -949,7 +947,6 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
             settings={"workspace": "./ws"},
         ),
         runtime=RuntimeConfig(
-            transport="cli",
             input_schema="chat",
             output_schema="message",
         ),
@@ -960,7 +957,7 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
     assert config["schema_version"] == "fabric.agent/v1alpha1"
     assert config["metadata"] == {"name": "demo"}
     assert config["harness"]["adapter_id"] == "test.fabric.shim"
-    assert config["runtime"]["transport"] == "cli"
+    assert config["runtime"]["input_schema"] == "chat"
     assert config["harness"]["settings"]["workspace"] == "./ws"
 
     profile = FabricProfileConfig.from_mapping({"name": "typed_relay"})
@@ -976,8 +973,8 @@ def test_resolve_accepts_path_and_fabric_config_sources():
     path_config = client.resolve("agent")
     typed_config = client.resolve(_fabric_config())
 
-    assert path_config["config"]["runtime"]["transport"] == "library"
-    assert typed_config["config"]["runtime"]["transport"] == "library"
+    assert path_config["config"]["runtime"]["input_schema"] == "chat"
+    assert typed_config["config"]["runtime"]["input_schema"] == "chat"
 
 
 async def test_start_session_alias_returns_session_and_info_includes_session_id():

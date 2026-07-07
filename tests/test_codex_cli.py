@@ -68,7 +68,7 @@ def codex_payload_fixture(tmp_path):
                         "model": "openai/gpt-5.4",
                     }
                 },
-                "runtime": {"transport": "cli"},
+                "runtime": {},
             },
         },
         "runtime_context": {
@@ -151,7 +151,6 @@ def fabric_config(tmp_path, mock_codex):
                 },
             },
             "runtime": {
-                "transport": "cli",
                 "artifacts": str(tmp_path / "artifacts"),
             },
             "environment": {

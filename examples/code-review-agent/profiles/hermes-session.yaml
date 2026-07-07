@@ -22,7 +22,6 @@ harness:
     system_prompt: You are a concise smoke test assistant.
 
 runtime:
-  transport: library
   input_schema: chat
   output_schema: message
   artifacts: ./artifacts/hermes-session

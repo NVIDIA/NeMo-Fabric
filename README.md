@@ -183,7 +183,6 @@ config = FabricConfig.from_mapping(
             }
         },
         "runtime": {
-            "transport": "library",
             "input_schema": "chat",
             "output_schema": "message",
         },

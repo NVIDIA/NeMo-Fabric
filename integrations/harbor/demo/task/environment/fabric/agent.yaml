@@ -9,7 +9,6 @@ harness:
   resolution: preinstalled
 
 runtime:
-  transport: cli
   input_schema: text
   output_schema: message
   artifacts: /logs/agent/fabric-artifacts/smoke

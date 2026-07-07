@@ -59,8 +59,6 @@ def _repository_adapter_config() -> FabricConfig:
                 }
             },
             "runtime": {
-                "mode": "oneshot",
-                "transport": "library",
                 "input_schema": "chat",
                 "output_schema": "message",
                 "artifacts": "./artifacts",

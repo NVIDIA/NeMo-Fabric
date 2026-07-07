@@ -23,7 +23,6 @@ models:
     temperature: 0.0
 
 runtime:
-  transport: cli
   input_schema: chat
   output_schema: message
   artifacts: ./artifacts/hermes-cli

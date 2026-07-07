@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::config::{
     AdapterKind, CapabilityTarget, ControlLocation, EnvironmentOwnership, ResolutionStrategy,
-    RunPlan, Transport,
+    RunPlan,
 };
 
 /// Diagnostic status.
@@ -130,19 +130,6 @@ fn check_resolution(plan: &RunPlan) -> DoctorCheck {
 
 fn check_runtime_execution_surface(plan: &RunPlan) -> Vec<DoctorCheck> {
     let mut checks = Vec::new();
-    match plan.config.runtime.transport {
-        Transport::Http => checks.push(check(
-            "runtime.transport",
-            DoctorStatus::Warn,
-            "runtime transport `http` is modeled but not implemented by Fabric runtime dispatch",
-        )),
-        Transport::NativePlugin => checks.push(check(
-            "runtime.transport",
-            DoctorStatus::Warn,
-            "runtime transport `native_plugin` is modeled but not implemented by Fabric runtime dispatch",
-        )),
-        Transport::Library | Transport::Cli => {}
-    }
     let Some(adapter) = &plan.adapter_descriptor else {
         return checks;
     };
@@ -482,7 +469,7 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use crate::config::{AdapterKind, ResolutionStrategy, Transport, resolve_run_plan};
+    use crate::config::{AdapterKind, ResolutionStrategy, resolve_run_plan};
 
     fn example_agent_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/code-review-agent")
@@ -560,7 +547,6 @@ mod tests {
     #[test]
     fn doctor_reports_http_execution_as_modeled_not_implemented() {
         let mut plan = resolve_run_plan(example_agent_dir(), None).expect("run plan");
-        plan.config.runtime.transport = Transport::Http;
         plan.resolution = Some(ResolutionStrategy::Service);
         plan.adapter_descriptor
             .as_mut()
@@ -571,12 +557,6 @@ mod tests {
         let report = doctor_plan(&plan);
 
         assert_eq!(report.status, DoctorStatus::Warn);
-        assert!(report.checks.iter().any(|check| {
-            check.name == "runtime.transport"
-                && check.status == DoctorStatus::Warn
-                && check.message.contains("modeled but not implemented")
-                && check.message.contains("http")
-        }));
         assert!(report.checks.iter().any(|check| {
             check.name == "runtime.adapter"
                 && check.status == DoctorStatus::Warn

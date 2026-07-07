@@ -16,11 +16,10 @@ pub use config::{
     HarnessConfig, McpConfig, McpExposure, McpServerPlan, MetadataConfig, ModelConfig,
     ProfileConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, RunPlan,
     RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
-    TelemetryProvider, Transport, load_adapter_descriptor, load_fabric_document,
-    resolve_effective_config, resolve_effective_config_from_config,
-    resolve_effective_config_with_profiles, resolve_run_plan, resolve_run_plan_from_config,
-    resolve_run_plan_from_effective_config, resolve_run_plan_with_profiles,
-    validate_agent_directory,
+    TelemetryProvider, load_adapter_descriptor, load_fabric_document, resolve_effective_config,
+    resolve_effective_config_from_config, resolve_effective_config_with_profiles, resolve_run_plan,
+    resolve_run_plan_from_config, resolve_run_plan_from_effective_config,
+    resolve_run_plan_with_profiles, validate_agent_directory,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};

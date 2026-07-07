@@ -224,19 +224,17 @@ class RuntimeConfig(_ConfigMapping):
     """Runtime input/output contract.
 
     Attributes:
-        transport: Optional adapter transport such as ``library`` or ``stdio``.
         input_schema: Optional logical input contract identifier.
         output_schema: Optional logical output contract identifier.
         artifacts: Optional artifact-root path.
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
 
-    _fields = frozenset({"transport", "input_schema", "output_schema", "artifacts"})
+    _fields = frozenset({"input_schema", "output_schema", "artifacts"})
 
     def __init__(
         self,
         *,
-        transport: str | None = None,
         input_schema: str | None = None,
         output_schema: str | None = None,
         artifacts: str | Path | None = None,
@@ -244,7 +242,6 @@ class RuntimeConfig(_ConfigMapping):
     ) -> None:
         values: dict[str, Any] = {}
         for key, item in (
-            ("transport", transport),
             ("input_schema", input_schema),
             ("output_schema", output_schema),
             ("artifacts", artifacts),
@@ -259,12 +256,13 @@ class RuntimeConfig(_ConfigMapping):
 
         data = _mapping(value, "runtime")
         return cls(
-            transport=data.get("transport"),
             input_schema=data.get("input_schema"),
             output_schema=data.get("output_schema"),
             artifacts=data.get("artifacts"),
             extra_fields={
-                key: item for key, item in data.items() if key not in cls._fields | {"mode"}
+                key: item
+                for key, item in data.items()
+                if key not in cls._fields | {"mode", "transport"}
             },
         )
 
