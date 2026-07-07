@@ -34,12 +34,11 @@ Keep `fabric-adapter.json` aligned with the process implementation:
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
 - `adapter_kind` is `process` because Fabric owns process supervision,
   stdout/stderr capture, exit status, logs, and artifacts.
-- `runner.command` and `runner.script` define the launcher process. The script
-  reads Fabric payload JSON from `FABRIC_INVOCATION`, with stdin as fallback,
-  and writes JSON output to stdout.
+- `runner.script` names the launcher executable that Fabric resolves from
+  `PATH`. It reads Fabric payload JSON from `FABRIC_INVOCATION`, with stdin as
+  fallback, and writes JSON output to stdout.
 - Harness settings should use `hermes_command` and `hermes_args` for the actual
-  Hermes CLI command and arguments. Do not use `command` for Hermes itself;
-  `command` belongs to the Fabric process runner.
+  Hermes CLI command and arguments.
 - `requirements` powers `fabric doctor`; keep required env vars and the `hermes`
   binary requirement current.
 - `config.accepts` must match the Fabric sections this adapter maps into Hermes.

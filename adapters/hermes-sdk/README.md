@@ -32,8 +32,9 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
 
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
 - `adapter_kind` is `python` because Fabric can invoke it through Python.
-- `runner.module`, `runner.callable`, and `runner.script` must remain thin
-  routes to the same `run(payload: dict) -> dict` implementation.
+- `runner.script` names the installed launcher executable that Fabric resolves
+  from `PATH`; `runner.module` and `runner.callable` describe the equivalent
+  Python API route.
 - `requirements` powers `fabric doctor`; keep required env vars, binaries, or
   packages current.
 - `config.accepts` must match the Fabric sections this adapter maps into Hermes.
