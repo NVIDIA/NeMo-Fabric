@@ -188,6 +188,14 @@ config = FabricConfig.from_mapping(
         },
     },
 )
+config.add_skill_path("./skills/code-review")
+config.add_mcp_server(
+    "github",
+    transport="streamable-http",
+    url="${GITHUB_MCP_URL}",
+    exposure="harness_native",
+)
+config.enable_relay(output_dir="./artifacts/relay")
 
 client = Fabric()
 plan = client.plan(

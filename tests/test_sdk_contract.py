@@ -28,6 +28,7 @@ from nemo_fabric import (
     FabricRuntimeError,
     FabricStateError,
     HarnessConfig,
+    McpConfig,
     MetadataConfig,
     RunPlan,
     RunRequest,
@@ -38,6 +39,8 @@ from nemo_fabric import (
     RuntimeUpdate,
     Session,
     SessionInfo,
+    SkillConfig,
+    TelemetryConfig,
 )
 
 
@@ -115,6 +118,69 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
             harness=HarnessConfig(adapter_id="test.fabric.shim"),
             models=[],  # type: ignore[arg-type]
         )
+
+
+def test_typed_config_authoring_helpers_emit_schema_shape():
+    config = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        models={
+            "default": {
+                "provider": "test",
+                "model": "test-model",
+            }
+        },
+    )
+
+    assert isinstance(config.mcp, McpConfig)
+    assert isinstance(config.skills, SkillConfig)
+    assert isinstance(config.telemetry, TelemetryConfig)
+
+    config.add_skill_path("./skills/review").add_skill_path("./skills/review")
+    config.add_mcp_server(
+        "github",
+        transport="streamable-http",
+        url="${GITHUB_MCP_URL}",
+        exposure="fabric_managed",
+    )
+    config.enable_relay(
+        project="fabric-tests",
+        output_dir="./artifacts/relay",
+        config={"version": 1},
+    )
+
+    assert config.to_mapping()["skills"] == {"paths": ["./skills/review"]}
+    assert config.to_mapping()["mcp"] == {
+        "servers": {
+            "github": {
+                "transport": "streamable-http",
+                "url": "${GITHUB_MCP_URL}",
+                "exposure": "fabric_managed",
+            }
+        }
+    }
+    assert config.to_mapping()["telemetry"] == {
+        "enabled": True,
+        "provider": "relay",
+        "project": "fabric-tests",
+        "output_dir": "./artifacts/relay",
+        "config": {"version": 1},
+    }
+
+    config.mcp.remove_server("github")
+    config.skills.remove_path("./skills/review")
+    assert "mcp" not in config.to_mapping()
+    assert "skills" not in config.to_mapping()
+
+    with pytest.raises(FabricConfigError, match="mcp exposure"):
+        config.add_mcp_server(
+            "bad",
+            transport="streamable-http",
+            url="http://example.invalid",
+            exposure="sideways",
+        )
+    with pytest.raises(FabricConfigError, match="telemetry provider"):
+        TelemetryConfig(provider="sideways")
 
 
 def test_typed_profile_preserves_partial_overlay_sections():

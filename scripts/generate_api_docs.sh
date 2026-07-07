@@ -61,7 +61,7 @@ add_frontmatter \
 add_frontmatter \
   "$out/nemo_fabric.client.md" \
   "Client" \
-  "Resolve, plan, diagnose, and run agents with FabricClient." \
+  "Resolve, plan, diagnose, and run agents with Fabric." \
   "/reference/api/python-library-reference/client"
 add_frontmatter \
   "$out/nemo_fabric.session.md" \

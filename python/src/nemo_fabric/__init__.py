@@ -26,6 +26,7 @@ from nemo_fabric.types import (
     FabricEvent,
     FabricProfileConfig,
     HarnessConfig,
+    McpConfig,
     MetadataConfig,
     RunPlan,
     RunRequest,
@@ -36,6 +37,8 @@ from nemo_fabric.types import (
     RuntimeUpdate,
     RuntimeUpdateResult,
     SessionInfo,
+    SkillConfig,
+    TelemetryConfig,
     TelemetryRef,
 )
 
@@ -56,6 +59,7 @@ __all__ = [
     "FabricEvent",
     "FabricProfileConfig",
     "HarnessConfig",
+    "McpConfig",
     "MetadataConfig",
     "FabricNativeUnavailableError",
     "FabricRuntimeError",
@@ -71,5 +75,7 @@ __all__ = [
     "Session",
     "SessionInfo",
     "SessionStatus",
+    "SkillConfig",
+    "TelemetryConfig",
     "TelemetryRef",
 ]

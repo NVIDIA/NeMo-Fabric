@@ -326,6 +326,204 @@ class EnvironmentConfig(_ConfigMapping):
         )
 
 
+class SkillConfig(_ConfigMapping):
+    """Skill capability configuration.
+
+    The shape matches the ``skills`` section in ``agent.yaml`` while providing
+    small authoring helpers for Python callers.
+    """
+
+    _fields = frozenset({"paths"})
+    _omit_if_empty = frozenset({"paths"})
+
+    def __init__(
+        self,
+        *,
+        paths: Sequence[str | Path] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        values: dict[str, Any] = {
+            "paths": [str(path) for path in ([] if paths is None else paths)]
+        }
+        super().__init__(values, extra_fields=extra_fields)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "SkillConfig":
+        """Validate a skill mapping and preserve extension fields."""
+
+        data = _mapping(value, "skills")
+        return cls(
+            paths=data.get("paths", []),
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+    def add_path(self, path: str | Path) -> "SkillConfig":
+        """Add a skill path to this config if it is not already present."""
+
+        value = str(path)
+        paths = list(self.get("paths", []))
+        if value not in paths:
+            paths.append(value)
+        self["paths"] = paths
+        return self
+
+    def remove_path(self, path: str | Path) -> "SkillConfig":
+        """Remove a skill path from this config if present."""
+
+        value = str(path)
+        self["paths"] = [item for item in self.get("paths", []) if item != value]
+        return self
+
+
+class McpConfig(_ConfigMapping):
+    """MCP capability configuration with authoring helpers."""
+
+    _fields = frozenset({"servers"})
+    _omit_if_empty = frozenset({"servers"})
+    _EXPOSURES = frozenset({"harness_native", "fabric_managed"})
+
+    def __init__(
+        self,
+        *,
+        servers: Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        values: dict[str, Any] = {
+            "servers": _mapping({} if servers is None else servers, "mcp servers")
+        }
+        super().__init__(values, extra_fields=extra_fields)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "McpConfig":
+        """Validate an MCP mapping and preserve extension fields."""
+
+        data = _mapping(value, "mcp")
+        return cls(
+            servers=data.get("servers", {}),
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+    def add_server(
+        self,
+        name: str,
+        *,
+        transport: str,
+        url: str,
+        exposure: str = "harness_native",
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> "McpConfig":
+        """Add or replace a named MCP server."""
+
+        if exposure not in self._EXPOSURES:
+            allowed = ", ".join(sorted(self._EXPOSURES))
+            raise FabricConfigError(f"mcp exposure must be one of: {allowed}")
+        server = {
+            "transport": _required_text(transport, "mcp transport"),
+            "url": _required_text(url, "mcp url"),
+            "exposure": exposure,
+        }
+        server.update(
+            _mapping(
+                {} if extra_fields is None else extra_fields,
+                "mcp server extra_fields",
+            )
+        )
+        servers = dict(self.get("servers", {}))
+        servers[_required_text(name, "mcp server name")] = server
+        self["servers"] = servers
+        return self
+
+    def remove_server(self, name: str) -> "McpConfig":
+        """Remove a named MCP server if present."""
+
+        servers = dict(self.get("servers", {}))
+        servers.pop(name, None)
+        self["servers"] = servers
+        return self
+
+
+class TelemetryConfig(_ConfigMapping):
+    """Telemetry configuration with authoring helpers."""
+
+    _fields = frozenset({"enabled", "provider", "project", "output_dir", "config"})
+    _PROVIDERS = frozenset({"relay", "native"})
+
+    def __init__(
+        self,
+        *,
+        enabled: bool = False,
+        provider: str | None = None,
+        project: str | None = None,
+        output_dir: str | Path | None = None,
+        config: Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        values: dict[str, Any] = {"enabled": _boolean(enabled, "telemetry enabled")}
+        if provider is not None:
+            values["provider"] = self._provider(provider)
+        if project is not None:
+            values["project"] = project
+        if output_dir is not None:
+            values["output_dir"] = output_dir
+        if config is not None:
+            values["config"] = config
+        super().__init__(values, extra_fields=extra_fields)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "TelemetryConfig":
+        """Validate a telemetry mapping and preserve extension fields."""
+
+        data = _mapping(value, "telemetry")
+        return cls(
+            enabled=data.get("enabled", False),
+            provider=data.get("provider"),
+            project=data.get("project"),
+            output_dir=data.get("output_dir"),
+            config=data.get("config"),
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+    @classmethod
+    def _provider(cls, provider: str) -> str:
+        value = _required_text(provider, "telemetry provider")
+        if value not in cls._PROVIDERS:
+            allowed = ", ".join(sorted(cls._PROVIDERS))
+            raise FabricConfigError(f"telemetry provider must be one of: {allowed}")
+        return value
+
+    def enable_relay(
+        self,
+        *,
+        project: str | None = None,
+        output_dir: str | Path | None = None,
+        config: Mapping[str, Any] | None = None,
+    ) -> "TelemetryConfig":
+        """Enable NeMo Relay telemetry for subsequently started runtimes."""
+
+        self["enabled"] = True
+        self["provider"] = "relay"
+        if project is not None:
+            self["project"] = project
+        if output_dir is not None:
+            self["output_dir"] = str(output_dir)
+        if config is not None:
+            self["config"] = _mapping(config, "telemetry config")
+        return self
+
+    def enable_native(self) -> "TelemetryConfig":
+        """Let the selected harness adapter handle telemetry natively."""
+
+        self["enabled"] = True
+        self["provider"] = "native"
+        return self
+
+    def disable(self) -> "TelemetryConfig":
+        """Disable telemetry for subsequently started runtimes."""
+
+        self["enabled"] = False
+        return self
+
+
 class FabricConfig(_ConfigMapping):
     """Mutable typed representation of a Fabric agent configuration.
 
@@ -363,7 +561,7 @@ class FabricConfig(_ConfigMapping):
             "tools",
         }
     )
-    _omit_if_empty = frozenset({"models"})
+    _omit_if_empty = frozenset({"models", "mcp", "skills"})
 
     def __init__(
         self,
@@ -393,6 +591,13 @@ class FabricConfig(_ConfigMapping):
             if environment is None
             else _coerce(EnvironmentConfig, environment, "environment")
         )
+        mcp_value = None if mcp is None else _coerce(McpConfig, mcp, "mcp")
+        skills_value = None if skills is None else _coerce(SkillConfig, skills, "skills")
+        telemetry_value = (
+            None
+            if telemetry is None
+            else _coerce(TelemetryConfig, telemetry, "telemetry")
+        )
         values: dict[str, Any] = {
             "schema_version": _required_text(schema_version, "schema_version"),
             "metadata": metadata_value,
@@ -402,9 +607,9 @@ class FabricConfig(_ConfigMapping):
         }
         for key, item in (
             ("environment", environment_value),
-            ("mcp", mcp),
-            ("skills", skills),
-            ("telemetry", telemetry),
+            ("mcp", mcp_value),
+            ("skills", skills_value),
+            ("telemetry", telemetry_value),
             ("profiles", profiles),
             ("tools", tools),
         ):
@@ -435,6 +640,88 @@ class FabricConfig(_ConfigMapping):
             tools=data.get("tools"),
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
         )
+
+    @property
+    def mcp(self) -> McpConfig:
+        """Mutable MCP capability config, created on first access."""
+
+        return self._ensure_section("mcp", McpConfig)
+
+    @mcp.setter
+    def mcp(self, value: McpConfig | Mapping[str, Any]) -> None:
+        self["mcp"] = _coerce(McpConfig, value, "mcp")
+
+    @property
+    def skills(self) -> SkillConfig:
+        """Mutable skill capability config, created on first access."""
+
+        return self._ensure_section("skills", SkillConfig)
+
+    @skills.setter
+    def skills(self, value: SkillConfig | Mapping[str, Any]) -> None:
+        self["skills"] = _coerce(SkillConfig, value, "skills")
+
+    @property
+    def telemetry(self) -> TelemetryConfig:
+        """Mutable telemetry config, created on first access."""
+
+        return self._ensure_section("telemetry", TelemetryConfig)
+
+    @telemetry.setter
+    def telemetry(self, value: TelemetryConfig | Mapping[str, Any]) -> None:
+        self["telemetry"] = _coerce(TelemetryConfig, value, "telemetry")
+
+    def _ensure_section(self, key: str, model: type[_T]) -> _T:
+        value = self.get(key)
+        if value is None:
+            value = model()  # type: ignore[call-arg]
+            self[key] = value
+        elif not isinstance(value, model):
+            value = _coerce(model, value, key)
+            self[key] = value
+        return value
+
+    def add_mcp_server(
+        self,
+        name: str,
+        *,
+        transport: str,
+        url: str,
+        exposure: str = "harness_native",
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> "FabricConfig":
+        """Add or replace a named MCP server and return this config."""
+
+        self.mcp.add_server(
+            name,
+            transport=transport,
+            url=url,
+            exposure=exposure,
+            extra_fields=extra_fields,
+        )
+        return self
+
+    def add_skill_path(self, path: str | Path) -> "FabricConfig":
+        """Add a skill path and return this config."""
+
+        self.skills.add_path(path)
+        return self
+
+    def enable_relay(
+        self,
+        *,
+        project: str | None = None,
+        output_dir: str | Path | None = None,
+        config: Mapping[str, Any] | None = None,
+    ) -> "FabricConfig":
+        """Enable NeMo Relay telemetry and return this config."""
+
+        self.telemetry.enable_relay(
+            project=project,
+            output_dir=output_dir,
+            config=config,
+        )
+        return self
 
 
 class FabricProfileConfig(_ConfigMapping):

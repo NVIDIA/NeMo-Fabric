@@ -139,14 +139,12 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RuntimeConfig`
-Runtime lifecycle mode and input/output contract.
+Runtime input/output contract.
 
 
 
 **Attributes:**
 
- - <b>`mode`</b>:  Lifecycle mode: ``oneshot``, ``session``, or ``service``.
- - <b>`transport`</b>:  Optional adapter transport such as ``library`` or ``stdio``.
  - <b>`input_schema`</b>:  Optional logical input contract identifier.
  - <b>`output_schema`</b>:  Optional logical output contract identifier.
  - <b>`artifacts`</b>:  Optional artifact-root path.
@@ -157,8 +155,6 @@ Runtime lifecycle mode and input/output contract.
 
 ```python
 __init__(
-    mode: 'str' = 'oneshot',
-    transport: 'str | None' = None,
     input_schema: 'str | None' = None,
     output_schema: 'str | None' = None,
     artifacts: 'str | Path | None' = None,
@@ -272,6 +268,255 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `SkillConfig`
+Skill capability configuration.
+
+The shape matches the ``skills`` section in ``agent.yaml`` while providing small authoring helpers for Python callers.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+__init__(
+    paths: 'Sequence[str | Path] | None' = None,
+    extra_fields: 'Mapping[str, Any] | None' = None
+) → None
+```
+
+
+
+
+
+
+---
+
+#### <kbd>property</kbd> extra_fields
+
+Return preserved schema-extension fields as a deep copy.
+
+
+
+---
+
+
+### <kbd>method</kbd> `add_path`
+
+```python
+add_path(path: 'str | Path') → 'SkillConfig'
+```
+
+Add a skill path to this config if it is not already present.
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(value: 'Mapping[str, Any]') → 'SkillConfig'
+```
+
+Validate a skill mapping and preserve extension fields.
+
+---
+
+
+### <kbd>method</kbd> `remove_path`
+
+```python
+remove_path(path: 'str | Path') → 'SkillConfig'
+```
+
+Remove a skill path from this config if present.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `McpConfig`
+MCP capability configuration with authoring helpers.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+__init__(
+    servers: 'Mapping[str, Any] | None' = None,
+    extra_fields: 'Mapping[str, Any] | None' = None
+) → None
+```
+
+
+
+
+
+
+---
+
+#### <kbd>property</kbd> extra_fields
+
+Return preserved schema-extension fields as a deep copy.
+
+
+
+---
+
+
+### <kbd>method</kbd> `add_server`
+
+```python
+add_server(
+    name: 'str',
+    transport: 'str',
+    url: 'str',
+    exposure: 'str' = 'harness_native',
+    extra_fields: 'Mapping[str, Any] | None' = None
+) → 'McpConfig'
+```
+
+Add or replace a named MCP server.
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(value: 'Mapping[str, Any]') → 'McpConfig'
+```
+
+Validate an MCP mapping and preserve extension fields.
+
+---
+
+
+### <kbd>method</kbd> `remove_server`
+
+```python
+remove_server(name: 'str') → 'McpConfig'
+```
+
+Remove a named MCP server if present.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `TelemetryConfig`
+Telemetry configuration with authoring helpers.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+__init__(
+    enabled: 'bool' = False,
+    provider: 'str | None' = None,
+    project: 'str | None' = None,
+    output_dir: 'str | Path | None' = None,
+    config: 'Mapping[str, Any] | None' = None,
+    extra_fields: 'Mapping[str, Any] | None' = None
+) → None
+```
+
+
+
+
+
+
+---
+
+#### <kbd>property</kbd> extra_fields
+
+Return preserved schema-extension fields as a deep copy.
+
+
+
+---
+
+
+### <kbd>method</kbd> `disable`
+
+```python
+disable() → 'TelemetryConfig'
+```
+
+Disable telemetry for subsequently started runtimes.
+
+---
+
+
+### <kbd>method</kbd> `enable_native`
+
+```python
+enable_native() → 'TelemetryConfig'
+```
+
+Let the selected harness adapter handle telemetry natively.
+
+---
+
+
+### <kbd>method</kbd> `enable_relay`
+
+```python
+enable_relay(
+    project: 'str | None' = None,
+    output_dir: 'str | Path | None' = None,
+    config: 'Mapping[str, Any] | None' = None
+) → 'TelemetryConfig'
+```
+
+Enable NeMo Relay telemetry for subsequently started runtimes.
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(value: 'Mapping[str, Any]') → 'TelemetryConfig'
+```
+
+Validate a telemetry mapping and preserve extension fields.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `FabricConfig`
 Mutable typed representation of a Fabric agent configuration.
 
@@ -284,7 +529,7 @@ The object follows the same schema as ``agent.yaml``. It is mutable while caller
  - <b>`schema_version`</b>:  Agent schema identifier.
  - <b>`metadata`</b>:  Required ``MetadataConfig`` agent identity.
  - <b>`harness`</b>:  Required ``HarnessConfig`` adapter selection.
- - <b>`runtime`</b>:  Runtime lifecycle configuration; defaults to oneshot.
+ - <b>`runtime`</b>:  Runtime input/output configuration.
  - <b>`environment`</b>:  Optional execution environment configuration.
  - <b>`models`</b>:  Named, JSON-compatible model configurations.
  - <b>`mcp`</b>:  Optional MCP configuration.
@@ -325,7 +570,68 @@ __init__(
 
 Return preserved schema-extension fields as a deep copy.
 
+---
 
+#### <kbd>property</kbd> mcp
+
+Mutable MCP capability config, created on first access.
+
+---
+
+#### <kbd>property</kbd> skills
+
+Mutable skill capability config, created on first access.
+
+---
+
+#### <kbd>property</kbd> telemetry
+
+Mutable telemetry config, created on first access.
+
+
+
+---
+
+
+### <kbd>method</kbd> `add_mcp_server`
+
+```python
+add_mcp_server(
+    name: 'str',
+    transport: 'str',
+    url: 'str',
+    exposure: 'str' = 'harness_native',
+    extra_fields: 'Mapping[str, Any] | None' = None
+) → 'FabricConfig'
+```
+
+Add or replace a named MCP server and return this config.
+
+---
+
+
+### <kbd>method</kbd> `add_skill_path`
+
+```python
+add_skill_path(path: 'str | Path') → 'FabricConfig'
+```
+
+Add a skill path and return this config.
+
+---
+
+
+### <kbd>method</kbd> `enable_relay`
+
+```python
+enable_relay(
+    project: 'str | None' = None,
+    output_dir: 'str | Path | None' = None,
+    config: 'Mapping[str, Any] | None' = None
+) → 'FabricConfig'
+```
+
+Enable NeMo Relay telemetry and return this config.
 
 ---
 
@@ -1296,7 +1602,6 @@ Applications should treat ``runtime_binding`` as opaque. Fabric validates the ha
  - <b>`runtime_binding`</b>:  Opaque integrity-bound runtime binding.
  - <b>`agent_name`</b>:  Resolved agent name.
  - <b>`harness`</b>:  Stable harness identifier.
- - <b>`mode`</b>:  Runtime lifecycle mode.
  - <b>`adapter_kind`</b>:  Adapter execution mechanism.
  - <b>`adapter_id`</b>:  Optional Fabric adapter identifier.
  - <b>`environment`</b>:  Prepared environment snapshot.
