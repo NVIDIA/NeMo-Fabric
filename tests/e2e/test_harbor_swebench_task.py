@@ -17,13 +17,14 @@ from pathlib import Path
 
 import pytest
 
+from _utils.utils import run_fabric_cli
+
 ROOT = Path(__file__).resolve().parents[2]
 HARBOR_ROOT = ROOT.parent / "harbor"
 DEFAULT_TASK = (
     HARBOR_ROOT / "datasets" / "swebench-opencode-smoke" / "django__django-13741"
 )
 IMAGE = "swebench/sweb.eval.x86_64.django_1776_django-13741:latest"
-COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 RUN_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_DOCKER"
 VERIFY_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_VERIFY"
 
@@ -172,7 +173,11 @@ def verify_with_harbor_task(task_dir: Path, workspace: Path, logs: Path) -> None
 
 
 def call_json(*args: object) -> dict:
-    completed = run(*COMMAND, *(str(arg) for arg in args), cwd=ROOT)
+    completed = run_fabric_cli(*args)
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+        )
     return json.loads(completed.stdout)
 
 

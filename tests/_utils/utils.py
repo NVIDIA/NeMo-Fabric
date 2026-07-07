@@ -1,17 +1,37 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import subprocess
 from pathlib import Path
 
 import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FABRIC_COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
+
+
+def run_fabric_cli(
+    *args: object,
+    stdin: str | None = None,
+    timeout: float = 60.0,
+) -> subprocess.CompletedProcess[str]:
+    """Run the Fabric CLI from the repository root and capture its output."""
+    return subprocess.run(
+        [*FABRIC_COMMAND, *(str(arg) for arg in args)],
+        cwd=REPO_ROOT,
+        input=stdin,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=timeout,
+    )
 
 
 def assert_relay_disabled_native_observability(result: dict):
     """Assert telemetry-off runs still surface native harness evidence."""
 
     artifact_by_name = {
-        artifact["name"]: artifact
-        for artifact in result["artifacts"]["artifacts"]
+        artifact["name"]: artifact for artifact in result["artifacts"]["artifacts"]
     }
     assert "stdout" in artifact_by_name
     assert "relay_config" not in artifact_by_name

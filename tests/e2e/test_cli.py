@@ -9,10 +9,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from _utils.utils import assert_relay_disabled_native_observability
-
-ROOT = Path(__file__).resolve().parents[2]
-COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
+from _utils.utils import assert_relay_disabled_native_observability, run_fabric_cli
 
 
 def test_cli(
@@ -180,13 +177,7 @@ def call_json(*args: object) -> dict:
 
 
 def run(*args: object) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        [*COMMAND, *(str(arg) for arg in args)],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    completed = run_fabric_cli(*args)
     if completed.returncode != 0:
         raise AssertionError(
             f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
@@ -204,11 +195,4 @@ def run_with_stdin(stdin: str, *args: object) -> subprocess.CompletedProcess[str
 
 
 def run_raw(stdin: str, *args: object) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [*COMMAND, *(str(arg) for arg in args)],
-        cwd=ROOT,
-        input=stdin,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    return run_fabric_cli(*args, stdin=stdin)
