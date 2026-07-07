@@ -85,18 +85,18 @@ credential-free pipeline check plus real Hermes, Hermes-with-Relay, and Codex
 variants. See [`demo/README.md`](demo/README.md) for the commands and recording
 flow.
 
-## Local Smoke
+## Local Test
 
-The lightweight smoke uses a fake Harbor environment and validates command
+The lightweight test uses a fake Harbor environment and validates command
 construction plus metadata propagation:
 
 ```bash
 pytest tests/python/test_harbor_integration.py
 ```
 
-## SWE-Bench Smoke
+## SWE-Bench Test
 
-The Docker-backed SWE-Bench smoke is opt-in because it requires Docker, a local
+The Docker-backed SWE-Bench test is opt-in because it requires Docker, a local
 SWE-Bench image, and a Harbor-generated task directory. Harbor still owns task
 materialization and verification; Fabric only invokes the configured harness and
 captures artifacts.
