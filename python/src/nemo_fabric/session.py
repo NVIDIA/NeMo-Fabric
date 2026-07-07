@@ -511,15 +511,7 @@ async def _run_native_lifecycle(
 
 
 async def _call_blocking(func: Any) -> Any:
-    task = asyncio.create_task(asyncio.to_thread(func))
-    try:
-        return await asyncio.shield(task)
-    except asyncio.CancelledError:
-        try:
-            await asyncio.shield(task)
-        except Exception:
-            pass
-        raise
+    return func()
 
 
 def _require_session_runtime(plan: RunPlan | Mapping[str, Any], method: str) -> None:

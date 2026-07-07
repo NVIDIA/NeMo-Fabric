@@ -36,7 +36,7 @@ DOCUMENTED_SNIPPETS = [
     "--profile hermes_cli_session",
     "--session-id review-session-123",
     "--verbose",
-    "requires `runtime.mode: session`; use `fabric run`",
+    "adapter supports sessions",
     "The CLI is a separate interface over the same Rust",
 ]
 
@@ -52,7 +52,6 @@ README_PLAN_CONFIG = {
         }
     },
     "runtime": {
-        "mode": "session",
         "transport": "library",
         "input_schema": "chat",
         "output_schema": "message",

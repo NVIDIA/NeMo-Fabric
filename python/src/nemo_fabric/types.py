@@ -221,10 +221,9 @@ class HarnessConfig(_ConfigMapping):
 
 
 class RuntimeConfig(_ConfigMapping):
-    """Runtime lifecycle mode and input/output contract.
+    """Runtime input/output contract.
 
     Attributes:
-        mode: Lifecycle mode: ``oneshot``, ``session``, or ``service``.
         transport: Optional adapter transport such as ``library`` or ``stdio``.
         input_schema: Optional logical input contract identifier.
         output_schema: Optional logical output contract identifier.
@@ -232,23 +231,18 @@ class RuntimeConfig(_ConfigMapping):
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
 
-    _fields = frozenset(
-        {"mode", "transport", "input_schema", "output_schema", "artifacts"}
-    )
+    _fields = frozenset({"transport", "input_schema", "output_schema", "artifacts"})
 
     def __init__(
         self,
         *,
-        mode: str = "oneshot",
         transport: str | None = None,
         input_schema: str | None = None,
         output_schema: str | None = None,
         artifacts: str | Path | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        if mode not in {"oneshot", "session", "service"}:
-            raise FabricConfigError(f"unsupported runtime mode: {mode!r}")
-        values: dict[str, Any] = {"mode": mode}
+        values: dict[str, Any] = {}
         for key, item in (
             ("transport", transport),
             ("input_schema", input_schema),
@@ -265,12 +259,13 @@ class RuntimeConfig(_ConfigMapping):
 
         data = _mapping(value, "runtime")
         return cls(
-            mode=data.get("mode", "oneshot"),
             transport=data.get("transport"),
             input_schema=data.get("input_schema"),
             output_schema=data.get("output_schema"),
             artifacts=data.get("artifacts"),
-            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+            extra_fields={
+                key: item for key, item in data.items() if key not in cls._fields | {"mode"}
+            },
         )
 
 
@@ -344,7 +339,7 @@ class FabricConfig(_ConfigMapping):
         schema_version: Agent schema identifier.
         metadata: Required ``MetadataConfig`` agent identity.
         harness: Required ``HarnessConfig`` adapter selection.
-        runtime: Runtime lifecycle configuration; defaults to oneshot.
+        runtime: Runtime input/output configuration.
         environment: Optional execution environment configuration.
         models: Named, JSON-compatible model configurations.
         mcp: Optional MCP configuration.
@@ -1052,7 +1047,6 @@ class RuntimeHandle(FabricMapping):
         runtime_binding: Opaque integrity-bound runtime binding.
         agent_name: Resolved agent name.
         harness: Stable harness identifier.
-        mode: Runtime lifecycle mode.
         adapter_kind: Adapter execution mechanism.
         adapter_id: Optional Fabric adapter identifier.
         environment: Prepared environment snapshot.
@@ -1062,7 +1056,6 @@ class RuntimeHandle(FabricMapping):
     runtime_binding: str
     agent_name: str
     harness: str
-    mode: str
     adapter_kind: str
     adapter_id: str | None
     environment: Mapping[str, Any]
@@ -1072,7 +1065,6 @@ class RuntimeHandle(FabricMapping):
             "runtime_binding",
             "agent_name",
             "harness",
-            "mode",
             "adapter_kind",
             "adapter_id",
             "environment",
@@ -1087,7 +1079,6 @@ class RuntimeHandle(FabricMapping):
             "runtime_binding",
             "agent_name",
             "harness",
-            "mode",
             "adapter_kind",
         ):
             data[field] = _required_text(data.get(field), field.replace("_", " "))

@@ -85,11 +85,11 @@ def test_load_payload_falls_back_to_stdin(
     ("runtime_context", "expected"),
     [
         ({"session_id": "caller-session", "runtime_id": "runtime-1"}, "caller-session"),
-        ({"runtime_id": "runtime-1"}, "runtime-1"),
+        ({"runtime_id": "runtime-1"}, None),
         ({}, None),
     ],
 )
-def test_runtime_session_id_prefers_caller_session_id(
+def test_runtime_session_id_uses_explicit_session_id(
     common_utils: types.ModuleType,
     runtime_context: dict[str, object],
     expected: str | None,

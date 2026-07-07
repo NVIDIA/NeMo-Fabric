@@ -31,7 +31,7 @@ async def test_hermes_sdk_rejects_native_telemetry():
         await adapter.run_hermes_sdk(payload)
 
 
-async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
+async def test_fabric_session_id_drives_hermes_session_id_and_hermes_db_history(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -150,6 +150,7 @@ async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
         },
         "runtime_context": {
             "runtime_id": "runtime-fabric-123",
+            "session_id": "fabric-session-123",
             "environment": {"workspace": str(tmp_path)},
         },
         "request": {
@@ -161,10 +162,10 @@ async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
 
     output = await adapter.run_hermes_sdk(payload)
 
-    assert captured["db_resolve_session"] == "runtime-fabric-123"
+    assert captured["db_resolve_session"] == "fabric-session-123"
     assert captured["db_get_session"] == ["runtime-resolved-456"]
     assert captured["db_get_messages"] == "runtime-resolved-456"
-    assert captured["init"]["session_id"] == "runtime-fabric-123"
+    assert captured["init"]["session_id"] == "fabric-session-123"
     assert isinstance(captured["init"]["session_db"], FakeSessionDB)
     assert captured["init"]["platform"] == "fabric"
     assert captured["conversation"]["conversation_history"] == db_history

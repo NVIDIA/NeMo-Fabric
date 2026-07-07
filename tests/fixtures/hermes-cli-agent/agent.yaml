@@ -23,7 +23,6 @@ models:
     temperature: 0.0
 
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: chat
   output_schema: message

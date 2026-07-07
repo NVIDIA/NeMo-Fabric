@@ -43,7 +43,7 @@ pub struct FabricConfig {
     /// Model aliases.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, ModelConfig>,
-    /// Runtime mode and input/output contract.
+    /// Runtime input/output contract.
     pub runtime: RuntimeConfig,
     /// Environment where the harness or its tools execute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -137,6 +137,9 @@ pub struct AdapterDescriptor {
     /// Telemetry support declared by this adapter.
     #[serde(default)]
     pub telemetry: AdapterTelemetrySupport,
+    /// Runtime lifecycle operations supported by this adapter.
+    #[serde(default)]
+    pub capabilities: RuntimeCapabilities,
     /// Additive adapter descriptor fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
@@ -483,11 +486,9 @@ pub struct ModelConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Runtime mode and input/output contract.
+/// Runtime input/output contract.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeConfig {
-    /// Runtime mode.
-    pub mode: RuntimeMode,
     /// Transport used to operate the harness.
     #[serde(default = "default_runtime_transport")]
     pub transport: Transport,
@@ -515,18 +516,6 @@ fn default_input_schema() -> String {
 
 fn default_output_schema() -> String {
     "text".to_string()
-}
-
-/// Runtime lifecycle mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeMode {
-    /// Request is the lifecycle boundary.
-    Oneshot,
-    /// Long-running process or service is the lifecycle boundary.
-    Service,
-    /// Session is the lifecycle boundary.
-    Session,
 }
 
 /// Runtime transport.
@@ -1107,14 +1096,18 @@ fn resolve_runtime_capabilities(
         config.runtime.transport,
         Transport::Library | Transport::Cli
     );
+    let descriptor_capabilities = descriptor
+        .map(|descriptor| descriptor.capabilities.clone())
+        .unwrap_or_default();
     RuntimeCapabilities {
-        session: implemented_runtime && config.runtime.mode == RuntimeMode::Session,
-        service: false,
-        streaming: false,
-        updates: false,
-        cancellation: false,
-        concurrent_invocations: false,
-        metadata: BTreeMap::new(),
+        session: implemented_runtime && descriptor_capabilities.session,
+        service: implemented_runtime && descriptor_capabilities.service,
+        streaming: implemented_runtime && descriptor_capabilities.streaming,
+        updates: implemented_runtime && descriptor_capabilities.updates,
+        cancellation: implemented_runtime && descriptor_capabilities.cancellation,
+        concurrent_invocations: implemented_runtime
+            && descriptor_capabilities.concurrent_invocations,
+        metadata: descriptor_capabilities.metadata,
     }
 }
 
@@ -1378,16 +1371,22 @@ pub struct RunPlan {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeCapabilities {
     /// Whether the selected runtime supports session lifecycle operations.
+    #[serde(default)]
     pub session: bool,
     /// Whether the selected runtime supports service lifecycle operations.
+    #[serde(default)]
     pub service: bool,
     /// Whether invocations can emit progressive output.
+    #[serde(default)]
     pub streaming: bool,
     /// Whether a running runtime can accept config updates.
+    #[serde(default)]
     pub updates: bool,
     /// Whether an in-flight invocation can be cancelled.
+    #[serde(default)]
     pub cancellation: bool,
     /// Whether the runtime accepts concurrent invocations.
+    #[serde(default)]
     pub concurrent_invocations: bool,
     /// Additional adapter-specific capability metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -1556,7 +1555,6 @@ harness:
   settings:
     workspace: ./workspace
 runtime:
-  mode: oneshot
   transport: library
   input_schema: chat
   output_schema: message
@@ -1579,7 +1577,7 @@ harness:
   settings:
     timeout_seconds: 30
 runtime:
-  mode: session
+  input_schema: prompt
 tools:
   enabled: [profile]
   cleared: null
@@ -1600,8 +1598,8 @@ future_top_level:
         let value = serde_json::to_value(&effective.config).expect("config json");
 
         assert_eq!(effective.profiles, ["session"]);
-        assert_eq!(value["runtime"]["mode"], "session");
         assert_eq!(value["runtime"]["transport"], "library");
+        assert_eq!(value["runtime"]["input_schema"], "prompt");
         assert_eq!(value["harness"]["settings"]["workspace"], "./workspace");
         assert_eq!(value["harness"]["settings"]["timeout_seconds"], 30);
         assert_eq!(value["tools"]["enabled"], serde_json::json!(["profile"]));
@@ -1622,7 +1620,6 @@ metadata:
 harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
-  mode: oneshot
 "#,
         )
         .expect("minimal config");
@@ -1642,7 +1639,6 @@ metadata:
 harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
-  mode: oneshot
 telemetry:
   enabled: true
   config:
@@ -1673,7 +1669,6 @@ metadata:
 harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
-  mode: oneshot
 telemetry:
   enabled: true
   provider: native
@@ -1715,7 +1710,6 @@ metadata:
 harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
-  mode: session
 "#,
         )
         .expect("session config");
@@ -1853,7 +1847,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: message
@@ -2006,7 +1999,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: text
@@ -2188,7 +2180,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: message

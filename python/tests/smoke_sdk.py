@@ -30,7 +30,7 @@ def main() -> None:
             adapter_id="test.fabric.shim",
             settings={"future_adapter_option": True},
         ),
-        runtime=RuntimeConfig(mode="oneshot"),
+        runtime=RuntimeConfig(),
         extra_fields={"future_config": {"enabled": True}},
     )
     request = RunRequest(

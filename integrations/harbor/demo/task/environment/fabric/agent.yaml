@@ -9,7 +9,6 @@ harness:
   resolution: preinstalled
 
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: message

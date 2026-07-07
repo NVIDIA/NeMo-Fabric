@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use fabric_core::{
-    AdapterKind, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle, RuntimeMode, SchemaName,
-    doctor_plan, generate_all_schemas, generate_schema_json, invoke_runtime,
+    AdapterKind, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle, SchemaName, doctor_plan,
+    generate_all_schemas, generate_schema_json, invoke_runtime,
     resolve_effective_config_with_profiles, resolve_run_plan_with_profiles, run_plan,
     start_runtime, stop_runtime, validate_agent_directory, write_schema_snapshots,
 };
@@ -238,9 +238,9 @@ fn run_chat(
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plan = resolve_run_plan_with_profiles(path, profile)?;
-    if plan.config.runtime.mode != RuntimeMode::Session {
+    if !plan.capabilities.session {
         return Err(
-            "fabric chat requires runtime.mode=session; use `fabric run` for oneshot profiles"
+            "fabric chat requires an adapter with session capability; use `fabric run` otherwise"
                 .into(),
         );
     }

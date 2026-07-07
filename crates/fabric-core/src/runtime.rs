@@ -18,7 +18,7 @@ use serde_json::{Map, Value};
 
 use crate::config::{
     AdapterKind, CapabilityPlan, ControlLocation, EffectiveConfig, EnvironmentOwnership, RunPlan,
-    RuntimeMode, TelemetryPlan,
+    TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
@@ -234,8 +234,6 @@ pub struct RuntimeHandle {
     pub agent_name: String,
     /// Stable machine-readable harness identifier.
     pub harness: String,
-    /// Runtime mode.
-    pub mode: RuntimeMode,
     /// Adapter kind.
     pub adapter_kind: AdapterKind,
     /// Adapter implementation id.
@@ -464,12 +462,6 @@ fn validate_runtime_handle(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<()
     expect_runtime_field(runtime, "harness", &harness(plan), &runtime.harness)?;
     expect_runtime_field(
         runtime,
-        "runtime.mode",
-        &runtime_mode_name(plan.config.runtime.mode),
-        &runtime_mode_name(runtime.mode),
-    )?;
-    expect_runtime_field(
-        runtime,
         "adapter_kind",
         &adapter_kind_name(adapter_kind(plan)),
         &adapter_kind_name(runtime.adapter_kind),
@@ -610,7 +602,6 @@ impl RuntimeAdapter for ProcessAdapter {
             runtime_binding,
             agent_name: plan.agent_name.clone(),
             harness: harness(plan),
-            mode: plan.config.runtime.mode,
             adapter_kind: adapter_kind(plan),
             adapter_id: adapter_id(plan),
             environment,
@@ -658,7 +649,6 @@ impl RuntimeAdapter for PythonAdapter {
             runtime_binding,
             agent_name: plan.agent_name.clone(),
             harness: harness(plan),
-            mode: plan.config.runtime.mode,
             adapter_kind: adapter_kind(plan),
             adapter_id: adapter_id(plan),
             environment,
@@ -1159,15 +1149,6 @@ fn adapter_kind_name(adapter_kind: AdapterKind) -> String {
         AdapterKind::Http => "http",
         AdapterKind::Python => "python",
         AdapterKind::NativePlugin => "native_plugin",
-    }
-    .to_string()
-}
-
-fn runtime_mode_name(mode: RuntimeMode) -> String {
-    match mode {
-        RuntimeMode::Oneshot => "oneshot",
-        RuntimeMode::Service => "service",
-        RuntimeMode::Session => "session",
     }
     .to_string()
 }
@@ -1874,7 +1855,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: text
@@ -1922,7 +1902,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: text
@@ -2394,7 +2373,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: session
   transport: cli
   input_schema: text
   output_schema: text
@@ -2456,7 +2434,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: text
@@ -2542,7 +2519,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: text

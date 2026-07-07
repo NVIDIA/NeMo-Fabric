@@ -34,6 +34,18 @@
           "$ref": "#/$defs/AdapterKind",
           "description": "Adapter implementation kind."
         },
+        "capabilities": {
+          "$ref": "#/$defs/RuntimeCapabilities",
+          "default": {
+            "cancellation": false,
+            "concurrent_invocations": false,
+            "service": false,
+            "session": false,
+            "streaming": false,
+            "updates": false
+          },
+          "description": "Runtime lifecycle operations supported by this adapter."
+        },
         "config": {
           "$ref": "#/$defs/AdapterConfigSupport",
           "default": {},
@@ -532,7 +544,7 @@
         },
         "runtime": {
           "$ref": "#/$defs/RuntimeConfig",
-          "description": "Runtime mode and input/output contract."
+          "description": "Runtime input/output contract."
         },
         "schema_version": {
           "description": "Config schema version.",
@@ -824,10 +836,12 @@
       "description": "Lifecycle behavior implemented by a resolved runtime path.",
       "properties": {
         "cancellation": {
+          "default": false,
           "description": "Whether an in-flight invocation can be cancelled.",
           "type": "boolean"
         },
         "concurrent_invocations": {
+          "default": false,
           "description": "Whether the runtime accepts concurrent invocations.",
           "type": "boolean"
         },
@@ -837,35 +851,31 @@
           "type": "object"
         },
         "service": {
+          "default": false,
           "description": "Whether the selected runtime supports service lifecycle operations.",
           "type": "boolean"
         },
         "session": {
+          "default": false,
           "description": "Whether the selected runtime supports session lifecycle operations.",
           "type": "boolean"
         },
         "streaming": {
+          "default": false,
           "description": "Whether invocations can emit progressive output.",
           "type": "boolean"
         },
         "updates": {
+          "default": false,
           "description": "Whether a running runtime can accept config updates.",
           "type": "boolean"
         }
       },
-      "required": [
-        "session",
-        "service",
-        "streaming",
-        "updates",
-        "cancellation",
-        "concurrent_invocations"
-      ],
       "type": "object"
     },
     "RuntimeConfig": {
       "additionalProperties": true,
-      "description": "Runtime mode and input/output contract.",
+      "description": "Runtime input/output contract.",
       "properties": {
         "artifacts": {
           "description": "Artifact directory.",
@@ -879,10 +889,6 @@
           "description": "Input schema label.",
           "type": "string"
         },
-        "mode": {
-          "$ref": "#/$defs/RuntimeMode",
-          "description": "Runtime mode."
-        },
         "output_schema": {
           "default": "text",
           "description": "Output schema label.",
@@ -894,30 +900,7 @@
           "description": "Transport used to operate the harness."
         }
       },
-      "required": [
-        "mode"
-      ],
       "type": "object"
-    },
-    "RuntimeMode": {
-      "description": "Runtime lifecycle mode.",
-      "oneOf": [
-        {
-          "const": "oneshot",
-          "description": "Request is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "service",
-          "description": "Long-running process or service is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "session",
-          "description": "Session is the lifecycle boundary.",
-          "type": "string"
-        }
-      ]
     },
     "SkillConfig": {
       "additionalProperties": true,

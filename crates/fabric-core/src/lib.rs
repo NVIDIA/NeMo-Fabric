@@ -15,7 +15,7 @@ pub use config::{
     EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan, FabricConfig, FabricDocument,
     HarnessConfig, McpConfig, McpExposure, McpServerPlan, MetadataConfig, ModelConfig,
     ProfileConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, RunPlan,
-    RuntimeCapabilities, RuntimeConfig, RuntimeMode, SkillConfig, TelemetryConfig, TelemetryPlan,
+    RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
     TelemetryProvider, Transport, load_adapter_descriptor, load_fabric_document,
     resolve_effective_config, resolve_effective_config_from_config,
     resolve_effective_config_with_profiles, resolve_run_plan, resolve_run_plan_from_config,

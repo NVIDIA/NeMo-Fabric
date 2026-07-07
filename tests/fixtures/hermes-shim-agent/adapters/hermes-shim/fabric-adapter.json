@@ -2,6 +2,9 @@
   "adapter_id": "test.fabric.hermes_shim",
   "harness": "hermes",
   "adapter_kind": "python",
+  "capabilities": {
+    "session": true
+  },
   "runner": {
     "module": "nemo_fabric_test_adapters.hermes_shim.adapter",
     "callable": "run",

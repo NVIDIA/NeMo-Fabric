@@ -65,7 +65,7 @@ def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
             {
                 "metadata": {"name": "harbor-demo"},
                 "harness": {"adapter_id": "demo.fabric.smoke"},
-                "runtime": {"mode": "oneshot"},
+                "runtime": {"transport": "cli"},
                 "models": {"default": {"provider": "demo", "model": "demo"}},
             }
         ),
@@ -118,7 +118,7 @@ def test_runner_rejects_malformed_profile(tmp_path):
             {
                 "metadata": {"name": "harbor-demo"},
                 "harness": {"adapter_id": "demo.fabric.smoke"},
-                "runtime": {"mode": "oneshot"},
+                "runtime": {"transport": "cli"},
             }
         ),
         encoding="utf-8",
@@ -154,7 +154,7 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
                         "model": "openai/gpt-5.4",
                     }
                 },
-                "runtime": {"mode": "oneshot"},
+                "runtime": {"transport": "cli"},
             },
         },
         "runtime_context": {
@@ -197,7 +197,7 @@ def test_codex_demo_uses_current_adapter_contract():
     profile = yaml.safe_load(CODEX_PROFILE.read_text(encoding="utf-8"))
     settings = profile["harness"]["settings"]
 
-    assert profile["runtime"]["mode"] == "oneshot"
+    assert profile["runtime"]["transport"] == "cli"
     assert settings["sandbox"] == "danger-full-access"
     assert settings["skip_git_repo_check"] is True
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"

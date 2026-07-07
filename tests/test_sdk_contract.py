@@ -58,7 +58,7 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
         "schema_version": "fabric.agent/v1alpha1",
         "metadata": {"name": "demo", "owner": "sdk"},
         "harness": {"adapter_id": "test.fabric.shim", "future": True},
-        "runtime": {"mode": "session"},
+        "runtime": {},
         "future_top_level": {"enabled": True},
     }
 
@@ -77,7 +77,7 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
     assert config.to_mapping()["future_top_level"] == {"enabled": True}
     assert "models" not in config.to_mapping()
 
-    runtime = RuntimeConfig(mode="service")
+    runtime = RuntimeConfig(transport="http")
     config.runtime = runtime
     config["future_runtime"] = {"enabled": True}
     assert isinstance(config.runtime, RuntimeConfig)
@@ -93,8 +93,8 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
         FabricConfig.from_mapping({"harness": {"adapter_id": "test.fabric.shim"}})
     with pytest.raises(FabricConfigError, match="adapter_id"):
         HarnessConfig(adapter_id="")
-    with pytest.raises(FabricConfigError, match="runtime mode"):
-        RuntimeConfig(mode="invalid")
+    with pytest.raises(TypeError):
+        RuntimeConfig(unexpected=True)  # type: ignore[call-arg]
     with pytest.raises(FabricConfigError, match="harness settings"):
         HarnessConfig(
             adapter_id="test.fabric.shim",
@@ -192,7 +192,6 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
             "runtime_binding": "binding-1",
             "agent_name": "demo",
             "harness": "hermes",
-            "mode": "session",
             "adapter_kind": "python",
             "adapter_id": "test.fabric.shim",
             "environment": {
@@ -215,7 +214,6 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
         "runtime_binding",
         "agent_name",
         "harness",
-        "mode",
         "adapter_kind",
         "environment",
     ),
@@ -263,7 +261,7 @@ def test_doctor_report_and_errors_expose_typed_contract_fields():
             "status": "warn",
             "checks": [
                 {
-                    "name": "runtime.mode",
+                    "name": "runtime.transport",
                     "status": "warn",
                     "message": "not implemented",
                 }
@@ -278,7 +276,7 @@ def test_doctor_report_and_errors_expose_typed_contract_fields():
         details={"adapter_id": "test.fabric.shim"},
     )
 
-    assert report.checks[0].name == "runtime.mode"
+    assert report.checks[0].name == "runtime.transport"
     assert error.stage == "invoke"
     assert error.code == "adapter_failed"
     assert error.retryable is True
@@ -290,7 +288,6 @@ def _plan() -> dict[str, Any]:
         "metadata": {"name": "demo"},
         "harness": {"adapter_id": "test.fabric.shim"},
         "runtime": {
-            "mode": "session",
             "transport": "library",
             "input_schema": "chat",
             "output_schema": "message",
@@ -332,7 +329,6 @@ def _runtime() -> dict[str, Any]:
         "runtime_binding": "fabric-runtime-binding-test",
         "agent_name": "demo",
         "harness": "hermes",
-        "mode": "session",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
         "environment": {
@@ -367,7 +363,7 @@ def _fabric_config() -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="demo"),
         harness=HarnessConfig(adapter_id="test.fabric.shim"),
-        runtime=RuntimeConfig(mode="session"),
+        runtime=RuntimeConfig(),
     )
 
 
@@ -906,7 +902,6 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
             settings={"workspace": "./ws"},
         ),
         runtime=RuntimeConfig(
-            mode="oneshot",
             transport="cli",
             input_schema="chat",
             output_schema="message",
@@ -918,7 +913,7 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
     assert config["schema_version"] == "fabric.agent/v1alpha1"
     assert config["metadata"] == {"name": "demo"}
     assert config["harness"]["adapter_id"] == "test.fabric.shim"
-    assert config["runtime"]["mode"] == "oneshot"
+    assert config["runtime"]["transport"] == "cli"
     assert config["harness"]["settings"]["workspace"] == "./ws"
 
     profile = FabricProfileConfig.from_mapping({"name": "typed_relay"})
@@ -934,8 +929,8 @@ def test_resolve_accepts_path_and_fabric_config_sources():
     path_config = client.resolve("agent")
     typed_config = client.resolve(_fabric_config())
 
-    assert path_config["config"]["runtime"]["mode"] == "session"
-    assert typed_config["config"]["runtime"]["mode"] == "session"
+    assert path_config["config"]["runtime"]["transport"] == "library"
+    assert typed_config["config"]["runtime"]["transport"] == "library"
 
 
 async def test_start_session_alias_returns_session_and_info_includes_session_id():

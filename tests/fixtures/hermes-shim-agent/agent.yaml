@@ -20,7 +20,6 @@ models:
     temperature: 0.0
 
 runtime:
-  mode: session
   transport: library
   input_schema: chat
   output_schema: message

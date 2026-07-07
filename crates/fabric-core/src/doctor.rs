@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::config::{
     AdapterKind, CapabilityTarget, ControlLocation, EnvironmentOwnership, ResolutionStrategy,
-    RunPlan, RuntimeMode, Transport,
+    RunPlan, Transport,
 };
 
 /// Diagnostic status.
@@ -130,14 +130,6 @@ fn check_resolution(plan: &RunPlan) -> DoctorCheck {
 
 fn check_runtime_execution_surface(plan: &RunPlan) -> Vec<DoctorCheck> {
     let mut checks = Vec::new();
-    match plan.config.runtime.mode {
-        RuntimeMode::Service => checks.push(check(
-            "runtime.mode",
-            DoctorStatus::Warn,
-            "runtime mode `service` is modeled but not implemented by Fabric runtime dispatch",
-        )),
-        RuntimeMode::Oneshot | RuntimeMode::Session => {}
-    }
     match plan.config.runtime.transport {
         Transport::Http => checks.push(check(
             "runtime.transport",
@@ -490,9 +482,7 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use crate::config::{
-        AdapterKind, ResolutionStrategy, RuntimeMode, Transport, resolve_run_plan,
-    };
+    use crate::config::{AdapterKind, ResolutionStrategy, Transport, resolve_run_plan};
 
     fn example_agent_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/code-review-agent")
@@ -568,9 +558,8 @@ mod tests {
     }
 
     #[test]
-    fn doctor_reports_service_and_http_execution_as_modeled_not_implemented() {
+    fn doctor_reports_http_execution_as_modeled_not_implemented() {
         let mut plan = resolve_run_plan(example_agent_dir(), None).expect("run plan");
-        plan.config.runtime.mode = RuntimeMode::Service;
         plan.config.runtime.transport = Transport::Http;
         plan.resolution = Some(ResolutionStrategy::Service);
         plan.adapter_descriptor
@@ -582,12 +571,6 @@ mod tests {
         let report = doctor_plan(&plan);
 
         assert_eq!(report.status, DoctorStatus::Warn);
-        assert!(report.checks.iter().any(|check| {
-            check.name == "runtime.mode"
-                && check.status == DoctorStatus::Warn
-                && check.message.contains("modeled but not implemented")
-                && check.message.contains("service")
-        }));
         assert!(report.checks.iter().any(|check| {
             check.name == "runtime.transport"
                 && check.status == DoctorStatus::Warn

@@ -12,106 +12,130 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from harbor.agents.base import BaseAgent
-from harbor.environments.base import BaseEnvironment
-from harbor.models.agent.context import AgentContext
+try:
+    from harbor.agents.base import BaseAgent
+    from harbor.environments.base import BaseEnvironment
+    from harbor.models.agent.context import AgentContext
+except ModuleNotFoundError as error:  # pragma: no cover - exercised without harbor extra
+    _HARBOR_IMPORT_ERROR = error
+else:
+    _HARBOR_IMPORT_ERROR = None
 
 
-class FabricAgent(BaseAgent):
-    """Harbor agent wrapper that delegates harness execution to Fabric.
+if _HARBOR_IMPORT_ERROR is not None:
 
-    Harbor owns task materialization, environment lifecycle, verification, and
-    reward calculation. Fabric owns the selected agent harness invocation.
-    """
+    class FabricAgent:
+        """Placeholder that reports the missing Harbor optional dependency."""
 
-    def __init__(
-        self,
-        logs_dir: Path,
-        fabric_config_path: str,
-        fabric_profile_paths: str | Sequence[str] | None = None,
-        fabric_python: str = "python3",
-        fabric_spec_path: str = "/tmp/fabric-run.json",
-        fabric_result_path: str = "/logs/agent/fabric-result.json",
-        fabric_install_command: str | None = None,
-        fabric_cwd: str | None = None,
-        fabric_timeout_sec: int | None = None,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(logs_dir=logs_dir, *args, **kwargs)
-        self.fabric_config_path = fabric_config_path
-        self.fabric_profile_paths = normalize_paths(fabric_profile_paths)
-        self.fabric_python = fabric_python
-        self.fabric_spec_path = fabric_spec_path
-        self.fabric_result_path = fabric_result_path
-        self.fabric_install_command = fabric_install_command
-        self.fabric_cwd = fabric_cwd
-        self.fabric_timeout_sec = fabric_timeout_sec
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise ModuleNotFoundError(
+                "nemo_fabric.integrations.harbor requires the Harbor optional "
+                "dependency; install nemo-fabric with the harbor extra"
+            ) from _HARBOR_IMPORT_ERROR
 
-    @staticmethod
-    def name() -> str:
-        return "fabric"
+        @staticmethod
+        def name() -> str:
+            return "fabric"
 
-    def version(self) -> str | None:
-        return "0.1.0"
+else:
 
-    async def setup(self, environment: BaseEnvironment) -> None:
-        result = await environment.exec("mkdir -p /logs/agent /tmp", timeout_sec=30)
-        ensure_success("Fabric setup failed", result)
-        if self.fabric_install_command:
+    class FabricAgent(BaseAgent):
+        """Harbor agent wrapper that delegates harness execution to Fabric.
+
+        Harbor owns task materialization, environment lifecycle, verification, and
+        reward calculation. Fabric owns the selected agent harness invocation.
+        """
+
+        def __init__(
+            self,
+            logs_dir: Path,
+            fabric_config_path: str,
+            fabric_profile_paths: str | Sequence[str] | None = None,
+            fabric_python: str = "python3",
+            fabric_spec_path: str = "/tmp/fabric-run.json",
+            fabric_result_path: str = "/logs/agent/fabric-result.json",
+            fabric_install_command: str | None = None,
+            fabric_cwd: str | None = None,
+            fabric_timeout_sec: int | None = None,
+            *args: Any,
+            **kwargs: Any,
+        ) -> None:
+            super().__init__(logs_dir=logs_dir, *args, **kwargs)
+            self.fabric_config_path = fabric_config_path
+            self.fabric_profile_paths = normalize_paths(fabric_profile_paths)
+            self.fabric_python = fabric_python
+            self.fabric_spec_path = fabric_spec_path
+            self.fabric_result_path = fabric_result_path
+            self.fabric_install_command = fabric_install_command
+            self.fabric_cwd = fabric_cwd
+            self.fabric_timeout_sec = fabric_timeout_sec
+
+        @staticmethod
+        def name() -> str:
+            return "fabric"
+
+        def version(self) -> str | None:
+            return "0.1.0"
+
+        async def setup(self, environment: BaseEnvironment) -> None:
+            result = await environment.exec("mkdir -p /logs/agent /tmp", timeout_sec=30)
+            ensure_success("Fabric setup failed", result)
+            if self.fabric_install_command:
+                result = await environment.exec(
+                    self.fabric_install_command,
+                    cwd=self.fabric_cwd,
+                    env=self.extra_env,
+                    timeout_sec=self.fabric_timeout_sec,
+                )
+                ensure_success("Fabric install command failed", result)
+
+        async def run(
+            self,
+            instruction: str,
+            environment: BaseEnvironment,
+            context: AgentContext,
+        ) -> None:
+            spec = {
+                "config_path": self.fabric_config_path,
+                "profile_paths": self.fabric_profile_paths,
+                "request": self._build_request(instruction),
+            }
             result = await environment.exec(
-                self.fabric_install_command,
+                write_json_command(self.fabric_spec_path, spec),
+                cwd=self.fabric_cwd,
+                timeout_sec=30,
+            )
+            ensure_success("Fabric run specification write failed", result)
+
+            result = await environment.exec(
+                fabric_runner_command(
+                    fabric_python=self.fabric_python,
+                    spec_path=self.fabric_spec_path,
+                    result_path=self.fabric_result_path,
+                ),
                 cwd=self.fabric_cwd,
                 env=self.extra_env,
                 timeout_sec=self.fabric_timeout_sec,
             )
-            ensure_success("Fabric install command failed", result)
+            ensure_success("Fabric run failed", result)
 
-    async def run(
-        self,
-        instruction: str,
-        environment: BaseEnvironment,
-        context: AgentContext,
-    ) -> None:
-        spec = {
-            "config_path": self.fabric_config_path,
-            "profile_paths": self.fabric_profile_paths,
-            "request": self._build_request(instruction),
-        }
-        result = await environment.exec(
-            write_json_command(self.fabric_spec_path, spec),
-            cwd=self.fabric_cwd,
-            timeout_sec=30,
-        )
-        ensure_success("Fabric run specification write failed", result)
+            host_result_path = self.logs_dir / "fabric-result.json"
+            await environment.download_file(self.fabric_result_path, host_result_path)
+            populate_context_from_result(context, host_result_path)
 
-        result = await environment.exec(
-            fabric_runner_command(
-                fabric_python=self.fabric_python,
-                spec_path=self.fabric_spec_path,
-                result_path=self.fabric_result_path,
-            ),
-            cwd=self.fabric_cwd,
-            env=self.extra_env,
-            timeout_sec=self.fabric_timeout_sec,
-        )
-        ensure_success("Fabric run failed", result)
-
-        host_result_path = self.logs_dir / "fabric-result.json"
-        await environment.download_file(self.fabric_result_path, host_result_path)
-        populate_context_from_result(context, host_result_path)
-
-    def _build_request(self, instruction: str) -> dict[str, Any]:
-        return {
-            "request_id": f"harbor-{uuid.uuid4()}",
-            "input": instruction,
-            "context": {
-                "source": "harbor",
-                "model_name": self.model_name,
-                "skills_dir": self.skills_dir,
-                "mcp_servers": [dump_mcp_server(server) for server in self.mcp_servers],
-            },
-        }
+        def _build_request(self, instruction: str) -> dict[str, Any]:
+            return {
+                "request_id": f"harbor-{uuid.uuid4()}",
+                "input": instruction,
+                "context": {
+                    "source": "harbor",
+                    "model_name": self.model_name,
+                    "skills_dir": self.skills_dir,
+                    "mcp_servers": [
+                        dump_mcp_server(server) for server in self.mcp_servers
+                    ],
+                },
+            }
 
 
 def normalize_paths(paths: str | Sequence[str] | None) -> list[str]:

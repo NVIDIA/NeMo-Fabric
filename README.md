@@ -183,7 +183,6 @@ config = FabricConfig.from_mapping(
             }
         },
         "runtime": {
-            "mode": "session",
             "transport": "library",
             "input_schema": "chat",
             "output_schema": "message",
@@ -273,7 +272,7 @@ asyncio.run(chat())
 current adapters may buffer internally before yielding events and the final
 result. Runtime updates and cancellation are capability-gated and raise
 `FabricCapabilityError` when the selected runtime does not support them.
-Session APIs require `runtime.mode: session`.
+Session APIs require an adapter that advertises session capability.
 
 Service mode is part of the forward SDK contract but is not implemented by the
 current runtime. `start_service(...)` raises `FabricCapabilityError` rather than
@@ -281,8 +280,9 @@ silently emulating server or tenancy behavior outside Fabric's execution scope.
 
 ### Interactive CLI Chat
 
-For local manual multi-turn testing, use `fabric chat` with a session-mode
-profile. It drives the same started runtime in an interactive loop:
+For local manual multi-turn testing, use `fabric chat` with a profile whose
+adapter supports sessions. It drives the same started runtime in an interactive
+loop:
 
 ```bash
 fabric chat examples/code-review-agent \
@@ -308,10 +308,9 @@ harness, runtime id, and session id at startup and from `/info`, then uses a
 `you[profile:session]>` prompt and `agent>` responses for the transcript.
 `/help` shows commands, `/verbose on|off` toggles a fenced per-turn metadata
 block after each agent response with request/invocation ids, status, artifact
-count, and telemetry details, and `/clear` clears the terminal. `fabric chat`
-requires `runtime.mode: session`; use `fabric run` for oneshot profiles and
-machine-readable stdout. Because `chat` is an interactive terminal UI, the
-transcript and metadata are written together on stderr.
+count, and telemetry details, and `/clear` clears the terminal. `fabric run`
+remains the machine-readable one-shot path. Because `chat` is an interactive
+terminal UI, the transcript and metadata are written together on stderr.
 
 The opt-in real integration checks are `tests/smoke_hermes_session.py` and
 `tests/smoke_codex_cli.py`.

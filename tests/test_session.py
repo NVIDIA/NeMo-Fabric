@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -32,11 +31,11 @@ from nemo_fabric import client as client_mod
 from nemo_fabric import session as session_mod
 
 
-def _plan(runtime_mode: str = "session") -> dict[str, Any]:
+def _plan(*, session_capability: bool = True) -> dict[str, Any]:
     config = {
         "metadata": {"name": "demo"},
         "harness": {"adapter_id": "test.fabric.shim"},
-        "runtime": {"mode": runtime_mode, "transport": "library"},
+        "runtime": {"transport": "library"},
     }
     return {
         "agent_name": "demo",
@@ -58,7 +57,7 @@ def _plan(runtime_mode: str = "session") -> dict[str, Any]:
             }
         },
         "capabilities": {
-            "session": runtime_mode == "session",
+            "session": session_capability,
             "service": False,
             "streaming": False,
             "updates": False,
@@ -74,7 +73,6 @@ def _runtime() -> dict[str, Any]:
         "runtime_binding": "fabric-runtime-binding-test",
         "agent_name": "demo",
         "harness": "hermes",
-        "mode": "session",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
         "environment": {
@@ -86,11 +84,11 @@ def _runtime() -> dict[str, Any]:
     }
 
 
-def _config(mode: str = "session") -> FabricConfig:
+def _config() -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="demo"),
         harness=HarnessConfig(adapter_id="test.fabric.shim"),
-        runtime=RuntimeConfig(mode=mode),
+        runtime=RuntimeConfig(),
     )
 
 
@@ -177,7 +175,9 @@ async def test_start_session_rejects_non_session_capability(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    mock_native.plan.side_effect = lambda path, profiles: json.dumps(_plan("oneshot"))
+    mock_native.plan.side_effect = (
+        lambda path, profiles: json.dumps(_plan(session_capability=False))
+    )
 
     with pytest.raises(FabricCapabilityError, match="session capability"):
         await native_client.start_session("agent")
@@ -374,16 +374,15 @@ async def test_run_stops_runtime_after_success_and_failure(
     assert mock_native.stop_runtime.call_count == 2
 
 
-async def test_async_lifecycle_methods_offload_planning(
+async def test_async_lifecycle_methods_resolve_plans(
     native_client: Fabric,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    event_loop_thread = threading.get_ident()
-    planning_threads: list[int] = []
+    planning_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
     original_plan = native_client.plan
 
     def record_plan(*args: Any, **kwargs: Any):
-        planning_threads.append(threading.get_ident())
+        planning_calls.append((args, kwargs))
         return original_plan(*args, **kwargs)
 
     monkeypatch.setattr(native_client, "plan", record_plan)
@@ -394,8 +393,7 @@ async def test_async_lifecycle_methods_offload_planning(
     with pytest.raises(FabricCapabilityError, match="service mode"):
         await native_client.start_service("agent")
 
-    assert len(planning_threads) == 3
-    assert all(thread != event_loop_thread for thread in planning_threads)
+    assert len(planning_calls) == 3
 
 
 async def test_run_surfaces_cleanup_failure_after_success(
@@ -408,36 +406,6 @@ async def test_run_surfaces_cleanup_failure_after_success(
         await native_client.run("agent", input="hello")
 
     assert caught.value.stage == "run"
-    assert mock_native.stop_runtime.call_count == 1
-
-
-async def test_run_cancellation_keeps_event_loop_responsive_until_cleanup(
-    native_client: Fabric,
-    mock_native: MagicMock,
-):
-    started = threading.Event()
-    release = threading.Event()
-    invoke = mock_native.invoke_runtime.side_effect
-
-    def blocking_invoke(*args: str) -> str:
-        started.set()
-        release.wait(timeout=1)
-        return invoke(*args)
-
-    mock_native.invoke_runtime.side_effect = blocking_invoke
-    run = asyncio.create_task(native_client.run("agent", input="hello"))
-    await asyncio.to_thread(started.wait, 1)
-    fallback_release = threading.Timer(1, release.set)
-    fallback_release.start()
-
-    run.cancel()
-    await asyncio.sleep(0.01)
-    assert not run.done()
-
-    release.set()
-    with pytest.raises(asyncio.CancelledError):
-        await run
-    fallback_release.cancel()
     assert mock_native.stop_runtime.call_count == 1
 
 

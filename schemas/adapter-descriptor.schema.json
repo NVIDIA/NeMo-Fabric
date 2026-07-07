@@ -101,6 +101,47 @@
         }
       },
       "type": "object"
+    },
+    "RuntimeCapabilities": {
+      "description": "Lifecycle behavior implemented by a resolved runtime path.",
+      "properties": {
+        "cancellation": {
+          "default": false,
+          "description": "Whether an in-flight invocation can be cancelled.",
+          "type": "boolean"
+        },
+        "concurrent_invocations": {
+          "default": false,
+          "description": "Whether the runtime accepts concurrent invocations.",
+          "type": "boolean"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Additional adapter-specific capability metadata.",
+          "type": "object"
+        },
+        "service": {
+          "default": false,
+          "description": "Whether the selected runtime supports service lifecycle operations.",
+          "type": "boolean"
+        },
+        "session": {
+          "default": false,
+          "description": "Whether the selected runtime supports session lifecycle operations.",
+          "type": "boolean"
+        },
+        "streaming": {
+          "default": false,
+          "description": "Whether invocations can emit progressive output.",
+          "type": "boolean"
+        },
+        "updates": {
+          "default": false,
+          "description": "Whether a running runtime can accept config updates.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -115,6 +156,18 @@
     "adapter_kind": {
       "$ref": "#/$defs/AdapterKind",
       "description": "Adapter implementation kind."
+    },
+    "capabilities": {
+      "$ref": "#/$defs/RuntimeCapabilities",
+      "default": {
+        "cancellation": false,
+        "concurrent_invocations": false,
+        "service": false,
+        "session": false,
+        "streaming": false,
+        "updates": false
+      },
+      "description": "Runtime lifecycle operations supported by this adapter."
     },
     "config": {
       "$ref": "#/$defs/AdapterConfigSupport",

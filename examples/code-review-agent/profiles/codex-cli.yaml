@@ -25,7 +25,6 @@ skills: null
 mcp: null
 
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: text
   output_schema: message

@@ -47,11 +47,6 @@ def _api_key_preflight_check(settings: dict[str, Any], model_config: dict[str, A
             ) from exc
 
 
-def get_runtime_mode(payload: dict[str, Any]) -> str:
-    runtime = common_utils.fabric_config(payload).get("runtime") or {}
-    return runtime.get("mode", "oneshot")
-
-
 def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     hermes_common.validate_hermes_telemetry_provider(payload)
     settings = common_utils.settings_payload(payload)
@@ -60,9 +55,8 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     environment = common_utils.environment_payload(payload)
     model_config = hermes_common.selected_model_config(payload)
     model_name = settings.get("model_name") or model_config.get("model")
-    runtime_mode = get_runtime_mode(payload)
-    use_session = runtime_mode == "session"
     fabric_session_id = common_utils.runtime_session_id(payload)
+    use_session = fabric_session_id is not None
 
     relay_plugin_config = hermes_common.configure_hermes_relay(payload)
 
@@ -80,11 +74,6 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
     if use_session:
-        if fabric_session_id is None:
-            raise RuntimeError(
-                "runtime.mode=session is set, but no session_id or runtime_id was provided "
-                "in the payload. Please provide an id to resume an existing session."
-            )
         hermes_common.ensure_hermes_session(
             fabric_session_id,
             model_name,
@@ -133,7 +122,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         "harness": "hermes",
         "adapter": "cli",
         "base_url": hermes_common.get_base_url(settings, model_config),
-        "mode": f"hermes_cli_{runtime_mode}",
+        "mode": "hermes_cli_session" if use_session else "hermes_cli_oneshot",
         "command": redact_command(command),
         "cwd": str(cwd),
         "enabled_toolsets": toolsets,

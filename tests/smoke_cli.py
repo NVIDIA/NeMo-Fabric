@@ -75,7 +75,7 @@ def main() -> None:
             descriptor = profile_plan["adapter_descriptor"]["descriptor"]
             assert descriptor["adapter_id"] == adapter_id
             assert descriptor["adapter_kind"] == adapter_kind
-            assert profile_plan["config"]["runtime"]["mode"] == "oneshot"
+            assert "mode" not in profile_plan["config"]["runtime"]
             assert profile_plan["capability_plan"]["native"]["skill_paths"]
             assert "github" in profile_plan["capability_plan"]["native"]["mcp_servers"]
             telemetry_plan = profile_plan["telemetry_plan"]
@@ -157,17 +157,6 @@ def main() -> None:
         assert "| request_id: request-" in chat.stderr
         assert "| invocation_id: invocation-" in chat.stderr
         assert "| artifact_count:" in chat.stderr
-
-        rejected_chat = run_raw(
-            "",
-            "chat",
-            temp_example,
-            "--profile",
-            "hermes_sdk",
-        )
-        assert rejected_chat.returncode != 0
-        assert rejected_chat.stdout == ""
-        assert "fabric chat requires runtime.mode=session" in rejected_chat.stderr
 
 
 def call_text(*args: object) -> str:

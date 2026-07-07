@@ -130,7 +130,7 @@
         },
         "runtime": {
           "$ref": "#/$defs/RuntimeConfig",
-          "description": "Runtime mode and input/output contract."
+          "description": "Runtime input/output contract."
         },
         "schema_version": {
           "description": "Config schema version.",
@@ -369,7 +369,7 @@
     },
     "RuntimeConfig": {
       "additionalProperties": true,
-      "description": "Runtime mode and input/output contract.",
+      "description": "Runtime input/output contract.",
       "properties": {
         "artifacts": {
           "description": "Artifact directory.",
@@ -383,10 +383,6 @@
           "description": "Input schema label.",
           "type": "string"
         },
-        "mode": {
-          "$ref": "#/$defs/RuntimeMode",
-          "description": "Runtime mode."
-        },
         "output_schema": {
           "default": "text",
           "description": "Output schema label.",
@@ -398,30 +394,7 @@
           "description": "Transport used to operate the harness."
         }
       },
-      "required": [
-        "mode"
-      ],
       "type": "object"
-    },
-    "RuntimeMode": {
-      "description": "Runtime lifecycle mode.",
-      "oneOf": [
-        {
-          "const": "oneshot",
-          "description": "Request is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "service",
-          "description": "Long-running process or service is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "session",
-          "description": "Session is the lifecycle boundary.",
-          "type": "string"
-        }
-      ]
     },
     "SkillConfig": {
       "additionalProperties": true,

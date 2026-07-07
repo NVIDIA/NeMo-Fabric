@@ -1,7 +1,7 @@
 # Codex CLI Adapter
 
 Runs an installed Codex CLI through Fabric's process-adapter lifecycle. The
-same adapter supports one-shot and session runtime modes.
+same adapter supports both one-shot invocation and Fabric sessions.
 
 Install Fabric with the adapter dependency before running it:
 
@@ -35,16 +35,17 @@ Fabric adds only explicitly configured invocation overrides:
 `codex_command`, `codex_state_dir`, `cwd`, `env`, and
 `skip_git_repo_check` are available for prepared environments and tests.
 
-## Runtime Modes
+## Execution Paths
 
-One-shot mode runs `codex exec --json --ephemeral` and returns the final agent
+`fabric run` runs `codex exec --json --ephemeral` and returns the final agent
 message, usage, and thread ID in the normalized Fabric result.
 
-Session mode omits `--ephemeral`. The first invocation records Codex's generated
-thread ID against Fabric's session ID; later invocations use
-`codex exec resume <thread-id>`. Codex owns its transcript and authentication;
-Fabric owns the lifecycle and the session-to-thread correlation record.
-Both modes accept text input; Codex owns conversation history for session runs.
+`fabric chat` and `Fabric.start_session(...)` omit `--ephemeral`. The first
+session invocation records Codex's generated thread ID against Fabric's session
+ID; later invocations use `codex exec resume <thread-id>`. Codex owns its
+transcript and authentication; Fabric owns the lifecycle and the
+session-to-thread correlation record. Both paths accept text input; Codex owns
+conversation history for session runs.
 
 Use the `codex_cli` and `codex_cli_session` profiles under
 `examples/code-review-agent/profiles/` for local one-shot and `fabric chat`

@@ -252,7 +252,7 @@ class Fabric:
         """Diagnose a planned agent without starting its runtime.
 
         Doctor checks the resolved adapter, capability mappings, and declared
-        environment requirements. Blocking native work runs off the event loop.
+        environment requirements using the native Fabric core.
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
@@ -349,8 +349,7 @@ class Fabric:
         ``request_file`` may be supplied. Omitting all four produces an empty
         text input. A complete ``request`` or ``request_file`` cannot be mixed
         with separate ``request_id``, ``context``, or ``overrides`` fields.
-        Blocking native lifecycle calls run off the event loop, and Fabric
-        attempts to stop a started runtime even when invocation fails.
+        Fabric attempts to stop a started runtime even when invocation fails.
 
         Args:
             agent: Agent-package directory or config-file path, or a typed

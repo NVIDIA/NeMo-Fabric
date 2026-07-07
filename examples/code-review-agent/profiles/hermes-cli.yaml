@@ -17,7 +17,6 @@ harness:
     enabled_toolsets: []
 
 runtime:
-  mode: oneshot
   transport: cli
   input_schema: chat
   output_schema: message

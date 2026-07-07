@@ -102,14 +102,6 @@ class CodexSettings(NamedTuple):
     relay_plugin_config: dict[str, Any] | None
 
 
-def runtime_mode(payload: dict[str, Any]) -> str:
-    runtime = common_utils.fabric_config(payload).get("runtime") or {}
-    mode = str(runtime.get("mode") or "oneshot")
-    if mode not in {"oneshot", "session"}:
-        raise ValueError("Codex CLI adapter supports only oneshot and session modes")
-    return mode
-
-
 def state_dir(payload: dict[str, Any]) -> Path:
     settings = common_utils.settings_payload(payload)
     config_root = Path(common_utils.config_root(payload)).resolve()
@@ -168,11 +160,11 @@ def build_command(
     payload: dict[str, Any],
     *,
     thread_id: str | None = None,
+    session_id: str | None = None,
     codex_settings: CodexSettings,
 ) -> list[str]:
     settings = common_utils.settings_payload(payload)
     command = resolve_command(payload, settings.get("codex_command") or "codex")
-    mode = runtime_mode(payload)
     sandbox = str(settings.get("sandbox") or "read-only")
     if sandbox not in SANDBOXES:
         raise ValueError(
@@ -181,7 +173,7 @@ def build_command(
 
     args = [command, "exec", "--json"]
 
-    if mode == "oneshot":
+    if session_id is None:
         args.append("--ephemeral")
     args.extend(["--sandbox", sandbox])
 
@@ -612,10 +604,7 @@ def exception_output(value: str | bytes | None) -> str:
 
 
 def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
-    mode = runtime_mode(payload)
-    session_id = common_utils.runtime_session_id(payload) if mode == "session" else None
-    if mode == "session" and not session_id:
-        raise RuntimeError("runtime.mode=session requires a session_id or runtime_id")
+    session_id = common_utils.runtime_session_id(payload)
     prior_thread_id = load_thread_id(payload, session_id) if session_id else None
     cwd = resolve_cwd(payload)
     codex_settings = write_config_files(payload)
@@ -635,6 +624,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         command = build_command(
             payload,
             thread_id=prior_thread_id,
+            session_id=session_id,
             codex_settings=codex_settings,
         )
 
@@ -691,7 +681,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     output = {
         "harness": "codex",
         "adapter": "cli",
-        "mode": f"codex_cli_{mode}",
+        "mode": "codex_cli_session" if session_id else "codex_cli_oneshot",
         "command": redact_command(command),
         "cwd": str(cwd),
         "model": selected_model(payload),

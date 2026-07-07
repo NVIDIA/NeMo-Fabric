@@ -68,7 +68,7 @@ def codex_payload_fixture(tmp_path):
                         "model": "openai/gpt-5.4",
                     }
                 },
-                "runtime": {"mode": "oneshot"},
+                "runtime": {"transport": "cli"},
             },
         },
         "runtime_context": {
@@ -136,7 +136,7 @@ for event in events:
     path.chmod(0o755)
 
 
-def fabric_config(tmp_path, mock_codex, *, mode):
+def fabric_config(tmp_path, mock_codex):
     return FabricConfig.from_mapping(
         {
             "schema_version": "fabric.agent/v1alpha1",
@@ -151,7 +151,6 @@ def fabric_config(tmp_path, mock_codex, *, mode):
                 },
             },
             "runtime": {
-                "mode": mode,
                 "transport": "cli",
                 "artifacts": str(tmp_path / "artifacts"),
             },
@@ -543,7 +542,6 @@ def test_config_override_values_reject_nested_non_finite_numbers(value):
 
 def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypatch, tmp_path):
     adapter = load_codex_adapter()
-    codex_payload["effective_config"]["config"]["runtime"]["mode"] = "session"
     codex_payload["runtime_context"]["session_id"] = "review-session"
     mock_run = MagicMock(
         side_effect=[
@@ -676,19 +674,11 @@ def test_adapter_rejects_invalid_timeout(codex_payload, timeout):
         adapter.run_codex(codex_payload)
 
 
-def test_adapter_rejects_unsupported_runtime_mode(codex_payload):
-    adapter = load_codex_adapter()
-    codex_payload["effective_config"]["config"]["runtime"]["mode"] = "service"
-
-    with pytest.raises(ValueError, match="supports only oneshot and session"):
-        adapter.run_codex(codex_payload)
-
-
 def test_session_fails_if_codex_does_not_return_thread_identity(
     codex_payload, monkeypatch
 ):
     adapter = load_codex_adapter()
-    codex_payload["effective_config"]["config"]["runtime"]["mode"] = "session"
+    codex_payload["runtime_context"]["session_id"] = "review-session"
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
             args=[],
@@ -736,7 +726,7 @@ def test_successful_process_without_final_response_is_failed(codex_payload, monk
 async def test_fabric_session_invokes_codex_then_resumes(tmp_path):
     mock_codex = tmp_path / "codex"
     write_mock_codex(mock_codex)
-    config = fabric_config(tmp_path, mock_codex, mode="session")
+    config = fabric_config(tmp_path, mock_codex)
 
     async with await Fabric().start_session(
         config,
@@ -758,7 +748,7 @@ async def test_fabric_session_invokes_codex_then_resumes(tmp_path):
 async def test_fabric_oneshot_is_ephemeral_and_uses_cached_codex_auth(tmp_path):
     mock_codex = tmp_path / "codex"
     write_mock_codex(mock_codex)
-    config = fabric_config(tmp_path, mock_codex, mode="oneshot")
+    config = fabric_config(tmp_path, mock_codex)
     os.environ.pop("OPENAI_API_KEY", None)
 
     async with Fabric() as client:
@@ -781,13 +771,13 @@ async def test_fabric_oneshot_is_ephemeral_and_uses_cached_codex_auth(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("profile", "mode", "session_capability"),
+    "profile",
     [
-        ("codex_cli", "oneshot", False),
-        ("codex_cli_session", "session", True),
+        "codex_cli",
+        "codex_cli_session",
     ],
 )
-def test_codex_profiles_resolve_runtime_mode(profile, mode, session_capability):
+def test_codex_profiles_resolve_session_capability(profile):
     plan = Fabric().plan(
         ROOT / "examples" / "code-review-agent",
         profiles=[profile],
@@ -795,9 +785,9 @@ def test_codex_profiles_resolve_runtime_mode(profile, mode, session_capability):
 
     assert plan.adapter.adapter_id == "nvidia.fabric.codex.cli"
     assert plan.adapter.harness == "codex"
-    assert plan.effective_config.config.runtime.mode == mode
+    assert "mode" not in plan.effective_config.config.runtime
     assert plan.effective_config.config.runtime.input_schema == "text"
-    assert plan.capabilities.session is session_capability
+    assert plan.capabilities.session is True
     settings = plan.effective_config.config.harness.settings
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"
     unsupported = plan["capability_plan"]["unsupported"]

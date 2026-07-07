@@ -58,9 +58,6 @@ def runtime_session_id(payload: dict[str, Any]) -> str | None:
     session_id = context.get("session_id")
     if session_id:
         return str(session_id)
-    runtime_id = context.get("runtime_id")
-    if runtime_id:
-        return str(runtime_id)
     return None
 
 

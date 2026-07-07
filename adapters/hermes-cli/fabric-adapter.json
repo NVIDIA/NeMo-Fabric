@@ -16,5 +16,8 @@
   },
   "telemetry": {
     "supports": ["relay", "atif", "otel", "openinference"]
+  },
+  "capabilities": {
+    "session": true
   }
 }

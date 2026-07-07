@@ -232,8 +232,8 @@ Status:
 - SDK supports agent-package paths and typed/in-memory config.
 - CLI supports validate, inspect, plan, doctor, schema generation, and run.
 - SDK session APIs cover `start_session`, `invoke`, `stream`, `cancel`, and
-  `stop` for `runtime.mode: session`, including caller-provided
-  `session_id` propagation.
+  `stop` for adapters that advertise session capability, including
+  caller-provided `session_id` propagation.
 - CLI includes `fabric chat` for local interactive session-mode debugging with
   explicit `--session-id`, `/info`, `/verbose`, and oneshot-profile rejection.
 - SDK and CLI can plan and run Hermes without callers importing

@@ -43,7 +43,7 @@ doctor(
 
 Diagnose a planned agent without starting its runtime.
 
-Doctor checks the resolved adapter, capability mappings, and declared environment requirements. Blocking native work runs off the event loop.
+Doctor checks the resolved adapter, capability mappings, and declared environment requirements using the native Fabric core.
 
 
 
@@ -161,7 +161,7 @@ run(
 
 Execute one complete start, invoke, and stop lifecycle.
 
-Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_file`` may be supplied. Omitting all four produces an empty text input. A complete ``request`` or ``request_file`` cannot be mixed with separate ``request_id``, ``context``, or ``overrides`` fields. Blocking native lifecycle calls run off the event loop, and Fabric attempts to stop a started runtime even when invocation fails.
+Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_file`` may be supplied. Omitting all four produces an empty text input. A complete ``request`` or ``request_file`` cannot be mixed with separate ``request_id``, ``context``, or ``overrides`` fields. Fabric attempts to stop a started runtime even when invocation fails.
 
 
 

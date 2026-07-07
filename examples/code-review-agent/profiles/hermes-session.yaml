@@ -3,7 +3,7 @@
 
 schema_version: fabric.profile/v1alpha1
 name: hermes_session
-description: Drive the Hermes Python adapter as a multi-turn session (runtime mode session).
+description: Drive the Hermes Python adapter through Fabric's session APIs.
 
 harness:
   adapter_id: nvidia.fabric.hermes.sdk
@@ -22,7 +22,6 @@ harness:
     system_prompt: You are a concise smoke test assistant.
 
 runtime:
-  mode: session
   transport: library
   input_schema: chat
   output_schema: message
