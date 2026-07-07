@@ -5,7 +5,7 @@
   "runner": {
     "module": "nemo_fabric_adapters.hermes_sdk.adapter",
     "callable": "run",
-    "script": "src/nemo_fabric_adapters/hermes_sdk/adapter.py"
+    "script": "nemo-fabric-adapters-hermes-sdk"
   },
   "requirements": {
     "env": [

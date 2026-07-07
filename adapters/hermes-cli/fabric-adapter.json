@@ -4,7 +4,7 @@
   "adapter_kind": "process",
   "runner": {
     "command": "python3",
-    "script": "src/nemo_fabric_adapters/hermes_cli/adapter.py",
+    "script": "nemo-fabric-adapters-hermes-cli",
     "stdin_payload": "fabric_request"
   },
   "requirements": {
