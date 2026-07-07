@@ -59,12 +59,12 @@ The important caller-facing handles are:
 | `Session` | The Python object used to invoke, stream, update, cancel, and stop a session. | Use it for ordered conversations, stateful coding tasks, or service-style interaction. A session serializes turns by default. |
 | `InvocationHandle` | One request or turn sent to a runtime. | Usually seen through `invocation_id`, events, and `RunResult` correlation rather than manipulated directly in Python. It is the core unit for status, artifacts, errors, and future cancellation/streaming control. |
 
-`RuntimeHandle` still exists as a lower-level binding to the harness runtime, but
-most SDK callers should work through `Session` and `SessionHandle`.
+`RuntimeHandle` is the lower-level binding to the harness runtime. SDK callers
+normally work through `Session` and `SessionHandle`.
 
-Consumers still own product-level orchestration. Fabric does not schedule jobs,
-manage queues, own retries, or scale workers. Platform, Harbor, Gym, and local
-applications decide how many sessions or tasks to run.
+Product-level orchestration belongs to the consumer. Fabric does not schedule
+jobs, manage queues, own retries, or scale workers. Platform, Harbor, Gym, and
+local applications decide how many sessions or tasks to run.
 
 ## Configure In Code
 
