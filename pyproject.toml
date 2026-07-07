@@ -9,12 +9,11 @@ build-backend = "maturin"
 name = "nemo-fabric"
 version = "0.1.0"
 description = "Python SDK and native bindings for NeMo Fabric"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
 codex = [
-  "tomli>=2; python_version < '3.11'",
   "tomli-w~=1.2",
 ]
 
@@ -28,7 +27,7 @@ docs = [
 ]
 
 hermes = [
-  "hermes-agent>=0.17.0; python_version >= '3.11' and python_version < '3.14'",
+  "hermes-agent>=0.17.0",
   "pyyaml>=6.0", # needed by adapters to write hermes config files
 ]
 
@@ -48,7 +47,6 @@ test = [
     "pytest-asyncio>=0.26",
     "pytest-cov~=7.0",
     "pyyaml>=6.0",
-    "tomli>=2; python_version < '3.11'",
     "tomli-w~=1.2",
     "uvicorn~=0.49",
 ]
