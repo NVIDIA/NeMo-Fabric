@@ -54,7 +54,7 @@ except ImportError:
     _native = None
 
 
-class FabricClient:
+class Fabric:
     """Primary Python entrypoint for NeMo Fabric.
 
     The client accepts either a path-backed agent package or a typed
@@ -63,7 +63,7 @@ class FabricClient:
     ``base_dir`` to resolve relative paths. All inspection and execution APIs
     return typed, read-only mapping models.
 
-    ``FabricClient`` is native-only. The ``fabric`` CLI is a separate public
+    ``Fabric`` is native-only. The ``fabric`` CLI is a separate public
     surface over the same Rust core; SDK calls raise
     ``FabricNativeUnavailableError`` when the native extension is not
     installed.
@@ -76,7 +76,7 @@ class FabricClient:
     multi-turn examples.
     """
 
-    async def __aenter__(self) -> "FabricClient":
+    async def __aenter__(self) -> "Fabric":
         return self
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
@@ -571,3 +571,6 @@ class FabricClient:
                 code="native_unavailable",
             )
         return native
+
+
+FabricClient = Fabric

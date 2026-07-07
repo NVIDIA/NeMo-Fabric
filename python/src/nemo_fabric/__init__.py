@@ -3,7 +3,7 @@
 
 """Python SDK surface for NeMo Fabric."""
 
-from nemo_fabric.client import FabricClient
+from nemo_fabric.client import Fabric, FabricClient
 from nemo_fabric.errors import (
     FabricCapabilityError,
     FabricConfigError,
@@ -48,6 +48,7 @@ __all__ = [
     "EffectiveConfig",
     "EnvironmentConfig",
     "ErrorInfo",
+    "Fabric",
     "FabricConfig",
     "FabricCapabilityError",
     "FabricClient",

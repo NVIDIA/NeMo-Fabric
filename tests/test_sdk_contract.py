@@ -18,6 +18,7 @@ from nemo_fabric import (
     DoctorReport,
     EffectiveConfig,
     EnvironmentConfig,
+    Fabric,
     FabricClient,
     FabricCapabilityError,
     FabricConfig,
@@ -42,13 +43,15 @@ from nemo_fabric import (
 
 
 def test_public_contract_has_no_unreleased_aliases():
+    assert FabricClient is Fabric
+    assert list(signature(Fabric).parameters) == []
     assert list(signature(FabricClient).parameters) == []
     assert not hasattr(RunRequest, "from_text")
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
-        assert not hasattr(FabricClient, name)
+        assert not hasattr(Fabric, name)
 
     for name in ("resolve", "plan", "doctor", "run", "start_session", "start_service"):
-        assert len(get_overloads(getattr(FabricClient, name))) == 2, name
+        assert len(get_overloads(getattr(Fabric, name))) == 2, name
 
     assert not hasattr(fabric_errors, "FabricCliError")
 
