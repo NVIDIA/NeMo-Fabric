@@ -8,24 +8,19 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from shutil import copytree, rmtree
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 
 
-def test_swebench_style(tmp_path: Path):
-    agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
-    temp_agent = tmp_path / "hermes-shim-agent"
-    copytree(agent, temp_agent)
-    rmtree(temp_agent / "artifacts", ignore_errors=True)
-    workspace = temp_agent / "repos" / "my-service"
+def test_swebench_style(hermes_shim_agent_dir: Path):
+    workspace = hermes_shim_agent_dir / "repos" / "my-service"
     run_command(workspace, "git", "init", "-q")
     run_command(workspace, "git", "add", "calculator.py")
 
     result = call_json(
         "run",
-        temp_agent,
+        hermes_shim_agent_dir,
         "--profile",
         "swebench_shim",
         "--input",

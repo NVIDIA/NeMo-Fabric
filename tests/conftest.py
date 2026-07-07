@@ -48,8 +48,25 @@ def hermes_agent_dir_fixture(hermes_cli_agent_dir_src: Path, tmp_path: Path) -> 
     This mirrors the behavior of the smoke tests.
     """
     agent_dir = tmp_path / "hermes-cli-agent"
-    shutil.copytree(hermes_cli_agent_dir_src, agent_dir)
+    shutil.copytree(hermes_cli_agent_dir_src, agent_dir, ignore=shutil.ignore_patterns("artifacts"))
     assert agent_dir.exists(), f"Missing fake Hermes CLI agent directory: {agent_dir}"
+    return agent_dir.resolve()
+
+@pytest.fixture(name="hermes_shim_agent_dir_src", scope="session")
+def hermes_shim_agent_dir_src_fixture() -> Path:
+    agent_dir = CUR_DIR / "fixtures" / "hermes-shim-agent"
+    assert agent_dir.exists(), f"Missing Hermes shim agent directory: {agent_dir}"
+    return agent_dir
+
+@pytest.fixture(name="hermes_shim_agent_dir")
+def hermes_shim_agent_dir_fixture(
+    hermes_shim_agent_dir_src: Path,
+    tmp_path: Path,
+) -> Path:
+    """Creates a temporary copy of the Hermes shim agent directory."""
+    agent_dir = tmp_path / "hermes-shim-agent"
+    shutil.copytree(hermes_shim_agent_dir_src, agent_dir, ignore=shutil.ignore_patterns("artifacts"))
+    assert agent_dir.exists(), f"Missing Hermes shim agent directory: {agent_dir}"
     return agent_dir.resolve()
 
 @pytest.fixture(name="code_review_agent_dir")

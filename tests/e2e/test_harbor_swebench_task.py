@@ -14,7 +14,6 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from shutil import copytree, rmtree
 
 import pytest
 
@@ -29,7 +28,7 @@ RUN_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_DOCKER"
 VERIFY_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_VERIFY"
 
 
-def test_harbor_swebench_task(tmp_path: Path):
+def test_harbor_swebench_task(hermes_shim_agent_dir: Path):
     if os.environ.get(RUN_ENV) != "1":
         pytest.skip(f"set {RUN_ENV}=1 to run the Docker-backed SWE-Bench test")
 
@@ -38,23 +37,20 @@ def test_harbor_swebench_task(tmp_path: Path):
         raise AssertionError(f"Harbor SWE-Bench task directory not found: {task_dir}")
 
     assert_docker_image()
-    temp_agent = tmp_path / "hermes-shim-agent"
-    copytree(ROOT / "tests" / "fixtures" / "hermes-shim-agent", temp_agent)
-    rmtree(temp_agent / "artifacts", ignore_errors=True)
 
-    workspace = temp_agent / "repos" / "swebench-django-13741"
+    workspace = hermes_shim_agent_dir / "repos" / "swebench-django-13741"
     workspace.mkdir(parents=True)
     copy_testbed_from_image(workspace)
     assert_clean_workspace(workspace)
 
-    request_file = temp_agent / "django-13741.request.json"
+    request_file = hermes_shim_agent_dir / "django-13741.request.json"
     request_file.write_text(
         json.dumps(build_request(task_dir), indent=2), encoding="utf-8"
     )
 
     result = call_json(
         "run",
-        temp_agent,
+        hermes_shim_agent_dir,
         "--profile",
         "harbor_swebench_django_13741",
         "--request-file",
@@ -74,7 +70,9 @@ def test_harbor_swebench_task(tmp_path: Path):
 
     if os.environ.get(VERIFY_ENV) == "1":
         verify_with_harbor_task(
-            task_dir, workspace, temp_agent / "artifacts" / "verifier"
+            task_dir,
+            workspace,
+            hermes_shim_agent_dir / "artifacts" / "verifier",
         )
 
 

@@ -11,8 +11,6 @@ from shutil import copytree
 
 from nemo_fabric import FabricClient
 
-ROOT = Path(__file__).resolve().parents[2]
-
 
 async def run_copy(
     client: FabricClient, fixture_agent: Path, root: Path, name: str
@@ -22,13 +20,11 @@ async def run_copy(
     return await client.run(agent, profiles=["env_local"], input=f"hello from {name}")
 
 
-async def test_sdk_concurrency(tmp_path: Path):
-    fixture_agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
-
+async def test_sdk_concurrency(hermes_shim_agent_dir_src: Path, tmp_path: Path):
     async with FabricClient() as client:
         first, second = await asyncio.gather(
-            run_copy(client, fixture_agent, tmp_path, "agent-one"),
-            run_copy(client, fixture_agent, tmp_path, "agent-two"),
+            run_copy(client, hermes_shim_agent_dir_src, tmp_path, "agent-one"),
+            run_copy(client, hermes_shim_agent_dir_src, tmp_path, "agent-two"),
         )
 
     assert first["status"] == "succeeded"

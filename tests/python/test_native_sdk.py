@@ -5,9 +5,7 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
-from shutil import copytree
 
 import nemo_fabric._native as native
 from nemo_fabric import FabricClient, FabricConfig, FabricProfileConfig
@@ -15,16 +13,15 @@ from nemo_fabric import FabricClient, FabricConfig, FabricProfileConfig
 ROOT = Path(__file__).resolve().parents[2]
 
 
-async def test_native_sdk():
+async def test_native_sdk(hermes_shim_agent_dir: Path):
     assert native.version()
 
     async with FabricClient() as client:
-        await smoke(client)
+        await smoke(client, hermes_shim_agent_dir)
 
 
-async def smoke(client: FabricClient) -> None:
+async def smoke(client: FabricClient, fixture_agent: Path) -> None:
     example_agent = ROOT / "examples" / "code-review-agent"
-    fixture_agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
 
     inspected = client.resolve(example_agent, profiles=["env_local"])
     assert inspected["agent_name"] == "code-review-agent"
@@ -136,20 +133,17 @@ async def smoke(client: FabricClient) -> None:
         "nested": {"first": 1, "second": 2},
     }
 
-    with tempfile.TemporaryDirectory(prefix="fabric-native-sdk-") as tmpdir:
-        temp_agent = Path(tmpdir) / "hermes-shim-agent"
-        copytree(fixture_agent, temp_agent)
-        result = await client.run(
-            temp_agent,
-            profiles=["env_local"],
-            input="hello native",
-        )
-        async with await client.start_session(
-            temp_agent,
-            profiles=["env_local"],
-        ) as session:
-            first = await session.invoke(input="hello session one")
-            second = await session.invoke(input="hello session two")
+    result = await client.run(
+        fixture_agent,
+        profiles=["env_local"],
+        input="hello native",
+    )
+    async with await client.start_session(
+        fixture_agent,
+        profiles=["env_local"],
+    ) as session:
+        first = await session.invoke(input="hello session one")
+        second = await session.invoke(input="hello session two")
 
     assert result["status"] == "succeeded"
     assert result.profiles == ("env_local",)

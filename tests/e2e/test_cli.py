@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from shutil import copytree
 
 from _utils.utils import assert_relay_disabled_native_observability
 
@@ -16,13 +15,13 @@ ROOT = Path(__file__).resolve().parents[2]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 
 
-def test_cli(tmp_path: Path):
-    example_agent = ROOT / "examples" / "code-review-agent"
-    fixture_agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
-    temp_example = tmp_path / "code-review-agent"
-    temp_fixture = tmp_path / "hermes-shim-agent"
-    copytree(example_agent, temp_example)
-    copytree(fixture_agent, temp_fixture)
+def test_cli(
+    tmp_path: Path,
+    code_review_agent_dir: Path,
+    hermes_shim_agent_dir: Path,
+):
+    temp_example = code_review_agent_dir
+    temp_fixture = hermes_shim_agent_dir
 
     assert call_text("validate", temp_example).startswith("validated")
     inspected = call_json("inspect", temp_example)

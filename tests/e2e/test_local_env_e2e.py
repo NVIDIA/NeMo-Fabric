@@ -8,25 +8,20 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from shutil import copytree, rmtree
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 
 
-def test_local_env_e2e(tmp_path: Path):
-    agent = tmp_path / "hermes-shim-agent"
-    copytree(ROOT / "tests" / "fixtures" / "hermes-shim-agent", agent)
-    rmtree(agent / "artifacts", ignore_errors=True)
-
-    plan = call_json("plan", agent, "--profile", "env_local")
+def test_local_env_e2e(hermes_shim_agent_dir: Path):
+    plan = call_json("plan", hermes_shim_agent_dir, "--profile", "env_local")
     assert plan["environment_plan"]["provider"] == "local"
     assert plan["environment_plan"]["workspace"].endswith("repos/my-service")
     assert plan["adapter_descriptor"]["source"] == "local"
 
     result = call_json(
         "run",
-        agent,
+        hermes_shim_agent_dir,
         "--profile",
         "env_local",
         "--request-json",
