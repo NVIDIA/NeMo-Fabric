@@ -1,562 +1,197 @@
-# Python SDK Contract
+# Python SDK Guide
 
-## Scope and Status
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
 
-This is the target public API. MVP includes typed sources, resolution, planning,
-diagnostics, oneshot runs, sessions, typed results and errors, capability checks,
-and a stable buffered `stream()` shape. Runtime updates, progressive streaming,
-and service mode may follow MVP. Unsupported operations raise
-`FabricCapabilityError`.
+This guide describes the public Python SDK shape for NeMo Fabric. The generated
+API reference remains the source for exact signatures; this page explains how the
+pieces are intended to fit together.
 
-## Design
+## Principles
 
-Fabric owns runtime execution; callers own orchestration, servers, tenancy,
-persistence, and product workflows. The SDK uses one source abstraction, one
-ordered `profiles` argument, and one method per lifecycle operation.
+- `Fabric` is the primary SDK entrypoint.
+- Python callers can use either an agent package path or a typed `FabricConfig`.
+- Path-backed calls use profile names from the agent package.
+- Typed-config calls use ordered profile mappings, not a public profile class.
+- `run(...)` is the one-shot convenience path.
+- `start_session(...)` is the reusable multi-turn path.
+- Consumers own scheduling, retries, tenancy, and product-level orchestration.
 
-## Common Types
+## Agent Sources
 
-All values crossing the Python/native boundary are JSON-shaped.
-
-```python
-from __future__ import annotations
-
-import asyncio
-import os
-from collections.abc import AsyncIterator, Mapping, Sequence
-from pathlib import Path
-from typing import Literal, overload
-
-JSONScalar = str | int | float | bool | None
-JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
-PathSource = str | os.PathLike[str]
-AgentSource = PathSource | FabricConfig
-```
-
-Invalid JSON values raise `FabricConfigError` before native execution.
-
-## Client and CLI
+Path-backed usage is best for CLI parity, examples, CI, and reproducibility:
 
 ```python
-class Fabric:
-    def __init__(self) -> None: ...
+from nemo_fabric import Fabric
+
+fabric = Fabric()
+plan = fabric.plan(
+    "examples/code-review-agent",
+    profiles=["hermes_sdk", "mcp_github"],
+)
 ```
 
-`Fabric` is native-only. The CLI is a separate surface over the same core;
-the same file-backed config and profiles produce equivalent contract data.
-
-## Agent Sources and Profiles
-
-Profile types follow the agent source:
+Typed-config usage is best when Platform, Harbor, Gym, or another consumer
+already owns the top-level job/deployment config:
 
 ```python
-@overload
-def plan(
-    agent: PathSource,
-    *,
-    profiles: str | Sequence[str] | None = None,
-) -> RunPlan: ...
+from nemo_fabric import Fabric, FabricConfig
 
-@overload
-def plan(
-    agent: FabricConfig,
-    *,
-    profiles: Sequence[FabricProfileConfig] | None = None,
-    base_dir: PathSource | None = None,
-) -> RunPlan: ...
+config = FabricConfig.from_mapping(
+    {
+        "metadata": {"name": "code-review-agent"},
+        "harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},
+        "models": {
+            "default": {
+                "provider": "nvidia",
+                "model": "nvidia/nemotron-3-nano-30b-a3b",
+            }
+        },
+        "runtime": {"input_schema": "chat", "output_schema": "message"},
+    }
+)
 ```
 
-The same overload pattern applies to `resolve`, `doctor`, `run`,
-`start_session`, and `start_service`.
+Raw dictionaries are not accepted directly as agent sources. Convert them with
+`FabricConfig.from_mapping(...)` so validation and extension preservation are
+explicit.
 
-- Agent strings are paths, never raw config, adapter IDs, or agent names.
-- Paths accept one profile name or an ordered sequence of names. `FabricConfig`
-  uses ordered `FabricProfileConfig` objects; mixed stacks are rejected.
-- `base_dir` applies only to `FabricConfig`.
-- Raw mappings require explicit `from_mapping(...)` conversion.
-- Equivalent file and typed sources produce equivalent configs and plans.
+## Config Helpers
 
-There is no public singular `profile` alias or public `plan_config`,
-`run_config`, `doctor_config`, `start`, or `start_config` family.
-
-## Typed Config
-
-Typed config uses the same schema as `agent.yaml`.
+Typed config exposes small authoring helpers for common capability edits. These
+helpers mutate the config before planning or starting a runtime; they do not
+modify already-started runtimes.
 
 ```python
-class MetadataConfig:
-    name: str
-    description: str | None
-    extra_fields: Mapping[str, JSONValue]
-
-class HarnessConfig:
-    adapter_id: str
-    resolution: str | None
-    settings: Mapping[str, JSONValue]
-    extra_fields: Mapping[str, JSONValue]
-
-class RuntimeConfig:
-    mode: Literal["oneshot", "session", "service"]
-    transport: str | None
-    input_schema: str | None
-    output_schema: str | None
-    artifacts: str | Path | None
-    extra_fields: Mapping[str, JSONValue]
-
-class EnvironmentConfig:
-    provider: str
-    workspace: str | Path | None
-    artifacts: str | Path | None
-    settings: Mapping[str, JSONValue]
-    metadata: Mapping[str, JSONValue]
-    extra_fields: Mapping[str, JSONValue]
-
-class FabricConfig:
-    schema_version: str
-    metadata: MetadataConfig
-    harness: HarnessConfig
-    runtime: RuntimeConfig
-    environment: EnvironmentConfig | None
-    models: Mapping[str, Mapping[str, JSONValue]]
-    mcp: Mapping[str, JSONValue] | None
-    skills: Mapping[str, JSONValue] | None
-    telemetry: Mapping[str, JSONValue] | None
-    profiles: Mapping[str, JSONValue] | None
-    tools: JSONValue
-    extra_fields: Mapping[str, JSONValue]
-
-    @classmethod
-    def from_mapping(cls, value: Mapping[str, JSONValue]) -> FabricConfig: ...
-
-    def to_mapping(self) -> dict[str, JSONValue]: ...
-
-class FabricProfileConfig:
-    schema_version: str
-    name: str
-    description: str | None
-    harness: HarnessConfig | Mapping[str, JSONValue] | None
-    runtime: RuntimeConfig | Mapping[str, JSONValue] | None
-    environment: EnvironmentConfig | Mapping[str, JSONValue] | None
-    models: Mapping[str, Mapping[str, JSONValue]] | None
-    mcp: Mapping[str, JSONValue] | None
-    skills: Mapping[str, JSONValue] | None
-    telemetry: Mapping[str, JSONValue] | None
-    tools: JSONValue
-    extra_fields: Mapping[str, JSONValue]
-
-    @classmethod
-    def from_mapping(
-        cls,
-        value: Mapping[str, JSONValue],
-    ) -> FabricProfileConfig: ...
-
-    def to_mapping(self) -> dict[str, JSONValue]: ...
+config.add_skill_path("./skills/code-review")
+config.add_mcp_server(
+    "github",
+    transport="streamable-http",
+    url="${GITHUB_MCP_URL}",
+    exposure="harness_native",
+)
+config.enable_relay(output_dir="./artifacts/relay")
 ```
 
-- `metadata` and `harness` are required; names, adapter IDs, and runtime mode
-  are validated.
-- Mutable configs default to the v1alpha1 schemas and `oneshot`; omitted
-  environment, runtime transport, and schemas remain unset until resolution,
-  which applies local, `library`, `text`, and `text` defaults.
-- Constructors reject unknown keywords. Mapping conversion preserves unknown
-  fields through `extra_fields` and returns deep copies.
-- Profile sections are partial recursive overlays. They are validated as a
-  complete config after merging with the base and earlier profiles.
-- Config is mutable before resolution; plans and runtimes are snapshots.
-- Unstable model, MCP, skill, telemetry, and tool shapes remain JSON mappings.
-- `FabricConfig.profiles` controls discovery; lifecycle `profiles` selects
-  overlays.
-
-## Config Extension
-
-Normalized fields represent cross-harness concepts. Adapter-only fields belong
-in `HarnessConfig.settings`. Unknown fields are preserved but are not supported
-until the SDK recognizes them.
-
-## Inspection Types
-
-Inspection and result models are typed, read-only mappings that preserve unknown
-fields.
+Use profile mappings for ordered variations:
 
 ```python
-class AdapterInfo:
-    adapter_id: str
-    harness: str
-    adapter_kind: str
-    metadata: Mapping[str, JSONValue]
-
-class RuntimeCapabilities:
-    session: bool
-    service: bool
-    streaming: bool
-    updates: bool
-    cancellation: bool
-    concurrent_invocations: bool
-    metadata: Mapping[str, JSONValue]
-
-class EffectiveConfig:
-    agent_name: str
-    profiles: Sequence[str]
-    agent_root: Path
-    config_path: Path | None
-    config_root: Path
-    config: FabricConfig
-
-class RunPlan:
-    effective_config: EffectiveConfig
-    agent_name: str
-    profiles: Sequence[str]
-    adapter: AdapterInfo
-    capabilities: RuntimeCapabilities
-
-class DoctorCheck:
-    name: str
-    status: Literal["pass", "warn", "fail"]
-    message: str
-    metadata: Mapping[str, JSONValue]
-
-class DoctorReport:
-    agent_name: str
-    profiles: Sequence[str]
-    status: Literal["pass", "warn", "fail"]
-    checks: Sequence[DoctorCheck]
+profiles = [
+    {
+        "name": "github_mcp",
+        "mcp": {
+            "servers": {
+                "github": {
+                    "transport": "streamable-http",
+                    "url": "${GITHUB_MCP_URL}",
+                    "exposure": "fabric_managed",
+                }
+            }
+        },
+    }
+]
 ```
 
-`harness` is the stable machine-readable harness identifier. `adapter_id`
-identifies its Fabric adapter implementation, while `adapter_kind` identifies
-the execution mechanism.
+## Planning And Diagnostics
 
-## Client API
-
-These compact signatures use the source-specific overloads above.
+`resolve(...)` validates and normalizes config. `plan(...)` resolves adapter and
+runtime capabilities. `doctor(...)` performs preflight checks.
 
 ```python
-class Fabric:
-    def resolve(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
-        base_dir: PathSource | None = None,
-    ) -> EffectiveConfig: ...
-
-    def plan(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
-        base_dir: PathSource | None = None,
-    ) -> RunPlan: ...
-
-    async def doctor(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
-        base_dir: PathSource | None = None,
-    ) -> DoctorReport: ...
-
-    async def run(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
-        base_dir: PathSource | None = None,
-        input: JSONValue = None,
-        input_file: str | Path | None = None,
-        request: RunRequest | Mapping[str, JSONValue] | None = None,
-        request_file: str | Path | None = None,
-        request_id: str | None = None,
-        context: Mapping[str, JSONValue] | None = None,
-        overrides: Mapping[str, JSONValue] | None = None,
-    ) -> RunResult: ...
-
-    async def start_session(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
-        base_dir: PathSource | None = None,
-        session_id: str | None = None,
-        overrides: Mapping[str, JSONValue] | None = None,
-    ) -> Session: ...
-
-    async def start_service(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: str | Sequence[str] | Sequence[FabricProfileConfig] | None = None,
-        base_dir: PathSource | None = None,
-        service_id: str | None = None,
-        overrides: Mapping[str, JSONValue] | None = None,
-    ) -> RuntimeService: ...
+async with Fabric() as fabric:
+    effective = fabric.resolve(config)
+    plan = fabric.plan(config, profiles=profiles, base_dir="examples/code-review-agent")
+    report = await fabric.doctor(
+        config,
+        profiles=profiles,
+        base_dir="examples/code-review-agent",
+    )
 ```
 
-`resolve()` resolves config only; `plan()` resolves adapters and capabilities.
+`base_dir` is only valid with typed config. It gives relative paths in the config
+the same anchor an agent package directory would provide.
 
-## Requests and Overrides
+## One-Shot Runs
+
+`run(...)` performs one complete lifecycle: plan, start runtime, invoke once,
+collect result/artifacts, and stop runtime.
 
 ```python
-class RunRequest:
-    input: JSONValue
-    request_id: str
-    context: Mapping[str, JSONValue]
-    overrides: Mapping[str, JSONValue] | None
-    extra_fields: Mapping[str, JSONValue]
+from nemo_fabric import RunRequest
 
-    @classmethod
-    def from_mapping(
-        cls,
-        value: Mapping[str, JSONValue],
-    ) -> RunRequest: ...
+request = RunRequest(
+    input="Review the workspace changes.",
+    request_id="job-123-turn-1",
+    context={"job_id": "job-123"},
+    overrides={"max_iterations": 1},
+)
 
-    def to_mapping(self) -> dict[str, JSONValue]: ...
+async with Fabric() as fabric:
+    result = await fabric.run(
+        config,
+        base_dir="examples/code-review-agent",
+        session_id="job-123",
+        request=request,
+    )
+
+print(result.status)
+print(result.output)
+print(result.artifacts)
 ```
 
-At most one input source is accepted; none means empty text. File inputs apply
-only to `run()`. Request IDs default automatically, context is caller-owned, and
-unknown fields are preserved. Complete requests reject separate request fields.
-There is no `from_text()` or `input_text` alias.
-
-Merge precedence is:
-
-```text
-base config < ordered profiles < service < session < invocation
-```
-
-Objects merge recursively; later scalars, arrays, and `null` replace earlier
-values. Lists are not concatenated. Runtime changes are capability-gated.
-
-## Oneshot Runs
-
-`run()` resolves, plans, creates, invokes, collects, and destroys one runtime.
-Cleanup failure raises `FabricRuntimeError` even after a successful invocation.
+`session_id` is a first-class convenience for passing a caller-owned stable
+conversation/task key. It is encoded into request context and rejected if it
+conflicts with an existing request context value.
 
 ## Sessions
 
-A `Session` owns one runtime and orders turns unless concurrency is declared.
+`start_session(...)` starts one reusable runtime and returns a `Session`. The
+session serializes turns by default and injects the stable `session_id` into each
+request.
 
 ```python
-class SessionInfo:
-    session_id: str
-    runtime_id: str
-    agent_name: str
-    profiles: Sequence[str]
-    harness: str
-    adapter_id: str
-    adapter_kind: str
-    status: Literal["active", "stopped", "failed"]
-    capabilities: RuntimeCapabilities
-
-class Session:
-    session_id: str
-    runtime_id: str
-    info: SessionInfo
-
-    async def invoke(
-        self,
-        *,
-        input: JSONValue = None,
-        request: RunRequest | Mapping[str, JSONValue] | None = None,
-        request_id: str | None = None,
-        context: Mapping[str, JSONValue] | None = None,
-        overrides: Mapping[str, JSONValue] | None = None,
-    ) -> RunResult: ...
-
-    async def stream(
-        self,
-        *,
-        input: JSONValue = None,
-        request: RunRequest | Mapping[str, JSONValue] | None = None,
-        request_id: str | None = None,
-        context: Mapping[str, JSONValue] | None = None,
-        overrides: Mapping[str, JSONValue] | None = None,
-    ) -> AsyncIterator[FabricEvent | RunResult]: ...
-
-    async def update(self, update: RuntimeUpdate) -> RuntimeUpdateResult: ...
-    async def cancel(self) -> None: ...
-    async def stop(self) -> None: ...
+async with await Fabric().start_session(
+    "examples/code-review-agent",
+    profiles=["hermes_session"],
+    session_id="review-session-123",
+) as session:
+    first = await session.invoke(input="Inspect the repository")
+    second = await session.invoke(input="Now review the latest patch")
 ```
 
-- `Session.info` copies plan and runtime identity; it never derives one identity
-  field from another.
-- `cancel()` targets the current invocation, leaves a supported runtime active,
-  and raises `FabricCapabilityError` when unsupported.
-- `stop()` rejects active work and destroys an idle runtime exactly once.
-  Invoke, cancel, and stop transitions are serialized.
+Use `Session.stream(...)` for buffered event/result iteration. Use
+`Session.update(...)` and `Session.cancel(...)` only when the selected adapter
+advertises those capabilities; unsupported operations raise
+`FabricCapabilityError`.
 
-## Services
+## Concurrency Boundary
 
-Service mode reuses one runtime. `RuntimeService` owns it; `ServiceSession` owns
-only logical state. Callers retain serving, authentication, tenancy, persistence,
-and scheduling.
-
-```python
-class ServiceInfo:
-    service_id: str
-    runtime_id: str
-    agent_name: str
-    profiles: Sequence[str]
-    harness: str
-    adapter_id: str
-    adapter_kind: str
-    status: Literal["active", "stopped", "failed"]
-    capabilities: RuntimeCapabilities
-
-class ServiceSessionInfo:
-    service_id: str
-    session_id: str
-    runtime_id: str
-    status: Literal["active", "closed", "failed"]
-
-class ServiceSession:
-    service_id: str
-    session_id: str
-    info: ServiceSessionInfo
-
-    async def invoke(...) -> RunResult: ...
-    async def stream(...) -> AsyncIterator[FabricEvent | RunResult]: ...
-    async def update(self, update: RuntimeUpdate) -> RuntimeUpdateResult: ...
-    async def cancel(self) -> None: ...
-    async def close(self) -> None: ...
-
-class RuntimeService:
-    service_id: str
-    runtime_id: str
-    info: ServiceInfo
-
-    async def create_session(
-        self,
-        *,
-        session_id: str | None = None,
-        context: Mapping[str, JSONValue] | None = None,
-        overrides: Mapping[str, JSONValue] | None = None,
-    ) -> ServiceSession: ...
-
-    async def get_session(self, session_id: str) -> ServiceSession: ...
-    async def invoke(...) -> RunResult: ...
-    async def stream(...) -> AsyncIterator[FabricEvent | RunResult]: ...
-    async def cancel(self, request_id: str) -> None: ...
-    async def update(self, update: RuntimeUpdate) -> RuntimeUpdateResult: ...
-    async def close_session(self, session_id: str) -> None: ...
-    async def stop(self) -> None: ...
-```
-
-Abbreviated invocation methods match `Session`. `ServiceSession.close()` releases
-logical state; `RuntimeService.stop()` closes idle sessions and the runtime.
-Direct service calls are stateless. IDs are correlation, not authorization.
-
-## Streaming and Updates
-
-`stream()` yields events and one terminal result. Adapters may buffer, so callers
-must not assume immediate event delivery. Event kinds and metadata are additive.
-
-```python
-class RuntimeUpdate:
-    overrides: Mapping[str, JSONValue]
-    metadata: Mapping[str, JSONValue]
-
-class RuntimeUpdateResult:
-    status: Literal["applied", "partially_applied", "rejected"]
-    applied: Mapping[str, JSONValue]
-    rejected: Mapping[str, JSONValue]
-    reason: str | None
-```
-
-The target determines update scope. Unsupported updates raise
-`FabricCapabilityError`; supported updates report applied and rejected fields.
-
-## Results and Identity
-
-```python
-class ErrorInfo:
-    stage: str
-    code: str
-    message: str
-    retryable: bool
-    metadata: Mapping[str, JSONValue]
-
-class ArtifactRef:
-    name: str
-    kind: str
-    path: Path
-    media_type: str | None
-    metadata: Mapping[str, JSONValue]
-
-class ArtifactManifest:
-    root: Path | None
-    artifacts: Sequence[ArtifactRef]
-
-class TelemetryRef:
-    provider: str
-    kind: str
-    uri: str | None
-    trace_id: str | None
-    metadata: Mapping[str, JSONValue]
-
-class FabricEvent:
-    event_id: str
-    timestamp_millis: int
-    kind: str
-    message: str
-    metadata: Mapping[str, JSONValue]
-
-class RunResult:
-    agent_name: str
-    profiles: Sequence[str]
-    harness: str
-    adapter_kind: str
-    adapter_id: str
-    runtime_id: str
-    invocation_id: str
-    request_id: str
-    status: Literal["succeeded", "failed", "cancelled"]
-    output: JSONValue
-    error: ErrorInfo | None
-    artifacts: ArtifactManifest
-    telemetry: Sequence[TelemetryRef]
-    events: Sequence[FabricEvent]
-    metadata: Mapping[str, JSONValue]
-    extra_fields: Mapping[str, JSONValue]
-```
-
-`profiles` is the full ordered stack; no singular field exists. Harness, adapter,
-and runtime identities stay distinct. Normalized harness failure returns a
-failed result; lifecycle failure raises a typed exception.
+Fabric does not schedule jobs, manage queues, or own rollout parallelism. Those
+remain consumer responsibilities. Fabric keeps each runtime/session object safe
+to call, permits multiple independent runtimes in one process, serializes
+same-session invocations by default, and returns structured status/errors/logs
+for the consumer to propagate.
 
 ## Errors
 
-```python
-class FabricError(RuntimeError):
-    stage: str | None
-    code: str | None
-    retryable: bool
-    details: Mapping[str, JSONValue]
+All public SDK errors inherit from `FabricError`.
 
-class FabricConfigError(FabricError): ...
-class FabricRuntimeError(FabricError): ...
-class FabricStateError(FabricRuntimeError): ...
-class FabricCapabilityError(FabricRuntimeError): ...
-class FabricNativeUnavailableError(FabricRuntimeError): ...
-```
+- `FabricConfigError`: invalid source, config, profile, request, or override.
+- `FabricCapabilityError`: selected adapter does not support the requested
+  operation.
+- `FabricRuntimeError`: runtime startup, invocation, or shutdown failed before a
+  normalized result could be returned.
+- `FabricStateError`: invalid session state transition.
+- `FabricNativeUnavailableError`: native extension is not installed.
 
-Invalid input, unsupported operations, bad handle state, and lifecycle failure
-map to the four specific errors above. Native exceptions never leak. Python task
-cancellation remains `asyncio.CancelledError` with deterministic cleanup.
+Consumers own job-level retries. Fabric reports structured failure metadata and
+performs best-effort runtime cleanup for runtimes it starts.
 
-## Compatibility
+## CLI Relationship
 
-- Unknown fields survive Python, native, adapter, and serialization boundaries.
-- New optional fields and event kinds are additive.
-- New required fields require a schema-version change.
-- Capabilities declare support for session, service, streaming, updates,
-  cancellation, and concurrency.
-- Public symbols and signatures are covered by static type and API contract
-  tests.
-- Aliases are added only for migration from an actually released API.
-
-## Non-Goals
-
-The SDK does not own external server lifecycle, authentication, tenancy policy,
-durable job persistence, UI state, evaluation scoring, or caller-specific
-orchestration.
+The CLI is file-first. It loads `agent.yaml`, applies profile files in order, and
+executes through the same Rust core. The SDK is config-first for Python
+consumers. A path-backed SDK call and an equivalent CLI call should resolve to
+the same effective config and run plan.
