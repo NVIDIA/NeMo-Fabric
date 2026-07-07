@@ -20,20 +20,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import nemo_fabric_adapters.common.utils as common_utils
 import tomli_w
 
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
     import tomli as tomllib
-
-CUR_DIR = Path(__file__).parent
-ADAPTERS_DIR = CUR_DIR.parent.parent.parent.parent
-COMMON_DIR = (ADAPTERS_DIR / "common/src").resolve().as_posix()
-if COMMON_DIR not in sys.path:
-    sys.path.append(COMMON_DIR)
-
-import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
 
 SANDBOXES = {"read-only", "workspace-write", "danger-full-access"}
 DEFAULT_TIMEOUT_SECONDS = 1800

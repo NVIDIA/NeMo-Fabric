@@ -17,14 +17,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-CUR_DIR = Path(__file__).parent
-ADAPTERS_DIR = CUR_DIR.parent.parent.parent.parent
-COMMON_DIR = (ADAPTERS_DIR / "common/src").resolve().as_posix()
-if COMMON_DIR not in sys.path:
-    sys.path.append(COMMON_DIR)
-
-import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
-import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
+import nemo_fabric_adapters.common.hermes as hermes_common
+import nemo_fabric_adapters.common.utils as common_utils
 
 
 def main() -> None:
