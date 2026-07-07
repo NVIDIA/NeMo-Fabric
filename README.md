@@ -284,10 +284,6 @@ result. Runtime updates and cancellation are capability-gated and raise
 `FabricCapabilityError` when the selected runtime does not support them.
 Session APIs require an adapter that advertises session capability.
 
-Service mode is part of the forward SDK contract but is not implemented by the
-current runtime. `start_service(...)` raises `FabricCapabilityError` rather than
-silently emulating server or tenancy behavior outside Fabric's execution scope.
-
 ### Interactive CLI Chat
 
 For local manual multi-turn testing, use `fabric chat` with a profile whose

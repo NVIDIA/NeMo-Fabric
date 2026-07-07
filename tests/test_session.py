@@ -391,10 +391,8 @@ async def test_async_lifecycle_methods_resolve_plans(
     await native_client.run("agent", input="hello")
     session = await native_client.start_session("agent")
     await session.stop()
-    with pytest.raises(FabricCapabilityError, match="service mode"):
-        await native_client.start_service("agent")
 
-    assert len(planning_calls) == 3
+    assert len(planning_calls) == 2
 
 
 async def test_run_surfaces_cleanup_failure_after_success(

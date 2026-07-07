@@ -50,7 +50,7 @@ def test_public_contract_has_no_unreleased_aliases():
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
         assert not hasattr(Fabric, name)
 
-    for name in ("resolve", "plan", "doctor", "run", "start_session", "start_service"):
+    for name in ("resolve", "plan", "doctor", "run", "start_session"):
         assert len(get_overloads(getattr(Fabric, name))) == 2, name
 
     assert not hasattr(fabric_errors, "FabricCliError")
@@ -816,27 +816,6 @@ async def test_native_runtime_errors_use_typed_exception_and_stop_runtime():
     assert isinstance(error.value, FabricError)
     assert isinstance(error.value.__cause__, RuntimeError)
     assert native.stopped == 1
-
-
-async def test_start_service_reports_capability_failure_contract():
-    client = NativeClient(NativeRecorder())
-
-    with pytest.raises(FabricCapabilityError) as caught:
-        await client.start_service("agent", service_id="service-1")
-
-    assert caught.value.stage == "start"
-    assert caught.value.code == "service_not_supported"
-    assert caught.value.details == {"service": False, "service_id": "service-1"}
-
-
-async def test_start_service_validates_overrides_before_planning():
-    native = NativeRecorder()
-    client = NativeClient(native)
-
-    with pytest.raises(FabricConfigError, match="service overrides"):
-        await client.start_service("agent", overrides=[])  # type: ignore[arg-type]
-
-    assert native.path_profile_calls == []
 
 
 def test_public_sdk_exceptions_share_a_common_base():

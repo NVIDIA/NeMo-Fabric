@@ -80,7 +80,7 @@ plan(
 
 Resolve an agent source into an immutable execution plan.
 
-Planning applies profiles, resolves the selected adapter, and reports the runtime capabilities that gate session, service, streaming, update, cancellation, and concurrency APIs. It does not start the runtime.
+Planning applies profiles, resolves the selected adapter, and reports the runtime capabilities that gate session, streaming, update, cancellation, and concurrency APIs. It does not start the runtime.
 
 
 
@@ -192,43 +192,6 @@ Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_fil
  - <b>`FabricConfigError`</b>:  If sources are combined, request data is not  JSON-compatible, or config resolution fails.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
  - <b>`FabricRuntimeError`</b>:  If the native runtime lifecycle fails before a  normalized result can be returned.
-
----
-
-
-### <kbd>method</kbd> `start_service`
-
-```python
-start_service(
-    agent: 'AgentSource',
-    profiles: 'PathProfiles | Sequence[FabricProfileConfig] | None' = None,
-    base_dir: 'PathSource | None' = None,
-    service_id: 'str | None' = None,
-    overrides: 'Mapping[str, Any] | None' = None
-) → Any
-```
-
-Validate a service request and report the unsupported operation.
-
-Service handles are part of the reserved SDK contract, but the current Fabric runtime does not implement service creation. This method validates inputs and resolves the plan before raising ``FabricCapabilityError`` with code ``service_not_supported``.
-
-
-
-**Args:**
-
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
- - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
- - <b>`service_id`</b>:  Reserved caller-owned service identifier.
- - <b>`overrides`</b>:  JSON-compatible service-scoped config overrides.
-
-
-
-**Raises:**
-
- - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid.
- - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
- - <b>`FabricCapabilityError`</b>:  Always, because service creation is not yet  implemented.
 
 ---
 
