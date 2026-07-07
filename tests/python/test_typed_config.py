@@ -10,13 +10,12 @@ run it without an on-disk agent package:
   with ``base_dir=None`` -- zero filesystem layout, no ``agent.yaml``.
 * ``run`` drives a real core runtime run using only a local adapter directory
   (still no agent package).
-This complements ``smoke_native_sdk.py``, which exercises ``plan`` with a
+This complements ``test_native_sdk.py``, which exercises ``plan`` with a
 ``base_dir`` pointed at an agent package.
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import subprocess
 import tempfile
@@ -163,12 +162,17 @@ def sdk_and_cli_profile_stacks_match(client: FabricClient) -> None:
     sdk_plan = client.plan(config, profiles=profiles, base_dir=SHIM_AGENT)
     cli_plan = _cli_plan(SHIM_AGENT, "env_local", "mcp_github")
 
-    assert sdk_plan.profiles == tuple(cli_plan["profiles"]) == ("env_local", "mcp_github")
+    assert (
+        sdk_plan.profiles == tuple(cli_plan["profiles"]) == ("env_local", "mcp_github")
+    )
     assert "profile" not in sdk_plan
     assert "profile" not in cli_plan
     sdk_mapping = sdk_plan.to_mapping()
     assert sdk_mapping["config"] == cli_plan["config"]
-    assert sdk_mapping["effective_config"]["config"] == cli_plan["effective_config"]["config"]
+    assert (
+        sdk_mapping["effective_config"]["config"]
+        == cli_plan["effective_config"]["config"]
+    )
     assert sdk_mapping["adapter_descriptor"] == cli_plan["adapter_descriptor"]
     assert sdk_mapping["capabilities"] == cli_plan["capabilities"]
     assert sdk_mapping["capability_plan"] == cli_plan["capability_plan"]
@@ -177,12 +181,11 @@ def sdk_and_cli_profile_stacks_match(client: FabricClient) -> None:
     assert sdk_mapping["resolution"] == cli_plan["resolution"]
 
 
-async def main() -> None:
+async def test_typed_config():
     async with FabricClient() as client:
         sdk_and_cli_profile_stacks_match(client)
         await resolves_and_diagnoses_without_a_directory(client)
         await runs_without_an_agent_package(client)
-    print("smoke_typed_config ok")
 
 
 def _load_yaml(path: Path) -> dict:
@@ -204,7 +207,3 @@ def _cli_plan(agent: Path, *profiles: str) -> dict:
     if completed.returncode != 0:
         raise AssertionError(completed.stderr)
     return json.loads(completed.stdout)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

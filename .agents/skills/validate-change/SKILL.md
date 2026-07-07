@@ -29,8 +29,7 @@ surfaces touched by a change.
   `cargo check -p fabric-python --locked`.
 - If public configuration types changed, confirm the schema snapshot tests in
   `just test-rust` pass and review generated schema diffs.
-- If an adapter or integration changed, run its focused tests or smoke path in
-  addition to the language suite.
+- If an adapter or integration changed, run its focused tests.
 - If documentation or examples changed, run `just docs` when practical and
   verify documented commands against the current repository.
 - If code changes alter APIs, commands, paths, packaging behavior, telemetry
@@ -40,19 +39,15 @@ surfaces touched by a change.
 ## Start With the Change Shape
 
 - **Rust core, CLI, or shared runtime semantics changed**
-  Run Rust formatting and tests. Add Python tests when the behavior is exposed
-  through the SDK, and run relevant CLI smoke tests for CLI behavior.
+  Run Rust formatting and tests. Add Python tests when the behavior is exposed through the SDK, and run relevant tests for CLI behavior.
 - **Python SDK or PyO3 binding changed**
   Use `python-tests`, run focused pytest tests first, then run
   `just test-python`. Rebuild with `just build-python` when native code or
   packaging changed.
 - **Adapter behavior changed**
-  Run the focused adapter tests under `tests/`, then `just test-python`. Add the
-  dependency-free smoke path when launch, environment, or lifecycle behavior
-  changed.
+  Run the focused adapter tests under `tests/adapters`, then `just test-python`.
 - **Harbor integration changed**
-  Run `tests/test_harbor_runner.py`, relevant Python integration smokes, and
-  `just test-python`.
+  Run `tests/test_harbor_runner.py`, then `just test-python`.
 - **Schema or public contract changed**
   Run both language suites and review changes under `schemas/` and generated API
   references.
@@ -91,11 +86,6 @@ just docs
 just --fmt --check
 git diff --check
 ```
-
-Use `.github/workflows/ci_python.yml` as the source of truth for the
-dependency-free smoke list. Gated integration smokes require their documented
-credentials, sibling checkouts, services, or Docker environment; do not report
-them as run unless those prerequisites were present.
 
 ## Hygiene Checks
 

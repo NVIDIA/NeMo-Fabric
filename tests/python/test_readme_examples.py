@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 from nemo_fabric import FabricClient, FabricConfig
@@ -87,11 +86,6 @@ async def readme_python_examples_run() -> None:
     assert typed_plan.adapter.adapter_id == "nvidia.fabric.hermes.sdk"
 
 
-def main() -> None:
+async def test_readme_examples():
     readme_documents_each_example()
-    asyncio.run(readme_python_examples_run())
-    print("smoke_readme_examples ok")
-
-
-if __name__ == "__main__":
-    main()
+    await readme_python_examples_run()

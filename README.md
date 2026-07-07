@@ -313,8 +313,8 @@ requires `runtime.mode: session`; use `fabric run` for oneshot profiles and
 machine-readable stdout. Because `chat` is an interactive terminal UI, the
 transcript and metadata are written together on stderr.
 
-The opt-in real integration checks are `tests/smoke_hermes_session.py` and
-`tests/smoke_codex_cli.py`.
+The opt-in real integration checks are `tests/e2e/test_hermes_session.py` and
+`tests/e2e/test_codex_cli.py`.
 
 `FabricClient()` uses the native Rust binding. SDK `run(...)` and
 `start_session(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
@@ -367,14 +367,6 @@ fabric run examples/code-review-agent \
   --input "Review the workspace and summarize the highest-risk issue."
 ```
 
-Run the real one-shot and session smoke after installing Fabric with its native
-extension:
-
-```bash
-python3 -m pip install -e ".[codex]"
-RUN_FABRIC_CODEX_INTEGRATION=1 python3 tests/smoke_codex_cli.py
-```
-
 Run the Hermes CLI adapter:
 
 ```bash
@@ -386,15 +378,37 @@ fabric run examples/code-review-agent \
   --input "Reply with exactly: hermes cli ok"
 ```
 
-Run Hermes with NeMo Relay enabled:
+## Tests
+
+To run the full test suite, bootstrap a virtual environment with the optional dependencies.
 
 ```bash
-uv venv .tmp/fabric-hermes-relay-venv --python 3.12
-uv pip install --python .tmp/fabric-hermes-relay-venv/bin/python \
-  -e ../nemo-relay \
-  -e ../hermes-agent
+uv venv --seed .venv --python 3.12'
+source .venv/bin/activate
+uv sync --all-groups --all-extras
+```
 
-export NVIDIA_API_KEY=...
-export HERMES_PYTHON="$PWD/.tmp/fabric-hermes-relay-venv/bin/python"
-RUN_FABRIC_RELAY_INTEGRATION=1 python3 tests/smoke_relay_integration.py
+Build Fabric and the Python extension, since we have already bootstrapped a virtual environment, we will pass the `no_uv` flag to avoid building reinstalling depdnendencies in the virtual environment.
+```bash
+just no_uv=true build-all
+```
+
+Run both Rust and Python tests:
+```bash
+just no_uv=true test-all
+```
+
+Run just the Rust tests:
+```bash
+just no_uv=true test-rust
+```
+
+Run just the Python tests:
+```bash
+just no_uv=true test-python
+```
+
+Running `pytest` directly:
+```bash
+pytest
 ```

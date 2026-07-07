@@ -5,13 +5,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-import sys
-from pathlib import Path
 from typing import Any
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from nemo_fabric import (
     FabricCapabilityError,
@@ -88,7 +83,9 @@ class MockNative:
         self.requests: list[dict[str, Any]] = []
         self.stopped = 0
 
-    def invoke_runtime(self, plan_json: str, runtime_json: str, request_json: str) -> str:
+    def invoke_runtime(
+        self, plan_json: str, runtime_json: str, request_json: str
+    ) -> str:
         request = json.loads(request_json)
         self.requests.append(request)
         turn = len(self.requests)
@@ -167,7 +164,10 @@ async def stable_runtime_across_turns() -> None:
 
     assert isinstance(first, RunResult)
     assert first.request_id == "session-request-1"
-    assert [inv["runtime_id"] for inv in session.invocations] == ["runtime-1", "runtime-1"]
+    assert [inv["runtime_id"] for inv in session.invocations] == [
+        "runtime-1",
+        "runtime-1",
+    ]
     assert native.requests[0]["context"]["job_id"] == "job-1"
     assert native.requests[0]["context"]["turn_id"] == "turn-1"
     assert native.requests[0]["context"]["session_id"] == "runtime-1"
@@ -224,13 +224,8 @@ async def failed_result_exposes_structured_error() -> None:
     assert native.stopped == 1
 
 
-async def main() -> None:
+async def test_sdk_sessions():
     await stable_runtime_across_turns()
     await stream_and_lifecycle()
     await unsupported_cancel_leaves_session_active()
     await failed_result_exposes_structured_error()
-    print("smoke_sdk_sessions ok")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

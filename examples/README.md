@@ -5,8 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Examples
 
-This directory holds sample Fabric agent packages and single-file configs used
-by smoke tests and demos.
+This directory holds sample Fabric agent packages and single-file configs used tests and demos.
 
 The first example focuses on the shared Fabric contract:
 
@@ -29,5 +28,5 @@ fabric plan examples/code-review-agent --profile env_local --profile mcp_github
 fabric plan examples/code-review-agent --profile hermes_cli
 ```
 
-The dependency-free Hermes shim used by smoke tests lives under
+The dependency-free Hermes shim used by tests lives under
 `tests/fixtures/hermes-shim-agent`; it is not a maintained adapter.
