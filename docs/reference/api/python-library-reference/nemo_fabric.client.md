@@ -154,6 +154,7 @@ run(
     request: 'RunRequest | Mapping[str, Any] | None' = None,
     request_file: 'str | Path | None' = None,
     request_id: 'str | None' = None,
+    session_id: 'str | None' = None,
     context: 'Mapping[str, Any] | None' = None,
     overrides: 'Mapping[str, Any] | None' = None
 ) → RunResult
@@ -175,6 +176,7 @@ Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_fil
  - <b>`request`</b>:  Complete ``RunRequest`` or compatible mapping.
  - <b>`request_file`</b>:  UTF-8 JSON file containing a complete request.
  - <b>`request_id`</b>:  Caller-owned request identifier. Fabric generates one  when omitted.
+ - <b>`session_id`</b>:  Stable caller-owned conversation identifier to pass  through the invocation context.
  - <b>`context`</b>:  Caller-owned, JSON-compatible request metadata.
  - <b>`overrides`</b>:  JSON-compatible invocation-scoped config overrides.
 

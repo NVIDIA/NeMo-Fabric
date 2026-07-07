@@ -218,6 +218,7 @@ async def run(raw_config):
             result = await client.run(
                 config,
                 base_dir="examples/code-review-agent",
+                session_id="job-123",
                 request=request,
             )
     except FabricError as error:
@@ -232,7 +233,9 @@ async def run(raw_config):
 callers load or compose requests outside the SDK. Per-request `context` is
 caller-owned metadata; `overrides` are
 request-scoped config changes applied only where the selected harness adapter
-supports them. Failed runs expose structured `result.error.stage`,
+supports them. `session_id` is a first-class convenience for passing the stable
+conversation key through request context. Failed runs expose structured
+`result.error.stage`,
 `result.error.code`, and `result.error.retryable` when the adapter returns a
 normalized failure.
 

@@ -96,6 +96,9 @@ enum Command {
         /// Full Fabric RunRequest JSON file.
         #[arg(long)]
         request_file: Option<PathBuf>,
+        /// Caller-provided harness conversation id.
+        #[arg(long = "session-id")]
+        session_id: Option<String>,
         /// Show adapter output.
         #[arg(long = "show-output")]
         show_output: bool,
@@ -158,10 +161,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             input_file,
             request_json,
             request_file,
+            session_id,
             show_output,
         }) => {
             let plan = resolve_run_plan_with_profiles(path, &profile)?;
-            let request = match (request_file, request_json, input_file) {
+            let mut request = match (request_file, request_json, input_file) {
                 (Some(path), None, None) => {
                     serde_json::from_str::<RunRequest>(&std::fs::read_to_string(path)?)?
                 }
@@ -175,6 +179,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
             };
+            if let Some(session_id) = session_id {
+                attach_session_id(&mut request, &session_id)?;
+            }
             let result = run_plan(&plan, request)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
             if show_output {
@@ -228,6 +235,27 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("fabric {}", fabric_core::version());
         }
     }
+    Ok(())
+}
+
+fn attach_session_id(
+    request: &mut RunRequest,
+    session_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if session_id.trim().is_empty() {
+        return Err("--session-id must be a non-empty string".into());
+    }
+    if let Some(existing) = request.context.get("session_id") {
+        if existing != &Value::String(session_id.to_string()) {
+            return Err(
+                "request context session_id conflicts with the --session-id argument".into(),
+            );
+        }
+    }
+    request.context.insert(
+        "session_id".to_string(),
+        Value::String(session_id.to_string()),
+    );
     Ok(())
 }
 

@@ -32,6 +32,7 @@ from nemo_fabric.errors import (
 )
 from nemo_fabric.session import (
     Session,
+    _attach_session_id,
     _call_blocking,
     _json_mapping,
     _require_session_runtime,
@@ -309,6 +310,7 @@ class Fabric:
         request: RunRequest | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
+        session_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> RunResult: ...
@@ -325,6 +327,7 @@ class Fabric:
         request: RunRequest | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
+        session_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> RunResult: ...
@@ -340,6 +343,7 @@ class Fabric:
         request: RunRequest | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
+        session_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> RunResult:
@@ -365,6 +369,8 @@ class Fabric:
             request_file: UTF-8 JSON file containing a complete request.
             request_id: Caller-owned request identifier. Fabric generates one
                 when omitted.
+            session_id: Stable caller-owned conversation identifier to pass
+                through the invocation context.
             context: Caller-owned, JSON-compatible request metadata.
             overrides: JSON-compatible invocation-scoped config overrides.
 
@@ -395,6 +401,7 @@ class Fabric:
             context=context,
             overrides=overrides,
         )
+        _attach_session_id(request_payload, session_id, "run")
         native = self._require_native_module("run")
         return RunResult.from_mapping(
             await _run_native_lifecycle(native, plan.to_mapping(), request_payload)

@@ -111,6 +111,19 @@ def main() -> None:
         assert hermes["output"]["managed_mcp_servers"] == []
         assert_relay_disabled_native_observability(hermes)
 
+        with_session = call_json(
+            "run",
+            temp_fixture,
+            "--profile",
+            "env_local",
+            "--input",
+            "hello session hermes",
+            "--session-id",
+            "run-session-123",
+        )
+        assert with_session["status"] == "succeeded"
+        assert with_session["output"]["session_id"] == "run-session-123"
+
         request = json.dumps(
             {
                 "request_id": "cli-structured-request",

@@ -688,6 +688,45 @@ async def test_typed_source_accepts_granular_request_fields_and_returns_result()
     }
 
 
+async def test_run_session_id_is_a_first_class_context_field():
+    native = NativeRecorder()
+    client = NativeClient(native)
+
+    result = await client.run(
+        _fabric_config(),
+        input="hello",
+        request_id="request-1",
+        session_id="session-1",
+        context={"job_id": "job-1"},
+    )
+
+    assert result.status == "succeeded"
+    assert native.requests[0]["context"] == {
+        "job_id": "job-1",
+        "session_id": "session-1",
+    }
+
+    await client.run(
+        _fabric_config(),
+        request=RunRequest(
+            input="hello",
+            context={"session_id": "session-2"},
+        ),
+        session_id="session-2",
+    )
+    assert native.requests[1]["context"]["session_id"] == "session-2"
+
+    with pytest.raises(FabricConfigError, match="session_id conflicts"):
+        await client.run(
+            _fabric_config(),
+            request=RunRequest(
+                input="hello",
+                context={"session_id": "request-session"},
+            ),
+            session_id="argument-session",
+        )
+
+
 async def test_invalid_request_context_raises_config_error():
     native = NativeRecorder()
     client = NativeClient(native)
@@ -783,6 +822,14 @@ async def test_session_invoke_accepts_run_request_and_turn_fields():
         await session.invoke(
             request=RunRequest(input="hello"),
             context={"turn_id": "turn-1"},
+        )
+
+    with pytest.raises(FabricConfigError, match="session_id conflicts"):
+        await session.invoke(
+            request=RunRequest(
+                input="hello",
+                context={"session_id": "different-session"},
+            )
         )
 
 

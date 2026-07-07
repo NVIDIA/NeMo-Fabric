@@ -25,6 +25,7 @@ DOCUMENTED_SNIPPETS = [
     "config = FabricConfig.from_mapping(",
     "plan = client.plan(",
     "result = await client.run(",
+    'session_id="job-123",',
     '"harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},',
     'base_dir="examples/code-review-agent",',
     "### Multi-Turn SDK Sessions",

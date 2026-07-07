@@ -190,10 +190,7 @@ class Session:
                 context=context,
                 overrides=overrides,
             )
-            payload["context"] = {
-                **payload.get("context", {}),
-                "session_id": self.session_id,
-            }
+            _attach_session_id(payload, self.session_id, "session")
             merged = _merge_overrides(self._overrides, payload.get("overrides"))
             if merged:
                 payload["overrides"] = merged
@@ -412,6 +409,25 @@ def _merge_overrides(
         else:
             result[key] = value
     return result
+
+
+def _attach_session_id(
+    payload: dict[str, Any],
+    session_id: str | None,
+    owner: str,
+) -> None:
+    if session_id is None:
+        return
+    if not isinstance(session_id, str) or not session_id.strip():
+        raise FabricConfigError(f"{owner} session_id must be a non-empty string")
+    context = _json_mapping(payload.get("context", {}), f"{owner} context")
+    existing = context.get("session_id")
+    if existing is not None and existing != session_id:
+        raise FabricConfigError(
+            f"{owner} context session_id conflicts with the session_id argument"
+        )
+    context["session_id"] = session_id
+    payload["context"] = context
 
 
 def _run_request_payload(
