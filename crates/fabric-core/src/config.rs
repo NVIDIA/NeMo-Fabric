@@ -15,6 +15,8 @@ use serde_json::Value;
 use crate::error::{FabricError, Result};
 
 const AGENT_YAML: &str = "agent.yaml";
+/// Adapter descriptor contract version supported by this core.
+pub const ADAPTER_CONTRACT_VERSION: &str = "fabric.adapter/v1alpha1";
 
 /// A loaded Fabric document with resolved source path and agent root.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -117,6 +119,9 @@ pub struct HarnessConfig {
 /// Language-neutral adapter descriptor for a harness integration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterDescriptor {
+    /// Adapter descriptor contract version.
+    #[schemars(length(min = 1))]
+    pub contract_version: String,
     /// Unique id for this adapter implementation.
     #[schemars(length(min = 1))]
     pub adapter_id: String,
@@ -1036,6 +1041,16 @@ fn validate_adapter_descriptor(
 }
 
 fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path) -> Result<()> {
+    if descriptor.contract_version.trim().is_empty() {
+        return invalid_adapter_descriptor(path, "contract_version must not be empty");
+    }
+    if descriptor.contract_version != ADAPTER_CONTRACT_VERSION {
+        return Err(FabricError::AdapterDescriptorUnsupported {
+            adapter_id: descriptor.adapter_id.clone(),
+            field: "contract_version",
+            value: descriptor.contract_version.clone(),
+        });
+    }
     if descriptor.adapter_id.trim().is_empty() {
         return invalid_adapter_descriptor(path, "adapter_id must not be empty");
     }
@@ -1695,6 +1710,7 @@ runtime:
         let descriptor =
             load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
 
+        assert_eq!(descriptor.contract_version, ADAPTER_CONTRACT_VERSION);
         assert_eq!(descriptor.adapter_id, "nvidia.fabric.hermes.sdk");
         assert_eq!(descriptor.harness, "hermes");
         assert_eq!(descriptor.adapter_kind, AdapterKind::Python);
@@ -1824,6 +1840,7 @@ environment:
         std::fs::write(
             root.join("adapters/reviewer-process/fabric-adapter.json"),
             r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "acme.fabric.reviewer.process",
   "harness": "reviewer",
   "adapter_kind": "process"
@@ -1984,6 +2001,7 @@ mcp:
         std::fs::write(
             root.join("adapters/minimal/fabric-adapter.json"),
             r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "acme.fabric.minimal",
   "harness": "minimal",
   "adapter_kind": "process"
@@ -2155,6 +2173,7 @@ environment:
         std::fs::write(
             root.join("adapters/invalid-process/fabric-adapter.json"),
             r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "   ",
   "harness": "invalid",
   "adapter_kind": "process"
@@ -2184,6 +2203,7 @@ environment:
         std::fs::write(
             &descriptor_path,
             r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "",
   "harness": "invalid",
   "adapter_kind": "process"
@@ -2196,6 +2216,39 @@ environment:
             error,
             FabricError::InvalidAdapterDescriptor { message, .. }
                 if message.contains("adapter_id")
+        ));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_unsupported_adapter_contract_version() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-invalid-adapter-contract-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let descriptor_path = root.join("fabric-adapter.json");
+        std::fs::write(
+            &descriptor_path,
+            r#"{
+  "contract_version": "fabric.adapter/v9",
+  "adapter_id": "acme.fabric.future",
+  "harness": "future",
+  "adapter_kind": "process"
+}"#,
+        )
+        .expect("write adapter descriptor");
+
+        let error = load_adapter_descriptor(&descriptor_path).expect_err("invalid descriptor");
+        assert!(matches!(
+            error,
+            FabricError::AdapterDescriptorUnsupported {
+                field,
+                value,
+                ..
+            } if field == "contract_version" && value == "fabric.adapter/v9"
         ));
 
         let _ = std::fs::remove_dir_all(root);

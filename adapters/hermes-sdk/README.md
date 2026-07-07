@@ -30,6 +30,7 @@ configuration for:
 
 Keep `fabric-adapter.json` aligned with the Python implementation:
 
+- `contract_version` must match the adapter contract supported by Fabric core.
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
 - `adapter_kind` is `python` because Fabric can invoke it through Python.
 - `runner.module`, `runner.callable`, and `runner.script` must remain thin

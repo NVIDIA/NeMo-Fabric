@@ -1944,6 +1944,7 @@ runtime:
 
     fn process_adapter_descriptor() -> &'static str {
         r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "acme.fabric.process",
   "harness": "process",
   "adapter_kind": "process"

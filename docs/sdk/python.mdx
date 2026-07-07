@@ -66,6 +66,60 @@ Product-level orchestration belongs to the consumer. Fabric does not schedule
 jobs, manage queues, own retries, or scale workers. Platform, Harbor, Gym, and
 local applications decide how many sessions or tasks to run.
 
+## Contract Boundaries
+
+Fabric keeps a narrow execution contract. Applications own product behavior
+around that contract.
+
+### Versioning
+
+Fabric uses explicit contract versions where persisted or independently
+maintained artifacts cross package boundaries:
+
+- `schema_version` identifies portable config files such as `agent.yaml` and
+  profile files.
+- `contract_version` identifies the adapter descriptor contract implemented by
+  a `fabric-adapter.json` file.
+- Python and Rust package versions identify the installed SDK/core release.
+
+Fabric validates adapter descriptor contract versions during planning. Package
+semver alone is not treated as the compatibility contract for saved agent
+packages or independently maintained adapters.
+
+### Config Extensibility
+
+The public schema has typed fields for stable Fabric concepts and explicit
+extension points for adapter- or application-owned data. Use known fields for
+portable concepts such as harness selection, models, runtime, skills, MCP,
+telemetry, and artifacts. Use adapter-owned `harness.settings`, metadata, or
+preserved extension fields for data that Fabric should carry but not interpret.
+
+Unknown data is not the same as supported behavior. An adapter must advertise
+and implement a capability before Fabric treats it as runnable.
+
+### Resilience
+
+Fabric reports lifecycle failures; applications own recovery policy. If a
+runtime process dies, a connection is permanently lost, or an adapter cannot
+complete an invocation, Fabric marks the relevant runtime/session/invocation as
+failed and returns structured error metadata when possible.
+
+Transient I/O failures may be marked with retryable error metadata, but Fabric
+does not perform job-level retries by default. Consumers decide whether to retry
+the request, start a replacement runtime, fail the job, or escalate to a user.
+
+### Scaling And Backpressure
+
+Fabric does not schedule work, manage queues, or scale workers. Consumers decide
+how many runtimes, sessions, and jobs to run. Fabric keeps individual
+runtime/session handles safe to use, serializes same-session invocations by
+default, and exposes adapter capability metadata for operations such as
+sessions, streaming, updates, cancellation, and concurrency.
+
+If a harness reports capacity pressure, an adapter should surface it as a
+structured error or event such as busy, rate limited, capacity exceeded, or
+backpressure. The consumer decides whether to wait, retry, scale out, or fail.
+
 ## Configure In Code
 
 Build typed config in one of two ways:

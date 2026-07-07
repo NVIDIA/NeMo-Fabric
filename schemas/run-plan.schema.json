@@ -51,6 +51,11 @@
           "default": {},
           "description": "Fabric config areas this adapter consumes or generates."
         },
+        "contract_version": {
+          "description": "Adapter descriptor contract version.",
+          "minLength": 1,
+          "type": "string"
+        },
         "harness": {
           "description": "Stable machine-readable harness identifier implemented by this adapter.",
           "minLength": 1,
@@ -73,6 +78,7 @@
         }
       },
       "required": [
+        "contract_version",
         "adapter_id",
         "harness",
         "adapter_kind"

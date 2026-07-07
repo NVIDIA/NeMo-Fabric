@@ -16,7 +16,9 @@ contract. The files are generated from the Rust core types, not edited by hand.
 
 - `agent`: portable base `agent.yaml` config.
 - `profile`: profile config applied over an agent config.
-- `adapter-descriptor`: minimal adapter descriptor consumed by Fabric.
+- `adapter-descriptor`: minimal adapter descriptor consumed by Fabric. Each
+  descriptor declares a `contract_version`; Fabric rejects descriptors for
+  unsupported adapter contracts during planning.
 - `effective-config`: merged config after profile resolution.
 - `run-plan`: executable plan derived from effective config.
 

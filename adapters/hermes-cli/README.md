@@ -31,6 +31,7 @@ before calling the CLI. It maps:
 
 Keep `fabric-adapter.json` aligned with the process implementation:
 
+- `contract_version` must match the adapter contract supported by Fabric core.
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
 - `adapter_kind` is `process` because Fabric owns process supervision,
   stdout/stderr capture, exit status, logs, and artifacts.

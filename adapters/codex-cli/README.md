@@ -3,6 +3,10 @@
 Runs an installed Codex CLI through Fabric's process-adapter lifecycle. The
 same adapter supports both one-shot invocation and Fabric sessions.
 
+Keep `fabric-adapter.json` aligned with the adapter implementation.
+`contract_version` must match the adapter contract supported by Fabric core;
+`adapter_id` is the stable id selected by `harness.adapter_id`.
+
 Install Fabric with the adapter dependency before running it:
 
 ```bash
