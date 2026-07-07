@@ -5,21 +5,14 @@ import builtins
 import json
 import os
 import tomllib
-import types
 from io import StringIO
 from pathlib import Path
 
+import nemo_fabric_adapters.common.utils as common_utils
 import pytest
 
 
-@pytest.fixture(name="common_utils", scope="session")
-def common_utils_fixture(adapters_common: str) -> types.ModuleType:
-    import nemo_fabric_adapters.common.utils as common_utils  # noqa: E402
-
-    return common_utils
-
-
-def test_payload_accessors_prefer_effective_config(common_utils: types.ModuleType):
+def test_payload_accessors_prefer_effective_config():
     payload = {
         "agent_name": "outer-agent",
         "config_root": "/outer",
@@ -53,10 +46,7 @@ def test_payload_accessors_prefer_effective_config(common_utils: types.ModuleTyp
     assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
 
 
-def test_load_payload_reads_fabric_invocation(
-    common_utils: types.ModuleType,
-    tmp_path: Path,
-):
+def test_load_payload_reads_fabric_invocation(tmp_path: Path):
     invocation_path = tmp_path / "invocation.json"
     invocation_path.write_text(
         json.dumps({"request": {"input": "from file"}}),
@@ -68,7 +58,6 @@ def test_load_payload_reads_fabric_invocation(
 
 
 def test_load_payload_falls_back_to_stdin(
-    common_utils: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ):
     os.environ.pop("FABRIC_INVOCATION", None)
@@ -86,7 +75,6 @@ def test_load_payload_falls_back_to_stdin(
     ],
 )
 def test_runtime_session_id_prefers_caller_session_id(
-    common_utils: types.ModuleType,
     runtime_context: dict[str, object],
     expected: str | None,
 ):
@@ -94,7 +82,6 @@ def test_runtime_session_id_prefers_caller_session_id(
 
 
 def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
-    common_utils: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,
 ):
     real_import = builtins.__import__
@@ -122,12 +109,11 @@ def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
         (42, ["42"]),
     ],
 )
-def test_normalize_list(common_utils: types.ModuleType, value: object, expected: list[str]):
+def test_normalize_list(value: object, expected: list[str]):
     assert common_utils.normalize_list(value) == expected
 
 
 def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config(
-    common_utils: types.ModuleType,
     tmp_path: Path,
 ):
     config_path = tmp_path / "relay.json"
@@ -201,7 +187,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     ]
 
 
-def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path):
+def test_collect_relay_artifacts(tmp_path: Path):
     atof_dir = tmp_path / "atof"
     atif_dir = tmp_path / "atif"
     atof_dir.mkdir()
@@ -243,7 +229,6 @@ def test_collect_relay_artifacts(common_utils: types.ModuleType, tmp_path: Path)
     ],
 )
 def test_write_relay_configs(
-    common_utils: types.ModuleType,
     tmp_path: Path,
     relay_config: dict[str, object] | None,
     plugin_config: dict[str, object] | None,
