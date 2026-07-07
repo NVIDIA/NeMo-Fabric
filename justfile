@@ -77,3 +77,20 @@ test-rust:
 
 # Run all Rust and Python tests.
 test-all: test-rust test-python
+
+# Build wheels for every Python project into the repository dist directory.
+wheels:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    projects=(
+        .
+        python
+        adapters/common
+        adapters/codex-cli
+        adapters/hermes-cli
+        adapters/hermes-sdk
+    )
+    uv build --wheel --clear --out-dir dist "${projects[0]}"
+    for project in "${projects[@]:1}"; do
+        uv build --wheel --out-dir dist "$project"
+    done
