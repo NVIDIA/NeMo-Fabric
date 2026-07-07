@@ -2,49 +2,55 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
-build-backend = "maturin"
+requires = [
+  "setuptools>=64",
+  "setuptools-scm>=8",
+  "setuptools_dynamic_dependencies>=1.0.0",
+]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric"
-version = "0.1.0"
-description = "Python SDK and native bindings for NeMo Fabric"
+description = "Python SDK distribution for NeMo Fabric"
 requires-python = ">=3.11"
-dependencies = []
+dynamic = ["version", "dependencies", "optional-dependencies"]
 
-[project.optional-dependencies]
+[tool.setuptools]
+packages = []
+
+[tool.setuptools_dynamic_dependencies]
+dependencies = [
+]
+
+[tool.setuptools_dynamic_dependencies.optional-dependencies]
 adapters-common = [
-  "nemo-fabric-adapters-common",
+  "nemo-fabric-adapters-common == {version}",
 ]
 
 adapters-codex-cli = [
-  "nemo-fabric-adapters-codex-cli",
+  "nemo-fabric-adapters-codex-cli == {version}",
 ]
 
 adapters-hermes-cli = [
-  "nemo-fabric-adapters-hermes-cli",
+  "nemo-fabric-adapters-hermes-cli == {version}",
 ]
 
 adapters-hermes-sdk = [
-  "nemo-fabric-adapters-hermes-sdk",
+  "nemo-fabric-adapters-hermes-sdk == {version}",
 ]
 
 codex = [
-  "nemo-fabric-adapters-codex-cli",
+  "nemo-fabric-adapters-codex-cli == {version}",
 ]
 
 harbor = [
   "harbor>=0.16.1; python_version >= '3.12'",
   "pyyaml>=6.0",
 ]
-docs = [
-  "lazydocs>=0.4",
-  "beautifulsoup4>=4.12",
-]
 
 hermes = [
-  "nemo-fabric-adapters-hermes-cli",
-  "nemo-fabric-adapters-hermes-sdk",
+  "nemo-fabric-adapters-hermes-cli == {version}",
+  "nemo-fabric-adapters-hermes-sdk == {version}",
   "hermes-agent>=0.17.0",
 ]
 
@@ -53,9 +59,18 @@ relay = [
   "tomli-w~=1.2", # Needed by adapters to write relay config files
 ]
 
+runtime = [
+  "nemo-fabric-runtime == {version}",
+]
+
 [dependency-groups]
 dev = [
     "ipython~=8.20",
+]
+
+docs = [
+  "lazydocs>=0.4",
+  "beautifulsoup4>=4.12",
 ]
 
 test = [
@@ -72,16 +87,14 @@ test = [
 default-groups = ["dev", "test"]
 
 [tool.uv.sources]
+nemo-fabric-runtime = { path = "python" }
 nemo-fabric-adapters-common = { path = "adapters/common" }
 nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli" }
 nemo-fabric-adapters-hermes-cli = { path = "adapters/hermes-cli" }
 nemo-fabric-adapters-hermes-sdk = { path = "adapters/hermes-sdk" }
 
-[tool.maturin]
-manifest-path = "crates/fabric-python/Cargo.toml"
-python-source = "python/src"
-module-name = "nemo_fabric._native"
-features = ["pyo3/extension-module"]
+[tool.setuptools_scm]
+git_describe_command = "git describe --long --first-parent"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

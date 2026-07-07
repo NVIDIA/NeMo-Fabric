@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "nemo-fabric-runtime"
+description = "Python SDK and native bindings for NeMo Fabric"
+requires-python = ">=3.11"
+dependencies = []
+dynamic = ["version"]
+
+[tool.maturin]
+manifest-path = "../crates/fabric-python/Cargo.toml"
+python-source = "src"
+module-name = "nemo_fabric._native"
+features = ["pyo3/extension-module"]

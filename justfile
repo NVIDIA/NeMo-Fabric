@@ -30,15 +30,19 @@ build-rust:
     cargo build --workspace --locked
     cargo install --path crates/fabric-cli --locked --force
 
-# Build and install the Python package and native extension in the project environment.
+# Build and install the Python distribution and native runtime in the project environment.
 # --set [no_uv=true|false]
 build-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" == "true" ]]; then
-        uv pip install --python .venv/bin/python --no-deps --reinstall --editable .
+        uv pip install --python .venv/bin/python --no-deps --reinstall \
+            --editable ./python \
+            --editable .
     else
-        uv sync --no-default-groups --reinstall-package nemo-fabric
+        uv sync --no-default-groups \
+            --reinstall-package nemo-fabric \
+            --reinstall-package nemo-fabric-runtime
     fi
 
 # Build all supported language packages.
