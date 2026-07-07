@@ -28,9 +28,9 @@ harbor run
 ```
 
 `FabricAgent` writes a JSON run specification into the Harbor environment. The
-runner loads the referenced YAML files as `FabricConfig` and
-`FabricProfileConfig`, applies Harbor's model selection as the final profile,
-and invokes the Fabric Python SDK. This path does not invoke the Fabric CLI.
+runner loads the referenced YAML files as `FabricConfig` plus ordered profile
+mappings, applies Harbor's model selection as the final profile, and invokes the
+Fabric Python SDK. This path does not invoke the Fabric CLI.
 
 The runner must execute inside the task environment because that is where the
 harness reads and modifies the task workspace. Fabric, its adapter, and all

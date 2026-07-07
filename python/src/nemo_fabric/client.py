@@ -15,6 +15,7 @@ from nemo_fabric._config_sources import (
     AgentSource,
     PathProfiles,
     PathSource,
+    TypedProfiles,
     config_json,
     config_profiles,
     is_config_source,
@@ -42,7 +43,6 @@ from nemo_fabric.types import (
     DoctorReport,
     EffectiveConfig,
     FabricConfig,
-    FabricProfileConfig,
     RunPlan,
     RunRequest,
     RunResult,
@@ -59,7 +59,7 @@ class Fabric:
 
     The client accepts either a path-backed agent package or a typed
     ``FabricConfig``. Path-backed sources select profiles by name; typed
-    sources accept ordered ``FabricProfileConfig`` values and may use
+    sources accept ordered profile mappings and may use
     ``base_dir`` to resolve relative paths. All inspection and execution APIs
     return typed, read-only mapping models.
 
@@ -96,7 +96,7 @@ class Fabric:
         self,
         agent: FabricConfig,
         *,
-        profiles: Sequence[FabricProfileConfig] | None = None,
+        profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
     ) -> EffectiveConfig: ...
 
@@ -104,7 +104,7 @@ class Fabric:
         self,
         agent: AgentSource,
         *,
-        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | TypedProfiles | None = None,
         base_dir: PathSource | None = None,
     ) -> EffectiveConfig:
         """Resolve an agent source and its ordered profile overlays.
@@ -119,7 +119,7 @@ class Fabric:
                 them with ``FabricConfig.from_mapping()``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
+                profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a ``FabricConfig``.
 
@@ -167,7 +167,7 @@ class Fabric:
         self,
         agent: FabricConfig,
         *,
-        profiles: Sequence[FabricProfileConfig] | None = None,
+        profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
     ) -> RunPlan: ...
 
@@ -175,7 +175,7 @@ class Fabric:
         self,
         agent: AgentSource,
         *,
-        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | TypedProfiles | None = None,
         base_dir: PathSource | None = None,
     ) -> RunPlan:
         """Resolve an agent source into an immutable execution plan.
@@ -189,7 +189,7 @@ class Fabric:
                 ``FabricConfig``. Raw mappings are not accepted.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
+                profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a ``FabricConfig``.
 
@@ -238,7 +238,7 @@ class Fabric:
         self,
         agent: FabricConfig,
         *,
-        profiles: Sequence[FabricProfileConfig] | None = None,
+        profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
     ) -> DoctorReport: ...
 
@@ -246,7 +246,7 @@ class Fabric:
         self,
         agent: AgentSource,
         *,
-        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | TypedProfiles | None = None,
         base_dir: PathSource | None = None,
     ) -> DoctorReport:
         """Diagnose a planned agent without starting its runtime.
@@ -259,7 +259,7 @@ class Fabric:
                 ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
+                profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a ``FabricConfig``.
 
@@ -319,7 +319,7 @@ class Fabric:
         self,
         agent: FabricConfig,
         *,
-        profiles: Sequence[FabricProfileConfig] | None = None,
+        profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
         input: Any = None,
         input_file: str | Path | None = None,
@@ -335,7 +335,7 @@ class Fabric:
         self,
         agent: AgentSource,
         *,
-        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | TypedProfiles | None = None,
         base_dir: PathSource | None = None,
         input: Any = None,
         input_file: str | Path | None = None,
@@ -359,7 +359,7 @@ class Fabric:
                 ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
+                profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a ``FabricConfig``.
             input: JSON-compatible invocation input.
@@ -422,7 +422,7 @@ class Fabric:
         self,
         agent: FabricConfig,
         *,
-        profiles: Sequence[FabricProfileConfig] | None = None,
+        profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
         session_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -432,7 +432,7 @@ class Fabric:
         self,
         agent: AgentSource,
         *,
-        profiles: PathProfiles | Sequence[FabricProfileConfig] | None = None,
+        profiles: PathProfiles | TypedProfiles | None = None,
         base_dir: PathSource | None = None,
         session_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -449,7 +449,7 @@ class Fabric:
                 ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
+                profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a ``FabricConfig``.
             session_id: Stable caller-owned conversation identifier. Defaults

@@ -30,7 +30,6 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.ErrorInfo`](./nemo_fabric.types.md#class-errorinfo): Structured failure returned inside a normalized ``RunResult``.
 - [`types.FabricConfig`](./nemo_fabric.types.md#class-fabricconfig): Mutable typed representation of a Fabric agent configuration.
 - [`types.FabricEvent`](./nemo_fabric.types.md#class-fabricevent): One normalized lifecycle or invocation event.
-- [`types.FabricProfileConfig`](./nemo_fabric.types.md#class-fabricprofileconfig): Mutable, partial overlay applied to a typed ``FabricConfig``.
 - [`types.HarnessConfig`](./nemo_fabric.types.md#class-harnessconfig): Harness adapter selection and adapter-owned settings.
 - [`types.McpConfig`](./nemo_fabric.types.md#class-mcpconfig): MCP capability configuration with authoring helpers.
 - [`types.MetadataConfig`](./nemo_fabric.types.md#class-metadataconfig): Agent identity and human-readable metadata.

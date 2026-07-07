@@ -11,12 +11,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from nemo_fabric.errors import FabricConfigError
-from nemo_fabric.types import FabricConfig, FabricProfileConfig
+from nemo_fabric.types import FabricConfig, _FabricProfileConfig
 
 PathSource = str | os.PathLike[str]
 AgentSource = PathSource | FabricConfig
-ProfileSource = str | FabricProfileConfig
+ProfileSource = str | Mapping[str, Any]
 PathProfiles = str | Sequence[str]
+TypedProfiles = Sequence[Mapping[str, Any]]
 
 
 def is_config_source(value: Any) -> bool:
@@ -51,21 +52,26 @@ def path_profiles(profiles: PathProfiles | None) -> list[str]:
 
 
 def config_profiles(
-    profiles: Sequence[FabricProfileConfig] | None,
-) -> list[FabricProfileConfig]:
+    profiles: TypedProfiles | None,
+) -> list[_FabricProfileConfig]:
     if profiles is None:
         return []
     if isinstance(profiles, (str, bytes)):
         raise FabricConfigError(
-            "FabricConfig profiles must contain FabricProfileConfig values"
+            "FabricConfig profiles must contain profile mappings"
         )
     values = list(profiles)
-    if not all(isinstance(profile, FabricProfileConfig) for profile in values):
-        raise FabricConfigError(
-            "FabricConfig profiles must contain FabricProfileConfig values; "
-            "use FabricProfileConfig.from_mapping(...) for mappings"
-        )
-    return values
+    normalized: list[_FabricProfileConfig] = []
+    for profile in values:
+        if isinstance(profile, _FabricProfileConfig):
+            normalized.append(profile)
+        elif isinstance(profile, Mapping):
+            normalized.append(_FabricProfileConfig.from_mapping(profile))
+        else:
+            raise FabricConfigError(
+                "FabricConfig profiles must contain profile mappings"
+            )
+    return normalized
 
 
 def validate_base_dir(agent: AgentSource, base_dir: PathSource | None) -> str | None:
@@ -82,7 +88,7 @@ def config_json(config: FabricConfig) -> str:
     return json.dumps(config.to_mapping())
 
 
-def profiles_json(profiles: Sequence[FabricProfileConfig]) -> str | None:
+def profiles_json(profiles: Sequence[_FabricProfileConfig]) -> str | None:
     if not profiles:
         return None
     return json.dumps([profile.to_mapping() for profile in profiles])

@@ -724,7 +724,7 @@ class FabricConfig(_ConfigMapping):
         return self
 
 
-class FabricProfileConfig(_ConfigMapping):
+class _FabricProfileConfig(_ConfigMapping):
     """Mutable, partial overlay applied to a typed ``FabricConfig``.
 
     Profile sections recursively overlay the base config in caller order. A
@@ -807,10 +807,10 @@ class FabricProfileConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "FabricProfileConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_FabricProfileConfig":
         """Build a typed, partial profile overlay from a mapping."""
 
-        data = _mapping(value, "FabricProfileConfig")
+        data = _mapping(value, "profile mapping")
         return cls(
             schema_version=data.get("schema_version", "fabric.profile/v1alpha1"),
             name=data.get("name"),

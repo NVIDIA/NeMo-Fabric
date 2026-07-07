@@ -11,7 +11,7 @@ from pathlib import Path
 from shutil import copytree
 
 import nemo_fabric._native as native
-from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig
+from nemo_fabric import Fabric, FabricConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -94,17 +94,16 @@ async def smoke(client: Fabric) -> None:
             },
         }
     )
-    typed_profile = FabricProfileConfig.from_mapping(
-        {
-            "name": "typed_relay",
-            "harness": {"settings": {"timeout_seconds": 30}},
-            "telemetry": {"enabled": True, "output_dir": "./artifacts/relay"},
-            "consumer_extension": {
-                "profile": True,
-                "nested": {"second": 2},
-            },
-        }
-    )
+    typed_profile = {
+        "schema_version": "fabric.profile/v1alpha1",
+        "name": "typed_relay",
+        "harness": {"settings": {"timeout_seconds": 30}},
+        "telemetry": {"enabled": True, "output_dir": "./artifacts/relay"},
+        "consumer_extension": {
+            "profile": True,
+            "nested": {"second": 2},
+        },
+    }
     typed_config_resolved = client.resolve(
         typed_config,
         profiles=[typed_profile],

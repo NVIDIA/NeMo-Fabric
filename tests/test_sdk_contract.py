@@ -23,7 +23,6 @@ from nemo_fabric import (
     FabricConfig,
     FabricConfigError,
     FabricError,
-    FabricProfileConfig,
     FabricNativeUnavailableError,
     FabricRuntimeError,
     FabricStateError,
@@ -181,21 +180,6 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         )
     with pytest.raises(FabricConfigError, match="telemetry provider"):
         TelemetryConfig(provider="sideways")
-
-
-def test_typed_profile_preserves_partial_overlay_sections():
-    profile = FabricProfileConfig.from_mapping(
-        {
-            "name": "session",
-            "harness": {"settings": {"timeout_seconds": 30}},
-            "runtime": {"input_schema": "chat"},
-        }
-    )
-
-    assert profile.to_mapping()["harness"] == {
-        "settings": {"timeout_seconds": 30}
-    }
-    assert profile.to_mapping()["runtime"] == {"input_schema": "chat"}
 
 
 def test_inspection_models_are_typed_read_only_mappings():
@@ -950,16 +934,18 @@ def test_config_methods_reject_raw_mappings_and_pydantic_like_objects():
         client.plan(ModelDumpLike())
 
 
-def test_profile_configs_require_explicit_profile_config_conversion():
+def test_typed_config_profiles_accept_mappings_and_reject_other_values():
     client = NativeClient(NativeRecorder())
 
-    with pytest.raises(FabricConfigError, match="FabricProfileConfig values"):
+    client.plan(_fabric_config(), profiles=[{"name": "typed_relay"}])
+
+    with pytest.raises(FabricConfigError, match="profile mappings"):
         client.plan(_fabric_config(), profiles="typed_relay")  # type: ignore[arg-type]
 
-    with pytest.raises(FabricConfigError, match="FabricProfileConfig.from_mapping"):
+    with pytest.raises(FabricConfigError, match="profile mappings"):
         client.plan(
             _fabric_config(),
-            profiles=[{"name": "typed_relay"}],
+            profiles=["typed_relay"],  # type: ignore[list-item]
         )
 
 
@@ -1005,11 +991,8 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
     assert config["runtime"]["input_schema"] == "chat"
     assert config["harness"]["settings"]["workspace"] == "./ws"
 
-    profile = FabricProfileConfig.from_mapping({"name": "typed_relay"})
-    assert profile.to_mapping() == {
-        "schema_version": "fabric.profile/v1alpha1",
-        "name": "typed_relay",
-    }
+    client = NativeClient(NativeRecorder())
+    client.plan(config, profiles=[{"name": "typed_relay"}])
 
 
 def test_resolve_accepts_path_and_fabric_config_sources():

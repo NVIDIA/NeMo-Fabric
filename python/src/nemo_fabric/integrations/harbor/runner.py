@@ -13,16 +13,16 @@ from typing import Any
 
 import yaml
 
-from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig, RunRequest
+from nemo_fabric import Fabric, FabricConfig, RunRequest
 
 
 def load_sources(
     spec: dict[str, Any],
-) -> tuple[FabricConfig, list[FabricProfileConfig]]:
+) -> tuple[FabricConfig, list[dict[str, Any]]]:
     config_path = Path(spec["config_path"])
     config = FabricConfig.from_mapping(load_yaml(config_path))
     profiles = [
-        FabricProfileConfig.from_mapping(load_yaml(Path(path)))
+        load_yaml(Path(path))
         for path in spec.get("profile_paths", [])
     ]
 
@@ -30,15 +30,16 @@ def load_sources(
     if isinstance(model_name, str) and model_name:
         provider = model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
         profiles.append(
-            FabricProfileConfig(
-                name="harbor_model",
-                models={
+            {
+                "schema_version": "fabric.profile/v1alpha1",
+                "name": "harbor_model",
+                "models": {
                     "default": {
                         "provider": provider,
                         "model": model_name,
                     }
                 },
-            )
+            }
         )
     return config, profiles
 

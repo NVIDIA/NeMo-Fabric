@@ -28,7 +28,6 @@ import yaml
 from nemo_fabric import (
     Fabric,
     FabricConfig,
-    FabricProfileConfig,
     RunRequest,
     RunResult,
 )
@@ -150,12 +149,8 @@ def sdk_and_cli_profile_stacks_match(client: Fabric) -> None:
 
     config = FabricConfig.from_mapping(_load_yaml(SHIM_AGENT / "agent.yaml"))
     profiles = [
-        FabricProfileConfig.from_mapping(
-            _load_yaml(SHIM_AGENT / "profiles" / "env-local.yaml")
-        ),
-        FabricProfileConfig.from_mapping(
-            _load_yaml(SHIM_AGENT / "profiles" / "mcp-github.yaml")
-        ),
+        _load_yaml(SHIM_AGENT / "profiles" / "env-local.yaml"),
+        _load_yaml(SHIM_AGENT / "profiles" / "mcp-github.yaml"),
     ]
 
     sdk_plan = client.plan(config, profiles=profiles, base_dir=SHIM_AGENT)

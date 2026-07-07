@@ -129,7 +129,7 @@ Fabric applies profiles in caller order and validates the final effective config
 before planning or running.
 
 Path sources select profiles by name. Typed `FabricConfig` sources use ordered
-`FabricProfileConfig` objects; the SDK rejects mixed profile stacks. See the
+profile mappings; the SDK rejects mixed profile stacks. See the
 [Python SDK contract](docs/python-sdk-contract.md) for the complete public API,
 type definitions, lifecycle semantics, and compatibility rules.
 
@@ -278,7 +278,7 @@ asyncio.run(chat())
 ```
 
 `start_session(...)` accepts either an agent path with named profiles or a
-`FabricConfig` with typed profiles. `stream(...)` is the stable streaming API;
+`FabricConfig` with profile mappings. `stream(...)` is the stable streaming API;
 current adapters may buffer internally before yielding events and the final
 result. Runtime updates and cancellation are capability-gated and raise
 `FabricCapabilityError` when the selected runtime does not support them.
