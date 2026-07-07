@@ -26,7 +26,3 @@ integrations/harbor/demo/task/environment/vendor/
 
 # vscode settings
 .vscode/
-
-# UV Lock
-# TBD if we want to track this in git
-uv.lock
