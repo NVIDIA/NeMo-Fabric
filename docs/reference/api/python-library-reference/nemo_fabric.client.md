@@ -1,7 +1,7 @@
 ---
 title: "Client"
 slug: "/reference/api/python-library-reference/client"
-description: "Resolve, plan, diagnose, and run agents with FabricClient."
+description: "Resolve, plan, diagnose, and run agents with Fabric."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -14,12 +14,12 @@ Native Python client for resolving and running NeMo Fabric agents.
 ---
 
 
-## <kbd>class</kbd> `FabricClient`
+## <kbd>class</kbd> `Fabric`
 Primary Python entrypoint for NeMo Fabric.
 
 The client accepts either a path-backed agent package or a typed ``FabricConfig``. Path-backed sources select profiles by name; typed sources accept ordered ``FabricProfileConfig`` values and may use ``base_dir`` to resolve relative paths. All inspection and execution APIs return typed, read-only mapping models.
 
-``FabricClient`` is native-only. The ``fabric`` CLI is a separate public surface over the same Rust core; SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
+``Fabric`` is native-only. The ``fabric`` CLI is a separate public surface over the same Rust core; SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
 The client is also an asynchronous context manager. Leaving the context does not stop independently created sessions; use each ``Session`` as an asynchronous context manager or call ``Session.stop()`` explicitly.
 

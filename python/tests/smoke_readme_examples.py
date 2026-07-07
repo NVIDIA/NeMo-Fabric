@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from nemo_fabric import FabricClient, FabricConfig
+from nemo_fabric import Fabric, FabricConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
@@ -29,7 +29,7 @@ DOCUMENTED_SNIPPETS = [
     'base_dir="examples/code-review-agent",',
     "### Multi-Turn SDK Sessions",
     "### Interactive CLI Chat",
-    "FabricClient().start_session(",
+    "Fabric().start_session(",
     'profiles=["hermes_session"],',
     'session_id="review-session-123",',
     "fabric chat examples/code-review-agent \\",
@@ -72,7 +72,7 @@ async def readme_python_examples_run() -> None:
     """The documented Python SDK examples execute and return documented shapes."""
 
     agent = EXAMPLE_AGENT
-    async with FabricClient() as client:
+    async with Fabric() as client:
         plan = client.plan(agent, profiles=["hermes_sdk"])
         report = await client.doctor(agent, profiles=["hermes_sdk"])
         typed_plan = client.plan(

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python" / "src"))
 
 from nemo_fabric import (  # noqa: E402
-    FabricClient,
+    Fabric,
     FabricConfig,
     FabricNativeUnavailableError,
     HarnessConfig,
@@ -46,11 +46,11 @@ def main() -> None:
 
     client_mod._native = None
     try:
-        FabricClient().plan(config)
+        Fabric().plan(config)
     except FabricNativeUnavailableError:
         pass
     else:
-        raise AssertionError("native-only FabricClient must reject a missing extension")
+        raise AssertionError("native-only Fabric must reject a missing extension")
 
 
 if __name__ == "__main__":

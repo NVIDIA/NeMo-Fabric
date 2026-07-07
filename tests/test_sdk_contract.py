@@ -19,7 +19,6 @@ from nemo_fabric import (
     EffectiveConfig,
     EnvironmentConfig,
     Fabric,
-    FabricClient,
     FabricCapabilityError,
     FabricConfig,
     FabricConfigError,
@@ -43,9 +42,7 @@ from nemo_fabric import (
 
 
 def test_public_contract_has_no_unreleased_aliases():
-    assert FabricClient is Fabric
     assert list(signature(Fabric).parameters) == []
-    assert list(signature(FabricClient).parameters) == []
     assert not hasattr(RunRequest, "from_text")
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
         assert not hasattr(Fabric, name)
@@ -457,7 +454,7 @@ class NativeRecorder:
         return json.dumps([])
 
 
-class NativeClient(FabricClient):
+class NativeClient(Fabric):
     def __init__(self, native: NativeRecorder) -> None:
         super().__init__()
         self.native = native

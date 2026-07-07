@@ -571,6 +571,3 @@ class Fabric:
                 code="native_unavailable",
             )
         return native
-
-
-FabricClient = Fabric

@@ -15,7 +15,7 @@ import pytest
 
 from nemo_fabric import (
     FabricCapabilityError,
-    FabricClient,
+    Fabric,
     FabricConfig,
     FabricConfigError,
     FabricNativeUnavailableError,
@@ -139,13 +139,13 @@ def mock_native_fixture() -> MagicMock:
 def native_client_fixture(
     monkeypatch: pytest.MonkeyPatch,
     mock_native: MagicMock,
-) -> FabricClient:
+) -> Fabric:
     monkeypatch.setattr(client_mod, "_native", mock_native)
-    return FabricClient()
+    return Fabric()
 
 
 def _session(mock_native: MagicMock, *, overrides: dict[str, Any] | None = None) -> Session:
-    client = FabricClient()
+    client = Fabric()
     client._native_module = lambda: mock_native  # type: ignore[method-assign]
     return Session(
         client=client,
@@ -156,7 +156,7 @@ def _session(mock_native: MagicMock, *, overrides: dict[str, Any] | None = None)
 
 
 async def test_start_session_supports_path_and_typed_sources(
-    native_client: FabricClient,
+    native_client: Fabric,
     mock_native: MagicMock,
 ):
     path_session = await native_client.start_session("agent", profiles=["typed"])
@@ -174,7 +174,7 @@ async def test_start_session_supports_path_and_typed_sources(
 
 
 async def test_start_session_rejects_non_session_capability(
-    native_client: FabricClient,
+    native_client: Fabric,
     mock_native: MagicMock,
 ):
     mock_native.plan.side_effect = lambda path, profiles: json.dumps(_plan("oneshot"))
@@ -184,7 +184,7 @@ async def test_start_session_rejects_non_session_capability(
 
 
 async def test_start_session_preserves_start_stage(
-    native_client: FabricClient,
+    native_client: Fabric,
     mock_native: MagicMock,
 ):
     mock_native.start_runtime.side_effect = RuntimeError("start failed")
@@ -196,7 +196,7 @@ async def test_start_session_preserves_start_stage(
 
 
 async def test_start_session_rejects_invalid_overrides_before_start(
-    native_client: FabricClient,
+    native_client: Fabric,
     mock_native: MagicMock,
 ):
     with pytest.raises(FabricConfigError, match="keys must be strings"):
@@ -209,7 +209,7 @@ async def test_start_session_rejects_invalid_overrides_before_start(
 
 
 async def test_start_session_rejects_cyclic_overrides_before_start(
-    native_client: FabricClient,
+    native_client: Fabric,
     mock_native: MagicMock,
 ):
     overrides: dict[str, Any] = {}
@@ -361,7 +361,7 @@ async def test_concurrent_invokes_are_rejected(
 
 
 async def test_run_stops_runtime_after_success_and_failure(
-    native_client: FabricClient,
+    native_client: Fabric,
     mock_native: MagicMock,
 ):
     result = await native_client.run("agent", input="hello")
@@ -375,7 +375,7 @@ async def test_run_stops_runtime_after_success_and_failure(
 
 
 async def test_async_lifecycle_methods_offload_planning(
-    native_client: FabricClient,
+    native_client: Fabric,
     monkeypatch: pytest.MonkeyPatch,
 ):
     event_loop_thread = threading.get_ident()
@@ -399,7 +399,7 @@ async def test_async_lifecycle_methods_offload_planning(
 
 
 async def test_run_surfaces_cleanup_failure_after_success(
-    native_client: FabricClient,
+    native_client: Fabric,
     mock_native: MagicMock,
 ):
     mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
@@ -412,7 +412,7 @@ async def test_run_surfaces_cleanup_failure_after_success(
 
 
 async def test_run_cancellation_keeps_event_loop_responsive_until_cleanup(
-    native_client: FabricClient,
+    native_client: Fabric,
     mock_native: MagicMock,
 ):
     started = threading.Event()
@@ -454,4 +454,4 @@ async def test_native_unavailable_uses_typed_error(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(client_mod, "_native", None)
 
     with pytest.raises(FabricNativeUnavailableError, match="native extension"):
-        FabricClient().plan("agent")
+        Fabric().plan("agent")

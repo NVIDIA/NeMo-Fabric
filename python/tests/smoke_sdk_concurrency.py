@@ -14,10 +14,10 @@ from shutil import copytree
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python" / "src"))
 
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 
-async def run_copy(client: FabricClient, fixture_agent: Path, root: Path, name: str) -> dict:
+async def run_copy(client: Fabric, fixture_agent: Path, root: Path, name: str) -> dict:
     agent = root / name
     copytree(fixture_agent, agent)
     return await client.run(agent, profiles=["env_local"], input=f"hello from {name}")
@@ -26,7 +26,7 @@ async def run_copy(client: FabricClient, fixture_agent: Path, root: Path, name: 
 async def main() -> None:
     fixture_agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
 
-    async with FabricClient() as client:
+    async with Fabric() as client:
         with tempfile.TemporaryDirectory(prefix="fabric-sdk-concurrency-") as tmpdir:
             temp_root = Path(tmpdir)
             first, second = await asyncio.gather(

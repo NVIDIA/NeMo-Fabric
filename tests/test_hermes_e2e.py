@@ -13,7 +13,7 @@ import pytest
 import yaml
 
 from _utils.utils import update_base_url
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 
 class BaseTestHermesE2E:
@@ -49,7 +49,7 @@ class BaseTestHermesE2E:
             api_server,
         )
 
-        async with FabricClient() as client:
+        async with Fabric() as client:
             self.result = await client.run(
                 code_review_agent_dir,
                 profiles=list(self.profile_names),

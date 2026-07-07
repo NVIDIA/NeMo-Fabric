@@ -142,12 +142,12 @@ Use Fabric from Python:
 import asyncio
 from pathlib import Path
 
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 async def main():
     agent = Path("examples/code-review-agent")
 
-    async with FabricClient() as client:
+    async with Fabric() as client:
         resolved = client.resolve(agent, profiles=["hermes_sdk"])
         plan = client.plan(agent, profiles=["hermes_sdk"])
         report = await client.doctor(agent, profiles=["hermes_sdk"])
@@ -163,7 +163,7 @@ Consumers that already own a top-level job config can construct the Fabric slice
 in code instead of materializing an agent directory:
 
 ```python
-from nemo_fabric import FabricClient, FabricConfig
+from nemo_fabric import Fabric, FabricConfig
 
 config = FabricConfig.from_mapping(
     {
@@ -185,7 +185,7 @@ config = FabricConfig.from_mapping(
     },
 )
 
-client = FabricClient()
+client = Fabric()
 plan = client.plan(
     config,
     base_dir="examples/code-review-agent",
@@ -197,7 +197,7 @@ request explicitly. Results remain dict-compatible while exposing stable fields
 as attributes:
 
 ```python
-from nemo_fabric import FabricClient, FabricConfig, FabricError, RunRequest
+from nemo_fabric import Fabric, FabricConfig, FabricError, RunRequest
 
 request = RunRequest(
     input="Review the workspace changes.",
@@ -209,7 +209,7 @@ request = RunRequest(
 async def run(raw_config):
     config = FabricConfig.from_mapping(raw_config)
     try:
-        async with FabricClient() as client:
+        async with Fabric() as client:
             result = await client.run(
                 config,
                 base_dir="examples/code-review-agent",
@@ -246,10 +246,10 @@ uses the generated `runtime_id`; if supplied, Fabric uses the caller-provided
 ```python
 import asyncio
 
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 async def chat():
-    async with await FabricClient().start_session(
+    async with await Fabric().start_session(
         "examples/code-review-agent",
         profiles=["hermes_session"],
         session_id="review-session-123",
@@ -310,7 +310,7 @@ transcript and metadata are written together on stderr.
 The opt-in real integration checks are `tests/smoke_hermes_session.py` and
 `tests/smoke_codex_cli.py`.
 
-`FabricClient()` uses the native Rust binding. SDK `run(...)` and
+`Fabric()` uses the native Rust binding. SDK `run(...)` and
 `start_session(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
 `invoke_runtime` / `stop_runtime`) so one-shot and session paths use the same
 adapter execution contract. The CLI is a separate interface over the same Rust

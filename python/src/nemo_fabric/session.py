@@ -47,7 +47,7 @@ class SessionStatus(str, Enum):
 class Session:
     """One ordered multi-turn conversation over a Fabric runtime.
 
-    Create sessions with ``FabricClient.start_session()`` rather than calling
+    Create sessions with ``Fabric.start_session()`` rather than calling
     the constructor. A session owns one started runtime, serializes invocations,
     and preserves harness state across turns. Use it as an asynchronous context
     manager to stop the runtime on exit.

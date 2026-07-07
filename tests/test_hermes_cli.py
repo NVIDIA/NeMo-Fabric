@@ -4,12 +4,12 @@
 import types
 from pathlib import Path
 
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 
 async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, hermes_cli_profile: str):
     # Ensure the hermes_cli adapter returns expected fields
-    async with FabricClient() as client:
+    async with Fabric() as client:
         result = await client.run(
             hermes_agent_dir,
             profiles=[hermes_cli_profile],
@@ -54,7 +54,7 @@ telemetry:
         encoding="utf-8",
     )
 
-    async with FabricClient() as client:
+    async with Fabric() as client:
         result = await client.run(
             hermes_agent_dir,
             profiles=[hermes_cli_profile, "native_telemetry"],
@@ -76,7 +76,7 @@ async def test_hermes_cli_multi_turn(
     This test calls the fake-hermes.py script rather than hermes itself, thus it doesn't require an API key, however
     the hermes_cli adapter does use the hermes_state module, so we can test that the session is recorded propperly.
     """
-    async with await FabricClient().start_session(
+    async with await Fabric().start_session(
         hermes_agent_dir,
         profiles=[hermes_cli_session_profile],
     ) as session:

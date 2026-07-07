@@ -38,11 +38,11 @@ Invalid JSON values raise `FabricConfigError` before native execution.
 ## Client and CLI
 
 ```python
-class FabricClient:
+class Fabric:
     def __init__(self) -> None: ...
 ```
 
-`FabricClient` is native-only. The CLI is a separate surface over the same core;
+`Fabric` is native-only. The CLI is a separate surface over the same core;
 the same file-backed config and profiles produce equivalent contract data.
 
 ## Agent Sources and Profiles
@@ -231,7 +231,7 @@ the execution mechanism.
 These compact signatures use the source-specific overloads above.
 
 ```python
-class FabricClient:
+class Fabric:
     def resolve(
         self,
         agent: AgentSource,

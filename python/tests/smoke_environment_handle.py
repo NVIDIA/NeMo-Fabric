@@ -12,13 +12,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 async def main() -> None:
-    async with FabricClient() as client:
+    async with Fabric() as client:
         session = await client.start_session(
             ROOT / "examples" / "code-review-agent",
             profiles=["env_local"],

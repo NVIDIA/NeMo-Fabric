@@ -23,7 +23,7 @@ harbor run
   -> FabricAgent on the host
   -> Harbor BaseEnvironment.exec(...)
   -> python -m nemo_fabric.integrations.harbor.runner in the task environment
-  -> FabricClient.run(...)
+  -> Fabric.run(...)
   -> selected Fabric harness adapter
 ```
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from shutil import copytree
 
 import nemo_fabric._native as native
-from nemo_fabric import FabricClient, FabricConfig, FabricProfileConfig
+from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -19,11 +19,11 @@ ROOT = Path(__file__).resolve().parents[2]
 async def main() -> None:
     assert native.version()
 
-    async with FabricClient() as client:
+    async with Fabric() as client:
         await smoke(client)
 
 
-async def smoke(client: FabricClient) -> None:
+async def smoke(client: Fabric) -> None:
     example_agent = ROOT / "examples" / "code-review-agent"
     fixture_agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
 

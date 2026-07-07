@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 @pytest.mark.parametrize("api_key_set", [True, False])
 async def test_preflight_api_key_e2e(hermes_agent_dir: Path, hermes_cli_profile: str, api_key_set: bool):
@@ -27,7 +27,7 @@ async def test_preflight_api_key_e2e(hermes_agent_dir: Path, hermes_cli_profile:
         assert "FAB_CI_FAKE_KEY" not in os.environ, "FAB_CI_FAKE_KEY should not be set in the environment for this test"
     
 
-    async with FabricClient() as client:
+    async with Fabric() as client:
         result = await client.run(
             hermes_agent_dir,
             profiles=[hermes_cli_profile],

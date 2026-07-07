@@ -16,7 +16,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
     import tomli as tomllib
 
-from nemo_fabric import FabricClient, FabricConfig
+from nemo_fabric import Fabric, FabricConfig
 
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTER_PATH = (
@@ -738,7 +738,7 @@ async def test_fabric_session_invokes_codex_then_resumes(tmp_path):
     write_mock_codex(mock_codex)
     config = fabric_config(tmp_path, mock_codex, mode="session")
 
-    async with await FabricClient().start_session(
+    async with await Fabric().start_session(
         config,
         base_dir=tmp_path,
         session_id="fabric-session",
@@ -761,7 +761,7 @@ async def test_fabric_oneshot_is_ephemeral_and_uses_cached_codex_auth(tmp_path):
     config = fabric_config(tmp_path, mock_codex, mode="oneshot")
     os.environ.pop("OPENAI_API_KEY", None)
 
-    async with FabricClient() as client:
+    async with Fabric() as client:
         report = await client.doctor(config, base_dir=tmp_path)
         result = await client.run(
             config,
@@ -788,7 +788,7 @@ async def test_fabric_oneshot_is_ephemeral_and_uses_cached_codex_auth(tmp_path):
     ],
 )
 def test_codex_profiles_resolve_runtime_mode(profile, mode, session_capability):
-    plan = FabricClient().plan(
+    plan = Fabric().plan(
         ROOT / "examples" / "code-review-agent",
         profiles=[profile],
     )

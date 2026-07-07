@@ -88,12 +88,12 @@ Use the same package through the typed Python SDK:
 import asyncio
 from pathlib import Path
 
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 
 async def main() -> None:
     agent = Path("examples/code-review-agent")
-    async with FabricClient() as client:
+    async with Fabric() as client:
         plan = client.plan(agent, profiles=["hermes_sdk"])
         report = await client.doctor(agent, profiles=["hermes_sdk"])
         result = await client.run(

@@ -59,7 +59,7 @@ uv run --extra harbor harbor run \
 The config and profile paths are paths inside the Harbor task container.
 `--ak` passes constructor arguments to `FabricAgent`; these are not Fabric CLI
 flags. The integration loads the YAML into typed SDK config objects and calls
-`FabricClient.run()` inside the task environment.
+`Fabric.run()` inside the task environment.
 
 ## Switch harnesses and telemetry with profiles
 

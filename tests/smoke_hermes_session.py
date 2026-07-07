@@ -3,7 +3,7 @@
 
 """Opt-in integration smoke for the SDK multi-turn Session path (real Hermes).
 
-Drives ``FabricClient.start -> invoke -> invoke -> stop`` against the Hermes SDK
+Drives ``Fabric.start -> invoke -> invoke -> stop`` against the Hermes SDK
 and CLI adapters and asserts the session carries conversation memory across
 turns through the same Fabric runtime handle.
 
@@ -72,10 +72,10 @@ async def _run() -> None:
 
 
 async def _run_sdk_session() -> None:
-    from nemo_fabric import FabricClient, SessionStatus
+    from nemo_fabric import Fabric, SessionStatus
 
     agent = str(ROOT / "examples" / "code-review-agent")
-    async with await FabricClient().start_session(
+    async with await Fabric().start_session(
         agent,
         profiles=["hermes_session"],
     ) as session:
@@ -99,10 +99,10 @@ async def _run_sdk_session() -> None:
 
 
 async def _run_cli_session() -> None:
-    from nemo_fabric import FabricClient, SessionStatus
+    from nemo_fabric import Fabric, SessionStatus
 
     agent = str(ROOT / "examples" / "code-review-agent")
-    async with await FabricClient().start_session(
+    async with await Fabric().start_session(
         agent,
         profiles=["hermes_cli_session"],
     ) as session:

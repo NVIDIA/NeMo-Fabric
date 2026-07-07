@@ -74,7 +74,7 @@ Important kwargs:
 Harbor passes the task instruction to Fabric as `RunRequest.input`. Harbor
 metadata such as model name, skills directory, and MCP server definitions are
 included under `RunRequest.context`. The sandbox-local runner loads YAML into
-`FabricConfig` and `FabricProfileConfig`, then calls `FabricClient.run()`.
+`FabricConfig` and `FabricProfileConfig`, then calls `Fabric.run()`.
 The normalized result is saved as `fabric-result.json`, and summary fields are
 copied into `context.metadata["fabric"]`.
 

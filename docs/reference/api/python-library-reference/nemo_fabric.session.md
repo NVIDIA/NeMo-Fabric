@@ -29,7 +29,7 @@ Lifecycle state of a session runtime.
 ## <kbd>class</kbd> `Session`
 One ordered multi-turn conversation over a Fabric runtime.
 
-Create sessions with ``FabricClient.start_session()`` rather than calling the constructor. A session owns one started runtime, serializes invocations, and preserves harness state across turns. Use it as an asynchronous context manager to stop the runtime on exit.
+Create sessions with ``Fabric.start_session()`` rather than calling the constructor. A session owns one started runtime, serializes invocations, and preserves harness state across turns. Use it as an asynchronous context manager to stop the runtime on exit.
 
 Session-scoped overrides are recursively merged with invocation overrides; invocation values win. Runtime identity and conversation identity are distinct: ``runtime_id`` identifies this lifecycle, while ``session_id`` is the stable caller-owned resume key.
 

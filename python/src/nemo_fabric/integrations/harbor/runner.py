@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from nemo_fabric import FabricClient, FabricConfig, FabricProfileConfig, RunRequest
+from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig, RunRequest
 
 
 def load_sources(
@@ -53,7 +53,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
 async def run(spec: dict[str, Any]) -> dict[str, Any]:
     config, profiles = load_sources(spec)
     request = RunRequest.from_mapping(spec.get("request", {}))
-    async with FabricClient() as client:
+    async with Fabric() as client:
         result = await client.run(
             config,
             profiles=profiles,

@@ -10,14 +10,14 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 ## Modules
 
-- [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NeMo Fabric agents.
+- [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabric): Native Python client for resolving and running NeMo Fabric agents.
 - [`nemo_fabric.session`](./nemo_fabric.session.md#module-nemo_fabricsession): Session lifecycle support for the Fabric Python SDK.
 - [`nemo_fabric.types`](./nemo_fabric.types.md#module-nemo_fabrictypes): Public data contracts for the NeMo Fabric Python SDK.
 - [`nemo_fabric.errors`](./nemo_fabric.errors.md#module-nemo_fabricerrors): Public exception hierarchy for the NeMo Fabric Python SDK.
 
 ## Classes
 
-- [`client.FabricClient`](./nemo_fabric.client.md#class-fabricclient): Primary Python entrypoint for NeMo Fabric.
+- [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
 - [`session.Session`](./nemo_fabric.session.md#class-session): One ordered multi-turn conversation over a Fabric runtime.
 - [`session.SessionStatus`](./nemo_fabric.session.md#class-sessionstatus): Lifecycle state of a session runtime.
 - [`types.AdapterInfo`](./nemo_fabric.types.md#class-adapterinfo): Resolved adapter identity attached to a run plan.

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from nemo_fabric import (
     FabricCapabilityError,
-    FabricClient,
+    Fabric,
     FabricStateError,
     RunRequest,
     RunResult,
@@ -134,7 +134,7 @@ class MockNative:
         return "[]"
 
 
-class NativeClient(FabricClient):
+class NativeClient(Fabric):
     def __init__(self, native: MockNative) -> None:
         super().__init__()
         self.native = native

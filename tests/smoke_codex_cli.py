@@ -32,11 +32,11 @@ def main() -> None:
 
 
 async def _run() -> None:
-    from nemo_fabric import FabricClient
+    from nemo_fabric import Fabric
 
     agent = ROOT / "examples" / "code-review-agent"
     nonce = f"fabric-{uuid.uuid4().hex[:8]}"
-    async with FabricClient() as client:
+    async with Fabric() as client:
         oneshot = await client.run(
             agent,
             profiles=["codex_cli"],

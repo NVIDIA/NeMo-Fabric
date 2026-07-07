@@ -3,7 +3,7 @@
 
 """Python SDK surface for NeMo Fabric."""
 
-from nemo_fabric.client import Fabric, FabricClient
+from nemo_fabric.client import Fabric
 from nemo_fabric.errors import (
     FabricCapabilityError,
     FabricConfigError,
@@ -51,7 +51,6 @@ __all__ = [
     "Fabric",
     "FabricConfig",
     "FabricCapabilityError",
-    "FabricClient",
     "FabricConfigError",
     "FabricError",
     "FabricEvent",
