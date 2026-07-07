@@ -64,12 +64,21 @@ request and the use of returned evidence.
 
 ## Quick start
 
+Install `just` 1.50.0+ if it is not already available.
+
+```bash
+cargo install just --locked
+```
+
+Refer to the [official installation guide](https://just.systems/man/en/installation.html)
+for more details.
+
 Install the Python SDK with its native binding and the CLI from a source
 checkout:
 
 ```bash
-python3 -m pip install -e .
-cargo install --path crates/fabric-cli --locked --force
+export PATH="$HOME/.cargo/bin:$PATH"
+just build-all
 ```
 
 Inspect and diagnose an agent package before running it:

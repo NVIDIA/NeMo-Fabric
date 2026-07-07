@@ -1,0 +1,8 @@
+{
+  "name": "nemo-fabric-docs",
+  "private": true,
+  "version": "0.0.0",
+  "devDependencies": {
+    "fern-api": "5.37.10"
+  }
+}
