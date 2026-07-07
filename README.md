@@ -142,6 +142,15 @@ fabric plan examples/code-review-agent --profile hermes_sdk
 fabric plan examples/code-review-agent --profile env_local --profile mcp_github
 ```
 
+For temporary CLI experiments, apply dotted JSON overrides after profiles:
+
+```bash
+fabric inspect examples/code-review-agent \
+  --profile hermes_sdk \
+  --set telemetry.enabled=true \
+  --set telemetry.output_dir=./artifacts/cli-set
+```
+
 Use Fabric from Python:
 
 ```python
