@@ -130,7 +130,7 @@ before planning or running.
 
 Path sources select profiles by name. Typed `FabricConfig` sources use ordered
 profile mappings; the SDK rejects mixed profile stacks. See the
-[Python SDK contract](docs/python-sdk-contract.md) for the complete public API,
+[Python SDK guide](docs/sdk/python.mdx) for the complete public API,
 type definitions, lifecycle semantics, and compatibility rules.
 
 ## Use Fabric

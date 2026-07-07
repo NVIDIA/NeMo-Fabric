@@ -6,10 +6,14 @@ navigation:
     contents:
       - page: Overview
         path: ./getting-started/overview.mdx
-  - section: Guides
+  - section: SDK
     contents:
-      - page: Evaluate agents with Harbor
-        path: ./guides/harbor-evaluation.mdx
+      - page: Python SDK
+        path: ./sdk/python.mdx
+  - section: Integrations
+    contents:
+      - page: Harbor
+        path: ./integrations/harbor.mdx
   - section: Reference
     contents:
       - section: API
