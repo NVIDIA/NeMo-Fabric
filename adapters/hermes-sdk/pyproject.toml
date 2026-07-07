@@ -26,6 +26,7 @@ include = ["nemo_fabric_adapters.hermes_sdk*"]
 [tool.setuptools_dynamic_dependencies]
 dependencies = [
   "nemo-fabric-adapters-common == {version}",
+  "pyyaml>=6.0", # needed for writing hermes config files
 ]
 
 [tool.setuptools_scm]

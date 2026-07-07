@@ -1608,7 +1608,7 @@ adapters-hermes-sdk = [
     { name = "nemo-fabric-adapters-hermes-sdk" },
 ]
 codex = [
-    { name = "tomli-w" },
+    { name = "nemo-fabric-adapters-codex-cli" },
 ]
 docs = [
     { name = "beautifulsoup4" },
@@ -1620,7 +1620,8 @@ harbor = [
 ]
 hermes = [
     { name = "hermes-agent" },
-    { name = "pyyaml" },
+    { name = "nemo-fabric-adapters-hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-sdk" },
 ]
 relay = [
     { name = "nemo-relay" },
@@ -1648,13 +1649,14 @@ requires-dist = [
     { name = "hermes-agent", marker = "extra == 'hermes'", specifier = ">=0.17.0" },
     { name = "lazydocs", marker = "extra == 'docs'", specifier = ">=0.4" },
     { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'adapters-codex-cli'", directory = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'codex'", directory = "adapters/codex-cli" },
     { name = "nemo-fabric-adapters-common", marker = "extra == 'adapters-common'", directory = "adapters/common" },
     { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'adapters-hermes-cli'", directory = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'hermes'", directory = "adapters/hermes-cli" },
     { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'adapters-hermes-sdk'", directory = "adapters/hermes-sdk" },
-    { name = "nemo-relay", marker = "python_full_version >= '3.11' and extra == 'relay'", specifier = "~=0.4" },
+    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'hermes'", directory = "adapters/hermes-sdk" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = "~=0.4" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
-    { name = "pyyaml", marker = "extra == 'hermes'", specifier = ">=6.0" },
-    { name = "tomli-w", marker = "extra == 'codex'", specifier = "~=1.2" },
     { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
 ]
 provides-extras = ["adapters-common", "adapters-codex-cli", "adapters-hermes-cli", "adapters-hermes-sdk", "codex", "harbor", "docs", "hermes", "relay"]
@@ -1676,10 +1678,14 @@ name = "nemo-fabric-adapters-codex-cli"
 source = { directory = "adapters/codex-cli" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
+    { name = "tomli-w" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "nemo-fabric-adapters-common", specifier = "==0.1.dev155+g01ebeb1f3.d20260707" }]
+requires-dist = [
+    { name = "nemo-fabric-adapters-common", specifier = "==0.1.0.dev6+g167fd64" },
+    { name = "tomli-w", specifier = "~=1.2" },
+]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
@@ -1690,20 +1696,30 @@ name = "nemo-fabric-adapters-hermes-cli"
 source = { directory = "adapters/hermes-cli" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
+    { name = "pyyaml" },
+    { name = "tomli-w" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "nemo-fabric-adapters-common", specifier = "==0.1.dev155+g01ebeb1f3.d20260707" }]
+requires-dist = [
+    { name = "nemo-fabric-adapters-common", specifier = "==0.1.0.dev6+g167fd64" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "tomli-w", specifier = "~=1.2" },
+]
 
 [[package]]
 name = "nemo-fabric-adapters-hermes-sdk"
 source = { directory = "adapters/hermes-sdk" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "nemo-fabric-adapters-common", specifier = "==0.1.dev155+g01ebeb1f3.d20260707" }]
+requires-dist = [
+    { name = "nemo-fabric-adapters-common", specifier = "==0.1.0.dev6+g167fd64" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
 
 [[package]]
 name = "nemo-relay"

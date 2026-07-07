@@ -26,6 +26,7 @@ include = ["nemo_fabric_adapters.codex_cli*"]
 [tool.setuptools_dynamic_dependencies]
 dependencies = [
   "nemo-fabric-adapters-common == {version}",
+  "tomli-w~=1.2",
 ]
 
 [tool.setuptools_scm]

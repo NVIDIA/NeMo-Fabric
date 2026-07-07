@@ -30,7 +30,7 @@ adapters-hermes-sdk = [
 ]
 
 codex = [
-  "tomli-w~=1.2",
+  "nemo-fabric-adapters-codex-cli",
 ]
 
 harbor = [
@@ -43,12 +43,13 @@ docs = [
 ]
 
 hermes = [
+  "nemo-fabric-adapters-hermes-cli",
+  "nemo-fabric-adapters-hermes-sdk",
   "hermes-agent>=0.17.0",
-  "pyyaml>=6.0", # needed by adapters to write hermes config files
 ]
 
 relay = [
-  "nemo-relay~=0.4; python_version >= '3.11'",
+  "nemo-relay~=0.4",
   "tomli-w~=1.2", # Needed by adapters to write relay config files
 ]
 
