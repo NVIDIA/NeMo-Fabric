@@ -10,7 +10,6 @@ environment:
 
 telemetry:
   enabled: true
-  mode: sdk
   output_dir: /logs/agent/fabric-artifacts/hermes-relay/relay
   config:
     version: 1

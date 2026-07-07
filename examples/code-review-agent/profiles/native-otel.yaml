@@ -8,7 +8,6 @@ description: Enable Native OpenTelemetry tracing.
 telemetry:
   enabled: true
   provider: native
-  mode: sdk
   config:
     version: 1
     components:

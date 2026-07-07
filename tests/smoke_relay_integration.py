@@ -47,7 +47,7 @@ def main() -> None:
         )
         assert result["status"] == "succeeded"
         assert result["telemetry"]["relay_enabled"] is True
-        assert result["telemetry"]["metadata"]["relay_mode"] == "sdk"
+        assert "relay_mode" not in result["telemetry"]["metadata"]
         assert result["output"]["mode"] == "hermes_sdk"
         assert result["output"]["relay_runtime"]["emitter"] == "hermes.observability/nemo_relay"
         assert_hermes_config_mapping(result["output"])

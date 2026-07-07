@@ -16,7 +16,6 @@ environment:
 
 telemetry:
   enabled: true
-  mode: sdk
   output_dir: ./artifacts/opensandbox
   config:
     version: 1

@@ -23,6 +23,7 @@ use crate::config::{
 use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+const RELAY_RUNTIME_MODE: &str = "sdk";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -1279,9 +1280,6 @@ fn runtime_telemetry_context(
         "telemetry_provider".to_string(),
         Value::String(telemetry.provider.as_str().to_string()),
     );
-    if let Some(mode) = &telemetry.relay_mode {
-        metadata.insert("relay_mode".to_string(), Value::String(mode.clone()));
-    }
     if let Some(project) = &telemetry.relay_project {
         metadata.insert("relay_project".to_string(), Value::String(project.clone()));
     }
@@ -1685,7 +1683,7 @@ fn prepare_relay_runtime_config(
         "schema_version": "fabric.relay/v1alpha1",
         "relay": {
             "enabled": true,
-            "mode": telemetry.relay_mode.as_deref().unwrap_or("sdk"),
+            "mode": RELAY_RUNTIME_MODE,
             "project": telemetry.relay_project.clone(),
             "output_dir": telemetry
                 .relay_output_dir
@@ -1718,15 +1716,14 @@ fn prepare_relay_runtime_config(
         "application/json",
     )?;
     let path = absolute_path(root.join("relay-config.json"))?;
-    let mode = telemetry
-        .relay_mode
-        .clone()
-        .unwrap_or_else(|| "sdk".to_string());
     Ok(Some(RelayRuntimeConfig {
         path: path.clone(),
         env: BTreeMap::from([
             ("FABRIC_RELAY_ENABLED".to_string(), "true".to_string()),
-            ("FABRIC_RELAY_MODE".to_string(), mode),
+            (
+                "FABRIC_RELAY_MODE".to_string(),
+                RELAY_RUNTIME_MODE.to_string(),
+            ),
             (
                 "FABRIC_RELAY_CONFIG_PATH".to_string(),
                 path.to_string_lossy().into_owned(),
@@ -1752,9 +1749,6 @@ fn telemetry_ref(
         "telemetry_provider".to_string(),
         Value::String(telemetry.provider.as_str().to_string()),
     );
-    if let Some(mode) = &telemetry.relay_mode {
-        metadata.insert("relay_mode".to_string(), Value::String(mode.clone()));
-    }
     if let Some(project) = &telemetry.relay_project {
         metadata.insert("relay_project".to_string(), Value::String(project.clone()));
     }

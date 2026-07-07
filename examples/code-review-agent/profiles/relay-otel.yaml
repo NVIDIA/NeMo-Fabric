@@ -8,7 +8,6 @@ description: Enable NeMo Relay OpenTelemetry tracing.
 telemetry:
   enabled: true
   provider: relay
-  mode: sdk
   output_dir: ./artifacts/relay-otel
   config:
     version: 1
