@@ -40,7 +40,7 @@ build-python:
             --editable ./python \
             --editable .
     else
-        uv sync --no-default-groups \
+        uv sync --no-default-groups --extra runtime \
             --reinstall-package nemo-fabric \
             --reinstall-package nemo-fabric-runtime
     fi
@@ -83,7 +83,7 @@ test-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
-        uv sync --group test --no-group dev --extra harbor --extra hermes --extra relay --extra runtime
+        uv sync --group test --no-group dev --extra codex --extra harbor --extra hermes --extra relay --extra runtime
     fi
     uv run --no-sync pytest
 
