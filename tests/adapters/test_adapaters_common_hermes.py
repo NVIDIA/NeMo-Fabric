@@ -26,7 +26,7 @@ def test_request_payload():
 def test_default_base_url(
     provider: str | None,
     expected: str | None,
-) -> None:
+):
     assert hermes_common.default_base_url(provider) == expected
 
 
@@ -51,7 +51,7 @@ def test_get_base_url(
     settings: dict[str, object],
     model_config: dict[str, object],
     expected: str | None,
-) -> None:
+):
     assert hermes_common.get_base_url(settings, model_config) == expected
 
 
@@ -75,7 +75,7 @@ def test_selected_model_config(
     selected_model: str | None,
     models: dict[str, object],
     expected: dict[str, object],
-) -> None:
+):
     settings = {}
     if selected_model is not None:
         settings["model"] = selected_model
@@ -94,7 +94,7 @@ def test_selected_model_config(
 @pytest.mark.parametrize("provider", [None, "relay"])
 def test_validate_hermes_telemetry_provider_accepts_relay(
     provider: str | None,
-) -> None:
+):
     telemetry = {"enabled": True}
     if provider is not None:
         telemetry["provider"] = provider
@@ -103,7 +103,7 @@ def test_validate_hermes_telemetry_provider_accepts_relay(
     hermes_common.validate_hermes_telemetry_provider(payload)
 
 
-def test_validate_hermes_telemetry_provider_rejects_native() -> None:
+def test_validate_hermes_telemetry_provider_rejects_native():
     payload = {
         "effective_config": {
             "config": {"telemetry": {"enabled": True, "provider": "native"}}
@@ -114,7 +114,7 @@ def test_validate_hermes_telemetry_provider_rejects_native() -> None:
         hermes_common.validate_hermes_telemetry_provider(payload)
 
 
-def test_build_hermes_config_maps_fabric_config_to_hermes_config() -> None:
+def test_build_hermes_config_maps_fabric_config_to_hermes_config():
     os.environ["MCP_URL"] = "http://localhost:9000/mcp"
     payload = {
         "runtime_context": {"environment": {"workspace": "/workspace/repo"}},
@@ -188,7 +188,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config() -> None:
 
 def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     tmp_path: Path,
-) -> None:
+):
     relay_config = tmp_path / "relay.json"
     relay_config.write_text(
         json.dumps(
@@ -283,7 +283,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
 
-def test_write_hermes_config_writes_file(tmp_path: Path) -> None:
+def test_write_hermes_config_writes_file(tmp_path: Path):
     payload = {
         "effective_config": {
             "config": {
@@ -337,7 +337,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path) -> None:
 def test_hermes_mcp_server_config(
     server: dict[str, str],
     expected: dict[str, object],
-) -> None:
+):
     assert hermes_common.hermes_mcp_server_config(server) == expected
 
 
@@ -350,16 +350,16 @@ def test_hermes_mcp_server_config(
 )
 def test_hermes_mcp_server_config_rejects_unsupported_mappings(
     server: dict[str, str],
-) -> None:
+):
     with pytest.raises(ValueError, match="requires url or command"):
         hermes_common.hermes_mcp_server_config(server)
 
 
-def test_without_none() -> None:
+def test_without_none():
     assert hermes_common.without_none({"a": 1, "b": None, "c": False}) == {"a": 1, "c": False}
 
 
-def test_summarize_hermes_config() -> None:
+def test_summarize_hermes_config():
     assert hermes_common.summarize_hermes_config(
         {
             "model": {"default": "demo"},
@@ -381,7 +381,7 @@ def test_summarize_hermes_config() -> None:
 
 def test_configure_hermes_relay_sets_hermes_plugin_environment(
     tmp_path: Path,
-) -> None:
+):
     config_path = tmp_path / "relay.json"
     config_path.write_text(
         json.dumps(
@@ -448,7 +448,7 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
     assert os.environ["HERMES_NEMO_RELAY_ATIF_MODEL_NAME"] == "nvidia/review-model"
 
 
-def test_configure_hermes_relay_returns_none_when_disabled() -> None:
+def test_configure_hermes_relay_returns_none_when_disabled():
     os.environ.pop("FABRIC_RELAY_ENABLED", None)
 
     assert hermes_common.configure_hermes_relay({}) is None
