@@ -3,7 +3,6 @@
   "harness": "codex",
   "adapter_kind": "process",
   "runner": {
-    "command": "python3",
     "script": "nemo-fabric-adapters-codex-cli",
     "stdin_payload": "fabric_request"
   },
