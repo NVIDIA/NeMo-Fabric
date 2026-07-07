@@ -76,23 +76,33 @@ around that contract.
 Fabric uses explicit contract versions where persisted or independently
 maintained artifacts cross package boundaries:
 
-- `schema_version` identifies portable config files such as `agent.yaml` and
-  profile files.
+- `schema_version` identifies portable config documents such as `agent.yaml`
+  and profile files.
 - `contract_version` identifies the adapter descriptor contract implemented by
   a `fabric-adapter.json` file.
 - Python and Rust package versions identify the installed SDK/core release.
 
+Fabric versions top-level persisted documents and independently maintained
+contracts. It does not version each config subsection independently. For
+example, MCP, skills, models, telemetry, and runtime fields evolve under the
+enclosing `schema_version`.
+
 Fabric validates adapter descriptor contract versions during planning. Package
-semver alone is not treated as the compatibility contract for saved agent
-packages or independently maintained adapters.
+semver identifies the installed implementation, but it is not the compatibility
+contract for saved agent packages or independently maintained adapters.
 
 ### Config Extensibility
 
-The public schema has typed fields for stable Fabric concepts and explicit
+The public schema has typed fields for stable Fabric concepts and controlled
 extension points for adapter- or application-owned data. Use known fields for
 portable concepts such as harness selection, models, runtime, skills, MCP,
 telemetry, and artifacts. Use adapter-owned `harness.settings`, metadata, or
-preserved extension fields for data that Fabric should carry but not interpret.
+preserved extension fields for data Fabric should carry but not interpret.
+
+Additive optional fields may be introduced within the existing document schema
+version when old configs remain valid. Required fields, removed fields, or
+semantic changes that alter how existing configs are interpreted require a new
+enclosing document schema version or an explicit compatibility path.
 
 Unknown data is not the same as supported behavior. An adapter must advertise
 and implement a capability before Fabric treats it as runnable.
