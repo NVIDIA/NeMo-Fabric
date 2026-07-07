@@ -28,7 +28,7 @@ from nemo_fabric.types import (
     RuntimeHandle,
     RuntimeUpdate,
     RuntimeUpdateResult,
-    SessionInfo,
+    SessionHandle,
 )
 
 
@@ -64,6 +64,7 @@ class Session:
         client: Any,
         plan: RunPlan | Mapping[str, Any],
         runtime: RuntimeHandle | Mapping[str, Any],
+        handle: SessionHandle | Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
         session_id: str | None = None,
     ) -> None:
@@ -74,12 +75,24 @@ class Session:
         self._runtime = (
             runtime if isinstance(runtime, RuntimeHandle) else RuntimeHandle.from_mapping(runtime)
         )
+        self._handle = (
+            _session_handle_from_runtime(
+                self._plan,
+                self._runtime,
+                session_id=session_id,
+                status=SessionStatus.ACTIVE,
+            )
+            if handle is None
+            else handle if isinstance(handle, SessionHandle) else SessionHandle.from_mapping(handle)
+        )
         self._client = client
         self._overrides = _json_mapping(overrides, "session overrides")
-        self._session_id = session_id
         self._messages: list[Any] = []
         self._invocations: list[dict[str, Any]] = []
-        self._status = SessionStatus.ACTIVE
+        try:
+            self._status = SessionStatus(self._handle.status)
+        except ValueError as error:
+            raise FabricConfigError(f"unknown session status: {self._handle.status}") from error
         self._current_task: asyncio.Task[Any] | None = None
         self._closing = False
 
@@ -108,6 +121,12 @@ class Session:
         return RuntimeHandle.from_mapping(self._runtime.to_mapping())
 
     @property
+    def handle(self) -> SessionHandle:
+        """Return a detached snapshot of the public session handle."""
+
+        return SessionHandle.from_mapping(self._handle.to_mapping())
+
+    @property
     def runtime_id(self) -> str:
         """Return the unique identifier for this started runtime lifecycle."""
 
@@ -115,27 +134,15 @@ class Session:
 
     @property
     def session_id(self) -> str:
-        """Return the stable conversation ID, defaulting to ``runtime_id``."""
+        """Return the stable session ID."""
 
-        return self._session_id or self.runtime_id
+        return self._handle.session_id
 
     @property
-    def info(self) -> SessionInfo:
+    def info(self) -> SessionHandle:
         """Return a typed snapshot of session identity, status, and capabilities."""
 
-        return SessionInfo.from_mapping(
-            {
-                "session_id": self.session_id,
-                "runtime_id": self.runtime_id,
-                "agent_name": self._runtime.agent_name,
-                "profiles": self._plan.profiles,
-                "harness": self._runtime.harness,
-                "adapter_id": self._runtime.adapter_id,
-                "adapter_kind": self._runtime.adapter_kind,
-                "status": self._status.value,
-                "capabilities": self._plan.capabilities,
-            }
-        )
+        return self.handle
 
     async def invoke(
         self,
@@ -210,9 +217,11 @@ class Session:
                 typed_result = RunResult.from_mapping(result)
             except FabricError:
                 self._status = SessionStatus.FAILED
+                self._handle = self._handle.with_status(SessionStatus.FAILED.value)
                 raise
             except Exception as error:
                 self._status = SessionStatus.FAILED
+                self._handle = self._handle.with_status(SessionStatus.FAILED.value)
                 raise FabricRuntimeError(str(error), stage="invoke") from error
             self._absorb(typed_result)
             return typed_result
@@ -234,7 +243,7 @@ class Session:
     ) -> AsyncIterator[FabricEvent | RunResult]:
         """Yield buffered events followed by one terminal result.
 
-        Current adapters may buffer internally; this API does not promise that
+        Some adapters may buffer internally; this API does not promise that
         events arrive in real time. Request validation and failure behavior are
         identical to ``invoke()``.
 
@@ -341,12 +350,15 @@ class Session:
             )
         except FabricError:
             self._status = SessionStatus.FAILED
+            self._handle = self._handle.with_status(SessionStatus.FAILED.value)
             raise
         except Exception as error:
             self._status = SessionStatus.FAILED
+            self._handle = self._handle.with_status(SessionStatus.FAILED.value)
             raise FabricRuntimeError(str(error), stage="stop") from error
         else:
             self._status = SessionStatus.STOPPED
+            self._handle = self._handle.with_status(SessionStatus.STOPPED.value)
         finally:
             self._closing = False
 
@@ -369,6 +381,28 @@ class Session:
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
         if self._status is not SessionStatus.FAILED:
             await self.stop()
+
+
+def _session_handle_from_runtime(
+    plan: RunPlan,
+    runtime: RuntimeHandle,
+    *,
+    session_id: str | None,
+    status: SessionStatus,
+) -> SessionHandle:
+    return SessionHandle.from_mapping(
+        {
+            "session_id": session_id or runtime.runtime_id,
+            "runtime_id": runtime.runtime_id,
+            "agent_name": runtime.agent_name,
+            "harness": runtime.harness,
+            "adapter_id": runtime.adapter_id,
+            "adapter_kind": runtime.adapter_kind,
+            "status": status.value,
+            "capabilities": plan.capabilities,
+            "metadata": {},
+        }
+    )
 
 
 def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:

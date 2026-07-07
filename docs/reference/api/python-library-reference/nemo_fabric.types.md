@@ -1582,30 +1582,24 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
-## <kbd>class</kbd> `RunResult`
-Normalized terminal result from one Fabric invocation.
+## <kbd>class</kbd> `SessionHandle`
+Caller-facing identity and lifecycle snapshot for one session.
 
-The model is both attribute-accessible and mapping-compatible. A harness failure can be represented by ``status`` and ``error`` without raising when the adapter successfully returns a normalized result.
+A session handle is the public SDK handle for a live or resumable agent session. It references the lower-level runtime that backs the session, but applications should use the session id for conversation/task correlation.
 
 
 
 **Attributes:**
 
+ - <b>`session_id`</b>:  Stable conversation or task identifier.
+ - <b>`runtime_id`</b>:  Runtime lifecycle identifier backing this session.
  - <b>`agent_name`</b>:  Resolved agent name.
- - <b>`profiles`</b>:  Applied profile names.
  - <b>`harness`</b>:  Stable harness identifier.
- - <b>`adapter_kind`</b>:  Adapter execution mechanism.
  - <b>`adapter_id`</b>:  Fabric adapter identifier.
- - <b>`runtime_id`</b>:  Runtime lifecycle identifier.
- - <b>`invocation_id`</b>:  Identifier for this invocation.
- - <b>`request_id`</b>:  Correlated request identifier.
- - <b>`status`</b>:  Terminal invocation status.
- - <b>`output`</b>:  JSON-compatible harness output.
- - <b>`error`</b>:  Structured failure, or ``None`` on success.
- - <b>`artifacts`</b>:  Normalized artifact manifest.
- - <b>`telemetry`</b>:  Ordered telemetry references.
- - <b>`events`</b>:  Ordered lifecycle and invocation events.
- - <b>`metadata`</b>:  Result-specific structured details.
+ - <b>`adapter_kind`</b>:  Adapter execution mechanism.
+ - <b>`status`</b>:  Current session lifecycle state.
+ - <b>`capabilities`</b>:  Operations declared by the runtime.
+ - <b>`metadata`</b>:  Session-specific structured metadata.
 
 
 ### <kbd>method</kbd> `__init__`
@@ -1660,26 +1654,46 @@ to_mapping() → dict[str, Any]
 
 Return a detached, JSON-compatible mapping for serialization.
 
+---
+
+
+### <kbd>method</kbd> `with_status`
+
+```python
+with_status(status: 'str') → 'SessionHandle'
+```
+
+Return a copy of this handle with an updated lifecycle status.
+
 
 ---
 
 
-## <kbd>class</kbd> `SessionInfo`
-Read-only metadata snapshot for an active or stopped session.
+## <kbd>class</kbd> `RunResult`
+Normalized terminal result from one Fabric invocation.
+
+The model is both attribute-accessible and mapping-compatible. A harness failure can be represented by ``status`` and ``error`` without raising when the adapter successfully returns a normalized result.
 
 
 
 **Attributes:**
 
- - <b>`session_id`</b>:  Stable conversation identifier.
- - <b>`runtime_id`</b>:  Runtime lifecycle identifier.
  - <b>`agent_name`</b>:  Resolved agent name.
  - <b>`profiles`</b>:  Applied profile names.
  - <b>`harness`</b>:  Stable harness identifier.
- - <b>`adapter_id`</b>:  Fabric adapter identifier.
  - <b>`adapter_kind`</b>:  Adapter execution mechanism.
- - <b>`status`</b>:  Current session lifecycle state.
- - <b>`capabilities`</b>:  Operations declared by the runtime.
+ - <b>`adapter_id`</b>:  Fabric adapter identifier.
+ - <b>`runtime_id`</b>:  Runtime lifecycle identifier.
+ - <b>`session_id`</b>:  Conversation/session identifier, or ``None`` when absent.
+ - <b>`invocation_id`</b>:  Identifier for this invocation.
+ - <b>`request_id`</b>:  Correlated request identifier.
+ - <b>`status`</b>:  Terminal invocation status.
+ - <b>`output`</b>:  JSON-compatible harness output.
+ - <b>`error`</b>:  Structured failure, or ``None`` on success.
+ - <b>`artifacts`</b>:  Normalized artifact manifest.
+ - <b>`telemetry`</b>:  Ordered telemetry references.
+ - <b>`events`</b>:  Ordered lifecycle and invocation events.
+ - <b>`metadata`</b>:  Result-specific structured details.
 
 
 ### <kbd>method</kbd> `__init__`

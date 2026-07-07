@@ -28,19 +28,39 @@ individual invocations.
 ```text
 FabricConfig
   -> RunPlan
-  -> RuntimeHandle
-  -> Session
+  -> SessionHandle
   -> InvocationHandle
   -> RunResult
 ```
 
-The three handles are the important caller-facing concepts:
+```mermaid
+flowchart TB
+  Config["FabricConfig"]
+  Plan["RunPlan"]
+  Session["Session<br/>owns a SessionHandle"]
+  Runtime["RuntimeHandle<br/>lower-level runtime binding"]
+  Invoke1["InvocationHandle<br/>turn 1"]
+  Invoke2["InvocationHandle<br/>turn 2"]
+  Result1["RunResult<br/>turn 1"]
+  Result2["RunResult<br/>turn 2"]
+
+  Config --> Plan
+  Plan --> Session
+  Session -. owns .-> Runtime
+  Session --> Invoke1 --> Result1
+  Session --> Invoke2 --> Result2
+```
+
+The important caller-facing handles are:
 
 | Concept | What It Represents | How Consumers Use It |
 | --- | --- | --- |
-| `RuntimeHandle` | One started harness runtime. | Treat it as an opaque lifecycle binding. Fabric creates it when a runtime starts and uses it when invoking or stopping that runtime. |
-| `Session` | A reusable multi-turn handle over one runtime. | Use it for ordered conversations, stateful coding tasks, or service-style interaction. A session serializes turns by default. |
+| `SessionHandle` | Public identity and lifecycle snapshot for one live or resumable session. | Use it for session IDs, status, adapter identity, capabilities, and result/event correlation. |
+| `Session` | The Python object used to invoke, stream, update, cancel, and stop a session. | Use it for ordered conversations, stateful coding tasks, or service-style interaction. A session serializes turns by default. |
 | `InvocationHandle` | One request or turn sent to a runtime. | Usually seen through `invocation_id`, events, and `RunResult` correlation rather than manipulated directly in Python. It is the core unit for status, artifacts, errors, and future cancellation/streaming control. |
+
+`RuntimeHandle` still exists as a lower-level binding to the harness runtime, but
+most SDK callers should work through `Session` and `SessionHandle`.
 
 Consumers still own product-level orchestration. Fabric does not schedule jobs,
 manage queues, own retries, or scale workers. Platform, Harbor, Gym, and local
@@ -138,7 +158,7 @@ definitions and the generated API reference for exact Python signatures.
 | Agent config | `schemas/agent.schema.json` |
 | Run plan | `schemas/run-plan.schema.json` |
 | Request/result/event contracts | `schemas/run-request.schema.json`, `schemas/run-result.schema.json`, `schemas/fabric-event.schema.json` |
-| Runtime and invocation handles | `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
+| Session, runtime, and invocation handles | `schemas/session-handle.schema.json`, `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
 | Artifacts and errors | `schemas/artifact-manifest.schema.json`, `schemas/error-info.schema.json` |
 
 For schema maintenance details, see `schemas/SCHEMA.md`. For generated Python API
@@ -280,7 +300,7 @@ Important fields:
 | `telemetry` | References to Relay or other telemetry streams produced by the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
-| `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across sessions, logs, telemetry, and artifacts. |
+| `session_id`, `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across sessions, logs, telemetry, and artifacts. |
 
 If Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial

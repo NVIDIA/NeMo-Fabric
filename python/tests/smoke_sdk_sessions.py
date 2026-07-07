@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Smoke: the SDK Session boundary over the native RuntimeHandle lifecycle."""
+"""Smoke: the SDK Session boundary over the native session/runtime lifecycle."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from nemo_fabric import (
     RunRequest,
     RunResult,
     Session,
+    SessionHandle,
     SessionStatus,
 )
 
@@ -99,6 +100,7 @@ class MockNative:
                 "status": "failed" if request.get("input") == "fail" else "succeeded",
                 "request_id": request["request_id"],
                 "runtime_id": json.loads(runtime_json)["runtime_id"],
+                "session_id": request.get("context", {}).get("session_id"),
                 "invocation_id": f"invocation-{turn}",
                 "events": [
                     {
@@ -148,9 +150,11 @@ async def stable_runtime_across_turns() -> None:
     native = MockNative()
     session = _session(native)
     assert session.status is SessionStatus.ACTIVE
+    assert isinstance(session.handle, SessionHandle)
+    assert session.handle.status == "active"
     assert session.runtime_id == "runtime-1"
     assert session.session_id == "runtime-1"
-    assert session.info["session_id"] == "runtime-1"
+    assert session.handle["session_id"] == "runtime-1"
     assert not hasattr(session, "id")
 
     first = await session.invoke(
@@ -164,6 +168,7 @@ async def stable_runtime_across_turns() -> None:
 
     assert isinstance(first, RunResult)
     assert first.request_id == "session-request-1"
+    assert first.session_id == "runtime-1"
     assert [inv["runtime_id"] for inv in session.invocations] == ["runtime-1", "runtime-1"]
     assert native.requests[0]["context"]["job_id"] == "job-1"
     assert native.requests[0]["context"]["turn_id"] == "turn-1"
@@ -184,6 +189,7 @@ async def stream_and_lifecycle() -> None:
     await session.stop()
     await session.stop()
     assert session.status is SessionStatus.STOPPED
+    assert session.handle.status == "stopped"
     assert native.stopped == 1
     try:
         await session.invoke(input="too late")

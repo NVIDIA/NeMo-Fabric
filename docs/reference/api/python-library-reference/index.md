@@ -41,7 +41,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.RuntimeHandle`](./nemo_fabric.types.md#class-runtimehandle): Opaque identity and binding for one started runtime.
 - [`types.RuntimeUpdate`](./nemo_fabric.types.md#class-runtimeupdate): Capability-gated update requested for a running session.
 - [`types.RuntimeUpdateResult`](./nemo_fabric.types.md#class-runtimeupdateresult): Normalized outcome of a runtime update request.
-- [`types.SessionInfo`](./nemo_fabric.types.md#class-sessioninfo): Read-only metadata snapshot for an active or stopped session.
+- [`types.SessionHandle`](./nemo_fabric.types.md#class-sessionhandle): Caller-facing identity and lifecycle snapshot for one session.
 - [`types.SkillConfig`](./nemo_fabric.types.md#class-skillconfig): Skill capability configuration.
 - [`types.TelemetryConfig`](./nemo_fabric.types.md#class-telemetryconfig): Telemetry configuration with authoring helpers.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.

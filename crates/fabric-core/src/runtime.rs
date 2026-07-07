@@ -18,7 +18,7 @@ use serde_json::{Map, Value};
 
 use crate::config::{
     AdapterKind, CapabilityPlan, ControlLocation, EffectiveConfig, EnvironmentOwnership, RunPlan,
-    TelemetryPlan,
+    RuntimeCapabilities, TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
@@ -71,6 +71,9 @@ pub struct RunResult {
     pub adapter_id: Option<String>,
     /// Runtime handle id.
     pub runtime_id: String,
+    /// Caller-owned or Fabric-generated session id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// Invocation handle id.
     pub invocation_id: String,
     /// Request id.
@@ -242,6 +245,52 @@ pub struct RuntimeHandle {
     pub adapter_id: Option<String>,
     /// Prepared environment.
     pub environment: EnvironmentHandle,
+}
+
+/// User-facing session lifecycle status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStatus {
+    /// The session runtime can accept invocations.
+    Active,
+    /// The session runtime has stopped or detached.
+    Stopped,
+    /// The session runtime failed and cannot accept invocations.
+    Failed,
+}
+
+/// Caller-facing handle for one live or resumable agent session.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SessionHandle {
+    /// Stable session id used for conversation/task correlation.
+    pub session_id: String,
+    /// Runtime handle id backing this session.
+    pub runtime_id: String,
+    /// Resolved agent name.
+    pub agent_name: String,
+    /// Stable machine-readable harness identifier.
+    pub harness: String,
+    /// Adapter kind.
+    pub adapter_kind: AdapterKind,
+    /// Adapter implementation id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter_id: Option<String>,
+    /// Session lifecycle status.
+    pub status: SessionStatus,
+    /// Runtime capabilities declared by the resolved plan.
+    pub capabilities: RuntimeCapabilities,
+    /// Session metadata useful for consumers and diagnostics.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, Value>,
+}
+
+/// Started session plus the lower-level runtime binding that backs it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct StartedSession {
+    /// Caller-facing session handle.
+    pub session_handle: SessionHandle,
+    /// Lower-level runtime binding.
+    pub runtime_handle: RuntimeHandle,
 }
 
 /// One request sent to a runtime.
@@ -421,6 +470,16 @@ pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
     }
 }
 
+/// Start or connect to a harness runtime and wrap it in a session handle.
+pub fn start_session(plan: &RunPlan, session_id: Option<String>) -> Result<StartedSession> {
+    let runtime_handle = start_runtime(plan)?;
+    let session_handle = session_handle(plan, &runtime_handle, session_id);
+    Ok(StartedSession {
+        session_handle,
+        runtime_handle,
+    })
+}
+
 /// Invoke a started harness runtime.
 pub fn invoke_runtime(
     plan: &RunPlan,
@@ -435,6 +494,24 @@ pub fn invoke_runtime(
             harness: harness(plan),
             adapter_kind,
         }),
+    }
+}
+
+fn session_handle(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    session_id: Option<String>,
+) -> SessionHandle {
+    SessionHandle {
+        session_id: session_id.unwrap_or_else(|| runtime.runtime_id.clone()),
+        runtime_id: runtime.runtime_id.clone(),
+        agent_name: runtime.agent_name.clone(),
+        harness: runtime.harness.clone(),
+        adapter_kind: runtime.adapter_kind,
+        adapter_id: runtime.adapter_id.clone(),
+        status: SessionStatus::Active,
+        capabilities: plan.capabilities.clone(),
+        metadata: BTreeMap::new(),
     }
 }
 
@@ -889,6 +966,7 @@ fn run_process_adapter(
         adapter_kind: adapter_kind(plan),
         adapter_id: adapter_id(plan),
         runtime_id: invocation.runtime_id,
+        session_id: request_session_id(&request),
         invocation_id: invocation.invocation_id,
         request_id: request.request_id,
         status,
@@ -1100,6 +1178,7 @@ fn run_python_adapter(
         adapter_kind: adapter_kind(plan),
         adapter_id: adapter_id(plan),
         runtime_id: invocation.runtime_id,
+        session_id: request_session_id(&request),
         invocation_id: invocation.invocation_id,
         request_id: request.request_id,
         status,

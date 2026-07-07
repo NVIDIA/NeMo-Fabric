@@ -84,6 +84,24 @@ def _runtime() -> dict[str, Any]:
     }
 
 
+def _started_session(session_id: str | None = None) -> dict[str, Any]:
+    runtime = _runtime()
+    return {
+        "session_handle": {
+            "session_id": session_id or runtime["runtime_id"],
+            "runtime_id": runtime["runtime_id"],
+            "agent_name": "demo",
+            "harness": "hermes",
+            "adapter_kind": "python",
+            "adapter_id": "test.fabric.shim",
+            "status": "active",
+            "capabilities": _plan()["capabilities"],
+            "metadata": {},
+        },
+        "runtime_handle": runtime,
+    }
+
+
 def _config() -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="demo"),
@@ -101,6 +119,9 @@ def mock_native_fixture() -> MagicMock:
         lambda config_json, profiles_json, base_dir: json.dumps(_plan())
     )
     mock_native.start_runtime.return_value = json.dumps(_runtime())
+    mock_native.start_session.side_effect = (
+        lambda plan_json, session_id=None: json.dumps(_started_session(session_id))
+    )
 
     def invoke(plan_json: str, runtime_json: str, request_json: str) -> str:
         request = json.loads(request_json)
@@ -114,6 +135,7 @@ def mock_native_fixture() -> MagicMock:
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
                 "runtime_id": "runtime-1",
+                "session_id": request.get("context", {}).get("session_id"),
                 "invocation_id": f"invocation-{turn}",
                 "request_id": request["request_id"],
                 "status": "succeeded",
@@ -187,7 +209,7 @@ async def test_start_session_preserves_start_stage(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    mock_native.start_runtime.side_effect = RuntimeError("start failed")
+    mock_native.start_session.side_effect = RuntimeError("start failed")
 
     with pytest.raises(FabricRuntimeError, match="start failed") as caught:
         await native_client.start_session("agent")
@@ -205,7 +227,7 @@ async def test_start_session_rejects_invalid_overrides_before_start(
             overrides={"nested": {1: "invalid"}},  # type: ignore[dict-item]
         )
 
-    mock_native.start_runtime.assert_not_called()
+    mock_native.start_session.assert_not_called()
 
 
 async def test_start_session_rejects_cyclic_overrides_before_start(
@@ -218,7 +240,7 @@ async def test_start_session_rejects_cyclic_overrides_before_start(
     with pytest.raises(FabricConfigError, match="JSON-compatible"):
         await native_client.start_session("agent", overrides=overrides)
 
-    mock_native.start_runtime.assert_not_called()
+    mock_native.start_session.assert_not_called()
 
 
 async def test_session_reuses_runtime_and_orders_turns(mock_native: MagicMock):

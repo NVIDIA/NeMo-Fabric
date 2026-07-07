@@ -37,7 +37,7 @@ from nemo_fabric import (
     RuntimeHandle,
     RuntimeUpdate,
     Session,
-    SessionInfo,
+    SessionHandle,
     SkillConfig,
     TelemetryConfig,
 )
@@ -281,7 +281,6 @@ def test_runtime_handle_requires_native_contract_fields(field):
         (EffectiveConfig, {"config": {}}),
         (DoctorReport, {}),
         (RunResult, {}),
-        (SessionInfo, {}),
     ),
 )
 def test_snapshot_models_require_profiles(model, payload):
@@ -454,6 +453,26 @@ class NativeRecorder:
         assert json.loads(plan_json)["agent_name"] == "demo"
         return json.dumps(_runtime())
 
+    def start_session(self, plan_json: str, session_id: str | None = None) -> str:
+        assert json.loads(plan_json)["agent_name"] == "demo"
+        runtime = _runtime()
+        return json.dumps(
+            {
+                "session_handle": {
+                    "session_id": session_id or runtime["runtime_id"],
+                    "runtime_id": runtime["runtime_id"],
+                    "agent_name": "demo",
+                    "harness": "hermes",
+                    "adapter_kind": "python",
+                    "adapter_id": "test.fabric.shim",
+                    "status": "active",
+                    "capabilities": _plan()["capabilities"],
+                    "metadata": {},
+                },
+                "runtime_handle": runtime,
+            }
+        )
+
     def invoke_runtime(
         self, plan_json: str, runtime_json: str, request_json: str
     ) -> str:
@@ -469,6 +488,7 @@ class NativeRecorder:
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
                 "runtime_id": json.loads(runtime_json)["runtime_id"],
+                "session_id": request.get("context", {}).get("session_id"),
                 "invocation_id": "invocation-1",
                 "request_id": request["request_id"],
                 "status": "failed" if request["input"] == "fail" else "succeeded",
@@ -860,7 +880,7 @@ async def test_session_invoke_accepts_run_request_and_turn_fields():
         )
 
 
-async def test_session_info_stream_and_capability_errors_are_typed():
+async def test_session_handle_stream_and_capability_errors_are_typed():
     session = Session(
         client=NativeClient(NativeRecorder()),
         plan=RunPlan.from_mapping(_plan()),
@@ -868,10 +888,11 @@ async def test_session_info_stream_and_capability_errors_are_typed():
         session_id="session-1",
     )
 
-    assert isinstance(session.info, SessionInfo)
-    assert session.info.profiles == ("typed",)
-    assert session.info.harness == "hermes"
-    assert session.info.adapter_id == "test.fabric.shim"
+    assert isinstance(session.handle, SessionHandle)
+    assert session.handle.harness == "hermes"
+    assert session.handle.adapter_id == "test.fabric.shim"
+    assert session.info is not session.handle
+    assert session.info.to_mapping() == session.handle.to_mapping()
 
     streamed = [item async for item in session.stream(input="hello")]
     assert streamed[0].kind == "invocation_end"
@@ -1012,7 +1033,8 @@ async def test_start_session_alias_returns_session_and_info_includes_session_id(
     )
 
     assert session.session_id == "session-1"
-    assert session.info["session_id"] == "session-1"
+    assert isinstance(session.handle, SessionHandle)
+    assert session.handle["session_id"] == "session-1"
 
 
 async def test_session_state_errors_use_sdk_error_hierarchy():

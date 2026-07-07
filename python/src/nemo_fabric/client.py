@@ -479,8 +479,10 @@ class Fabric:
         _require_session_runtime(plan, "start_session")
         native = self._require_native_module("start_session")
         try:
-            runtime = await _call_blocking(
-                lambda: json.loads(native.start_runtime(json.dumps(plan.to_mapping())))
+            started = await _call_blocking(
+                lambda: json.loads(
+                    native.start_session(json.dumps(plan.to_mapping()), session_id)
+                )
             )
         except FabricError:
             raise
@@ -489,9 +491,9 @@ class Fabric:
         return Session(
             client=self,
             plan=plan,
-            runtime=runtime,
+            runtime=started["runtime_handle"],
+            handle=started["session_handle"],
             overrides=session_overrides,
-            session_id=session_id,
         )
 
     def _native_module(self) -> Any | None:

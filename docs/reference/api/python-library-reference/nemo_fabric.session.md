@@ -36,6 +36,12 @@ Session-scoped overrides are recursively merged with invocation overrides; invoc
 
 ---
 
+#### <kbd>property</kbd> handle
+
+Return a detached snapshot of the public session handle.
+
+---
+
 #### <kbd>property</kbd> info
 
 Return a typed snapshot of session identity, status, and capabilities.
@@ -68,7 +74,7 @@ Return the unique identifier for this started runtime lifecycle.
 
 #### <kbd>property</kbd> session_id
 
-Return the stable conversation ID, defaulting to ``runtime_id``.
+Return the stable session ID.
 
 ---
 
@@ -176,7 +182,7 @@ stream(
 
 Yield buffered events followed by one terminal result.
 
-Current adapters may buffer internally; this API does not promise that events arrive in real time. Request validation and failure behavior are identical to ``invoke()``.
+Some adapters may buffer internally; this API does not promise that events arrive in real time. Request validation and failure behavior are identical to ``invoke()``.
 
 
 

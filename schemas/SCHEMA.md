@@ -31,7 +31,11 @@ contract. The files are generated from the Rust core types, not edited by hand.
 ### Runtime Lifecycle
 
 - `environment-handle`: prepared execution environment context.
-- `runtime-handle`: active or resumable harness runtime.
+- `runtime-handle`: lower-level active or resumable harness runtime binding.
+- `session-handle`: caller-facing handle for one live or resumable agent
+  session.
+- `started-session`: native session start result containing both the public
+  session handle and lower-level runtime handle.
 - `invocation-handle`: one request/turn sent to a runtime.
 
 ### Results, Artifacts, And Diagnostics
