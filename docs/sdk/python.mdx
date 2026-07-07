@@ -21,9 +21,9 @@ files before invoking Fabric.
 Generated API reference pages remain the source of truth for exact signatures.
 This guide explains how the pieces are intended to fit together.
 
-## Mental Model
+## Execution Model
 
-Fabric separates configuration, runtime lifecycle, session lifecycle, and
+Fabric separates configuration, runtime planning, session lifecycle, and
 individual invocations.
 
 ```text
@@ -67,71 +67,10 @@ Product-level orchestration belongs to the consumer. Fabric does not schedule
 jobs, manage queues, own retries, or scale workers. Platform, Harbor, Gym, and
 local applications decide how many sessions or tasks to run.
 
-## Contract Boundaries
+Fabric provides the runtime contract; applications own product policy around
+that contract.
 
-Fabric keeps a narrow execution contract. Applications own product behavior
-around that contract.
-
-### Versioning
-
-Fabric uses explicit contract versions where persisted or independently
-maintained artifacts cross package boundaries:
-
-- `schema_version` identifies portable config documents such as `agent.yaml`
-  and profile files.
-- `contract_version` identifies the adapter descriptor contract implemented by
-  a `fabric-adapter.json` file.
-- Python and Rust package versions identify the installed SDK/core release.
-
-Fabric versions top-level persisted documents and independently maintained
-contracts. It does not version each config subsection independently. For
-example, MCP, skills, models, telemetry, and runtime fields evolve under the
-enclosing `schema_version`.
-
-Fabric validates adapter descriptor contract versions during planning. Package
-semver identifies the installed implementation, but it is not the compatibility
-contract for saved agent packages or independently maintained adapters.
-
-### Config Extensibility
-
-The public schema has typed fields for stable Fabric concepts and controlled
-extension points for adapter- or application-owned data. Use known fields for
-portable concepts such as harness selection, models, runtime, skills, MCP,
-telemetry, and artifacts. Use adapter-owned `harness.settings`, metadata, or
-preserved extension fields for data Fabric should carry but not interpret.
-
-Additive optional fields may be introduced within the existing document schema
-version when old configs remain valid. Required fields, removed fields, or
-semantic changes that alter how existing configs are interpreted require a new
-enclosing document schema version or an explicit compatibility path.
-
-Unknown data is not the same as supported behavior. An adapter must advertise
-and implement a capability before Fabric treats it as runnable.
-
-### Resilience
-
-Fabric reports lifecycle failures; applications own recovery policy. If a
-runtime process dies, a connection is permanently lost, or an adapter cannot
-complete an invocation, Fabric marks the relevant runtime/session/invocation as
-failed and returns structured error metadata when possible.
-
-Transient I/O failures may be marked with retryable error metadata, but Fabric
-does not perform job-level retries by default. Consumers decide whether to retry
-the request, start a replacement runtime, fail the job, or escalate to a user.
-
-### Scaling And Backpressure
-
-Fabric does not schedule work, manage queues, or scale workers. Consumers decide
-how many runtimes, sessions, and jobs to run. Fabric keeps individual
-runtime/session handles safe to use, serializes same-session invocations by
-default, and exposes adapter capability metadata for operations such as
-sessions, streaming, updates, cancellation, and concurrency.
-
-If a harness reports capacity pressure, an adapter should surface it as a
-structured error or event such as busy, rate limited, capacity exceeded, or
-backpressure. The consumer decides whether to wait, retry, scale out, or fail.
-
-## Configure In Code
+## Configure Agents In Code
 
 Build typed config in one of two ways:
 
@@ -216,7 +155,7 @@ If a config contains relative paths, pass a `base_dir` when planning, checking,
 or running. The base directory anchors paths such as skills, workspace, and
 artifact locations to the caller's package or job layout.
 
-## Schemas And Reference
+## JSON Schemas And Pydantic Models
 
 The SDK's Pydantic models are hand-maintained against the Rust-generated public
 schemas. Use the schemas for exact persisted field definitions and the generated
@@ -227,6 +166,7 @@ and `RunRequestModel` for authoring.
 
 | Contract | Source |
 | --- | --- |
+| SDK Pydantic models | `nemo_fabric.models`; see the generated [Models reference](/reference/api/python-library-reference/models) |
 | Agent config | `schemas/agent.schema.json` |
 | Run plan | `schemas/run-plan.schema.json` |
 | Request/result/event contracts | `schemas/run-request.schema.json`, `schemas/run-result.schema.json`, `schemas/fabric-event.schema.json` |
@@ -391,7 +331,7 @@ async with Fabric() as fabric:
     plan = fabric.plan(config)
     report = await fabric.doctor(config)
 
-if not plan.capabilities.sessions:
+if not plan.capabilities.session:
     raise RuntimeError("selected adapter does not support sessions")
 ```
 
@@ -448,3 +388,67 @@ Consumers own job-level retries and rollout-level failure policy. Fabric perform
 best-effort cleanup for runtimes it starts, records structured error metadata
 when possible, and propagates enough status, event, artifact, and exception
 detail for the consumer to decide what to do next.
+
+## Compatibility And Boundaries
+
+Fabric keeps a narrow execution contract. Applications own product behavior
+around that contract.
+
+### Versioning
+
+Fabric uses explicit contract versions where persisted or independently
+maintained artifacts cross package boundaries:
+
+- `schema_version` identifies portable config documents such as `agent.yaml`
+  and profile files.
+- `contract_version` identifies the adapter descriptor contract implemented by
+  a `fabric-adapter.json` file.
+- Python and Rust package versions identify the installed SDK/core release.
+
+Fabric versions top-level persisted documents and independently maintained
+contracts. It does not version each config subsection independently. For
+example, MCP, skills, models, telemetry, and runtime fields evolve under the
+enclosing `schema_version`.
+
+Fabric validates adapter descriptor contract versions during planning. Package
+semver identifies the installed implementation, but it is not the compatibility
+contract for saved agent packages or independently maintained adapters.
+
+### Config Extensibility
+
+The public schema has typed fields for stable Fabric concepts and controlled
+extension points for adapter- or application-owned data. Use known fields for
+portable concepts such as harness selection, models, runtime, skills, MCP,
+telemetry, and artifacts. Use adapter-owned `harness.settings`, metadata, or
+preserved extension fields for data Fabric should carry but not interpret.
+
+Additive optional fields may be introduced within the existing document schema
+version when old configs remain valid. Required fields, removed fields, or
+semantic changes that alter how existing configs are interpreted require a new
+enclosing document schema version or an explicit compatibility path.
+
+Unknown data is not the same as supported behavior. An adapter must advertise
+and implement a capability before Fabric treats it as runnable.
+
+### Resilience
+
+Fabric reports lifecycle failures; applications own recovery policy. If a
+runtime process dies, a connection is permanently lost, or an adapter cannot
+complete an invocation, Fabric marks the relevant runtime/session/invocation as
+failed and returns structured error metadata when possible.
+
+Transient I/O failures may be marked with retryable error metadata, but Fabric
+does not perform job-level retries by default. Consumers decide whether to retry
+the request, start a replacement runtime, fail the job, or escalate to a user.
+
+### Scaling And Backpressure
+
+Fabric does not schedule work, manage queues, or scale workers. Consumers decide
+how many runtimes, sessions, and jobs to run. Fabric keeps individual
+runtime/session handles safe to use, serializes same-session invocations by
+default, and exposes adapter capability metadata for operations such as
+sessions, streaming, updates, cancellation, and concurrency.
+
+If a harness reports capacity pressure, an adapter should surface it as a
+structured error or event such as busy, rate limited, capacity exceeded, or
+backpressure. The consumer decides whether to wait, retry, scale out, or fail.
