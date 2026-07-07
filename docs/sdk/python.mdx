@@ -360,17 +360,21 @@ Near term, compatibility checks should make this more explicit by validating:
 - optional capability support such as sessions, streaming, Relay, MCP, or tool
   exposure.
 
-## Custom And Extra Fields
+## Custom Fields And Adapter Settings
 
-Fabric keeps the core config stable while allowing adapters and consumers to
-carry additional structured data. Use normalized fields for portable concepts
-such as models, MCP, tools, skills, telemetry, runtime input/output shape, and
-artifacts. Put harness-specific settings under adapter-owned config fields.
+Use normalized Fabric fields for portable behavior: models, runtime,
+environment, skills, MCP, telemetry, tools, artifacts, and request context.
 
-Typed config models preserve unknown extension fields where supported, but
-extension preservation is not the same as feature support. An adapter must still
-declare and implement the behavior for any custom field it consumes. Use
-`doctor(...)` to catch unsupported or ignored settings before launching a run.
+Use `harness.settings` for adapter-owned configuration that the selected adapter
+understands. Examples include Hermes-specific launch options, Codex CLI flags,
+or adapter-specific config file locations.
+
+Use `metadata` for caller-owned annotations that Fabric should preserve and echo
+back, but not interpret.
+
+Adapter settings are not portable by default. An adapter must explicitly read
+and implement a setting before it affects runtime behavior. Use `doctor(...)` to
+catch unsupported, ignored, or malformed adapter settings before launching a run.
 
 ## Errors
 
@@ -389,7 +393,7 @@ best-effort cleanup for runtimes it starts, records structured error metadata
 when possible, and propagates enough status, event, artifact, and exception
 detail for the consumer to decide what to do next.
 
-## Compatibility And Boundaries
+## SDK Contract Boundaries
 
 Fabric keeps a narrow execution contract. Applications own product behavior
 around that contract.
