@@ -30,6 +30,9 @@ dependencies = [
   "tomli-w~=1.2", # Needed by adapters to write relay config files
 ]
 
+[tool.uv.sources]
+nemo-fabric-adapters-common = { path = "../common" }
+
 [tool.setuptools_scm]
 root = "../.."
 git_describe_command = "git describe --long --first-parent"

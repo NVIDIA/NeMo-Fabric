@@ -48,6 +48,22 @@ build-python:
 # Build all supported language packages.
 build-all: build-rust build-python
 
+# Create or update the lockfile for every Python project.
+lock-python:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    projects=(
+        .
+        python
+        adapters/common
+        adapters/codex-cli
+        adapters/hermes-cli
+        adapters/hermes-sdk
+    )
+    for project in "${projects[@]}"; do
+        uv lock --project "$project"
+    done
+
 # Generate the Python and Rust API references and validate the Fern configuration.
 # --set [no_uv=true|false]
 docs:

@@ -29,6 +29,9 @@ dependencies = [
   "pyyaml>=6.0", # needed for writing hermes config files
 ]
 
+[tool.uv.sources]
+nemo-fabric-adapters-common = { path = "../common" }
+
 [tool.setuptools_scm]
 root = "../.."
 git_describe_command = "git describe --long --first-parent"

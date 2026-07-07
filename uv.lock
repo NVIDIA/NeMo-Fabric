@@ -1688,7 +1688,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", specifier = "==0.1.0.dev6+g167fd64" },
+    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
 
@@ -1707,7 +1707,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", specifier = "==0.1.0.dev6+g167fd64" },
+    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
@@ -1722,7 +1722,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", specifier = "==0.1.0.dev6+g167fd64" },
+    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
