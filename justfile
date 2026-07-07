@@ -70,7 +70,7 @@ docs:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
-        uv sync --extra docs
+        uv sync --group docs
     fi
     npm ci --prefix docs --ignore-scripts
     PATH="{{ REPO_ROOT }}/.venv/bin:$PATH" bash scripts/generate_api_docs.sh
