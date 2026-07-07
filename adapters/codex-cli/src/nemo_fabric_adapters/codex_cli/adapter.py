@@ -12,8 +12,8 @@ import math
 import os
 import socket
 import subprocess
-import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -22,11 +22,6 @@ from typing import Any, NamedTuple
 
 import nemo_fabric_adapters.common.utils as common_utils
 import tomli_w
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
-    import tomli as tomllib
 
 SANDBOXES = {"read-only", "workspace-write", "danger-full-access"}
 DEFAULT_TIMEOUT_SECONDS = 1800

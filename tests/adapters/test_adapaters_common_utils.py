@@ -4,16 +4,12 @@
 import builtins
 import json
 import os
+import tomllib
 import types
 from io import StringIO
 from pathlib import Path
 
 import pytest
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
-    import tomli as tomllib
 
 
 @pytest.fixture(name="common_utils", scope="session")
