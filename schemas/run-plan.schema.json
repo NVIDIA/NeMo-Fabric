@@ -76,6 +76,11 @@
           "type": "string"
         },
         {
+          "const": "installed",
+          "description": "Descriptor bundled with an installed Fabric distribution (adapters shipped in the `nemo_fabric`\nwheel), discovered at runtime beside the native extension.",
+          "type": "string"
+        },
+        {
           "const": "local",
           "description": "Descriptor registered by the agent package or local development config.",
           "type": "string"

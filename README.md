@@ -118,10 +118,10 @@ under `examples/code-review-agent/artifacts/hermes-sdk/`.
   harness, model, MCP, tools, skills, telemetry, or environment context without
   editing `agent.yaml`.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
-  The Hermes SDK and CLI adapters live under `adapters/hermes-sdk/` and
-  `adapters/hermes-cli/`; the Codex CLI adapter lives under
-  `adapters/codex-cli/`. Harness-specific extensions belong under
-  `harness.settings` so the normalized contract can remain stable.
+  The maintained adapters live inside the Python package under
+  `python/src/nemo_fabric/adapters/` (Hermes SDK/CLI in `hermes-sdk/` and
+  `hermes-cli/`, Codex CLI in `codex-cli/`) so wheels ship them. Harness-specific
+  extensions belong under `harness.settings` so the normalized contract can remain stable.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
 

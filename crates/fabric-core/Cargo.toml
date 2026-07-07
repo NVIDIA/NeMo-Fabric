@@ -13,6 +13,7 @@ description = "Core config and runtime contract for NeMo Fabric."
 workspace = true
 
 [dependencies]
+process_path.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

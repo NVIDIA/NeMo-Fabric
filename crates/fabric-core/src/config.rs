@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
@@ -148,6 +149,9 @@ pub struct AdapterDescriptor {
 pub enum AdapterDescriptorSource {
     /// Descriptor maintained in this Fabric repository.
     Repository,
+    /// Descriptor bundled with an installed Fabric distribution (adapters shipped in the `nemo_fabric`
+    /// wheel), discovered at runtime beside the native extension.
+    Installed,
     /// Descriptor registered by the agent package or local development config.
     Local,
 }
@@ -181,13 +185,24 @@ struct AdapterRegistry {
 impl AdapterRegistry {
     fn from_config(_config: &FabricConfig, config_root: &Path) -> Result<Self> {
         let mut registry = Self::default();
+        // Precedence is last-writer (see `register_descriptor`): repository (compile-time dev tree) is
+        // the weakest, installed (shipped/relocatable) overrides it, and a local agent package overrides
+        // both. So a `pip install`ed distribution resolves built-in adapters without a checkout, while
+        // an agent can still ship its own.
         registry.register_repository_directory(&repository_adapter_dir())?;
+        if let Some(directory) = bundled_adapter_dir() {
+            registry.register_installed_directory(directory)?;
+        }
         registry.register_local_directory(&config_root.join("adapters"))?;
         Ok(registry)
     }
 
     fn register_repository_directory(&mut self, directory: &Path) -> Result<()> {
         self.register_directory_tree(directory, AdapterDescriptorSource::Repository)
+    }
+
+    fn register_installed_directory(&mut self, directory: &Path) -> Result<()> {
+        self.register_directory_tree(directory, AdapterDescriptorSource::Installed)
     }
 
     fn register_local_directory(&mut self, directory: &Path) -> Result<()> {
@@ -265,9 +280,24 @@ fn is_adapter_descriptor_file(path: &Path) -> bool {
 }
 
 fn repository_adapter_dir() -> PathBuf {
+    // The maintained adapters live inside the Python package tree (so wheels ship them; see
+    // `bundled_adapter_dir`). This compile-time path resolves them for in-repo dev/CLI builds.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join("adapters")
+        .join("python/src/nemo_fabric/adapters")
+}
+
+/// `<dir of the loaded native extension>/adapters`, if it exists — the bundle shipped in the
+/// `nemo_fabric` wheel. Located at runtime (no env var, no `base_dir`), memoized. `None` for dev builds
+/// not co-located with a bundle; those fall back to the repository source.
+fn bundled_adapter_dir() -> Option<&'static Path> {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let dylib = process_path::get_dylib_path()?;
+        let candidate = dylib.parent()?.join("adapters");
+        candidate.is_dir().then_some(candidate)
+    })
+    .as_deref()
 }
 
 /// Adapter install or availability strategy.
@@ -2244,5 +2274,46 @@ environment:
         ));
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn installed_source_overrides_repository_for_same_adapter_id() {
+        let base = std::env::temp_dir().join(format!(
+            "fabric-installed-adapter-test-{}",
+            std::process::id()
+        ));
+        let repo_dir = base.join("repo/adapters");
+        let installed_dir = base.join("installed/adapters");
+        let _ = std::fs::remove_dir_all(&base);
+        for dir in [&repo_dir, &installed_dir] {
+            std::fs::create_dir_all(dir.join("codex-cli")).expect("create adapter dir");
+            std::fs::write(
+                dir.join("codex-cli/fabric-adapter.json"),
+                r#"{
+  "adapter_id": "nvidia.fabric.codex.cli",
+  "harness": "codex",
+  "adapter_kind": "process"
+}"#,
+            )
+            .expect("write descriptor");
+        }
+
+        let mut registry = AdapterRegistry::default();
+        registry
+            .register_repository_directory(&repo_dir)
+            .expect("register repository");
+        registry
+            .register_installed_directory(&installed_dir)
+            .expect("register installed");
+
+        let entry = registry
+            .get("nvidia.fabric.codex.cli")
+            .expect("adapter resolved");
+        // Installed is registered after Repository, and last-writer wins, so it takes precedence and
+        // the descriptor resolves from the relocatable installed dir rather than the repository tree.
+        assert_eq!(entry.source, AdapterDescriptorSource::Installed);
+        assert!(entry.root.starts_with(installed_dir.canonicalize().unwrap_or(installed_dir)));
+
+        let _ = std::fs::remove_dir_all(base);
     }
 }
