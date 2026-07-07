@@ -79,26 +79,32 @@ Build typed config in one of two ways:
   configs or complete application-owned config.
 
 ```python
-from nemo_fabric import FabricConfigModel
+from nemo_fabric import (
+    FabricConfigModel,
+    HarnessConfigModel,
+    MetadataConfigModel,
+    ModelConfigModel,
+    RuntimeConfigModel,
+)
 
 config = FabricConfigModel(
-    metadata={"name": "review-agent"},
-    harness={
-        "adapter_id": "nvidia.fabric.hermes.sdk",
-        "resolution": "preinstalled",
-    },
+    metadata=MetadataConfigModel(name="review-agent"),
+    harness=HarnessConfigModel(
+        adapter_id="nvidia.fabric.hermes.sdk",
+        resolution="preinstalled",
+    ),
     models={
-        "default": {
-            "provider": "nvidia",
-            "model": "nvidia/nemotron-3-nano-30b-a3b",
-            "api_key_env": "NVIDIA_API_KEY",
-        }
+        "default": ModelConfigModel(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+            api_key_env="NVIDIA_API_KEY",
+        )
     },
-    runtime={
-        "input_schema": "chat",
-        "output_schema": "message",
-        "artifacts": "./artifacts",
-    },
+    runtime=RuntimeConfigModel(
+        input_schema="chat",
+        output_schema="message",
+        artifacts="./artifacts",
+    ),
 )
 
 config.add_skill_path("./skills/code-review")
@@ -119,19 +125,24 @@ run. Applications can do that with ordinary Python functions, config builders, o
 copies of a typed config.
 
 ```python
-from nemo_fabric import FabricConfigModel
+from nemo_fabric import (
+    FabricConfigModel,
+    HarnessConfigModel,
+    MetadataConfigModel,
+    ModelConfigModel,
+)
 
 
 def review_agent_config(*, github_mcp: bool, relay: bool) -> FabricConfigModel:
     config = FabricConfigModel(
-        metadata={"name": "review-agent"},
-        harness={"adapter_id": "nvidia.fabric.hermes.sdk"},
+        metadata=MetadataConfigModel(name="review-agent"),
+        harness=HarnessConfigModel(adapter_id="nvidia.fabric.hermes.sdk"),
         models={
-            "default": {
-                "provider": "nvidia",
-                "model": "nvidia/nemotron-3-nano-30b-a3b",
-                "api_key_env": "NVIDIA_API_KEY",
-            }
+            "default": ModelConfigModel(
+                provider="nvidia",
+                model="nvidia/nemotron-3-nano-30b-a3b",
+                api_key_env="NVIDIA_API_KEY",
+            )
         },
     )
     if github_mcp:
