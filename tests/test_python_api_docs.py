@@ -11,6 +11,7 @@ from inspect import getdoc, getmembers, isclass, isfunction, ismethod, getattr_s
 from pathlib import Path
 
 import nemo_fabric
+from pydantic import BaseModel
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,7 @@ NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.session": "/reference/api/python-library-reference/sessions",
+    "nemo_fabric.models": "/reference/api/python-library-reference/models",
     "nemo_fabric.types": "/reference/api/python-library-reference/types",
     "nemo_fabric.errors": "/reference/api/python-library-reference/errors",
 }
@@ -74,6 +76,8 @@ def test_exported_sdk_classes_and_public_members_have_docstrings() -> None:
                 or ismethod(member)
                 or isinstance(raw_member, property)
             ):
+                continue
+            if issubclass(exported, BaseModel) and hasattr(BaseModel, member_name):
                 continue
             assert getdoc(member), f"{export_name}.{member_name}"
 

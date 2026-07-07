@@ -20,6 +20,7 @@ from nemo_fabric.errors import (
     FabricRuntimeError,
     FabricStateError,
 )
+from nemo_fabric.models import RunRequestModel
 from nemo_fabric.types import (
     FabricEvent,
     RunPlan,
@@ -148,7 +149,7 @@ class Session:
         self,
         *,
         input: Any = None,
-        request: RunRequest | Mapping[str, Any] | None = None,
+        request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
         request_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -236,7 +237,7 @@ class Session:
         self,
         *,
         input: Any = None,
-        request: RunRequest | Mapping[str, Any] | None = None,
+        request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
         request_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -468,7 +469,7 @@ def _run_request_payload(
     *,
     input: Any,
     input_file: str | Path | None,
-    request: RunRequest | Mapping[str, Any] | None,
+    request: RunRequest | RunRequestModel | Mapping[str, Any] | None,
     request_file: str | Path | None,
     request_id: str | None,
     context: Mapping[str, Any] | None,
@@ -498,7 +499,7 @@ def _run_request_payload(
     elif request is not None:
         payload = (
             request.to_mapping()
-            if isinstance(request, RunRequest)
+            if isinstance(request, (RunRequest, RunRequestModel))
             else RunRequest.from_mapping(request).to_mapping()
         )
     elif input_file is not None:

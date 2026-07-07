@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from nemo_fabric import Fabric, FabricConfig
+from nemo_fabric import Fabric, FabricConfigModel
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
@@ -22,11 +22,11 @@ DOCUMENTED_SNIPPETS = [
     "fabric doctor examples/code-review-agent --profile hermes_sdk",
     'plan = client.plan(agent, profiles=["hermes_sdk"])',
     'report = await client.doctor(agent, profiles=["hermes_sdk"])',
-    "config = FabricConfig.from_mapping(",
+    "config = FabricConfigModel(",
     "plan = client.plan(",
     "result = await client.run(",
     'session_id="job-123",',
-    '"harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},',
+    'harness={"adapter_id": "nvidia.fabric.hermes.sdk"},',
     'base_dir="examples/code-review-agent",',
     "### Multi-Turn SDK Sessions",
     "### Interactive CLI Chat",
@@ -75,7 +75,7 @@ async def readme_python_examples_run() -> None:
         plan = client.plan(agent, profiles=["hermes_sdk"])
         report = await client.doctor(agent, profiles=["hermes_sdk"])
         typed_plan = client.plan(
-            FabricConfig.from_mapping(README_PLAN_CONFIG),
+            FabricConfigModel.from_mapping(README_PLAN_CONFIG),
             base_dir=agent,
         )
 

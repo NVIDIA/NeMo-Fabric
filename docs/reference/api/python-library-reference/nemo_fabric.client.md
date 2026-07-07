@@ -17,7 +17,7 @@ Native Python client for resolving and running NeMo Fabric agents.
 ## <kbd>class</kbd> `Fabric`
 Primary Python entrypoint for NeMo Fabric.
 
-The client accepts either a path-backed agent package or a typed ``FabricConfig``. Path-backed sources select profiles by name; typed sources accept ordered profile mappings and may use ``base_dir`` to resolve relative paths. All inspection and execution APIs return typed, read-only mapping models.
+The client accepts either a path-backed agent package or a typed ``FabricConfigModel`` or compatibility ``FabricConfig``. Path-backed sources select profiles by name; typed sources accept ordered profile mappings and may use ``base_dir`` to resolve relative paths. All inspection and execution APIs return typed, read-only mapping models.
 
 ``Fabric`` is native-only. The ``fabric`` CLI is a separate public surface over the same Rust core; SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
@@ -49,9 +49,9 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfigModel`` or compatibility ``FabricConfig``.
  - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  profile mappings.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
 
 
 
@@ -86,9 +86,9 @@ Planning applies profiles, resolves the selected adapter, and reports the runtim
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``. Raw mappings are not accepted.
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfigModel`` or compatibility ``FabricConfig``. Raw  mappings are not accepted.
  - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  profile mappings.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
 
 
 
@@ -123,9 +123,9 @@ Resolution validates and normalizes configuration but does not resolve an adapte
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``. Raw mappings are not accepted; convert  them with ``FabricConfig.from_mapping()``.
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfigModel`` or compatibility ``FabricConfig``. Raw  mappings are not accepted; convert them with  ``FabricConfigModel.from_mapping()``.
  - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  profile mappings.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
 
 
 
@@ -151,7 +151,7 @@ run(
     base_dir: 'PathSource | None' = None,
     input: 'Any' = None,
     input_file: 'str | Path | None' = None,
-    request: 'RunRequest | Mapping[str, Any] | None' = None,
+    request: 'RunRequest | RunRequestModel | Mapping[str, Any] | None' = None,
     request_file: 'str | Path | None' = None,
     request_id: 'str | None' = None,
     session_id: 'str | None' = None,
@@ -168,9 +168,9 @@ Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_fil
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfigModel`` or compatibility ``FabricConfig``.
  - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  profile mappings.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
  - <b>`input`</b>:  JSON-compatible invocation input.
  - <b>`input_file`</b>:  UTF-8 file whose contents become the invocation input.
  - <b>`request`</b>:  Complete ``RunRequest`` or compatible mapping.
@@ -216,9 +216,9 @@ The resolved plan must declare the session capability. Each call starts a new ru
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
+ - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfigModel`` or compatibility ``FabricConfig``.
  - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  profile mappings.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
  - <b>`session_id`</b>:  Stable caller-owned conversation identifier. Defaults  to the generated runtime identifier.
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the session unless superseded by invocation overrides.
 

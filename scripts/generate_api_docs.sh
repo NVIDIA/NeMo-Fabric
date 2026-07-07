@@ -23,6 +23,7 @@ PYTHONPATH="python/src" lazydocs \
   --overview-file "index.md" \
   "nemo_fabric.client" \
   "nemo_fabric.session" \
+  "nemo_fabric.models" \
   "nemo_fabric.types" \
   "nemo_fabric.errors"
 
@@ -68,6 +69,11 @@ add_frontmatter \
   "Sessions" \
   "Drive stateful multi-turn runtimes through the Session API." \
   "/reference/api/python-library-reference/sessions"
+add_frontmatter \
+  "$out/nemo_fabric.models.md" \
+  "Models" \
+  "Pydantic authoring models for Fabric config and request inputs." \
+  "/reference/api/python-library-reference/models"
 add_frontmatter \
   "$out/nemo_fabric.types.md" \
   "Types" \

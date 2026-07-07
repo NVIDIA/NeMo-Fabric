@@ -30,7 +30,7 @@ Fabric provides:
 ```mermaid
 flowchart TB
   Consumer["Consumer\nCLI | Python SDK | integrations"]
-  Config["Agent source\nagent.yaml or FabricConfig + profiles"]
+  Config["Agent source\nagent.yaml or FabricConfigModel"]
   Core["Fabric Rust core\nresolve | plan | create | invoke | destroy"]
   Adapter["Selected Fabric adapter"]
   Harness["Agent harness runtime\nHermes | Codex | custom"]
@@ -108,8 +108,8 @@ under `examples/code-review-agent/artifacts/hermes-sdk/`.
 ## Core Concepts
 
 - **Agent source:** callers provide either an agent package path or a typed
-  `FabricConfig`. An agent package contains `agent.yaml` plus optional profiles,
-  skills, repos, and artifacts. Start with
+  `FabricConfigModel`. An agent package contains `agent.yaml` plus optional
+  profiles, skills, repos, and artifacts. Start with
   `examples/code-review-agent/agent.yaml`.
 - **Typed config:** SDK consumers can construct configuration in memory without
   materializing an agent directory. `agent.yaml` remains the portable
@@ -128,8 +128,9 @@ under `examples/code-review-agent/artifacts/hermes-sdk/`.
 Fabric applies profiles in caller order and validates the final effective config
 before planning or running.
 
-Path sources select profiles by name. Typed `FabricConfig` sources use ordered
-profile mappings; the SDK rejects mixed profile stacks. See the
+Path sources select profiles by name. Typed `FabricConfigModel` sources usually
+compose the final config in Python; profile mappings remain available for callers
+that need file-style overlays. The SDK rejects mixed profile stacks. See the
 [Python SDK guide](docs/sdk/python.mdx) for the complete public API,
 type definitions, lifecycle semantics, and compatibility rules.
 
@@ -178,23 +179,20 @@ Consumers that already own a top-level job config can construct the Fabric slice
 in code instead of materializing an agent directory:
 
 ```python
-from nemo_fabric import Fabric, FabricConfig
+from nemo_fabric import Fabric, FabricConfigModel
 
-config = FabricConfig.from_mapping(
-    {
-        "schema_version": "fabric.agent/v1alpha1",
-        "metadata": {"name": "code-review-agent"},
-        "harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},
-        "models": {
-            "default": {
-                "provider": "nvidia",
-                "model": "nvidia/nemotron-3-nano-30b-a3b",
-            }
-        },
-        "runtime": {
-            "input_schema": "chat",
-            "output_schema": "message",
-        },
+config = FabricConfigModel(
+    metadata={"name": "code-review-agent"},
+    harness={"adapter_id": "nvidia.fabric.hermes.sdk"},
+    models={
+        "default": {
+            "provider": "nvidia",
+            "model": "nvidia/nemotron-3-nano-30b-a3b",
+        }
+    },
+    runtime={
+        "input_schema": "chat",
+        "output_schema": "message",
     },
 )
 config.add_skill_path("./skills/code-review")
@@ -218,9 +216,9 @@ request explicitly. Results remain dict-compatible while exposing stable fields
 as attributes:
 
 ```python
-from nemo_fabric import Fabric, FabricConfig, FabricError, RunRequest
+from nemo_fabric import Fabric, FabricConfigModel, FabricError, RunRequestModel
 
-request = RunRequest(
+request = RunRequestModel(
     input="Review the workspace changes.",
     request_id="job-123-turn-1",
     context={"job_id": "job-123"},
@@ -228,7 +226,7 @@ request = RunRequest(
 )
 
 async def run(raw_config):
-    config = FabricConfig.from_mapping(raw_config)
+    config = FabricConfigModel.from_mapping(raw_config)
     try:
         async with Fabric() as client:
             result = await client.run(
@@ -245,8 +243,8 @@ async def run(raw_config):
     print(result["runtime_id"])
 ```
 
-`RunRequest.from_mapping(...)` accepts JSON-shaped request dictionaries when
-callers load or compose requests outside the SDK. Per-request `context` is
+`RunRequestModel.from_mapping(...)` accepts JSON-shaped request dictionaries
+when callers load or compose requests outside the SDK. Per-request `context` is
 caller-owned metadata; `overrides` are
 request-scoped config changes applied only where the selected harness adapter
 supports them. `session_id` is a first-class convenience for passing the stable
@@ -287,7 +285,7 @@ asyncio.run(chat())
 ```
 
 `start_session(...)` accepts either an agent path with named profiles or a
-`FabricConfig` with profile mappings. `stream(...)` is the stable streaming API;
+`FabricConfigModel` with profile mappings. `stream(...)` is the stable streaming API;
 current adapters may buffer internally before yielding events and the final
 result. Runtime updates and cancellation are capability-gated and raise
 `FabricCapabilityError` when the selected runtime does not support them.

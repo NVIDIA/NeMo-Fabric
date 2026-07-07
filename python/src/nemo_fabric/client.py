@@ -30,6 +30,7 @@ from nemo_fabric.errors import (
     FabricNativeUnavailableError,
     FabricRuntimeError,
 )
+from nemo_fabric.models import FabricConfigModel, RunRequestModel
 from nemo_fabric.session import (
     Session,
     _attach_session_id,
@@ -58,8 +59,9 @@ class Fabric:
     """Primary Python entrypoint for NeMo Fabric.
 
     The client accepts either a path-backed agent package or a typed
-    ``FabricConfig``. Path-backed sources select profiles by name; typed
-    sources accept ordered profile mappings and may use
+    ``FabricConfigModel`` or compatibility ``FabricConfig``. Path-backed
+    sources select profiles by name; typed sources accept ordered profile
+    mappings and may use
     ``base_dir`` to resolve relative paths. All inspection and execution APIs
     return typed, read-only mapping models.
 
@@ -94,7 +96,7 @@ class Fabric:
     @overload
     def resolve(
         self,
-        agent: FabricConfig,
+        agent: FabricConfig | FabricConfigModel,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -115,13 +117,14 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``. Raw mappings are not accepted; convert
-                them with ``FabricConfig.from_mapping()``.
+                ``FabricConfigModel`` or compatibility ``FabricConfig``. Raw
+                mappings are not accepted; convert them with
+                ``FabricConfigModel.from_mapping()``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a ``FabricConfig``.
+                config. Valid only when ``agent`` is a typed config source.
 
         Returns:
             The normalized ``EffectiveConfig`` snapshot.
@@ -165,7 +168,7 @@ class Fabric:
     @overload
     def plan(
         self,
-        agent: FabricConfig,
+        agent: FabricConfig | FabricConfigModel,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -186,12 +189,13 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``. Raw mappings are not accepted.
+                ``FabricConfigModel`` or compatibility ``FabricConfig``. Raw
+                mappings are not accepted.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a ``FabricConfig``.
+                config. Valid only when ``agent`` is a typed config source.
 
         Returns:
             A ``RunPlan`` containing the effective config, adapter, and
@@ -236,7 +240,7 @@ class Fabric:
     @overload
     async def doctor(
         self,
-        agent: FabricConfig,
+        agent: FabricConfig | FabricConfigModel,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -256,12 +260,12 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``.
+                ``FabricConfigModel`` or compatibility ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a ``FabricConfig``.
+                config. Valid only when ``agent`` is a typed config source.
 
         Returns:
             A ``DoctorReport`` with aggregate status and ordered checks.
@@ -306,7 +310,7 @@ class Fabric:
         base_dir: None = None,
         input: Any = None,
         input_file: str | Path | None = None,
-        request: RunRequest | Mapping[str, Any] | None = None,
+        request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
         session_id: str | None = None,
@@ -317,13 +321,13 @@ class Fabric:
     @overload
     async def run(
         self,
-        agent: FabricConfig,
+        agent: FabricConfig | FabricConfigModel,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
         input: Any = None,
         input_file: str | Path | None = None,
-        request: RunRequest | Mapping[str, Any] | None = None,
+        request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
         session_id: str | None = None,
@@ -339,7 +343,7 @@ class Fabric:
         base_dir: PathSource | None = None,
         input: Any = None,
         input_file: str | Path | None = None,
-        request: RunRequest | Mapping[str, Any] | None = None,
+        request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
         session_id: str | None = None,
@@ -356,12 +360,12 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``.
+                ``FabricConfigModel`` or compatibility ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a ``FabricConfig``.
+                config. Valid only when ``agent`` is a typed config source.
             input: JSON-compatible invocation input.
             input_file: UTF-8 file whose contents become the invocation input.
             request: Complete ``RunRequest`` or compatible mapping.
@@ -420,7 +424,7 @@ class Fabric:
     @overload
     async def start_session(
         self,
-        agent: FabricConfig,
+        agent: FabricConfig | FabricConfigModel,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -446,12 +450,12 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``.
+                ``FabricConfigModel`` or compatibility ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a ``FabricConfig``.
+                config. Valid only when ``agent`` is a typed config source.
             session_id: Stable caller-owned conversation identifier. Defaults
                 to the generated runtime identifier.
             overrides: JSON-compatible overrides applied to every invocation

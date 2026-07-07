@@ -13,6 +13,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, TypeVar
 
+from pydantic import BaseModel
+
 from nemo_fabric.errors import FabricConfigError
 
 JSONScalar = str | int | float | bool | None
@@ -23,6 +25,8 @@ _T = TypeVar("_T")
 
 
 def _plain(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return _plain(value.model_dump(mode="json", exclude_none=True))
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, _ConfigMapping):
@@ -46,6 +50,8 @@ def _plain(value: Any) -> Any:
 
 
 def _mapping(value: Any, name: str) -> dict[str, Any]:
+    if isinstance(value, BaseModel):
+        value = value.model_dump(mode="json", exclude_none=True)
     if not isinstance(value, Mapping):
         raise FabricConfigError(f"{name} must be a JSON object")
     return _plain(value)
@@ -75,6 +81,8 @@ def _boolean(value: Any, name: str) -> bool:
 def _coerce(model: type[_T], value: _T | Mapping[str, Any], name: str) -> _T:
     if isinstance(value, model):
         return deepcopy(value)
+    if isinstance(value, BaseModel):
+        return model.from_mapping(value.model_dump(mode="json", exclude_none=True))  # type: ignore[attr-defined,no-any-return]
     if isinstance(value, Mapping):
         return model.from_mapping(value)  # type: ignore[attr-defined,no-any-return]
     raise FabricConfigError(f"{name} must be a {model.__name__} or JSON object")

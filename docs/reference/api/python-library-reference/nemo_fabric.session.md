@@ -109,7 +109,7 @@ Report whether runtime cancellation is available.
 ```python
 invoke(
     input: 'Any' = None,
-    request: 'RunRequest | Mapping[str, Any] | None' = None,
+    request: 'RunRequest | RunRequestModel | Mapping[str, Any] | None' = None,
     request_id: 'str | None' = None,
     context: 'Mapping[str, Any] | None' = None,
     overrides: 'Mapping[str, Any] | None' = None
@@ -173,7 +173,7 @@ Repeated calls after a successful stop are no-ops. A failed session or an in-fli
 ```python
 stream(
     input: 'Any' = None,
-    request: 'RunRequest | Mapping[str, Any] | None' = None,
+    request: 'RunRequest | RunRequestModel | Mapping[str, Any] | None' = None,
     request_id: 'str | None' = None,
     context: 'Mapping[str, Any] | None' = None,
     overrides: 'Mapping[str, Any] | None' = None

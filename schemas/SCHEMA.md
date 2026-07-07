@@ -8,6 +8,11 @@ SPDX-License-Identifier: Apache-2.0
 This directory contains committed JSON Schema snapshots for the public Fabric
 contract. The files are generated from the Rust core types, not edited by hand.
 
+The Python SDK exposes Pydantic authoring models for application callers. Those
+models are hand-maintained against these Rust-generated schemas for now. When a
+schema-backed Rust type changes, update the matching Pydantic model and its
+schema-alignment tests in the same change.
+
 ## Exported Schemas
 
 `fabric schema` exports the current public typed contract.

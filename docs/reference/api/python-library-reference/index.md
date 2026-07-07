@@ -12,6 +12,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 - [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NeMo Fabric agents.
 - [`nemo_fabric.session`](./nemo_fabric.session.md#module-nemo_fabricsession): Session lifecycle support for the Fabric Python SDK.
+- [`nemo_fabric.models`](./nemo_fabric.models.md#module-nemo_fabricmodels): Pydantic SDK models for NeMo Fabric configuration and requests.
 - [`nemo_fabric.types`](./nemo_fabric.types.md#module-nemo_fabrictypes): Public data contracts for the NeMo Fabric Python SDK.
 - [`nemo_fabric.errors`](./nemo_fabric.errors.md#module-nemo_fabricerrors): Public exception hierarchy for the NeMo Fabric Python SDK.
 
@@ -20,6 +21,20 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
 - [`session.Session`](./nemo_fabric.session.md#class-session): One ordered multi-turn conversation over a Fabric runtime.
 - [`session.SessionStatus`](./nemo_fabric.session.md#class-sessionstatus): Lifecycle state of a session runtime.
+- [`models.EnvironmentConfigModel`](./nemo_fabric.models.md#class-environmentconfigmodel): Execution environment metadata supplied by the consumer.
+- [`models.FabricBaseModel`](./nemo_fabric.models.md#class-fabricbasemodel): Base class for SDK-facing Pydantic models.
+- [`models.FabricConfigModel`](./nemo_fabric.models.md#class-fabricconfigmodel): SDK-facing typed Fabric agent configuration.
+- [`models.FabricProfileConfigModel`](./nemo_fabric.models.md#class-fabricprofileconfigmodel): Typed profile overlay used when a Python caller wants file-style overlays.
+- [`models.HarnessConfigModel`](./nemo_fabric.models.md#class-harnessconfigmodel): Harness adapter selection plus adapter-owned settings.
+- [`models.McpConfigModel`](./nemo_fabric.models.md#class-mcpconfigmodel): MCP capability configuration.
+- [`models.McpServerConfigModel`](./nemo_fabric.models.md#class-mcpserverconfigmodel): MCP server configuration.
+- [`models.MetadataConfigModel`](./nemo_fabric.models.md#class-metadataconfigmodel): Human-readable agent identity.
+- [`models.ModelConfigModel`](./nemo_fabric.models.md#class-modelconfigmodel): Model alias configuration.
+- [`models.ProfileRegistryConfigModel`](./nemo_fabric.models.md#class-profileregistryconfigmodel): Profile discovery config for portable file-backed agent packages.
+- [`models.RunRequestModel`](./nemo_fabric.models.md#class-runrequestmodel): Pydantic authoring model for one Fabric invocation request.
+- [`models.RuntimeConfigModel`](./nemo_fabric.models.md#class-runtimeconfigmodel): Runtime input/output contract.
+- [`models.SkillConfigModel`](./nemo_fabric.models.md#class-skillconfigmodel): Skill capability configuration.
+- [`models.TelemetryConfigModel`](./nemo_fabric.models.md#class-telemetryconfigmodel): Telemetry configuration.
 - [`types.AdapterInfo`](./nemo_fabric.types.md#class-adapterinfo): Resolved adapter identity attached to a run plan.
 - [`types.ArtifactManifest`](./nemo_fabric.types.md#class-artifactmanifest): Normalized collection of artifacts produced by a run.
 - [`types.ArtifactRef`](./nemo_fabric.types.md#class-artifactref): Reference to one artifact produced by a run.

@@ -12,10 +12,11 @@ consumer configure an agent harness, validate the resolved plan, start a runtime
 send one or more turns, stream normalized events, stop the runtime, and collect
 results, artifacts, logs, and telemetry references.
 
-The SDK is config-first. Applications should construct a typed `FabricConfig`
-from their own job, deployment, or evaluation config. Portable file formats such
-as `agent.yaml` remain useful for examples, CI, and reproducibility, but the SDK
-does not require callers to write intermediate files before invoking Fabric.
+The SDK is config-first. Applications should construct a Pydantic
+`FabricConfigModel` from their own job, deployment, or evaluation config.
+Portable file formats such as `agent.yaml` remain useful for examples, CI, and
+reproducibility, but the SDK does not require callers to write intermediate
+files before invoking Fabric.
 
 Generated API reference pages remain the source of truth for exact signatures.
 This guide explains how the pieces are intended to fit together.
@@ -26,7 +27,7 @@ Fabric separates configuration, runtime lifecycle, session lifecycle, and
 individual invocations.
 
 ```text
-FabricConfig
+FabricConfigModel
   -> RunPlan
   -> SessionHandle
   -> InvocationHandle
@@ -35,7 +36,7 @@ FabricConfig
 
 ```mermaid
 flowchart TB
-  Config["FabricConfig"]
+  Config["FabricConfigModel"]
   Plan["RunPlan"]
   Session["Session<br/>owns a SessionHandle"]
   Runtime["RuntimeHandle<br/>lower-level runtime binding"]
@@ -139,9 +140,9 @@ Build typed config in one of two ways:
   configs or complete application-owned config.
 
 ```python
-from nemo_fabric import FabricConfig
+from nemo_fabric import FabricConfigModel
 
-config = FabricConfig(
+config = FabricConfigModel(
     metadata={"name": "review-agent"},
     harness={
         "adapter_id": "nvidia.fabric.hermes.sdk",
@@ -179,8 +180,11 @@ run. Applications can do that with ordinary Python functions, config builders, o
 copies of a typed config.
 
 ```python
-def review_agent_config(*, github_mcp: bool, relay: bool) -> FabricConfig:
-    config = FabricConfig(
+from nemo_fabric import FabricConfigModel
+
+
+def review_agent_config(*, github_mcp: bool, relay: bool) -> FabricConfigModel:
+    config = FabricConfigModel(
         metadata={"name": "review-agent"},
         harness={"adapter_id": "nvidia.fabric.hermes.sdk"},
         models={
@@ -214,8 +218,12 @@ artifact locations to the caller's package or job layout.
 
 ## Schemas And Reference
 
-The SDK models mirror the public Fabric schema. Use the schemas for exact field
-definitions and the generated API reference for exact Python signatures.
+The SDK's Pydantic models are hand-maintained against the Rust-generated public
+schemas. Use the schemas for exact persisted field definitions and the generated
+API reference for exact Python signatures. The mapping-compatible `FabricConfig`
+and `RunRequest` classes remain available as the normalization bridge used by
+the runtime layer, but new application code should prefer `FabricConfigModel`
+and `RunRequestModel` for authoring.
 
 | Contract | Source |
 | --- | --- |
@@ -250,9 +258,9 @@ Use `run(...)` when the application has one input and does not need to preserve
 runtime state after the result is collected.
 
 ```python
-from nemo_fabric import Fabric, RunRequest
+from nemo_fabric import Fabric, RunRequestModel
 
-request = RunRequest(
+request = RunRequestModel(
     input="Review the workspace changes.",
     request_id="job-123-turn-1",
     context={"job_id": "job-123"},

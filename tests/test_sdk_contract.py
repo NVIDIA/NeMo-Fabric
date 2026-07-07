@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import json
 from inspect import signature
+from pathlib import Path
 from typing import Any, get_overloads
 
 import pytest
+from pydantic import ValidationError
 
 import nemo_fabric.errors as fabric_errors
 
@@ -21,8 +23,10 @@ from nemo_fabric import (
     Fabric,
     FabricCapabilityError,
     FabricConfig,
+    FabricConfigModel,
     FabricConfigError,
     FabricError,
+    FabricProfileConfigModel,
     FabricNativeUnavailableError,
     FabricRuntimeError,
     FabricStateError,
@@ -31,6 +35,7 @@ from nemo_fabric import (
     MetadataConfig,
     RunPlan,
     RunRequest,
+    RunRequestModel,
     RunResult,
     RuntimeCapabilities,
     RuntimeConfig,
@@ -180,6 +185,63 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         )
     with pytest.raises(FabricConfigError, match="telemetry provider"):
         TelemetryConfig(provider="sideways")
+
+
+def test_pydantic_config_models_emit_schema_shape_and_validate():
+    config = FabricConfigModel(
+        metadata={"name": "demo", "owner": "sdk"},
+        harness={"adapter_id": "test.fabric.shim", "future": True},
+        models={
+            "default": {
+                "provider": "test",
+                "model": "test-model",
+                "temperature": 0.0,
+            }
+        },
+        future_top_level={"enabled": True},
+    )
+    config.add_skill_path("./skills/review")
+    config.add_mcp_server(
+        "github",
+        transport="streamable-http",
+        url="${GITHUB_MCP_URL}",
+        exposure="fabric_managed",
+    )
+    config.enable_relay(project="fabric-tests", output_dir="./artifacts/relay")
+
+    emitted = config.to_mapping()
+
+    assert emitted["schema_version"] == "fabric.agent/v1alpha1"
+    assert emitted["metadata"]["owner"] == "sdk"
+    assert emitted["harness"]["future"] is True
+    assert emitted["runtime"] == {}
+    assert emitted["models"]["default"]["model"] == "test-model"
+    assert emitted["skills"] == {"paths": ["./skills/review"]}
+    assert emitted["mcp"]["servers"]["github"]["exposure"] == "fabric_managed"
+    assert emitted["telemetry"]["provider"] == "relay"
+    assert config.extra_fields == {"future_top_level": {"enabled": True}}
+
+    normalized = FabricConfig.from_mapping(config)
+    assert normalized.to_mapping()["future_top_level"] == {"enabled": True}
+
+    with pytest.raises(ValidationError):
+        FabricConfigModel(metadata={"name": "missing-harness"})  # type: ignore[call-arg]
+    with pytest.raises(ValidationError):
+        config.add_mcp_server(
+            "bad",
+            transport="streamable-http",
+            url="http://example.invalid",
+            exposure="sideways",  # type: ignore[arg-type]
+        )
+
+
+def test_pydantic_agent_model_tracks_rust_schema_top_level_fields():
+    schema = json.loads(Path("schemas/agent.schema.json").read_text(encoding="utf-8"))
+    pydantic_schema = FabricConfigModel.model_json_schema()
+
+    assert set(pydantic_schema["properties"]).issuperset(schema["properties"])
+    assert set(pydantic_schema["required"]) == {"metadata", "harness"}
+    assert set(schema["required"]) == {"schema_version", "metadata", "harness", "runtime"}
 
 
 def test_inspection_models_are_typed_read_only_mappings():
@@ -418,6 +480,7 @@ class NativeRecorder:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self.path_profile_calls: list[Any] = []
+        self.config_profile_calls: list[Any] = []
         self.stopped = 0
         self.fail_invoke = False
 
@@ -438,6 +501,9 @@ class NativeRecorder:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
+        self.config_profile_calls.append(
+            None if profiles_json is None else json.loads(profiles_json)
+        )
         return json.dumps(_plan()["effective_config"])
 
     def plan_config(
@@ -447,6 +513,9 @@ class NativeRecorder:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
+        self.config_profile_calls.append(
+            None if profiles_json is None else json.loads(profiles_json)
+        )
         return json.dumps(_plan())
 
     def start_runtime(self, plan_json: str) -> str:
@@ -598,6 +667,23 @@ def test_run_request_constructor_generates_request_metadata():
     assert request.input == "hello"
     assert request.request_id.startswith("request-")
     assert request.context == {}
+
+
+def test_pydantic_run_request_model_is_accepted_by_runtime_shape():
+    pydantic_request = RunRequestModel(
+        input={"messages": [{"role": "user", "content": "hello"}]},
+        request_id="request-1",
+        context={"job_id": "job-1"},
+        future_request={"enabled": True},
+    )
+
+    request = RunRequest.from_mapping(pydantic_request)
+
+    assert request.to_mapping()["input"] == {
+        "messages": [{"role": "user", "content": "hello"}]
+    }
+    assert request.context == {"job_id": "job-1"}
+    assert request.extra_fields["future_request"] == {"enabled": True}
 
 
 def test_run_result_wraps_nested_error_and_keeps_mapping_access():
@@ -935,24 +1021,33 @@ async def test_lifecycle_methods_reject_raw_mapping_agent_source():
     native = NativeRecorder()
     client = NativeClient(native)
 
-    with pytest.raises(FabricConfigError, match="FabricConfig.from_mapping"):
+    with pytest.raises(FabricConfigError, match="FabricConfigModel.from_mapping"):
         await client.run({"metadata": {"name": "demo"}}, input="hello")
 
     assert native.requests == []
 
 
-def test_config_methods_reject_raw_mappings_and_pydantic_like_objects():
+def test_config_methods_accept_real_pydantic_models_and_reject_lookalikes():
     class ModelDumpLike:
         def model_dump(self, *, mode: str, exclude_none: bool) -> dict[str, Any]:
             return {"metadata": {"name": "demo"}}
 
-    client = NativeClient(NativeRecorder())
+    native = NativeRecorder()
+    client = NativeClient(native)
 
-    with pytest.raises(FabricConfigError, match="FabricConfig.from_mapping"):
+    with pytest.raises(FabricConfigError, match="FabricConfigModel.from_mapping"):
         client.plan({"metadata": {"name": "demo"}})
 
     with pytest.raises(FabricConfigError, match="FabricConfig"):
         client.plan(ModelDumpLike())
+
+    config = FabricConfigModel(
+        metadata={"name": "demo"},
+        harness={"adapter_id": "test.fabric.shim"},
+    )
+    client.plan(config, profiles=[FabricProfileConfigModel(name="typed")])
+
+    assert native.config_profile_calls == [[{"schema_version": "fabric.profile/v1alpha1", "name": "typed"}]]
 
 
 def test_typed_config_profiles_accept_mappings_and_reject_other_values():
