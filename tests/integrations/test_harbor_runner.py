@@ -94,11 +94,10 @@ def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
         "provider": "demo",
         "model": "demo",
     }
-    assert profiles[-1]["models"]["default"] == {
-        "provider": "openai",
-        "model": "openai/gpt-5.4",
-    }
-    assert [profile["name"] for profile in profiles] == ["codex", "harbor_model"]
+    harbor_model = profiles[-1].models["default"]
+    assert harbor_model.provider == "openai"
+    assert harbor_model.model == "openai/gpt-5.4"
+    assert [profile.name for profile in profiles] == ["codex", "harbor_model"]
     assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == "harbor-demo"
 
 

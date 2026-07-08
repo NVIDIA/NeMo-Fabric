@@ -57,8 +57,7 @@ class Fabric:
 
     The client accepts either a path-backed agent package or a typed
     ``FabricConfig``. Path-backed sources select profiles by name; typed sources
-    accept ordered profile
-    mappings and may use
+    accept ordered ``FabricProfileConfig`` values and may use
     ``base_dir`` to resolve relative paths. All inspection and execution APIs
     return typed, read-only mapping models.
 
@@ -109,7 +108,7 @@ class Fabric:
                 ``FabricConfig.from_mapping()``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                profile mappings.
+                ``FabricProfileConfig`` values.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a typed config source.
 
@@ -180,7 +179,7 @@ class Fabric:
                 mappings are not accepted.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                profile mappings.
+                ``FabricProfileConfig`` values.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a typed config source.
 
@@ -250,7 +249,7 @@ class Fabric:
                 ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                profile mappings.
+                ``FabricProfileConfig`` values.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a typed config source.
 
@@ -347,7 +346,7 @@ class Fabric:
                 ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                profile mappings.
+                ``FabricProfileConfig`` values.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a typed config source.
             input: JSON-compatible invocation input.
@@ -429,7 +428,7 @@ class Fabric:
                 ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
-                profile mappings.
+                ``FabricProfileConfig`` values.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a typed config source.
             overrides: JSON-compatible overrides applied to every invocation

@@ -966,15 +966,24 @@ def test_config_methods_accept_real_pydantic_models_and_reject_lookalikes():
     assert native.config_profile_calls == [[{"schema_version": "fabric.profile/v1alpha1", "name": "typed"}]]
 
 
-def test_typed_config_profiles_accept_mappings_and_reject_other_values():
+def test_typed_config_profiles_require_profile_models():
     client = NativeClient(NativeRecorder())
 
-    client.plan(_fabric_config(), profiles=[{"name": "typed_relay"}])
+    client.plan(
+        _fabric_config(),
+        profiles=[FabricProfileConfig(name="typed_relay")],
+    )
 
-    with pytest.raises(FabricConfigError, match="profile mappings"):
+    with pytest.raises(FabricConfigError, match="FabricProfileConfig"):
+        client.plan(
+            _fabric_config(),
+            profiles=[{"name": "typed_relay"}],  # type: ignore[list-item]
+        )
+
+    with pytest.raises(FabricConfigError, match="FabricProfileConfig"):
         client.plan(_fabric_config(), profiles="typed_relay")  # type: ignore[arg-type]
 
-    with pytest.raises(FabricConfigError, match="profile mappings"):
+    with pytest.raises(FabricConfigError, match="FabricProfileConfig"):
         client.plan(
             _fabric_config(),
             profiles=["typed_relay"],  # type: ignore[list-item]
@@ -1024,7 +1033,7 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
     assert config.harness.settings["workspace"] == "./ws"
 
     client = NativeClient(NativeRecorder())
-    client.plan(config, profiles=[{"name": "typed_relay"}])
+    client.plan(config, profiles=[FabricProfileConfig(name="typed_relay")])
 
 
 def test_resolve_accepts_path_and_fabric_config_sources():
