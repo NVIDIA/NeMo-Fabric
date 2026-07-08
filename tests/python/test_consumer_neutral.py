@@ -27,8 +27,9 @@ import sys
 import tomllib
 from pathlib import Path
 
-SDK_ROOT = Path(__file__).resolve().parents[2] / "python" / "src" / "nemo_fabric"
-PYPROJECT = Path(__file__).resolve().parents[2] / "python" / "pyproject.toml"
+ROOT_DIR = Path(__file__).resolve().parents[2]
+SDK_ROOT = ROOT_DIR / "python" / "src" / "nemo_fabric"
+PYPROJECT = ROOT_DIR / "python" / "pyproject.toml"
 ALLOWED = set(sys.stdlib_module_names) | {"nemo_fabric", "__future__"}
 # Consumer/harness packages that must never leak into a plain ``import nemo_fabric``.
 CONSUMER_SPECIFIC = [

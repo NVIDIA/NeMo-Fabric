@@ -2,21 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [project]
-name = "nemo-fabric"
-version = "0.1.0"
-description = "Python SDK surface for NeMo Fabric"
-requires-python = ">=3.10"
+name = "nemo-fabric-runtime"
+description = "Python SDK and native bindings for NeMo Fabric"
+requires-python = ">=3.11"
 dependencies = []
+dynamic = ["version"]
 
-[project.optional-dependencies]
-harbor = ["harbor>=0.13.2"]
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-nemo_fabric = ["py.typed", "_native.pyi"]
+[tool.maturin]
+manifest-path = "../crates/fabric-python/Cargo.toml"
+python-source = "src"
+module-name = "nemo_fabric._native"
+features = ["pyo3/extension-module"]

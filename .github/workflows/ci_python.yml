@@ -12,9 +12,6 @@ concurrency:
   group: ci-python-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 defaults:
   run:
     shell: bash
@@ -24,6 +21,8 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -56,9 +55,54 @@ jobs:
       - name: Build SDK with native extension
         run: |
           uv venv --python 3.12 .venv
-          uv sync --group test --no-group dev --extra harbor --extra hermes --extra relay
+          uv sync --group test --no-group dev --extra codex --extra harbor --extra hermes --extra relay --extra runtime
 
       - name: Run pytest
         run: |
           set -euo pipefail
           just test-python
+
+  build-wheels:
+    name: Build wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: fabric-python-wheels
+
+      - name: Install just
+        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        with:
+          tool: just@1.50.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Build wheels
+        run: just wheels
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-wheels
+          path: dist/*.whl
+          if-no-files-found: error

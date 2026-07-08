@@ -5,16 +5,15 @@ SPDX-License-Identifier: Apache-2.0
 
 # Hermes CLI Adapter
 
-This adapter runs Hermes through the installed `hermes` CLI. It is the process
-path for local debugging, `fabric run`, and environment-backed consumers that
-want Fabric to invoke a command and capture stdout, stderr, exit code, logs, and
-artifacts.
+This adapter runs Hermes through the installed `hermes` CLI. Fabric starts the
+adapter as a Python module for local debugging, `fabric run`, and
+environment-backed consumers. The adapter then invokes Hermes and captures
+stdout, stderr, exit status, logs, and artifacts.
 
-Unlike the Hermes SDK adapter, this adapter intentionally does not advertise
-`runner.module` or `runner.callable`. Fabric invokes a small launcher as a
-process. The launcher reads the Fabric invocation from `FABRIC_INVOCATION`,
-falls back to stdin for simple/debug runs, writes Hermes-native config, and
-then launches the real Hermes CLI.
+Fabric invokes `runner.module` with `python -m`. The module reads the Fabric
+invocation from standard input, writes Hermes-native config, and then launches
+the real Hermes CLI. `runner.callable` records the corresponding reusable
+Python function.
 
 ## What It Maps
 
@@ -29,17 +28,14 @@ before calling the CLI. It maps:
 
 ## Maintaining The Adapter
 
-Keep `fabric-adapter.json` aligned with the process implementation:
+Keep `fabric-adapter.json` aligned with the Python implementation:
 
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
-- `adapter_kind` is `process` because Fabric owns process supervision,
-  stdout/stderr capture, exit status, logs, and artifacts.
-- `runner.command` and `runner.script` define the launcher process. The script
-  reads Fabric payload JSON from `FABRIC_INVOCATION`, with stdin as fallback,
-  and writes JSON output to stdout.
+- `adapter_kind` is `python` because Fabric invokes the adapter with Python.
+- `runner.module` names the module that Fabric invokes with `python -m`.
+  `runner.callable` names the equivalent reusable Python function.
 - Harness settings should use `hermes_command` and `hermes_args` for the actual
-  Hermes CLI command and arguments. Do not use `command` for Hermes itself;
-  `command` belongs to the Fabric process runner.
+  Hermes CLI command and arguments.
 - `requirements` powers `fabric doctor`; keep required env vars and the `hermes`
   binary requirement current.
 - `config.accepts` must match the Fabric sections this adapter maps into Hermes.

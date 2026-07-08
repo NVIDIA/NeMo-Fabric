@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = [
+  "setuptools>=64",
+  "setuptools-scm>=8",
+  "setuptools_dynamic_dependencies>=1.0.0",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nemo-fabric-adapters-hermes-sdk"
+description = "Hermes SDK adapter for NeMo Fabric"
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nemo_fabric_adapters.hermes_sdk*"]
+
+[tool.setuptools.data-files]
+"share/nemo-fabric/adapters/hermes-sdk" = ["fabric-adapter.json"]
+
+[tool.setuptools_dynamic_dependencies]
+dependencies = [
+  "nemo-fabric-adapters-common == {version}",
+  "pyyaml>=6.0", # needed for writing hermes config files
+]
+
+[tool.uv.sources]
+nemo-fabric-adapters-common = { path = "../common" }
+
+[tool.setuptools_scm]
+root = "../.."
+git_describe_command = "git describe --long --first-parent"
