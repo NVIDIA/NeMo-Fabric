@@ -38,9 +38,7 @@
           "$ref": "#/$defs/RuntimeCapabilities",
           "default": {
             "cancellation": false,
-            "concurrent_invocations": false,
             "service": false,
-            "session": false,
             "streaming": false,
             "updates": false
           },
@@ -396,7 +394,7 @@
         },
         "connection": {
           "additionalProperties": true,
-          "description": "Provider connection metadata, such as server URL, session id, or namespace.",
+          "description": "Provider connection metadata, such as server URL, credential reference, or namespace.",
           "type": "object"
         },
         "control_location": {
@@ -846,11 +844,6 @@
           "description": "Whether an in-flight invocation can be cancelled.",
           "type": "boolean"
         },
-        "concurrent_invocations": {
-          "default": false,
-          "description": "Whether the runtime accepts concurrent invocations.",
-          "type": "boolean"
-        },
         "metadata": {
           "additionalProperties": true,
           "description": "Additional adapter-specific capability metadata.",
@@ -859,11 +852,6 @@
         "service": {
           "default": false,
           "description": "Whether the selected runtime supports service lifecycle operations.",
-          "type": "boolean"
-        },
-        "session": {
-          "default": false,
-          "description": "Whether the selected runtime supports session lifecycle operations.",
           "type": "boolean"
         },
         "streaming": {

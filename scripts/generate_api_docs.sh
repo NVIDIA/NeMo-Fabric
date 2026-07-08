@@ -22,7 +22,7 @@ PYTHONPATH="python/src" lazydocs \
   --output-path "$out" \
   --overview-file "index.md" \
   "nemo_fabric.client" \
-  "nemo_fabric.session" \
+  "nemo_fabric.runtime" \
   "nemo_fabric.models" \
   "nemo_fabric.types" \
   "nemo_fabric.errors"
@@ -65,10 +65,10 @@ add_frontmatter \
   "Resolve, plan, diagnose, and run agents with Fabric." \
   "/reference/api/python-library-reference/client"
 add_frontmatter \
-  "$out/nemo_fabric.session.md" \
-  "Sessions" \
-  "Drive stateful multi-turn runtimes through the Session API." \
-  "/reference/api/python-library-reference/sessions"
+  "$out/nemo_fabric.runtime.md" \
+  "Runtime" \
+  "Drive stateful multi-turn execution through the Runtime API." \
+  "/reference/api/python-library-reference/runtime"
 add_frontmatter \
   "$out/nemo_fabric.models.md" \
   "Models" \

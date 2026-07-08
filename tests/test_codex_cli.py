@@ -177,9 +177,10 @@ def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(
     exec_index = command.index("exec")
     assert command[0] == "codex"
     assert command[1:exec_index] == []
-    assert command[exec_index : exec_index + 3] == ["exec", "--json", "--ephemeral"]
-    assert ["--sandbox", "read-only"] == command[exec_index + 3 : exec_index + 5]
-    assert ["--profile", "fabric-runtime-1"] == command[exec_index + 5 : exec_index + 7]
+    assert command[exec_index : exec_index + 2] == ["exec", "--json"]
+    assert "--ephemeral" not in command
+    assert ["--sandbox", "read-only"] == command[exec_index + 2 : exec_index + 4]
+    assert ["--profile", "fabric-runtime-1"] == command[exec_index + 4 : exec_index + 6]
     assert "--dangerously-bypass-hook-trust" not in command
     assert ["--model", "gpt-5.4"] == command[-3:-1]
     assert command[-1] == "-"
@@ -539,9 +540,8 @@ def test_config_override_values_reject_nested_non_finite_numbers(value):
         adapter.toml_value(value)
 
 
-def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypatch, tmp_path):
+def test_runtime_reuses_codex_thread_across_invocations(codex_payload, monkeypatch, tmp_path):
     adapter = load_codex_adapter()
-    codex_payload["runtime_context"]["session_id"] = "review-session"
     mock_run = MagicMock(
         side_effect=[
             subprocess.CompletedProcess(
@@ -578,7 +578,6 @@ def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     assert second_command[-3:] == ["resume", "thread-123", "-"]
     assert first["response"] == "first response"
     assert second["response"] == "second response"
-    assert second["session_id"] == "review-session"
     assert second["thread_id"] == "thread-123"
     assert second["usage"]["cached_input_tokens"] == 2
     child_env = mock_run.call_args_list[0].kwargs["env"]
@@ -588,14 +587,14 @@ def test_session_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     assert "FABRIC_UNRELATED_SECRET" not in child_env
     assert mock_run.call_args_list[0].kwargs["timeout"] == 1800
 
-    state_path = adapter.session_state_path(codex_payload, "review-session")
+    state_path = adapter.runtime_state_path(codex_payload, "runtime-1")
     assert json.loads(state_path.read_text(encoding="utf-8")) == {
-        "session_id": "review-session",
+        "runtime_id": "runtime-1",
         "thread_id": "thread-123",
     }
 
 
-def test_oneshot_does_not_persist_codex_thread(codex_payload, monkeypatch):
+def test_runtime_persists_codex_thread_state(codex_payload, monkeypatch):
     adapter = load_codex_adapter()
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
@@ -614,7 +613,7 @@ def test_oneshot_does_not_persist_codex_thread(codex_payload, monkeypatch):
     assert "events" not in output
     assert "stdout" not in output
     assert "stderr" not in output
-    assert not (Path(output["state_dir"]) / "sessions").exists()
+    assert (Path(output["state_dir"]) / "runtimes").exists()
 
 
 def test_adapter_rejects_structured_input_until_chat_is_supported(codex_payload):
@@ -673,11 +672,10 @@ def test_adapter_rejects_invalid_timeout(codex_payload, timeout):
         adapter.run_codex(codex_payload)
 
 
-def test_session_fails_if_codex_does_not_return_thread_identity(
+def test_runtime_fails_if_codex_does_not_return_thread_identity(
     codex_payload, monkeypatch
 ):
     adapter = load_codex_adapter()
-    codex_payload["runtime_context"]["session_id"] = "review-session"
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
             args=[],
@@ -722,19 +720,17 @@ def test_successful_process_without_final_response_is_failed(codex_payload, monk
     assert "final agent message" in output["error"]
 
 
-async def test_fabric_session_invokes_codex_then_resumes(tmp_path):
+async def test_fabric_runtime_invokes_codex_then_resumes(tmp_path):
     mock_codex = tmp_path / "codex"
     write_mock_codex(mock_codex)
     config = fabric_config(tmp_path, mock_codex)
 
-    async with await Fabric().start_session(
+    async with await Fabric().start_runtime(
         config,
         base_dir=tmp_path,
-        session_id="fabric-session",
-    ) as session:
-        assert session.session_id == "fabric-session"
-        first = await session.invoke(input="first")
-        second = await session.invoke(input="second")
+    ) as runtime:
+        first = await runtime.invoke(input="first")
+        second = await runtime.invoke(input="second")
 
     assert first.runtime_id == second.runtime_id
     assert first.output["response"] == "thread-fake:first"
@@ -744,7 +740,7 @@ async def test_fabric_session_invokes_codex_then_resumes(tmp_path):
     assert second.output["command"][-3:] == ["resume", "thread-fake", "-"]
 
 
-async def test_fabric_oneshot_is_ephemeral_and_uses_cached_codex_auth(tmp_path):
+async def test_fabric_oneshot_uses_cached_codex_auth(tmp_path):
     mock_codex = tmp_path / "codex"
     write_mock_codex(mock_codex)
     config = fabric_config(tmp_path, mock_codex)
@@ -765,28 +761,19 @@ async def test_fabric_oneshot_is_ephemeral_and_uses_cached_codex_auth(tmp_path):
     )
     assert not any(check.name == "requirement.env" for check in report.checks)
     assert result.output["response"] == "thread-fake:inspect"
-    assert "--ephemeral" in result.output["command"]
-    assert result.output["session_id"] is None
+    assert "--ephemeral" not in result.output["command"]
 
 
-@pytest.mark.parametrize(
-    "profile",
-    [
-        "codex_cli",
-        "codex_cli_session",
-    ],
-)
-def test_codex_profiles_resolve_session_capability(profile):
+def test_codex_profile_resolves_runtime_adapter():
     plan = Fabric().plan(
         ROOT / "examples" / "code-review-agent",
-        profiles=[profile],
+        profiles=["codex_cli"],
     )
 
     assert plan.adapter.adapter_id == "nvidia.fabric.codex.cli"
     assert plan.adapter.harness == "codex"
     assert "mode" not in plan.effective_config.config.runtime
     assert plan.effective_config.config.runtime.input_schema == "text"
-    assert plan.capabilities.session is True
     settings = plan.effective_config.config.harness.settings
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"
     unsupported = plan["capability_plan"]["unsupported"]

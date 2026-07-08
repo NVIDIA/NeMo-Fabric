@@ -39,10 +39,8 @@ from nemo_fabric import (
     RunResult,
     RuntimeCapabilities,
     RuntimeConfig,
+    Runtime,
     RuntimeHandle,
-    RuntimeUpdate,
-    Session,
-    SessionHandle,
     SkillConfig,
     TelemetryConfig,
 )
@@ -54,7 +52,7 @@ def test_public_contract_has_no_unreleased_aliases():
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
         assert not hasattr(Fabric, name)
 
-    for name in ("resolve", "plan", "doctor", "run", "start_session"):
+    for name in ("resolve", "plan", "doctor", "run", "start_runtime"):
         assert len(get_overloads(getattr(Fabric, name))) == 2, name
 
     assert not hasattr(fabric_errors, "FabricCliError")
@@ -270,12 +268,10 @@ def test_inspection_models_are_typed_read_only_mappings():
                 }
             },
             "capabilities": {
-                "session": True,
                 "service": False,
                 "streaming": False,
                 "updates": False,
                 "cancellation": False,
-                "concurrent_invocations": False,
                 "future_capability": "declared",
             },
         }
@@ -359,8 +355,8 @@ def test_run_plan_requires_profiles():
 
 
 def test_runtime_capabilities_reject_non_boolean_values():
-    with pytest.raises(FabricConfigError, match="session capability"):
-        RuntimeCapabilities.from_mapping({"session": "false"})
+    with pytest.raises(FabricConfigError, match="streaming capability"):
+        RuntimeCapabilities.from_mapping({"streaming": "false"})
 
 
 def test_doctor_report_and_errors_expose_typed_contract_fields():
@@ -422,12 +418,10 @@ def _plan() -> dict[str, Any]:
             }
         },
         "capabilities": {
-            "session": True,
             "service": False,
             "streaming": False,
             "updates": False,
             "cancellation": False,
-            "concurrent_invocations": False,
         },
     }
 
@@ -522,26 +516,6 @@ class NativeRecorder:
         assert json.loads(plan_json)["agent_name"] == "demo"
         return json.dumps(_runtime())
 
-    def start_session(self, plan_json: str, session_id: str | None = None) -> str:
-        assert json.loads(plan_json)["agent_name"] == "demo"
-        runtime = _runtime()
-        return json.dumps(
-            {
-                "session_handle": {
-                    "session_id": session_id or runtime["runtime_id"],
-                    "runtime_id": runtime["runtime_id"],
-                    "agent_name": "demo",
-                    "harness": "hermes",
-                    "adapter_kind": "python",
-                    "adapter_id": "test.fabric.shim",
-                    "status": "active",
-                    "capabilities": _plan()["capabilities"],
-                    "metadata": {},
-                },
-                "runtime_handle": runtime,
-            }
-        )
-
     def invoke_runtime(
         self, plan_json: str, runtime_json: str, request_json: str
     ) -> str:
@@ -557,7 +531,6 @@ class NativeRecorder:
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
                 "runtime_id": json.loads(runtime_json)["runtime_id"],
-                "session_id": request.get("context", {}).get("session_id"),
                 "invocation_id": "invocation-1",
                 "request_id": request["request_id"],
                 "status": "failed" if request["input"] == "fail" else "succeeded",
@@ -842,45 +815,6 @@ async def test_typed_source_accepts_granular_request_fields_and_returns_result()
     }
 
 
-async def test_run_session_id_is_a_first_class_context_field():
-    native = NativeRecorder()
-    client = NativeClient(native)
-
-    result = await client.run(
-        _fabric_config(),
-        input="hello",
-        request_id="request-1",
-        session_id="session-1",
-        context={"job_id": "job-1"},
-    )
-
-    assert result.status == "succeeded"
-    assert native.requests[0]["context"] == {
-        "job_id": "job-1",
-        "session_id": "session-1",
-    }
-
-    await client.run(
-        _fabric_config(),
-        request=RunRequest(
-            input="hello",
-            context={"session_id": "session-2"},
-        ),
-        session_id="session-2",
-    )
-    assert native.requests[1]["context"]["session_id"] == "session-2"
-
-    with pytest.raises(FabricConfigError, match="session_id conflicts"):
-        await client.run(
-            _fabric_config(),
-            request=RunRequest(
-                input="hello",
-                context={"session_id": "request-session"},
-            ),
-            session_id="argument-session",
-        )
-
-
 async def test_invalid_request_context_raises_config_error():
     native = NativeRecorder()
     client = NativeClient(native)
@@ -916,17 +850,16 @@ def test_public_sdk_exceptions_share_a_common_base():
     assert issubclass(FabricNativeUnavailableError, FabricError)
 
 
-async def test_session_invoke_accepts_run_request_and_turn_fields():
+async def test_runtime_invoke_accepts_run_request_and_turn_fields():
     native = NativeRecorder()
-    session = Session(
+    runtime = Runtime(
         client=NativeClient(native),
         plan=_plan(),
         runtime=_runtime(),
-        overrides={"session": True, "limits": {"session": 1}},
-        session_id="session-1",
+        overrides={"runtime": True, "limits": {"runtime": 1}},
     )
 
-    result = await session.invoke(
+    result = await runtime.invoke(
         request=RunRequest(
             input="hello",
             request_id="request-2",
@@ -940,56 +873,31 @@ async def test_session_invoke_accepts_run_request_and_turn_fields():
     assert native.requests[0] == {
         "input": "hello",
         "request_id": "request-2",
-        "context": {
-            "job_id": "job-2",
-            "session_id": "session-1",
-        },
+        "context": {"job_id": "job-2"},
         "overrides": {
-            "session": True,
+            "runtime": True,
             "request": True,
-            "limits": {"session": 1, "request": 1},
+            "limits": {"runtime": 1, "request": 1},
         },
     }
 
     with pytest.raises(FabricConfigError, match="complete request"):
-        await session.invoke(
+        await runtime.invoke(
             request=RunRequest(input="hello"),
             context={"turn_id": "turn-1"},
         )
 
-    with pytest.raises(FabricConfigError, match="session_id conflicts"):
-        await session.invoke(
-            request=RunRequest(
-                input="hello",
-                context={"session_id": "different-session"},
-            )
-        )
-
-
-async def test_session_handle_stream_and_capability_errors_are_typed():
-    session = Session(
+async def test_runtime_handle_is_typed_and_detached():
+    runtime = Runtime(
         client=NativeClient(NativeRecorder()),
         plan=RunPlan.from_mapping(_plan()),
         runtime=_runtime(),
-        session_id="session-1",
     )
 
-    assert isinstance(session.handle, SessionHandle)
-    assert session.handle.harness == "hermes"
-    assert session.handle.adapter_id == "test.fabric.shim"
-    assert session.info is not session.handle
-    assert session.info.to_mapping() == session.handle.to_mapping()
-
-    streamed = [item async for item in session.stream(input="hello")]
-    assert streamed[0].kind == "invocation_end"
-    assert isinstance(streamed[-1], RunResult)
-
-    with pytest.raises(FabricCapabilityError, match="cancellation"):
-        await session.cancel()
-    assert session.info.status == "active"
-
-    with pytest.raises(FabricCapabilityError, match="updates"):
-        await session.update(RuntimeUpdate.from_mapping({"overrides": {"x": 1}}))
+    assert isinstance(runtime.handle, RuntimeHandle)
+    assert runtime.handle.harness == "hermes"
+    assert runtime.handle.adapter_id == "test.fabric.shim"
+    assert runtime.handle is not runtime.handle
 
 
 async def test_run_rejects_multiple_primary_input_sources():
@@ -1068,9 +976,9 @@ def test_typed_config_profiles_accept_mappings_and_reject_other_values():
 def test_path_source_accepts_single_profile_name():
     native = NativeRecorder()
 
-    NativeClient(native).plan("agent", profiles="hermes_session")
+    NativeClient(native).plan("agent", profiles="hermes_runtime")
 
-    assert native.path_profile_calls == [["hermes_session"]]
+    assert native.path_profile_calls == [["hermes_runtime"]]
 
 
 def test_path_source_rejects_mapping_profiles_before_native_planning():
@@ -1079,7 +987,7 @@ def test_path_source_rejects_mapping_profiles_before_native_planning():
     with pytest.raises(FabricConfigError, match="profile names"):
         NativeClient(native).plan(
             "agent",
-            profiles={"name": "hermes_session"},  # type: ignore[arg-type]
+            profiles={"name": "hermes_runtime"},  # type: ignore[arg-type]
         )
 
     assert native.path_profile_calls == []
@@ -1121,24 +1029,20 @@ def test_resolve_accepts_path_and_fabric_config_sources():
     assert typed_config["config"]["runtime"]["input_schema"] == "chat"
 
 
-async def test_start_session_alias_returns_session_and_info_includes_session_id():
-    session = await NativeClient(NativeRecorder()).start_session(
-        "agent",
-        session_id="session-1",
-    )
+async def test_start_runtime_returns_runtime_with_typed_handle():
+    runtime = await NativeClient(NativeRecorder()).start_runtime("agent")
 
-    assert session.session_id == "session-1"
-    assert isinstance(session.handle, SessionHandle)
-    assert session.handle["session_id"] == "session-1"
+    assert runtime.runtime_id == "runtime-1"
+    assert isinstance(runtime.handle, RuntimeHandle)
 
 
-async def test_session_state_errors_use_sdk_error_hierarchy():
-    session = Session(
+async def test_runtime_state_errors_use_sdk_error_hierarchy():
+    runtime = Runtime(
         client=NativeClient(NativeRecorder()),
         plan=_plan(),
         runtime=_runtime(),
     )
-    await session.stop()
+    await runtime.stop()
 
-    with pytest.raises(FabricStateError, match="cannot invoke a stopped session"):
-        await session.invoke(input="hello")
+    with pytest.raises(FabricStateError, match="cannot invoke a stopped runtime"):
+        await runtime.invoke(input="hello")

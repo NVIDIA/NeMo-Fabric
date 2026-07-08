@@ -12,7 +12,7 @@ from nemo_fabric.errors import (
     FabricRuntimeError,
     FabricStateError,
 )
-from nemo_fabric.session import Session, SessionStatus
+from nemo_fabric.runtime import Runtime, RuntimeStatus
 from nemo_fabric.models import (
     EnvironmentConfigModel,
     FabricBaseModel,
@@ -49,9 +49,6 @@ from nemo_fabric.types import (
     RuntimeCapabilities,
     RuntimeHandle,
     RuntimeConfig,
-    RuntimeUpdate,
-    RuntimeUpdateResult,
-    SessionHandle,
     SkillConfig,
     TelemetryConfig,
     TelemetryRef,
@@ -96,11 +93,8 @@ __all__ = [
     "RuntimeHandle",
     "RuntimeConfig",
     "RuntimeConfigModel",
-    "RuntimeUpdate",
-    "RuntimeUpdateResult",
-    "Session",
-    "SessionHandle",
-    "SessionStatus",
+    "Runtime",
+    "RuntimeStatus",
     "SkillConfig",
     "SkillConfigModel",
     "TelemetryConfig",

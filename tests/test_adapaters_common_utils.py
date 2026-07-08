@@ -84,17 +84,20 @@ def test_load_payload_falls_back_to_stdin(
 @pytest.mark.parametrize(
     ("runtime_context", "expected"),
     [
-        ({"session_id": "caller-session", "runtime_id": "runtime-1"}, "caller-session"),
-        ({"runtime_id": "runtime-1"}, None),
-        ({}, None),
+        ({"runtime_id": "runtime-1"}, "runtime-1"),
     ],
 )
-def test_runtime_session_id_uses_explicit_session_id(
+def test_runtime_id_reads_required_runtime_context(
     common_utils: types.ModuleType,
     runtime_context: dict[str, object],
-    expected: str | None,
+    expected: str,
 ):
-    assert common_utils.runtime_session_id({"runtime_context": runtime_context}) == expected
+    assert common_utils.runtime_id({"runtime_context": runtime_context}) == expected
+
+
+def test_runtime_id_requires_runtime_context(common_utils: types.ModuleType):
+    with pytest.raises(ValueError, match="runtime_context.runtime_id"):
+        common_utils.runtime_id({"runtime_context": {}})
 
 
 def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(

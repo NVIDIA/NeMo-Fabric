@@ -31,7 +31,7 @@ into the caller.
   </Card>
   <Card title="Typed lifecycle contracts">
     Resolve configs, inspect capabilities, run one-shot jobs, and hold
-    multi-turn sessions with typed requests, plans, handles, and results.
+    multi-turn runtimes with typed requests, plans, handles, and results.
   </Card>
   <Card title="Normalized evidence">
     Collect output, errors, lifecycle events, artifact manifests, and telemetry
@@ -126,7 +126,7 @@ contains the complete Hermes environment recipe.
 | Interface | Use it when | Start with |
 | --- | --- | --- |
 | Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
-| Session API | You need multiple ordered turns over one live harness runtime | [Sessions](/reference/api/python-library-reference/sessions) |
+| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
 | `fabric` CLI | You are validating packages, debugging profiles, or running reproducible local/CI jobs | `fabric validate`, `plan`, `doctor`, `run`, and `chat` |
 | JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
 
@@ -137,12 +137,12 @@ and wants to pass only its Fabric slice in memory.
 ## Core workflow
 
 1. **Configure** an agent package or typed `FabricConfig` with a harness adapter,
-   runtime mode, environment, models, tools, skills, MCP, and telemetry.
+   environment, models, tools, skills, MCP, and telemetry.
 2. **Apply profiles** in caller order to vary harness, model, environment, or
    observability settings without mutating the base config.
 3. **Plan and diagnose** to resolve the adapter and check capabilities and
    requirements before spending work on a runtime.
-4. **Run or start a session** through the shared start, invoke, and stop
+4. **Run or start a runtime** through the shared start, invoke, and stop
    lifecycle contract.
 5. **Consume evidence** from `RunResult`: output, structured failure details,
    artifacts, events, and telemetry references.
@@ -157,11 +157,10 @@ and wants to pass only its Fabric slice in memory.
     Resolve, plan, diagnose, run, and start stateful runtimes.
   </Card>
   <Card
-    title="Sessions"
-    href="/reference/api/python-library-reference/sessions"
+    title="Runtime"
+    href="/reference/api/python-library-reference/runtime"
   >
-    Invoke multiple turns, inspect identity and history, stream events, and
-    stop runtime handles safely.
+    Invoke multiple ordered turns and stop runtime handles safely.
   </Card>
   <Card
     title="Types"

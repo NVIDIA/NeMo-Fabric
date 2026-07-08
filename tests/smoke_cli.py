@@ -111,18 +111,16 @@ def main() -> None:
         assert hermes["output"]["managed_mcp_servers"] == []
         assert_relay_disabled_native_observability(hermes)
 
-        with_session = call_json(
+        second_run = call_json(
             "run",
             temp_fixture,
             "--profile",
             "env_local",
             "--input",
-            "hello session hermes",
-            "--session-id",
-            "run-session-123",
+            "hello runtime hermes",
         )
-        assert with_session["status"] == "succeeded"
-        assert with_session["output"]["session_id"] == "run-session-123"
+        assert second_run["status"] == "succeeded"
+        assert second_run["output"]["runtime_id"] == second_run["runtime_id"]
 
         request = json.dumps(
             {
@@ -141,22 +139,20 @@ def main() -> None:
             temp_fixture,
             "--profile",
             "env_local",
-            "--session-id",
-            "cli-session-123",
             "--verbose",
         )
         assert chat.stdout == ""
         assert '"received": "hello chat"' in chat.stderr
-        assert '"session_id": "cli-session-123"' in chat.stderr
+        assert '"runtime_id": "runtime-' in chat.stderr
         assert "NEMO FABRIC" in chat.stderr
-        assert "interactive runtime session" in chat.stderr
+        assert "interactive runtime" in chat.stderr
         assert "agent: hermes-shim-agent" in chat.stderr
         assert "profile: env_local" in chat.stderr
         assert "harness: hermes" in chat.stderr
         assert "adapter: python" in chat.stderr
-        assert chat.stderr.count("session_id: cli-session-123 (provided)") >= 2
-        assert "you[env_local:cli-session-123]> " in chat.stderr
-        assert "you[env_local:cli-session-123]> \nagent> {" in chat.stderr
+        assert chat.stderr.count("runtime_id: runtime-") >= 2
+        assert "you[env_local:runtime-" in chat.stderr
+        assert "> \nagent> {" in chat.stderr
         assert "agent> {" in chat.stderr
         assert "runtime_id: runtime-" in chat.stderr
         assert "/verbose on|off" in chat.stderr

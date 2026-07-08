@@ -28,8 +28,5 @@
       "otel",
       "openinference"
     ]
-  },
-  "capabilities": {
-    "session": true
   }
 }

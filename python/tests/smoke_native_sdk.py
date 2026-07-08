@@ -137,12 +137,12 @@ async def smoke(client: Fabric) -> None:
             profiles=["env_local"],
             input="hello native",
         )
-        async with await client.start_session(
+        async with await client.start_runtime(
             temp_agent,
             profiles=["env_local"],
-        ) as session:
-            first = await session.invoke(input="hello session one")
-            second = await session.invoke(input="hello session two")
+        ) as runtime:
+            first = await runtime.invoke(input="hello runtime one")
+            second = await runtime.invoke(input="hello runtime two")
 
     assert result["status"] == "succeeded"
     assert result.profiles == ("env_local",)
@@ -157,7 +157,7 @@ async def smoke(client: Fabric) -> None:
     assert first.profiles == ("env_local",)
     assert first.harness == "hermes"
     assert first["runtime_id"] == second["runtime_id"]
-    assert session.runtime["runtime_id"] == first["runtime_id"]
+    assert runtime.handle["runtime_id"] == first["runtime_id"]
 
 
 if __name__ == "__main__":

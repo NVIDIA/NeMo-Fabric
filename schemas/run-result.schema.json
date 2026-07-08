@@ -300,13 +300,6 @@
       "description": "Runtime handle id.",
       "type": "string"
     },
-    "session_id": {
-      "description": "Caller-owned or Fabric-generated session id.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "status": {
       "$ref": "#/$defs/RunStatus",
       "description": "Runtime status."

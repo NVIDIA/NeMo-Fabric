@@ -21,7 +21,7 @@ The client accepts either a path-backed agent package or a typed ``FabricConfigM
 
 ``Fabric`` is native-only. The ``fabric`` CLI is a separate public surface over the same Rust core; SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
-The client is also an asynchronous context manager. Leaving the context does not stop independently created sessions; use each ``Session`` as an asynchronous context manager or call ``Session.stop()`` explicitly.
+The client is also an asynchronous context manager. Leaving the context does not stop independently created runtimes; use each ``Runtime`` as an asynchronous context manager or call ``Runtime.stop()`` explicitly.
 
 See the Getting Started overview for runnable one-shot, typed-config, and multi-turn examples.
 
@@ -80,7 +80,7 @@ plan(
 
 Resolve an agent source into an immutable execution plan.
 
-Planning applies profiles, resolves the selected adapter, and reports the runtime capabilities that gate session, streaming, update, cancellation, and concurrency APIs. It does not start the runtime.
+Planning applies profiles, resolves the selected adapter, and reports optional runtime capabilities such as streaming, updates, and cancellation. It does not start the runtime.
 
 
 
@@ -154,7 +154,6 @@ run(
     request: 'RunRequest | RunRequestModel | Mapping[str, Any] | None' = None,
     request_file: 'str | Path | None' = None,
     request_id: 'str | None' = None,
-    session_id: 'str | None' = None,
     context: 'Mapping[str, Any] | None' = None,
     overrides: 'Mapping[str, Any] | None' = None
 ) → RunResult
@@ -176,7 +175,6 @@ Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_fil
  - <b>`request`</b>:  Complete ``RunRequest`` or compatible mapping.
  - <b>`request_file`</b>:  UTF-8 JSON file containing a complete request.
  - <b>`request_id`</b>:  Caller-owned request identifier. Fabric generates one  when omitted.
- - <b>`session_id`</b>:  Stable caller-owned conversation identifier to pass  through the invocation context.
  - <b>`context`</b>:  Caller-owned, JSON-compatible request metadata.
  - <b>`overrides`</b>:  JSON-compatible invocation-scoped config overrides.
 
@@ -196,21 +194,20 @@ Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_fil
 ---
 
 
-### <kbd>method</kbd> `start_session`
+### <kbd>method</kbd> `start_runtime`
 
 ```python
-start_session(
+start_runtime(
     agent: 'AgentSource',
     profiles: 'PathProfiles | TypedProfiles | None' = None,
     base_dir: 'PathSource | None' = None,
-    session_id: 'str | None' = None,
     overrides: 'Mapping[str, Any] | None' = None
-) → Session
+) → Runtime
 ```
 
-Start a stateful, multi-turn session runtime.
+Start a stateful runtime for one or more ordered invocations.
 
-The resolved plan must declare the session capability. Each call starts a new runtime. ``session_id`` is the stable conversation identifier; if omitted, the new runtime identifier is used. Session-scoped overrides are recursively merged below invocation-scoped overrides.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides.
 
 
 
@@ -219,13 +216,12 @@ The resolved plan must declare the session capability. Each call starts a new ru
  - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfigModel`` or compatibility ``FabricConfig``.
  - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  profile mappings.
  - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
- - <b>`session_id`</b>:  Stable caller-owned conversation identifier. Defaults  to the generated runtime identifier.
- - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the session unless superseded by invocation overrides.
+ - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
 
 
 
 **Returns:**
- An active ``Session``. Use it as an asynchronous context manager to guarantee runtime shutdown.
+ An active ``Runtime``. Use it as an asynchronous context manager to guarantee runtime shutdown.
 
 
 
@@ -233,7 +229,6 @@ The resolved plan must declare the session capability. Each call starts a new ru
 
  - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
- - <b>`FabricCapabilityError`</b>:  If the resolved runtime does not support  sessions.
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 
 

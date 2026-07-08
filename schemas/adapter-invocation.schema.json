@@ -265,7 +265,7 @@
         },
         "connection": {
           "additionalProperties": true,
-          "description": "Provider connection metadata, such as server URL, session id, or namespace.",
+          "description": "Provider connection metadata, such as server URL, credential reference, or namespace.",
           "type": "object"
         },
         "control_location": {
@@ -684,7 +684,7 @@
       "properties": {
         "context": {
           "additionalProperties": true,
-          "description": "Runtime context such as task, rollout, session, or caller metadata.",
+          "description": "Runtime context such as task, rollout, workflow, or caller metadata.",
           "type": "object"
         },
         "input": {
@@ -750,13 +750,6 @@
         "runtime_id": {
           "description": "Runtime handle id.",
           "type": "string"
-        },
-        "session_id": {
-          "description": "Optional caller-provided harness conversation id.",
-          "type": [
-            "string",
-            "null"
-          ]
         },
         "telemetry": {
           "anyOf": [

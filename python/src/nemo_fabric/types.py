@@ -977,30 +977,24 @@ class RuntimeCapabilities(FabricMapping):
     not implemented.
 
     Attributes:
-        session: Whether stateful multi-turn sessions are supported.
         service: Whether long-lived service handles are supported.
         streaming: Whether event streaming is supported.
         updates: Whether runtime configuration updates are supported.
         cancellation: Whether in-flight cancellation is supported.
-        concurrent_invocations: Whether invocations may overlap safely.
         metadata: Additional capability details.
     """
 
-    session: bool
     service: bool
     streaming: bool
     updates: bool
     cancellation: bool
-    concurrent_invocations: bool
     metadata: Mapping[str, Any]
     _fields = frozenset(
         {
-            "session",
             "service",
             "streaming",
             "updates",
             "cancellation",
-            "concurrent_invocations",
             "metadata",
         }
     )
@@ -1381,74 +1375,6 @@ class RuntimeHandle(FabricMapping):
         return data
 
 
-class SessionHandle(FabricMapping):
-    """Caller-facing identity and lifecycle snapshot for one session.
-
-    A session handle is the public SDK handle for a live or resumable agent
-    session. It references the lower-level runtime that backs the session, but
-    applications should use the session id for conversation/task correlation.
-
-    Attributes:
-        session_id: Stable conversation or task identifier.
-        runtime_id: Runtime lifecycle identifier backing this session.
-        agent_name: Resolved agent name.
-        harness: Stable harness identifier.
-        adapter_id: Fabric adapter identifier.
-        adapter_kind: Adapter execution mechanism.
-        status: Current session lifecycle state.
-        capabilities: Operations declared by the runtime.
-        metadata: Session-specific structured metadata.
-    """
-
-    session_id: str
-    runtime_id: str
-    agent_name: str
-    harness: str
-    adapter_id: str | None
-    adapter_kind: str
-    status: str
-    capabilities: RuntimeCapabilities
-    metadata: Mapping[str, Any]
-    _fields = frozenset(
-        {
-            "session_id",
-            "runtime_id",
-            "agent_name",
-            "harness",
-            "adapter_id",
-            "adapter_kind",
-            "status",
-            "capabilities",
-            "metadata",
-        }
-    )
-    _json_fields = frozenset({"metadata"})
-
-    @classmethod
-    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        for field in (
-            "session_id",
-            "runtime_id",
-            "agent_name",
-            "harness",
-            "adapter_kind",
-            "status",
-        ):
-            data[field] = _required_text(data.get(field), field.replace("_", " "))
-        if data.get("adapter_id") is not None:
-            data["adapter_id"] = _required_text(data["adapter_id"], "adapter id")
-        data["capabilities"] = RuntimeCapabilities.from_mapping(data.get("capabilities", {}))
-        data["metadata"] = _mapping(data.get("metadata", {}), "session metadata")
-        return data
-
-    def with_status(self, status: str) -> "SessionHandle":
-        """Return a copy of this handle with an updated lifecycle status."""
-
-        data = self.to_mapping()
-        data["status"] = status
-        return SessionHandle.from_mapping(data)
-
-
 class RunResult(FabricMapping):
     """Normalized terminal result from one Fabric invocation.
 
@@ -1463,7 +1389,6 @@ class RunResult(FabricMapping):
         adapter_kind: Adapter execution mechanism.
         adapter_id: Fabric adapter identifier.
         runtime_id: Runtime lifecycle identifier.
-        session_id: Conversation/session identifier, or ``None`` when absent.
         invocation_id: Identifier for this invocation.
         request_id: Correlated request identifier.
         status: Terminal invocation status.
@@ -1481,7 +1406,6 @@ class RunResult(FabricMapping):
     adapter_kind: str
     adapter_id: str
     runtime_id: str
-    session_id: str | None
     invocation_id: str
     request_id: str
     status: str
@@ -1499,7 +1423,6 @@ class RunResult(FabricMapping):
             "adapter_kind",
             "adapter_id",
             "runtime_id",
-            "session_id",
             "invocation_id",
             "request_id",
             "status",
@@ -1526,9 +1449,6 @@ class RunResult(FabricMapping):
             "status",
         ):
             data[field] = _required_text(data.get(field), field.replace("_", " "))
-        data.setdefault("session_id", None)
-        if data.get("session_id") is not None:
-            data["session_id"] = _required_text(data["session_id"], "session id")
         data["error"] = (
             None if data.get("error") is None else ErrorInfo.from_mapping(data["error"])
         )
@@ -1549,35 +1469,3 @@ class RunResult(FabricMapping):
         )
         data["metadata"] = _mapping(data.get("metadata", {}), "result metadata")
         return data
-
-
-class RuntimeUpdate(FabricMapping):
-    """Capability-gated update requested for a running session.
-
-    Attributes:
-        overrides: Config overrides to apply to the runtime.
-        metadata: Caller-owned update metadata.
-    """
-
-    overrides: Mapping[str, Any]
-    metadata: Mapping[str, Any]
-    _fields = frozenset({"overrides", "metadata"})
-    _json_fields = frozenset({"overrides", "metadata"})
-
-
-class RuntimeUpdateResult(FabricMapping):
-    """Normalized outcome of a runtime update request.
-
-    Attributes:
-        status: Terminal update status.
-        applied: Overrides accepted by the runtime.
-        rejected: Overrides rejected by the runtime.
-        reason: Optional explanation for partial or complete rejection.
-    """
-
-    status: str
-    applied: Mapping[str, Any]
-    rejected: Mapping[str, Any]
-    reason: str | None
-    _fields = frozenset({"status", "applied", "rejected", "reason"})
-    _json_fields = frozenset({"applied", "rejected"})

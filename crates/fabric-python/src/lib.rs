@@ -9,7 +9,7 @@ use fabric_core::{
     FabricConfig, ProfileConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
     load_fabric_document, resolve_effective_config_from_config,
     resolve_effective_config_with_profiles, resolve_run_plan_from_config,
-    resolve_run_plan_with_profiles, run_plan, start_session as start_core_session,
+    resolve_run_plan_with_profiles, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -185,21 +185,6 @@ fn start_runtime(py: Python<'_>, plan_json: String) -> PyResult<String> {
     to_json(&runtime)
 }
 
-/// Start a session for a resolved run plan and return StartedSession JSON.
-#[pyfunction]
-#[pyo3(signature = (plan_json, session_id=None))]
-fn start_session(
-    py: Python<'_>,
-    plan_json: String,
-    session_id: Option<String>,
-) -> PyResult<String> {
-    let plan = parse_run_plan(plan_json)?;
-    let session = py
-        .detach(|| start_core_session(&plan, session_id))
-        .map_err(to_py_error)?;
-    to_json(&session)
-}
-
 /// Invoke a previously started runtime and return RunResult JSON.
 #[pyfunction]
 fn invoke_runtime(
@@ -241,7 +226,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
     m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
-    m.add_function(wrap_pyfunction!(start_session, m)?)?;
     m.add_function(wrap_pyfunction!(invoke_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(stop_runtime, m)?)?;
     Ok(())

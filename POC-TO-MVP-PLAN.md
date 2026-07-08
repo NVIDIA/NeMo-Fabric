@@ -60,8 +60,8 @@ The repo already contains the core shape of the MVP:
   generation, and running.
 - Python package with native Rust bindings plus CLI fallback.
 - SDK support for both agent-package paths and typed/in-memory config.
-- Session-mode SDK lifecycle support with a stable `session_id` resume key for
-  both agent-package paths and typed/in-memory config.
+- Runtime SDK lifecycle support for both agent-package paths and
+  typed/in-memory config. A runtime owns its adapter-native conversation state.
 - Agent package examples with `agent.yaml`, `profiles/`, `skills/`, and
   workspace fixtures.
 - Ordered multi-profile resolution.
@@ -76,7 +76,7 @@ The repo already contains the core shape of the MVP:
 ## In Scope
 
 - Stable SDK and CLI behavior for Hermes-backed one-shot runs.
-- Minimal session lifecycle shape where Hermes support is available.
+- Minimal runtime lifecycle shape where Hermes support is available.
 - EffectiveConfig and RunPlan as the resolved core contract.
 - Multiple profiles applied in caller-provided order.
 - A reusable config-variation test matrix that proves the same agent can vary
@@ -176,10 +176,9 @@ Status:
 - Fabric model, workspace, skills, MCP, tools, telemetry, and artifact config
   remains visible in generated Hermes-native config or launch settings.
 - Unsupported Hermes MCP mappings with no target fail before invocation.
-- Session-mode adapters receive Fabric's stable session key from
-  `runtime_context.session_id` when supplied, or `runtime_context.runtime_id`
-  as the default. Hermes CLI maps that Fabric key onto Hermes session id/title
-  for resume.
+- Hermes adapters map Fabric's `runtime_context.runtime_id` onto the
+  Hermes-native session id/title used for conversation continuity. That native
+  session identity remains internal to the adapter.
 - Relay-backed Hermes CLI tests now cover ATOF/ATIF artifact references and
   generated Relay config in the process-backed path.
 - SDK and CLI smoke coverage asserts normalized `RunResult` parity for shared
@@ -231,15 +230,14 @@ Status:
 - Base Python SDK and CLI surfaces are in place.
 - SDK supports agent-package paths and typed/in-memory config.
 - CLI supports validate, inspect, plan, doctor, schema generation, and run.
-- SDK session APIs cover `start_session`, `invoke`, `stream`, `cancel`, and
-  `stop` for adapters that advertise session capability, including
-  caller-provided `session_id` propagation.
-- CLI includes `fabric chat` for local interactive session-mode debugging with
-  explicit `--session-id`, `/info`, `/verbose`, and oneshot-profile rejection.
+- SDK runtime APIs cover `start_runtime`, `invoke`, and `stop`. Each runtime
+  permits one active invocation; consumers own concurrency across runtimes.
+- CLI includes `fabric chat` for local interactive runtime debugging with
+  `/info` and `/verbose` commands.
 - SDK and CLI can plan and run Hermes without callers importing
   Hermes-specific code.
 - CLI and SDK smoke tests cover core planning and run paths.
-- README examples for plan, doctor, typed config, SDK sessions, and CLI chat are
+- README examples for plan, doctor, typed config, SDK runtimes, and CLI chat are
   mirrored by executable smoke tests to prevent documented API drift.
 - Typed config is a first-class SDK path and is covered without requiring an
   agent directory.
@@ -323,7 +321,7 @@ Before calling the MVP complete:
 - `cargo fmt --check` passes.
 - Python SDK smoke passes.
 - CLI smoke passes.
-- CLI chat smoke passes for session-mode profiles.
+- CLI chat smoke passes for stateful runtime profiles.
 - real Hermes SDK smoke passes in a documented clean environment.
 - real Hermes CLI smoke passes in a documented clean environment.
 - Hermes config-variation matrix passes for supported profile combinations.

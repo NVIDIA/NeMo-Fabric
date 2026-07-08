@@ -533,7 +533,7 @@ pub struct EnvironmentConfig {
     /// Artifact path inside or outside the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<PathBuf>,
-    /// Provider connection metadata, such as server URL, session id, or namespace.
+    /// Provider connection metadata, such as server URL, credential reference, or namespace.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub connection: serde_json::Map<String, Value>,
     /// Consumer-provided environment metadata.
@@ -1088,13 +1088,10 @@ fn resolve_runtime_capabilities(
         .map(|descriptor| descriptor.capabilities.clone())
         .unwrap_or_default();
     RuntimeCapabilities {
-        session: implemented_runtime && descriptor_capabilities.session,
         service: implemented_runtime && descriptor_capabilities.service,
         streaming: implemented_runtime && descriptor_capabilities.streaming,
         updates: implemented_runtime && descriptor_capabilities.updates,
         cancellation: implemented_runtime && descriptor_capabilities.cancellation,
-        concurrent_invocations: implemented_runtime
-            && descriptor_capabilities.concurrent_invocations,
         metadata: descriptor_capabilities.metadata,
     }
 }
@@ -1357,9 +1354,6 @@ pub struct RunPlan {
 /// Lifecycle behavior implemented by a resolved runtime path.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeCapabilities {
-    /// Whether the selected runtime supports session lifecycle operations.
-    #[serde(default)]
-    pub session: bool,
     /// Whether the selected runtime supports service lifecycle operations.
     #[serde(default)]
     pub service: bool,
@@ -1372,9 +1366,6 @@ pub struct RuntimeCapabilities {
     /// Whether an in-flight invocation can be cancelled.
     #[serde(default)]
     pub cancellation: bool,
-    /// Whether the runtime accepts concurrent invocations.
-    #[serde(default)]
-    pub concurrent_invocations: bool,
     /// Additional adapter-specific capability metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
@@ -1555,7 +1546,7 @@ future_top_level:
         let profile: ProfileConfig = serde_yaml::from_str(
             r#"
 schema_version: fabric.profile/v1alpha1
-name: session
+name: overlay
 harness:
   settings:
     timeout_seconds: 30
@@ -1580,7 +1571,7 @@ future_top_level:
         .expect("effective config");
         let value = serde_json::to_value(&effective.config).expect("config json");
 
-        assert_eq!(effective.profiles, ["session"]);
+        assert_eq!(effective.profiles, ["overlay"]);
         assert_eq!(value["runtime"]["input_schema"], "prompt");
         assert_eq!(value["harness"]["settings"]["workspace"], "./workspace");
         assert_eq!(value["harness"]["settings"]["timeout_seconds"], 30);
@@ -1682,30 +1673,6 @@ provider: unsupported
     }
 
     #[test]
-    fn unsupported_adapter_kinds_do_not_claim_session_capability() {
-        let config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.hermes.sdk
-runtime:
-"#,
-        )
-        .expect("session config");
-        let descriptor =
-            load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
-
-        assert!(resolve_runtime_capabilities(&config, Some(&descriptor)).session);
-        for adapter_kind in [AdapterKind::Http, AdapterKind::NativePlugin] {
-            let mut descriptor = descriptor.clone();
-            descriptor.adapter_kind = adapter_kind;
-            assert!(!resolve_runtime_capabilities(&config, Some(&descriptor)).session);
-        }
-    }
-
-    #[test]
     fn loads_adapter_descriptor() {
         let descriptor =
             load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
@@ -1743,12 +1710,10 @@ runtime:
         assert_eq!(
             plan_json["capabilities"],
             serde_json::json!({
-                "session": true,
                 "service": false,
                 "streaming": false,
                 "updates": false,
-                "cancellation": false,
-                "concurrent_invocations": false
+                "cancellation": false
             })
         );
         assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");

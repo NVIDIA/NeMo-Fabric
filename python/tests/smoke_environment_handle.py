@@ -19,14 +19,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 async def main() -> None:
     async with Fabric() as client:
-        session = await client.start_session(
+        runtime = await client.start_runtime(
             ROOT / "examples" / "code-review-agent",
             profiles=["env_local"],
         )
         try:
-            workspace = session.runtime["environment"]["workspace"]
+            workspace = runtime.handle["environment"]["workspace"]
         finally:
-            await session.stop()
+            await runtime.stop()
 
     assert os.path.isabs(workspace), f"workspace not absolute: {workspace}"
     assert (

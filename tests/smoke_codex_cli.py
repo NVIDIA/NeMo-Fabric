@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Opt-in real Codex CLI smoke for Fabric one-shot and session modes.
+"""Opt-in real Codex CLI smoke for Fabric one-shot and multi-turn runtimes.
 
     RUN_FABRIC_CODEX_INTEGRATION=1 python3 tests/smoke_codex_cli.py
 """
@@ -46,15 +46,14 @@ async def _run() -> None:
         assert "fabric_codex_oneshot_ok" in oneshot["output"]["response"].lower(), (
             oneshot.to_mapping()
         )
-        assert "--ephemeral" in oneshot["output"]["command"], oneshot.to_mapping()
+        assert "--ephemeral" not in oneshot["output"]["command"], oneshot.to_mapping()
 
-        async with await client.start_session(
+        async with await client.start_runtime(
             agent,
-            profiles=["codex_cli_session"],
-            session_id=nonce,
-        ) as session:
-            first = await session.invoke(input=f"Remember this value: {nonce}")
-            second = await session.invoke(
+            profiles=["codex_cli"],
+        ) as runtime:
+            first = await runtime.invoke(input=f"Remember this value: {nonce}")
+            second = await runtime.invoke(
                 input="Reply with only the value I asked you to remember."
             )
 

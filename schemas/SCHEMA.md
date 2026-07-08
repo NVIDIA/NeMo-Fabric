@@ -38,11 +38,7 @@ schema-alignment tests in the same change.
 ### Runtime Lifecycle
 
 - `environment-handle`: prepared execution environment context.
-- `runtime-handle`: lower-level active or resumable harness runtime binding.
-- `session-handle`: caller-facing handle for one live or resumable agent
-  session.
-- `started-session`: native session start result containing both the public
-  session handle and lower-level runtime handle.
+- `runtime-handle`: active harness runtime identity and opaque adapter binding.
 - `invocation-handle`: one request/turn sent to a runtime.
 
 ### Results, Artifacts, And Diagnostics

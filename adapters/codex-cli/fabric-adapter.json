@@ -13,8 +13,5 @@
   },
   "config": {
     "accepts": ["models"]
-  },
-  "capabilities": {
-    "session": true
   }
 }

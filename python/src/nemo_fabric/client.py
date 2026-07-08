@@ -31,12 +31,10 @@ from nemo_fabric.errors import (
     FabricRuntimeError,
 )
 from nemo_fabric.models import FabricConfigModel, RunRequestModel
-from nemo_fabric.session import (
-    Session,
-    _attach_session_id,
+from nemo_fabric.runtime import (
+    Runtime,
     _call_blocking,
     _json_mapping,
-    _require_session_runtime,
     _run_native_lifecycle,
     _run_request_payload,
 )
@@ -71,8 +69,8 @@ class Fabric:
     installed.
 
     The client is also an asynchronous context manager. Leaving the context
-    does not stop independently created sessions; use each ``Session`` as
-    an asynchronous context manager or call ``Session.stop()`` explicitly.
+    does not stop independently created runtimes; use each ``Runtime`` as
+    an asynchronous context manager or call ``Runtime.stop()`` explicitly.
 
     See the Getting Started overview for runnable one-shot, typed-config, and
     multi-turn examples.
@@ -184,8 +182,8 @@ class Fabric:
         """Resolve an agent source into an immutable execution plan.
 
         Planning applies profiles, resolves the selected adapter, and reports
-        the runtime capabilities that gate session, streaming, update,
-        cancellation, and concurrency APIs. It does not start the runtime.
+        optional runtime capabilities such as streaming, updates, and
+        cancellation. It does not start the runtime.
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
@@ -313,7 +311,6 @@ class Fabric:
         request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
-        session_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> RunResult: ...
@@ -330,7 +327,6 @@ class Fabric:
         request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
-        session_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> RunResult: ...
@@ -346,7 +342,6 @@ class Fabric:
         request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
         request_file: str | Path | None = None,
         request_id: str | None = None,
-        session_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> RunResult:
@@ -372,8 +367,6 @@ class Fabric:
             request_file: UTF-8 JSON file containing a complete request.
             request_id: Caller-owned request identifier. Fabric generates one
                 when omitted.
-            session_id: Stable caller-owned conversation identifier to pass
-                through the invocation context.
             context: Caller-owned, JSON-compatible request metadata.
             overrides: JSON-compatible invocation-scoped config overrides.
 
@@ -404,49 +397,43 @@ class Fabric:
             context=context,
             overrides=overrides,
         )
-        _attach_session_id(request_payload, session_id, "run")
         native = self._require_native_module("run")
         return RunResult.from_mapping(
             await _run_native_lifecycle(native, plan.to_mapping(), request_payload)
         )
 
     @overload
-    async def start_session(
+    async def start_runtime(
         self,
         agent: PathSource,
         *,
         profiles: PathProfiles | None = None,
         base_dir: None = None,
-        session_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
-    ) -> Session: ...
+    ) -> Runtime: ...
 
     @overload
-    async def start_session(
+    async def start_runtime(
         self,
         agent: FabricConfig | FabricConfigModel,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
-        session_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
-    ) -> Session: ...
+    ) -> Runtime: ...
 
-    async def start_session(
+    async def start_runtime(
         self,
         agent: AgentSource,
         *,
         profiles: PathProfiles | TypedProfiles | None = None,
         base_dir: PathSource | None = None,
-        session_id: str | None = None,
         overrides: Mapping[str, Any] | None = None,
-    ) -> Session:
-        """Start a stateful, multi-turn session runtime.
+    ) -> Runtime:
+        """Start a stateful runtime for one or more ordered invocations.
 
-        The resolved plan must declare the session capability. Each call starts
-        a new runtime. ``session_id`` is the stable conversation identifier; if
-        omitted, the new runtime identifier is used. Session-scoped overrides
-        are recursively merged below invocation-scoped overrides.
+        Each call starts a new logical runtime. Runtime-scoped overrides are
+        recursively merged below invocation-scoped overrides.
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
@@ -456,48 +443,40 @@ class Fabric:
                 profile mappings.
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a typed config source.
-            session_id: Stable caller-owned conversation identifier. Defaults
-                to the generated runtime identifier.
             overrides: JSON-compatible overrides applied to every invocation
-                in the session unless superseded by invocation overrides.
+                in the runtime unless superseded by invocation overrides.
 
         Returns:
-            An active ``Session``. Use it as an asynchronous context
+            An active ``Runtime``. Use it as an asynchronous context
             manager to guarantee runtime shutdown.
 
         Raises:
             FabricConfigError: If inputs or overrides are invalid.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
-            FabricCapabilityError: If the resolved runtime does not support
-                sessions.
             FabricRuntimeError: If runtime startup fails.
         """
 
-        session_overrides = _json_mapping(overrides, "session overrides")
+        runtime_overrides = _json_mapping(overrides, "runtime overrides")
         plan = await _call_blocking(
             lambda: self.plan(  # type: ignore[arg-type]
                 agent, profiles=profiles, base_dir=base_dir
             )
         )
-        _require_session_runtime(plan, "start_session")
-        native = self._require_native_module("start_session")
+        native = self._require_native_module("start_runtime")
         try:
-            started = await _call_blocking(
-                lambda: json.loads(
-                    native.start_session(json.dumps(plan.to_mapping()), session_id)
-                )
+            runtime = await _call_blocking(
+                lambda: json.loads(native.start_runtime(json.dumps(plan.to_mapping())))
             )
         except FabricError:
             raise
         except Exception as error:
             raise FabricRuntimeError(str(error), stage="start") from error
-        return Session(
+        return Runtime(
             client=self,
             plan=plan,
-            runtime=started["runtime_handle"],
-            handle=started["session_handle"],
-            overrides=session_overrides,
+            runtime=runtime,
+            overrides=runtime_overrides,
         )
 
     def _native_module(self) -> Any | None:

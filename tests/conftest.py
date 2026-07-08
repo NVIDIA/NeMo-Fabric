@@ -68,12 +68,15 @@ def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
 def hermes_cli_profile_fixture() -> str:
     return "env_local"
 
-@pytest.fixture(name="hermes_cli_session_profile")
-def hermes_cli_session_profile_fixture(repo_root: Path, hermes_agent_dir: Path) -> str:
-    src_yaml = repo_root / "examples/code-review-agent/profiles/hermes-cli-session.yaml"
-    assert src_yaml.exists(), f"Missing hermes-cli-session.yaml profile: {src_yaml}"
-    shutil.copy(src_yaml, hermes_agent_dir / "profiles/hermes-cli-session.yaml")
-    return "hermes_cli_session"
+@pytest.fixture(name="hermes_cli_runtime_profile")
+def hermes_cli_runtime_profile_fixture(hermes_agent_dir: Path) -> str:
+    import yaml
+
+    config_path = hermes_agent_dir / "agent.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["harness"]["settings"]["prepare_runtime_state"] = True
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    return "env_local"
 
 
 @pytest.fixture(name="hermes_command")

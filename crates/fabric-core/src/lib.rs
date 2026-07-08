@@ -26,8 +26,8 @@ pub use error::{FabricError, Result};
 pub use runtime::{
     AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage,
     FabricEvent, InvocationHandle, RunRequest, RunResult, RunStatus, RuntimeContext, RuntimeHandle,
-    RuntimeTelemetryContext, SessionHandle, SessionStatus, StartedSession, TelemetryRef,
-    invoke_runtime, prepare_environment, run_plan, start_runtime, start_session, stop_runtime,
+    RuntimeTelemetryContext, TelemetryRef, invoke_runtime, prepare_environment, run_plan,
+    start_runtime, stop_runtime,
 };
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,

@@ -28,7 +28,7 @@
         },
         "connection": {
           "additionalProperties": true,
-          "description": "Provider connection metadata, such as server URL, session id, or namespace.",
+          "description": "Provider connection metadata, such as server URL, credential reference, or namespace.",
           "type": "object"
         },
         "control_location": {

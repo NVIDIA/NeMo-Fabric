@@ -232,7 +232,6 @@ async def run(raw_config):
             result = await client.run(
                 config,
                 base_dir="examples/code-review-agent",
-                session_id="job-123",
                 request=request,
             )
     except FabricError as error:
@@ -247,23 +246,17 @@ async def run(raw_config):
 when callers load or compose requests outside the SDK. Per-request `context` is
 caller-owned metadata; `overrides` are
 request-scoped config changes applied only where the selected harness adapter
-supports them. `session_id` is a first-class convenience for passing the stable
-conversation key through request context. Failed runs expose structured
+supports them. Failed runs expose structured
 `result.error.stage`,
 `result.error.code`, and `result.error.retryable` when the adapter returns a
 normalized failure.
 
-### Multi-Turn SDK Sessions
+### Multi-Turn SDK Runtimes
 
-Open a `Session` and invoke it repeatedly. The session keeps one Fabric runtime
-handle active across turns; harness/adapter state is authoritative rather than
-reconstructed from a Python-side transcript.
-
-Fabric separates runtime identity from conversation identity. Each
-`start_session(...)` call creates a new `runtime_id` for that runtime lifecycle.
-`session_id` is the stable conversation key used for resume: if omitted, Fabric
-uses the generated `runtime_id`; if supplied, Fabric uses the caller-provided
-`session_id`.
+Open a `Runtime` and invoke it repeatedly. The runtime keeps its adapter-owned
+harness state active across turns rather than reconstructing state from a
+Python-side transcript. Every `start_runtime(...)` call creates a new logical
+runtime with its own structured `runtime_id`.
 
 ```python
 import asyncio
@@ -271,66 +264,57 @@ import asyncio
 from nemo_fabric import Fabric
 
 async def chat():
-    async with await Fabric().start_session(
+    async with await Fabric().start_runtime(
         "examples/code-review-agent",
-        profiles=["hermes_session"],
-        session_id="review-session-123",
-    ) as session:
-        await session.invoke(input="My name is Robin.")
-        reply = await session.invoke(input="What's my name?")   # recalls "Robin"
-        print(session.runtime_id, session.session_id, session.status.value)
+        profiles=["hermes_sdk"],
+    ) as runtime:
+        await runtime.invoke(input="My name is Robin.")
+        reply = await runtime.invoke(input="What's my name?")   # recalls "Robin"
+        print(runtime.runtime_id, runtime.status.value)
         print(reply["output"]["response"])
 
 asyncio.run(chat())
 ```
 
-`start_session(...)` accepts either an agent path with named profiles or a
-`FabricConfigModel` with profile mappings. `stream(...)` is the stable streaming API;
-current adapters may buffer internally before yielding events and the final
-result. Runtime updates and cancellation are capability-gated and raise
-`FabricCapabilityError` when the selected runtime does not support them.
-Session APIs require an adapter that advertises session capability.
+`start_runtime(...)` accepts either an agent path with named profiles or a
+`FabricConfigModel` with profile mappings. Each runtime permits one active
+invocation at a time. Applications create independent runtimes and own queues,
+retries, timeouts, and concurrency policy.
 
 ### Interactive CLI Chat
 
-For local manual multi-turn testing, use `fabric chat` with a profile whose
-adapter supports sessions. It drives the same started runtime in an interactive
-loop:
+For local manual multi-turn testing, use `fabric chat`. It drives one started
+runtime in an interactive loop:
 
 ```bash
 fabric chat examples/code-review-agent \
-  --profile hermes_cli_session \
-  --session-id review-session-123 \
+  --profile hermes_cli \
   --verbose
 ```
 
-The same session flow works with an existing Codex CLI login:
+The same runtime flow works with an existing Codex CLI login:
 
 ```bash
 fabric chat examples/code-review-agent \
-  --profile codex_cli_session \
-  --session-id review-session-123
+  --profile codex_cli
 ```
 
-`--session-id` is optional. Each `fabric chat` start creates a new `runtime_id`;
-the session id is the stable resume key. If `--session-id` is omitted, Fabric
-uses the generated `runtime_id` as the session id. If you want a later chat run
-to resume the same conversation, pass that prior session id explicitly.
-`fabric chat` prints a `NEMO FABRIC` session banner with the agent, profile,
-harness, runtime id, and session id at startup and from `/info`, then uses a
-`you[profile:session]>` prompt and `agent>` responses for the transcript.
+Each `fabric chat` start creates a new runtime. `fabric chat` prints a
+`NEMO FABRIC` runtime banner with the agent, profile, harness, and runtime id at
+startup and from `/info`, then uses a `you[profile:runtime]>` prompt and `agent>`
+responses for the transcript.
 `/help` shows commands, `/verbose on|off` toggles a fenced per-turn metadata
 block after each agent response with request/invocation ids, status, artifact
 count, and telemetry details, and `/clear` clears the terminal. `fabric run`
 remains the machine-readable one-shot path. Because `chat` is an interactive
 terminal UI, the transcript and metadata are written together on stderr.
 
-The opt-in real integration checks are `tests/smoke_hermes_session.py` and
+The opt-in real integration checks are `tests/smoke_hermes_runtime.py` and
 `tests/smoke_codex_cli.py`.
 
 `Fabric()` uses the native Rust binding. SDK `run(...)` and
-`start_session(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
-`invoke_runtime` / `stop_runtime`) so one-shot and session paths use the same
+`start_runtime(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
+`invoke_runtime` / `stop_runtime`) so one-shot and multi-turn paths use the same
 adapter execution contract. The CLI is a separate interface over the same Rust
 core. For source-tree development, run `just build-python` before using the
 SDK.
@@ -379,7 +363,7 @@ fabric run examples/code-review-agent \
   --input "Review the workspace and summarize the highest-risk issue."
 ```
 
-Run the real one-shot and session smoke after installing Fabric with its native
+Run the real one-shot and multi-turn runtime smoke after installing Fabric with its native
 extension:
 
 ```bash

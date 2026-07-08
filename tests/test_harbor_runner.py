@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import importlib.util
 import json
 import os
@@ -134,6 +135,74 @@ def test_runner_rejects_malformed_profile(tmp_path):
         )
 
 
+def test_each_harbor_job_delegates_to_an_independent_fabric_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    from nemo_fabric.integrations.harbor import runner
+
+    config_path = tmp_path / "agent.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "metadata": {"name": "harbor-demo"},
+                "harness": {"adapter_id": "demo.fabric.smoke"},
+                "runtime": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls: list[dict[str, object]] = []
+
+    class FakeResult:
+        def __init__(self, runtime_id: str) -> None:
+            self.runtime_id = runtime_id
+
+        def to_mapping(self) -> dict[str, str]:
+            return {"runtime_id": self.runtime_id}
+
+    class FakeFabric:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def run(self, config, *, profiles, base_dir, request):
+            runtime_id = f"runtime-{len(calls) + 1}"
+            calls.append(
+                {
+                    "runtime_id": runtime_id,
+                    "request": request.to_mapping(),
+                }
+            )
+            return FakeResult(runtime_id)
+
+    monkeypatch.setattr(runner, "Fabric", FakeFabric)
+    specs = [
+        {
+            "config_path": str(config_path),
+            "request": {
+                "input": f"job {job_id}",
+                "context": {"job_id": job_id},
+            },
+        }
+        for job_id in ("job-1", "job-2")
+    ]
+
+    async def run_specs():
+        return await asyncio.gather(*(runner.run(spec) for spec in specs))
+
+    results = asyncio.run(run_specs())
+
+    assert [result["runtime_id"] for result in results] == ["runtime-1", "runtime-2"]
+    requests = [call["request"] for call in calls]
+    assert [request["context"]["job_id"] for request in requests] == [  # type: ignore[index]
+        "job-1",
+        "job-2",
+    ]
+
+
 def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
     adapter = load_codex_adapter()
 
@@ -177,7 +246,6 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
         "codex",
         "exec",
         "--json",
-        "--ephemeral",
         "--sandbox",
         "workspace-write",
         "--profile",

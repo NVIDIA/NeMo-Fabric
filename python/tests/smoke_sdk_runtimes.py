@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Smoke: the SDK Session boundary over the native session/runtime lifecycle."""
+"""Smoke: the SDK Runtime boundary over the native runtime lifecycle."""
 
 from __future__ import annotations
 
@@ -13,16 +13,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from nemo_fabric import (
-    FabricCapabilityError,
-    Fabric,
-    FabricStateError,
-    RunRequest,
-    RunResult,
-    Session,
-    SessionHandle,
-    SessionStatus,
-)
+from nemo_fabric import Fabric, FabricStateError, RunRequest, RunResult, Runtime, RuntimeStatus
 
 
 def _plan() -> dict[str, Any]:
@@ -54,12 +45,10 @@ def _plan() -> dict[str, Any]:
             }
         },
         "capabilities": {
-            "session": True,
             "service": False,
             "streaming": False,
             "updates": False,
             "cancellation": False,
-            "concurrent_invocations": False,
         },
     }
 
@@ -100,7 +89,6 @@ class MockNative:
                 "status": "failed" if request.get("input") == "fail" else "succeeded",
                 "request_id": request["request_id"],
                 "runtime_id": json.loads(runtime_json)["runtime_id"],
-                "session_id": request.get("context", {}).get("session_id"),
                 "invocation_id": f"invocation-{turn}",
                 "events": [
                     {
@@ -142,97 +130,75 @@ class NativeClient(Fabric):
         return self.native
 
 
-def _session(native: MockNative) -> Session:
-    return Session(client=NativeClient(native), plan=_plan(), runtime=_runtime())
+def _runtime_wrapper(native: MockNative) -> Runtime:
+    return Runtime(client=NativeClient(native), plan=_plan(), runtime=_runtime())
 
 
 async def stable_runtime_across_turns() -> None:
     native = MockNative()
-    session = _session(native)
-    assert session.status is SessionStatus.ACTIVE
-    assert isinstance(session.handle, SessionHandle)
-    assert session.handle.status == "active"
-    assert session.runtime_id == "runtime-1"
-    assert session.session_id == "runtime-1"
-    assert session.handle["session_id"] == "runtime-1"
-    assert not hasattr(session, "id")
+    runtime = _runtime_wrapper(native)
+    assert runtime.status is RuntimeStatus.ACTIVE
+    assert runtime.runtime_id == "runtime-1"
+    assert runtime.handle.runtime_id == "runtime-1"
 
-    first = await session.invoke(
+    first = await runtime.invoke(
         request=RunRequest(
             input="My name is Robin.",
-            request_id="session-request-1",
+            request_id="runtime-request-1",
             context={"job_id": "job-1", "turn_id": "turn-1"},
         ),
     )
-    await session.invoke(input="What's my name?")
+    await runtime.invoke(input="What's my name?")
 
     assert isinstance(first, RunResult)
-    assert first.request_id == "session-request-1"
-    assert first.session_id == "runtime-1"
-    assert [inv["runtime_id"] for inv in session.invocations] == ["runtime-1", "runtime-1"]
+    assert first.request_id == "runtime-request-1"
+    assert [inv["runtime_id"] for inv in runtime.invocations] == ["runtime-1", "runtime-1"]
     assert native.requests[0]["context"]["job_id"] == "job-1"
     assert native.requests[0]["context"]["turn_id"] == "turn-1"
-    assert native.requests[0]["context"]["session_id"] == "runtime-1"
-    assert native.requests[1]["context"]["session_id"] == "runtime-1"
     assert "history" not in native.requests[0]["context"]
     assert "history" not in native.requests[1]["context"]
-    assert session.runtime_id == "runtime-1"
+    assert runtime.runtime_id == "runtime-1"
 
 
-async def stream_and_lifecycle() -> None:
+async def runtime_lifecycle() -> None:
     native = MockNative()
-    session = _session(native)
-    items = [item async for item in session.stream(input="hello")]
-    assert items[-1].status == "succeeded"
-    assert items[:-1] and all(event.kind == "log" for event in items[:-1])
+    runtime = _runtime_wrapper(native)
+    result = await runtime.invoke(input="hello")
+    assert result.status == "succeeded"
+    assert result.events and all(event.kind == "log" for event in result.events)
 
-    await session.stop()
-    await session.stop()
-    assert session.status is SessionStatus.STOPPED
-    assert session.handle.status == "stopped"
+    await runtime.stop()
+    await runtime.stop()
+    assert runtime.status is RuntimeStatus.STOPPED
     assert native.stopped == 1
     try:
-        await session.invoke(input="too late")
+        await runtime.invoke(input="too late")
     except FabricStateError:
         pass
     else:
         raise AssertionError("invoke after stop should raise")
 
 
-async def unsupported_cancel_leaves_session_active() -> None:
-    native = MockNative()
-    session = _session(native)
-    try:
-        await session.cancel()
-    except FabricCapabilityError:
-        pass
-    else:
-        raise AssertionError("unsupported cancellation should raise")
-    assert session.status is SessionStatus.ACTIVE
-    await session.stop()
-
-
 async def failed_result_exposes_structured_error() -> None:
     native = MockNative()
-    session = _session(native)
-    result = await session.invoke(input="fail")
+    runtime = _runtime_wrapper(native)
+    result = await runtime.invoke(input="fail")
 
     assert isinstance(result, RunResult)
     assert result.status == "failed"
     assert result.error.stage == "invoke"
     assert result.error.code == "adapter_failed"
     assert result.error.retryable is False
-    await session.stop()
-    assert session.status is SessionStatus.STOPPED
+    await runtime.stop()
+    assert runtime.status is RuntimeStatus.STOPPED
     assert native.stopped == 1
 
 
 async def main() -> None:
     await stable_runtime_across_turns()
-    await stream_and_lifecycle()
-    await unsupported_cancel_leaves_session_active()
+    await runtime_lifecycle()
     await failed_result_exposes_structured_error()
-    print("smoke_sdk_sessions ok")
+    print("smoke_sdk_runtimes ok")
 
 
 if __name__ == "__main__":

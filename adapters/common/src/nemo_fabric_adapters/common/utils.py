@@ -51,14 +51,13 @@ def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("runtime_context") or {}
 
 
-def runtime_session_id(payload: dict[str, Any]) -> str | None:
-    """Return Fabric's session key for adapter-owned harness session mapping."""
+def runtime_id(payload: dict[str, Any]) -> str:
+    """Return the Fabric runtime id used to key adapter-owned state."""
 
-    context = runtime_context(payload)
-    session_id = context.get("session_id")
-    if session_id:
-        return str(session_id)
-    return None
+    value = runtime_context(payload).get("runtime_id")
+    if not value:
+        raise ValueError("runtime_context.runtime_id is required")
+    return str(value)
 
 
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
