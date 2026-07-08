@@ -8,7 +8,6 @@ description: Enable NeMo Relay ATOF/ATIF tracing.
 telemetry:
   enabled: true
   provider: relay
-  mode: sdk
   output_dir: ./artifacts/relay
   config:
     version: 1

@@ -72,8 +72,6 @@ class BaseTestHermesE2E:
         assert len(self.result.telemetry) == 1
         assert self.result.telemetry[0].provider == "relay"
         assert self.result.telemetry[0].metadata["relay_enabled"] is True
-        assert self.result.telemetry[0].metadata["relay_mode"] == "sdk"
-
         output = self.output
         assert output["adapter"] == self.output_adapter
         assert output["harness"] == "hermes"
@@ -81,7 +79,6 @@ class BaseTestHermesE2E:
         assert output["base_url"] == f"{self.api_server}/v1"
         assert output["error"] is None
         assert output["relay_runtime"]["enabled"] is True
-        assert output["relay_runtime"]["mode"] == "sdk"
         assert output["relay_runtime"]["emitter"] == "hermes.observability/nemo_relay"        
         assert output["failed"] is False
         

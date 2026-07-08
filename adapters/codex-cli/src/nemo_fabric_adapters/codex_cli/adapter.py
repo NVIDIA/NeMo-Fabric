@@ -699,7 +699,6 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         )
         output["relay_runtime"] = {
             "enabled": True,
-            "mode": os.environ.get("FABRIC_RELAY_MODE"),
             "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
             "emitter": "nemo-relay",
         }

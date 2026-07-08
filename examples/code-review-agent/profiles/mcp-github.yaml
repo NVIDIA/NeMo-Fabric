@@ -14,7 +14,6 @@ mcp:
 
 telemetry:
   enabled: true
-  mode: sdk
   output_dir: ./artifacts/mcp-github
   config:
     version: 1

@@ -449,13 +449,6 @@
           "description": "Whether telemetry is enabled for this run.",
           "type": "boolean"
         },
-        "mode": {
-          "description": "Telemetry mode, for example `sdk`, `gateway`, or `external`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "output_dir": {
           "description": "Optional telemetry output directory.",
           "type": [

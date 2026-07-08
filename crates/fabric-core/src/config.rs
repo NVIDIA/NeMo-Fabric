@@ -637,9 +637,6 @@ pub struct TelemetryConfig {
     /// Telemetry provider responsible for runtime integration.
     #[serde(default)]
     pub provider: TelemetryProvider,
-    /// Telemetry mode, for example `sdk`, `gateway`, or `external`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
     /// Optional project name for telemetry backends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
@@ -1296,7 +1293,6 @@ fn resolve_telemetry_plan(
     Some(TelemetryPlan {
         provider: telemetry.provider,
         relay_enabled: telemetry.enabled && telemetry.provider == TelemetryProvider::Relay,
-        relay_mode: telemetry.mode.clone(),
         relay_project: telemetry.project.clone(),
         relay_output_dir: telemetry.output_dir.clone(),
         relay_config: telemetry.config.clone(),
@@ -1515,9 +1511,6 @@ pub struct TelemetryPlan {
     pub provider: TelemetryProvider,
     /// Whether Relay is enabled.
     pub relay_enabled: bool,
-    /// Relay mode, when configured.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub relay_mode: Option<String>,
     /// Relay project, when configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay_project: Option<String>,

@@ -869,13 +869,6 @@
           "description": "Whether telemetry is enabled for this run.",
           "type": "boolean"
         },
-        "mode": {
-          "description": "Telemetry mode, for example `sdk`, `gateway`, or `external`.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
         "output_dir": {
           "description": "Optional telemetry output directory.",
           "type": [
@@ -918,13 +911,6 @@
         "relay_enabled": {
           "description": "Whether Relay is enabled.",
           "type": "boolean"
-        },
-        "relay_mode": {
-          "description": "Relay mode, when configured.",
-          "type": [
-            "string",
-            "null"
-          ]
         },
         "relay_output_dir": {
           "description": "Relay output directory, when configured.",

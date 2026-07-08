@@ -150,7 +150,6 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     if relay_plugin_config is not None:
         output["relay_runtime"] = {
             "enabled": True,
-            "mode": os.environ.get("FABRIC_RELAY_MODE"),
             "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
             "emitter": "hermes.observability/nemo_relay",
         }
