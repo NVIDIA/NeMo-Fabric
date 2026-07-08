@@ -25,7 +25,8 @@ clean:
         **/coverage.xml \
         **/dist \
         docs/node_modules \
-        target/
+        target/ \
+        **/build/
 
 # Build the Rust workspace using the locked dependency set.
 build-rust:
