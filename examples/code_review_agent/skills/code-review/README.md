@@ -5,4 +5,4 @@ SPDX-License-Identifier: Apache-2.0
 
 # Code Review Skill
 
-Minimal skill directory used by the typed SDK example.
+Minimal skill directory used by the code-review example.

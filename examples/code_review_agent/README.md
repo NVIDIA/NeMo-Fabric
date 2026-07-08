@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Typed Code Review Agent
+# Code Review Agent
 
 This example constructs complete `FabricConfig` values with the public Pydantic
 models. Each harness, environment, capability, or telemetry variant starts from

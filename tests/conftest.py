@@ -83,7 +83,7 @@ def hermes_shim_agent_dir_fixture(
 @pytest.fixture(name="code_review_agent_dir")
 def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
     """
-    Creates a writable copy of the typed example's assets for runtime tests.
+    Creates a writable copy of the example's assets for runtime tests.
     """
     return _copy_agent_dir(
         repo_root / "examples" / "code_review_agent",

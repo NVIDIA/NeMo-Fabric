@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Typed configuration builders for the code-review agent example."""
+"""Configuration builders for the code-review agent example."""
 
 from examples.code_review_agent.config import (
     BASE_DIR,

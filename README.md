@@ -90,7 +90,7 @@ with:
 .tmp/hermes-venv/bin/python -m pip install -e ../hermes-agent
 ```
 
-Run the typed Pydantic example:
+Run the code-review example:
 
 ```bash
 export NVIDIA_API_KEY=...
