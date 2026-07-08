@@ -72,18 +72,12 @@ Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 ### <kbd>method</kbd> `invoke`
 
 ```python
-invoke(
-    input: 'Any' = None,
-    request: 'RunRequest | None' = None,
-    request_id: 'str | None' = None,
-    context: 'Mapping[str, Any] | None' = None,
-    overrides: 'Mapping[str, Any] | None' = None
-) → RunResult
+invoke(input: 'Any' = None, request: 'RunRequest | None' = None) → RunResult
 ```
 
 Run one turn on this runtime.
 
-A complete ``request`` cannot be combined with separate ``request_id``, ``context``, or ``overrides`` fields. Runtime overrides are merged below invocation overrides. Concurrent turns on the same runtime are rejected.
+``input`` and ``request`` are mutually exclusive. Runtime overrides are merged below invocation overrides from ``RunRequest``. Concurrent turns on the same runtime are rejected.
 
 
 
@@ -91,9 +85,6 @@ A complete ``request`` cannot be combined with separate ``request_id``, ``contex
 
  - <b>`input`</b>:  JSON-compatible turn input.
  - <b>`request`</b>:  Complete validated ``RunRequest``.
- - <b>`request_id`</b>:  Caller-owned request identifier; generated when omitted.
- - <b>`context`</b>:  Caller-owned, JSON-compatible request metadata.
- - <b>`overrides`</b>:  JSON-compatible invocation-scoped config overrides.
 
 
 

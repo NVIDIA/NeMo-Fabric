@@ -764,13 +764,6 @@ async def test_run_accepts_full_run_request_on_native_path():
     native = NativeRecorder()
     client = NativeClient(native)
 
-    with pytest.raises(FabricConfigError, match="complete request"):
-        await client.run(
-            "agent",
-            request=RunRequest(input="hello"),
-            context={"turn_id": "turn-4"},
-        )
-
     result = await client.run(
         "agent",
         request=RunRequest(
@@ -791,15 +784,17 @@ async def test_run_accepts_full_run_request_on_native_path():
     }
 
 
-async def test_typed_source_accepts_granular_request_fields_and_returns_result():
+async def test_typed_source_accepts_run_request_and_returns_result():
     native = NativeRecorder()
     client = NativeClient(native)
     result = await client.run(
         _fabric_config(),
-        input="hello",
-        request_id="request-1",
-        context={"job_id": "job-1"},
-        overrides={"max_iterations": 1},
+        request=RunRequest(
+            input="hello",
+            request_id="request-1",
+            context={"job_id": "job-1"},
+            overrides={"max_iterations": 1},
+        ),
     )
 
     assert isinstance(result, RunResult)
@@ -811,20 +806,6 @@ async def test_typed_source_accepts_granular_request_fields_and_returns_result()
         "context": {"job_id": "job-1"},
         "overrides": {"max_iterations": 1},
     }
-
-
-async def test_invalid_request_context_raises_config_error():
-    native = NativeRecorder()
-    client = NativeClient(native)
-
-    with pytest.raises(FabricConfigError, match="request context"):
-        await client.run(
-            _fabric_config(),
-            input="hello",
-            context="not-a-mapping",  # type: ignore[arg-type]
-        )
-
-    assert native.requests == []
 
 
 async def test_native_runtime_errors_use_typed_exception_and_stop_runtime():
@@ -848,7 +829,7 @@ def test_public_sdk_exceptions_share_a_common_base():
     assert issubclass(FabricNativeUnavailableError, FabricError)
 
 
-async def test_runtime_invoke_accepts_run_request_and_turn_fields():
+async def test_runtime_invoke_accepts_run_request():
     native = NativeRecorder()
     runtime = Runtime(
         client=NativeClient(native),
@@ -879,12 +860,6 @@ async def test_runtime_invoke_accepts_run_request_and_turn_fields():
         },
     }
 
-    with pytest.raises(FabricConfigError, match="complete request"):
-        await runtime.invoke(
-            request=RunRequest(input="hello"),
-            context={"turn_id": "turn-1"},
-        )
-
 async def test_runtime_handle_is_typed_and_detached():
     runtime = Runtime(
         client=NativeClient(NativeRecorder()),
@@ -901,7 +876,7 @@ async def test_runtime_handle_is_typed_and_detached():
 async def test_run_rejects_multiple_primary_input_sources():
     client = NativeClient(NativeRecorder())
 
-    with pytest.raises(FabricConfigError, match="at most one input source"):
+    with pytest.raises(FabricConfigError, match="mutually exclusive"):
         await client.run(
             _fabric_config(),
             input="hello",
@@ -925,8 +900,7 @@ async def test_unified_agent_source_dispatches_fabric_config_to_runtime_path():
 
     result = await client.run(
         _fabric_config(),
-        input="hello",
-        request_id="request-5",
+        request=RunRequest(input="hello", request_id="request-5"),
     )
 
     assert result.request_id == "request-5"

@@ -148,18 +148,13 @@ run(
     profiles: 'PathProfiles | TypedProfiles | None' = None,
     base_dir: 'PathSource | None' = None,
     input: 'Any' = None,
-    input_file: 'str | Path | None' = None,
-    request: 'RunRequest | None' = None,
-    request_file: 'str | Path | None' = None,
-    request_id: 'str | None' = None,
-    context: 'Mapping[str, Any] | None' = None,
-    overrides: 'Mapping[str, Any] | None' = None
+    request: 'RunRequest | None' = None
 ) → RunResult
 ```
 
 Execute one complete start, invoke, and stop lifecycle.
 
-Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_file`` may be supplied. Omitting all four produces an empty text input. A complete ``request`` or ``request_file`` cannot be mixed with separate ``request_id``, ``context``, or ``overrides`` fields. Fabric attempts to stop a started runtime even when invocation fails.
+``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. Fabric attempts to stop a started runtime even when invocation fails.
 
 
 
@@ -169,12 +164,7 @@ Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_fil
  - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
  - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
  - <b>`input`</b>:  JSON-compatible invocation input.
- - <b>`input_file`</b>:  UTF-8 file whose contents become the invocation input.
  - <b>`request`</b>:  Complete validated ``RunRequest``.
- - <b>`request_file`</b>:  UTF-8 JSON file containing a complete request.
- - <b>`request_id`</b>:  Caller-owned request identifier. Fabric generates one  when omitted.
- - <b>`context`</b>:  Caller-owned, JSON-compatible request metadata.
- - <b>`overrides`</b>:  JSON-compatible invocation-scoped config overrides.
 
 
 
@@ -185,7 +175,7 @@ Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_fil
 
 **Raises:**
 
- - <b>`FabricConfigError`</b>:  If sources are combined, request data is not  JSON-compatible, or config resolution fails.
+ - <b>`FabricConfigError`</b>:  If input and request are combined, request data is not  JSON-compatible, or config resolution fails.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
  - <b>`FabricRuntimeError`</b>:  If the native runtime lifecycle fails before a  normalized result can be returned.
 

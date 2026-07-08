@@ -22,6 +22,7 @@ from nemo_fabric import (
     FabricStateError,
     HarnessConfig,
     MetadataConfig,
+    RunRequest,
     RunResult,
     RuntimeConfig,
     Runtime,
@@ -274,8 +275,10 @@ async def test_runtime_recursively_merges_overrides(mock_native: MagicMock):
     )
 
     await runtime.invoke(
-        input="hello",
-        overrides={"limits": {"tokens": 20}, "mode": None},
+        request=RunRequest(
+            input="hello",
+            overrides={"limits": {"tokens": 20}, "mode": None},
+        ),
     )
 
     assert mock_native.requests[0]["overrides"] == {

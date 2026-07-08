@@ -10,7 +10,6 @@ import json
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
@@ -101,22 +100,16 @@ class Runtime:
         *,
         input: Any = None,
         request: RunRequest | None = None,
-        request_id: str | None = None,
-        context: Mapping[str, Any] | None = None,
-        overrides: Mapping[str, Any] | None = None,
     ) -> RunResult:
         """Run one turn on this runtime.
 
-        A complete ``request`` cannot be combined with separate ``request_id``,
-        ``context``, or ``overrides`` fields. Runtime overrides are merged below
-        invocation overrides. Concurrent turns on the same runtime are rejected.
+        ``input`` and ``request`` are mutually exclusive. Runtime overrides are
+        merged below invocation overrides from ``RunRequest``. Concurrent turns
+        on the same runtime are rejected.
 
         Args:
             input: JSON-compatible turn input.
             request: Complete validated ``RunRequest``.
-            request_id: Caller-owned request identifier; generated when omitted.
-            context: Caller-owned, JSON-compatible request metadata.
-            overrides: JSON-compatible invocation-scoped config overrides.
 
         Returns:
             The normalized ``RunResult`` for this turn.
@@ -141,12 +134,7 @@ class Runtime:
         try:
             payload = _run_request_payload(
                 input=input,
-                input_file=None,
                 request=request,
-                request_file=None,
-                request_id=request_id,
-                context=context,
-                overrides=overrides,
             )
             merged = _merge_overrides(self._overrides, payload.get("overrides"))
             if merged:
@@ -331,61 +319,17 @@ def _merge_overrides(
 def _run_request_payload(
     *,
     input: Any,
-    input_file: str | Path | None,
     request: RunRequest | None,
-    request_file: str | Path | None,
-    request_id: str | None,
-    context: Mapping[str, Any] | None,
-    overrides: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    primary_sources = [
-        input is not None,
-        input_file is not None,
-        request is not None,
-        request_file is not None,
-    ]
-    if sum(primary_sources) > 1:
-        raise FabricConfigError(
-            "at most one input source is allowed: input, input_file, request, or request_file"
-        )
-    separate_fields = request_id is not None or context is not None or overrides is not None
-    if (request is not None or request_file is not None) and separate_fields:
-        raise FabricConfigError(
-            "a complete request cannot be combined with separate request fields"
-        )
+    if input is not None and request is not None:
+        raise FabricConfigError("input and request are mutually exclusive")
     try:
-        if request_file is not None:
-            try:
-                raw = json.loads(Path(request_file).read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as error:
-                raise FabricConfigError(f"failed to read request file: {error}") from error
-            payload = RunRequest.model_validate(raw).to_mapping()
-        elif request is not None:
+        if request is not None:
             if not isinstance(request, RunRequest):
                 raise FabricConfigError("request must be a RunRequest")
             payload = request.to_mapping()
-        elif input_file is not None:
-            try:
-                file_input = Path(input_file).read_text(encoding="utf-8")
-            except OSError as error:
-                raise FabricConfigError(f"failed to read input file: {error}") from error
-            request_fields: dict[str, Any] = {
-                "input": file_input,
-                "context": {} if context is None else context,
-                "overrides": overrides,
-            }
-            if request_id is not None:
-                request_fields["request_id"] = request_id
-            payload = RunRequest(**request_fields).to_mapping()
         else:
-            request_fields = {
-                "input": input,
-                "context": {} if context is None else context,
-                "overrides": overrides,
-            }
-            if request_id is not None:
-                request_fields["request_id"] = request_id
-            payload = RunRequest(**request_fields).to_mapping()
+            payload = RunRequest(input=input).to_mapping()
     except ValidationError as error:
         raise FabricConfigError(str(error)) from error
     return payload

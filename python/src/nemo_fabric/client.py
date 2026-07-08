@@ -9,7 +9,6 @@ import asyncio
 import importlib
 import json
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any, overload
 
 from nemo_fabric._config_sources import (
@@ -295,12 +294,7 @@ class Fabric:
         profiles: PathProfiles | None = None,
         base_dir: None = None,
         input: Any = None,
-        input_file: str | Path | None = None,
         request: RunRequest | None = None,
-        request_file: str | Path | None = None,
-        request_id: str | None = None,
-        context: Mapping[str, Any] | None = None,
-        overrides: Mapping[str, Any] | None = None,
     ) -> RunResult: ...
 
     @overload
@@ -311,12 +305,7 @@ class Fabric:
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
         input: Any = None,
-        input_file: str | Path | None = None,
         request: RunRequest | None = None,
-        request_file: str | Path | None = None,
-        request_id: str | None = None,
-        context: Mapping[str, Any] | None = None,
-        overrides: Mapping[str, Any] | None = None,
     ) -> RunResult: ...
 
     async def run(
@@ -326,19 +315,13 @@ class Fabric:
         profiles: PathProfiles | TypedProfiles | None = None,
         base_dir: PathSource | None = None,
         input: Any = None,
-        input_file: str | Path | None = None,
         request: RunRequest | None = None,
-        request_file: str | Path | None = None,
-        request_id: str | None = None,
-        context: Mapping[str, Any] | None = None,
-        overrides: Mapping[str, Any] | None = None,
     ) -> RunResult:
         """Execute one complete start, invoke, and stop lifecycle.
 
-        Exactly zero or one of ``input``, ``input_file``, ``request``, and
-        ``request_file`` may be supplied. Omitting all four produces an empty
-        text input. A complete ``request`` or ``request_file`` cannot be mixed
-        with separate ``request_id``, ``context``, or ``overrides`` fields.
+        ``input`` and ``request`` are mutually exclusive. Omitting both produces
+        an empty text input. Use ``RunRequest`` when the invocation needs a
+        caller-owned request ID, context, or overrides.
         Fabric attempts to stop a started runtime even when invocation fails.
 
         Args:
@@ -350,20 +333,14 @@ class Fabric:
             base_dir: Base directory for resolving relative paths in a typed
                 config. Valid only when ``agent`` is a typed config source.
             input: JSON-compatible invocation input.
-            input_file: UTF-8 file whose contents become the invocation input.
             request: Complete validated ``RunRequest``.
-            request_file: UTF-8 JSON file containing a complete request.
-            request_id: Caller-owned request identifier. Fabric generates one
-                when omitted.
-            context: Caller-owned, JSON-compatible request metadata.
-            overrides: JSON-compatible invocation-scoped config overrides.
 
         Returns:
             The normalized ``RunResult``, including output, artifacts,
             telemetry references, lifecycle events, and structured error data.
 
         Raises:
-            FabricConfigError: If sources are combined, request data is not
+            FabricConfigError: If input and request are combined, request data is not
                 JSON-compatible, or config resolution fails.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
@@ -378,12 +355,7 @@ class Fabric:
         )
         request_payload = _run_request_payload(
             input=input,
-            input_file=input_file,
             request=request,
-            request_file=request_file,
-            request_id=request_id,
-            context=context,
-            overrides=overrides,
         )
         native = self._require_native_module("run")
         return RunResult.from_mapping(
