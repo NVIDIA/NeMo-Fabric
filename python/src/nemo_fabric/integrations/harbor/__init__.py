@@ -52,7 +52,7 @@ else:
             fabric_config_path: str,
             fabric_profile_paths: str | Sequence[str] | None = None,
             fabric_python: str = "python3",
-            fabric_spec_path: str = "/tmp/fabric-run.json",
+            fabric_spec_path: str | None = None,
             fabric_result_path: str = "/logs/agent/fabric-result.json",
             fabric_install_command: str | None = None,
             fabric_cwd: str | None = None,
@@ -100,8 +100,9 @@ else:
                 "profile_paths": self.fabric_profile_paths,
                 "request": self._build_request(instruction),
             }
+            spec_path = self.fabric_spec_path or f"/tmp/fabric-run-{uuid.uuid4()}.json"
             result = await environment.exec(
-                write_json_command(self.fabric_spec_path, spec),
+                write_json_command(spec_path, spec),
                 cwd=self.fabric_cwd,
                 timeout_sec=30,
             )
@@ -110,7 +111,7 @@ else:
             result = await environment.exec(
                 fabric_runner_command(
                     fabric_python=self.fabric_python,
-                    spec_path=self.fabric_spec_path,
+                    spec_path=spec_path,
                     result_path=self.fabric_result_path,
                 ),
                 cwd=self.fabric_cwd,

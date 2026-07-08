@@ -142,7 +142,9 @@ async def test_harbor_integration(tmp_path: Path):
     await agent.setup(environment)  # type: ignore[arg-type]
     await agent.run("fix the bug", environment, context)  # type: ignore[arg-type]
 
-    spec = json.loads(environment.files["/tmp/fabric-run.json"])
+    spec_paths = [path for path in environment.files if path.startswith("/tmp/fabric-run-")]
+    assert len(spec_paths) == 1
+    spec = json.loads(environment.files[spec_paths[0]])
     request = spec["request"]
     assert request["input"] == "fix the bug"
     assert request["context"]["source"] == "harbor"
@@ -169,3 +171,19 @@ async def test_harbor_integration(tmp_path: Path):
     assert context.metadata["fabric"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
     artifacts = context.metadata["fabric"]["artifacts"]["artifacts"]
     assert {artifact["name"] for artifact in artifacts} == {"stdout", "workspace_patch"}
+
+
+async def test_harbor_default_spec_path_is_unique_per_run(tmp_path: Path):
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_config_path="/opt/fabric-demo/agent.yaml",
+    )
+    environment = FakeHarborEnvironment()
+
+    await agent.setup(environment)  # type: ignore[arg-type]
+    await agent.run("first", environment, AgentContext())  # type: ignore[arg-type]
+    await agent.run("second", environment, AgentContext())  # type: ignore[arg-type]
+
+    spec_paths = [path for path in environment.files if path.startswith("/tmp/fabric-run-")]
+    assert len(spec_paths) == 2
+    assert len(set(spec_paths)) == 2
