@@ -259,6 +259,7 @@ fn resolve_effective_config_cli(
         apply_cli_override(&mut config, override_spec)?;
     }
     effective.config = serde_json::from_value(config)?;
+    effective.agent_name = effective.config.metadata.name.clone();
     Ok(effective)
 }
 

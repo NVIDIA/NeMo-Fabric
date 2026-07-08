@@ -23,8 +23,12 @@ def test_cli_overrides(code_review_agent_dir: Path):
         "telemetry.output_dir=./artifacts/cli-set",
         "--set",
         'mcp.servers.github.exposure="fabric_managed"',
+        "--set",
+        'metadata.name="overridden-agent"',
     )
     config = inspected["config"]
+    assert inspected["agent_name"] == "overridden-agent"
+    assert config["metadata"]["name"] == "overridden-agent"
     assert config["telemetry"]["enabled"] is True
     assert config["telemetry"]["output_dir"] == "./artifacts/cli-set"
     assert config["mcp"]["servers"]["github"]["exposure"] == "fabric_managed"
