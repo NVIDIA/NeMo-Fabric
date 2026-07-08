@@ -7,8 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 
 This example reviews the repository under `repos/my-service`. It constructs a
 complete `FabricConfig` with the public Pydantic models and passes it directly
-to the Python SDK. Variants are independent deep copies of that config; the
-example does not serialize configs to YAML or use profiles.
+to the Python SDK. Variants are independent deep copies of that config.
+
+The example does not serialize configs to YAML or use profiles.
 
 ## Set up
 
