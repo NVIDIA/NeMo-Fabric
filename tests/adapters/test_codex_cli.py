@@ -594,6 +594,16 @@ def test_runtime_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     }
 
 
+def test_runtime_rejects_corrupt_codex_thread_state(codex_payload):
+    adapter = load_codex_adapter()
+    state_path = adapter.runtime_state_path(codex_payload, "runtime-1")
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text("{", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="invalid Codex runtime state"):
+        adapter.load_thread_id(codex_payload, "runtime-1")
+
+
 def test_runtime_persists_codex_thread_state(codex_payload, monkeypatch):
     adapter = load_codex_adapter()
     mock_run = MagicMock(

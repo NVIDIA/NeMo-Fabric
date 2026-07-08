@@ -125,8 +125,13 @@ def load_thread_id(payload: dict[str, Any], runtime_id: str) -> str | None:
     path = runtime_state_path(payload, runtime_id)
     if not path.is_file():
         return None
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if value.get("runtime_id") != runtime_id or not value.get("thread_id"):
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"invalid Codex runtime state in {path}") from error
+    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get(
+        "thread_id"
+    ):
         raise RuntimeError(f"invalid Codex runtime state in {path}")
     return str(value["thread_id"])
 
