@@ -82,9 +82,9 @@ async def test_hermes_cli_multi_turn(
     ) as runtime:
         runtime_id = runtime.runtime_id
         await runtime.invoke(input="prompt1")
-        await runtime.invoke(input="prompt2")
+        result = await runtime.invoke(input="prompt2")
 
-    session_db_path = hermes_agent_dir / "artifacts/hermes-home/state.db"
+    session_db_path = Path(result["output"]["hermes_home"]) / "state.db"
     assert session_db_path.exists(), f"Expected session DB at {session_db_path} does not exist"
 
     session_db = hermes_state.SessionDB(db_path=session_db_path)

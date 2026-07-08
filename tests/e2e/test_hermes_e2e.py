@@ -214,7 +214,7 @@ class TestHermesCliE2E(BaseTestHermesE2E):
     adapter_kind = "process"
     adapter_runner = "process"
     output_adapter = "cli"
-    mode = "hermes_cli_oneshot"
+    mode = "hermes_cli_runtime"
     artifact_dir = "hermes-cli"
     atof_platform = "cli"
 
