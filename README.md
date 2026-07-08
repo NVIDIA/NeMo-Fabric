@@ -30,7 +30,7 @@ Fabric provides:
 ```mermaid
 flowchart TB
   Consumer["Consumer\nCLI | Python SDK | integrations"]
-  Config["Agent source\nagent.yaml or FabricConfigModel"]
+  Config["Agent source\nagent.yaml or FabricConfig"]
   Core["Fabric Rust core\nresolve | plan | create | invoke | destroy"]
   Adapter["Selected Fabric adapter"]
   Harness["Agent harness runtime\nHermes | Codex | custom"]
@@ -108,7 +108,7 @@ under `examples/code-review-agent/artifacts/hermes-sdk/`.
 ## Core Concepts
 
 - **Agent source:** callers provide either an agent package path or a typed
-  `FabricConfigModel`. An agent package contains `agent.yaml` plus optional
+  `FabricConfig`. An agent package contains `agent.yaml` plus optional
   profiles, skills, repos, and artifacts. Start with
   `examples/code-review-agent/agent.yaml`.
 - **Typed config:** SDK consumers can construct configuration in memory without
@@ -128,7 +128,7 @@ under `examples/code-review-agent/artifacts/hermes-sdk/`.
 Fabric applies profiles in caller order and validates the final effective config
 before planning or running.
 
-Path sources select profiles by name. Typed `FabricConfigModel` sources usually
+Path sources select profiles by name. Typed `FabricConfig` sources usually
 compose the final config in Python; profile mappings remain available for callers
 that need file-style overlays. The SDK rejects mixed profile stacks. See the
 [Python SDK guide](docs/sdk/python.mdx) for the complete public API,

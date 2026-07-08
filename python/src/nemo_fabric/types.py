@@ -146,7 +146,7 @@ class _ConfigMapping(dict[str, Any]):
         return data
 
 
-class MetadataConfig(_ConfigMapping):
+class _MetadataConfig(_ConfigMapping):
     """Agent identity and human-readable metadata.
 
     Attributes:
@@ -170,7 +170,7 @@ class MetadataConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "MetadataConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_MetadataConfig":
         """Validate a metadata mapping and preserve unknown extension fields."""
 
         data = _mapping(value, "metadata")
@@ -181,7 +181,7 @@ class MetadataConfig(_ConfigMapping):
         )
 
 
-class HarnessConfig(_ConfigMapping):
+class _HarnessConfig(_ConfigMapping):
     """Harness adapter selection and adapter-owned settings.
 
     Attributes:
@@ -214,7 +214,7 @@ class HarnessConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "HarnessConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_HarnessConfig":
         """Validate a harness mapping and preserve unknown extension fields."""
 
         data = _mapping(value, "harness")
@@ -226,7 +226,7 @@ class HarnessConfig(_ConfigMapping):
         )
 
 
-class RuntimeConfig(_ConfigMapping):
+class _RuntimeConfig(_ConfigMapping):
     """Runtime input/output contract.
 
     Attributes:
@@ -257,7 +257,7 @@ class RuntimeConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "RuntimeConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_RuntimeConfig":
         """Validate a runtime mapping and apply stable constructor defaults."""
 
         data = _mapping(value, "runtime")
@@ -273,7 +273,7 @@ class RuntimeConfig(_ConfigMapping):
         )
 
 
-class EnvironmentConfig(_ConfigMapping):
+class _EnvironmentConfig(_ConfigMapping):
     """Execution environment configuration.
 
     Attributes:
@@ -318,7 +318,7 @@ class EnvironmentConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "EnvironmentConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_EnvironmentConfig":
         """Validate an environment mapping and preserve extension fields."""
 
         data = _mapping(value, "environment")
@@ -332,7 +332,7 @@ class EnvironmentConfig(_ConfigMapping):
         )
 
 
-class SkillConfig(_ConfigMapping):
+class _SkillConfig(_ConfigMapping):
     """Skill capability configuration.
 
     The shape matches the ``skills`` section in ``agent.yaml`` while providing
@@ -354,7 +354,7 @@ class SkillConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "SkillConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_SkillConfig":
         """Validate a skill mapping and preserve extension fields."""
 
         data = _mapping(value, "skills")
@@ -363,7 +363,7 @@ class SkillConfig(_ConfigMapping):
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
         )
 
-    def add_path(self, path: str | Path) -> "SkillConfig":
+    def add_path(self, path: str | Path) -> "_SkillConfig":
         """Add a skill path to this config if it is not already present."""
 
         value = str(path)
@@ -373,7 +373,7 @@ class SkillConfig(_ConfigMapping):
         self["paths"] = paths
         return self
 
-    def remove_path(self, path: str | Path) -> "SkillConfig":
+    def remove_path(self, path: str | Path) -> "_SkillConfig":
         """Remove a skill path from this config if present."""
 
         value = str(path)
@@ -381,7 +381,7 @@ class SkillConfig(_ConfigMapping):
         return self
 
 
-class McpConfig(_ConfigMapping):
+class _McpConfig(_ConfigMapping):
     """MCP capability configuration with authoring helpers."""
 
     _fields = frozenset({"servers"})
@@ -400,7 +400,7 @@ class McpConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "McpConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_McpConfig":
         """Validate an MCP mapping and preserve extension fields."""
 
         data = _mapping(value, "mcp")
@@ -417,7 +417,7 @@ class McpConfig(_ConfigMapping):
         url: str,
         exposure: str = "harness_native",
         extra_fields: Mapping[str, Any] | None = None,
-    ) -> "McpConfig":
+    ) -> "_McpConfig":
         """Add or replace a named MCP server."""
 
         if exposure not in self._EXPOSURES:
@@ -439,7 +439,7 @@ class McpConfig(_ConfigMapping):
         self["servers"] = servers
         return self
 
-    def remove_server(self, name: str) -> "McpConfig":
+    def remove_server(self, name: str) -> "_McpConfig":
         """Remove a named MCP server if present."""
 
         servers = dict(self.get("servers", {}))
@@ -448,7 +448,7 @@ class McpConfig(_ConfigMapping):
         return self
 
 
-class TelemetryConfig(_ConfigMapping):
+class _TelemetryConfig(_ConfigMapping):
     """Telemetry configuration with authoring helpers."""
 
     _fields = frozenset({"enabled", "provider", "project", "output_dir", "config"})
@@ -476,7 +476,7 @@ class TelemetryConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "TelemetryConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_TelemetryConfig":
         """Validate a telemetry mapping and preserve extension fields."""
 
         data = _mapping(value, "telemetry")
@@ -503,7 +503,7 @@ class TelemetryConfig(_ConfigMapping):
         project: str | None = None,
         output_dir: str | Path | None = None,
         config: Mapping[str, Any] | None = None,
-    ) -> "TelemetryConfig":
+    ) -> "_TelemetryConfig":
         """Enable NeMo Relay telemetry for subsequently started runtimes."""
 
         self["enabled"] = True
@@ -516,21 +516,21 @@ class TelemetryConfig(_ConfigMapping):
             self["config"] = _mapping(config, "telemetry config")
         return self
 
-    def enable_native(self) -> "TelemetryConfig":
+    def enable_native(self) -> "_TelemetryConfig":
         """Let the selected harness adapter handle telemetry natively."""
 
         self["enabled"] = True
         self["provider"] = "native"
         return self
 
-    def disable(self) -> "TelemetryConfig":
+    def disable(self) -> "_TelemetryConfig":
         """Disable telemetry for subsequently started runtimes."""
 
         self["enabled"] = False
         return self
 
 
-class FabricConfig(_ConfigMapping):
+class _ResolvedFabricConfig(_ConfigMapping):
     """Mutable typed representation of a Fabric agent configuration.
 
     The object follows the same schema as ``agent.yaml``. It is mutable while
@@ -572,11 +572,11 @@ class FabricConfig(_ConfigMapping):
     def __init__(
         self,
         *,
-        metadata: MetadataConfig | Mapping[str, Any],
-        harness: HarnessConfig | Mapping[str, Any],
-        runtime: RuntimeConfig | Mapping[str, Any] | None = None,
+        metadata: _MetadataConfig | Mapping[str, Any],
+        harness: _HarnessConfig | Mapping[str, Any],
+        runtime: _RuntimeConfig | Mapping[str, Any] | None = None,
         schema_version: str = "fabric.agent/v1alpha1",
-        environment: EnvironmentConfig | Mapping[str, Any] | None = None,
+        environment: _EnvironmentConfig | Mapping[str, Any] | None = None,
         models: Mapping[str, Any] | None = None,
         mcp: Mapping[str, Any] | None = None,
         skills: Mapping[str, Any] | None = None,
@@ -585,24 +585,24 @@ class FabricConfig(_ConfigMapping):
         tools: Any = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        metadata_value = _coerce(MetadataConfig, metadata, "metadata")
-        harness_value = _coerce(HarnessConfig, harness, "harness")
+        metadata_value = _coerce(_MetadataConfig, metadata, "metadata")
+        harness_value = _coerce(_HarnessConfig, harness, "harness")
         runtime_value = _coerce(
-            RuntimeConfig,
-            RuntimeConfig() if runtime is None else runtime,
+            _RuntimeConfig,
+            _RuntimeConfig() if runtime is None else runtime,
             "runtime",
         )
         environment_value = (
             None
             if environment is None
-            else _coerce(EnvironmentConfig, environment, "environment")
+            else _coerce(_EnvironmentConfig, environment, "environment")
         )
-        mcp_value = None if mcp is None else _coerce(McpConfig, mcp, "mcp")
-        skills_value = None if skills is None else _coerce(SkillConfig, skills, "skills")
+        mcp_value = None if mcp is None else _coerce(_McpConfig, mcp, "mcp")
+        skills_value = None if skills is None else _coerce(_SkillConfig, skills, "skills")
         telemetry_value = (
             None
             if telemetry is None
-            else _coerce(TelemetryConfig, telemetry, "telemetry")
+            else _coerce(_TelemetryConfig, telemetry, "telemetry")
         )
         values: dict[str, Any] = {
             "schema_version": _required_text(schema_version, "schema_version"),
@@ -624,7 +624,7 @@ class FabricConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "FabricConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_ResolvedFabricConfig":
         """Build a typed agent config from the ``agent.yaml`` mapping shape."""
 
         data = _mapping(value, "FabricConfig")
@@ -648,34 +648,34 @@ class FabricConfig(_ConfigMapping):
         )
 
     @property
-    def mcp(self) -> McpConfig:
+    def mcp(self) -> _McpConfig:
         """Mutable MCP capability config, created on first access."""
 
-        return self._ensure_section("mcp", McpConfig)
+        return self._ensure_section("mcp", _McpConfig)
 
     @mcp.setter
-    def mcp(self, value: McpConfig | Mapping[str, Any]) -> None:
-        self["mcp"] = _coerce(McpConfig, value, "mcp")
+    def mcp(self, value: _McpConfig | Mapping[str, Any]) -> None:
+        self["mcp"] = _coerce(_McpConfig, value, "mcp")
 
     @property
-    def skills(self) -> SkillConfig:
+    def skills(self) -> _SkillConfig:
         """Mutable skill capability config, created on first access."""
 
-        return self._ensure_section("skills", SkillConfig)
+        return self._ensure_section("skills", _SkillConfig)
 
     @skills.setter
-    def skills(self, value: SkillConfig | Mapping[str, Any]) -> None:
-        self["skills"] = _coerce(SkillConfig, value, "skills")
+    def skills(self, value: _SkillConfig | Mapping[str, Any]) -> None:
+        self["skills"] = _coerce(_SkillConfig, value, "skills")
 
     @property
-    def telemetry(self) -> TelemetryConfig:
+    def telemetry(self) -> _TelemetryConfig:
         """Mutable telemetry config, created on first access."""
 
-        return self._ensure_section("telemetry", TelemetryConfig)
+        return self._ensure_section("telemetry", _TelemetryConfig)
 
     @telemetry.setter
-    def telemetry(self, value: TelemetryConfig | Mapping[str, Any]) -> None:
-        self["telemetry"] = _coerce(TelemetryConfig, value, "telemetry")
+    def telemetry(self, value: _TelemetryConfig | Mapping[str, Any]) -> None:
+        self["telemetry"] = _coerce(_TelemetryConfig, value, "telemetry")
 
     def _ensure_section(self, key: str, model: type[_T]) -> _T:
         value = self.get(key)
@@ -695,7 +695,7 @@ class FabricConfig(_ConfigMapping):
         url: str,
         exposure: str = "harness_native",
         extra_fields: Mapping[str, Any] | None = None,
-    ) -> "FabricConfig":
+    ) -> "_ResolvedFabricConfig":
         """Add or replace a named MCP server and return this config."""
 
         self.mcp.add_server(
@@ -707,7 +707,7 @@ class FabricConfig(_ConfigMapping):
         )
         return self
 
-    def add_skill_path(self, path: str | Path) -> "FabricConfig":
+    def add_skill_path(self, path: str | Path) -> "_ResolvedFabricConfig":
         """Add a skill path and return this config."""
 
         self.skills.add_path(path)
@@ -719,7 +719,7 @@ class FabricConfig(_ConfigMapping):
         project: str | None = None,
         output_dir: str | Path | None = None,
         config: Mapping[str, Any] | None = None,
-    ) -> "FabricConfig":
+    ) -> "_ResolvedFabricConfig":
         """Enable NeMo Relay telemetry and return this config."""
 
         self.telemetry.enable_relay(
@@ -774,9 +774,9 @@ class _FabricProfileConfig(_ConfigMapping):
         name: str,
         schema_version: str = "fabric.profile/v1alpha1",
         description: str | None = None,
-        harness: HarnessConfig | Mapping[str, Any] | None = None,
-        runtime: RuntimeConfig | Mapping[str, Any] | None = None,
-        environment: EnvironmentConfig | Mapping[str, Any] | None = None,
+        harness: _HarnessConfig | Mapping[str, Any] | None = None,
+        runtime: _RuntimeConfig | Mapping[str, Any] | None = None,
+        environment: _EnvironmentConfig | Mapping[str, Any] | None = None,
         models: Mapping[str, Any] | None = None,
         mcp: Mapping[str, Any] | None = None,
         skills: Mapping[str, Any] | None = None,
@@ -1024,7 +1024,7 @@ class EffectiveConfig(FabricMapping):
     agent_root: Path
     config_path: Path | None
     config_root: Path
-    config: FabricConfig
+    config: _ResolvedFabricConfig
     _fields = frozenset(
         {"agent_name", "profiles", "agent_root", "config_path", "config_root", "config"}
     )
@@ -1037,7 +1037,7 @@ class EffectiveConfig(FabricMapping):
         data["config_path"] = (
             None if data.get("config_path") is None else Path(data["config_path"])
         )
-        data["config"] = FabricConfig.from_mapping(data.get("config", {}))
+        data["config"] = _ResolvedFabricConfig.from_mapping(data.get("config", {}))
         return data
 
 

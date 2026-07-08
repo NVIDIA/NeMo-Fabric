@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import nemo_fabric._native as native
-from nemo_fabric import Fabric, FabricConfig, FabricProfileConfigModel
+from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -92,7 +92,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
             },
         }
     )
-    typed_profile = FabricProfileConfigModel(
+    typed_profile = FabricProfileConfig(
         name="typed_relay",
         harness={"settings": {"timeout_seconds": 30}},
         telemetry={"enabled": True, "output_dir": "./artifacts/relay"},

@@ -90,7 +90,7 @@ def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
         }
     )
 
-    assert config.models["default"] == {
+    assert config.models["default"].to_mapping() == {
         "provider": "demo",
         "model": "demo",
     }

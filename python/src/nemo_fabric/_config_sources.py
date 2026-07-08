@@ -11,19 +11,19 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from nemo_fabric.errors import FabricConfigError
-from nemo_fabric.models import FabricConfigModel, FabricProfileConfigModel
-from nemo_fabric.types import FabricConfig, _FabricProfileConfig
+from nemo_fabric.models import FabricConfig, FabricProfileConfig
+from nemo_fabric.types import _FabricProfileConfig
 
 PathSource = str | os.PathLike[str]
-TypedConfigSource = FabricConfig | FabricConfigModel
+TypedConfigSource = FabricConfig
 AgentSource = PathSource | TypedConfigSource
-ProfileSource = str | Mapping[str, Any] | FabricProfileConfigModel
+ProfileSource = str | Mapping[str, Any] | FabricProfileConfig
 PathProfiles = str | Sequence[str]
-TypedProfiles = Sequence[Mapping[str, Any] | FabricProfileConfigModel]
+TypedProfiles = Sequence[Mapping[str, Any] | FabricProfileConfig]
 
 
 def is_config_source(value: Any) -> bool:
-    return isinstance(value, (FabricConfig, FabricConfigModel))
+    return isinstance(value, FabricConfig)
 
 
 def path_arg(value: Any) -> str:
@@ -32,10 +32,10 @@ def path_arg(value: Any) -> str:
     if isinstance(value, Mapping):
         raise FabricConfigError(
             "agent mappings are not accepted directly; "
-            "use FabricConfigModel.from_mapping(...) first"
+            "use FabricConfig.from_mapping(...) first"
         )
     raise FabricConfigError(
-        "agent must be a path-like source, FabricConfigModel, or FabricConfig"
+        "agent must be a path-like source or FabricConfig"
     )
 
 
@@ -69,7 +69,7 @@ def config_profiles(
     for profile in values:
         if isinstance(profile, _FabricProfileConfig):
             normalized.append(profile)
-        elif isinstance(profile, FabricProfileConfigModel):
+        elif isinstance(profile, FabricProfileConfig):
             normalized.append(_FabricProfileConfig.from_mapping(profile.to_mapping()))
         elif isinstance(profile, Mapping):
             normalized.append(_FabricProfileConfig.from_mapping(profile))
@@ -90,7 +90,7 @@ def validate_base_dir(agent: AgentSource, base_dir: PathSource | None) -> str | 
 
 def config_json(config: TypedConfigSource) -> str:
     if not is_config_source(config):
-        raise FabricConfigError("config must be a FabricConfig or FabricConfigModel")
+        raise FabricConfigError("config must be a FabricConfig")
     return json.dumps(config.to_mapping())
 
 

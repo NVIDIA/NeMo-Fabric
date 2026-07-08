@@ -24,10 +24,9 @@ from nemo_fabric import (
     Fabric,
     FabricCapabilityError,
     FabricConfig,
-    FabricConfigModel,
     FabricConfigError,
     FabricError,
-    FabricProfileConfigModel,
+    FabricProfileConfig,
     FabricNativeUnavailableError,
     FabricRuntimeError,
     FabricStateError,
@@ -39,7 +38,6 @@ from nemo_fabric import (
     RunResult,
     RuntimeCapabilities,
     RuntimeConfig,
-    RuntimeConfigModel,
     Runtime,
     RuntimeHandle,
     SkillConfig,
@@ -87,38 +85,28 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
 
     runtime = RuntimeConfig(input_schema="http")
     config.runtime = runtime
-    config["future_runtime"] = {"enabled": True}
+    config.future_runtime = {"enabled": True}
     assert isinstance(config.runtime, RuntimeConfig)
     assert config.extra_fields["future_runtime"] == {"enabled": True}
 
-    with pytest.raises(TypeError):
-        FabricConfig(  # type: ignore[call-arg]
-            metadata=MetadataConfig(name="demo"),
-            harness=HarnessConfig(adapter_id="test.fabric.shim"),
-            unexpected=True,
-        )
-    with pytest.raises(FabricConfigError, match="metadata"):
+    with pytest.raises(ValidationError, match="metadata"):
         FabricConfig.from_mapping({"harness": {"adapter_id": "test.fabric.shim"}})
-    with pytest.raises(FabricConfigError, match="adapter_id"):
+    with pytest.raises(ValidationError, match="adapter_id"):
         HarnessConfig(adapter_id="")
-    with pytest.raises(TypeError):
-        RuntimeConfig(unexpected=True)  # type: ignore[call-arg]
-    with pytest.raises(FabricConfigError, match="harness settings"):
+    with pytest.raises(ValidationError, match="settings"):
         HarnessConfig(
             adapter_id="test.fabric.shim",
             settings=[],  # type: ignore[arg-type]
         )
-    with pytest.raises(FabricConfigError, match="extra_fields"):
-        MetadataConfig(name="demo", extra_fields=[])  # type: ignore[arg-type]
-    with pytest.raises(FabricConfigError, match="environment settings"):
+    with pytest.raises(ValidationError, match="settings"):
         EnvironmentConfig(settings=[])  # type: ignore[arg-type]
-    with pytest.raises(FabricConfigError, match="runtime must be"):
+    with pytest.raises(ValidationError, match="runtime"):
         FabricConfig(
             metadata=MetadataConfig(name="demo"),
             harness=HarnessConfig(adapter_id="test.fabric.shim"),
             runtime=[],  # type: ignore[arg-type]
         )
-    with pytest.raises(FabricConfigError, match="models"):
+    with pytest.raises(ValidationError, match="models"):
         FabricConfig(
             metadata=MetadataConfig(name="demo"),
             harness=HarnessConfig(adapter_id="test.fabric.shim"),
@@ -138,10 +126,6 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         },
     )
 
-    assert isinstance(config.mcp, McpConfig)
-    assert isinstance(config.skills, SkillConfig)
-    assert isinstance(config.telemetry, TelemetryConfig)
-
     config.add_skill_path("./skills/review").add_skill_path("./skills/review")
     config.add_mcp_server(
         "github",
@@ -154,6 +138,10 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         output_dir="./artifacts/relay",
         config={"version": 1},
     )
+
+    assert isinstance(config.mcp, McpConfig)
+    assert isinstance(config.skills, SkillConfig)
+    assert isinstance(config.telemetry, TelemetryConfig)
 
     assert config.to_mapping()["skills"] == {"paths": ["./skills/review"]}
     assert config.to_mapping()["mcp"] == {
@@ -175,22 +163,22 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
 
     config.mcp.remove_server("github")
     config.skills.remove_path("./skills/review")
-    assert "mcp" not in config.to_mapping()
-    assert "skills" not in config.to_mapping()
+    assert config.to_mapping()["mcp"]["servers"] == {}
+    assert config.to_mapping()["skills"]["paths"] == []
 
-    with pytest.raises(FabricConfigError, match="mcp exposure"):
+    with pytest.raises(ValidationError, match="exposure"):
         config.add_mcp_server(
             "bad",
             transport="streamable-http",
             url="http://example.invalid",
             exposure="sideways",
         )
-    with pytest.raises(FabricConfigError, match="telemetry provider"):
+    with pytest.raises(ValidationError, match="provider"):
         TelemetryConfig(provider="sideways")
 
 
-def test_pydantic_config_models_emit_schema_shape_and_validate():
-    config = FabricConfigModel(
+def test_config_emits_schema_shape_and_validates():
+    config = FabricConfig(
         metadata={"name": "demo", "owner": "sdk"},
         harness={"adapter_id": "test.fabric.shim", "future": True},
         models={
@@ -223,11 +211,11 @@ def test_pydantic_config_models_emit_schema_shape_and_validate():
     assert emitted["telemetry"]["provider"] == "relay"
     assert config.extra_fields == {"future_top_level": {"enabled": True}}
 
-    normalized = FabricConfig.from_mapping(config)
+    normalized = FabricConfig.model_validate(config)
     assert normalized.to_mapping()["future_top_level"] == {"enabled": True}
 
     with pytest.raises(ValidationError):
-        FabricConfigModel(metadata={"name": "missing-harness"})  # type: ignore[call-arg]
+        FabricConfig(metadata={"name": "missing-harness"})  # type: ignore[call-arg]
     with pytest.raises(ValidationError):
         config.add_mcp_server(
             "bad",
@@ -237,9 +225,9 @@ def test_pydantic_config_models_emit_schema_shape_and_validate():
         )
 
 
-def test_pydantic_agent_model_tracks_rust_schema_top_level_fields():
+def test_agent_model_tracks_rust_schema_top_level_fields():
     schema = json.loads(Path("schemas/agent.schema.json").read_text(encoding="utf-8"))
-    pydantic_schema = FabricConfigModel.model_json_schema()
+    pydantic_schema = FabricConfig.model_json_schema()
 
     assert set(pydantic_schema["properties"]).issuperset(schema["properties"])
     assert set(pydantic_schema["required"]) == {"metadata", "harness"}
@@ -949,7 +937,7 @@ async def test_lifecycle_methods_reject_raw_mapping_agent_source():
     native = NativeRecorder()
     client = NativeClient(native)
 
-    with pytest.raises(FabricConfigError, match="FabricConfigModel.from_mapping"):
+    with pytest.raises(FabricConfigError, match="FabricConfig.from_mapping"):
         await client.run({"metadata": {"name": "demo"}}, input="hello")
 
     assert native.requests == []
@@ -963,17 +951,17 @@ def test_config_methods_accept_real_pydantic_models_and_reject_lookalikes():
     native = NativeRecorder()
     client = NativeClient(native)
 
-    with pytest.raises(FabricConfigError, match="FabricConfigModel.from_mapping"):
+    with pytest.raises(FabricConfigError, match="FabricConfig.from_mapping"):
         client.plan({"metadata": {"name": "demo"}})
 
     with pytest.raises(FabricConfigError, match="FabricConfig"):
         client.plan(ModelDumpLike())
 
-    config = FabricConfigModel(
+    config = FabricConfig(
         metadata={"name": "demo"},
         harness={"adapter_id": "test.fabric.shim"},
     )
-    client.plan(config, profiles=[FabricProfileConfigModel(name="typed")])
+    client.plan(config, profiles=[FabricProfileConfig(name="typed")])
 
     assert native.config_profile_calls == [[{"schema_version": "fabric.profile/v1alpha1", "name": "typed"}]]
 
@@ -1029,11 +1017,11 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
     copied = config.to_mapping()
     copied["harness"]["settings"]["workspace"] = "mutated"
 
-    assert config["schema_version"] == "fabric.agent/v1alpha1"
-    assert config["metadata"] == {"name": "demo"}
-    assert config["harness"]["adapter_id"] == "test.fabric.shim"
-    assert config["runtime"]["input_schema"] == "chat"
-    assert config["harness"]["settings"]["workspace"] == "./ws"
+    assert config.schema_version == "fabric.agent/v1alpha1"
+    assert config.metadata.to_mapping() == {"name": "demo"}
+    assert config.harness.adapter_id == "test.fabric.shim"
+    assert config.runtime.input_schema == "chat"
+    assert config.harness.settings["workspace"] == "./ws"
 
     client = NativeClient(NativeRecorder())
     client.plan(config, profiles=[{"name": "typed_relay"}])

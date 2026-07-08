@@ -31,7 +31,7 @@ from nemo_fabric.errors import (
     FabricNativeUnavailableError,
     FabricRuntimeError,
 )
-from nemo_fabric.models import FabricConfigModel, RunRequest
+from nemo_fabric.models import FabricConfig, RunRequest
 from nemo_fabric.runtime import (
     Runtime,
     _call_blocking,
@@ -42,7 +42,6 @@ from nemo_fabric.runtime import (
 from nemo_fabric.types import (
     DoctorReport,
     EffectiveConfig,
-    FabricConfig,
     RunPlan,
     RunResult,
 )
@@ -57,8 +56,8 @@ class Fabric:
     """Primary Python entrypoint for NeMo Fabric.
 
     The client accepts either a path-backed agent package or a typed
-    ``FabricConfigModel`` or compatibility ``FabricConfig``. Path-backed
-    sources select profiles by name; typed sources accept ordered profile
+    ``FabricConfig``. Path-backed sources select profiles by name; typed sources
+    accept ordered profile
     mappings and may use
     ``base_dir`` to resolve relative paths. All inspection and execution APIs
     return typed, read-only mapping models.
@@ -84,7 +83,7 @@ class Fabric:
     @overload
     def resolve(
         self,
-        agent: FabricConfig | FabricConfigModel,
+        agent: FabricConfig,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -105,9 +104,9 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfigModel`` or compatibility ``FabricConfig``. Raw
+                ``FabricConfig``. Raw
                 mappings are not accepted; convert them with
-                ``FabricConfigModel.from_mapping()``.
+                ``FabricConfig.from_mapping()``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.
@@ -156,7 +155,7 @@ class Fabric:
     @overload
     def plan(
         self,
-        agent: FabricConfig | FabricConfigModel,
+        agent: FabricConfig,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -177,7 +176,7 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfigModel`` or compatibility ``FabricConfig``. Raw
+                ``FabricConfig``. Raw
                 mappings are not accepted.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
@@ -228,7 +227,7 @@ class Fabric:
     @overload
     async def doctor(
         self,
-        agent: FabricConfig | FabricConfigModel,
+        agent: FabricConfig,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -248,7 +247,7 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfigModel`` or compatibility ``FabricConfig``.
+                ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.
@@ -308,7 +307,7 @@ class Fabric:
     @overload
     async def run(
         self,
-        agent: FabricConfig | FabricConfigModel,
+        agent: FabricConfig,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -345,7 +344,7 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfigModel`` or compatibility ``FabricConfig``.
+                ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.
@@ -405,7 +404,7 @@ class Fabric:
     @overload
     async def start_runtime(
         self,
-        agent: FabricConfig | FabricConfigModel,
+        agent: FabricConfig,
         *,
         profiles: TypedProfiles | None = None,
         base_dir: PathSource | None = None,
@@ -427,7 +426,7 @@ class Fabric:
 
         Args:
             agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfigModel`` or compatibility ``FabricConfig``.
+                ``FabricConfig``.
             profiles: One profile name or an ordered sequence of names for a
                 path-backed source. For a typed source, an ordered sequence of
                 profile mappings.

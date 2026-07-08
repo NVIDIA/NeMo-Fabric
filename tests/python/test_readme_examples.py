@@ -25,7 +25,7 @@ DOCUMENTED_SNIPPETS = [
 ]
 
 DETAILED_SDK_SNIPPETS = (
-    "config = FabricConfigModel(",
+    "config = FabricConfig(",
     "request = RunRequest(",
     "### Multi-Turn SDK Runtimes",
 )

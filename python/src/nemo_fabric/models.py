@@ -72,14 +72,14 @@ class FabricBaseModel(BaseModel):
         return {key: item for key, item in data.items() if item not in ({}, [])}
 
 
-class MetadataConfigModel(FabricBaseModel):
+class MetadataConfig(FabricBaseModel):
     """Human-readable agent identity."""
 
     name: str = Field(min_length=1)
     description: str | None = None
 
 
-class HarnessConfigModel(FabricBaseModel):
+class HarnessConfig(FabricBaseModel):
     """Harness adapter selection plus adapter-owned settings."""
 
     adapter_id: str = Field(min_length=1)
@@ -98,7 +98,7 @@ class HarnessConfigModel(FabricBaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
-class RuntimeConfigModel(FabricBaseModel):
+class RuntimeConfig(FabricBaseModel):
     """Runtime input/output contract."""
 
     input_schema: str | None = None
@@ -106,7 +106,7 @@ class RuntimeConfigModel(FabricBaseModel):
     artifacts: str | Path | None = None
 
 
-class EnvironmentConfigModel(FabricBaseModel):
+class EnvironmentConfig(FabricBaseModel):
     """Execution environment metadata supplied by the consumer."""
 
     provider: str = Field(default="local", min_length=1)
@@ -119,7 +119,7 @@ class EnvironmentConfigModel(FabricBaseModel):
     control_location: Literal["external_control", "in_env_control"] = "in_env_control"
 
 
-class ModelConfigModel(FabricBaseModel):
+class ModelConfig(FabricBaseModel):
     """Model alias configuration."""
 
     provider: str = Field(min_length=1)
@@ -129,7 +129,7 @@ class ModelConfigModel(FabricBaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
-class SkillConfigModel(FabricBaseModel):
+class SkillConfig(FabricBaseModel):
     """Skill capability configuration."""
 
     paths: list[str | Path] = Field(default_factory=list)
@@ -151,7 +151,7 @@ class SkillConfigModel(FabricBaseModel):
         return self
 
 
-class McpServerConfigModel(FabricBaseModel):
+class McpServerConfig(FabricBaseModel):
     """MCP server configuration."""
 
     transport: str = Field(min_length=1)
@@ -159,10 +159,10 @@ class McpServerConfigModel(FabricBaseModel):
     exposure: Literal["harness_native", "fabric_managed"] = "harness_native"
 
 
-class McpConfigModel(FabricBaseModel):
+class McpConfig(FabricBaseModel):
     """MCP capability configuration."""
 
-    servers: dict[str, McpServerConfigModel] = Field(default_factory=dict)
+    servers: dict[str, McpServerConfig] = Field(default_factory=dict)
 
     def add_server(
         self,
@@ -175,7 +175,7 @@ class McpConfigModel(FabricBaseModel):
     ) -> Self:
         """Add or replace a named MCP server."""
 
-        self.servers[name] = McpServerConfigModel(
+        self.servers[name] = McpServerConfig(
             transport=transport,
             url=url,
             exposure=exposure,
@@ -190,7 +190,7 @@ class McpConfigModel(FabricBaseModel):
         return self
 
 
-class TelemetryConfigModel(FabricBaseModel):
+class TelemetryConfig(FabricBaseModel):
     """Telemetry configuration."""
 
     enabled: bool = False
@@ -232,25 +232,25 @@ class TelemetryConfigModel(FabricBaseModel):
         return self
 
 
-class ProfileRegistryConfigModel(FabricBaseModel):
+class ProfileRegistryConfig(FabricBaseModel):
     """Profile discovery config for portable file-backed agent packages."""
 
     directories: list[str | Path] = Field(default_factory=list)
 
 
-class FabricConfigModel(FabricBaseModel):
+class FabricConfig(FabricBaseModel):
     """SDK-facing typed Fabric agent configuration."""
 
     schema_version: str = "fabric.agent/v1alpha1"
-    metadata: MetadataConfigModel
-    harness: HarnessConfigModel
-    runtime: RuntimeConfigModel = Field(default_factory=RuntimeConfigModel)
-    environment: EnvironmentConfigModel | None = None
-    models: dict[str, ModelConfigModel | dict[str, Any]] = Field(default_factory=dict)
-    mcp: McpConfigModel | None = None
-    skills: SkillConfigModel | None = None
-    telemetry: TelemetryConfigModel | None = None
-    profiles: ProfileRegistryConfigModel | dict[str, Any] | None = None
+    metadata: MetadataConfig
+    harness: HarnessConfig
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    environment: EnvironmentConfig | None = None
+    models: dict[str, ModelConfig | dict[str, Any]] = Field(default_factory=dict)
+    mcp: McpConfig | None = None
+    skills: SkillConfig | None = None
+    telemetry: TelemetryConfig | None = None
+    profiles: ProfileRegistryConfig | dict[str, Any] | None = None
     tools: Any = None
 
     @classmethod
@@ -279,7 +279,7 @@ class FabricConfigModel(FabricBaseModel):
         """Add or replace a named MCP server and return this config."""
 
         if self.mcp is None:
-            self.mcp = McpConfigModel()
+            self.mcp = McpConfig()
         self.mcp.add_server(
             name,
             transport=transport,
@@ -293,7 +293,7 @@ class FabricConfigModel(FabricBaseModel):
         """Add a skill path and return this config."""
 
         if self.skills is None:
-            self.skills = SkillConfigModel()
+            self.skills = SkillConfig()
         self.skills.add_path(path)
         return self
 
@@ -307,7 +307,7 @@ class FabricConfigModel(FabricBaseModel):
         """Enable NeMo Relay telemetry and return this config."""
 
         if self.telemetry is None:
-            self.telemetry = TelemetryConfigModel()
+            self.telemetry = TelemetryConfig()
         self.telemetry.enable_relay(
             project=project,
             output_dir=output_dir,
@@ -316,19 +316,19 @@ class FabricConfigModel(FabricBaseModel):
         return self
 
 
-class FabricProfileConfigModel(FabricBaseModel):
+class FabricProfileConfig(FabricBaseModel):
     """Typed profile overlay used when a Python caller wants file-style overlays."""
 
     schema_version: str = "fabric.profile/v1alpha1"
     name: str = Field(min_length=1)
     description: str | None = None
-    harness: HarnessConfigModel | dict[str, Any] | None = None
-    runtime: RuntimeConfigModel | dict[str, Any] | None = None
-    environment: EnvironmentConfigModel | dict[str, Any] | None = None
-    models: dict[str, ModelConfigModel | dict[str, Any]] | None = None
-    mcp: McpConfigModel | dict[str, Any] | None = None
-    skills: SkillConfigModel | dict[str, Any] | None = None
-    telemetry: TelemetryConfigModel | dict[str, Any] | None = None
+    harness: HarnessConfig | dict[str, Any] | None = None
+    runtime: RuntimeConfig | dict[str, Any] | None = None
+    environment: EnvironmentConfig | dict[str, Any] | None = None
+    models: dict[str, ModelConfig | dict[str, Any]] | None = None
+    mcp: McpConfig | dict[str, Any] | None = None
+    skills: SkillConfig | dict[str, Any] | None = None
+    telemetry: TelemetryConfig | dict[str, Any] | None = None
     tools: Any = None
 
 

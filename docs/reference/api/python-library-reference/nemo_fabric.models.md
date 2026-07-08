@@ -76,7 +76,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `MetadataConfigModel`
+## <kbd>class</kbd> `MetadataConfig`
 Human-readable agent identity.
 
 
@@ -136,7 +136,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `HarnessConfigModel`
+## <kbd>class</kbd> `HarnessConfig`
 Harness adapter selection plus adapter-owned settings.
 
 
@@ -196,7 +196,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `RuntimeConfigModel`
+## <kbd>class</kbd> `RuntimeConfig`
 Runtime input/output contract.
 
 
@@ -256,7 +256,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `EnvironmentConfigModel`
+## <kbd>class</kbd> `EnvironmentConfig`
 Execution environment metadata supplied by the consumer.
 
 
@@ -316,7 +316,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `ModelConfigModel`
+## <kbd>class</kbd> `ModelConfig`
 Model alias configuration.
 
 
@@ -376,7 +376,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `SkillConfigModel`
+## <kbd>class</kbd> `SkillConfig`
 Skill capability configuration.
 
 
@@ -458,7 +458,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `McpServerConfigModel`
+## <kbd>class</kbd> `McpServerConfig`
 MCP server configuration.
 
 
@@ -518,7 +518,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `McpConfigModel`
+## <kbd>class</kbd> `McpConfig`
 MCP capability configuration.
 
 
@@ -606,7 +606,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `TelemetryConfigModel`
+## <kbd>class</kbd> `TelemetryConfig`
 Telemetry configuration.
 
 
@@ -703,7 +703,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `ProfileRegistryConfigModel`
+## <kbd>class</kbd> `ProfileRegistryConfig`
 Profile discovery config for portable file-backed agent packages.
 
 
@@ -763,7 +763,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `FabricConfigModel`
+## <kbd>class</kbd> `FabricConfig`
 SDK-facing typed Fabric agent configuration.
 
 
@@ -866,7 +866,7 @@ Return a detached mapping matching the Rust ``FabricConfig`` schema.
 ---
 
 
-## <kbd>class</kbd> `FabricProfileConfigModel`
+## <kbd>class</kbd> `FabricProfileConfig`
 Typed profile overlay used when a Python caller wants file-style overlays.
 
 

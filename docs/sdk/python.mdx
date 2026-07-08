@@ -13,7 +13,7 @@ multi-turn runtime, and collect normalized results, events, artifacts, and
 telemetry references.
 
 The SDK is config-first. Applications should construct a Pydantic
-`FabricConfigModel` from their own job, deployment, or evaluation config.
+`FabricConfig` from their own job, deployment, or evaluation config.
 Portable file formats such as `agent.yaml` remain useful for examples, CI, and
 reproducibility, but the SDK does not require callers to write intermediate
 files before invoking Fabric.
@@ -34,17 +34,17 @@ import asyncio
 
 from nemo_fabric import (
     Fabric,
-    FabricConfigModel,
-    HarnessConfigModel,
-    MetadataConfigModel,
-    ModelConfigModel,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
 )
 
-config = FabricConfigModel(
-    metadata=MetadataConfigModel(name="review-agent"),
-    harness=HarnessConfigModel(adapter_id="nvidia.fabric.hermes.sdk"),
+config = FabricConfig(
+    metadata=MetadataConfig(name="review-agent"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes.sdk"),
     models={
-        "default": ModelConfigModel(
+        "default": ModelConfig(
             provider="nvidia",
             model="nvidia/nemotron-3-nano-30b-a3b",
             api_key_env="NVIDIA_API_KEY",
@@ -80,7 +80,7 @@ invocations. It does not expose a separate portable session layer.
 
 ```mermaid
 flowchart TB
-  Config["FabricConfigModel"]
+  Config["FabricConfig"]
   Plan["RunPlan"]
   Runtime["Runtime"]
   Invoke1["Invocation<br/>turn 1"]
@@ -98,7 +98,7 @@ Most application code works with four objects:
 
 | Concept | What It Represents | How Consumers Use It |
 | --- | --- | --- |
-| `FabricConfigModel` | Typed configuration for the harness, models, runtime, and capabilities. | Construct it from application config before planning or running. |
+| `FabricConfig` | Typed configuration for the harness, models, runtime, and capabilities. | Construct it from application config before planning or running. |
 | `RunPlan` | The resolved config, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
 | `Runtime` | The Python object for one logical, stateful harness execution. | Use it to send ordered invocations and stop the execution. Use it as an async context manager for cleanup. |
 | `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, events, artifacts, and correlation IDs. |
@@ -127,7 +127,7 @@ retries, worker scaling, and the number of runtimes to run.
 
 ## Configure Agents In Code
 
-Build the complete nested `FabricConfigModel` directly, or start with a base
+Build the complete nested `FabricConfig` directly, or start with a base
 config and use helpers to add capabilities. For example, extend the config from
 the first example with skills, MCP, and telemetry:
 
@@ -411,8 +411,7 @@ around that contract.
 The SDK's Pydantic models are maintained against the Rust-generated public
 schemas. Use the schemas for persisted field definitions and the generated API
 reference for exact Python signatures. New application code should prefer
-`FabricConfigModel` and `RunRequest`; the mapping-compatible `FabricConfig`
-class normalizes configuration data at the runtime boundary.
+`FabricConfig` and `RunRequest` for validated SDK inputs.
 
 | Contract | Source |
 | --- | --- |
