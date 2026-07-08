@@ -36,9 +36,6 @@ pre-release or build-metadata variants used during packaging.
   - All `nemo-fabric-* == <version>` requirements in the root
     `pyproject.toml` optional dependencies.
   - Each adapter's `nemo-fabric-adapters-common == <version>` dependency.
-- Keep `FabricAgent.version()` in
-  `python/src/nemo_fabric/integrations/harbor/__init__.py` aligned with the
-  released Python package version.
 
 For a normal release, use the same `X.Y.Z` string everywhere. For a prerelease
 or build-metadata version, use valid Cargo SemVer in `Cargo.toml` and the
@@ -85,8 +82,6 @@ If editing the helper code, keep these contracts aligned:
   `rg -n '^version =|nemo-fabric-[a-z-]+ == ' pyproject.toml adapters/*/pyproject.toml`
 - Confirm the runtime remains dynamic:
   `rg -n 'dynamic = \["version"\]' python/pyproject.toml`
-- Confirm the Harbor integration version:
-  `rg -n 'return "[0-9]' python/src/nemo_fabric/integrations/harbor/__init__.py`
 - Run `cargo check --workspace --locked`.
 - Run `just build-python` to verify all Python package metadata resolves.
 - Run `just test-python` when the integration version or Python packaging
