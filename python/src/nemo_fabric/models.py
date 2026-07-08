@@ -323,4 +323,3 @@ class RunRequestModel(FabricBaseModel):
         if "input" not in data:
             data["input"] = ""
         return data
-
