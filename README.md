@@ -129,8 +129,9 @@ Fabric applies profiles in caller order and validates the final effective config
 before planning or running.
 
 Path sources select profiles by name. Typed `FabricConfig` sources usually
-compose the final config in Python; profile mappings remain available for callers
-that need file-style overlays. The SDK rejects mixed profile stacks. See the
+compose the final config in Python; `FabricProfileConfig` values are available
+for callers that need ordered file-style overlays. The SDK rejects raw profile
+mappings and mixed profile stacks. See the
 [Python SDK guide](docs/sdk/python.mdx) for the complete public API,
 type definitions, lifecycle semantics, and compatibility rules.
 

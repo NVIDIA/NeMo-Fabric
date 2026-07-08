@@ -150,8 +150,8 @@ Config helpers edit the typed config before planning or starting a runtime. They
 do not modify already-started runtimes.
 
 For evaluation or deployment variations, use ordinary Python functions and
-copies of the typed config. Supply the final config to Fabric rather than
-requiring a separate profile overlay model for in-memory usage.
+copies of the typed config. Supply the final config to Fabric when the variation
+does not need file-profile merge semantics.
 
 ```python
 def review_agent_config(base, *, github_mcp: bool, relay: bool):
@@ -169,6 +169,10 @@ def review_agent_config(base, *, github_mcp: bool, relay: bool):
 
 variant = review_agent_config(config, github_mcp=True, relay=True)
 ```
+
+When an in-memory caller needs the same ordered overlay behavior as file-backed
+profiles, construct `FabricProfileConfig` values and pass them through
+`profiles=[...]`. Fabric does not accept raw profile mappings.
 
 If a config contains relative paths, pass a `base_dir` to `resolve(...)`,
 `plan(...)`, `doctor(...)`, `run(...)`, or `start_runtime(...)`. The base
