@@ -37,10 +37,11 @@ build-python:
     set -euo pipefail
     if [[ "{{ no_uv }}" == "true" ]]; then
         uv pip install --python .venv/bin/python --no-deps --reinstall \
+            --group adapters \
             --editable ./python \
             --editable .
     else
-        uv sync --no-default-groups --extra runtime \
+        uv sync --no-default-groups --group adapters --extra runtime \
             --reinstall-package nemo-fabric \
             --reinstall-package nemo-fabric-runtime
     fi

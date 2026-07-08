@@ -64,6 +64,13 @@ runtime = [
 ]
 
 [dependency-groups]
+adapters = [
+  "nemo-fabric-adapters-common",
+  "nemo-fabric-adapters-codex-cli",
+  "nemo-fabric-adapters-hermes-cli",
+  "nemo-fabric-adapters-hermes-sdk",
+]
+
 dev = [
     "ipython~=8.20",
 ]
@@ -84,7 +91,7 @@ test = [
 ]
 
 [tool.uv]
-default-groups = ["dev", "test"]
+default-groups = ["adapters", "dev", "test"]
 
 [tool.uv.sources]
 nemo-fabric-runtime = { path = "python" }

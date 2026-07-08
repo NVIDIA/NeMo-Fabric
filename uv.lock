@@ -1627,6 +1627,12 @@ runtime = [
 ]
 
 [package.dev-dependencies]
+adapters = [
+    { name = "nemo-fabric-adapters-codex-cli" },
+    { name = "nemo-fabric-adapters-common" },
+    { name = "nemo-fabric-adapters-hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-sdk" },
+]
 dev = [
     { name = "ipython" },
 ]
@@ -1663,6 +1669,12 @@ requires-dist = [
 provides-extras = ["adapters-common", "adapters-codex-cli", "adapters-hermes-cli", "adapters-hermes-sdk", "codex", "harbor", "hermes", "relay", "runtime"]
 
 [package.metadata.requires-dev]
+adapters = [
+    { name = "nemo-fabric-adapters-codex-cli", directory = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-hermes-cli", directory = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-sdk", directory = "adapters/hermes-sdk" },
+]
 dev = [{ name = "ipython", specifier = "~=8.20" }]
 docs = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
