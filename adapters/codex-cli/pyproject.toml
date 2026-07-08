@@ -4,17 +4,19 @@
 [build-system]
 requires = [
   "setuptools>=64",
-  "setuptools-scm>=8",
-  "setuptools_dynamic_dependencies>=1.0.0",
 ]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric-adapters-codex-cli"
+version = "0.1.0"
 description = "Codex CLI adapter for NeMo Fabric"
 readme = "README.md"
 requires-python = ">=3.11"
-dynamic = ["version", "dependencies"]
+dependencies = [
+  "nemo-fabric-adapters-common == 0.1.0",
+  "tomli-w~=1.2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -23,15 +25,5 @@ include = ["nemo_fabric_adapters.codex_cli*"]
 [tool.setuptools.data-files]
 "share/nemo-fabric/adapters/codex-cli" = ["fabric-adapter.json"]
 
-[tool.setuptools_dynamic_dependencies]
-dependencies = [
-  "nemo-fabric-adapters-common == {version}",
-  "tomli-w~=1.2",
-]
-
 [tool.uv.sources]
 nemo-fabric-adapters-common = { path = "../common" }
-
-[tool.setuptools_scm]
-root = "../.."
-git_describe_command = "git describe --long --first-parent"

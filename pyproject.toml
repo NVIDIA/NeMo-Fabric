@@ -4,43 +4,38 @@
 [build-system]
 requires = [
   "setuptools>=64",
-  "setuptools-scm>=8",
-  "setuptools_dynamic_dependencies>=1.0.0",
 ]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric"
+version = "0.1.0"
 description = "Python SDK distribution for NeMo Fabric"
 requires-python = ">=3.11"
-dynamic = ["version", "dependencies", "optional-dependencies"]
+dependencies = []
 
 [tool.setuptools]
 packages = []
 
-[tool.setuptools_dynamic_dependencies]
-dependencies = [
-]
-
-[tool.setuptools_dynamic_dependencies.optional-dependencies]
+[project.optional-dependencies]
 adapters-common = [
-  "nemo-fabric-adapters-common == {version}",
+  "nemo-fabric-adapters-common == 0.1.0",
 ]
 
 adapters-codex-cli = [
-  "nemo-fabric-adapters-codex-cli == {version}",
+  "nemo-fabric-adapters-codex-cli == 0.1.0",
 ]
 
 adapters-hermes-cli = [
-  "nemo-fabric-adapters-hermes-cli == {version}",
+  "nemo-fabric-adapters-hermes-cli == 0.1.0",
 ]
 
 adapters-hermes-sdk = [
-  "nemo-fabric-adapters-hermes-sdk == {version}",
+  "nemo-fabric-adapters-hermes-sdk == 0.1.0",
 ]
 
 codex = [
-  "nemo-fabric-adapters-codex-cli == {version}",
+  "nemo-fabric-adapters-codex-cli == 0.1.0",
 ]
 
 harbor = [
@@ -49,8 +44,8 @@ harbor = [
 ]
 
 hermes = [
-  "nemo-fabric-adapters-hermes-cli == {version}",
-  "nemo-fabric-adapters-hermes-sdk == {version}",
+  "nemo-fabric-adapters-hermes-cli == 0.1.0",
+  "nemo-fabric-adapters-hermes-sdk == 0.1.0",
   "hermes-agent>=0.17.0",
 ]
 
@@ -60,7 +55,7 @@ relay = [
 ]
 
 runtime = [
-  "nemo-fabric-runtime == {version}",
+  "nemo-fabric-runtime == 0.1.0",
 ]
 
 [dependency-groups]
@@ -99,9 +94,6 @@ nemo-fabric-adapters-common = { path = "adapters/common" }
 nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli" }
 nemo-fabric-adapters-hermes-cli = { path = "adapters/hermes-cli" }
 nemo-fabric-adapters-hermes-sdk = { path = "adapters/hermes-sdk" }
-
-[tool.setuptools_scm]
-git_describe_command = "git describe --long --first-parent"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
