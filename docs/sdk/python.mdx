@@ -147,7 +147,8 @@ capability_config.enable_relay(
 ```
 
 Config helpers edit the typed config before planning or starting a runtime. They
-do not modify already-started runtimes.
+do not modify already-started runtimes. Use `remove_mcp_server(name)` and
+`remove_skill_path(path)` to remove capabilities from a copied config.
 
 For evaluation or deployment variations, use ordinary Python functions and
 copies of the typed config. Supply the final config to Fabric when the variation

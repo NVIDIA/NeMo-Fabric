@@ -16,13 +16,12 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use fabric_core::{
-    AdapterKind, EffectiveConfig, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle,
-    SchemaName, doctor_plan, generate_all_schemas, generate_schema_json, invoke_runtime,
-    resolve_effective_config_with_profiles, resolve_run_plan_from_effective_config,
-    resolve_run_plan_with_profiles, run_plan, start_runtime, stop_runtime,
-    validate_agent_directory, write_schema_snapshots,
+    AdapterKind, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle, SchemaName, doctor_plan,
+    generate_all_schemas, generate_schema_json, invoke_runtime,
+    resolve_effective_config_with_profiles, resolve_run_plan_with_profiles, run_plan,
+    start_runtime, stop_runtime, validate_agent_directory, write_schema_snapshots,
 };
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 #[derive(Debug, Parser)]
 #[command(name = "fabric")]
@@ -47,9 +46,6 @@ enum Command {
         /// Profile name from configured profile directories, or a YAML profile path.
         #[arg(long = "profile")]
         profile: Vec<String>,
-        /// Ephemeral dotted config override, for example telemetry.enabled=true.
-        #[arg(long = "set")]
-        set: Vec<String>,
     },
     /// Resolve an agent/profile into a runnable plan.
     Plan {
@@ -58,9 +54,6 @@ enum Command {
         /// Profile name from configured profile directories, or a YAML profile path.
         #[arg(long = "profile")]
         profile: Vec<String>,
-        /// Ephemeral dotted config override, for example telemetry.enabled=true.
-        #[arg(long = "set")]
-        set: Vec<String>,
     },
     /// Diagnose a resolved agent/profile without installing or running it.
     Doctor {
@@ -69,9 +62,6 @@ enum Command {
         /// Profile name from configured profile directories, or a YAML profile path.
         #[arg(long = "profile")]
         profile: Vec<String>,
-        /// Ephemeral dotted config override, for example telemetry.enabled=true.
-        #[arg(long = "set")]
-        set: Vec<String>,
     },
     /// Start an interactive multi-turn runtime.
     Chat {
@@ -80,9 +70,6 @@ enum Command {
         /// Profile name from configured profile directories, or a YAML profile path.
         #[arg(long = "profile")]
         profile: Vec<String>,
-        /// Ephemeral dotted config override, for example telemetry.enabled=true.
-        #[arg(long = "set")]
-        set: Vec<String>,
         /// Show per-turn runtime, invocation, artifact, and telemetry details.
         #[arg(long)]
         verbose: bool,
@@ -94,9 +81,6 @@ enum Command {
         /// Profile name from configured profile directories, or a YAML profile path.
         #[arg(long = "profile")]
         profile: Vec<String>,
-        /// Ephemeral dotted config override, for example telemetry.enabled=true.
-        #[arg(long = "set")]
-        set: Vec<String>,
         /// Inline request payload.
         #[arg(long, default_value = "")]
         input: String,
@@ -143,38 +127,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             validate_agent_directory(&path)?;
             println!("validated {}", path.display());
         }
-        Some(Command::Inspect { path, profile, set }) => {
-            let effective_config = resolve_effective_config_cli(path, &profile, &set)?;
+        Some(Command::Inspect { path, profile }) => {
+            let effective_config = resolve_effective_config_with_profiles(path, &profile)?;
             println!("{}", serde_json::to_string_pretty(&effective_config)?);
         }
-        Some(Command::Plan { path, profile, set }) => {
-            let plan = resolve_run_plan_cli(path, &profile, &set)?;
+        Some(Command::Plan { path, profile }) => {
+            let plan = resolve_run_plan_with_profiles(path, &profile)?;
             println!("{}", serde_json::to_string_pretty(&plan)?);
         }
-        Some(Command::Doctor { path, profile, set }) => {
-            let plan = resolve_run_plan_cli(path, &profile, &set)?;
+        Some(Command::Doctor { path, profile }) => {
+            let plan = resolve_run_plan_with_profiles(path, &profile)?;
             let report = doctor_plan(&plan);
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Some(Command::Chat {
             path,
             profile,
-            set,
             verbose,
         }) => {
-            run_chat(path, &profile, &set, verbose)?;
+            run_chat(path, &profile, verbose)?;
         }
         Some(Command::Run {
             path,
             profile,
-            set,
             input,
             input_file,
             request_json,
             request_file,
             show_output,
         }) => {
-            let plan = resolve_run_plan_cli(path, &profile, &set)?;
+            let plan = resolve_run_plan_with_profiles(path, &profile)?;
             let request = match (request_file, request_json, input_file) {
                 (Some(path), None, None) => {
                     serde_json::from_str::<RunRequest>(&std::fs::read_to_string(path)?)?
@@ -245,90 +227,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn resolve_effective_config_cli(
-    path: PathBuf,
-    profiles: &[String],
-    overrides: &[String],
-) -> Result<EffectiveConfig, Box<dyn std::error::Error>> {
-    let mut effective = resolve_effective_config_with_profiles(path, profiles)?;
-    if overrides.is_empty() {
-        return Ok(effective);
-    }
-    let mut config = serde_json::to_value(&effective.config)?;
-    for override_spec in overrides {
-        apply_cli_override(&mut config, override_spec)?;
-    }
-    effective.config = serde_json::from_value(config)?;
-    effective.agent_name = effective.config.metadata.name.clone();
-    Ok(effective)
-}
-
-fn resolve_run_plan_cli(
-    path: PathBuf,
-    profiles: &[String],
-    overrides: &[String],
-) -> Result<RunPlan, Box<dyn std::error::Error>> {
-    if overrides.is_empty() {
-        return Ok(resolve_run_plan_with_profiles(path, profiles)?);
-    }
-    let effective = resolve_effective_config_cli(path, profiles, overrides)?;
-    Ok(resolve_run_plan_from_effective_config(effective)?)
-}
-
-fn apply_cli_override(
-    config: &mut Value,
-    override_spec: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let Some((path, raw_value)) = override_spec.split_once('=') else {
-        return Err(format!("--set expects key=value, got `{override_spec}`").into());
-    };
-    let path = path.trim();
-    if path.is_empty() {
-        return Err("--set key path must not be empty".into());
-    }
-    let value = serde_json::from_str::<Value>(raw_value)
-        .unwrap_or_else(|_| Value::String(raw_value.to_string()));
-    let parts: Vec<&str> = path.split('.').filter(|part| !part.is_empty()).collect();
-    if parts.is_empty() {
-        return Err("--set key path must contain at least one field".into());
-    }
-    set_object_path(config, &parts, value)
-}
-
-fn set_object_path(
-    current: &mut Value,
-    parts: &[&str],
-    value: Value,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let Some((head, tail)) = parts.split_first() else {
-        return Err("empty --set path".into());
-    };
-    if tail.is_empty() {
-        let object = current
-            .as_object_mut()
-            .ok_or_else(|| format!("cannot set `{head}` on a non-object value"))?;
-        object.insert((*head).to_string(), value);
-        return Ok(());
-    }
-    let object = current
-        .as_object_mut()
-        .ok_or_else(|| format!("cannot descend into `{head}` on a non-object value"))?;
-    let child = object
-        .entry((*head).to_string())
-        .or_insert_with(|| Value::Object(Map::new()));
-    if !child.is_object() {
-        return Err(format!("cannot descend into non-object field `{head}`").into());
-    }
-    set_object_path(child, tail, value)
-}
-
 fn run_chat(
     path: PathBuf,
     profile: &[String],
-    overrides: &[String],
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let plan = resolve_run_plan_cli(path, profile, overrides)?;
+    let plan = resolve_run_plan_with_profiles(path, profile)?;
     let runtime = start_runtime(&plan)?;
     let chat_result = chat_loop(&plan, &runtime, verbose);
     let stop_result = stop_runtime(&plan, &runtime);

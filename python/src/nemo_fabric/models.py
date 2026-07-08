@@ -107,16 +107,51 @@ class RuntimeConfig(FabricBaseModel):
 
 
 class EnvironmentConfig(FabricBaseModel):
-    """Execution environment metadata supplied by the consumer."""
+    """Execution environment configuration supplied by the consumer.
 
-    provider: str = Field(default="local", min_length=1)
-    workspace: str | Path | None = None
-    artifacts: str | Path | None = None
-    settings: dict[str, Any] = Field(default_factory=dict)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    connection: dict[str, Any] = Field(default_factory=dict)
-    ownership: Literal["caller_owned", "fabric_owned"] = "caller_owned"
-    control_location: Literal["external_control", "in_env_control"] = "in_env_control"
+    ``provider`` selects the environment implementation. ``workspace`` is the
+    path visible to the harness, while ``artifacts`` is the provider-specific
+    output location. ``settings`` configures the selected provider;
+    ``connection`` describes how Fabric reaches an existing environment; and
+    ``metadata`` carries consumer-owned values that Fabric does not interpret.
+    ``ownership`` identifies who tears the environment down, and
+    ``control_location`` identifies whether Fabric control code runs inside or
+    outside it.
+    """
+
+    provider: str = Field(
+        default="local",
+        min_length=1,
+        description="Environment provider, such as local, docker, opensandbox, or k8s.",
+    )
+    workspace: str | Path | None = Field(
+        default=None,
+        description="Workspace path visible to the harness.",
+    )
+    artifacts: str | Path | None = Field(
+        default=None,
+        description="Environment-specific artifact path.",
+    )
+    settings: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Provider-specific configuration interpreted by the environment provider.",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Consumer-owned environment metadata passed through without Fabric semantics.",
+    )
+    connection: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Connection data for an existing environment, such as URL, namespace, or credential reference.",
+    )
+    ownership: Literal["caller_owned", "fabric_owned"] = Field(
+        default="caller_owned",
+        description="Whether the caller or Fabric owns environment teardown.",
+    )
+    control_location: Literal["external_control", "in_env_control"] = Field(
+        default="in_env_control",
+        description="Whether Fabric control code runs outside or inside the environment.",
+    )
 
 
 class ModelConfig(FabricBaseModel):
@@ -289,12 +324,30 @@ class FabricConfig(FabricBaseModel):
         )
         return self
 
+    def remove_mcp_server(self, name: str) -> Self:
+        """Remove a named MCP server and return this config."""
+
+        if self.mcp is not None:
+            self.mcp.remove_server(name)
+            if not self.mcp.servers:
+                self.mcp = None
+        return self
+
     def add_skill_path(self, path: str | Path) -> Self:
         """Add a skill path and return this config."""
 
         if self.skills is None:
             self.skills = SkillConfig()
         self.skills.add_path(path)
+        return self
+
+    def remove_skill_path(self, path: str | Path) -> Self:
+        """Remove a skill path and return this config."""
+
+        if self.skills is not None:
+            self.skills.remove_path(path)
+            if not self.skills.paths:
+                self.skills = None
         return self
 
     def enable_relay(

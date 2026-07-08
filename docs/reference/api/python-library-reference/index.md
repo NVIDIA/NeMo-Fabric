@@ -21,7 +21,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
 - [`runtime.Runtime`](./nemo_fabric.runtime.md#class-runtime): One logical, stateful harness execution.
 - [`runtime.RuntimeStatus`](./nemo_fabric.runtime.md#class-runtimestatus): Lifecycle state of a runtime.
-- [`models.EnvironmentConfig`](./nemo_fabric.models.md#class-environmentconfig): Execution environment metadata supplied by the consumer.
+- [`models.EnvironmentConfig`](./nemo_fabric.models.md#class-environmentconfig): Execution environment configuration supplied by the consumer.
 - [`models.FabricBaseModel`](./nemo_fabric.models.md#class-fabricbasemodel): Base class for SDK-facing Pydantic models.
 - [`models.FabricConfig`](./nemo_fabric.models.md#class-fabricconfig): SDK-facing typed Fabric agent configuration.
 - [`models.FabricProfileConfig`](./nemo_fabric.models.md#class-fabricprofileconfig): Typed profile overlay used when a Python caller wants file-style overlays.

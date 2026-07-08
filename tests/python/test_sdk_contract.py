@@ -161,10 +161,12 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         "config": {"version": 1},
     }
 
-    config.mcp.remove_server("github")
-    config.skills.remove_path("./skills/review")
-    assert config.to_mapping()["mcp"]["servers"] == {}
-    assert config.to_mapping()["skills"]["paths"] == []
+    config.remove_mcp_server("github").remove_mcp_server("missing")
+    config.remove_skill_path("./skills/review").remove_skill_path("./skills/missing")
+    assert config.mcp is None
+    assert config.skills is None
+    assert "mcp" not in config.to_mapping()
+    assert "skills" not in config.to_mapping()
 
     with pytest.raises(ValidationError, match="exposure"):
         config.add_mcp_server(
@@ -232,6 +234,16 @@ def test_agent_model_tracks_rust_schema_top_level_fields():
     assert set(pydantic_schema["properties"]).issuperset(schema["properties"])
     assert set(pydantic_schema["required"]) == {"metadata", "harness"}
     assert set(schema["required"]) == {"schema_version", "metadata", "harness", "runtime"}
+
+
+def test_environment_model_defines_extension_field_ownership():
+    properties = EnvironmentConfig.model_json_schema()["properties"]
+
+    assert "environment provider" in properties["settings"]["description"]
+    assert "without Fabric semantics" in properties["metadata"]["description"]
+    assert "existing environment" in properties["connection"]["description"]
+    assert "environment teardown" in properties["ownership"]["description"]
+    assert "outside or inside" in properties["control_location"]["description"]
 
 
 def test_inspection_models_are_typed_read_only_mappings():

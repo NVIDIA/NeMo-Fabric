@@ -257,7 +257,9 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `EnvironmentConfig`
-Execution environment metadata supplied by the consumer.
+Execution environment configuration supplied by the consumer.
+
+``provider`` selects the environment implementation. ``workspace`` is the path visible to the harness, while ``artifacts`` is the provider-specific output location. ``settings`` configures the selected provider; ``connection`` describes how Fabric reaches an existing environment; and ``metadata`` carries consumer-owned values that Fabric does not interpret. ``ownership`` identifies who tears the environment down, and ``control_location`` identifies whether Fabric control code runs inside or outside it.
 
 
 ---
@@ -850,6 +852,28 @@ from_mapping(value: 'Mapping[str, Any]') → Self
 ```
 
 Validate the public agent config mapping shape.
+
+---
+
+
+### <kbd>method</kbd> `remove_mcp_server`
+
+```python
+remove_mcp_server(name: 'str') → Self
+```
+
+Remove a named MCP server and return this config.
+
+---
+
+
+### <kbd>method</kbd> `remove_skill_path`
+
+```python
+remove_skill_path(path: 'str | Path') → Self
+```
+
+Remove a skill path and return this config.
 
 ---
 
