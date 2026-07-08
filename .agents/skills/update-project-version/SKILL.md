@@ -48,23 +48,34 @@ versions rather than blindly copying incompatible syntax.
 
 ## Workflow
 
-1. Read the current version from `Cargo.toml` and decide the exact target
-   version string.
-2. Run `just set-version <version>` to update release-version source files:
-   - `[workspace.package].version`
-3. Update all setuptools based `pyproject.toml` files listed above:
-   - Set each `project.version` to the Python target version.
-   - Update every internal `nemo-fabric-*` exact-version requirement.
-4. Leave `python/pyproject.toml` dynamic and unchanged unless its Maturin
-   configuration itself needs correction.
-5. Update `FabricAgent.version()` to the Python target version.
-6. Refresh generated dependency state:
-   - Run `cargo check --workspace` to update `Cargo.lock` workspace package
-     entries.
-   - Run `just lock-python` to update the root, runtime, and adapter
-     `uv.lock` files.
-7. Audit references to the old version with targeted searches. Distinguish
+1. Read the current version from `Cargo.toml` and decide the exact Cargo and
+   Python target version strings.
+2. Run `just set-version <cargo-version>`. The recipe converts supported Cargo
+   SemVer prereleases to PEP 440 and updates:
+   - `Cargo.toml` `[workspace.package].version`
+   - `Cargo.toml` `workspace.dependencies.fabric-core.version`
+   - All five setuptools `project.version` fields
+   - Every internal `nemo-fabric-*` exact-version requirement
+   - `FabricAgent.version()`
+   - `Cargo.lock` through Cargo metadata resolution
+   - The root, runtime, and adapter `uv.lock` files through `just lock-python`
+3. Confirm that `python/pyproject.toml` remains dynamic and unchanged.
+4. Audit references to the old version with targeted searches. Distinguish
    package-version surfaces from examples and unrelated dependency versions.
+
+If editing the helper code, keep these contracts aligned:
+
+- `set_project_version` must call the Cargo, Python project, and Harbor
+  integration version helpers.
+- `set_cargo_workspace_version` must update the workspace version and the
+  `fabric-core` workspace dependency, then verify every `fabric-*` workspace
+  package through Cargo metadata.
+- `set_python_project_versions` must update all five explicit setuptools
+  versions and all internal exact-version pins while rejecting a static version
+  in `python/pyproject.toml`.
+- `set_harbor_integration_version` must update `FabricAgent.version()`.
+- The `set-version` recipe must run `just lock-python` after source metadata is
+  updated.
 
 ## Validation
 
