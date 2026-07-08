@@ -6,13 +6,8 @@
 from __future__ import annotations
 
 import asyncio
-import sys
-import tempfile
 from pathlib import Path
 from shutil import copytree
-
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "python" / "src"))
 
 from nemo_fabric import Fabric
 
@@ -23,16 +18,12 @@ async def run_copy(client: Fabric, fixture_agent: Path, root: Path, name: str) -
     return await client.run(agent, profiles=["env_local"], input=f"hello from {name}")
 
 
-async def main() -> None:
-    fixture_agent = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
-
+async def test_sdk_concurrency(hermes_shim_agent_dir_src: Path, tmp_path: Path):
     async with Fabric() as client:
-        with tempfile.TemporaryDirectory(prefix="fabric-sdk-concurrency-") as tmpdir:
-            temp_root = Path(tmpdir)
-            first, second = await asyncio.gather(
-                run_copy(client, fixture_agent, temp_root, "agent-one"),
-                run_copy(client, fixture_agent, temp_root, "agent-two"),
-            )
+        first, second = await asyncio.gather(
+            run_copy(client, hermes_shim_agent_dir_src, tmp_path, "agent-one"),
+            run_copy(client, hermes_shim_agent_dir_src, tmp_path, "agent-two"),
+        )
 
     assert first["status"] == "succeeded"
     assert second["status"] == "succeeded"
@@ -41,7 +32,3 @@ async def main() -> None:
     assert first["output"]["received"] == "hello from agent-one"
     assert second["output"]["received"] == "hello from agent-two"
     assert first["artifacts"]["root"] != second["artifacts"]["root"]
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

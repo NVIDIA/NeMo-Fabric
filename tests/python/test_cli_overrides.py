@@ -11,13 +11,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
-AGENT = ROOT / "examples" / "code-review-agent"
-
-
-def main() -> None:
+def test_cli_overrides(code_review_agent_dir: Path):
     inspected = _json_command(
         "inspect",
-        str(AGENT),
+        str(code_review_agent_dir),
         "--profile",
         "hermes_sdk",
         "--set",
@@ -34,7 +31,7 @@ def main() -> None:
 
     plan = _json_command(
         "plan",
-        str(AGENT),
+        str(code_review_agent_dir),
         "--profile",
         "hermes_sdk",
         "--set",
@@ -44,7 +41,6 @@ def main() -> None:
     )
     assert plan["telemetry_plan"]["relay_enabled"] is True
     assert plan["telemetry_plan"]["relay_output_dir"].endswith("artifacts/cli-set")
-    print("smoke_cli_overrides ok")
 
 
 def _json_command(*args: str) -> dict:
@@ -58,7 +54,3 @@ def _json_command(*args: str) -> dict:
     if completed.returncode != 0:
         raise AssertionError(completed.stderr)
     return json.loads(completed.stdout)
-
-
-if __name__ == "__main__":
-    main()

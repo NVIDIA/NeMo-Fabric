@@ -121,9 +121,8 @@ def test_validate_hermes_telemetry_provider_rejects_native(
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config(
     hermes_common: types.ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("MCP_URL", "http://localhost:9000/mcp")
+    os.environ["MCP_URL"] = "http://localhost:9000/mcp"
     payload = {
         "runtime_context": {"environment": {"workspace": "/workspace/repo"}},
         "capability_plan": {
@@ -196,7 +195,6 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config(
 
 def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     hermes_common: types.ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     import nemo_fabric_adapters.common.utils as common_utils
@@ -215,7 +213,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config))
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(relay_config)
     payload = {
         "runtime_context": {
             "runtime_id": "runtime-matrix",
@@ -395,7 +393,6 @@ def test_summarize_hermes_config(hermes_common: types.ModuleType) -> None:
 
 def test_configure_hermes_relay_sets_hermes_plugin_environment(
     hermes_common: types.ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     config_path = tmp_path / "relay.json"
@@ -431,8 +428,8 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FABRIC_RELAY_ENABLED", "true")
-    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(config_path))
+    os.environ["FABRIC_RELAY_ENABLED"] = "true"
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(config_path)
     payload = {
         "runtime_context": {"runtime_id": "runtime-relay"},
         "effective_config": {
@@ -466,8 +463,7 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
 
 def test_configure_hermes_relay_returns_none_when_disabled(
     hermes_common: types.ModuleType,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("FABRIC_RELAY_ENABLED", raising=False)
+    os.environ.pop("FABRIC_RELAY_ENABLED", None)
 
     assert hermes_common.configure_hermes_relay({}) is None

@@ -3,32 +3,30 @@
 
 """Opt-in real Codex CLI smoke for Fabric one-shot and multi-turn runtimes.
 
-    RUN_FABRIC_CODEX_INTEGRATION=1 python3 tests/smoke_codex_cli.py
+RUN_FABRIC_CODEX_INTEGRATION=1 pytest tests/e2e/test_codex_cli.py
 """
 
 from __future__ import annotations
 
-import asyncio
 import importlib.util
 import os
 import shutil
-import sys
 import uuid
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "python" / "src"))
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
-def main() -> None:
+async def test_codex_cli():
     if os.environ.get("RUN_FABRIC_CODEX_INTEGRATION") != "1":
-        print("skipping: set RUN_FABRIC_CODEX_INTEGRATION=1 to run")
-        return
+        pytest.skip("set RUN_FABRIC_CODEX_INTEGRATION=1 to run")
     if shutil.which("codex") is None:
-        raise SystemExit("codex CLI is required")
+        pytest.fail("codex CLI is required")
     if importlib.util.find_spec("nemo_fabric._native") is None:
-        raise SystemExit("the nemo_fabric native extension is required (pip install -e .)")
-    asyncio.run(_run())
+        pytest.fail("the nemo_fabric native extension is required (pip install -e .)")
+    await _run()
 
 
 async def _run() -> None:
@@ -65,9 +63,3 @@ async def _run() -> None:
             "resume",
             first["output"]["thread_id"],
         ], second.to_mapping()
-
-    print("smoke_codex_cli ok")
-
-
-if __name__ == "__main__":
-    main()

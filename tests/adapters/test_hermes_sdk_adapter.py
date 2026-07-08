@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -12,7 +13,7 @@ from typing import Any
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 HERMES_SDK_SRC = ROOT / "adapters" / "hermes-sdk" / "src"
 if str(HERMES_SDK_SRC) not in sys.path:
     sys.path.insert(0, str(HERMES_SDK_SRC))
@@ -125,7 +126,7 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
     monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
     monkeypatch.setitem(sys.modules, "run_agent", run_agent)
-    monkeypatch.setenv("TEST_API_KEY", "secret")
+    os.environ["TEST_API_KEY"] = "secret"
 
     payload = {
         "effective_config": {

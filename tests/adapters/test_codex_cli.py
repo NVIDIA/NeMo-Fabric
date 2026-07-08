@@ -18,7 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
 
 from nemo_fabric import Fabric, FabricConfig
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 ADAPTER_PATH = (
     ROOT
     / "adapters"

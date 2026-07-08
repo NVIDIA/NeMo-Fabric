@@ -13,66 +13,68 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import tempfile
 from pathlib import Path
-from shutil import copytree, rmtree
 
-ROOT = Path(__file__).resolve().parents[1]
+import pytest
+
+from _utils.utils import run_fabric_cli
+
+ROOT = Path(__file__).resolve().parents[2]
 HARBOR_ROOT = ROOT.parent / "harbor"
-DEFAULT_TASK = HARBOR_ROOT / "datasets" / "swebench-opencode-smoke" / "django__django-13741"
+DEFAULT_TASK = (
+    HARBOR_ROOT / "datasets" / "swebench-opencode-smoke" / "django__django-13741"
+)
 IMAGE = "swebench/sweb.eval.x86_64.django_1776_django-13741:latest"
-COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
 RUN_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_DOCKER"
 VERIFY_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_VERIFY"
 
 
-def main() -> None:
+def test_harbor_swebench_task(hermes_shim_agent_dir: Path):
     if os.environ.get(RUN_ENV) != "1":
-        print(f"skipped; set {RUN_ENV}=1 to run the Docker-backed SWE-Bench smoke")
-        return
+        pytest.skip(f"set {RUN_ENV}=1 to run the Docker-backed SWE-Bench test")
 
     task_dir = Path(os.environ.get("FABRIC_HARBOR_SWEBENCH_TASK", DEFAULT_TASK))
     if not task_dir.exists():
         raise AssertionError(f"Harbor SWE-Bench task directory not found: {task_dir}")
 
     assert_docker_image()
-    scratch_root = ROOT / ".tmp"
-    scratch_root.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="fabric-harbor-swebench-", dir=scratch_root) as tmpdir:
-        temp_agent = Path(tmpdir) / "hermes-shim-agent"
-        copytree(ROOT / "tests" / "fixtures" / "hermes-shim-agent", temp_agent)
-        rmtree(temp_agent / "artifacts", ignore_errors=True)
 
-        workspace = temp_agent / "repos" / "swebench-django-13741"
-        workspace.mkdir(parents=True)
-        copy_testbed_from_image(workspace)
-        assert_clean_workspace(workspace)
+    workspace = hermes_shim_agent_dir / "repos" / "swebench-django-13741"
+    workspace.mkdir(parents=True)
+    copy_testbed_from_image(workspace)
+    assert_clean_workspace(workspace)
 
-        request_file = temp_agent / "django-13741.request.json"
-        request_file.write_text(json.dumps(build_request(task_dir), indent=2), encoding="utf-8")
+    request_file = hermes_shim_agent_dir / "django-13741.request.json"
+    request_file.write_text(
+        json.dumps(build_request(task_dir), indent=2), encoding="utf-8"
+    )
 
-        result = call_json(
-            "run",
-            temp_agent,
-            "--profile",
-            "harbor_swebench_django_13741",
-            "--request-file",
-            request_file,
+    result = call_json(
+        "run",
+        hermes_shim_agent_dir,
+        "--profile",
+        "harbor_swebench_django_13741",
+        "--request-file",
+        request_file,
+    )
+
+    assert result["status"] == "succeeded", result
+    assert result["output"]["task"]["instance_id"] == "django__django-13741"
+    assert result["output"]["changed"] is True
+
+    patch = read_artifact(result, "workspace_patch")
+    assert "django/contrib/auth/forms.py" in patch
+    assert "kwargs.setdefault" in patch and "disabled" in patch, patch
+
+    status = read_artifact(result, "workspace_status")
+    assert "django/contrib/auth/forms.py" in status
+
+    if os.environ.get(VERIFY_ENV) == "1":
+        verify_with_harbor_task(
+            task_dir,
+            workspace,
+            hermes_shim_agent_dir / "artifacts" / "verifier",
         )
-
-        assert result["status"] == "succeeded", result
-        assert result["output"]["task"]["instance_id"] == "django__django-13741"
-        assert result["output"]["changed"] is True
-
-        patch = read_artifact(result, "workspace_patch")
-        assert "django/contrib/auth/forms.py" in patch
-        assert "kwargs.setdefault" in patch and "disabled" in patch, patch
-
-        status = read_artifact(result, "workspace_status")
-        assert "django/contrib/auth/forms.py" in status
-
-        if os.environ.get(VERIFY_ENV) == "1":
-            verify_with_harbor_task(task_dir, workspace, temp_agent / "artifacts" / "verifier")
 
 
 def assert_docker_image() -> None:
@@ -99,7 +101,9 @@ def assert_clean_workspace(workspace: Path) -> None:
 
 
 def build_request(task_dir: Path) -> dict:
-    config = json.loads((task_dir / "tests" / "config.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (task_dir / "tests" / "config.json").read_text(encoding="utf-8")
+    )
     return {
         "request_id": config["instance_id"],
         "input": (task_dir / "instruction.md").read_text(encoding="utf-8"),
@@ -163,11 +167,17 @@ def verify_with_harbor_task(task_dir: Path, workspace: Path, logs: Path) -> None
             f"chown -R {os.getuid()}:{os.getgid()} /workspace /logs",
         )
     reward = (logs / "verifier" / "reward.txt").read_text(encoding="utf-8").strip()
-    assert reward == "1", (logs / "verifier" / "report.json").read_text(encoding="utf-8")
+    assert reward == "1", (logs / "verifier" / "report.json").read_text(
+        encoding="utf-8"
+    )
 
 
 def call_json(*args: object) -> dict:
-    completed = run(*COMMAND, *(str(arg) for arg in args), cwd=ROOT)
+    completed = run_fabric_cli(*args)
+    if completed.returncode != 0:
+        raise AssertionError(
+            f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
+        )
     return json.loads(completed.stdout)
 
 
@@ -184,7 +194,3 @@ def run(*command: object, cwd: Path | None = None) -> subprocess.CompletedProces
             f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
         )
     return completed
-
-
-if __name__ == "__main__":
-    main()

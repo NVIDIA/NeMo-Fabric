@@ -48,21 +48,41 @@ def hermes_agent_dir_fixture(hermes_cli_agent_dir_src: Path, tmp_path: Path) -> 
     This mirrors the behavior of the smoke tests.
     """
     agent_dir = tmp_path / "hermes-cli-agent"
-    shutil.copytree(hermes_cli_agent_dir_src, agent_dir)
+    shutil.copytree(hermes_cli_agent_dir_src, agent_dir, ignore=shutil.ignore_patterns("artifacts"))
     assert agent_dir.exists(), f"Missing fake Hermes CLI agent directory: {agent_dir}"
     return agent_dir.resolve()
+
+@pytest.fixture(name="hermes_shim_agent_dir_src", scope="session")
+def hermes_shim_agent_dir_src_fixture() -> Path:
+    agent_dir = CUR_DIR / "fixtures" / "hermes-shim-agent"
+    assert agent_dir.exists(), f"Missing Hermes shim agent directory: {agent_dir}"
+    return agent_dir
+
+def _copy_agent_dir(src_dir: Path, tmp_path: Path, agent_name: str) -> Path:
+    """
+    Creates a temporary copy of the specified agent directory for testing.
+    This mirrors the behavior of the smoke tests.
+    """
+    assert src_dir.exists(), f"Missing directory: {src_dir}"
+    agent_dir = tmp_path / agent_name
+    shutil.copytree(src_dir, agent_dir, ignore=shutil.ignore_patterns("artifacts"))
+    assert agent_dir.exists(), f"Missing {agent_name} directory: {agent_dir}"
+    return agent_dir.resolve()
+
+@pytest.fixture(name="hermes_shim_agent_dir")
+def hermes_shim_agent_dir_fixture(
+    hermes_shim_agent_dir_src: Path,
+    tmp_path: Path,
+) -> Path:
+    """Creates a temporary copy of the Hermes shim agent directory."""
+    return _copy_agent_dir(hermes_shim_agent_dir_src, tmp_path, "hermes-shim-agent")
 
 @pytest.fixture(name="code_review_agent_dir")
 def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
     """
     Creates a temporary copy of the example code review agent directory for testing.
     """
-    source_dir = repo_root / "examples" / "code-review-agent"
-    assert source_dir.exists(), f"Missing Hermes code review agent directory: {source_dir}"
-    agent_dir = tmp_path / "code-review-agent"
-    shutil.copytree(source_dir, agent_dir, ignore=shutil.ignore_patterns("artifacts"))
-    assert agent_dir.exists(), f"Missing Hermes code review agent directory: {agent_dir}"
-    return agent_dir.resolve()
+    return _copy_agent_dir(repo_root / "examples" / "code-review-agent", tmp_path, "code-review-agent")
 
 @pytest.fixture(name="hermes_cli_profile", scope="session")
 def hermes_cli_profile_fixture() -> str:

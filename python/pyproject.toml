@@ -10,7 +10,9 @@ name = "nemo-fabric"
 version = "0.1.0"
 description = "Python SDK surface for NeMo Fabric"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+  "pydantic>=2.10,<3",
+]
 
 [project.optional-dependencies]
 harbor = ["harbor>=0.13.2"]

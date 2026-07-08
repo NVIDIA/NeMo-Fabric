@@ -14,7 +14,7 @@ import nemo_fabric
 from pydantic import BaseModel
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_DIR = ROOT / "docs" / "reference" / "api" / "python-library-reference"
 LANDING_PAGE = ROOT / "docs" / "getting-started" / "overview.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
