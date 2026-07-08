@@ -31,6 +31,11 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--variant", choices=CONFIG_BUILDERS, default="hermes-sdk")
     parser.add_argument("--relay", action="store_true")
+    parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="Print the resolved run plan without starting a runtime.",
+    )
     parser.add_argument("--input", default="Review the workspace changes.")
     args = parser.parse_args()
 
@@ -38,8 +43,12 @@ async def main() -> None:
     if args.relay:
         config = with_relay(config)
 
-    result = await Fabric().run(config, base_dir=BASE_DIR, input=args.input)
-    print(json.dumps(result.to_mapping(), indent=2))
+    fabric = Fabric()
+    if args.plan:
+        output = fabric.plan(config, base_dir=BASE_DIR)
+    else:
+        output = await fabric.run(config, base_dir=BASE_DIR, input=args.input)
+    print(json.dumps(output.to_mapping(), indent=2))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Contract tests for the Pydantic-first code-review example."""
+"""Contract tests for the code-review example."""
+
+import json
+import subprocess
+import sys
 
 from examples.code_review_agent import (
     BASE_DIR,
@@ -69,7 +73,7 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     assert variants[3].telemetry.provider == "relay"
 
 
-def test_typed_variants_plan_without_file_profiles():
+def test_variants_plan_without_file_profiles():
     client = Fabric()
 
     for config in (hermes_sdk_config(), hermes_cli_config(), codex_cli_config()):
@@ -77,3 +81,36 @@ def test_typed_variants_plan_without_file_profiles():
         assert plan.profiles == ()
         assert plan.agent_name == "code-review-agent"
         assert plan.adapter.adapter_id == config.harness.adapter_id
+
+
+def test_example_entrypoint_plans_without_starting_a_runtime():
+    cases = (
+        ([], "nvidia.fabric.hermes.sdk", False),
+        (["--variant", "hermes-cli"], "nvidia.fabric.hermes.cli", False),
+        (["--variant", "codex-cli"], "nvidia.fabric.codex.cli", False),
+        (["--relay"], "nvidia.fabric.hermes.sdk", True),
+    )
+
+    for options, adapter_id, relay_enabled in cases:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "examples.code_review_agent",
+                *options,
+                "--plan",
+            ],
+            cwd=BASE_DIR.parents[1],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        plan = json.loads(completed.stdout)
+        assert plan["agent_name"] == "code-review-agent"
+        assert plan["profiles"] == []
+        assert (
+            plan["adapter_descriptor"]["descriptor"]["adapter_id"] == adapter_id
+        )
+        assert plan["telemetry_plan"]["relay_enabled"] is relay_enabled
