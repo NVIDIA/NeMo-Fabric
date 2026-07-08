@@ -7,10 +7,10 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 # Python SDK
 
-The Python SDK is the application-facing interface for NeMo Fabric. It lets a
-consumer configure an agent harness, validate the resolved plan, start a runtime,
-send one or more turns, stream normalized events, stop the runtime, and collect
-results, artifacts, logs, and telemetry references.
+The Python SDK is the application-facing interface for NeMo Fabric. Use it to
+configure an agent harness, inspect the resolved plan, run one request or a
+multi-turn runtime, and collect normalized results, events, artifacts, and
+telemetry references.
 
 The SDK is config-first. Applications should construct a Pydantic
 `FabricConfigModel` from their own job, deployment, or evaluation config.
@@ -18,29 +18,73 @@ Portable file formats such as `agent.yaml` remain useful for examples, CI, and
 reproducibility, but the SDK does not require callers to write intermediate
 files before invoking Fabric.
 
-Generated API reference pages are the source of truth for exact signatures.
-This guide explains how the pieces fit together.
+Generated API reference pages remain the source of truth for exact signatures.
+This guide explains how the pieces are intended to fit together.
+
+For installation and a package-backed example, start with the
+[Getting Started overview](/getting-started/overview).
+
+## Start With One Run
+
+Construct a typed config, then pass it to `Fabric.run(...)`. The SDK starts a
+runtime, invokes it once, collects the result, and stops the runtime.
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    Fabric,
+    FabricConfigModel,
+    HarnessConfigModel,
+    MetadataConfigModel,
+    ModelConfigModel,
+)
+
+config = FabricConfigModel(
+    metadata=MetadataConfigModel(name="review-agent"),
+    harness=HarnessConfigModel(adapter_id="nvidia.fabric.hermes.sdk"),
+    models={
+        "default": ModelConfigModel(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+)
+
+
+async def main() -> None:
+    async with Fabric() as fabric:
+        result = await fabric.run(
+            config,
+            input="Review the workspace changes.",
+        )
+
+    print(result.status)
+    print(result.output)
+
+
+asyncio.run(main())
+```
+
+Use `base_dir` to resolve relative paths in an in-memory config. Before running
+in a new environment, call `plan(...)` to inspect adapter selection and
+`doctor(...)` to check runtime requirements.
+
+The remaining examples reuse this `config` value.
 
 ## Execution Model
 
-Fabric separates configuration, runtime planning, runtime lifecycle, and
-individual invocations. It does not expose a separate portable session layer.
-
-```text
-FabricConfigModel
-  -> RunPlan
-  -> RuntimeHandle
-  -> InvocationHandle
-  -> RunResult
-```
+Fabric separates configuration, planning, runtime lifecycle, and individual
+invocations. It does not expose a separate portable session layer.
 
 ```mermaid
 flowchart TB
   Config["FabricConfigModel"]
   Plan["RunPlan"]
-  Runtime["Runtime<br/>owns a RuntimeHandle"]
-  Invoke1["InvocationHandle<br/>turn 1"]
-  Invoke2["InvocationHandle<br/>turn 2"]
+  Runtime["Runtime"]
+  Invoke1["Invocation<br/>turn 1"]
+  Invoke2["Invocation<br/>turn 2"]
   Result1["RunResult<br/>turn 1"]
   Result2["RunResult<br/>turn 2"]
 
@@ -50,105 +94,62 @@ flowchart TB
   Runtime --> Invoke2 --> Result2
 ```
 
-The important caller-facing handles are:
+Most application code works with four objects:
 
 | Concept | What It Represents | How Consumers Use It |
 | --- | --- | --- |
+| `FabricConfigModel` | Typed configuration for the harness, models, runtime, and capabilities. | Construct it from application config before planning or running. |
+| `RunPlan` | The resolved config, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
 | `Runtime` | The Python object for one logical, stateful harness execution. | Use it to send ordered invocations and stop the execution. Use it as an async context manager for cleanup. |
-| `RuntimeHandle` | The identity and opaque adapter binding for that execution. | Use its Fabric runtime ID for result, event, artifact, and telemetry correlation. Native thread/session IDs remain adapter-internal. |
-| `InvocationHandle` | One request or turn sent to a runtime. | Usually seen through `invocation_id`, events, and `RunResult` correlation rather than manipulated directly in Python. It is the core unit for status, artifacts, errors, and future cancellation/streaming control. |
+| `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, events, artifacts, and correlation IDs. |
+
+`RuntimeHandle` and `InvocationHandle` carry lifecycle identity across the
+native boundary. Most Python callers use their `runtime_id` and
+`invocation_id` through `Runtime` and `RunResult` rather than manipulating the
+handles directly.
 
 A runtime is a logical execution boundary, not necessarily an operating-system
 process. An adapter may use an in-process SDK, a process, or shared service
 infrastructure while preserving isolated state for each Fabric runtime.
 
-Harness-native concepts such as a Codex thread, OpenCode or OpenClaw session,
-Hermes session row, or Claude conversation live inside the adapter's opaque
-runtime binding. They are not additional Fabric lifecycle objects.
+Harness-native threads, sessions, and conversations remain adapter-owned state
+associated with the Fabric runtime. They are not additional Fabric lifecycle
+objects.
 
-Product-level orchestration belongs to the consumer. Fabric does not schedule
-jobs, manage queues, own retries, or scale workers. Applications and other
-consumers decide how many runtimes or tasks to run. For example, a Harbor job
-starts its own Fabric runtime; Fabric does not interpret Harbor job IDs.
-
-Fabric provides the runtime contract; applications own product policy around
-that contract.
+Fabric provides the runtime contract. Applications own scheduling, queues,
+retries, worker scaling, and the number of runtimes to run.
 
 ## Configure Agents In Code
 
-Build typed config in one of two ways:
-
-- start with a base config and use helpers to add or edit capabilities;
-- provide the full nested config directly, which is often better for generated
-  configs or complete application-owned config.
+Build the complete nested `FabricConfigModel` directly, or start with a base
+config and use helpers to add capabilities. For example, extend the config from
+the first example with skills, MCP, and telemetry:
 
 ```python
-from nemo_fabric import (
-    FabricConfigModel,
-    HarnessConfigModel,
-    MetadataConfigModel,
-    ModelConfigModel,
-    RuntimeConfigModel,
-)
-
-config = FabricConfigModel(
-    metadata=MetadataConfigModel(name="review-agent"),
-    harness=HarnessConfigModel(
-        adapter_id="nvidia.fabric.hermes.sdk",
-        resolution="preinstalled",
-    ),
-    models={
-        "default": ModelConfigModel(
-            provider="nvidia",
-            model="nvidia/nemotron-3-nano-30b-a3b",
-            api_key_env="NVIDIA_API_KEY",
-        )
-    },
-    runtime=RuntimeConfigModel(
-        input_schema="chat",
-        output_schema="message",
-        artifacts="./artifacts",
-    ),
-)
-
-config.add_skill_path("./skills/code-review")
-config.add_mcp_server(
+capability_config = config.model_copy(deep=True)
+capability_config.add_skill_path("./skills/code-review")
+capability_config.add_mcp_server(
     "github",
     transport="streamable-http",
     url="${GITHUB_MCP_URL}",
     exposure="harness_native",
 )
-config.enable_relay(project="fabric-review", output_dir="./artifacts/relay")
+capability_config.enable_relay(
+    project="fabric-review",
+    output_dir="./artifacts/relay",
+)
 ```
 
 Config helpers edit the typed config before planning or starting a runtime. They
 do not modify already-started runtimes.
 
-For evaluation or deployment variations, construct the final config that should
-run. Applications can do that with ordinary Python functions, config builders, or
-copies of a typed config.
+For evaluation or deployment variations, use ordinary Python functions and
+copies of the typed config. Supply the final config to Fabric rather than
+requiring a separate profile overlay model for in-memory usage.
 
 ```python
-from nemo_fabric import (
-    FabricConfigModel,
-    HarnessConfigModel,
-    MetadataConfigModel,
-    ModelConfigModel,
-)
-
-
-def review_agent_config(*, github_mcp: bool, relay: bool) -> FabricConfigModel:
-    config = FabricConfigModel(
-        metadata=MetadataConfigModel(name="review-agent"),
-        harness=HarnessConfigModel(adapter_id="nvidia.fabric.hermes.sdk"),
-        models={
-            "default": ModelConfigModel(
-                provider="nvidia",
-                model="nvidia/nemotron-3-nano-30b-a3b",
-                api_key_env="NVIDIA_API_KEY",
-            )
-        },
-    )
+def review_agent_config(base, *, github_mcp: bool, relay: bool):
+    config = base.model_copy(deep=True)
     if github_mcp:
         config.add_mcp_server(
             "github",
@@ -160,36 +161,13 @@ def review_agent_config(*, github_mcp: bool, relay: bool) -> FabricConfigModel:
         config.enable_relay(project="fabric-review", output_dir="./artifacts/relay")
     return config
 
-config = review_agent_config(github_mcp=True, relay=True)
+variant = review_agent_config(config, github_mcp=True, relay=True)
 ```
 
-Fabric validates the final config supplied by the caller. The SDK does not
-require a separate profile overlay model for typed-config usage.
-
-If a config contains relative paths, pass a `base_dir` when planning, checking,
-or running. The base directory anchors paths such as skills, workspace, and
-artifact locations to the caller's package or job layout.
-
-## JSON Schemas And Pydantic Models
-
-The SDK's Pydantic models are hand-maintained against the Rust-generated public
-schemas. Use the schemas for exact persisted field definitions and the generated
-API reference for exact Python signatures. The mapping-compatible `FabricConfig`
-and `RunRequest` classes remain available as the normalization bridge used by
-the runtime layer, but new application code should prefer `FabricConfigModel`
-and `RunRequestModel` for authoring.
-
-| Contract | Source |
-| --- | --- |
-| SDK Pydantic models | `nemo_fabric.models`; see the generated [Models reference](/reference/api/python-library-reference/models) |
-| Agent config | `schemas/agent.schema.json` |
-| Run plan | `schemas/run-plan.schema.json` |
-| Request/result/event contracts | `schemas/run-request.schema.json`, `schemas/run-result.schema.json`, `schemas/fabric-event.schema.json` |
-| Runtime and invocation handles | `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
-| Artifacts and errors | `schemas/artifact-manifest.schema.json`, `schemas/error-info.schema.json` |
-
-For schema maintenance details, see `schemas/SCHEMA.md`. For generated Python API
-documentation, see the Python Library Reference under Reference.
+If a config contains relative paths, pass a `base_dir` to `resolve(...)`,
+`plan(...)`, `doctor(...)`, `run(...)`, or `start_runtime(...)`. The base
+directory anchors skills, workspaces, artifacts, and other relative paths to
+the caller's package or job layout.
 
 ## API Inventory
 
@@ -201,8 +179,8 @@ Use `Fabric` as the primary SDK entrypoint.
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
 | `Fabric.run(config, request=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | Convenience path for one-shot work. |
-| `Fabric.start_runtime(config, overrides=...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
-| `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time for the MVP. |
+| `Fabric.start_runtime(config, ...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
+| `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
 
 ## One-Shot Runs
@@ -217,7 +195,6 @@ request = RunRequestModel(
     input="Review the workspace changes.",
     request_id="request-123",
     context={"source": "review-service"},
-    overrides={"max_iterations": 1},
 )
 
 async with Fabric() as fabric:
@@ -265,52 +242,40 @@ turn. That thread ID remains adapter-internal.
 
 Applications create independent runtimes when they want parallel work. Fabric
 does not own a queue, worker pool, semaphore, retry policy, timeout policy, or
-numeric concurrency limit. For the MVP, attempting overlapping invocations on
-one runtime raises `FabricStateError`; this is an object-safety invariant rather
-than application concurrency management.
+numeric concurrency limit. Attempting overlapping invocations on one runtime
+raises `FabricStateError`; this is an object-safety invariant rather than
+application concurrency management.
 
 ```python
 import asyncio
+
 
 async def review_one(prompt: str):
     async with Fabric() as fabric:
         return await fabric.run(config, input=prompt)
 
-results = await asyncio.gather(
-    review_one("Review patch A"),
-    review_one("Review patch B"),
-)
+
+async def main() -> None:
+    results = await asyncio.gather(
+        review_one("Review patch A"),
+        review_one("Review patch B"),
+    )
+    print([result.status for result in results])
+
+
+asyncio.run(main())
 ```
 
-Harbor follows the same boundary: each Harbor job starts an independent Fabric
-runtime, and Harbor owns job IDs, queues, retries, timeouts, and concurrency.
-Harbor may store its own job-to-runtime and job-to-invocation correlation, but
-Fabric does not use a job ID to select or resume runtime state.
-
-## Streaming And Events
-
-The MVP returns normalized events on `RunResult.events`. A future
-`Runtime.stream(...)` API may yield events before the terminal result when the
-adapter supports genuine real-time streaming. Do not treat replaying buffered
-events after `invoke()` as live streaming.
-
-Streaming, live runtime updates, and cancellation remain reserved APIs until
-their adapter transports and lifecycle semantics are implemented. Cancellation
-may ultimately belong on a public invocation object rather than on `Runtime`.
-
-Events are useful for:
-
-- progress updates in application or service UIs;
-- logs and status forwarding in evaluation harnesses;
-- correlating runtime, invocation, adapter, and telemetry IDs;
-- reporting structured failures before or alongside the terminal result.
+For example, each Harbor job starts an independent Fabric runtime. Harbor owns
+job IDs and concurrency policy; Fabric does not use a job ID to select or
+resume runtime state.
 
 ## Unified Run Results
 
-Every successful SDK call that reaches the adapter boundary returns a normalized
-`RunResult`, even when the harness invocation itself failed. This keeps consumer
-code simple: inspect `status`, `error`, `events`, and `artifacts` first, then
-process `output` when the status is successful.
+Every invocation that reaches the adapter boundary returns a normalized
+`RunResult`, even when the harness invocation itself failed. Inspect `status`,
+`error`, `events`, and `artifacts` first, then process `output` when the status
+is successful.
 
 Important fields:
 
@@ -337,12 +302,23 @@ If Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
 `RunResult`.
 
+## Events
+
+Each `RunResult` includes the normalized events collected for that invocation.
+Event kinds and detail may vary by adapter, but their lifecycle and correlation
+fields use the common Fabric contract.
+
+Events are useful for:
+
+- rendering invocation history in application or service UIs;
+- forwarding logs and status to evaluation harnesses;
+- correlating runtime, invocation, adapter, and telemetry IDs;
+- reporting structured failures alongside the terminal result.
+
 ## Feature Support Across Harness Adapters
 
-The SDK presents one consistent shape across adapters, but harness adapters do
-not all support the same optional features. For example, an adapter may provide
-real-time event streaming while another returns events only with the terminal
-result.
+The SDK presents one consistent shape across adapters, but adapters differ in
+their runtime requirements, accepted configuration, and optional capabilities.
 
 Use `plan(...)` and `doctor(...)` before relying on optional features:
 
@@ -351,13 +327,13 @@ async with Fabric() as fabric:
     plan = fabric.plan(config)
     report = await fabric.doctor(config)
 
-if not plan.capabilities.streaming:
-    print("selected adapter returns buffered events")
+print(plan.adapter.adapter_id)
+print(report.status)
 ```
 
-Unsupported operations raise `FabricCapabilityError`. Consumers should use that
-error to provide actionable messages, select a different adapter config, or fall
-back to a supported execution mode.
+Use the plan to confirm adapter selection and capability routing. Use the doctor
+report to catch missing dependencies, unsupported settings, and environment
+problems before starting a runtime.
 
 ## Install And Runtime Responsibilities
 
@@ -377,8 +353,7 @@ Runtime compatibility checks should validate:
 - selected adapter version;
 - selected harness version or version range;
 - required environment variables or secret references;
-- optional capability support such as streaming, Relay, MCP, or tool
-  exposure.
+- optional capability support such as Relay, MCP, or tool exposure.
 
 ## Custom Fields And Adapter Settings
 
@@ -408,15 +383,32 @@ All public SDK errors inherit from `FabricError`.
 | `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
-Consumers own job-level retries and rollout-level failure policy. Fabric performs
-best-effort cleanup for runtimes it starts, records structured error metadata
-when possible, and propagates enough status, event, artifact, and exception
-detail for the consumer to decide what to do next.
+Consumers own job-level retries and rollout-level failure policy. One-shot runs
+attempt to stop the runtime before returning, and a `Runtime` used with
+`async with` stops on normal exit. Fabric records structured error metadata when
+possible and returns enough detail for the consumer to decide what to do next.
 
 ## SDK Contract Boundaries
 
 Fabric keeps a narrow execution contract. Applications own product behavior
 around that contract.
+
+### Schemas And Python Models
+
+The SDK's Pydantic models are maintained against the Rust-generated public
+schemas. Use the schemas for persisted field definitions and the generated API
+reference for exact Python signatures. New application code should prefer
+`FabricConfigModel` and `RunRequestModel`; the mapping-compatible
+`FabricConfig` and `RunRequest` classes normalize data at the runtime boundary.
+
+| Contract | Source |
+| --- | --- |
+| SDK Pydantic models | `nemo_fabric.models`; see the generated [Models reference](/reference/api/python-library-reference/models) |
+| Agent config | `schemas/agent.schema.json` |
+| Run plan | `schemas/run-plan.schema.json` |
+| Request, result, and events | `schemas/run-request.schema.json`, `schemas/run-result.schema.json`, `schemas/fabric-event.schema.json` |
+| Runtime and invocation handles | `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
+| Artifacts and errors | `schemas/artifact-manifest.schema.json`, `schemas/error-info.schema.json` |
 
 ### Versioning
 
@@ -465,13 +457,7 @@ Transient I/O failures may be marked with retryable error metadata, but Fabric
 does not perform job-level retries by default. Consumers decide whether to retry
 the request, start a replacement runtime, fail the job, or escalate to a user.
 
-### Scaling And Backpressure
-
-Fabric does not schedule work, manage queues, or scale workers. Consumers decide
-how many runtimes and jobs to run. Fabric keeps each runtime safe to use and
-rejects overlapping invocations on one runtime for the MVP. Applications create
-multiple runtimes and own any semaphore, worker-pool, retry, or timeout policy.
-Fabric does not advertise or enforce a numeric concurrency limit.
+### Capacity And Backpressure
 
 If a harness reports capacity pressure, an adapter should surface it as a
 structured error or event such as busy, rate limited, capacity exceeded, or
