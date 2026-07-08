@@ -134,251 +134,48 @@ that need file-style overlays. The SDK rejects mixed profile stacks. See the
 [Python SDK guide](docs/sdk/python.mdx) for the complete public API,
 type definitions, lifecycle semantics, and compatibility rules.
 
-## Use Fabric
+## Python Quick Start
 
-Inspect the run plan before invoking a harness:
-
-```bash
-fabric plan examples/code-review-agent --profile hermes_sdk
-fabric plan examples/code-review-agent --profile env_local --profile mcp_github
-```
-
-For temporary CLI experiments, apply dotted JSON overrides after profiles:
-
-```bash
-fabric inspect examples/code-review-agent \
-  --profile hermes_sdk \
-  --set telemetry.enabled=true \
-  --set telemetry.output_dir=./artifacts/cli-set
-```
-
-Use Fabric from Python:
+After completing the Hermes setup above, run the same agent package through the
+Python SDK:
 
 ```python
 import asyncio
-from pathlib import Path
 
 from nemo_fabric import Fabric
 
-async def main():
-    agent = Path("examples/code-review-agent")
 
-    client = Fabric()
-    resolved = client.resolve(agent, profiles=["hermes_sdk"])
-    plan = client.plan(agent, profiles=["hermes_sdk"])
-    report = await client.doctor(agent, profiles=["hermes_sdk"])
+async def main() -> None:
+    result = await Fabric().run(
+        "examples/code-review-agent",
+        profiles=["hermes_sdk"],
+        input="Reply with exactly: fabric works",
+    )
+    print(result.status)
+    print(result.output)
 
-    print(resolved.agent_name)
-    print(plan.agent_name)
-    print(report.checks)
 
 asyncio.run(main())
 ```
 
-Consumers that already own a top-level job config can construct the Fabric slice
-in code instead of materializing an agent directory:
+`run(...)` owns the complete start, invoke, and stop lifecycle. For typed
+in-memory configuration, planning and diagnostics, explicit requests,
+multi-turn runtimes, application-owned parallelism, results, and errors, see
+the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
+[generated Python API reference](docs/reference/api/python-library-reference/index.md).
 
-```python
-from nemo_fabric import (
-    Fabric,
-    FabricConfigModel,
-    HarnessConfigModel,
-    MetadataConfigModel,
-    ModelConfigModel,
-    RuntimeConfigModel,
-)
+## More Workflows
 
-config = FabricConfigModel(
-    metadata=MetadataConfigModel(name="code-review-agent"),
-    harness=HarnessConfigModel(adapter_id="nvidia.fabric.hermes.sdk"),
-    models={
-        "default": ModelConfigModel(
-            provider="nvidia",
-            model="nvidia/nemotron-3-nano-30b-a3b",
-        )
-    },
-    runtime=RuntimeConfigModel(
-        input_schema="chat",
-        output_schema="message",
-    ),
-)
-config.add_skill_path("./skills/code-review")
-config.add_mcp_server(
-    "github",
-    transport="streamable-http",
-    url="${GITHUB_MCP_URL}",
-    exposure="harness_native",
-)
-config.enable_relay(output_dir="./artifacts/relay")
-
-client = Fabric()
-plan = client.plan(
-    config,
-    base_dir="examples/code-review-agent",
-)
-```
-
-For runtime invocation, callers can either pass simple text or construct the
-request explicitly. Results remain dict-compatible while exposing stable fields
-as attributes:
-
-```python
-from nemo_fabric import Fabric, FabricConfigModel, FabricError, RunRequestModel
-
-request = RunRequestModel(
-    input="Review the workspace changes.",
-    request_id="job-123-turn-1",
-    context={"job_id": "job-123"},
-    overrides={"max_iterations": 1},
-)
-
-async def run(raw_config):
-    config = FabricConfigModel.from_mapping(raw_config)
-    try:
-        result = await Fabric().run(
-            config,
-            base_dir="examples/code-review-agent",
-            request=request,
-        )
-    except FabricError as error:
-        print(error.stage, error.code, error.retryable)
-        raise
-
-    print(result.status)
-    print(result["runtime_id"])
-```
-
-`RunRequestModel.from_mapping(...)` accepts JSON-shaped request dictionaries
-when callers load or compose requests outside the SDK. Per-request `context` is
-caller-owned metadata; `overrides` are
-request-scoped config changes applied only where the selected harness adapter
-supports them. Failed runs expose structured
-`result.error.stage`,
-`result.error.code`, and `result.error.retryable` when the adapter returns a
-normalized failure.
-
-### Multi-Turn SDK Runtimes
-
-Open a `Runtime` and invoke it repeatedly. The runtime keeps its adapter-owned
-harness state active across turns rather than reconstructing state from a
-Python-side transcript. Every `start_runtime(...)` call creates a new logical
-runtime with its own structured `runtime_id`.
-
-```python
-import asyncio
-
-from nemo_fabric import Fabric
-
-async def chat():
-    async with await Fabric().start_runtime(
-        "examples/code-review-agent",
-        profiles=["hermes_sdk"],
-    ) as runtime:
-        await runtime.invoke(input="My name is Robin.")
-        reply = await runtime.invoke(input="What's my name?")   # recalls "Robin"
-        print(runtime.runtime_id, runtime.status.value)
-        print(reply["output"]["response"])
-
-asyncio.run(chat())
-```
-
-`start_runtime(...)` accepts either an agent path with named profiles or a
-`FabricConfigModel` with profile mappings. Each runtime permits one active
-invocation at a time. Applications create independent runtimes and own queues,
-retries, timeouts, and concurrency policy.
-
-### Interactive CLI Chat
-
-For local manual multi-turn testing, use `fabric chat`. It drives one started
-runtime in an interactive loop:
-
-```bash
-fabric chat examples/code-review-agent \
-  --profile hermes_cli \
-  --verbose
-```
-
-The same runtime flow works with an existing Codex CLI login:
-
-```bash
-fabric chat examples/code-review-agent \
-  --profile codex_cli
-```
-
-Each `fabric chat` start creates a new runtime. `fabric chat` prints a
-`NEMO FABRIC` runtime banner with the agent, profile, harness, and runtime id at
-startup and from `/info`, then uses a `you[profile:runtime]>` prompt and `agent>`
-responses for the transcript.
-`/help` shows commands, `/verbose on|off` toggles a fenced per-turn metadata
-block after each agent response with request/invocation ids, status, artifact
-count, and telemetry details, and `/clear` clears the terminal. `fabric run`
-remains the machine-readable one-shot path. Because `chat` is an interactive
-terminal UI, the transcript and metadata are written together on stderr.
-
-The opt-in real integration checks are `tests/e2e/test_hermes_runtime.py` and
-`tests/e2e/test_codex_cli.py`.
-
-`Fabric()` uses the native Rust binding. SDK `run(...)` and
-`start_runtime(...)` drive the core Fabric runtime lifecycle (`start_runtime` /
-`invoke_runtime` / `stop_runtime`) so one-shot and multi-turn paths use the same
-adapter execution contract. The CLI is a separate interface over the same Rust
-core. For source-tree development, run `just build-python` before using the
-SDK.
-
-## Harbor Integration
-
-Harbor can use Fabric as one external agent while Fabric selects the execution
-harness from its ordered profile stack. Harbor retains task, environment,
-verification, reward, and job ownership. `FabricAgent` invokes the Fabric Python
-SDK inside the Harbor task environment; it does not invoke the Fabric CLI.
-
-After preparing the demo build context as described in the
-[Harbor multi-harness demo](integrations/harbor/demo/README.md), run the
-credential-free integration example:
-
-```bash
-DEMO_DIR="$PWD/integrations/harbor/demo"
-
-uv run --extra harbor harbor run \
-  --path "$DEMO_DIR/task" \
-  --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --ak fabric_config_path=/opt/fabric-demo/agent.yaml \
-  --ak 'fabric_profile_paths=["/opt/fabric-demo/profiles/smoke.yaml"]' \
-  --job-name fabric-smoke \
-  --jobs-dir "$DEMO_DIR/runs" \
-  --n-concurrent 1 \
-  --n-attempts 1 \
-  --force-build
-```
-
-The same Harbor agent can switch between the smoke, Hermes, Hermes with Relay
-telemetry, and Codex profiles. See the
-[Harbor integration guide](integrations/harbor/README.md) for ownership and
-installation details, and the demo guide for the complete command matrix.
-
-## Other Runs
-
-Run one isolated Codex CLI turn using Codex's existing authentication and
-configuration:
-
-```bash
-codex login status
-fabric doctor examples/code-review-agent --profile codex_cli
-fabric run examples/code-review-agent \
-  --profile codex_cli \
-  --input "Review the workspace and summarize the highest-risk issue."
-```
-
-Run the Hermes CLI adapter:
-
-```bash
-export NVIDIA_API_KEY=...
-export PATH="$PWD/.tmp/hermes-venv/bin:$PATH"
-
-fabric run examples/code-review-agent \
-  --profile hermes_cli \
-  --input "Reply with exactly: hermes cli ok"
-```
+- [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
+  diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
+- [Getting Started overview](docs/getting-started/overview.mdx): interface
+  selection and the end-to-end Fabric workflow.
+- [Harbor integration guide](integrations/harbor/README.md) and
+  [multi-harness demo](integrations/harbor/demo/README.md): ownership,
+  installation, and complete command matrices.
+- Adapter guides: [Hermes SDK](adapters/hermes-sdk/README.md),
+  [Hermes CLI](adapters/hermes-cli/README.md), and
+  [Codex CLI](adapters/codex-cli/README.md).
 
 ## Tests
 
