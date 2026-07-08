@@ -55,7 +55,7 @@ class FabricAgent(BaseAgent):
 
     def version(self) -> str | None:
         try:
-            return importlib.metadata.version("nemo-fabric")
+            return importlib.metadata.version("nemo-fabric-runtime")
         except importlib.metadata.PackageNotFoundError:
             return None
 
