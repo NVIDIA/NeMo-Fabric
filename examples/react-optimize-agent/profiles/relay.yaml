@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+
+metadata:
+  name: relay
+  description: Enable NeMo Relay ATOF/ATIF tracing for langchain-react eval runs.
+
+telemetry:
+  enabled: true
+  provider: relay
+  mode: sdk
+  output_dir: ./artifacts/relay
+  config:
+    version: 1
+    components:
+      - kind: observability
+        enabled: true
+        config:
+          version: 1
+          atif:
+            enabled: true
+            output_directory: ./artifacts/relay
+            filename_template: "trajectory-{session_id}.atif.json"
+            agent_name: react-optimize-agent
+            agent_version: fabric-poc
+          atof:
+            enabled: true
+            output_directory: ./artifacts/relay
+            filename: events.atof.jsonl
+            mode: overwrite
+
+runtime:
+  artifacts: ./artifacts
+
+environment:
+  artifacts: ./artifacts

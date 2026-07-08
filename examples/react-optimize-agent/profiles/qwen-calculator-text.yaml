@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+
+metadata:
+  name: qwen-calculator-text
+
+harness:
+  settings:
+    workflow:
+      tool_names: [calculator, current_datetime]
+      use_native_tool_calling: false
+    tools:
+      calculator:
+        kind: function_group
+        include: [add, subtract, multiply, divide, compare]
+      current_datetime:
+        kind: current_datetime

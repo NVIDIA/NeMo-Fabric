@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.agent/v1alpha1
+
+metadata:
+  name: react-optimize-agent
+  description: ReAct agent package for optimize parity (wiki + datetime tools).
+
+harness:
+  adapter_id: nvidia.fabric.langchain.react
+  resolution: preinstalled
+  settings:
+    workflow:
+      tool_names: [wiki, clock]
+      llm_name: default
+      verbose: false
+      parse_agent_response_max_retries: 3
+      max_tool_calls: 15
+      use_native_tool_calling: false
+    tools:
+      wiki:
+        kind: wiki_search
+        max_results: 2
+      clock:
+        kind: current_datetime
+
+models:
+  default:
+    provider: nvidia
+    model: nvidia-nemotron-3-nano-30b-a3b
+    temperature: 0.0
+    top_p: 1.0
+    api_key_env: NVIDIA_API_KEY
+
+runtime:
+  mode: oneshot
+  transport: library
+  input_schema: text
+  output_schema: message
+
+environment:
+  provider: local
+  workspace: .
+
+telemetry:
+  enabled: false
+
+profiles:
+  directories:
+    - ./profiles

@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+
+metadata:
+  name: qwen-igw-local
+  description: Platform Inference Gateway Qwen deployment (no API key).
+
+models:
+  default:
+    provider: openai
+    model: default/qwen3-8b
+    base_url: http://10.0.0.51:8080/apis/inference-gateway/v2/workspaces/default/openai/-/v1
+    api_key: not-used
+    allow_empty_api_key: true
+    temperature: 0.0
+    max_tokens: 256
+
+harness:
+  settings:
+    python_env: FABRIC_LANGCHAIN_PYTHON
+    workflow:
+      max_tool_calls: 5
+      parse_agent_response_max_retries: 3
