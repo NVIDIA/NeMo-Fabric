@@ -2452,6 +2452,10 @@ runtime:
             result.output["runtime_id"],
             Value::String(result.runtime_id.clone())
         );
+        assert_eq!(
+            result.output["invocation_id"],
+            Value::String(result.invocation_id.clone())
+        );
 
         let _ = fs::remove_dir_all(root);
     }
