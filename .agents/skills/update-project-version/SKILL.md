@@ -53,7 +53,6 @@ versions rather than blindly copying incompatible syntax.
    - `Cargo.toml` `workspace.dependencies.fabric-core.version`
    - All five setuptools `project.version` fields
    - Every internal `nemo-fabric-*` exact-version requirement
-   - `FabricAgent.version()`
    - `Cargo.lock` through Cargo metadata resolution
    - The root, runtime, and adapter `uv.lock` files through `just lock-python`
 3. Confirm that `python/pyproject.toml` remains dynamic and unchanged.
