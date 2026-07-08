@@ -18,18 +18,18 @@ Portable file formats such as `agent.yaml` remain useful for examples, CI, and
 reproducibility, but the SDK does not require callers to write intermediate
 files before invoking Fabric.
 
-Generated API reference pages remain the source of truth for exact signatures.
-This guide explains how the pieces are intended to fit together.
+Generated API reference pages are the source of truth for exact signatures.
+This guide explains how the pieces fit together.
 
 ## Execution Model
 
-Fabric separates configuration, runtime planning, session lifecycle, and
-individual invocations.
+Fabric separates configuration, runtime planning, runtime lifecycle, and
+individual invocations. It does not expose a separate portable session layer.
 
 ```text
 FabricConfigModel
   -> RunPlan
-  -> SessionHandle
+  -> RuntimeHandle
   -> InvocationHandle
   -> RunResult
 ```
@@ -38,34 +38,38 @@ FabricConfigModel
 flowchart TB
   Config["FabricConfigModel"]
   Plan["RunPlan"]
-  Session["Session<br/>owns a SessionHandle"]
-  Runtime["RuntimeHandle<br/>lower-level runtime binding"]
+  Runtime["Runtime<br/>owns a RuntimeHandle"]
   Invoke1["InvocationHandle<br/>turn 1"]
   Invoke2["InvocationHandle<br/>turn 2"]
   Result1["RunResult<br/>turn 1"]
   Result2["RunResult<br/>turn 2"]
 
   Config --> Plan
-  Plan --> Session
-  Session -. owns .-> Runtime
-  Session --> Invoke1 --> Result1
-  Session --> Invoke2 --> Result2
+  Plan --> Runtime
+  Runtime --> Invoke1 --> Result1
+  Runtime --> Invoke2 --> Result2
 ```
 
 The important caller-facing handles are:
 
 | Concept | What It Represents | How Consumers Use It |
 | --- | --- | --- |
-| `SessionHandle` | Public identity and lifecycle snapshot for one live or resumable session. | Use it for session IDs, status, adapter identity, capabilities, and result/event correlation. |
-| `Session` | The Python object used to invoke, stream, update, cancel, and stop a session. | Use it for ordered conversations, stateful coding tasks, or service-style interaction. A session serializes turns by default. |
+| `Runtime` | The Python object for one logical, stateful harness execution. | Use it to send ordered invocations and stop the execution. Use it as an async context manager for cleanup. |
+| `RuntimeHandle` | The identity and opaque adapter binding for that execution. | Use its Fabric runtime ID for result, event, artifact, and telemetry correlation. Native thread/session IDs remain adapter-internal. |
 | `InvocationHandle` | One request or turn sent to a runtime. | Usually seen through `invocation_id`, events, and `RunResult` correlation rather than manipulated directly in Python. It is the core unit for status, artifacts, errors, and future cancellation/streaming control. |
 
-`RuntimeHandle` is the lower-level binding to the harness runtime. SDK callers
-normally work through `Session` and `SessionHandle`.
+A runtime is a logical execution boundary, not necessarily an operating-system
+process. An adapter may use an in-process SDK, a process, or shared service
+infrastructure while preserving isolated state for each Fabric runtime.
+
+Harness-native concepts such as a Codex thread, OpenCode or OpenClaw session,
+Hermes session row, or Claude conversation live inside the adapter's opaque
+runtime binding. They are not additional Fabric lifecycle objects.
 
 Product-level orchestration belongs to the consumer. Fabric does not schedule
-jobs, manage queues, own retries, or scale workers. Platform, Harbor, Gym, and
-local applications decide how many sessions or tasks to run.
+jobs, manage queues, own retries, or scale workers. Applications and other
+consumers decide how many runtimes or tasks to run. For example, a Harbor job
+starts its own Fabric runtime; Fabric does not interpret Harbor job IDs.
 
 Fabric provides the runtime contract; applications own product policy around
 that contract.
@@ -181,7 +185,7 @@ and `RunRequestModel` for authoring.
 | Agent config | `schemas/agent.schema.json` |
 | Run plan | `schemas/run-plan.schema.json` |
 | Request/result/event contracts | `schemas/run-request.schema.json`, `schemas/run-result.schema.json`, `schemas/fabric-event.schema.json` |
-| Session, runtime, and invocation handles | `schemas/session-handle.schema.json`, `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
+| Runtime and invocation handles | `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
 | Artifacts and errors | `schemas/artifact-manifest.schema.json`, `schemas/error-info.schema.json` |
 
 For schema maintenance details, see `schemas/SCHEMA.md`. For generated Python API
@@ -193,15 +197,13 @@ Use `Fabric` as the primary SDK entrypoint.
 
 | API | Async | Use When | Notes |
 | --- | --- | --- | --- |
+| `Fabric.resolve(config, base_dir=...)` | No | You need the normalized effective config without resolving an adapter. | Does not start a runtime. |
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
-| `Fabric.run(config, request=..., session_id=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | Convenience path for one-shot jobs. |
-| `Fabric.start_session(config, session_id=..., overrides=...)` | Yes | You need a reusable multi-turn runtime. | Returns a `Session`. Use it as an async context manager. |
-| `Session.invoke(...)` | Yes | You need one ordered turn on an existing session. | Same-session turns are serialized by default. |
-| `Session.stream(...)` | Yes | You need events plus the terminal result through one async iterator. | Some adapters may buffer events internally. |
-| `Session.update(...)` | Yes | You need to update a running runtime. | Only available when the adapter advertises update support. |
-| `Session.cancel(...)` | Yes | You need best-effort cancellation. | Only available when the adapter advertises cancellation support. |
-| `Session.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
+| `Fabric.run(config, request=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | Convenience path for one-shot work. |
+| `Fabric.start_runtime(config, overrides=...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
+| `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time for the MVP. |
+| `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
 
 ## One-Shot Runs
 
@@ -213,8 +215,8 @@ from nemo_fabric import Fabric, RunRequestModel
 
 request = RunRequestModel(
     input="Review the workspace changes.",
-    request_id="job-123-turn-1",
-    context={"job_id": "job-123"},
+    request_id="request-123",
+    context={"source": "review-service"},
     overrides={"max_iterations": 1},
 )
 
@@ -222,7 +224,6 @@ async with Fabric() as fabric:
     result = await fabric.run(
         config,
         base_dir="/workspace/review-agent",
-        session_id="job-123",
         request=request,
     )
 
@@ -231,78 +232,77 @@ print(result.output)
 print(result.artifacts)
 ```
 
-`session_id` is a caller-owned stable conversation or task key. Fabric encodes it
-into request context so downstream adapters, telemetry, and results can correlate
-work for the same logical task.
+Fabric generates runtime and invocation IDs for lifecycle correlation. An
+application may include its own identifiers in opaque request metadata, but
+Fabric does not interpret them as job, session, scheduling, or resume state.
 
-## Multi-Turn Sessions
+## Multi-Turn Runtimes
 
-Use `start_session(...)` when the selected harness should keep state across
-turns. A session owns one runtime and stops it when the async context exits.
+Use `start_runtime(...)` when the selected harness should keep state across
+turns. Every call creates a new logical Fabric runtime; callers reuse the
+returned object rather than selecting it with a job or session ID. The runtime
+stops when its async context exits.
 
 ```python
 from nemo_fabric import Fabric
 
 async with Fabric() as fabric:
-    async with await fabric.start_session(
+    async with await fabric.start_runtime(
         config,
         base_dir="/workspace/review-agent",
-        session_id="review-session-123",
-    ) as session:
-        first = await session.invoke(input="Inspect the repository")
-        second = await session.invoke(input="Now review the latest patch")
+    ) as runtime:
+        first = await runtime.invoke(input="Inspect the repository")
+        second = await runtime.invoke(input="Now review the latest patch")
 
 print(first.status, second.status)
 ```
 
-Multiple independent sessions can run concurrently when the consumer schedules
-them. A single session serializes turns by default because most harnesses treat a
-session as ordered state.
+The adapter reuses its native state between calls. For example, the Codex
+adapter uses one Codex thread for the runtime and maps each invocation to one
+turn. That thread ID remains adapter-internal.
+
+## Application-Owned Parallelism
+
+Applications create independent runtimes when they want parallel work. Fabric
+does not own a queue, worker pool, semaphore, retry policy, timeout policy, or
+numeric concurrency limit. For the MVP, attempting overlapping invocations on
+one runtime raises `FabricStateError`; this is an object-safety invariant rather
+than application concurrency management.
 
 ```python
 import asyncio
 
-async def review_one(job_id: str, prompt: str):
+async def review_one(prompt: str):
     async with Fabric() as fabric:
-        return await fabric.run(
-            config,
-            session_id=job_id,
-            request={"input": prompt, "context": {"job_id": job_id}},
-        )
+        return await fabric.run(config, input=prompt)
 
 results = await asyncio.gather(
-    review_one("job-1", "Review patch A"),
-    review_one("job-2", "Review patch B"),
+    review_one("Review patch A"),
+    review_one("Review patch B"),
 )
 ```
 
+Harbor follows the same boundary: each Harbor job starts an independent Fabric
+runtime, and Harbor owns job IDs, queues, retries, timeouts, and concurrency.
+Harbor may store its own job-to-runtime and job-to-invocation correlation, but
+Fabric does not use a job ID to select or resume runtime state.
+
 ## Streaming And Events
 
-Use `Session.stream(...)` when the caller wants lifecycle or progress events
-before receiving the terminal result.
+The MVP returns normalized events on `RunResult.events`. A future
+`Runtime.stream(...)` API may yield events before the terminal result when the
+adapter supports genuine real-time streaming. Do not treat replaying buffered
+events after `invoke()` as live streaming.
 
-```python
-from nemo_fabric import Fabric, FabricEvent
-
-async with Fabric() as fabric:
-    async with await fabric.start_session(config, session_id="review-123") as session:
-        async for item in session.stream(input="Review this patch"):
-            if isinstance(item, FabricEvent):
-                print("event", item.kind, item.message)
-            else:
-                print("result", item.status, item.output)
-```
-
-`Session.stream(...)` yields normalized `FabricEvent` objects followed by one
-terminal `RunResult`. The API is streaming-shaped even when a specific adapter
-buffers internally. Consumers should treat event timing as adapter-dependent
-unless the selected adapter explicitly advertises real-time event streaming.
+Streaming, live runtime updates, and cancellation remain reserved APIs until
+their adapter transports and lifecycle semantics are implemented. Cancellation
+may ultimately belong on a public invocation object rather than on `Runtime`.
 
 Events are useful for:
 
-- progress updates in Platform or service UIs;
+- progress updates in application or service UIs;
 - logs and status forwarding in evaluation harnesses;
-- correlating runtime, session, invocation, adapter, and telemetry IDs;
+- correlating runtime, invocation, adapter, and telemetry IDs;
 - reporting structured failures before or alongside the terminal result.
 
 ## Unified Run Results
@@ -323,7 +323,15 @@ Important fields:
 | `telemetry` | References to Relay or other telemetry streams produced by the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
-| `session_id`, `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across sessions, logs, telemetry, and artifacts. |
+| `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across runtimes, logs, telemetry, and artifacts. |
+
+These are structured correlation fields, not interchangeable metadata:
+`runtime_id` identifies the runtime lifecycle, `invocation_id` identifies one
+invocation within that runtime, and `request_id` correlates the caller's
+request. Fabric-generated values use type-specific prefixes such as `runtime-`,
+`invocation-`, and `request-`; callers may provide their own `request_id`.
+Consumers should store and log each field separately and otherwise treat its
+value as opaque rather than parsing the identifier encoding.
 
 If Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
@@ -331,9 +339,10 @@ the SDK raises a `FabricError` subclass instead of returning a partial
 
 ## Feature Support Across Harness Adapters
 
-The SDK surface is stable, but harness adapters do not all support the same
-features. For example, one adapter may support sessions and streaming while
-another only supports one-shot execution.
+The SDK presents one consistent shape across adapters, but harness adapters do
+not all support the same optional features. For example, an adapter may provide
+real-time event streaming while another returns events only with the terminal
+result.
 
 Use `plan(...)` and `doctor(...)` before relying on optional features:
 
@@ -342,8 +351,8 @@ async with Fabric() as fabric:
     plan = fabric.plan(config)
     report = await fabric.doctor(config)
 
-if not plan.capabilities.session:
-    raise RuntimeError("selected adapter does not support sessions")
+if not plan.capabilities.streaming:
+    print("selected adapter returns buffered events")
 ```
 
 Unsupported operations raise `FabricCapabilityError`. Consumers should use that
@@ -362,13 +371,13 @@ Development environments may use extras, virtual environments, or local source
 checkouts to make iteration easy. Production environments should prefer explicit
 images, preinstalled dependencies, or managed deployment packages.
 
-Near term, compatibility checks should make this more explicit by validating:
+Runtime compatibility checks should validate:
 
 - Fabric SDK and native extension versions;
 - selected adapter version;
 - selected harness version or version range;
 - required environment variables or secret references;
-- optional capability support such as sessions, streaming, Relay, MCP, or tool
+- optional capability support such as streaming, Relay, MCP, or tool
   exposure.
 
 ## Custom Fields And Adapter Settings
@@ -396,7 +405,7 @@ All public SDK errors inherit from `FabricError`.
 | `FabricConfigError` | Invalid config, request, or override. |
 | `FabricCapabilityError` | Selected adapter does not support the requested operation. |
 | `FabricRuntimeError` | Runtime startup, invocation, or shutdown failed before a normalized result could be returned. |
-| `FabricStateError` | Invalid session state transition, such as invoking after stop. |
+| `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
 Consumers own job-level retries and rollout-level failure policy. Fabric performs
@@ -449,7 +458,7 @@ and implement a capability before Fabric treats it as runnable.
 
 Fabric reports lifecycle failures; applications own recovery policy. If a
 runtime process dies, a connection is permanently lost, or an adapter cannot
-complete an invocation, Fabric marks the relevant runtime/session/invocation as
+complete an invocation, Fabric marks the relevant runtime/invocation as
 failed and returns structured error metadata when possible.
 
 Transient I/O failures may be marked with retryable error metadata, but Fabric
@@ -459,10 +468,10 @@ the request, start a replacement runtime, fail the job, or escalate to a user.
 ### Scaling And Backpressure
 
 Fabric does not schedule work, manage queues, or scale workers. Consumers decide
-how many runtimes, sessions, and jobs to run. Fabric keeps individual
-runtime/session handles safe to use, serializes same-session invocations by
-default, and exposes adapter capability metadata for operations such as
-sessions, streaming, updates, cancellation, and concurrency.
+how many runtimes and jobs to run. Fabric keeps each runtime safe to use and
+rejects overlapping invocations on one runtime for the MVP. Applications create
+multiple runtimes and own any semaphore, worker-pool, retry, or timeout policy.
+Fabric does not advertise or enforce a numeric concurrency limit.
 
 If a harness reports capacity pressure, an adapter should surface it as a
 structured error or event such as busy, rate limited, capacity exceeded, or
