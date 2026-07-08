@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 from collections.abc import Mapping, Sequence
@@ -464,10 +465,29 @@ class Fabric:
             )
         )
         native = self._require_native_module("start_runtime")
+        started_runtime: dict[str, Any] | None = None
+
+        def start() -> dict[str, Any]:
+            nonlocal started_runtime
+            started_runtime = json.loads(native.start_runtime(json.dumps(plan.to_mapping())))
+            return started_runtime
+
         try:
-            runtime = await _call_blocking(
-                lambda: json.loads(native.start_runtime(json.dumps(plan.to_mapping())))
-            )
+            runtime = await _call_blocking(start)
+        except asyncio.CancelledError:
+            if started_runtime is not None:
+                try:
+                    await _call_blocking(
+                        lambda: json.loads(
+                            native.stop_runtime(
+                                json.dumps(plan.to_mapping()),
+                                json.dumps(started_runtime),
+                            )
+                        )
+                    )
+                except Exception:
+                    pass
+            raise
         except FabricError:
             raise
         except Exception as error:

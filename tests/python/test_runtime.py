@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -297,21 +298,21 @@ async def test_stop_is_idempotent_and_blocks_future_invokes(mock_native: MagicMo
 
 
 async def test_stop_rejects_in_flight_turn(
-    monkeypatch: pytest.MonkeyPatch,
     mock_native: MagicMock,
 ):
-    started = asyncio.Event()
-    release = asyncio.Event()
+    started = threading.Event()
+    release = threading.Event()
+    invoke = mock_native.invoke_runtime.side_effect
 
-    async def blocking(func):  # type: ignore[no-untyped-def]
+    def blocking_invoke(*args: Any) -> str:
         started.set()
-        await release.wait()
-        return func()
+        assert release.wait(timeout=5)
+        return invoke(*args)
 
-    monkeypatch.setattr(runtime_mod, "_call_blocking", blocking)
+    mock_native.invoke_runtime.side_effect = blocking_invoke
     runtime = _runtime_wrapper(mock_native)
     turn = asyncio.create_task(runtime.invoke(input="hello"))
-    await started.wait()
+    assert await asyncio.to_thread(started.wait, 2)
 
     with pytest.raises(FabricStateError, match="in flight"):
         await runtime.stop()
@@ -321,21 +322,21 @@ async def test_stop_rejects_in_flight_turn(
 
 
 async def test_concurrent_invokes_are_rejected(
-    monkeypatch: pytest.MonkeyPatch,
     mock_native: MagicMock,
 ):
-    started = asyncio.Event()
-    release = asyncio.Event()
+    started = threading.Event()
+    release = threading.Event()
+    invoke = mock_native.invoke_runtime.side_effect
 
-    async def blocking(func):  # type: ignore[no-untyped-def]
+    def blocking_invoke(*args: Any) -> str:
         started.set()
-        await release.wait()
-        return func()
+        assert release.wait(timeout=5)
+        return invoke(*args)
 
-    monkeypatch.setattr(runtime_mod, "_call_blocking", blocking)
+    mock_native.invoke_runtime.side_effect = blocking_invoke
     runtime = _runtime_wrapper(mock_native)
     first = asyncio.create_task(runtime.invoke(input="one"))
-    await started.wait()
+    assert await asyncio.to_thread(started.wait, 2)
 
     with pytest.raises(FabricStateError, match="already running"):
         await runtime.invoke(input="two")
@@ -345,28 +346,30 @@ async def test_concurrent_invokes_are_rejected(
 
 
 async def test_independent_runtimes_can_invoke_concurrently(
-    monkeypatch: pytest.MonkeyPatch,
     mock_native: MagicMock,
 ):
-    both_started = asyncio.Event()
-    release = asyncio.Event()
+    both_started = threading.Event()
+    release = threading.Event()
+    invoke = mock_native.invoke_runtime.side_effect
+    lock = threading.Lock()
     started = 0
 
-    async def blocking(func):  # type: ignore[no-untyped-def]
+    def blocking_invoke(*args: Any) -> str:
         nonlocal started
-        started += 1
-        if started == 2:
-            both_started.set()
-        await release.wait()
-        return func()
+        with lock:
+            started += 1
+            if started == 2:
+                both_started.set()
+        assert release.wait(timeout=5)
+        return invoke(*args)
 
-    monkeypatch.setattr(runtime_mod, "_call_blocking", blocking)
+    mock_native.invoke_runtime.side_effect = blocking_invoke
     first_runtime = _runtime_wrapper(mock_native)
     second_runtime = _runtime_wrapper(mock_native, runtime_id="runtime-2")
 
     first = asyncio.create_task(first_runtime.invoke(input="one"))
     second = asyncio.create_task(second_runtime.invoke(input="two"))
-    await both_started.wait()
+    assert await asyncio.to_thread(both_started.wait, 2)
 
     assert not first.done()
     assert not second.done()
@@ -376,6 +379,101 @@ async def test_independent_runtimes_can_invoke_concurrently(
         "runtime-1",
         "runtime-2",
     }
+
+
+async def test_blocking_native_calls_run_off_the_event_loop():
+    event_loop_thread = threading.get_ident()
+
+    worker_thread = await runtime_mod._call_blocking(threading.get_ident)
+
+    assert worker_thread != event_loop_thread
+
+
+async def test_cancelling_invoke_waits_for_native_work_and_stops_runtime(
+    mock_native: MagicMock,
+):
+    started = threading.Event()
+    release = threading.Event()
+    invoke = mock_native.invoke_runtime.side_effect
+
+    def blocking_invoke(*args: Any) -> str:
+        started.set()
+        assert release.wait(timeout=5)
+        return invoke(*args)
+
+    mock_native.invoke_runtime.side_effect = blocking_invoke
+    runtime = _runtime_wrapper(mock_native)
+    turn = asyncio.create_task(runtime.invoke(input="hello"))
+    assert await asyncio.to_thread(started.wait, 2)
+
+    turn.cancel()
+    await asyncio.sleep(0)
+    assert not turn.done()
+    turn.cancel()
+    await asyncio.sleep(0)
+    assert not turn.done()
+
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await turn
+
+    assert runtime.status is RuntimeStatus.STOPPED
+    mock_native.stop_runtime.assert_called_once()
+
+
+async def test_cancelling_start_stops_the_completed_native_runtime(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocking_start(*args: Any) -> str:
+        started.set()
+        assert release.wait(timeout=5)
+        return json.dumps(_runtime())
+
+    mock_native.start_runtime.side_effect = blocking_start
+    start = asyncio.create_task(native_client.start_runtime("agent"))
+    assert await asyncio.to_thread(started.wait, 2)
+
+    start.cancel()
+    await asyncio.sleep(0)
+    assert not start.done()
+
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await start
+
+    mock_native.stop_runtime.assert_called_once()
+
+
+async def test_cancelling_one_shot_run_waits_for_stop(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    started = threading.Event()
+    release = threading.Event()
+    invoke = mock_native.invoke_runtime.side_effect
+
+    def blocking_invoke(*args: Any) -> str:
+        started.set()
+        assert release.wait(timeout=5)
+        return invoke(*args)
+
+    mock_native.invoke_runtime.side_effect = blocking_invoke
+    run = asyncio.create_task(native_client.run("agent", input="hello"))
+    assert await asyncio.to_thread(started.wait, 2)
+
+    run.cancel()
+    await asyncio.sleep(0)
+    assert not run.done()
+
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+
+    mock_native.stop_runtime.assert_called_once()
 
 
 async def test_run_stops_runtime_after_success_and_failure(

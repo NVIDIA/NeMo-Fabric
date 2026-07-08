@@ -100,6 +100,23 @@ def test_runtime_id_requires_runtime_context(common_utils: types.ModuleType):
         common_utils.runtime_id({"runtime_context": {}})
 
 
+def test_runtime_state_directory_is_scoped_to_runtime(
+    common_utils: types.ModuleType,
+    tmp_path: Path,
+):
+    first = common_utils.runtime_state_directory(
+        tmp_path / "hermes-home",
+        {"runtime_context": {"runtime_id": "runtime-1"}},
+    )
+    second = common_utils.runtime_state_directory(
+        tmp_path / "hermes-home",
+        {"runtime_context": {"runtime_id": "runtime-2"}},
+    )
+
+    assert first == tmp_path / "hermes-home" / "runtimes" / "runtime-1"
+    assert second == tmp_path / "hermes-home" / "runtimes" / "runtime-2"
+
+
 def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
     common_utils: types.ModuleType,
     monkeypatch: pytest.MonkeyPatch,

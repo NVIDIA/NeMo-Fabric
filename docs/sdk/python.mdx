@@ -242,9 +242,15 @@ turn. That thread ID remains adapter-internal.
 
 Applications create independent runtimes when they want parallel work. Fabric
 does not own a queue, worker pool, semaphore, retry policy, timeout policy, or
-numeric concurrency limit. Attempting overlapping invocations on one runtime
-raises `FabricStateError`; this is an object-safety invariant rather than
-application concurrency management.
+numeric concurrency limit. Each `Runtime` accepts one invocation at a time so
+its ordered harness state cannot be changed by two calls at once. If an
+application overlaps calls on the same `Runtime`, the second call raises
+`FabricStateError`. To perform work in parallel, start independent runtimes;
+the application decides how many to run.
+
+Async lifecycle calls run blocking native work outside the Python event loop,
+so independent runtimes can make progress concurrently. This does not add a
+Fabric concurrency limit or scheduler.
 
 ```python
 import asyncio

@@ -151,18 +151,52 @@ class Runtime:
                 payload["overrides"] = merged
             else:
                 payload.pop("overrides", None)
+            native_result: dict[str, Any] | None = None
             try:
                 native = self._client._require_native_module("invoke")
-                result = await _call_blocking(
-                    lambda: json.loads(
+
+                def invoke() -> dict[str, Any]:
+                    nonlocal native_result
+                    native_result = json.loads(
                         native.invoke_runtime(
                             json.dumps(self._plan.to_mapping()),
                             json.dumps(self._runtime.to_mapping()),
                             json.dumps(payload),
                         )
                     )
-                )
+                    return native_result
+
+                result = await _call_blocking(invoke)
                 typed_result = RunResult.from_mapping(result)
+            except asyncio.CancelledError:
+                if native_result is not None:
+                    try:
+                        self._absorb(RunResult.from_mapping(native_result))
+                    except Exception:
+                        pass
+                stopped = False
+
+                def stop_after_cancel() -> Any:
+                    nonlocal stopped
+                    result = json.loads(
+                        native.stop_runtime(
+                            json.dumps(self._plan.to_mapping()),
+                            json.dumps(self._runtime.to_mapping()),
+                        )
+                    )
+                    stopped = True
+                    return result
+
+                try:
+                    await _call_blocking(stop_after_cancel)
+                except asyncio.CancelledError:
+                    self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
+                    raise
+                except Exception:
+                    self._status = RuntimeStatus.FAILED
+                else:
+                    self._status = RuntimeStatus.STOPPED
+                raise
             except FabricError:
                 self._status = RuntimeStatus.FAILED
                 raise
@@ -201,16 +235,25 @@ class Runtime:
         if self._closing:
             raise FabricStateError("runtime shutdown is already in progress")
         self._closing = True
+        stopped = False
         try:
             native = self._client._require_native_module("stop")
-            await _call_blocking(
-                lambda: json.loads(
+
+            def stop() -> Any:
+                nonlocal stopped
+                result = json.loads(
                     native.stop_runtime(
                         json.dumps(self._plan.to_mapping()),
                         json.dumps(self._runtime.to_mapping()),
                     )
                 )
-            )
+                stopped = True
+                return result
+
+            await _call_blocking(stop)
+        except asyncio.CancelledError:
+            self._status = RuntimeStatus.STOPPED if stopped else RuntimeStatus.FAILED
+            raise
         except FabricError:
             self._status = RuntimeStatus.FAILED
             raise
@@ -380,4 +423,17 @@ async def _run_native_lifecycle(
 
 
 async def _call_blocking(func: Any) -> Any:
-    return func()
+    worker = asyncio.create_task(asyncio.to_thread(func))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError as cancelled:
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+        try:
+            worker.result()
+        except BaseException:
+            pass
+        raise cancelled

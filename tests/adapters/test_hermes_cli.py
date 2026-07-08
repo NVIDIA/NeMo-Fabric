@@ -37,6 +37,8 @@ async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, h
         # Ensure these fields are present in the output, even if they are None
         assert field in output, f"Missing field in output: {field}"
 
+    assert Path(output["hermes_home"]).parts[-2:] == ("runtimes", result["runtime_id"])
+
 
 async def test_hermes_cli_rejects_native_telemetry(
     hermes_agent_dir: Path,

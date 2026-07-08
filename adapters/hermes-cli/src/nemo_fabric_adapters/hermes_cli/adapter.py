@@ -61,10 +61,11 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
 
     _api_key_preflight_check(settings, model_config)
 
-    hermes_home = resolve_path(
+    hermes_home_base = resolve_path(
         config_root,
         settings.get("hermes_home", "./artifacts/hermes-cli/home"),
     )
+    hermes_home = common_utils.runtime_state_directory(hermes_home_base, payload)
     hermes_home.mkdir(parents=True, exist_ok=True)
     hermes_config_path, hermes_config = hermes_common.write_hermes_config(
         payload,

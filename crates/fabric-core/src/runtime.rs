@@ -706,8 +706,15 @@ fn run_process_adapter(
         .or_else(|| runtime.environment.workspace.clone())
         .unwrap_or_else(|| plan.agent_root.clone());
     let mut artifacts = artifact_manifest(plan)?;
-    let relay_config =
-        prepare_relay_runtime_config(plan, runtime, &invocation, &request, &mut artifacts)?;
+    let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
+    let relay_config = prepare_relay_runtime_config(
+        plan,
+        runtime,
+        &invocation,
+        &request,
+        &fabric_home,
+        &mut artifacts,
+    )?;
     let adapter_payload = fabric_adapter_payload(
         plan,
         runtime,
@@ -716,7 +723,6 @@ fn run_process_adapter(
         &artifacts,
         relay_config.as_ref(),
     )?;
-    let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
     let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
 
     let mut command = Command::new(&command_path);
@@ -816,6 +822,7 @@ fn run_process_adapter(
     if !stdout.is_empty() {
         write_artifact(
             &mut artifacts,
+            &fabric_home,
             "stdout",
             "log",
             "stdout.txt",
@@ -826,6 +833,7 @@ fn run_process_adapter(
     if !stderr.is_empty() {
         write_artifact(
             &mut artifacts,
+            &fabric_home,
             "stderr",
             "log",
             "stderr.txt",
@@ -833,7 +841,7 @@ fn run_process_adapter(
             "text/plain",
         )?;
     }
-    collect_workspace_artifacts(&mut artifacts, runtime, &mut events)?;
+    collect_workspace_artifacts(&mut artifacts, &fabric_home, runtime, &mut events)?;
 
     let mut metadata = BTreeMap::new();
     metadata.insert(
@@ -925,8 +933,15 @@ fn run_python_adapter(
 
     let python = resolve_python_command(&plan.config_root, &settings);
     let mut artifacts = artifact_manifest(plan)?;
-    let relay_config =
-        prepare_relay_runtime_config(plan, runtime, &invocation, &request, &mut artifacts)?;
+    let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
+    let relay_config = prepare_relay_runtime_config(
+        plan,
+        runtime,
+        &invocation,
+        &request,
+        &fabric_home,
+        &mut artifacts,
+    )?;
 
     let mut command = Command::new(&python);
     command
@@ -1028,6 +1043,7 @@ fn run_python_adapter(
     if !stdout.is_empty() {
         write_artifact(
             &mut artifacts,
+            &fabric_home,
             "stdout",
             "log",
             "stdout.txt",
@@ -1038,6 +1054,7 @@ fn run_python_adapter(
     if !stderr.is_empty() {
         write_artifact(
             &mut artifacts,
+            &fabric_home,
             "stderr",
             "log",
             "stderr.txt",
@@ -1045,7 +1062,7 @@ fn run_python_adapter(
             "text/plain",
         )?;
     }
-    collect_workspace_artifacts(&mut artifacts, runtime, &mut events)?;
+    collect_workspace_artifacts(&mut artifacts, &fabric_home, runtime, &mut events)?;
 
     let mut metadata = BTreeMap::new();
     metadata.insert(
@@ -1503,16 +1520,17 @@ fn write_fabric_invocation(fabric_home: &Path, payload: &str) -> Result<PathBuf>
 
 fn write_artifact(
     manifest: &mut ArtifactManifest,
+    directory: &Path,
     name: &str,
     kind: &str,
     filename: &str,
     contents: &str,
     media_type: &str,
 ) -> Result<()> {
-    let Some(root) = &manifest.root else {
+    if manifest.root.is_none() {
         return Ok(());
-    };
-    let path = root.join(filename);
+    }
+    let path = directory.join(filename);
     std::fs::write(&path, contents).map_err(|source| FabricError::Write {
         path: path.clone(),
         source,
@@ -1528,6 +1546,7 @@ fn write_artifact(
 
 fn collect_workspace_artifacts(
     manifest: &mut ArtifactManifest,
+    artifact_directory: &Path,
     runtime: &RuntimeHandle,
     events: &mut Vec<FabricEvent>,
 ) -> Result<()> {
@@ -1575,6 +1594,7 @@ fn collect_workspace_artifacts(
     }
     write_artifact(
         manifest,
+        artifact_directory,
         "workspace_patch",
         "patch",
         "workspace.patch",
@@ -1583,6 +1603,7 @@ fn collect_workspace_artifacts(
     )?;
     write_artifact(
         manifest,
+        artifact_directory,
         "workspace_status",
         "log",
         "workspace-status.txt",
@@ -1655,6 +1676,7 @@ fn prepare_relay_runtime_config(
     runtime: &RuntimeHandle,
     invocation: &InvocationHandle,
     request: &RunRequest,
+    artifact_directory: &Path,
     artifacts: &mut ArtifactManifest,
 ) -> Result<Option<RelayRuntimeConfig>> {
     let Some(telemetry) = plan.telemetry_plan.as_ref() else {
@@ -1663,9 +1685,9 @@ fn prepare_relay_runtime_config(
     if !telemetry.relay_enabled {
         return Ok(None);
     }
-    let Some(root) = artifacts.root.clone() else {
+    if artifacts.root.is_none() {
         return Ok(None);
-    };
+    }
     let relay_config = serde_json::json!({
         "schema_version": "fabric.relay/v1alpha1",
         "relay": {
@@ -1696,13 +1718,14 @@ fn prepare_relay_runtime_config(
         serde_json::to_string_pretty(&relay_config).map_err(FabricError::SerializeJson)?;
     write_artifact(
         artifacts,
+        artifact_directory,
         "relay_config",
         "telemetry_config",
         "relay-config.json",
         &contents,
         "application/json",
     )?;
-    let path = absolute_path(root.join("relay-config.json"))?;
+    let path = absolute_path(artifact_directory.join("relay-config.json"))?;
     Ok(Some(RelayRuntimeConfig {
         path: path.clone(),
         env: BTreeMap::from([
@@ -1963,6 +1986,54 @@ environment:
     }
 
     #[test]
+    fn independent_runtimes_use_distinct_artifact_paths() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let first_runtime = start_runtime(&plan).expect("first runtime");
+        let second_runtime = start_runtime(&plan).expect("second runtime");
+
+        let first = invoke_runtime(&plan, &first_runtime, RunRequest::text("first runtime"))
+            .expect("first invocation");
+        let second = invoke_runtime(&plan, &second_runtime, RunRequest::text("second runtime"))
+            .expect("second invocation");
+        let first_stdout = first
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "stdout")
+            .expect("first stdout artifact");
+        let second_stdout = second
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "stdout")
+            .expect("second stdout artifact");
+
+        assert_eq!(first.artifacts.root, second.artifacts.root);
+        assert_ne!(first_stdout.path, second_stdout.path);
+        assert!(
+            first_stdout.path.starts_with(
+                root.join("artifacts")
+                    .join(".fabric")
+                    .join(&first_runtime.runtime_id)
+                    .join(&first.invocation_id)
+            )
+        );
+        assert!(
+            second_stdout.path.starts_with(
+                root.join("artifacts")
+                    .join(".fabric")
+                    .join(&second_runtime.runtime_id)
+                    .join(&second.invocation_id)
+            )
+        );
+        assert_eq!(artifact_content(&first, "stdout"), "first runtime");
+        assert_eq!(artifact_content(&second, "stdout"), "second runtime");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn native_telemetry_skips_relay_and_reaches_adapter_payload() {
         let root = temp_process_agent_dir();
         let config_path = root.join("agent.yaml");
@@ -1986,10 +2057,18 @@ telemetry:
             runtime_id: runtime.runtime_id.clone(),
         };
         let mut artifacts = artifact_manifest(&plan).expect("artifact manifest");
+        let artifact_directory =
+            prepare_fabric_home(&artifacts, &runtime, &invocation).expect("fabric home");
 
-        let relay =
-            prepare_relay_runtime_config(&plan, &runtime, &invocation, &request, &mut artifacts)
-                .expect("prepare telemetry");
+        let relay = prepare_relay_runtime_config(
+            &plan,
+            &runtime,
+            &invocation,
+            &request,
+            &artifact_directory,
+            &mut artifacts,
+        )
+        .expect("prepare telemetry");
         let payload = adapter_invocation(
             &plan,
             &runtime,

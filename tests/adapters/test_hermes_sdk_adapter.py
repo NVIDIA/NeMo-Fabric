@@ -170,3 +170,6 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     assert captured["init"]["platform"] == "fabric"
     assert captured["conversation"]["conversation_history"] == db_history
     assert "session_id" not in output
+    assert Path(output["hermes_home"]) == (
+        tmp_path / "hermes-home" / "runtimes" / "runtime-fabric-123"
+    )

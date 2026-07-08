@@ -60,6 +60,12 @@ def runtime_id(payload: dict[str, Any]) -> str:
     return str(value)
 
 
+def runtime_state_directory(base: str | Path, payload: dict[str, Any]) -> Path:
+    """Return a harness-owned state directory isolated to one Fabric runtime."""
+
+    return Path(base).joinpath("runtimes", runtime_id(payload))
+
+
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return runtime_context(payload).get("environment") or payload.get("environment") or {}
 
