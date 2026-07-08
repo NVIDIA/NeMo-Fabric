@@ -8,9 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import nemo_fabric._native as native
+from examples.code_review_agent import BASE_DIR, base_config
 from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 async def test_native_sdk(hermes_shim_agent_dir: Path):
@@ -20,14 +19,14 @@ async def test_native_sdk(hermes_shim_agent_dir: Path):
 
 
 async def smoke(client: Fabric, fixture_agent: Path) -> None:
-    example_agent = ROOT / "examples" / "code-review-agent"
+    example_config = base_config()
 
-    inspected = client.resolve(example_agent, profiles=["env_local"])
+    inspected = client.resolve(example_config, base_dir=BASE_DIR)
     assert inspected["agent_name"] == "code-review-agent"
-    assert inspected.profiles == ("env_local",)
+    assert inspected.profiles == ()
     assert inspected["config"]["metadata"]["name"] == "code-review-agent"
 
-    plan = client.plan(example_agent, profiles=["env_local"])
+    plan = client.plan(example_config, base_dir=BASE_DIR)
     assert plan["agent_name"] == "code-review-agent"
     assert (
         plan["adapter_descriptor"]["descriptor"]["adapter_id"]

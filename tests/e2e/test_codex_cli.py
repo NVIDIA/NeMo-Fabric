@@ -12,11 +12,8 @@ import importlib.util
 import os
 import shutil
 import uuid
-from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 async def test_codex_cli():
@@ -30,14 +27,15 @@ async def test_codex_cli():
 
 
 async def _run() -> None:
+    from examples.code_review_agent import BASE_DIR, codex_cli_config
     from nemo_fabric import Fabric
 
-    agent = ROOT / "examples" / "code-review-agent"
+    config = codex_cli_config()
     nonce = f"fabric-{uuid.uuid4().hex[:8]}"
     client = Fabric()
     oneshot = await client.run(
-        agent,
-        profiles=["codex_cli"],
+        config,
+        base_dir=BASE_DIR,
         input="Reply with exactly: FABRIC_CODEX_ONESHOT_OK",
     )
     assert oneshot["status"] == "succeeded", oneshot.to_mapping()
@@ -47,8 +45,8 @@ async def _run() -> None:
     assert "--ephemeral" not in oneshot["output"]["command"], oneshot.to_mapping()
 
     async with await client.start_runtime(
-        agent,
-        profiles=["codex_cli"],
+        config,
+        base_dir=BASE_DIR,
     ) as runtime:
         first = await runtime.invoke(input=f"Remember this value: {nonce}")
         second = await runtime.invoke(

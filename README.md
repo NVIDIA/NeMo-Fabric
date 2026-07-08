@@ -68,7 +68,7 @@ cargo install just --locked
 
 Refer to the [official installation guide](https://just.systems/man/en/installation.html) for more details.
 
-Install Fabric and the `fabric` CLI from the source checkout:
+Install Fabric from the source checkout:
 
 ```bash
 just build-all
@@ -90,30 +90,29 @@ with:
 .tmp/hermes-venv/bin/python -m pip install -e ../hermes-agent
 ```
 
-Run one input:
+Run the typed Pydantic example:
 
 ```bash
 export NVIDIA_API_KEY=...
 export HERMES_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
 
-fabric doctor examples/code-review-agent --profile hermes_sdk
-fabric run examples/code-review-agent \
-  --profile hermes_sdk \
+.venv/bin/python -m examples.code_review_agent \
   --input "Reply with exactly: fabric works"
 ```
 
 The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
-under `examples/code-review-agent/artifacts/hermes-sdk/`.
+under `examples/code_review_agent/artifacts/hermes-sdk/`. Its complete base
+config and clone-based variants live in
+`examples/code_review_agent/config.py`.
 
 ## Core Concepts
 
 - **Agent source:** callers provide either an agent package path or a typed
-  `FabricConfig`. An agent package contains `agent.yaml` plus optional
-  profiles, skills, repos, and artifacts. Start with
-  `examples/code-review-agent/agent.yaml`.
+  `FabricConfig`. Start with `examples/code_review_agent/config.py` for the
+  application-facing Pydantic pattern.
 - **Typed config:** SDK consumers can construct configuration in memory without
   materializing an agent directory. `agent.yaml` remains the portable
-  representation for CLI use, examples, CI, and reproducible runs.
+  representation for CLI use, CI, and reproducible runs.
 - **Profiles:** named variations of the base config. Use profiles to vary the
   harness, model, MCP, tools, skills, telemetry, or environment context without
   editing `agent.yaml`.
@@ -133,31 +132,7 @@ compose the final config in Python; `FabricProfileConfig` values are available
 for callers that need ordered file-style overlays. The SDK rejects raw profile
 mappings and mixed profile stacks. See the
 [Python SDK guide](docs/sdk/python.mdx) for the complete public API,
-type definitions, lifecycle semantics, and compatibility rules.
-
-## Python Quick Start
-
-After completing the Hermes setup above, run the same agent package through the
-Python SDK:
-
-```python
-import asyncio
-
-from nemo_fabric import Fabric
-
-
-async def main() -> None:
-    result = await Fabric().run(
-        "examples/code-review-agent",
-        profiles=["hermes_sdk"],
-        input="Reply with exactly: fabric works",
-    )
-    print(result.status)
-    print(result.output)
-
-
-asyncio.run(main())
-```
+type definitions, lifecycle semantics, and error behavior.
 
 `run(...)` owns the complete start, invoke, and stop lifecycle. For typed
 in-memory configuration, planning and diagnostics, explicit requests,

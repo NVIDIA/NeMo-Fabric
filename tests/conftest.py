@@ -11,6 +11,9 @@ from pathlib import Path
 import pytest
 
 CUR_DIR = Path(__file__).parent.resolve()
+REPO_ROOT = CUR_DIR.parent.resolve()
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 @pytest.fixture(name="restore_environ", autouse=True)
 def restore_environ_fixture():
@@ -80,9 +83,30 @@ def hermes_shim_agent_dir_fixture(
 @pytest.fixture(name="code_review_agent_dir")
 def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
     """
-    Creates a temporary copy of the example code review agent directory for testing.
+    Creates a writable copy of the typed example's assets for runtime tests.
     """
-    return _copy_agent_dir(repo_root / "examples" / "code-review-agent", tmp_path, "code-review-agent")
+    return _copy_agent_dir(
+        repo_root / "examples" / "code_review_agent",
+        tmp_path,
+        "code-review-agent",
+    )
+
+
+@pytest.fixture(name="file_config_agent_dir_src", scope="session")
+def file_config_agent_dir_src_fixture(repo_root: Path) -> Path:
+    """Return the test-only portable config package."""
+
+    return repo_root / "tests" / "fixtures" / "file-config-agent"
+
+
+@pytest.fixture(name="file_config_agent_dir")
+def file_config_agent_dir_fixture(
+    file_config_agent_dir_src: Path,
+    tmp_path: Path,
+) -> Path:
+    """Create a writable copy for CLI and file-profile tests."""
+
+    return _copy_agent_dir(file_config_agent_dir_src, tmp_path, "file-config-agent")
 
 @pytest.fixture(name="hermes_cli_profile", scope="session")
 def hermes_cli_profile_fixture() -> str:

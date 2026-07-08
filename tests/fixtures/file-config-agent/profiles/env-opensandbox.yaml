@@ -3,7 +3,7 @@
 
 schema_version: fabric.profile/v1alpha1
 name: env_opensandbox
-description: Run the harness/tools against an OpenSandbox-backed workspace and emit ATIF.
+description: Test OpenSandbox environment file-profile resolution.
 
 environment:
   provider: opensandbox

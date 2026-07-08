@@ -3,7 +3,7 @@
 
 schema_version: fabric.profile/v1alpha1
 name: codex_cli
-description: Run one isolated Codex CLI invocation using Codex-owned authentication.
+description: Test Codex CLI file-profile resolution.
 
 harness:
   adapter_id: nvidia.fabric.codex.cli

@@ -6,14 +6,19 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 import yaml
 
-from _utils.utils import update_base_url
-from nemo_fabric import Fabric
+from examples.code_review_agent import (
+    hermes_cli_config,
+    hermes_sdk_config,
+    with_relay,
+)
+from nemo_fabric import Fabric, FabricConfig
 
 
 class BaseTestHermesE2E:
@@ -21,8 +26,7 @@ class BaseTestHermesE2E:
     Shared E2E Hermes relay assertions for adapter-specific subclasses.
     """
 
-    profile_names: tuple[str, ...]
-    profile_file: str
+    config_builder: Callable[[], FabricConfig]
     adapter_kind: str
     adapter_runner: str
     output_adapter: str
@@ -44,14 +48,13 @@ class BaseTestHermesE2E:
 
         self.code_review_agent_dir = code_review_agent_dir
         self.api_server = api_server
-        update_base_url(
-            code_review_agent_dir / "profiles" / self.profile_file,
-            api_server,
-        )
+        config = self.config_builder()
+        config.harness.settings["base_url"] = f"{api_server}/v1"
+        config = with_relay(config)
 
         self.result = await Fabric().run(
-            code_review_agent_dir,
-            profiles=list(self.profile_names),
+            config,
+            base_dir=code_review_agent_dir,
             input="Reply with exactly: relay ok",
         )
 
@@ -120,7 +123,7 @@ class BaseTestHermesE2E:
         relay_config = json.loads(relay_config_path.read_text(encoding="utf-8"))
         assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
         assert relay_config["relay"]["enabled"] is True
-        assert relay_config["fabric"]["profiles"] == list(self.profile_names)
+        assert relay_config["fabric"]["profiles"] == []
         
         await self._additional_artifact_tests(artifact_by_name)
 
@@ -208,8 +211,7 @@ class BaseTestHermesE2E:
         
 
 class TestHermesCliE2E(BaseTestHermesE2E):
-    profile_names = ("hermes_cli", "relay")
-    profile_file = "hermes-cli.yaml"
+    config_builder = staticmethod(hermes_cli_config)
     adapter_kind = "process"
     adapter_runner = "process"
     output_adapter = "cli"
@@ -230,8 +232,7 @@ class TestHermesCliE2E(BaseTestHermesE2E):
 
 
 class TestHermesSdkE2E(BaseTestHermesE2E):
-    profile_names = ("hermes_sdk", "relay")
-    profile_file = "hermes-sdk.yaml"
+    config_builder = staticmethod(hermes_sdk_config)
     adapter_kind = "python"
     adapter_runner = "python"
     output_adapter = "python"

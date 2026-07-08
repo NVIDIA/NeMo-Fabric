@@ -3,7 +3,7 @@
 
 schema_version: fabric.profile/v1alpha1
 name: relay_otel
-description: Enable NeMo Relay OpenTelemetry tracing.
+description: Test Relay OpenTelemetry file-profile resolution.
 
 telemetry:
   enabled: true

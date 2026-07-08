@@ -14,10 +14,10 @@ from _utils.utils import assert_relay_disabled_native_observability, run_fabric_
 
 def test_cli(
     tmp_path: Path,
-    code_review_agent_dir: Path,
+    file_config_agent_dir: Path,
     hermes_shim_agent_dir: Path,
 ):
-    temp_example = code_review_agent_dir
+    temp_example = file_config_agent_dir
     temp_fixture = hermes_shim_agent_dir
 
     assert call_text("validate", temp_example).startswith("validated")

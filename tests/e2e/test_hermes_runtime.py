@@ -23,9 +23,6 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-
-
 async def test_hermes_runtime():
     if os.environ.get("RUN_FABRIC_HERMES_INTEGRATION") != "1":
         pytest.skip("set RUN_FABRIC_HERMES_INTEGRATION=1 to run")
@@ -66,12 +63,12 @@ async def _run() -> None:
 
 
 async def _run_sdk_runtime() -> None:
+    from examples.code_review_agent import BASE_DIR, hermes_sdk_config
     from nemo_fabric import Fabric, RuntimeStatus
 
-    agent = str(ROOT / "examples" / "code-review-agent")
     async with await Fabric().start_runtime(
-        agent,
-        profiles=["hermes_sdk"],
+        hermes_sdk_config(),
+        base_dir=BASE_DIR,
     ) as runtime:
         assert runtime.status is RuntimeStatus.ACTIVE, runtime.status
 
@@ -93,12 +90,12 @@ async def _run_sdk_runtime() -> None:
 
 
 async def _run_cli_runtime() -> None:
+    from examples.code_review_agent import BASE_DIR, hermes_cli_config
     from nemo_fabric import Fabric, RuntimeStatus
 
-    agent = str(ROOT / "examples" / "code-review-agent")
     async with await Fabric().start_runtime(
-        agent,
-        profiles=["hermes_cli"],
+        hermes_cli_config(),
+        base_dir=BASE_DIR,
     ) as runtime:
         assert runtime.status is RuntimeStatus.ACTIVE, runtime.status
 

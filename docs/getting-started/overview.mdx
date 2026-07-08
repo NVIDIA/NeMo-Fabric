@@ -13,7 +13,7 @@ versioned config, lifecycle, result, artifact, and telemetry contracts whether
 the selected harness is Hermes SDK, Hermes CLI, Codex CLI, or a custom adapter.
 
 Fabric owns the seam between an application and its harness. It resolves
-configuration and profiles, selects an adapter, drives the runtime lifecycle,
+configuration, selects an adapter, drives the runtime lifecycle,
 and returns normalized evidence without leaking harness-specific control code
 into the caller.
 
@@ -22,8 +22,8 @@ into the caller.
 <CardGroup cols={2}>
   <Card title="Portable configuration">
     Use a versioned `agent.yaml` package or construct the same typed
-    `FabricConfig` in Python. Ordered profiles make evaluation and ablation
-    variants explicit and reproducible.
+    `FabricConfig` in Python. Applications create variants from typed copies;
+    portable file packages can use ordered profiles.
   </Card>
   <Card title="Harness-neutral execution">
     Plan and invoke different harnesses through one Rust core, CLI, and Python
@@ -47,7 +47,7 @@ Application or evaluation harness
         |  Python SDK or fabric CLI
         v
 NeMo Fabric Rust core
-  config -> profiles -> plan -> lifecycle
+  config -> plan -> lifecycle
         |
         |  resolved adapter contract
         v
@@ -81,33 +81,22 @@ export PATH="$HOME/.cargo/bin:$PATH"
 just build-all
 ```
 
-Inspect and diagnose an agent package before running it:
-
-```bash
-fabric plan examples/code-review-agent --profile hermes_sdk
-fabric doctor examples/code-review-agent --profile hermes_sdk
-fabric run examples/code-review-agent \
-  --profile hermes_sdk \
-  --input "Reply with exactly: fabric works"
-```
-
-Use the same package through the typed Python SDK:
+Plan, diagnose, and run the typed example through the Python SDK:
 
 ```python
 import asyncio
-from pathlib import Path
-
+from examples.code_review_agent import BASE_DIR, hermes_sdk_config
 from nemo_fabric import Fabric
 
 
 async def main() -> None:
-    agent = Path("examples/code-review-agent")
+    config = hermes_sdk_config()
     client = Fabric()
-    plan = client.plan(agent, profiles=["hermes_sdk"])
-    report = await client.doctor(agent, profiles=["hermes_sdk"])
+    plan = client.plan(config, base_dir=BASE_DIR)
+    report = await client.doctor(config, base_dir=BASE_DIR)
     result = await client.run(
-        agent,
-        profiles=["hermes_sdk"],
+        config,
+        base_dir=BASE_DIR,
         input="Reply with exactly: fabric works",
     )
 
@@ -138,8 +127,9 @@ and wants to pass only its Fabric slice in memory.
 
 1. **Configure** an agent package or typed `FabricConfig` with a harness adapter,
    environment, models, tools, skills, MCP, and telemetry.
-2. **Apply profiles** in caller order to vary harness, model, environment, or
-   observability settings without mutating the base config.
+2. **Create variants** from deep copies to vary harness, model, environment, or
+   observability settings without mutating the base config. File-backed
+   packages may instead apply ordered profiles.
 3. **Plan and diagnose** to resolve the adapter and check capabilities and
    requirements before spending work on a runtime.
 4. **Run or start a runtime** through the shared start, invoke, and stop

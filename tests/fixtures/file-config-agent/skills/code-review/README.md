@@ -3,6 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Code Review Skill
+# File Config Fixture Skill
 
-Minimal skill directory used by the config validation examples.
+This directory exists only to exercise relative skill paths in file-backed
+configuration tests.

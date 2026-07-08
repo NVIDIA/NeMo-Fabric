@@ -47,5 +47,5 @@ runtime ID. Later invocations on the same runtime use
 Fabric owns the runtime lifecycle and runtime-to-thread correlation record.
 Both `fabric run` and stateful runtime paths accept text input.
 
-Use the `codex_cli` profile under `examples/code-review-agent/profiles/` for
-local one-shot and `fabric chat` examples.
+Use `codex_cli_config()` from `examples.code_review_agent` for local one-shot
+and multi-turn examples.

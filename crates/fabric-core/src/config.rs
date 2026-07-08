@@ -1510,8 +1510,8 @@ pub struct TelemetryPlan {
 mod tests {
     use super::*;
 
-    fn example_agent_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/code-review-agent")
+    fn file_config_agent_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/file-config-agent")
     }
 
     fn example_adapter_descriptor_path() -> PathBuf {
@@ -1701,7 +1701,7 @@ provider: unsupported
 
     #[test]
     fn resolves_base_config_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), None).expect("run plan");
+        let plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
 
         assert_eq!(plan.agent_name, "code-review-agent");
         assert!(plan.profiles.is_empty());
@@ -1765,7 +1765,7 @@ provider: unsupported
 
     #[test]
     fn resolves_hermes_sdk_adapter_descriptor() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("hermes_sdk")).expect("run plan");
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes_sdk")).expect("run plan");
         let adapter = plan
             .adapter_descriptor
             .as_ref()
@@ -1832,7 +1832,7 @@ environment:
     #[test]
     fn resolves_env_profile_from_agent_directory() {
         let plan =
-            resolve_run_plan(example_agent_dir(), Some("env_opensandbox")).expect("run plan");
+            resolve_run_plan(file_config_agent_dir(), Some("env_opensandbox")).expect("run plan");
 
         assert_eq!(plan.profiles, vec!["env_opensandbox"]);
         assert!(plan.config_path.ends_with("agent.yaml"));
@@ -1847,7 +1847,7 @@ environment:
 
     #[test]
     fn resolves_mcp_profile_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("mcp_github")).expect("run plan");
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("mcp_github")).expect("run plan");
 
         assert_eq!(plan.profiles, vec!["mcp_github"]);
         let plan_json = serde_json::to_value(&plan).expect("plan json");
@@ -1875,7 +1875,7 @@ environment:
     fn resolves_ordered_profiles_from_agent_directory() {
         let profiles = vec!["env_local".to_string(), "mcp_github".to_string()];
         let plan =
-            resolve_run_plan_with_profiles(example_agent_dir(), &profiles).expect("run plan");
+            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
 
         assert_eq!(plan.profiles, profiles);
         assert_eq!(
@@ -1902,7 +1902,7 @@ environment:
     #[test]
     fn resolves_in_memory_config_with_typed_profiles() {
         let FabricDocument::FabricConfig { config, root, .. } =
-            load_fabric_document(example_agent_dir()).expect("agent config");
+            load_fabric_document(file_config_agent_dir()).expect("agent config");
         let profile = read_yaml::<ProfileConfig>(&root.join("profiles/mcp-github.yaml"))
             .expect("profile config");
 
@@ -2003,7 +2003,7 @@ mcp:
     fn later_profiles_override_earlier_profiles() {
         let profiles = vec!["env_opensandbox".to_string(), "env_local".to_string()];
         let plan =
-            resolve_run_plan_with_profiles(example_agent_dir(), &profiles).expect("run plan");
+            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
 
         assert_eq!(plan.profiles, profiles);
         assert_eq!(
@@ -2028,7 +2028,7 @@ mcp:
 
         let profiles = vec!["env_local".to_string(), "env_opensandbox".to_string()];
         let plan =
-            resolve_run_plan_with_profiles(example_agent_dir(), &profiles).expect("run plan");
+            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
 
         assert_eq!(
             plan.environment_plan
@@ -2046,7 +2046,7 @@ mcp:
 
     #[test]
     fn resolves_hermes_sdk_profile_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("hermes_sdk")).expect("run plan");
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes_sdk")).expect("run plan");
 
         assert_eq!(plan.profiles, vec!["hermes_sdk"]);
         assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");
@@ -2088,7 +2088,7 @@ mcp:
 
     #[test]
     fn resolves_direct_profile_path_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("./profiles/hermes-sdk.yaml"))
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("./profiles/hermes-sdk.yaml"))
             .expect("run plan");
 
         assert_eq!(plan.profiles, vec!["./profiles/hermes-sdk.yaml"]);
@@ -2103,7 +2103,7 @@ mcp:
 
     #[test]
     fn errors_for_unknown_manifest_profile() {
-        let error = resolve_run_plan(example_agent_dir(), Some("missing")).expect_err("error");
+        let error = resolve_run_plan(file_config_agent_dir(), Some("missing")).expect_err("error");
 
         assert!(matches!(error, FabricError::UnknownProfile { .. }));
     }

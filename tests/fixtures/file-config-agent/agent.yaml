@@ -5,7 +5,7 @@ schema_version: fabric.agent/v1alpha1
 
 metadata:
   name: code-review-agent
-  description: Reviews code changes and summarizes correctness risks.
+  description: Test fixture for file-backed configuration and profiles.
 
 harness:
   adapter_id: nvidia.fabric.hermes.sdk

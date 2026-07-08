@@ -2,34 +2,29 @@
 # SPDX-License-Identifier: Apache-2.0
 
 schema_version: fabric.profile/v1alpha1
-name: hermes_sdk
-description: Run the Hermes Python adapter through an installed Hermes SDK.
+name: hermes_cli
+description: Test Hermes CLI file-profile resolution.
 
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes.cli
   resolution: preinstalled
   settings:
-    python_env: HERMES_PYTHON
     workspace: ./repos/my-service
-    hermes_home: ./artifacts/hermes-home
+    hermes_home: ./artifacts/hermes-cli/home
     base_url: https://integrate.api.nvidia.com/v1
     max_iterations: 1
-    max_tokens: 512
-    temperature: 0.0
-    reasoning_config:
-      effort: none
+    terminal_timeout: 60
     enabled_toolsets: []
-    system_prompt: You are a concise smoke test assistant.
 
 runtime:
   input_schema: chat
   output_schema: message
-  artifacts: ./artifacts/hermes-sdk
+  artifacts: ./artifacts/hermes-cli
 
 environment:
   provider: local
   workspace: ./repos/my-service
-  artifacts: ./artifacts/hermes-sdk
+  artifacts: ./artifacts/hermes-cli
 
 telemetry:
   enabled: false

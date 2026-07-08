@@ -171,6 +171,11 @@ def review_agent_config(base, *, github_mcp: bool, relay: bool):
 variant = review_agent_config(config, github_mcp=True, relay=True)
 ```
 
+The repository's
+[typed code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
+uses this pattern for complete Hermes SDK, Hermes CLI, Codex CLI, environment,
+MCP, and telemetry variants.
+
 When an in-memory caller needs the same ordered overlay behavior as file-backed
 profiles, construct `FabricProfileConfig` values and pass them through
 `profiles=[...]`. Fabric does not accept raw profile mappings.

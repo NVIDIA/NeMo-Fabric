@@ -335,14 +335,13 @@ def test_relay_routes_codex_through_standalone_gateway(
 
 
 def test_native_otel_profile_writes_codex_telemetry_config(codex_payload, tmp_path):
+    from examples.code_review_agent import codex_cli_config, with_native_otel
+
     adapter = load_codex_adapter()
-    profile = yaml.safe_load(
-        (ROOT / "examples/code-review-agent/profiles/native-otel.yaml").read_text(
-            encoding="utf-8"
-        )
-    )
     config = codex_payload["effective_config"]["config"]
-    config["telemetry"] = profile["telemetry"]
+    typed = with_native_otel(codex_cli_config())
+    assert typed.telemetry is not None
+    config["telemetry"] = typed.telemetry.to_mapping()
     config["harness"]["settings"]["config_overrides"] = {}
     codex_settings = adapter.write_config_files(codex_payload)
 
@@ -797,9 +796,11 @@ async def test_fabric_oneshot_uses_cached_codex_auth(tmp_path):
 
 
 def test_codex_profile_resolves_runtime_adapter():
+    from examples.code_review_agent import BASE_DIR, codex_cli_config
+
     plan = Fabric().plan(
-        ROOT / "examples" / "code-review-agent",
-        profiles=["codex_cli"],
+        codex_cli_config(),
+        base_dir=BASE_DIR,
     )
 
     assert plan.adapter.adapter_id == "nvidia.fabric.codex.cli"

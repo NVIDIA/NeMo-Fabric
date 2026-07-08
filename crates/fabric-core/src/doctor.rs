@@ -471,13 +471,13 @@ mod tests {
     use super::*;
     use crate::config::{AdapterKind, ResolutionStrategy, resolve_run_plan};
 
-    fn example_agent_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/code-review-agent")
+    fn file_config_agent_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/file-config-agent")
     }
 
     #[test]
     fn image_provided_uses_environment_image_instead_of_host_requirements() {
-        let mut plan = resolve_run_plan(example_agent_dir(), None).expect("run plan");
+        let mut plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
         plan.resolution = Some(ResolutionStrategy::ImageProvided);
         plan.environment_plan
             .as_mut()
@@ -505,7 +505,7 @@ mod tests {
     #[test]
     fn preinstalled_non_local_environment_does_not_probe_host_requirements() {
         let plan =
-            resolve_run_plan(example_agent_dir(), Some("env_opensandbox")).expect("run plan");
+            resolve_run_plan(file_config_agent_dir(), Some("env_opensandbox")).expect("run plan");
 
         let report = doctor_plan(&plan);
 
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn doctor_reports_http_execution_as_modeled_not_implemented() {
-        let mut plan = resolve_run_plan(example_agent_dir(), None).expect("run plan");
+        let mut plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
         plan.resolution = Some(ResolutionStrategy::Service);
         plan.adapter_descriptor
             .as_mut()
