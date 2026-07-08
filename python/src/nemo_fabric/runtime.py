@@ -13,9 +13,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from nemo_fabric.errors import FabricConfigError, FabricError, FabricRuntimeError, FabricStateError
-from nemo_fabric.models import RunRequestModel
-from nemo_fabric.types import RunPlan, RunRequest, RunResult, RuntimeHandle
+from nemo_fabric.models import RunRequest
+from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
 
 
 class RuntimeStatus(str, Enum):
@@ -98,7 +100,7 @@ class Runtime:
         self,
         *,
         input: Any = None,
-        request: RunRequest | RunRequestModel | Mapping[str, Any] | None = None,
+        request: RunRequest | None = None,
         request_id: str | None = None,
         context: Mapping[str, Any] | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -111,7 +113,7 @@ class Runtime:
 
         Args:
             input: JSON-compatible turn input.
-            request: Complete ``RunRequest`` or compatible mapping.
+            request: Complete validated ``RunRequest``.
             request_id: Caller-owned request identifier; generated when omitted.
             context: Caller-owned, JSON-compatible request metadata.
             overrides: JSON-compatible invocation-scoped config overrides.
@@ -330,7 +332,7 @@ def _run_request_payload(
     *,
     input: Any,
     input_file: str | Path | None,
-    request: RunRequest | RunRequestModel | Mapping[str, Any] | None,
+    request: RunRequest | None,
     request_file: str | Path | None,
     request_id: str | None,
     context: Mapping[str, Any] | None,
@@ -351,36 +353,41 @@ def _run_request_payload(
         raise FabricConfigError(
             "a complete request cannot be combined with separate request fields"
         )
-    if request_file is not None:
-        try:
-            raw = json.loads(Path(request_file).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise FabricConfigError(f"failed to read request file: {error}") from error
-        payload = RunRequest.from_mapping(raw).to_mapping()
-    elif request is not None:
-        payload = (
-            request.to_mapping()
-            if isinstance(request, (RunRequest, RunRequestModel))
-            else RunRequest.from_mapping(request).to_mapping()
-        )
-    elif input_file is not None:
-        try:
-            file_input = Path(input_file).read_text(encoding="utf-8")
-        except OSError as error:
-            raise FabricConfigError(f"failed to read input file: {error}") from error
-        payload = RunRequest(
-            input=file_input,
-            request_id=request_id,
-            context=context,
-            overrides=overrides,
-        ).to_mapping()
-    else:
-        payload = RunRequest(
-            input=input,
-            request_id=request_id,
-            context=context,
-            overrides=overrides,
-        ).to_mapping()
+    try:
+        if request_file is not None:
+            try:
+                raw = json.loads(Path(request_file).read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise FabricConfigError(f"failed to read request file: {error}") from error
+            payload = RunRequest.model_validate(raw).to_mapping()
+        elif request is not None:
+            if not isinstance(request, RunRequest):
+                raise FabricConfigError("request must be a RunRequest")
+            payload = request.to_mapping()
+        elif input_file is not None:
+            try:
+                file_input = Path(input_file).read_text(encoding="utf-8")
+            except OSError as error:
+                raise FabricConfigError(f"failed to read input file: {error}") from error
+            request_fields: dict[str, Any] = {
+                "input": file_input,
+                "context": {} if context is None else context,
+                "overrides": overrides,
+            }
+            if request_id is not None:
+                request_fields["request_id"] = request_id
+            payload = RunRequest(**request_fields).to_mapping()
+        else:
+            request_fields = {
+                "input": input,
+                "context": {} if context is None else context,
+                "overrides": overrides,
+            }
+            if request_id is not None:
+                request_fields["request_id"] = request_id
+            payload = RunRequest(**request_fields).to_mapping()
+    except ValidationError as error:
+        raise FabricConfigError(str(error)) from error
     return payload
 
 

@@ -11,12 +11,35 @@ without waiting for a schema release.
 
 from __future__ import annotations
 
+import math
+import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
+
+
+def _json_value(value: Any, name: str) -> Any:
+    """Validate and detach a JSON-compatible value."""
+
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must contain only finite JSON numbers")
+        return value
+    if isinstance(value, list):
+        return [_json_value(item, name) for item in value]
+    if isinstance(value, Mapping):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{name} JSON object keys must be strings")
+            result[key] = _json_value(item, name)
+        return result
+    raise ValueError(f"{name} must be JSON-compatible")
 
 
 class FabricBaseModel(BaseModel):
@@ -322,23 +345,50 @@ class FabricProfileConfigModel(FabricBaseModel):
     tools: Any = None
 
 
-class RunRequestModel(FabricBaseModel):
-    """Pydantic authoring model for one Fabric invocation request."""
+class RunRequest(FabricBaseModel):
+    """One validated Fabric invocation request."""
 
-    input: Any = None
-    request_id: str | None = None
+    input: Any = ""
+    request_id: str = Field(
+        default_factory=lambda: f"request-{uuid.uuid4().hex}",
+        min_length=1,
+    )
     context: dict[str, Any] = Field(default_factory=dict)
     overrides: dict[str, Any] | None = None
 
-    def to_mapping(self) -> dict[str, Any]:
-        """Return a request mapping; runtime wrappers fill generated ids."""
+    @field_validator("input", mode="before")
+    @classmethod
+    def _validate_input(cls, value: Any) -> Any:
+        return _json_value("" if value is None else value, "request input")
 
-        data = self.model_dump(mode="json", exclude_none=True)
-        data = {
-            key: item
-            for key, item in data.items()
-            if key == "input" or item not in ({}, [])
-        }
-        if self.input is None:
-            data["input"] = ""
+    @field_validator("context", mode="before")
+    @classmethod
+    def _validate_context(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            raise ValueError("request context must be a JSON object")
+        return _json_value(value, "request context")
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _validate_overrides(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if not isinstance(value, Mapping):
+            raise ValueError("request overrides must be a JSON object")
+        return _json_value(value, "request overrides")
+
+    @model_validator(mode="after")
+    def _validate_extensions(self) -> Self:
+        for name, value in (self.model_extra or {}).items():
+            _json_value(value, f"request extension {name!r}")
+        return self
+
+    def to_mapping(self) -> dict[str, Any]:
+        """Return a detached request mapping for the Rust runtime."""
+
+        data = _json_value(
+            self.model_dump(mode="python", exclude_none=True),
+            "request",
+        )
+        assert isinstance(data, dict)
         return data

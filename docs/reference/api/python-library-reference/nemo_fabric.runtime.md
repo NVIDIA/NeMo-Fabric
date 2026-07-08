@@ -74,7 +74,7 @@ Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 ```python
 invoke(
     input: 'Any' = None,
-    request: 'RunRequest | RunRequestModel | Mapping[str, Any] | None' = None,
+    request: 'RunRequest | None' = None,
     request_id: 'str | None' = None,
     context: 'Mapping[str, Any] | None' = None,
     overrides: 'Mapping[str, Any] | None' = None
@@ -90,7 +90,7 @@ A complete ``request`` cannot be combined with separate ``request_id``, ``contex
 **Args:**
 
  - <b>`input`</b>:  JSON-compatible turn input.
- - <b>`request`</b>:  Complete ``RunRequest`` or compatible mapping.
+ - <b>`request`</b>:  Complete validated ``RunRequest``.
  - <b>`request_id`</b>:  Caller-owned request identifier; generated when omitted.
  - <b>`context`</b>:  Caller-owned, JSON-compatible request metadata.
  - <b>`overrides`</b>:  JSON-compatible invocation-scoped config overrides.

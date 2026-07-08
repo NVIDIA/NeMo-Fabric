@@ -149,7 +149,7 @@ run(
     base_dir: 'PathSource | None' = None,
     input: 'Any' = None,
     input_file: 'str | Path | None' = None,
-    request: 'RunRequest | RunRequestModel | Mapping[str, Any] | None' = None,
+    request: 'RunRequest | None' = None,
     request_file: 'str | Path | None' = None,
     request_id: 'str | None' = None,
     context: 'Mapping[str, Any] | None' = None,
@@ -170,7 +170,7 @@ Exactly zero or one of ``input``, ``input_file``, ``request``, and ``request_fil
  - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
  - <b>`input`</b>:  JSON-compatible invocation input.
  - <b>`input_file`</b>:  UTF-8 file whose contents become the invocation input.
- - <b>`request`</b>:  Complete ``RunRequest`` or compatible mapping.
+ - <b>`request`</b>:  Complete validated ``RunRequest``.
  - <b>`request_file`</b>:  UTF-8 JSON file containing a complete request.
  - <b>`request_id`</b>:  Caller-owned request identifier. Fabric generates one  when omitted.
  - <b>`context`</b>:  Caller-owned, JSON-compatible request metadata.

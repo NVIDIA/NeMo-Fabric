@@ -31,7 +31,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.MetadataConfigModel`](./nemo_fabric.models.md#class-metadataconfigmodel): Human-readable agent identity.
 - [`models.ModelConfigModel`](./nemo_fabric.models.md#class-modelconfigmodel): Model alias configuration.
 - [`models.ProfileRegistryConfigModel`](./nemo_fabric.models.md#class-profileregistryconfigmodel): Profile discovery config for portable file-backed agent packages.
-- [`models.RunRequestModel`](./nemo_fabric.models.md#class-runrequestmodel): Pydantic authoring model for one Fabric invocation request.
+- [`models.RunRequest`](./nemo_fabric.models.md#class-runrequest): One validated Fabric invocation request.
 - [`models.RuntimeConfigModel`](./nemo_fabric.models.md#class-runtimeconfigmodel): Runtime input/output contract.
 - [`models.SkillConfigModel`](./nemo_fabric.models.md#class-skillconfigmodel): Skill capability configuration.
 - [`models.TelemetryConfigModel`](./nemo_fabric.models.md#class-telemetryconfigmodel): Telemetry configuration.
@@ -49,7 +49,6 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.McpConfig`](./nemo_fabric.types.md#class-mcpconfig): MCP capability configuration with authoring helpers.
 - [`types.MetadataConfig`](./nemo_fabric.types.md#class-metadataconfig): Agent identity and human-readable metadata.
 - [`types.RunPlan`](./nemo_fabric.types.md#class-runplan): Immutable execution plan produced before a runtime is started.
-- [`types.RunRequest`](./nemo_fabric.types.md#class-runrequest): One normalized invocation request.
 - [`types.RunResult`](./nemo_fabric.types.md#class-runresult): Normalized terminal result from one Fabric invocation.
 - [`types.RuntimeCapabilities`](./nemo_fabric.types.md#class-runtimecapabilities): Operations declared by the resolved runtime and adapter.
 - [`types.RuntimeConfig`](./nemo_fabric.types.md#class-runtimeconfig): Runtime input/output contract.

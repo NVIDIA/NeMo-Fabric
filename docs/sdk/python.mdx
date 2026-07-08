@@ -197,9 +197,9 @@ Use `run(...)` when the application has one input and does not need to preserve
 runtime state after the result is collected.
 
 ```python
-from nemo_fabric import Fabric, RunRequestModel
+from nemo_fabric import Fabric, RunRequest
 
-request = RunRequestModel(
+request = RunRequest(
     input="Review the workspace changes.",
     request_id="request-123",
     context={"source": "review-service"},
@@ -411,8 +411,8 @@ around that contract.
 The SDK's Pydantic models are maintained against the Rust-generated public
 schemas. Use the schemas for persisted field definitions and the generated API
 reference for exact Python signatures. New application code should prefer
-`FabricConfigModel` and `RunRequestModel`; the mapping-compatible
-`FabricConfig` and `RunRequest` classes normalize data at the runtime boundary.
+`FabricConfigModel` and `RunRequest`; the mapping-compatible `FabricConfig`
+class normalizes configuration data at the runtime boundary.
 
 | Contract | Source |
 | --- | --- |

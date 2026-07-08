@@ -13,6 +13,7 @@ from typing import Any, get_overloads
 import pytest
 from pydantic import ValidationError
 
+import nemo_fabric
 import nemo_fabric.errors as fabric_errors
 
 from nemo_fabric import (
@@ -35,7 +36,6 @@ from nemo_fabric import (
     MetadataConfig,
     RunPlan,
     RunRequest,
-    RunRequestModel,
     RunResult,
     RuntimeCapabilities,
     RuntimeConfig,
@@ -52,6 +52,7 @@ def test_public_contract_has_no_unreleased_aliases():
     assert not hasattr(Fabric, "__aenter__")
     assert not hasattr(Fabric, "__aexit__")
     assert not hasattr(RunRequest, "from_text")
+    assert not hasattr(nemo_fabric, "RunRequestModel")
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
         assert not hasattr(Fabric, name)
 
@@ -583,7 +584,7 @@ class NativeClient(Fabric):
         return self.native
 
 
-def test_run_request_is_mapping_compatible_and_json_safe():
+def test_run_request_is_validated_and_json_safe():
     context = {"run_id": "run-1", "labels": ["sdk"]}
     overrides = {"temperature": 0, "limits": {"turns": 1}}
     request = RunRequest(
@@ -595,7 +596,6 @@ def test_run_request_is_mapping_compatible_and_json_safe():
     context["labels"].append("mutated")
     overrides["limits"]["turns"] = 2
 
-    assert request["request_id"] == "request-1"
     assert request.request_id == "request-1"
     assert request.to_mapping()["input"] == {
         "messages": [{"role": "user", "content": "hello"}]
@@ -606,7 +606,7 @@ def test_run_request_is_mapping_compatible_and_json_safe():
         "limits": {"turns": 1},
     }
 
-    copied = request.to_dict()
+    copied = request.to_mapping()
     copied["context"]["run_id"] = "changed"
     assert request.to_mapping()["context"] == {"run_id": "run-1", "labels": ["sdk"]}
 
@@ -624,24 +624,24 @@ def test_run_request_from_mapping_copies_and_validates_context():
     assert request.input == "hello"
     assert request.context == {"job_id": "job-1"}
 
-    with pytest.raises(FabricConfigError, match="request context"):
+    with pytest.raises(ValidationError, match="request context"):
         RunRequest.from_mapping({"input": "bad", "context": "not-a-mapping"})
 
 
 def test_run_request_constructor_validates_context_and_overrides():
-    with pytest.raises(FabricConfigError, match="request context"):
+    with pytest.raises(ValidationError, match="request context"):
         RunRequest(input="bad", context="not-a-mapping")  # type: ignore[arg-type]
 
-    with pytest.raises(FabricConfigError, match="request overrides"):
+    with pytest.raises(ValidationError, match="request overrides"):
         RunRequest(input="bad", overrides="not-a-mapping")  # type: ignore[arg-type]
 
-    with pytest.raises(FabricConfigError, match="request context"):
+    with pytest.raises(ValidationError, match="request context"):
         RunRequest(input="bad", context=[])  # type: ignore[arg-type]
 
-    with pytest.raises(FabricConfigError, match="request extra_fields"):
-        RunRequest(input="bad", extra_fields=[])  # type: ignore[arg-type]
+    with pytest.raises(ValidationError, match="JSON-compatible"):
+        RunRequest(input="bad", future_request=object())
 
-    with pytest.raises(FabricConfigError, match="finite"):
+    with pytest.raises(ValidationError, match="finite"):
         RunRequest(input=float("nan"))
 
 
@@ -653,15 +653,13 @@ def test_run_request_constructor_generates_request_metadata():
     assert request.context == {}
 
 
-def test_pydantic_run_request_model_is_accepted_by_runtime_shape():
-    pydantic_request = RunRequestModel(
+def test_run_request_preserves_extension_fields():
+    request = RunRequest(
         input={"messages": [{"role": "user", "content": "hello"}]},
         request_id="request-1",
         context={"job_id": "job-1"},
         future_request={"enabled": True},
     )
-
-    request = RunRequest.from_mapping(pydantic_request)
 
     assert request.to_mapping()["input"] == {
         "messages": [{"role": "user", "content": "hello"}]
@@ -671,12 +669,12 @@ def test_pydantic_run_request_model_is_accepted_by_runtime_shape():
 
 
 @pytest.mark.parametrize("value", [{}, []])
-def test_pydantic_run_request_preserves_empty_structured_input(value):
-    assert RunRequestModel(input=value).to_mapping()["input"] == value
+def test_run_request_preserves_empty_structured_input(value):
+    assert RunRequest(input=value).to_mapping()["input"] == value
 
 
-def test_pydantic_run_request_defaults_missing_input_to_empty_text():
-    assert RunRequestModel().to_mapping()["input"] == ""
+def test_run_request_defaults_missing_input_to_empty_text():
+    assert RunRequest().to_mapping()["input"] == ""
 
 
 def test_run_result_wraps_nested_error_and_keeps_mapping_access():
@@ -928,6 +926,16 @@ async def test_run_rejects_multiple_primary_input_sources():
             _fabric_config(),
             input="hello",
             request={"input": "request"},
+        )
+
+
+async def test_run_rejects_raw_mapping_request():
+    client = NativeClient(NativeRecorder())
+
+    with pytest.raises(FabricConfigError, match="request must be a RunRequest"):
+        await client.run(
+            _fabric_config(),
+            request={"input": "request"},  # type: ignore[arg-type]
         )
 
 

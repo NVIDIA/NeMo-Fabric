@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import math
-import uuid
 from collections.abc import Iterator, Mapping, Sequence
 from copy import deepcopy
 from pathlib import Path
@@ -20,7 +19,6 @@ from nemo_fabric.errors import FabricConfigError
 JSONScalar = str | int | float | bool | None
 JSONValue = JSONScalar | list["JSONValue"] | dict[str, "JSONValue"]
 
-_UNSET = object()
 _T = TypeVar("_T")
 
 
@@ -1126,71 +1124,6 @@ class DoctorReport(FabricMapping):
             DoctorCheck.from_mapping(check) for check in data.get("checks", [])
         )
         return data
-
-
-class RunRequest(FabricMapping):
-    """One normalized invocation request.
-
-    ``input`` and all mapping fields must be JSON-compatible. Fabric generates
-    a request identifier when callers omit one and preserves unknown mapping
-    fields for forward compatibility.
-
-    Attributes:
-        input: Harness input; defaults to an empty string.
-        request_id: Caller-provided or generated request identifier.
-        context: Caller-owned metadata propagated with the invocation.
-        overrides: Optional invocation-scoped config overrides.
-        extra_fields: Preserved extension fields not recognized by this SDK.
-    """
-
-    input: Any
-    request_id: str
-    context: Mapping[str, Any]
-    overrides: Mapping[str, Any] | None
-    _fields = frozenset({"input", "request_id", "context", "overrides"})
-    _json_fields = frozenset({"input", "context", "overrides"})
-
-    def __init__(
-        self,
-        *,
-        input: Any = _UNSET,
-        request_id: str | None = None,
-        context: Mapping[str, Any] | None = None,
-        overrides: Mapping[str, Any] | None = None,
-        extra_fields: Mapping[str, Any] | None = None,
-    ) -> None:
-        data: dict[str, Any] = {
-            "input": "" if input is _UNSET or input is None else input,
-            "request_id": request_id or f"request-{uuid.uuid4().hex}",
-            "context": _mapping(
-                {} if context is None else context,
-                "request context",
-            ),
-        }
-        if overrides is not None:
-            data["overrides"] = _mapping(overrides, "request overrides")
-        extras = _mapping(
-            {} if extra_fields is None else extra_fields,
-            "request extra_fields",
-        )
-        overlap = self._fields.intersection(extras)
-        if overlap:
-            raise FabricConfigError(
-                f"request extra_fields duplicates known fields: {', '.join(sorted(overlap))}"
-            )
-        data.update(extras)
-        FabricMapping.__init__(self, data)
-
-    @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "RunRequest":
-        data = _mapping(value, "RunRequest")
-        return cls(
-            input=data.get("input", _UNSET),
-            request_id=data.get("request_id"),
-            context=data.get("context"),
-            overrides=data.get("overrides"),
-            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
-        )
 
 
 class ErrorInfo(FabricMapping):

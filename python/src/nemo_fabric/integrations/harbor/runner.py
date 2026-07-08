@@ -53,7 +53,7 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 async def run(spec: dict[str, Any]) -> dict[str, Any]:
     config, profiles = load_sources(spec)
-    request = RunRequest.from_mapping(spec.get("request", {}))
+    request = RunRequest.model_validate(spec.get("request", {}))
     result = await Fabric().run(
         config,
         profiles=profiles,

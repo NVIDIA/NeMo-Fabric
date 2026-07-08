@@ -926,8 +926,8 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `RunRequestModel`
-Pydantic authoring model for one Fabric invocation request.
+## <kbd>class</kbd> `RunRequest`
+One validated Fabric invocation request.
 
 
 ---
@@ -980,7 +980,7 @@ Validate a mapping using this Pydantic model.
 to_mapping() → dict[str, Any]
 ```
 
-Return a request mapping; runtime wrappers fill generated ids.
+Return a detached request mapping for the Rust runtime.
 
 
 

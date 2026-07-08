@@ -340,12 +340,10 @@ def test_harbor_sdk_package_documents_execution_boundary():
     assert "does not invoke the Fabric CLI" in readme
 
 
-def test_root_readme_documents_sdk_contract_and_harbor_example():
+def test_root_readme_routes_to_sdk_and_harbor_guides():
     readme = ROOT_README.read_text(encoding="utf-8")
 
     assert "runtime execution layer" in readme
     assert "docs/sdk/python.mdx" in readme
-    assert "## Harbor Integration" in readme
-    assert "uv run --extra harbor harbor run" in readme
-    assert "nemo_fabric.integrations.harbor:FabricAgent" in readme
+    assert "integrations/harbor/README.md" in readme
     assert "integrations/harbor/demo/README.md" in readme
