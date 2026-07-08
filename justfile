@@ -8,6 +8,8 @@ export REPO_ROOT := justfile_directory()
 # Skip dependency synchronization when the project environment is already fully synced.
 no_uv := "false"
 
+python_projects := ". python adapters/common adapters/codex-cli adapters/hermes-cli adapters/hermes-sdk"
+
 # Remove local Rust and Python build and test artifacts.
 clean:
     #!/usr/bin/env bash
@@ -53,14 +55,7 @@ build-all: build-rust build-python
 lock-python:
     #!/usr/bin/env bash
     set -euo pipefail
-    projects=(
-        .
-        python
-        adapters/common
-        adapters/codex-cli
-        adapters/hermes-cli
-        adapters/hermes-sdk
-    )
+    projects=({{ python_projects }})
     for project in "${projects[@]}"; do
         uv lock --project "$project"
     done
@@ -99,14 +94,7 @@ test-all: test-rust test-python
 wheels:
     #!/usr/bin/env bash
     set -euo pipefail
-    projects=(
-        .
-        python
-        adapters/common
-        adapters/codex-cli
-        adapters/hermes-cli
-        adapters/hermes-sdk
-    )
+    projects=({{ python_projects }})
     uv build --wheel --clear --out-dir dist "${projects[0]}"
     for project in "${projects[@]:1}"; do
         uv build --wheel --out-dir dist "$project"
