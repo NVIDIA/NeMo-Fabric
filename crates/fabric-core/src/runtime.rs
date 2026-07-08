@@ -559,7 +559,9 @@ fn stable_hash<T: Serialize>(prefix: &str, value: &T) -> Result<String> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct ProcessAdapterSettings {
-    script: PathBuf,
+    command: String,
+    #[serde(default)]
+    script: Option<PathBuf>,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
@@ -581,6 +583,10 @@ enum ProcessStdinPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct PythonAdapterSettings {
     script: PathBuf,
+    #[serde(default)]
+    python: Option<PathBuf>,
+    #[serde(default)]
+    python_env: Option<String>,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
@@ -699,8 +705,12 @@ fn run_process_adapter(
         runtime_id: runtime.runtime_id.clone(),
     };
     let settings = parse_process_settings(plan)?;
-    let command_display = settings.script.to_string_lossy().into_owned();
-    let command_args = settings.args.clone();
+    let command_path = resolve_command_path(
+        adapter_setting_root(plan, "command"),
+        Path::new(&settings.command),
+    );
+    let command_display = command_path.to_string_lossy().into_owned();
+    let command_args = process_command_args(plan, &settings);
     let cwd = settings
         .cwd
         .as_ref()
@@ -721,7 +731,7 @@ fn run_process_adapter(
     let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
     let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
 
-    let mut command = Command::new(&settings.script);
+    let mut command = Command::new(&command_path);
     command
         .args(&command_args)
         .current_dir(&cwd)
@@ -914,7 +924,10 @@ fn run_python_adapter(
         runtime_id: runtime.runtime_id.clone(),
     };
     let settings = parse_python_settings(plan)?;
-    let script = settings.script.clone();
+    let script = absolute_path(resolve_path(
+        adapter_setting_root(plan, "script"),
+        &settings.script,
+    ))?;
     let cwd = settings
         .cwd
         .as_ref()
@@ -922,12 +935,14 @@ fn run_python_adapter(
         .or_else(|| runtime.environment.workspace.clone())
         .unwrap_or_else(|| plan.agent_root.clone());
 
+    let python = resolve_python_command(&plan.config_root, &settings);
     let mut artifacts = artifact_manifest(plan)?;
     let relay_config =
         prepare_relay_runtime_config(plan, runtime, &invocation, &request, &mut artifacts)?;
 
-    let mut command = Command::new(&script);
+    let mut command = Command::new(&python);
     command
+        .arg(&script)
         .args(&settings.args)
         .current_dir(&cwd)
         .envs(&settings.env)
@@ -976,7 +991,7 @@ fn run_python_adapter(
     let mut child = command
         .spawn()
         .map_err(|source| FabricError::ProcessRunner {
-            command: script.to_string_lossy().into_owned(),
+            command: python.to_string_lossy().into_owned(),
             source,
         })?;
 
@@ -989,13 +1004,13 @@ fn run_python_adapter(
         relay_config.as_ref(),
     )?;
     if let Some(mut stdin) = child.stdin.take() {
-        write_child_stdin(&mut stdin, &stdin_payload, &script.to_string_lossy())?;
+        write_child_stdin(&mut stdin, &stdin_payload, &python.to_string_lossy())?;
     }
 
     let output = child
         .wait_with_output()
         .map_err(|source| FabricError::ProcessRunner {
-            command: script.to_string_lossy().into_owned(),
+            command: python.to_string_lossy().into_owned(),
             source,
         })?;
 
@@ -1048,6 +1063,10 @@ fn run_python_adapter(
     metadata.insert(
         "adapter_runner".to_string(),
         Value::String("python".to_string()),
+    );
+    metadata.insert(
+        "python".to_string(),
+        Value::String(python.to_string_lossy().into_owned()),
     );
     metadata.insert(
         "script".to_string(),
@@ -1202,6 +1221,16 @@ fn merged_adapter_settings(plan: &RunPlan) -> Map<String, Value> {
     settings
 }
 
+fn adapter_setting_root<'a>(plan: &'a RunPlan, key: &str) -> &'a Path {
+    if plan.config.harness.settings.contains_key(key) {
+        return &plan.config_root;
+    }
+    plan.adapter_descriptor
+        .as_ref()
+        .map(|adapter| adapter.root.as_path())
+        .unwrap_or(&plan.config_root)
+}
+
 fn fabric_adapter_payload(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
@@ -1310,6 +1339,25 @@ fn resolve_path(root: &Path, path: &Path) -> PathBuf {
     root.join(path)
 }
 
+fn resolve_command_path(root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() || path.components().count() > 1 {
+        return resolve_path(root, path);
+    }
+    path.to_path_buf()
+}
+
+fn resolve_python_command(root: &Path, settings: &PythonAdapterSettings) -> PathBuf {
+    if let Some(path) = settings.python.as_ref() {
+        return resolve_command_path(root, path);
+    }
+    if let Some(env_name) = settings.python_env.as_ref() {
+        if let Some(path) = std::env::var_os(env_name) {
+            return resolve_command_path(root, Path::new(&path));
+        }
+    }
+    PathBuf::from("python3")
+}
+
 fn absolute_path(path: PathBuf) -> Result<PathBuf> {
     if path.is_absolute() {
         return Ok(path);
@@ -1414,6 +1462,16 @@ fn unique_relay_artifact_name(manifest: &ArtifactManifest, kind: &str) -> String
         }
         index += 1;
     }
+}
+
+fn process_command_args(plan: &RunPlan, settings: &ProcessAdapterSettings) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(script) = settings.script.as_ref() {
+        let root = adapter_setting_root(plan, "script");
+        args.push(resolve_path(root, script).to_string_lossy().into_owned());
+    }
+    args.extend(settings.args.clone());
+    args
 }
 
 fn value_to_stdin(value: &Value) -> Result<String> {
@@ -1810,7 +1868,7 @@ metadata:
 harness:
   adapter_id: acme.fabric.process
   settings:
-    script: cat
+    command: cat
 models:
   default:
     provider: test
@@ -1858,7 +1916,7 @@ metadata:
 harness:
   adapter_id: acme.fabric.process
   settings:
-    script: cat
+    command: cat
 models:
   default:
     provider: test
@@ -1934,10 +1992,6 @@ environment:
         assert_eq!(result.status, RunStatus::Succeeded);
         assert_eq!(result.output, Value::String("hello fabric".to_string()));
         assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
-        assert_eq!(
-            result.metadata.get("command"),
-            Some(&Value::String("cat".to_string()))
-        );
         let result_json = serde_json::to_value(&result).expect("result json");
         assert!(result_json.get("profile").is_none());
         assert_eq!(
@@ -2016,7 +2070,7 @@ telemetry:
         let mut plan = resolve_run_plan(&root, None).expect("run plan");
         plan.agent_name = new_id("invoke-error-agent");
         plan.effective_config.agent_name = plan.agent_name.clone();
-        plan.config.harness.settings.remove("script");
+        plan.config.harness.settings.remove("command");
         let agent_name = plan.agent_name.clone();
 
         let error = run_plan(&plan, RunRequest::text("hello fabric")).expect_err("invoke error");
@@ -2137,7 +2191,7 @@ telemetry:
             .config
             .harness
             .settings
-            .insert("script".to_string(), Value::String("printf".to_string()));
+            .insert("command".to_string(), Value::String("printf".to_string()));
 
         let error = invoke_runtime(&other_plan, &runtime, RunRequest::text("hello fabric"))
             .expect_err("runtime mismatch");
@@ -2249,7 +2303,7 @@ print(json.dumps({
             "harness": {
                 "adapter_id": "acme.fabric.process",
                 "settings": {
-                    "script": "python3",
+                    "command": "python3",
                     "args": ["-c", adapter_script],
                 },
             },
@@ -2326,7 +2380,7 @@ metadata:
 harness:
   adapter_id: acme.fabric.process
   settings:
-    script: python3
+    command: python3
     args:
       - -c
       - |
@@ -2391,7 +2445,7 @@ metadata:
 harness:
   adapter_id: acme.fabric.process
   settings:
-    script: sh
+    command: sh
     args:
       - -c
       - |
@@ -2454,11 +2508,6 @@ runtime:
             result.metadata.get("adapter_runner"),
             Some(&Value::String("python".to_string()))
         );
-        assert_eq!(
-            result.metadata.get("script"),
-            Some(&Value::String("python3".to_string()))
-        );
-        assert!(!result.metadata.contains_key("python"));
     }
 
     #[test]
@@ -2480,7 +2529,7 @@ metadata:
 harness:
   adapter_id: acme.fabric.process
   settings:
-    script: python3
+    command: python3
     args:
       - -c
       - |
