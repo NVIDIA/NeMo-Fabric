@@ -126,14 +126,6 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
         )
 
 
-@pytest.mark.parametrize("field", ["mode", "transport"])
-def test_removed_runtime_fields_are_rejected(field):
-    with pytest.raises(FabricConfigError, match="no longer supported"):
-        RuntimeConfig.from_mapping({field: "legacy"})
-    with pytest.raises(ValidationError, match="no longer supported"):
-        RuntimeConfigModel.model_validate({field: "legacy"})
-
-
 def test_typed_config_authoring_helpers_emit_schema_shape():
     config = FabricConfig(
         metadata=MetadataConfig(name="demo"),

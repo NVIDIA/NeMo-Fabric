@@ -261,11 +261,6 @@ class RuntimeConfig(_ConfigMapping):
         """Validate a runtime mapping and apply stable constructor defaults."""
 
         data = _mapping(value, "runtime")
-        removed = sorted({"mode", "transport"} & data.keys())
-        if removed:
-            raise FabricConfigError(
-                f"runtime fields are no longer supported: {', '.join(removed)}"
-            )
         return cls(
             input_schema=data.get("input_schema"),
             output_schema=data.get("output_schema"),

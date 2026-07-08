@@ -105,19 +105,6 @@ class RuntimeConfigModel(FabricBaseModel):
     output_schema: str | None = None
     artifacts: str | Path | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def _reject_removed_fields(cls, value: Any) -> Any:
-        """Reject removed lifecycle fields instead of treating them as extensions."""
-
-        if isinstance(value, Mapping):
-            removed = sorted({"mode", "transport"} & value.keys())
-            if removed:
-                raise ValueError(
-                    f"runtime fields are no longer supported: {', '.join(removed)}"
-                )
-        return value
-
 
 class EnvironmentConfigModel(FabricBaseModel):
     """Execution environment metadata supplied by the consumer."""
