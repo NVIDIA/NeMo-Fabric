@@ -7,7 +7,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nemo_fabric import Fabric, FabricConfigModel
+from nemo_fabric import (
+    Fabric,
+    FabricConfigModel,
+    HarnessConfigModel,
+    MetadataConfigModel,
+    ModelConfigModel,
+    RuntimeConfigModel,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
@@ -22,9 +29,12 @@ DOCUMENTED_SNIPPETS = [
     'plan = client.plan(agent, profiles=["hermes_sdk"])',
     'report = await client.doctor(agent, profiles=["hermes_sdk"])',
     "config = FabricConfigModel(",
+    'metadata=MetadataConfigModel(name="code-review-agent"),',
     "plan = client.plan(",
     "result = await Fabric().run(",
-    'harness={"adapter_id": "nvidia.fabric.hermes.sdk"},',
+    'harness=HarnessConfigModel(adapter_id="nvidia.fabric.hermes.sdk"),',
+    '"default": ModelConfigModel(',
+    "runtime=RuntimeConfigModel(",
     'base_dir="examples/code-review-agent",',
     "### Multi-Turn SDK Runtimes",
     "### Interactive CLI Chat",
@@ -37,22 +47,21 @@ DOCUMENTED_SNIPPETS = [
     "The CLI is a separate interface over the same Rust",
 ]
 
-# The exact typed-config dict shown in the README example.
-README_PLAN_CONFIG = {
-    "schema_version": "fabric.agent/v1alpha1",
-    "metadata": {"name": "code-review-agent"},
-    "harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},
-    "models": {
-        "default": {
-            "provider": "nvidia",
-            "model": "nvidia/nemotron-3-nano-30b-a3b",
-        }
+# The exact typed config shown in the README example.
+README_PLAN_CONFIG = FabricConfigModel(
+    metadata=MetadataConfigModel(name="code-review-agent"),
+    harness=HarnessConfigModel(adapter_id="nvidia.fabric.hermes.sdk"),
+    models={
+        "default": ModelConfigModel(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+        )
     },
-    "runtime": {
-        "input_schema": "chat",
-        "output_schema": "message",
-    },
-}
+    runtime=RuntimeConfigModel(
+        input_schema="chat",
+        output_schema="message",
+    ),
+)
 
 
 def readme_documents_each_example() -> None:
@@ -71,7 +80,7 @@ async def readme_python_examples_run() -> None:
     plan = client.plan(agent, profiles=["hermes_sdk"])
     report = await client.doctor(agent, profiles=["hermes_sdk"])
     typed_plan = client.plan(
-        FabricConfigModel.from_mapping(README_PLAN_CONFIG),
+        README_PLAN_CONFIG,
         base_dir=agent,
     )
 

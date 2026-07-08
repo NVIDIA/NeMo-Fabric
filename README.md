@@ -179,21 +179,28 @@ Consumers that already own a top-level job config can construct the Fabric slice
 in code instead of materializing an agent directory:
 
 ```python
-from nemo_fabric import Fabric, FabricConfigModel
+from nemo_fabric import (
+    Fabric,
+    FabricConfigModel,
+    HarnessConfigModel,
+    MetadataConfigModel,
+    ModelConfigModel,
+    RuntimeConfigModel,
+)
 
 config = FabricConfigModel(
-    metadata={"name": "code-review-agent"},
-    harness={"adapter_id": "nvidia.fabric.hermes.sdk"},
+    metadata=MetadataConfigModel(name="code-review-agent"),
+    harness=HarnessConfigModel(adapter_id="nvidia.fabric.hermes.sdk"),
     models={
-        "default": {
-            "provider": "nvidia",
-            "model": "nvidia/nemotron-3-nano-30b-a3b",
-        }
+        "default": ModelConfigModel(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+        )
     },
-    runtime={
-        "input_schema": "chat",
-        "output_schema": "message",
-    },
+    runtime=RuntimeConfigModel(
+        input_schema="chat",
+        output_schema="message",
+    ),
 )
 config.add_skill_path("./skills/code-review")
 config.add_mcp_server(
