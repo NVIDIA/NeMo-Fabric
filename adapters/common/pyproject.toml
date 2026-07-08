@@ -4,21 +4,15 @@
 [build-system]
 requires = [
   "setuptools>=64",
-  "setuptools-scm>=8",
-  "setuptools_dynamic_dependencies>=1.0.0",
 ]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric-adapters-common"
+version = "0.1.0"
 description = "Shared Python helpers for NeMo Fabric adapters"
 requires-python = ">=3.11"
-dynamic = ["version"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["nemo_fabric_adapters.common*"]
-
-[tool.setuptools_scm]
-root = "../.."
-git_describe_command = "git describe --long --first-parent"
