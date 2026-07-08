@@ -672,6 +672,28 @@ def test_process_launch_failures_return_structured_results(
     assert "stderr" not in output
 
 
+def test_thread_mismatch_preserves_process_error(codex_payload, monkeypatch):
+    adapter = load_codex_adapter()
+    adapter.save_thread_id(codex_payload, "runtime-1", "thread-persisted")
+    monkeypatch.setattr(
+        adapter.subprocess,
+        "run",
+        MagicMock(
+            return_value=subprocess.CompletedProcess(
+                args=[],
+                returncode=1,
+                stdout=codex_jsonl("thread-unexpected", "failed response"),
+                stderr="Codex process failed",
+            )
+        ),
+    )
+
+    output = adapter.run_codex(codex_payload)
+
+    assert output["failed"] is True
+    assert output["error"] == "Codex process failed"
+
+
 @pytest.mark.parametrize("timeout", [0, -1, float("inf"), "30"])
 def test_adapter_rejects_invalid_timeout(codex_payload, timeout):
     adapter = load_codex_adapter()

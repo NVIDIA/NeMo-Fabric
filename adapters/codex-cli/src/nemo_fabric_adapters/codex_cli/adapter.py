@@ -673,7 +673,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     if not thread_id:
         error = error or "Codex runtime invocation did not return a thread identity"
     if prior_thread_id and thread_id != prior_thread_id:
-        error = (
+        error = error or (
             f"Codex resumed thread {thread_id}, expected persisted thread {prior_thread_id}"
         )
     if thread_id and not error:
