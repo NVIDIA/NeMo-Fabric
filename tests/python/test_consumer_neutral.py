@@ -4,17 +4,18 @@
 """Smoke test: the SDK core stays consumer-neutral.
 
 WS4 guardrail. The public SDK core -- the ``nemo_fabric`` package outside the
-``integrations`` subpackage -- may depend on Pydantic for its typed authoring
-models, but not on a harness (Hermes), consumer (Harbor/Platform), or telemetry
-backend (Relay). Adapters are loaded dynamically at runtime via importlib, and
-consumer glue lives under ``nemo_fabric.integrations`` behind an optional
-extra; the core never imports any of them.
+``integrations`` subpackage -- may depend on Pydantic and typing-extensions for
+its typed authoring models, but not on a harness (Hermes), consumer
+(Harbor/Platform), or telemetry backend (Relay). Adapters are loaded dynamically
+at runtime via importlib, and consumer glue lives under
+``nemo_fabric.integrations`` behind an optional extra; the core never imports
+any of them.
 
 Two checks:
 
 1. Static -- every top-level import in the core resolves to the standard
-   library, ``nemo_fabric``, or the Pydantic authoring dependency. This also
-   pins the SDK's direct dependency contract.
+   library, ``nemo_fabric``, or a declared authoring dependency. This also pins
+   the SDK's direct dependency contract.
 2. Runtime -- a plain ``import nemo_fabric`` (what a consumer like Platform does)
    pulls in no consumer/harness package.
 """
@@ -29,8 +30,13 @@ from pathlib import Path
 
 SDK_ROOT = Path(__file__).resolve().parents[2] / "python" / "src" / "nemo_fabric"
 PYPROJECT = Path(__file__).resolve().parents[2] / "python" / "pyproject.toml"
-ALLOWED = set(sys.stdlib_module_names) | {"nemo_fabric", "pydantic", "__future__"}
-EXPECTED_DEPENDENCIES = ["pydantic>=2.10,<3"]
+ALLOWED = set(sys.stdlib_module_names) | {
+    "nemo_fabric",
+    "pydantic",
+    "typing_extensions",
+    "__future__",
+}
+EXPECTED_DEPENDENCIES = ["pydantic>=2.10,<3", "typing-extensions>=4.12"]
 # Consumer/harness packages that must never leak into a plain ``import nemo_fabric``.
 CONSUMER_SPECIFIC = [
     "harbor",
