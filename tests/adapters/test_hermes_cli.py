@@ -17,8 +17,8 @@ async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, h
         )
 
     assert result["status"] == "succeeded"
-    assert result["adapter_kind"] == "process"
-    assert result["metadata"]["adapter_runner"] == "process"
+    assert result["adapter_kind"] == "python"
+    assert result["metadata"]["adapter_runner"] == "python"
 
     output = result["output"]
     assert output["adapter"] == "cli"
@@ -27,13 +27,16 @@ async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, h
     assert output["mode"] == "hermes_cli_oneshot"
     assert output["model"] == "test-model"
 
-    for dir_field in ('cwd', 'fabric_home', 'fabric_invocation', 'hermes_config_path', 'hermes_home'):
+    assert output["fabric_home"] is None
+    assert output["fabric_invocation"] is None
+
+    for dir_field in ("cwd", "hermes_config_path", "hermes_home"):
         # these should all be under the agent dir
         dir_path = Path(output[dir_field]).resolve()
         assert dir_path.exists(), f"Missing path for field {dir_field}: {dir_path}"
         assert dir_path.is_relative_to(hermes_agent_dir), f"Field {dir_field} is not under agent dir: {dir_path}"
 
-    for field in ('base_url', 'enabled_toolsets', 'error', 'response'):
+    for field in ("base_url", "enabled_toolsets", "error", "response"):
         # Ensure these fields are present in the output, even if they are None
         assert field in output, f"Missing field in output: {field}"
 

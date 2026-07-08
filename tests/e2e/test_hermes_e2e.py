@@ -211,8 +211,8 @@ class BaseTestHermesE2E:
 class TestHermesCliE2E(BaseTestHermesE2E):
     profile_names = ("hermes_cli", "relay")
     profile_file = "hermes-cli.yaml"
-    adapter_kind = "process"
-    adapter_runner = "process"
+    adapter_kind = "python"
+    adapter_runner = "python"
     output_adapter = "cli"
     mode = "hermes_cli_oneshot"
     artifact_dir = "hermes-cli"
@@ -221,10 +221,7 @@ class TestHermesCliE2E(BaseTestHermesE2E):
     async def _additional_artifact_tests(self, artifact_by_name: dict[str, dict[str, str]]):
         assert self.output["returncode"] == 0
 
-        fabric_invocation_path = Path(self.output["fabric_invocation"]).resolve()
-        assert fabric_invocation_path.is_file()
-        assert fabric_invocation_path.is_relative_to(self.artifact_root)
-        assert fabric_invocation_path.name == "adapter-invocation.json"
+        assert self.output["fabric_invocation"] is None
 
         relay_config_path = Path(artifact_by_name["relay_config"]["path"]).resolve()
         assert (relay_config_path.parent / "relay-config" / "plugins.toml").exists()

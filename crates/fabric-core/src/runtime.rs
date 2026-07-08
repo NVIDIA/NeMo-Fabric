@@ -582,7 +582,7 @@ enum ProcessStdinPayload {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct PythonAdapterSettings {
-    script: PathBuf,
+    module: String,
     #[serde(default)]
     python: Option<PathBuf>,
     #[serde(default)]
@@ -924,10 +924,6 @@ fn run_python_adapter(
         runtime_id: runtime.runtime_id.clone(),
     };
     let settings = parse_python_settings(plan)?;
-    let script = absolute_path(resolve_path(
-        adapter_setting_root(plan, "script"),
-        &settings.script,
-    ))?;
     let cwd = settings
         .cwd
         .as_ref()
@@ -942,7 +938,8 @@ fn run_python_adapter(
 
     let mut command = Command::new(&python);
     command
-        .arg(&script)
+        .arg("-m")
+        .arg(&settings.module)
         .args(&settings.args)
         .current_dir(&cwd)
         .envs(&settings.env)
@@ -981,10 +978,7 @@ fn run_python_adapter(
                 "invocation_id".to_string(),
                 Value::String(invocation.invocation_id.clone()),
             ),
-            (
-                "script".to_string(),
-                Value::String(script.to_string_lossy().into_owned()),
-            ),
+            ("module".to_string(), Value::String(settings.module.clone())),
         ]),
     ));
 
@@ -1068,10 +1062,7 @@ fn run_python_adapter(
         "python".to_string(),
         Value::String(python.to_string_lossy().into_owned()),
     );
-    metadata.insert(
-        "script".to_string(),
-        Value::String(script.to_string_lossy().into_owned()),
-    );
+    metadata.insert("module".to_string(), Value::String(settings.module));
     metadata.insert(
         "args".to_string(),
         Value::Array(settings.args.into_iter().map(Value::String).collect()),
@@ -2507,6 +2498,12 @@ runtime:
         assert_eq!(
             result.metadata.get("adapter_runner"),
             Some(&Value::String("python".to_string()))
+        );
+        assert_eq!(
+            result.metadata.get("module"),
+            Some(&Value::String(
+                "nemo_fabric_test_adapters.hermes_shim.adapter".to_string()
+            ))
         );
     }
 
