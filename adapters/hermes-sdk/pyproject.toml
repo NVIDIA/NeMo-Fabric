@@ -16,9 +16,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ["version", "dependencies"]
 
-[project.scripts]
-nemo-fabric-adapters-hermes-sdk = "nemo_fabric_adapters.hermes_sdk.adapter:main"
-
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["nemo_fabric_adapters.hermes_sdk*"]

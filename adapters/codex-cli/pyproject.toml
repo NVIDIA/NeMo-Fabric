@@ -16,9 +16,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dynamic = ["version", "dependencies"]
 
-[project.scripts]
-nemo-fabric-adapters-codex-cli = "nemo_fabric_adapters.codex_cli.adapter:main"
-
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["nemo_fabric_adapters.codex_cli*"]
