@@ -746,13 +746,13 @@ async def test_fabric_oneshot_uses_cached_codex_auth(tmp_path):
     config = fabric_config(tmp_path, mock_codex)
     os.environ.pop("OPENAI_API_KEY", None)
 
-    async with Fabric() as client:
-        report = await client.doctor(config, base_dir=tmp_path)
-        result = await client.run(
-            config,
-            base_dir=tmp_path,
-            input="inspect",
-        )
+    client = Fabric()
+    report = await client.doctor(config, base_dir=tmp_path)
+    result = await client.run(
+        config,
+        base_dir=tmp_path,
+        input="inspect",
+    )
 
     assert report.status == "pass"
     assert any(

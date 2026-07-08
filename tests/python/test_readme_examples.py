@@ -23,7 +23,7 @@ DOCUMENTED_SNIPPETS = [
     'report = await client.doctor(agent, profiles=["hermes_sdk"])',
     "config = FabricConfigModel(",
     "plan = client.plan(",
-    "result = await client.run(",
+    "result = await Fabric().run(",
     'harness={"adapter_id": "nvidia.fabric.hermes.sdk"},',
     'base_dir="examples/code-review-agent",',
     "### Multi-Turn SDK Runtimes",
@@ -67,13 +67,13 @@ async def readme_python_examples_run() -> None:
     """The documented Python SDK examples execute and return documented shapes."""
 
     agent = EXAMPLE_AGENT
-    async with Fabric() as client:
-        plan = client.plan(agent, profiles=["hermes_sdk"])
-        report = await client.doctor(agent, profiles=["hermes_sdk"])
-        typed_plan = client.plan(
-            FabricConfigModel.from_mapping(README_PLAN_CONFIG),
-            base_dir=agent,
-        )
+    client = Fabric()
+    plan = client.plan(agent, profiles=["hermes_sdk"])
+    report = await client.doctor(agent, profiles=["hermes_sdk"])
+    typed_plan = client.plan(
+        FabricConfigModel.from_mapping(README_PLAN_CONFIG),
+        base_dir=agent,
+    )
 
     # README prints plan["agent_name"] and report["checks"].
     assert plan["agent_name"] == "code-review-agent", plan["agent_name"]

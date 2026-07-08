@@ -163,10 +163,10 @@ from nemo_fabric import Fabric
 async def main():
     agent = Path("examples/code-review-agent")
 
-    async with Fabric() as client:
-        resolved = client.resolve(agent, profiles=["hermes_sdk"])
-        plan = client.plan(agent, profiles=["hermes_sdk"])
-        report = await client.doctor(agent, profiles=["hermes_sdk"])
+    client = Fabric()
+    resolved = client.resolve(agent, profiles=["hermes_sdk"])
+    plan = client.plan(agent, profiles=["hermes_sdk"])
+    report = await client.doctor(agent, profiles=["hermes_sdk"])
 
     print(resolved.agent_name)
     print(plan.agent_name)
@@ -228,12 +228,11 @@ request = RunRequestModel(
 async def run(raw_config):
     config = FabricConfigModel.from_mapping(raw_config)
     try:
-        async with Fabric() as client:
-            result = await client.run(
-                config,
-                base_dir="examples/code-review-agent",
-                request=request,
-            )
+        result = await Fabric().run(
+            config,
+            base_dir="examples/code-review-agent",
+            request=request,
+        )
     except FabricError as error:
         print(error.stage, error.code, error.retryable)
         raise

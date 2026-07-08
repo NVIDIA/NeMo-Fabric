@@ -9,12 +9,11 @@ from nemo_fabric import Fabric
 
 async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, hermes_cli_profile: str):
     # Ensure the hermes_cli adapter returns expected fields
-    async with Fabric() as client:
-        result = await client.run(
-            hermes_agent_dir,
-            profiles=[hermes_cli_profile],
-            input="who are you?",
-        )
+    result = await Fabric().run(
+        hermes_agent_dir,
+        profiles=[hermes_cli_profile],
+        input="who are you?",
+    )
 
     assert result["status"] == "succeeded"
     assert result["adapter_kind"] == "process"
@@ -56,12 +55,11 @@ telemetry:
         encoding="utf-8",
     )
 
-    async with Fabric() as client:
-        result = await client.run(
-            hermes_agent_dir,
-            profiles=[hermes_cli_profile, "native_telemetry"],
-            input="who are you?",
-        )
+    result = await Fabric().run(
+        hermes_agent_dir,
+        profiles=[hermes_cli_profile, "native_telemetry"],
+        input="who are you?",
+    )
 
     assert result["status"] == "failed"
     assert "only relay telemetry is supported for Hermes" in result["error"]["message"]

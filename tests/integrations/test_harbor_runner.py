@@ -162,12 +162,6 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
             return {"runtime_id": self.runtime_id}
 
     class FakeFabric:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
         async def run(self, config, *, profiles, base_dir, request):
             runtime_id = f"runtime-{len(calls) + 1}"
             calls.append(

@@ -16,8 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 async def test_native_sdk(hermes_shim_agent_dir: Path):
     assert native.version()
 
-    async with Fabric() as client:
-        await smoke(client, hermes_shim_agent_dir)
+    await smoke(Fabric(), hermes_shim_agent_dir)
 
 
 async def smoke(client: Fabric, fixture_agent: Path) -> None:

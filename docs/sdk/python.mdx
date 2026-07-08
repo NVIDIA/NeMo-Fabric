@@ -54,11 +54,11 @@ config = FabricConfigModel(
 
 
 async def main() -> None:
-    async with Fabric() as fabric:
-        result = await fabric.run(
-            config,
-            input="Review the workspace changes.",
-        )
+    fabric = Fabric()
+    result = await fabric.run(
+        config,
+        input="Review the workspace changes.",
+    )
 
     print(result.status)
     print(result.output)
@@ -102,6 +102,12 @@ Most application code works with four objects:
 | `RunPlan` | The resolved config, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
 | `Runtime` | The Python object for one logical, stateful harness execution. | Use it to send ordered invocations and stop the execution. Use it as an async context manager for cleanup. |
 | `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, events, artifacts, and correlation IDs. |
+
+`Fabric` is a lightweight, reusable SDK facade. It resolves configuration,
+creates plans and runtimes, and runs one-shot requests, but it does not
+represent a started execution and does not require cleanup. A `Runtime` owns
+stateful execution and shutdown, so it is the object used as an async context
+manager.
 
 `RuntimeHandle` and `InvocationHandle` carry lifecycle identity across the
 native boundary. Most Python callers use their `runtime_id` and
@@ -171,7 +177,9 @@ the caller's package or job layout.
 
 ## API Inventory
 
-Use `Fabric` as the primary SDK entrypoint.
+Create `Fabric()` as the primary SDK entrypoint. It is a regular Python object,
+not a lifecycle context manager, and may be reused to plan, diagnose, or start
+multiple independent runtimes.
 
 | API | Async | Use When | Notes |
 | --- | --- | --- | --- |
@@ -197,12 +205,12 @@ request = RunRequestModel(
     context={"source": "review-service"},
 )
 
-async with Fabric() as fabric:
-    result = await fabric.run(
-        config,
-        base_dir="/workspace/review-agent",
-        request=request,
-    )
+fabric = Fabric()
+result = await fabric.run(
+    config,
+    base_dir="/workspace/review-agent",
+    request=request,
+)
 
 print(result.status)
 print(result.output)
@@ -223,13 +231,13 @@ stops when its async context exits.
 ```python
 from nemo_fabric import Fabric
 
-async with Fabric() as fabric:
-    async with await fabric.start_runtime(
-        config,
-        base_dir="/workspace/review-agent",
-    ) as runtime:
-        first = await runtime.invoke(input="Inspect the repository")
-        second = await runtime.invoke(input="Now review the latest patch")
+fabric = Fabric()
+async with await fabric.start_runtime(
+    config,
+    base_dir="/workspace/review-agent",
+) as runtime:
+    first = await runtime.invoke(input="Inspect the repository")
+    second = await runtime.invoke(input="Now review the latest patch")
 
 print(first.status, second.status)
 ```
@@ -257,8 +265,7 @@ import asyncio
 
 
 async def review_one(prompt: str):
-    async with Fabric() as fabric:
-        return await fabric.run(config, input=prompt)
+    return await Fabric().run(config, input=prompt)
 
 
 async def main() -> None:
@@ -329,9 +336,9 @@ their runtime requirements, accepted configuration, and optional capabilities.
 Use `plan(...)` and `doctor(...)` before relying on optional features:
 
 ```python
-async with Fabric() as fabric:
-    plan = fabric.plan(config)
-    report = await fabric.doctor(config)
+fabric = Fabric()
+plan = fabric.plan(config)
+report = await fabric.doctor(config)
 
 print(plan.adapter.adapter_id)
 print(report.status)

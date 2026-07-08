@@ -24,11 +24,11 @@ async def run_copy(client: Fabric, fixture_agent: Path, root: Path, name: str) -
 
 
 async def test_sdk_concurrency(hermes_shim_agent_dir_src: Path, tmp_path: Path):
-    async with Fabric() as client:
-        first, second = await asyncio.gather(
-            run_copy(client, hermes_shim_agent_dir_src, tmp_path, "agent-one"),
-            run_copy(client, hermes_shim_agent_dir_src, tmp_path, "agent-two"),
-        )
+    client = Fabric()
+    first, second = await asyncio.gather(
+        run_copy(client, hermes_shim_agent_dir_src, tmp_path, "agent-one"),
+        run_copy(client, hermes_shim_agent_dir_src, tmp_path, "agent-two"),
+    )
 
     assert first["status"] == "succeeded"
     assert second["status"] == "succeeded"
@@ -42,11 +42,11 @@ async def test_sdk_concurrency(hermes_shim_agent_dir_src: Path, tmp_path: Path):
 async def test_independent_runtimes_isolate_files_in_shared_artifact_root(
     hermes_shim_agent_dir: Path,
 ):
-    async with Fabric() as client:
-        first, second = await asyncio.gather(
-            run_runtime(client, hermes_shim_agent_dir, "runtime-one"),
-            run_runtime(client, hermes_shim_agent_dir, "runtime-two"),
-        )
+    client = Fabric()
+    first, second = await asyncio.gather(
+        run_runtime(client, hermes_shim_agent_dir, "runtime-one"),
+        run_runtime(client, hermes_shim_agent_dir, "runtime-two"),
+    )
 
     assert first["status"] == "succeeded"
     assert second["status"] == "succeeded"

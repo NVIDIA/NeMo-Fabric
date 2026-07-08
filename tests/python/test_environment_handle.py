@@ -14,15 +14,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 async def test_environment_handle():
-    async with Fabric() as client:
-        runtime = await client.start_runtime(
-            ROOT / "examples" / "code-review-agent",
-            profiles=["env_local"],
-        )
-        try:
-            workspace = runtime.handle["environment"]["workspace"]
-        finally:
-            await runtime.stop()
+    runtime = await Fabric().start_runtime(
+        ROOT / "examples" / "code-review-agent",
+        profiles=["env_local"],
+    )
+    try:
+        workspace = runtime.handle["environment"]["workspace"]
+    finally:
+        await runtime.stop()
 
     assert os.path.isabs(workspace), f"workspace not absolute: {workspace}"
     assert "code-review-agent/examples/code-review-agent" not in workspace, (

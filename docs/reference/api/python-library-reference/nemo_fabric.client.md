@@ -21,8 +21,6 @@ The client accepts either a path-backed agent package or a typed ``FabricConfigM
 
 ``Fabric`` is native-only. The ``fabric`` CLI is a separate public surface over the same Rust core; SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
-The client is also an asynchronous context manager. Leaving the context does not stop independently created runtimes; use each ``Runtime`` as an asynchronous context manager or call ``Runtime.stop()`` explicitly.
-
 See the Getting Started overview for runnable one-shot, typed-config, and multi-turn examples.
 
 

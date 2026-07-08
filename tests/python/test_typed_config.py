@@ -175,10 +175,10 @@ def sdk_and_cli_profile_stacks_match(client: Fabric) -> None:
 
 
 async def test_typed_config():
-    async with Fabric() as client:
-        sdk_and_cli_profile_stacks_match(client)
-        await resolves_and_diagnoses_without_a_directory(client)
-        await runs_without_an_agent_package(client)
+    client = Fabric()
+    sdk_and_cli_profile_stacks_match(client)
+    await resolves_and_diagnoses_without_a_directory(client)
+    await runs_without_an_agent_package(client)
 
 
 def _load_yaml(path: Path) -> dict:

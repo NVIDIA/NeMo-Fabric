@@ -27,12 +27,11 @@ async def test_preflight_api_key_e2e(hermes_agent_dir: Path, hermes_cli_profile:
         assert "FAB_CI_FAKE_KEY" not in os.environ, "FAB_CI_FAKE_KEY should not be set in the environment for this test"
     
 
-    async with Fabric() as client:
-        result = await client.run(
-            hermes_agent_dir,
-            profiles=[hermes_cli_profile],
-            input="who are you?",
-        )
+    result = await Fabric().run(
+        hermes_agent_dir,
+        profiles=[hermes_cli_profile],
+        input="who are you?",
+    )
     if api_key_set:
         assert result["status"] == "succeeded"
     else:

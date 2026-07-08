@@ -54,13 +54,12 @@ def load_yaml(path: Path) -> dict[str, Any]:
 async def run(spec: dict[str, Any]) -> dict[str, Any]:
     config, profiles = load_sources(spec)
     request = RunRequest.from_mapping(spec.get("request", {}))
-    async with Fabric() as client:
-        result = await client.run(
-            config,
-            profiles=profiles,
-            base_dir=Path(spec["config_path"]).parent,
-            request=request,
-        )
+    result = await Fabric().run(
+        config,
+        profiles=profiles,
+        base_dir=Path(spec["config_path"]).parent,
+        request=request,
+    )
     return result.to_mapping()
 
 

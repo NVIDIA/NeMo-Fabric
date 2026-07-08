@@ -34,32 +34,32 @@ async def _run() -> None:
 
     agent = ROOT / "examples" / "code-review-agent"
     nonce = f"fabric-{uuid.uuid4().hex[:8]}"
-    async with Fabric() as client:
-        oneshot = await client.run(
-            agent,
-            profiles=["codex_cli"],
-            input="Reply with exactly: FABRIC_CODEX_ONESHOT_OK",
-        )
-        assert oneshot["status"] == "succeeded", oneshot.to_mapping()
-        assert "fabric_codex_oneshot_ok" in oneshot["output"]["response"].lower(), (
-            oneshot.to_mapping()
-        )
-        assert "--ephemeral" not in oneshot["output"]["command"], oneshot.to_mapping()
+    client = Fabric()
+    oneshot = await client.run(
+        agent,
+        profiles=["codex_cli"],
+        input="Reply with exactly: FABRIC_CODEX_ONESHOT_OK",
+    )
+    assert oneshot["status"] == "succeeded", oneshot.to_mapping()
+    assert "fabric_codex_oneshot_ok" in oneshot["output"]["response"].lower(), (
+        oneshot.to_mapping()
+    )
+    assert "--ephemeral" not in oneshot["output"]["command"], oneshot.to_mapping()
 
-        async with await client.start_runtime(
-            agent,
-            profiles=["codex_cli"],
-        ) as runtime:
-            first = await runtime.invoke(input=f"Remember this value: {nonce}")
-            second = await runtime.invoke(
-                input="Reply with only the value I asked you to remember."
-            )
+    async with await client.start_runtime(
+        agent,
+        profiles=["codex_cli"],
+    ) as runtime:
+        first = await runtime.invoke(input=f"Remember this value: {nonce}")
+        second = await runtime.invoke(
+            input="Reply with only the value I asked you to remember."
+        )
 
-        results = (first.to_mapping(), second.to_mapping())
-        assert first["status"] == second["status"] == "succeeded", results
-        assert first["output"]["thread_id"] == second["output"]["thread_id"], results
-        assert nonce in second["output"]["response"], second.to_mapping()
-        assert second["output"]["command"][-3:-1] == [
-            "resume",
-            first["output"]["thread_id"],
-        ], second.to_mapping()
+    results = (first.to_mapping(), second.to_mapping())
+    assert first["status"] == second["status"] == "succeeded", results
+    assert first["output"]["thread_id"] == second["output"]["thread_id"], results
+    assert nonce in second["output"]["response"], second.to_mapping()
+    assert second["output"]["command"][-3:-1] == [
+        "resume",
+        first["output"]["thread_id"],
+    ], second.to_mapping()

@@ -69,19 +69,9 @@ class Fabric:
     ``FabricNativeUnavailableError`` when the native extension is not
     installed.
 
-    The client is also an asynchronous context manager. Leaving the context
-    does not stop independently created runtimes; use each ``Runtime`` as
-    an asynchronous context manager or call ``Runtime.stop()`` explicitly.
-
     See the Getting Started overview for runnable one-shot, typed-config, and
     multi-turn examples.
     """
-
-    async def __aenter__(self) -> "Fabric":
-        return self
-
-    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
-        return None
 
     @overload
     def resolve(

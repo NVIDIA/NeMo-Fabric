@@ -48,6 +48,8 @@ from nemo_fabric import (
 
 def test_public_contract_has_no_unreleased_aliases():
     assert list(signature(Fabric).parameters) == []
+    assert not hasattr(Fabric, "__aenter__")
+    assert not hasattr(Fabric, "__aexit__")
     assert not hasattr(RunRequest, "from_text")
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
         assert not hasattr(Fabric, name)
