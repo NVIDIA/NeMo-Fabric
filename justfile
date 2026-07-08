@@ -191,10 +191,7 @@ import tomllib
 version = sys.argv[1]
 project_paths = (
     Path("pyproject.toml"),
-    Path("adapters/common/pyproject.toml"),
-    Path("adapters/codex-cli/pyproject.toml"),
-    Path("adapters/hermes-cli/pyproject.toml"),
-    Path("adapters/hermes-sdk/pyproject.toml"),
+    *sorted(Path("adapters").glob("**/pyproject.toml")),
 )
 pin_pattern = re.compile(r'(nemo-fabric-[a-z0-9-]+\s*==\s*)([^"\s,]+)')
 

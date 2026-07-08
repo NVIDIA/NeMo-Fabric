@@ -51,7 +51,8 @@ versions rather than blindly copying incompatible syntax.
    SemVer prereleases to PEP 440 and updates:
    - `Cargo.toml` `[workspace.package].version`
    - `Cargo.toml` `workspace.dependencies.fabric-core.version`
-   - All five setuptools `project.version` fields
+   - The root setuptools `project.version` and every
+     `adapters/**/pyproject.toml` `project.version`
    - Every internal `nemo-fabric-*` exact-version requirement
    - `Cargo.lock` through Cargo metadata resolution
    - The root, runtime, and adapter `uv.lock` files through `just lock-python`
@@ -61,15 +62,14 @@ versions rather than blindly copying incompatible syntax.
 
 If editing the helper code, keep these contracts aligned:
 
-- `set_project_version` must call the Cargo, Python project, and Harbor
-  integration version helpers.
+- `set_project_version` must call the Cargo and Python project version helpers.
 - `set_cargo_workspace_version` must update the workspace version and the
   `fabric-core` workspace dependency, then verify every `fabric-*` workspace
   package through Cargo metadata.
-- `set_python_project_versions` must update all five explicit setuptools
-  versions and all internal exact-version pins while rejecting a static version
-  in `python/pyproject.toml`.
-- `set_harbor_integration_version` must update `FabricAgent.version()`.
+- `set_python_project_versions` must update the root setuptools version, every
+  adapter `pyproject.toml` discovered recursively under `adapters/`, and all
+  internal exact-version pins while rejecting a static version in
+  `python/pyproject.toml`.
 - The `set-version` recipe must run `just lock-python` after source metadata is
   updated.
 
@@ -78,7 +78,7 @@ If editing the helper code, keep these contracts aligned:
 - Inspect Cargo version fields:
   `rg -n '^version =|fabric-core = \{ path = .*version =' Cargo.toml`
 - Inspect explicit Python versions and internal pins:
-  `rg -n '^version =|nemo-fabric-[a-z-]+ == ' pyproject.toml adapters/*/pyproject.toml`
+  `rg -n '^version =|nemo-fabric-[a-z-]+ == ' pyproject.toml adapters --glob 'pyproject.toml'`
 - Confirm the runtime remains dynamic:
   `rg -n 'dynamic = \["version"\]' python/pyproject.toml`
 - Run `cargo check --workspace --locked`.
