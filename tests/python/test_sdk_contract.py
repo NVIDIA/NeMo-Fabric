@@ -661,6 +661,15 @@ def test_pydantic_run_request_model_is_accepted_by_runtime_shape():
     assert request.extra_fields["future_request"] == {"enabled": True}
 
 
+@pytest.mark.parametrize("value", [{}, []])
+def test_pydantic_run_request_preserves_empty_structured_input(value):
+    assert RunRequestModel(input=value).to_mapping()["input"] == value
+
+
+def test_pydantic_run_request_defaults_missing_input_to_empty_text():
+    assert RunRequestModel().to_mapping()["input"] == ""
+
+
 def test_run_result_wraps_nested_error_and_keeps_mapping_access():
     result = RunResult.from_mapping(
         _run_result(

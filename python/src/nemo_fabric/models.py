@@ -320,7 +320,12 @@ class RunRequestModel(FabricBaseModel):
     def to_mapping(self) -> dict[str, Any]:
         """Return a request mapping; runtime wrappers fill generated ids."""
 
-        data = super().to_mapping()
-        if "input" not in data:
+        data = self.model_dump(mode="json", exclude_none=True)
+        data = {
+            key: item
+            for key, item in data.items()
+            if key == "input" or item not in ({}, [])
+        }
+        if self.input is None:
             data["input"] = ""
         return data
