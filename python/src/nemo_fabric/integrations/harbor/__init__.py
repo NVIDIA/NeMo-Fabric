@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 import shlex
 import uuid
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+
+from nemo_fabric import RunRequest, RunResult
+from nemo_fabric.integrations.harbor.models import HarborMcpServer, HarborRunSpec
 
 try:
     from harbor.agents.base import BaseAgent
@@ -50,10 +52,7 @@ else:
             self,
             logs_dir: Path,
             fabric_config_path: str,
-            fabric_profile_paths: str | Sequence[str] | None = None,
             fabric_python: str = "python3",
-            fabric_spec_path: str | None = None,
-            fabric_result_path: str = "/logs/agent/fabric-result.json",
             fabric_install_command: str | None = None,
             fabric_cwd: str | None = None,
             fabric_timeout_sec: int | None = None,
@@ -62,10 +61,7 @@ else:
         ) -> None:
             super().__init__(logs_dir=logs_dir, *args, **kwargs)
             self.fabric_config_path = fabric_config_path
-            self.fabric_profile_paths = normalize_paths(fabric_profile_paths)
             self.fabric_python = fabric_python
-            self.fabric_spec_path = fabric_spec_path
-            self.fabric_result_path = fabric_result_path
             self.fabric_install_command = fabric_install_command
             self.fabric_cwd = fabric_cwd
             self.fabric_timeout_sec = fabric_timeout_sec
@@ -95,24 +91,21 @@ else:
             environment: BaseEnvironment,
             context: AgentContext,
         ) -> None:
-            spec = {
-                "config_path": self.fabric_config_path,
-                "profile_paths": self.fabric_profile_paths,
-                "request": self._build_request(instruction),
-            }
-            spec_path = self.fabric_spec_path or f"/tmp/fabric-run-{uuid.uuid4()}.json"
-            result = await environment.exec(
-                write_json_command(spec_path, spec),
-                cwd=self.fabric_cwd,
-                timeout_sec=30,
-            )
-            ensure_success("Fabric run specification write failed", result)
+            token = uuid.uuid4().hex
+            spec = self._build_spec(instruction)
+            host_spec_path = self.logs_dir / f"fabric-run-{token}.json"
+            remote_spec_path = f"/tmp/fabric-run-{token}.json"
+            remote_result_path = f"/tmp/fabric-result-{token}.json"
+            host_result_path = self.logs_dir / f"fabric-result-{token}.json"
+            self.logs_dir.mkdir(parents=True, exist_ok=True)
+            host_spec_path.write_text(spec.model_dump_json(indent=2), encoding="utf-8")
+            await environment.upload_file(host_spec_path, remote_spec_path)
 
             result = await environment.exec(
                 fabric_runner_command(
                     fabric_python=self.fabric_python,
-                    spec_path=spec_path,
-                    result_path=self.fabric_result_path,
+                    spec_path=remote_spec_path,
+                    result_path=remote_result_path,
                 ),
                 cwd=self.fabric_cwd,
                 env=self.extra_env,
@@ -120,36 +113,23 @@ else:
             )
             ensure_success("Fabric run failed", result)
 
-            host_result_path = self.logs_dir / "fabric-result.json"
-            await environment.download_file(self.fabric_result_path, host_result_path)
+            await environment.download_file(remote_result_path, host_result_path)
             populate_context_from_result(context, host_result_path)
 
-        def _build_request(self, instruction: str) -> dict[str, Any]:
-            return {
-                "request_id": f"harbor-{uuid.uuid4()}",
-                "input": instruction,
-                "context": {
-                    "source": "harbor",
-                    "model_name": self.model_name,
-                    "skills_dir": self.skills_dir,
-                    "mcp_servers": [
-                        dump_mcp_server(server) for server in self.mcp_servers
-                    ],
-                },
-            }
+        def _build_request(self, instruction: str) -> RunRequest:
+            return RunRequest(input=instruction, context={"source": "harbor"})
 
-
-def normalize_paths(paths: str | Sequence[str] | None) -> list[str]:
-    if paths is None:
-        return []
-    if isinstance(paths, str):
-        return [paths]
-    return [path for path in paths if path]
-
-
-def write_json_command(path: str, payload: dict[str, Any]) -> str:
-    encoded = json.dumps(payload, indent=2)
-    return f"cat > {shlex.quote(path)} <<'FABRIC_JSON'\n{encoded}\nFABRIC_JSON"
+        def _build_spec(self, instruction: str) -> HarborRunSpec:
+            return HarborRunSpec(
+                config_path=self.fabric_config_path,
+                request=self._build_request(instruction),
+                model_name=self.model_name,
+                skills_dir=self.skills_dir,
+                mcp_servers=tuple(
+                    HarborMcpServer.model_validate(server.model_dump(mode="python"))
+                    for server in self.mcp_servers
+                ),
+            )
 
 
 def fabric_runner_command(
@@ -178,27 +158,20 @@ def ensure_success(message: str, result: Any) -> None:
     raise RuntimeError(f"{message} (exit {result.return_code}): {stderr or stdout}")
 
 
-def dump_mcp_server(server: Any) -> dict[str, Any]:
-    if hasattr(server, "model_dump"):
-        return server.model_dump(mode="json")
-    if hasattr(server, "dict"):
-        return server.dict()
-    return dict(server)
-
-
-def populate_context_from_result(context: AgentContext, path: Path) -> None:
-    result = json.loads(path.read_text(encoding="utf-8"))
+def populate_context_from_result(context: AgentContext, path: Path) -> RunResult:
+    result = RunResult.from_mapping(json.loads(path.read_text(encoding="utf-8")))
+    mapping = result.to_mapping()
     if context.metadata is None:
         context.metadata = {}
     context.metadata["fabric"] = {
-        "status": result.get("status"),
-        "runtime_id": result.get("runtime_id"),
-        "invocation_id": result.get("invocation_id"),
-        "request_id": result.get("request_id"),
-        "profiles": result.get("profiles", []),
-        "harness": result.get("harness"),
-        "adapter_id": result.get("adapter_id"),
-        "artifacts": result.get("artifacts", {}),
-        "telemetry": result.get("telemetry"),
-        "error": result.get("error"),
+        "status": mapping["status"],
+        "runtime_id": mapping["runtime_id"],
+        "invocation_id": mapping["invocation_id"],
+        "request_id": mapping["request_id"],
+        "harness": mapping["harness"],
+        "adapter_id": mapping.get("adapter_id"),
+        "artifacts": mapping["artifacts"],
+        "telemetry": mapping["telemetry"],
+        "error": mapping.get("error"),
     }
+    return result

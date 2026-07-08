@@ -55,12 +55,12 @@ def load_codex_adapter():
     return module
 
 
-def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
-    from nemo_fabric.integrations.harbor.runner import load_sources
+def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
+    from nemo_fabric import RunRequest
+    from nemo_fabric.integrations.harbor.models import HarborMcpServer, HarborRunSpec
+    from nemo_fabric.integrations.harbor.runner import compose_config, load_config
 
     config_path = tmp_path / "agent.yaml"
-    profile_path = tmp_path / "profiles" / "codex.yaml"
-    profile_path.parent.mkdir()
     config_path.write_text(
         yaml.safe_dump(
             {
@@ -68,68 +68,113 @@ def test_runner_loads_typed_sources_and_applies_harbor_model(tmp_path):
                 "harness": {"adapter_id": "demo.fabric.smoke"},
                 "runtime": {},
                 "models": {"default": {"provider": "demo", "model": "demo"}},
+                "mcp": {
+                    "servers": {
+                        "base": {
+                            "transport": "streamable-http",
+                            "url": "https://base.example.test",
+                        }
+                    }
+                },
+                "skills": {"paths": ["./base-skill"]},
             }
         ),
         encoding="utf-8",
     )
-    profile_path.write_text(
-        yaml.safe_dump(
-            {
-                "name": "codex",
-                "harness": {"adapter_id": "nvidia.fabric.codex.cli"},
-            }
+    spec = HarborRunSpec(
+        config_path=config_path,
+        request=RunRequest(input="fix it"),
+        model_name="openai/gpt-5.4",
+        skills_dir=tmp_path / "skills",
+        mcp_servers=(
+            HarborMcpServer(
+                name="remote",
+                transport="streamable-http",
+                url="https://mcp.example.test",
+            ),
+            HarborMcpServer(
+                name="local",
+                transport="stdio",
+                command="mcp-server",
+                args=("--stdio",),
+            ),
         ),
-        encoding="utf-8",
     )
 
-    config, profiles = load_sources(
-        {
-            "config_path": str(config_path),
-            "profile_paths": [str(profile_path)],
-            "request": {"context": {"model_name": "openai/gpt-5.4"}},
-        }
-    )
+    base = load_config(config_path)
+    config = compose_config(base, spec)
 
-    assert config.models["default"].to_mapping() == {
+    assert base.models["default"].to_mapping() == {
         "provider": "demo",
         "model": "demo",
     }
-    harbor_model = profiles[-1].models["default"]
-    assert harbor_model.provider == "openai"
-    assert harbor_model.model == "openai/gpt-5.4"
-    assert [profile.name for profile in profiles] == ["codex", "harbor_model"]
-    assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == "harbor-demo"
+    assert base.mcp is not None and "base" in base.mcp.servers
+    assert base.skills is not None and base.skills.paths == ["./base-skill"]
+    assert config.models["default"].to_mapping() == {
+        "provider": "openai",
+        "model": "openai/gpt-5.4",
+    }
+    assert config.mcp is not None
+    assert set(config.mcp.servers) == {"remote", "local"}
+    assert config.mcp.servers["local"].url == "mcp-server"
+    assert config.mcp.servers["local"].extra_fields["args"] == ["--stdio"]
+    assert config.skills is not None
+    assert config.skills.paths == [str(tmp_path / "skills")]
+    assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == (
+        "harbor-demo"
+    )
 
 
 def test_runner_rejects_missing_config(tmp_path):
-    from nemo_fabric.integrations.harbor.runner import load_sources
+    from nemo_fabric.integrations.harbor.runner import load_config
 
     with pytest.raises(FileNotFoundError):
-        load_sources({"config_path": str(tmp_path / "missing.yaml")})
+        load_config(tmp_path / "missing.yaml")
 
 
-def test_runner_rejects_malformed_profile(tmp_path):
-    from nemo_fabric.integrations.harbor.runner import load_sources
+def test_runner_rejects_malformed_config(tmp_path):
+    from nemo_fabric.integrations.harbor.runner import load_config
 
     config_path = tmp_path / "agent.yaml"
-    profile_path = tmp_path / "profile.yaml"
-    config_path.write_text(
-        yaml.safe_dump(
-            {
-                "metadata": {"name": "harbor-demo"},
-                "harness": {"adapter_id": "demo.fabric.smoke"},
-                "runtime": {},
-            }
-        ),
-        encoding="utf-8",
-    )
-    profile_path.write_text("harness: [", encoding="utf-8")
+    config_path.write_text("harness: [", encoding="utf-8")
 
     with pytest.raises(yaml.YAMLError):
-        load_sources(
+        load_config(config_path)
+
+
+def test_harbor_transport_models_validate_mcp_targets():
+    from pydantic import ValidationError
+
+    from nemo_fabric import RunRequest
+    from nemo_fabric.integrations.harbor.models import HarborMcpServer, HarborRunSpec
+
+    spec = HarborRunSpec.model_validate_json(
+        HarborRunSpec(
+            config_path="/workspace/agent.yaml",
+            request=RunRequest(input="fix it"),
+            mcp_servers=(
+                HarborMcpServer(
+                    name="github",
+                    transport="streamable-http",
+                    url="https://mcp.example.test",
+                ),
+            ),
+        ).model_dump_json()
+    )
+
+    assert spec.request.input == "fix it"
+    assert spec.mcp_servers[0].name == "github"
+    assert "profile_paths" not in HarborRunSpec.model_json_schema()["properties"]
+    with pytest.raises(ValidationError, match="require url"):
+        HarborMcpServer(name="missing", transport="sse")
+    with pytest.raises(ValidationError, match="require command"):
+        HarborMcpServer(name="missing", transport="stdio")
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        HarborRunSpec.model_validate(
             {
-                "config_path": str(config_path),
-                "profile_paths": [str(profile_path)],
+                "config_path": "/workspace/agent.yaml",
+                "request": {"input": "fix it"},
+                "profile_paths": [],
             }
         )
 
@@ -161,7 +206,7 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
             return {"runtime_id": self.runtime_id}
 
     class FakeFabric:
-        async def run(self, config, *, profiles, base_dir, request):
+        async def run(self, config, *, base_dir, request):
             runtime_id = f"runtime-{len(calls) + 1}"
             calls.append(
                 {
@@ -172,14 +217,16 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
             return FakeResult(runtime_id)
 
     monkeypatch.setattr(runner, "Fabric", FakeFabric)
+    from nemo_fabric.integrations.harbor.models import HarborRunSpec
+
     specs = [
-        {
-            "config_path": str(config_path),
-            "request": {
+        HarborRunSpec(
+            config_path=config_path,
+            request={
                 "input": f"job {job_id}",
                 "context": {"job_id": job_id},
             },
-        }
+        )
         for job_id in ("job-1", "job-2")
     ]
 
@@ -188,7 +235,7 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
 
     results = asyncio.run(run_specs())
 
-    assert [result["runtime_id"] for result in results] == ["runtime-1", "runtime-2"]
+    assert [result.runtime_id for result in results] == ["runtime-1", "runtime-2"]
     requests = [call["request"] for call in calls]
     assert [request["context"]["job_id"] for request in requests] == [  # type: ignore[index]
         "job-1",

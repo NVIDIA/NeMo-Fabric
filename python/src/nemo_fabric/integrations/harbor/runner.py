@@ -9,38 +9,58 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
-from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig, RunRequest
+from nemo_fabric import Fabric, FabricConfig, ModelConfig, RunResult
+from nemo_fabric.integrations.harbor.models import HarborRunSpec
 
 
-def load_sources(
-    spec: dict[str, Any],
-) -> tuple[FabricConfig, list[FabricProfileConfig]]:
-    config_path = Path(spec["config_path"])
-    config = FabricConfig.from_mapping(load_yaml(config_path))
-    profiles = [
-        FabricProfileConfig.model_validate(load_yaml(Path(path)))
-        for path in spec.get("profile_paths", [])
-    ]
+def load_config(path: Path) -> FabricConfig:
+    """Load one complete Fabric config from the task environment."""
 
-    model_name = (spec.get("request", {}).get("context") or {}).get("model_name")
-    if isinstance(model_name, str) and model_name:
-        provider = model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
-        profiles.append(
-            FabricProfileConfig(
-                name="harbor_model",
-                models={
-                    "default": {
-                        "provider": provider,
-                        "model": model_name,
-                    }
-                },
-            )
+    return FabricConfig.model_validate(load_yaml(path))
+
+
+def compose_config(base: FabricConfig, spec: HarborRunSpec) -> FabricConfig:
+    """Apply Harbor-owned values to an independent config copy."""
+
+    config = base.model_copy(deep=True)
+    if spec.model_name:
+        config.models["default"] = ModelConfig(
+            provider=model_provider(spec.model_name),
+            model=spec.model_name,
         )
-    return config, profiles
+
+    config.mcp = None
+    for server in spec.mcp_servers:
+        if server.transport == "stdio":
+            config.add_mcp_server(
+                server.name,
+                transport="stdio",
+                url=cast(str, server.command),
+                exposure="harness_native",
+                extra_fields={"args": list(server.args)},
+            )
+        else:
+            config.add_mcp_server(
+                server.name,
+                transport=server.transport,
+                url=cast(str, server.url),
+                exposure="harness_native",
+            )
+
+    config.skills = None
+    if spec.skills_dir is not None:
+        config.add_skill_path(spec.skills_dir)
+    return config
+
+
+def model_provider(model_name: str) -> str:
+    """Derive the provider prefix used by the Fabric model config."""
+
+    return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -50,16 +70,15 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return value
 
 
-async def run(spec: dict[str, Any]) -> dict[str, Any]:
-    config, profiles = load_sources(spec)
-    request = RunRequest.model_validate(spec.get("request", {}))
+async def run(spec: HarborRunSpec) -> RunResult:
+    base = load_config(spec.config_path)
+    config = compose_config(base, spec)
     result = await Fabric().run(
         config,
-        profiles=profiles,
-        base_dir=Path(spec["config_path"]).parent,
-        request=request,
+        base_dir=spec.config_path.parent,
+        request=spec.request,
     )
-    return result.to_mapping()
+    return result
 
 
 def main() -> None:
@@ -68,10 +87,10 @@ def main() -> None:
     parser.add_argument("--result", type=Path, required=True)
     args = parser.parse_args()
 
-    spec = json.loads(args.spec.read_text(encoding="utf-8"))
+    spec = HarborRunSpec.model_validate_json(args.spec.read_text(encoding="utf-8"))
     result = asyncio.run(run(spec))
     args.result.parent.mkdir(parents=True, exist_ok=True)
-    args.result.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    args.result.write_text(json.dumps(result.to_mapping(), indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
