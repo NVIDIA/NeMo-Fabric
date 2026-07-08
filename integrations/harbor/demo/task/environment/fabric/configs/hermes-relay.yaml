@@ -1,15 +1,41 @@
-schema_version: fabric.profile/v1alpha1
-name: telemetry
-description: Add Relay OpenInference, ATOF, and ATIF telemetry to the selected Hermes run.
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.agent/v1alpha1
+
+metadata:
+  name: harbor-calculator-demo
+  description: Hermes CLI with Relay telemetry in a Harbor task environment.
+
+harness:
+  adapter_id: nvidia.fabric.hermes.cli
+  resolution: preinstalled
+  settings:
+    cwd: /app
+    hermes_home: /tmp/fabric-hermes
+    base_url: https://integrate.api.nvidia.com/v1
+    max_iterations: 4
+    terminal_timeout: 120
+
+models:
+  default:
+    provider: nvidia
+    model: nvidia/nemotron-3-nano-30b-a3b
+    temperature: 0.0
 
 runtime:
+  input_schema: text
+  output_schema: message
   artifacts: /logs/agent/fabric-artifacts/hermes-relay
 
 environment:
+  provider: local
+  workspace: /app
   artifacts: /logs/agent/fabric-artifacts/hermes-relay
 
 telemetry:
   enabled: true
+  provider: relay
   output_dir: /logs/agent/fabric-artifacts/hermes-relay/relay
   config:
     version: 1
@@ -23,7 +49,6 @@ telemetry:
             output_directory: /logs/agent/fabric-artifacts/hermes-relay/relay
             filename_template: trajectory-{session_id}.atif.json
             agent_name: harbor-calculator-demo
-            agent_version: fabric-mvp
           atof:
             enabled: true
             output_directory: /logs/agent/fabric-artifacts/hermes-relay/relay

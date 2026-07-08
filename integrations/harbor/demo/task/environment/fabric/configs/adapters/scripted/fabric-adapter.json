@@ -1,4 +1,5 @@
 {
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "demo.fabric.scripted",
   "harness": "scripted",
   "adapter_kind": "process",

@@ -7,10 +7,10 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 # Evaluate multiple harnesses through one Harbor agent
 
-Use `nemo_fabric.integrations.harbor:FabricAgent` when Harbor should own the
-evaluation workflow while Fabric owns agent harness execution. The Harbor agent
-class stays fixed as Fabric profiles select Hermes CLI, Codex CLI, or another
-adapter.
+Use `nemo_fabric.integrations.harbor:FabricAgent` when Harbor owns the
+evaluation workflow and Fabric owns harness execution. The Harbor agent class
+stays fixed while each complete Fabric config selects Hermes CLI, Codex CLI, or
+another adapter.
 
 ```text
 Harbor task -> FabricAgent -> Fabric SDK -> selected adapter -> agent harness
@@ -22,17 +22,15 @@ Harbor task -> FabricAgent -> Fabric SDK -> selected adapter -> agent harness
 
 | Harbor owns | Fabric owns |
 | --- | --- |
-| Task and dataset materialization | Fabric config and ordered profile resolution |
-| Environment and container lifecycle | Harness adapter selection and invocation |
+| Task and dataset materialization | Fabric config validation |
+| Environment and container lifecycle | Harness adapter lifecycle and invocation |
 | Verifier execution and reward calculation | Normalized requests, results, and artifacts |
-| Job, trial, log, and artifact layout | Telemetry configuration and references |
+| Jobs, retries, concurrency, and run layout | Telemetry configuration and references |
 
-Fabric runs inside the Harbor task environment. It does not replace Harbor's
-container management, verifier, or evaluation semantics.
+One Harbor agent run creates one independent Fabric runtime. Fabric does not
+interpret Harbor job IDs or concurrency settings.
 
 ## Install the integration
-
-Install Fabric with the optional Harbor dependency:
 
 ```bash
 python3 -m pip install "nemo-fabric[harbor]"
@@ -43,66 +41,58 @@ dependency before invoking Harbor.
 
 ## Run a Fabric-backed Harbor task
 
-Point Harbor at the Fabric agent class, then pass the base config and ordered
-profile paths as agent constructor arguments:
+Pass one complete config path through Harbor's agent arguments:
 
 ```bash
 uv run --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --ak fabric_config_path=/opt/fabric-demo/agent.yaml \
-  --ak 'fabric_profile_paths=["/opt/fabric-demo/profiles/hermes.yaml"]' \
+  --ak fabric_config_path=/opt/fabric-demo/configs/hermes.yaml \
   --model nvidia/nemotron-3-nano-30b-a3b \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY"
 ```
 
-The config and profile paths are paths inside the Harbor task container.
-`--ak` passes constructor arguments to `FabricAgent`; these are not Fabric CLI
-flags. The integration loads the YAML into typed SDK config objects and calls
-`Fabric.run()` inside the task environment.
+The config path is inside the Harbor task container. `--ak` passes constructor
+arguments to `FabricAgent`; it is not a Fabric CLI flag.
 
-## Switch harnesses and telemetry with profiles
+The runner loads the YAML as `FabricConfig`, makes a deep copy, applies Harbor's
+model, MCP servers, and skill directory through SDK models and helpers, and
+calls `Fabric.run()` inside the task environment.
 
-The runnable demo keeps the Harbor agent and task fixed. Only the Fabric profile
-stack, model, and required credentials change:
+## Choose a complete config
 
-| Profile stack | Execution path | What it demonstrates |
+The demo keeps the Harbor agent and task fixed while selecting one complete
+config per execution path:
+
+| Config | Execution path | What it demonstrates |
 | --- | --- | --- |
 | `smoke.yaml` | Deterministic scripted adapter | Credential-free Harbor, Fabric, workspace, and verifier pipeline |
-| `hermes.yaml` | Hermes CLI | A real model-backed harness selected through Fabric |
-| `hermes.yaml`, `telemetry.yaml` | Hermes CLI with NeMo Relay | Phoenix OpenInference traces plus ATOF events and an ATIF trajectory |
-| `codex.yaml` | Codex CLI | A second real harness using an existing Codex login mounted by Harbor |
+| `hermes.yaml` | Hermes CLI | A model-backed harness selected through Fabric |
+| `hermes-relay.yaml` | Hermes CLI with NeMo Relay | Phoenix traces plus ATOF and ATIF records |
+| `codex.yaml` | Codex CLI | An existing Codex login mounted by Harbor |
 
-Profiles are applied in caller order. The telemetry profile composes with the
-Hermes profile without requiring another Harbor agent implementation.
+Harbor's `--model`, MCP servers, and skill directory are applied to an
+independent copy of the selected config for each run.
 
 ## Inspect results and evidence
 
-Each trial stores Fabric's normalized result in the Harbor agent logs as
-`fabric-result.json`. It includes status, selected profiles, harness and adapter
-identity, runtime and invocation IDs, artifacts, telemetry references, and any
-structured error.
-
-Open the Harbor viewer for rewards, exceptions, and trial logs:
+Each trial stores a normalized Fabric result in the Harbor agent logs. It
+includes status, harness and adapter identity, runtime and invocation IDs,
+artifacts, telemetry references, and structured errors.
 
 ```bash
 uv run --extra harbor harbor view "$RUNS_DIR"
 ```
 
-For Relay-enabled runs, inspect the same Harbor run directory for portable ATOF
-and ATIF records:
+For Relay-enabled runs, inspect the same directory for portable ATOF and ATIF
+records:
 
 ```bash
 find "$RUNS_DIR" -path '*/agent/fabric-artifacts/*/relay/events.atof.jsonl'
 find "$RUNS_DIR" -path '*/agent/fabric-artifacts/*/relay/*.atif.json'
 ```
 
-Open Phoenix separately to inspect the corresponding OpenInference trace.
-
-## Run the complete demo
-
-The repository demo contains the task image, Fabric config, profile matrix,
-portable Phoenix routing, exact commands for every variant, expected results,
-and a recording flow:
+The repository demo contains the task image, complete config matrix, Phoenix
+routing, exact commands, expected results, and recording flow:
 
 [Run the Harbor multi-harness demo](https://github.com/NVIDIA/NeMo-Fabric/tree/main/integrations/harbor/demo)

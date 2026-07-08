@@ -18,21 +18,22 @@ DEMO_README = DEMO_ROOT / "README.md"
 DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
 DEMO_HOST_GATEWAY = DEMO_ROOT / "host-gateway.compose.yaml"
 DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
-CODEX_PROFILE = (
+DEMO_CONFIGS = DEMO_ROOT / "task" / "environment" / "fabric" / "configs"
+CODEX_CONFIG = (
     DEMO_ROOT
     / "task"
     / "environment"
     / "fabric"
-    / "profiles"
+    / "configs"
     / "codex.yaml"
 )
-TELEMETRY_PROFILE = (
+RELAY_CONFIG = (
     DEMO_ROOT
     / "task"
     / "environment"
     / "fabric"
-    / "profiles"
-    / "telemetry.yaml"
+    / "configs"
+    / "hermes-relay.yaml"
 )
 INTEGRATION_README = ROOT / "integrations" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
@@ -302,16 +303,49 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
 
 
 def test_codex_demo_uses_current_adapter_contract():
-    profile = yaml.safe_load(CODEX_PROFILE.read_text(encoding="utf-8"))
-    settings = profile["harness"]["settings"]
+    config = yaml.safe_load(CODEX_CONFIG.read_text(encoding="utf-8"))
+    settings = config["harness"]["settings"]
 
-    assert profile["harness"]["adapter_id"] == "nvidia.fabric.codex.cli"
+    assert config["schema_version"] == "fabric.agent/v1alpha1"
+    assert config["harness"]["adapter_id"] == "nvidia.fabric.codex.cli"
     assert settings["sandbox"] == "danger-full-access"
     assert settings["skip_git_repo_check"] is True
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"
     dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
     assert 'nemo-fabric[codex,harbor,hermes,relay]' in dockerfile
     assert "@openai/codex@0.142.4" in dockerfile
+
+
+def test_harbor_demo_uses_complete_configs_without_profiles():
+    from nemo_fabric import FabricConfig
+
+    configs = sorted(DEMO_CONFIGS.glob("*.yaml"))
+
+    assert [path.name for path in configs] == [
+        "codex.yaml",
+        "hermes-relay.yaml",
+        "hermes.yaml",
+        "smoke.yaml",
+    ]
+    for path in configs:
+        config = FabricConfig.model_validate(yaml.safe_load(path.read_text()))
+        assert config.profiles is None
+    assert not list((DEMO_CONFIGS.parent / "profiles").glob("*.yaml"))
+
+
+def test_harbor_smoke_config_resolves_its_local_adapter():
+    from nemo_fabric import Fabric, RunRequest
+    from nemo_fabric.integrations.harbor.models import HarborRunSpec
+    from nemo_fabric.integrations.harbor.runner import compose_config, load_config
+
+    config_path = DEMO_CONFIGS / "smoke.yaml"
+    spec = HarborRunSpec(config_path=config_path, request=RunRequest(input="fix it"))
+    config = compose_config(load_config(config_path), spec)
+    plan = Fabric().plan(config, base_dir=config_path.parent)
+
+    assert plan.adapter.adapter_id == "demo.fabric.scripted"
+    assert plan["adapter_descriptor"]["source"] == "local"
+    assert plan["adapter_descriptor"]["root"].endswith("configs/adapters/scripted")
 
 
 def test_harbor_demo_documents_explicit_cli_commands():
@@ -348,9 +382,9 @@ def test_harbor_demo_setup_and_solution_fail_fast():
 
 
 def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
-    profile = yaml.safe_load(TELEMETRY_PROFILE.read_text(encoding="utf-8"))
+    config = yaml.safe_load(RELAY_CONFIG.read_text(encoding="utf-8"))
     host_gateway = yaml.safe_load(DEMO_HOST_GATEWAY.read_text(encoding="utf-8"))
-    observability = profile["telemetry"]["config"]["components"][0]["config"]
+    observability = config["telemetry"]["config"]["components"][0]["config"]
     demo = DEMO_README.read_text(encoding="utf-8")
 
     assert observability["openinference"] == {
@@ -383,7 +417,8 @@ def test_harbor_sdk_package_documents_execution_boundary():
     assert FabricAgent.name() == "fabric"
     assert "nemo_fabric.integrations.harbor:FabricAgent" in readme
     assert "nemo_fabric.integrations.harbor.runner" in readme
-    assert "does not invoke the Fabric CLI" in readme
+    assert "calls `Fabric.run()` directly" in readme
+    assert "fabric_profile_paths" not in readme
 
 
 def test_root_readme_routes_to_sdk_and_harbor_guides():

@@ -5,110 +5,101 @@ SPDX-License-Identifier: Apache-2.0
 
 # Harbor Integration
 
-Fabric provides a Harbor `BaseAgent` wrapper at
-`nemo_fabric.integrations.harbor:FabricAgent`.
+Use `nemo_fabric.integrations.harbor:FabricAgent` to run a Fabric harness inside
+a Harbor task environment.
 
-Use this when Harbor should keep ownership of evaluation semantics while Fabric
-owns the selected agent harness invocation.
-
-## Ownership
-
-Harbor owns:
-
-- task and dataset materialization;
-- environment/container lifecycle;
-- verifier execution and reward calculation;
-- Harbor job, trial, log, and artifact layout.
-
-Fabric owns:
-
-- Fabric agent config/profile resolution;
-- selected harness invocation, such as Hermes SDK or CLI;
-- normalized `RunRequest` / `RunResult` handling;
-- Fabric artifacts, logs, patch metadata, and telemetry references.
-
-The integration shape is:
+Harbor owns task and dataset materialization, container lifecycle, verification,
+rewards, retries, concurrency, and job layout. Fabric owns config validation,
+harness lifecycle, normalized results, artifacts, and telemetry references. One
+Harbor agent run creates one independent Fabric runtime.
 
 ```text
-Harbor task/env -> FabricAgent -> Fabric SDK runner -> harness runtime -> Fabric result -> Harbor metadata/verifier
+Harbor task
+  -> FabricAgent
+  -> HarborRunSpec JSON
+  -> sandbox-local Fabric.run()
+  -> selected harness
+  -> RunResult JSON
+  -> Harbor metadata and verifier
 ```
 
 ## Install
 
-Install the Harbor extra when the environment does not already provide Harbor:
+Install the Harbor dependency with Fabric:
 
 ```bash
-pip install "nemo-fabric[harbor]"
+python3 -m pip install "nemo-fabric[harbor]"
 ```
 
-For local checkout development:
+For a source checkout:
 
 ```bash
 python3 -m pip install -e .
 python3 -m pip install -e ../harbor
 ```
 
-## Using FabricAgent
+Fabric, the selected adapter, and the config file must also be available inside
+the Harbor task environment.
 
-`FabricAgent` follows Harbor 0.16.1's external-agent contract. The runner and
-config files must be installed or copied into the task environment:
+## Use FabricAgent
+
+Pass one complete Fabric config path through Harbor's agent arguments:
 
 ```bash
 harbor run --path <dataset-or-task-dir> \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
-  --ak fabric_config_path=/opt/fabric/agent.yaml \
-  --ak 'fabric_profile_paths=["/opt/fabric/profiles/hermes.yaml"]' \
+  --ak fabric_config_path=/opt/fabric/configs/hermes.yaml \
   --ae NVIDIA_API_KEY="$NVIDIA_API_KEY"
 ```
 
-Important kwargs:
+`fabric_config_path` is resolved inside the task container. The config selects
+the harness, runtime, environment, and telemetry behavior for the run.
 
-- `fabric_config_path`: YAML config path visible inside the Harbor environment.
-- `fabric_profile_paths`: YAML profile path or ordered profile-path list.
-- `fabric_python`: Python command used for the sandbox-local SDK runner.
-- `fabric_cwd`: optional working directory for Fabric commands.
-- `fabric_install_command`: optional explicit install/bootstrap command.
-- `fabric_timeout_sec`: optional timeout for Fabric install/run commands.
+`FabricAgent` accepts these Fabric-specific constructor arguments:
 
-Harbor passes the task instruction to Fabric as `RunRequest.input`. Harbor
-metadata such as model name, skills directory, and MCP server definitions are
-included under `RunRequest.context`. The sandbox-local runner loads YAML into
-`FabricConfig` and `FabricProfileConfig`, then calls `Fabric.run()`.
-The normalized result is saved as `fabric-result.json`, and summary fields are
-copied into `context.metadata["fabric"]`.
+- `fabric_config_path`: complete Fabric YAML config inside the task environment;
+- `fabric_python`: Python executable used to start the sandbox runner;
+- `fabric_cwd`: optional working directory for Fabric commands;
+- `fabric_install_command`: optional environment bootstrap command;
+- `fabric_timeout_sec`: optional timeout for bootstrap and execution.
 
-## Multi-Harness Demo
+## Config Composition
 
-The runnable MVP demo includes explicit Harbor CLI commands for a
-credential-free pipeline check plus real Hermes, Hermes-with-Relay, and Codex
-variants. See [`demo/README.md`](demo/README.md) for the commands and recording
-flow.
+The sandbox runner validates the YAML as `FabricConfig`, makes a deep copy, and
+then applies Harbor-owned inputs:
 
-## Local Test
+- `--model` replaces `models.default` with a `ModelConfig`;
+- Harbor MCP servers replace the config's MCP section through
+  `add_mcp_server()`;
+- Harbor's skill directory replaces the config's skill section through
+  `add_skill_path()`.
 
-The lightweight test uses a fake Harbor environment and validates command
-construction plus metadata propagation:
+The final config is passed directly to `Fabric.run()` with a `RunRequest`.
+Harbor scheduling values and job IDs do not enter the Fabric config or runtime.
+
+## Exchange Boundaries
+
+The host writes a validated `HarborRunSpec` to the Harbor log directory and
+uploads it to a unique task-environment path. The sandbox runner writes one
+normalized `RunResult` to a unique result path. The host validates that result
+before copying summary fields into `AgentContext.metadata["fabric"]`.
+
+## Demo and Tests
+
+The [multi-harness demo](demo/README.md) provides complete configs and commands
+for a credential-free smoke run, Hermes CLI, Hermes with Relay, and Codex CLI.
+
+Run the lightweight integration tests with:
 
 ```bash
-pytest tests/python/test_harbor_integration.py
+pytest tests/python/test_harbor_integration.py \
+  tests/integrations/test_harbor_runner.py
 ```
 
-## SWE-Bench Test
-
-The Docker-backed SWE-Bench test is opt-in because it requires Docker, a local
-SWE-Bench image, and a Harbor-generated task directory. Harbor still owns task
-materialization and verification; Fabric only invokes the configured harness and
-captures artifacts.
-
-```bash
-RUN_FABRIC_HARBOR_SWEBENCH_DOCKER=1 pytest tests/e2e/test_harbor_swebench_task.py
-```
-
-To run the verifier path as well:
+The Docker-backed SWE-Bench check is opt-in:
 
 ```bash
 RUN_FABRIC_HARBOR_SWEBENCH_DOCKER=1 \
-RUN_FABRIC_HARBOR_SWEBENCH_VERIFY=1 \
 pytest tests/e2e/test_harbor_swebench_task.py
 ```

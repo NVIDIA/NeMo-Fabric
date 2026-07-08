@@ -1,6 +1,11 @@
-schema_version: fabric.profile/v1alpha1
-name: hermes
-description: Run Hermes CLI against the Harbor task workspace.
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.agent/v1alpha1
+
+metadata:
+  name: harbor-calculator-demo
+  description: Hermes CLI code-repair run in a Harbor task environment.
 
 harness:
   adapter_id: nvidia.fabric.hermes.cli
@@ -19,9 +24,12 @@ models:
     temperature: 0.0
 
 runtime:
+  input_schema: text
+  output_schema: message
   artifacts: /logs/agent/fabric-artifacts/hermes
 
 environment:
+  provider: local
   workspace: /app
   artifacts: /logs/agent/fabric-artifacts/hermes
 

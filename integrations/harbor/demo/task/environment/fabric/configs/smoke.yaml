@@ -1,8 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 schema_version: fabric.agent/v1alpha1
 
 metadata:
   name: harbor-calculator-demo
-  description: One Harbor agent surface with Fabric-selected harnesses.
+  description: Deterministic Harbor and Fabric pipeline check.
 
 harness:
   adapter_id: demo.fabric.scripted
@@ -18,6 +21,5 @@ environment:
   workspace: /app
   artifacts: /logs/agent/fabric-artifacts/smoke
 
-profiles:
-  directories:
-    - ./profiles
+telemetry:
+  enabled: false
