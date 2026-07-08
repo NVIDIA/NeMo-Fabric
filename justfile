@@ -238,41 +238,10 @@ print("python/pyproject.toml continues to derive its version from Cargo.toml")
 PY
 }
 
-set_harbor_integration_version() {
-    local version=""
-    local python_executable=""
-    version="$(semver_to_pep440 "$1")"
-    python_executable="$(uv_python_executable)"
-
-    "$python_executable" - "$version" <<'PY'
-from pathlib import Path
-import re
-import sys
-
-version = sys.argv[1]
-path = Path("python/src/nemo_fabric/integrations/harbor/__init__.py")
-text = path.read_text()
-updated, count = re.subn(
-    r'(    def version\(self\) -> str \| None:\n        return ")[^"]+(")',
-    rf"\g<1>{version}\g<2>",
-    text,
-    count=1,
-)
-if count != 1:
-    raise SystemExit(f"Failed to find FabricAgent.version() in {path}")
-if updated != text:
-    path.write_text(updated)
-    print(f"{path} version updated to {version}")
-else:
-    print(f"{path} already set to {version}")
-PY
-}
-
 set_project_version() {
     local version="$1"
     set_cargo_workspace_version "$version"
     set_python_project_versions "$version"
-    set_harbor_integration_version "$version"
 }
 '''
 
