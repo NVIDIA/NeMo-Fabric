@@ -89,11 +89,11 @@ test = [
 default-groups = ["adapters", "dev", "test"]
 
 [tool.uv.sources]
-nemo-fabric-runtime = { path = "python" }
-nemo-fabric-adapters-common = { path = "adapters/common" }
-nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli" }
-nemo-fabric-adapters-hermes-cli = { path = "adapters/hermes-cli" }
-nemo-fabric-adapters-hermes-sdk = { path = "adapters/hermes-sdk" }
+nemo-fabric-runtime = { path = "python", editable = true }
+nemo-fabric-adapters-common = { path = "adapters/common", editable = true }
+nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli", editable = true }
+nemo-fabric-adapters-hermes-cli = { path = "adapters/hermes-cli", editable = true }
+nemo-fabric-adapters-hermes-sdk = { path = "adapters/hermes-sdk", editable = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

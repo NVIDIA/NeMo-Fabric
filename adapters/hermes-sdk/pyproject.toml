@@ -26,4 +26,4 @@ include = ["nemo_fabric_adapters.hermes_sdk*"]
 "share/nemo-fabric/adapters/hermes-sdk" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
-nemo-fabric-adapters-common = { path = "../common" }
+nemo-fabric-adapters-common = { path = "../common", editable = true }

@@ -1655,14 +1655,14 @@ test = [
 requires-dist = [
     { name = "harbor", marker = "python_full_version >= '3.12' and extra == 'harbor'", specifier = ">=0.16.1" },
     { name = "hermes-agent", marker = "extra == 'hermes'", specifier = ">=0.17.0" },
-    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'adapters-codex-cli'", directory = "adapters/codex-cli" },
-    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'codex'", directory = "adapters/codex-cli" },
-    { name = "nemo-fabric-adapters-common", marker = "extra == 'adapters-common'", directory = "adapters/common" },
-    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'adapters-hermes-cli'", directory = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'hermes'", directory = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'adapters-hermes-sdk'", directory = "adapters/hermes-sdk" },
-    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'hermes'", directory = "adapters/hermes-sdk" },
-    { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", directory = "python" },
+    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'adapters-codex-cli'", editable = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'codex'", editable = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-common", marker = "extra == 'adapters-common'", editable = "adapters/common" },
+    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'adapters-hermes-cli'", editable = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'hermes'", editable = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'adapters-hermes-sdk'", editable = "adapters/hermes-sdk" },
+    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'hermes'", editable = "adapters/hermes-sdk" },
+    { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = "~=0.4" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
     { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
@@ -1671,10 +1671,10 @@ provides-extras = ["adapters-common", "adapters-codex-cli", "adapters-hermes-cli
 
 [package.metadata.requires-dev]
 adapters = [
-    { name = "nemo-fabric-adapters-codex-cli", directory = "adapters/codex-cli" },
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
-    { name = "nemo-fabric-adapters-hermes-cli", directory = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-sdk", directory = "adapters/hermes-sdk" },
+    { name = "nemo-fabric-adapters-codex-cli", editable = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
+    { name = "nemo-fabric-adapters-hermes-cli", editable = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-sdk", editable = "adapters/hermes-sdk" },
 ]
 dev = [{ name = "ipython", specifier = "~=8.20" }]
 docs = [
@@ -1694,7 +1694,7 @@ test = [
 [[package]]
 name = "nemo-fabric-adapters-codex-cli"
 version = "0.1.0"
-source = { directory = "adapters/codex-cli" }
+source = { editable = "adapters/codex-cli" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
     { name = "tomli-w" },
@@ -1702,19 +1702,19 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
 version = "0.1.0"
-source = { directory = "adapters/common" }
+source = { editable = "adapters/common" }
 
 [[package]]
 name = "nemo-fabric-adapters-hermes-cli"
 version = "0.1.0"
-source = { directory = "adapters/hermes-cli" }
+source = { editable = "adapters/hermes-cli" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
     { name = "pyyaml" },
@@ -1723,7 +1723,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
@@ -1731,7 +1731,7 @@ requires-dist = [
 [[package]]
 name = "nemo-fabric-adapters-hermes-sdk"
 version = "0.1.0"
-source = { directory = "adapters/hermes-sdk" }
+source = { editable = "adapters/hermes-sdk" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
     { name = "pyyaml" },
@@ -1739,13 +1739,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]
 name = "nemo-fabric-runtime"
-source = { directory = "python" }
+source = { editable = "python" }
 dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
