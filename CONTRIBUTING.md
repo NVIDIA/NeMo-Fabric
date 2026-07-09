@@ -164,8 +164,7 @@ This section describes how to prepare and submit changes for review.
 Complete these checks before opening or updating a pull request:
 
 1. Open or identify an issue describing the proposed enhancement or bug fix.
-   External contributors should use a GitHub issue; NVIDIA contributors may use
-   a GitHub or Linear issue.
+   External contributors should use a GitHub issue; NVIDIA contributors may use a GitHub or Linear issue.
 2. Run the relevant test suites and confirm they pass.
 3. Verify the affected packages compile with `just build-rust`,
    `just build-python`, or `just build-all`.
