@@ -31,13 +31,16 @@ def current_virtualenv() -> Path | None:
 
 
 def virtualenv_subprocess_env() -> dict[str, str]:
-    """Return an environment that exposes the current virtualenv to subprocesses."""
+    """
+    When inside of a virtual environment, return a copy of os.environ with the virtualenv exposed.
 
-    virtualenv = current_virtualenv()
-    if virtualenv is None:
-        return {}
+    When outside of a virtual environment a copy of os.environ is returned.
+    """
 
     env = os.environ.copy()
+    virtualenv = current_virtualenv()
+    if virtualenv is None:
+        return env   
 
     scripts = virtualenv / ("Scripts" if os.name == "nt" else "bin")
     path = env.get("PATH")

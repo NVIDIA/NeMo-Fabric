@@ -47,36 +47,6 @@ RELAY_HOOK_MATCHER_EVENTS = {
     "PostToolUseFailure",
     "PreToolUse",
 }
-INHERITED_ENV_NAMES = {
-    "APPDATA",
-    "CODEX_HOME",
-    "COMSPEC",
-    "HOME",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "LANG",
-    "LC_ALL",
-    "LC_CTYPE",
-    "LOCALAPPDATA",
-    "NO_PROXY",
-    "PATH",
-    "PATHEXT",
-    "SHELL",
-    "SSL_CERT_DIR",
-    "SSL_CERT_FILE",
-    "SYSTEMROOT",
-    "TEMP",
-    "TMP",
-    "TMPDIR",
-    "USERPROFILE",
-    "XDG_CACHE_HOME",
-    "XDG_CONFIG_HOME",
-    "XDG_DATA_HOME",
-    "http_proxy",
-    "https_proxy",
-    "no_proxy",
-}
-
 
 class CodexSettings(NamedTuple):
     telemetry_provider: str
@@ -488,13 +458,7 @@ def build_env(
     *,
     relay_gateway_url: str | None = None,
 ) -> dict[str, str]:
-    env = {
-        name: os.environ[name]
-        for name in INHERITED_ENV_NAMES if name in os.environ
-    }
-
-    # If we are in a virtual env those values take precedence over the current environment variables
-    env.update(common_utils.virtualenv_subprocess_env())
+    env = common_utils.virtualenv_subprocess_env()
 
     configured = common_utils.settings_payload(payload).get("env")
     if configured is None:

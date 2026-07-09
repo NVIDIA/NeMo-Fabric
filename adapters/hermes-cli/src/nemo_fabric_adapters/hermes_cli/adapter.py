@@ -179,13 +179,7 @@ def build_command(
 
 
 def build_env(settings: dict[str, Any], hermes_home: Path) -> dict[str, str]:
-    env = os.environ.copy()
-
-    # If we are in a virtual env those values take precedence over the current environment variables
-    virtual_env_vars = common_utils.virtualenv_subprocess_env()
-    if len(virtual_env_vars) > 0:
-        env.pop("PYTHONHOME", None)
-        env.update(virtual_env_vars)
+    env = common_utils.virtualenv_subprocess_env()
 
     env.update({
         str(key): str(value)
