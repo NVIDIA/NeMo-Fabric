@@ -45,6 +45,7 @@ SDK_INTEGRATION_README = (
     / "harbor"
     / "README.md"
 )
+HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
 
 
 def load_codex_adapter():
@@ -413,12 +414,17 @@ def test_harbor_sdk_package_documents_execution_boundary():
     from nemo_fabric.integrations.harbor import FabricAgent
 
     readme = SDK_INTEGRATION_README.read_text(encoding="utf-8")
+    package_init = HARBOR_PACKAGE_INIT.read_text(encoding="utf-8")
 
     assert FabricAgent.name() == "fabric"
+    assert FabricAgent.__module__ == "nemo_fabric.integrations.harbor.fabric_agent"
     assert "nemo_fabric.integrations.harbor:FabricAgent" in readme
     assert "nemo_fabric.integrations.harbor.runner" in readme
     assert "calls `Fabric.run()` directly" in readme
     assert "fabric_profile_paths" not in readme
+    assert "`fabric_agent.py`" in readme
+    assert "class FabricAgent" not in package_init
+    assert "fabric_agent import FabricAgent" in package_init
 
 
 def test_root_readme_routes_to_sdk_and_harbor_guides():

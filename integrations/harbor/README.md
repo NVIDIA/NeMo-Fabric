@@ -41,7 +41,47 @@ python3 -m pip install -e ../harbor
 Fabric, the selected adapter, and the config file must also be available inside
 the Harbor task environment.
 
-## Use FabricAgent
+## Prepare a Fabric config
+
+Create one complete config for the execution path. For example:
+
+```yaml
+schema_version: fabric.agent/v1alpha1
+
+metadata:
+  name: harbor-review-agent
+
+harness:
+  adapter_id: nvidia.fabric.hermes.cli
+  resolution: preinstalled
+  settings:
+    cwd: /app
+    base_url: https://integrate.api.nvidia.com/v1
+
+models:
+  default:
+    provider: nvidia
+    model: nvidia/nemotron-3-nano-30b-a3b
+
+runtime:
+  input_schema: text
+  output_schema: message
+  artifacts: /logs/agent/fabric-artifacts
+
+environment:
+  provider: local
+  workspace: /app
+  artifacts: /logs/agent/fabric-artifacts
+
+telemetry:
+  enabled: false
+```
+
+Copy the config into the task image, for example at
+`/opt/fabric/configs/hermes.yaml`. `fabric_config_path` always refers to the
+path inside the task environment, not the host checkout.
+
+## Run the task
 
 Pass one complete Fabric config path through Harbor's agent arguments:
 
@@ -54,17 +94,10 @@ harbor run --path <dataset-or-task-dir> \
 ```
 
 `fabric_config_path` is resolved inside the task container. The config selects
-the harness, runtime, environment, and telemetry behavior for the run.
+the harness, runtime, environment, and telemetry behavior. Harbor supplies the
+task instruction and, when present, its model, MCP servers, and skill directory.
 
-`FabricAgent` accepts these Fabric-specific constructor arguments:
-
-- `fabric_config_path`: complete Fabric YAML config inside the task environment;
-- `fabric_python`: Python executable used to start the sandbox runner;
-- `fabric_cwd`: optional working directory for Fabric commands;
-- `fabric_install_command`: optional environment bootstrap command;
-- `fabric_timeout_sec`: optional timeout for bootstrap and execution.
-
-## Config Composition
+## Config composition
 
 The sandbox runner validates the YAML as `FabricConfig`, makes a deep copy, and
 then applies Harbor-owned inputs:
@@ -78,14 +111,32 @@ then applies Harbor-owned inputs:
 The final config is passed directly to `Fabric.run()` with a `RunRequest`.
 Harbor scheduling values and job IDs do not enter the Fabric config or runtime.
 
-## Exchange Boundaries
+## Inspect the result
 
 The host writes a validated `HarborRunSpec` to the Harbor log directory and
 uploads it to a unique task-environment path. The sandbox runner writes one
 normalized `RunResult` to a unique result path. The host validates that result
 before copying summary fields into `AgentContext.metadata["fabric"]`.
 
-## Demo and Tests
+The Harbor agent log directory contains `fabric-run-<id>.json` and
+`fabric-result-<id>.json`. The result includes Fabric status, harness and
+adapter identity, runtime and invocation IDs, artifacts, telemetry references,
+and structured errors. Use Harbor's viewer to inspect the trial and reward:
+
+```bash
+harbor view <jobs-directory>
+```
+
+## Optional agent arguments
+
+`FabricAgent` accepts these additional constructor arguments:
+
+- `fabric_python`: Python executable used to start the sandbox runner;
+- `fabric_cwd`: working directory for installation and execution;
+- `fabric_install_command`: environment bootstrap command;
+- `fabric_timeout_sec`: timeout for bootstrap and execution.
+
+## Demo and tests
 
 The [multi-harness demo](demo/README.md) provides complete configs and commands
 for a credential-free smoke run, Hermes CLI, Hermes with Relay, and Codex CLI.

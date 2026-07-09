@@ -21,14 +21,16 @@ The sandbox writes a normalized `RunResult`. The host downloads and validates
 that result before populating `AgentContext.metadata["fabric"]`. Each run uses
 unique specification and result paths.
 
-## Package Layout
+## Package layout
 
 - `models.py` defines `HarborRunSpec` and `HarborMcpServer`.
-- `__init__.py` implements the Harbor `BaseAgent` wrapper and result handling.
+- `fabric_agent.py` implements the Harbor `BaseAgent` wrapper, transport, and
+  result handling.
 - `runner.py` composes the final Fabric config and owns the sandbox-local SDK
   call.
+- `__init__.py` exports `FabricAgent` as the package entrypoint.
 
-## Constructor Arguments
+## Constructor arguments
 
 - `fabric_config_path`: complete Fabric YAML config inside the task environment;
 - `fabric_python`: Python executable used to start the runner;

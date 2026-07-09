@@ -251,7 +251,9 @@ async def test_harbor_exchange_paths_are_unique_per_run(tmp_path: Path):
 
 def test_harbor_rejects_invalid_downloaded_result(tmp_path: Path):
     from nemo_fabric import FabricConfigError
-    from nemo_fabric.integrations.harbor import populate_context_from_result
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+    )
 
     result_path = tmp_path / "fabric-result.json"
     result_path.write_text("{}", encoding="utf-8")
