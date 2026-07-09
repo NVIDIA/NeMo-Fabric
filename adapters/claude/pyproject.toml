@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = [
+  "setuptools>=64",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nemo-fabric-adapters-claude"
+version = "0.1.0"
+description = "Claude adapter for NeMo Fabric"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "nemo-fabric-adapters-common == 0.1.0",
+  "claude-agent-sdk==0.2.114",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nemo_fabric_adapters.claude*"]
+
+[tool.setuptools.data-files]
+"share/nemo-fabric/adapters/claude" = ["fabric-adapter.json"]
+
+[tool.uv.sources]
+nemo-fabric-adapters-common = { path = "../common", editable = true }

@@ -112,6 +112,19 @@ under `examples/code_review_agent/artifacts/hermes-sdk/`. Its complete base
 config and clone-based variants live in
 `examples/code_review_agent/config.py`.
 
+## Claude Adapter
+
+Build the local wheels and install Fabric with the independent Claude adapter:
+
+```bash
+just wheels
+python -m pip install --find-links dist "nemo-fabric[claude]"
+```
+
+Refer to the [Claude adapter guide](adapters/claude/README.md) for
+typed configuration, normalized tools, MCP and skills, multi-turn resume,
+authentication, and execution details.
+
 ## Core Concepts
 
 - **Agent source:** callers provide either an agent package path or a typed
@@ -126,7 +139,8 @@ config and clone-based variants live in
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
   The Hermes SDK and CLI adapters live under `adapters/hermes-sdk/` and
   `adapters/hermes-cli/`; the Codex CLI adapter lives under
-  `adapters/codex-cli/`. Harness-specific extensions belong under
+  `adapters/codex-cli/`; the [Claude adapter](adapters/claude/README.md)
+  lives under `adapters/claude/`. Harness-specific extensions belong under
   `harness.settings` so the normalized contract can remain stable.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
