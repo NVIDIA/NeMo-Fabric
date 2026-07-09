@@ -149,7 +149,7 @@ pub enum FabricError {
     },
     /// The default Python adapter interpreter path was invalid.
     #[error(
-        "environment variable `ADAPTER_PYTHON` must point to a file, but `{value}` resolved to `{path}`"
+        "environment variable `ADAPTER_PYTHON` (`{value}`) must point to a valid file"
     )]
     InvalidAdapterPython {
         /// Value read from `ADAPTER_PYTHON`.
