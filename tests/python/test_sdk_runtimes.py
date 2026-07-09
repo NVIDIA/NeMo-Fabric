@@ -73,6 +73,7 @@ class MockNative:
     def invoke_runtime(
         self, plan_json: str, runtime_json: str, request_json: str
     ) -> str:
+        assert json.loads(plan_json)["agent_name"] == "demo"
         request = json.loads(request_json)
         self.requests.append(request)
         turn = len(self.requests)

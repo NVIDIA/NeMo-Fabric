@@ -158,32 +158,38 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 To run the full test suite, bootstrap a virtual environment with the optional dependencies.
 
 ```bash
-uv venv --seed .venv --python 3.12'
+uv venv --seed .venv --python 3.12
 source .venv/bin/activate
 uv sync --all-groups --all-extras
 ```
 
-Build Fabric and the Python extension, since we have already bootstrapped a virtual environment, we will pass the `no_uv` flag to avoid building reinstalling depdnendencies in the virtual environment.
+Build Fabric and the Python extension. Because the virtual environment is
+already bootstrapped, pass `no_uv=true` to avoid reinstalling dependencies.
+
 ```bash
 just no_uv=true build-all
 ```
 
 Run both Rust and Python tests:
+
 ```bash
 just no_uv=true test-all
 ```
 
 Run just the Rust tests:
+
 ```bash
 just no_uv=true test-rust
 ```
 
 Run just the Python tests:
+
 ```bash
 just no_uv=true test-python
 ```
 
 Running `pytest` directly:
+
 ```bash
 pytest
 ```
