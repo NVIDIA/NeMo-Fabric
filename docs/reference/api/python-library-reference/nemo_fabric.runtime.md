@@ -17,7 +17,7 @@ Runtime lifecycle support for the Fabric Python SDK.
 ## <kbd>class</kbd> `RuntimeStatus`
 Lifecycle state of a runtime.
 
-``ACTIVE`` accepts invocations, ``STOPPED`` has released its runtime, and ``FAILED`` records a lifecycle failure that prevents further use.
+``ACTIVE`` accepts invocations, ``STOPPED`` has released its runtime, and ``FAILED`` records a lifecycle failure that prevents further invocations but still permits cleanup.
 
 
 
@@ -111,13 +111,13 @@ stop() → None
 
 Destroy an idle runtime exactly once.
 
-Repeated calls after a successful stop are no-ops. A failed runtime or an in-flight invocation must reach a terminal state before cleanup can proceed.
+Repeated calls after a successful stop are no-ops. A failed runtime may still be stopped so its resources are released.
 
 
 
 **Raises:**
 
- - <b>`FabricStateError`</b>:  If the runtime failed, is already stopping, or  has an invocation in flight.
+ - <b>`FabricStateError`</b>:  If the runtime is already stopping or has an  invocation in flight.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is missing.
  - <b>`FabricRuntimeError`</b>:  If native runtime shutdown fails.
 

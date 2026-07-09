@@ -39,21 +39,23 @@ not call `start_runtime()` directly.
 
 ## Install
 
-Install the Harbor dependency with Fabric:
+Harbor requires Python 3.12 or later. Install the Fabric runtime and Harbor
+integration in the environment that launches Harbor:
 
 ```bash
-python3 -m pip install "nemo-fabric[harbor]"
+python3 -m pip install "nemo-fabric[runtime,harbor]"
 ```
 
-For a source checkout:
+For a source checkout, run this from the repository root:
 
 ```bash
-python3 -m pip install -e .
+python3 -m pip install -e ".[runtime,harbor]"
 python3 -m pip install -e ../harbor
 ```
 
-Fabric, the selected adapter, and the config file must also be available inside
-the Harbor task environment.
+The Harbor task environment separately needs the Fabric runtime, the selected
+adapter and its dependencies, and the config file. Bake or install them into the
+task image; the [multi-harness demo](demo/README.md) shows one complete setup.
 
 ## Prepare a Fabric config
 
@@ -109,18 +111,22 @@ harbor run --path <dataset-or-task-dir> \
 
 `fabric_config_path` is resolved inside the task container. The config selects
 the harness, runtime, environment, and telemetry behavior. Harbor supplies the
-task instruction and, when present, its model, MCP servers, and skill directory.
+task instruction and may supply a replacement model, MCP servers, or skill
+directory.
 
 ## Config composition
 
 The sandbox runner validates the YAML as `FabricConfig`, makes a deep copy, and
 then applies Harbor-owned inputs:
 
-- `--model` replaces `models.default` with a `ModelConfig`;
-- Harbor MCP servers replace the config's MCP section through
+- when provided, `--model` replaces `models.default` with a `ModelConfig`;
+- when provided, Harbor MCP servers replace the config's MCP section through
   `add_mcp_server()`;
-- Harbor's skill directory replaces the config's skill section through
-  `add_skill_path()`.
+- when provided, Harbor's skill directory replaces the config's skill section
+  through `add_skill_path()`.
+
+If Harbor does not provide MCP servers or a skill directory, those sections
+remain unchanged from the complete Fabric config.
 
 The final config is passed directly to `Fabric.run()` with a `RunRequest`.
 Harbor scheduling values and job IDs do not enter the Fabric config or runtime.

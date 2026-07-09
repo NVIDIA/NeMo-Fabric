@@ -127,6 +127,37 @@ def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
     )
 
 
+def test_runner_preserves_config_capabilities_without_harbor_replacements(tmp_path):
+    from nemo_fabric import FabricConfig, RunRequest
+    from nemo_fabric.integrations.harbor.models import HarborRunSpec
+    from nemo_fabric.integrations.harbor.runner import compose_config
+
+    base = FabricConfig.model_validate(
+        {
+            "metadata": {"name": "harbor-demo"},
+            "harness": {"adapter_id": "demo.fabric.smoke"},
+            "mcp": {
+                "servers": {
+                    "base": {
+                        "transport": "streamable-http",
+                        "url": "https://base.example.test",
+                    }
+                }
+            },
+            "skills": {"paths": ["./base-skill"]},
+        }
+    )
+    spec = HarborRunSpec(
+        config_path=tmp_path / "agent.yaml",
+        request=RunRequest(input="fix it"),
+    )
+
+    config = compose_config(base, spec)
+
+    assert config.mcp is not None and set(config.mcp.servers) == {"base"}
+    assert config.skills is not None and config.skills.paths == ["./base-skill"]
+
+
 def test_runner_rejects_missing_config(tmp_path):
     from nemo_fabric.integrations.harbor.runner import load_config
 
@@ -313,7 +344,7 @@ def test_codex_demo_uses_current_adapter_contract():
     assert settings["skip_git_repo_check"] is True
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"
     dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
-    assert 'nemo-fabric[codex,harbor,hermes,relay]' in dockerfile
+    assert 'nemo-fabric[codex,harbor,hermes,relay,runtime]' in dockerfile
     assert "@openai/codex@0.142.4" in dockerfile
 
 
@@ -355,7 +386,7 @@ def test_harbor_demo_documents_explicit_cli_commands():
 
     assert "run.sh" not in demo
     assert "demo/run.sh" not in integration
-    assert demo.count("uv run --extra harbor harbor run") == 4
+    assert demo.count("uv run --extra runtime --extra harbor harbor run") == 4
     for flag in (
         "--path",
         "--agent",

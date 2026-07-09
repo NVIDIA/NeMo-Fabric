@@ -411,9 +411,11 @@ All public SDK errors inherit from `FabricError`.
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
 Consumers own job-level retries and rollout-level failure policy. One-shot runs
-attempt to stop the runtime before returning, and a `Runtime` used with
-`async with` stops on normal exit. Fabric records structured error metadata when
-possible and returns enough detail for the consumer to decide what to do next.
+attempt to stop the runtime before returning. A `Runtime` used with `async with`
+also attempts cleanup after an invocation error; if cleanup fails, that failure
+is attached to the original exception rather than replacing it. Fabric records
+structured error metadata when possible and returns enough detail for the
+consumer to decide what to do next.
 
 ## SDK Contract Boundaries
 

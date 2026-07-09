@@ -237,6 +237,10 @@ async def test_native_invoke_failure_marks_runtime_failed(mock_native: MagicMock
     with pytest.raises(FabricStateError, match="failed"):
         await runtime.invoke(input="too late")
 
+    await runtime.stop()
+    assert runtime.status is RuntimeStatus.STOPPED
+    mock_native.stop_runtime.assert_called_once()
+
 
 async def test_failed_invoke_is_not_masked_by_context_cleanup(mock_native: MagicMock):
     mock_native.invoke_runtime.side_effect = RuntimeError("invoke failed")
@@ -246,8 +250,22 @@ async def test_failed_invoke_is_not_masked_by_context_cleanup(mock_native: Magic
         async with runtime:
             await runtime.invoke(input="hello")
 
+    assert runtime.status is RuntimeStatus.STOPPED
+    mock_native.stop_runtime.assert_called_once()
+
+
+async def test_failed_cleanup_does_not_mask_invoke_failure(mock_native: MagicMock):
+    mock_native.invoke_runtime.side_effect = RuntimeError("invoke failed")
+    mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
+    runtime = _runtime_wrapper(mock_native)
+
+    with pytest.raises(FabricRuntimeError, match="invoke failed") as caught:
+        async with runtime:
+            await runtime.invoke(input="hello")
+
     assert runtime.status is RuntimeStatus.FAILED
-    mock_native.stop_runtime.assert_not_called()
+    assert caught.value.__notes__ == ["runtime cleanup failed: stop failed"]
+    mock_native.stop_runtime.assert_called_once()
 
 
 async def test_runtime_preserves_non_mapping_message_values(mock_native: MagicMock):

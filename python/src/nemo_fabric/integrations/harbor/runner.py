@@ -33,26 +33,27 @@ def compose_config(base: FabricConfig, spec: HarborRunSpec) -> FabricConfig:
             model=spec.model_name,
         )
 
-    config.mcp = None
-    for server in spec.mcp_servers:
-        if server.transport == "stdio":
-            config.add_mcp_server(
-                server.name,
-                transport="stdio",
-                url=cast(str, server.command),
-                exposure="harness_native",
-                extra_fields={"args": list(server.args)},
-            )
-        else:
-            config.add_mcp_server(
-                server.name,
-                transport=server.transport,
-                url=cast(str, server.url),
-                exposure="harness_native",
-            )
+    if spec.mcp_servers:
+        config.mcp = None
+        for server in spec.mcp_servers:
+            if server.transport == "stdio":
+                config.add_mcp_server(
+                    server.name,
+                    transport="stdio",
+                    url=cast(str, server.command),
+                    exposure="harness_native",
+                    extra_fields={"args": list(server.args)},
+                )
+            else:
+                config.add_mcp_server(
+                    server.name,
+                    transport=server.transport,
+                    url=cast(str, server.url),
+                    exposure="harness_native",
+                )
 
-    config.skills = None
     if spec.skills_dir is not None:
+        config.skills = None
         config.add_skill_path(spec.skills_dir)
     return config
 

@@ -10,7 +10,7 @@ Keep `fabric-adapter.json` aligned with the adapter implementation.
 Install Fabric with the adapter dependency before running it:
 
 ```bash
-python3 -m pip install -e ".[codex]"
+python3 -m pip install -e ".[runtime,codex]"
 ```
 
 ## Authentication and Codex Config

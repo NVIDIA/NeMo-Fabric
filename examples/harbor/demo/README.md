@@ -56,7 +56,7 @@ This run checks Harbor setup, spec upload, sandbox-local SDK execution,
 workspace mutation, result download, and verification:
 
 ```bash
-uv run --extra harbor harbor run \
+uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_config_path=/opt/fabric-demo/configs/smoke.yaml \
@@ -74,7 +74,7 @@ Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 ```bash
 export NVIDIA_API_KEY=...
 
-uv run --extra harbor harbor run \
+uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_config_path=/opt/fabric-demo/configs/hermes.yaml \
@@ -108,7 +108,7 @@ Visit `http://localhost:6006`. The Compose overlay maps
 `host.docker.internal` to the host gateway on Linux.
 
 ```bash
-uv run --extra harbor harbor run \
+uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_config_path=/opt/fabric-demo/configs/hermes-relay.yaml \
@@ -148,7 +148,7 @@ CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 test -f "$CODEX_HOME_DIR/auth.json"
 CODEX_AUTH_MOUNT="[{\"type\":\"bind\",\"source\":\"$CODEX_HOME_DIR/auth.json\",\"target\":\"/run/secrets/codex-auth.json\",\"read_only\":true}]"
 
-uv run --extra harbor harbor run \
+uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_config_path=/opt/fabric-demo/configs/codex.yaml \
@@ -174,7 +174,7 @@ Fabric result files use unique names in each trial's agent logs:
 ```bash
 find "$RUNS_DIR/fabric-smoke" -path '*/agent/fabric-result-*.json' -print -exec cat {} \;
 cat "$RUNS_DIR/fabric-smoke/result.json"
-uv run --extra harbor harbor view "$RUNS_DIR"
+uv run --extra runtime --extra harbor harbor view "$RUNS_DIR"
 ```
 
 Check Fabric status, harness and adapter identity, runtime and invocation IDs,

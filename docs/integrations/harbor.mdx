@@ -32,19 +32,20 @@ interpret Harbor job IDs or concurrency settings.
 
 ## Install the integration
 
+Harbor requires Python 3.12 or later.
+
 ```bash
-python3 -m pip install "nemo-fabric[harbor]"
+python3 -m pip install "nemo-fabric[runtime,harbor]"
 ```
 
-For a source checkout, `uv run --extra harbor` installs the same optional
-dependency before invoking Harbor.
+For a source checkout, use both the runtime and Harbor extras.
 
 ## Run a Fabric-backed Harbor task
 
 Pass one complete config path through Harbor's agent arguments:
 
 ```bash
-uv run --extra harbor harbor run \
+uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_config_path=/opt/fabric-demo/configs/hermes.yaml \
@@ -72,7 +73,8 @@ config per execution path:
 | `codex.yaml` | Codex CLI | An existing Codex login mounted by Harbor |
 
 Harbor's `--model`, MCP servers, and skill directory are applied to an
-independent copy of the selected config for each run.
+independent copy of the selected config for each run. Config-owned MCP servers
+and skills remain unchanged when Harbor does not provide replacements.
 
 ## Inspect results and evidence
 
@@ -81,7 +83,7 @@ includes status, harness and adapter identity, runtime and invocation IDs,
 artifacts, telemetry references, and structured errors.
 
 ```bash
-uv run --extra harbor harbor view "$RUNS_DIR"
+uv run --extra runtime --extra harbor harbor view "$RUNS_DIR"
 ```
 
 For Relay-enabled runs, inspect the same directory for portable ATOF and ATIF

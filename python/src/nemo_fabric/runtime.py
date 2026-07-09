@@ -23,7 +23,8 @@ class RuntimeStatus(str, Enum):
     """Lifecycle state of a runtime.
 
     ``ACTIVE`` accepts invocations, ``STOPPED`` has released its runtime, and
-    ``FAILED`` records a lifecycle failure that prevents further use.
+    ``FAILED`` records a lifecycle failure that prevents further invocations
+    but still permits cleanup.
     """
 
     ACTIVE = "active"
@@ -205,21 +206,18 @@ class Runtime:
     async def stop(self) -> None:
         """Destroy an idle runtime exactly once.
 
-        Repeated calls after a successful stop are no-ops. A failed runtime or
-        an in-flight invocation must reach a terminal state before cleanup can
-        proceed.
+        Repeated calls after a successful stop are no-ops. A failed runtime may
+        still be stopped so its resources are released.
 
         Raises:
-            FabricStateError: If the runtime failed, is already stopping, or
-                has an invocation in flight.
+            FabricStateError: If the runtime is already stopping or has an
+                invocation in flight.
             FabricNativeUnavailableError: If the native extension is missing.
             FabricRuntimeError: If native runtime shutdown fails.
         """
 
         if self._status is RuntimeStatus.STOPPED:
             return
-        if self._status is RuntimeStatus.FAILED:
-            raise FabricStateError("cannot stop a failed runtime")
         if self._current_task is not None:
             raise FabricStateError("cannot stop while a turn is in flight")
         if self._closing:
@@ -271,9 +269,18 @@ class Runtime:
     async def __aenter__(self) -> "Runtime":
         return self
 
-    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
-        if self._status is not RuntimeStatus.FAILED:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: object,
+    ) -> None:
+        try:
             await self.stop()
+        except Exception as cleanup_error:
+            if exc is None:
+                raise
+            exc.add_note(f"runtime cleanup failed: {cleanup_error}")
 
 
 def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:
