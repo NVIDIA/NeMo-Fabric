@@ -36,6 +36,9 @@ perl -0pi -e 's/<!--.*?-->//gs' "$out"/*.md
 perl -pi -e 's/<object object at 0x[0-9A-Fa-f]+>/.../g' "$out"/*.md
 perl -pi -e 's/[ \t]+$//' "$out"/*.md
 perl -0pi -e 's/\A\s+//' "$out"/*.md
+# lazydocs nests properties at h4 directly under h2 class sections. Flatten
+# those headings to h3 so generated pages satisfy markdown heading order.
+perl -pi -e 's/^#### (<kbd>property<\/kbd>)/### $1/' "$out"/*.md
 
 add_frontmatter() {
   local file="$1"

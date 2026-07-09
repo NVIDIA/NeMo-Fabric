@@ -40,7 +40,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -112,7 +112,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -183,7 +183,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -253,7 +253,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -322,7 +322,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -391,7 +391,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -461,7 +461,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -531,7 +531,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -598,7 +598,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -668,7 +668,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -738,7 +738,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -812,7 +812,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 
@@ -894,7 +894,7 @@ __init__(mapping: 'Mapping[str, Any]') → None
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return an immutable view of preserved extension fields.
 

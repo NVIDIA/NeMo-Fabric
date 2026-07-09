@@ -22,13 +22,13 @@ Base class for SDK-facing Pydantic models.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -39,7 +39,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -82,13 +82,13 @@ Human-readable agent identity.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -99,7 +99,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -142,13 +142,13 @@ Harness adapter selection plus adapter-owned settings.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -159,7 +159,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -202,13 +202,13 @@ Runtime input/output contract.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -219,7 +219,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -264,13 +264,13 @@ Execution environment configuration supplied by the consumer.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -281,7 +281,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -324,13 +324,13 @@ Model alias configuration.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -341,7 +341,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -384,13 +384,13 @@ Skill capability configuration.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -401,7 +401,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -466,13 +466,13 @@ MCP server configuration.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -483,7 +483,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -526,13 +526,13 @@ MCP capability configuration.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -543,7 +543,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -614,13 +614,13 @@ Telemetry configuration.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -631,7 +631,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -711,13 +711,13 @@ Profile discovery config for portable file-backed agent packages.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -728,7 +728,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -771,13 +771,13 @@ SDK-facing typed Fabric agent configuration.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -788,7 +788,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -896,13 +896,13 @@ Typed profile overlay used when a Python caller wants file-style overlays.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -913,7 +913,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 
@@ -956,13 +956,13 @@ One validated Fabric invocation request.
 
 ---
 
-#### <kbd>property</kbd> extra_fields
+### <kbd>property</kbd> extra_fields
 
 Return fields preserved by the extension point for this model.
 
 ---
 
-#### <kbd>property</kbd> model_extra
+### <kbd>property</kbd> model_extra
 
 Get extra fields set during validation.
 
@@ -973,7 +973,7 @@ Get extra fields set during validation.
 
 ---
 
-#### <kbd>property</kbd> model_fields_set
+### <kbd>property</kbd> model_fields_set
 
 Returns the set of fields that have been explicitly set on this model instance.
 

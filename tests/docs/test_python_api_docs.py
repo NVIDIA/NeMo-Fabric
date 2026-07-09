@@ -82,6 +82,12 @@ def test_exported_sdk_classes_and_public_members_have_docstrings() -> None:
             assert getdoc(member), f"{export_name}.{member_name}"
 
 
+def test_generated_reference_uses_valid_heading_order() -> None:
+    for page in REFERENCE_DIR.glob("*.md"):
+        text = page.read_text(encoding="utf-8")
+        assert "#### <kbd>property</kbd>" not in text, page
+
+
 def test_landing_page_routes_new_users_through_the_product() -> None:
     landing = LANDING_PAGE.read_text(encoding="utf-8")
     navigation = NAVIGATION.read_text(encoding="utf-8")
@@ -106,3 +112,10 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
         "/reference/api/python-library-reference/errors",
     ):
         assert destination in landing
+
+    quick_start = landing.split("## Quick start", maxsplit=1)[1].split(
+        "## Choose your interface", maxsplit=1
+    )[0]
+    assert "client.plan(" not in quick_start
+    assert "client.doctor(" not in quick_start
+    assert "/sdk/python" in quick_start

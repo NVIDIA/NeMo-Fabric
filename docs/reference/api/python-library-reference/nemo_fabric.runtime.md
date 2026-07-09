@@ -36,31 +36,31 @@ Runtime-scoped overrides are recursively merged with invocation overrides; invoc
 
 ---
 
-#### <kbd>property</kbd> handle
+### <kbd>property</kbd> handle
 
 Return a detached snapshot of the runtime handle.
 
 ---
 
-#### <kbd>property</kbd> invocations
+### <kbd>property</kbd> invocations
 
 Return copied request, runtime, and invocation IDs for completed turns.
 
 ---
 
-#### <kbd>property</kbd> messages
+### <kbd>property</kbd> messages
 
 Return a deep copy of the latest harness-provided message history.
 
 ---
 
-#### <kbd>property</kbd> runtime_id
+### <kbd>property</kbd> runtime_id
 
 Return the unique identifier for this started runtime lifecycle.
 
 ---
 
-#### <kbd>property</kbd> status
+### <kbd>property</kbd> status
 
 Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 

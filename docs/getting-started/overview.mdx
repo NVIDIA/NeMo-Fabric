@@ -81,7 +81,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 just build-all
 ```
 
-Plan, diagnose, and run the example through the Python SDK:
+Run the example through the Python SDK:
 
 ```python
 import asyncio
@@ -92,15 +92,13 @@ from nemo_fabric import Fabric
 async def main() -> None:
     config = hermes_sdk_config()
     client = Fabric()
-    plan = client.plan(config, base_dir=BASE_DIR)
-    report = await client.doctor(config, base_dir=BASE_DIR)
     result = await client.run(
         config,
         base_dir=BASE_DIR,
         input="Reply with exactly: fabric works",
     )
 
-    print(plan.adapter.harness, report.status, result.status)
+    print(result.status)
 
 
 asyncio.run(main())
@@ -109,6 +107,9 @@ asyncio.run(main())
 Harness installation and credential requirements differ by adapter. The
 [repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-sdk)
 contains the complete Hermes environment recipe.
+
+See the [Python SDK guide](/sdk/python) for planning, diagnostics, typed
+requests, and multi-turn runtime examples.
 
 ## Choose your interface
 
