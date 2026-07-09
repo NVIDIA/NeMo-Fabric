@@ -26,4 +26,4 @@ include = ["nemo_fabric_adapters.codex_cli*"]
 "share/nemo-fabric/adapters/codex-cli" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
-nemo-fabric-adapters-common = { path = "../common" }
+nemo-fabric-adapters-common = { path = "../common", editable = true }

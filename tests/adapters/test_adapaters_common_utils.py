@@ -4,12 +4,70 @@
 import builtins
 import json
 import os
+import sys
 import tomllib
 from io import StringIO
 from pathlib import Path
 
 import nemo_fabric_adapters.common.utils as common_utils
 import pytest
+
+
+@pytest.mark.parametrize(
+    ("prefix", "base_prefix", "expected"),
+    [
+        ("/usr", "/usr", None),
+        ("/workspace/.venv", "/usr", Path("/workspace/.venv")),
+    ],
+)
+def test_current_virtualenv(
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str,
+    base_prefix: str,
+    expected: Path | None,
+):
+    monkeypatch.setattr(sys, "prefix", prefix)
+    monkeypatch.setattr(sys, "base_prefix", base_prefix)
+
+    assert common_utils.current_virtualenv() == expected
+
+
+@pytest.mark.parametrize(
+    ("os_name", "scripts_directory"),
+    [("posix", "bin"), ("nt", "Scripts")],
+)
+def test_virtualenv_subprocess_env(
+    monkeypatch: pytest.MonkeyPatch,
+    os_name: str,
+    scripts_directory: str,
+):
+    virtualenv = Path("/workspace/.venv")
+    monkeypatch.setattr(common_utils, "current_virtualenv", lambda: virtualenv)
+    monkeypatch.setattr(os, "name", os_name)
+    os.environ["PATH"] = "/usr/bin"
+    os.environ["PYTHONHOME"] = "/usr/lib/python"
+    os.environ["FABRIC_TEST"] = "preserved"
+
+    env = common_utils.virtualenv_subprocess_env()
+
+    assert env["VIRTUAL_ENV"] == str(virtualenv)
+    assert env["PATH"] == os.pathsep.join(
+        (str(virtualenv / scripts_directory), "/usr/bin")
+    )
+    assert "PYTHONHOME" not in env
+    assert env["FABRIC_TEST"] == "preserved"
+
+
+def test_virtualenv_subprocess_env_preserves_environment_outside_virtualenv(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(common_utils, "current_virtualenv", lambda: None)
+    os.environ["FABRIC_TEST"] = "preserved"
+
+    env = common_utils.virtualenv_subprocess_env()
+
+    assert env == os.environ
+    assert env is not os.environ
 
 
 def test_payload_accessors_prefer_effective_config():

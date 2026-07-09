@@ -22,7 +22,7 @@ just build-all
 
 The default variant uses Hermes SDK with an NVIDIA-hosted model. Follow the
 [Hermes SDK quick start](../../README.md#quick-start-hermes-sdk) to install
-Hermes, then set `NVIDIA_API_KEY` and `HERMES_PYTHON` as described there.
+Hermes, then set `NVIDIA_API_KEY` and `ADAPTER_PYTHON` as described there.
 
 The config also demonstrates a harness-native GitHub MCP server. Set
 `GITHUB_MCP_URL` when you want to use that server; the review prompt below does
@@ -58,8 +58,8 @@ The entrypoint exposes the three complete harness configs defined in
 
 | Variant | Command option | Additional setup |
 | --- | --- | --- |
-| Hermes SDK | `--variant hermes-sdk` | `NVIDIA_API_KEY` and `HERMES_PYTHON` |
-| Hermes CLI | `--variant hermes-cli` | Installed [Hermes CLI adapter requirements](../../adapters/hermes-cli/README.md) |
+| Hermes SDK | `--variant hermes-sdk` | Installed [Hermes SDK adapter requirements](../../adapters/hermes-sdk/README.md) and `NVIDIA_API_KEY`|
+| Hermes CLI | `--variant hermes-cli` | Installed [Hermes CLI adapter requirements](../../adapters/hermes-cli/README.md) and `NVIDIA_API_KEY`|
 | Codex CLI | `--variant codex-cli` | Installed and authenticated [Codex CLI](../../adapters/codex-cli/README.md) |
 
 Add `--relay` to any variant to enable the Relay ATOF and ATIF configuration:
@@ -75,6 +75,8 @@ environment.
 ```
 
 Use `--plan` with these options to inspect a variant before running it.
+Use `--show-output` to print the adapter's `output.response` value on the final
+line after the normalized result.
 
 ## Compose configs in Python
 

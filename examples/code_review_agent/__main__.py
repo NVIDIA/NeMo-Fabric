@@ -36,6 +36,11 @@ async def main() -> None:
         action="store_true",
         help="Print the resolved run plan without starting a runtime.",
     )
+    parser.add_argument(
+        "--show-output",
+        action="store_true",
+        help="Print the adapter response after the normalized result.",
+    )
     parser.add_argument("--input", default="Review the workspace changes.")
     args = parser.parse_args()
 
@@ -49,6 +54,13 @@ async def main() -> None:
     else:
         output = await fabric.run(config, base_dir=BASE_DIR, input=args.input)
     print(json.dumps(output.to_mapping(), indent=2))
+    if args.show_output and not args.plan:
+        if isinstance(output.output, dict) and "response" in output.output:
+            print(f"\n{output.output['response']}")
+        elif output.error is not None:
+            print(f"\n{output.error.message}")
+        else:
+            print("\n(run succeeded but output has no 'response' field)")
 
 
 if __name__ == "__main__":

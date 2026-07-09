@@ -9,7 +9,6 @@ harness:
   adapter_id: nvidia.fabric.hermes.sdk
   resolution: preinstalled
   settings:
-    python_env: HERMES_PYTHON
     workspace: ./repos/my-service
     hermes_home: ./artifacts/hermes-home
     base_url: https://integrate.api.nvidia.com/v1

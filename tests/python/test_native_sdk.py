@@ -5,17 +5,49 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 
 import nemo_fabric._native as native
+import pytest
 from examples.code_review_agent import BASE_DIR, base_config
-from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig
+from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig, FabricRuntimeError
 
 
 async def test_native_sdk(hermes_shim_agent_dir: Path):
     assert native.version()
 
     await smoke(Fabric(), hermes_shim_agent_dir)
+
+
+async def test_adapter_python_selects_python_adapter_interpreter(
+    hermes_shim_agent_dir: Path,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+
+    result = await Fabric().run(
+        hermes_shim_agent_dir,
+        profiles=["env_local"],
+        input="hello adapter python",
+    )
+
+    assert result["status"] == "succeeded"
+
+
+async def test_adapter_python_rejects_invalid_path_before_start(
+    hermes_shim_agent_dir: Path,
+):
+    invalid_python = hermes_shim_agent_dir / "missing-python"
+    os.environ["ADAPTER_PYTHON"] = str(invalid_python)
+
+    with pytest.raises(FabricRuntimeError, match="ADAPTER_PYTHON") as caught:
+        await Fabric().start_runtime(
+            hermes_shim_agent_dir,
+            profiles=["env_local"],
+        )
+
+    assert caught.value.stage == "start"
 
 
 async def smoke(client: Fabric, fixture_agent: Path) -> None:

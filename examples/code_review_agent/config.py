@@ -73,7 +73,6 @@ def hermes_sdk_config() -> FabricConfig:
         adapter_id="nvidia.fabric.hermes.sdk",
         resolution="preinstalled",
         settings={
-            "python_env": "HERMES_PYTHON",
             "workspace": WORKSPACE,
             "hermes_home": "./artifacts/hermes-home",
             "base_url": "https://integrate.api.nvidia.com/v1",

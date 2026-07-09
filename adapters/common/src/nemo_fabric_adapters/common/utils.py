@@ -22,6 +22,36 @@ if TYPE_CHECKING:
     )
 
 
+def current_virtualenv() -> Path | None:
+    """Return the current virtual environment, if Python is running in one."""
+
+    if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
+        return None
+    return Path(sys.prefix)
+
+
+def virtualenv_subprocess_env() -> dict[str, str]:
+    """
+    When inside of a virtual environment, return a copy of os.environ with the virtualenv exposed.
+
+    When outside of a virtual environment a copy of os.environ is returned.
+    """
+
+    env = os.environ.copy()
+    virtualenv = current_virtualenv()
+    if virtualenv is None:
+        return env   
+
+    scripts = virtualenv / ("Scripts" if os.name == "nt" else "bin")
+    path = env.get("PATH")
+    env["VIRTUAL_ENV"] = str(virtualenv)
+    env["PATH"] = os.pathsep.join(
+        part for part in (str(scripts), path) if part
+    )
+    env.pop("PYTHONHOME", None)
+    return env
+
+
 def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("effective_config") or {}
 

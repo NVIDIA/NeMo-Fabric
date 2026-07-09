@@ -271,10 +271,13 @@ build-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" == "true" ]]; then
+        editable_projects=()
+        for project in {{ python_projects }}; do
+            editable_projects+=(--editable "$project")
+        done
         uv pip install --python .venv/bin/python --no-deps --reinstall \
             --group adapters \
-            --editable ./python \
-            --editable .
+            "${editable_projects[@]}"
     else
         uv sync --no-default-groups --group adapters --extra runtime \
             --reinstall-package nemo-fabric \
