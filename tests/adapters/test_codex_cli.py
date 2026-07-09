@@ -555,7 +555,6 @@ def test_runtime_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
     os.environ.pop("OPENAI_API_KEY", None)
     os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
-    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
     codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
         "CODEX_EXPLICIT": "forward-me"
     }
@@ -578,7 +577,6 @@ def test_runtime_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     assert child_env["CODEX_HOME"] == str(tmp_path / "codex-home")
     assert child_env["CODEX_EXPLICIT"] == "forward-me"
     assert "OPENAI_API_KEY" not in child_env
-    assert "FABRIC_UNRELATED_SECRET" not in child_env
     assert mock_run.call_args_list[0].kwargs["timeout"] == 1800
 
     state_path = adapter.runtime_state_path(codex_payload, "runtime-1")

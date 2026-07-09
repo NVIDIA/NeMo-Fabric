@@ -58,16 +58,14 @@ def test_virtualenv_subprocess_env(
     assert env["FABRIC_TEST"] == "preserved"
 
 
-def test_virtualenv_subprocess_env_preserves_environment_outside_virtualenv(
+def test_virtualenv_subprocess_env_outside_virtualenv(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setattr(common_utils, "current_virtualenv", lambda: None)
-    os.environ["FABRIC_TEST"] = "preserved"
 
     env = common_utils.virtualenv_subprocess_env()
 
-    assert env == os.environ
-    assert env is not os.environ
+    assert len(env) == 0
 
 
 def test_payload_accessors_prefer_effective_config():
