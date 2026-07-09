@@ -17,7 +17,7 @@ doctest = false
 
 [dependencies]
 fabric-core.workspace = true
-pyo3 = { workspace = true, features = ["abi3", "abi3-py310", "macros"] }
+pyo3 = { workspace = true, features = ["abi3", "abi3-py311", "macros"] }
 serde.workspace = true
 serde_json.workspace = true
 
