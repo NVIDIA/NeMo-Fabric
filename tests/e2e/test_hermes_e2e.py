@@ -74,6 +74,8 @@ class BaseTestHermesE2E:
         assert len(self.result.telemetry) == 1
         assert self.result.telemetry[0].provider == "relay"
         assert self.result.telemetry[0].metadata["relay_enabled"] is True
+        assert "relay_mode" not in self.result.telemetry[0].metadata
+
         output = self.output
         assert output["adapter"] == self.output_adapter
         assert output["harness"] == "hermes"
