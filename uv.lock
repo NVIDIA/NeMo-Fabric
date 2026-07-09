@@ -1591,6 +1591,7 @@ wheels = [
 
 [[package]]
 name = "nemo-fabric"
+version = "0.1.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -1692,6 +1693,7 @@ test = [
 
 [[package]]
 name = "nemo-fabric-adapters-codex-cli"
+version = "0.1.0"
 source = { directory = "adapters/codex-cli" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
@@ -1706,10 +1708,12 @@ requires-dist = [
 
 [[package]]
 name = "nemo-fabric-adapters-common"
+version = "0.1.0"
 source = { directory = "adapters/common" }
 
 [[package]]
 name = "nemo-fabric-adapters-hermes-cli"
+version = "0.1.0"
 source = { directory = "adapters/hermes-cli" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
@@ -1726,6 +1730,7 @@ requires-dist = [
 
 [[package]]
 name = "nemo-fabric-adapters-hermes-sdk"
+version = "0.1.0"
 source = { directory = "adapters/hermes-sdk" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },

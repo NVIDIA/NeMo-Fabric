@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import shlex
 import uuid
@@ -71,7 +72,10 @@ else:
             return "fabric"
 
         def version(self) -> str | None:
-            return "0.1.0"
+            try:
+                return importlib.metadata.version("nemo-fabric-runtime")
+            except importlib.metadata.PackageNotFoundError:
+                return None
 
         async def setup(self, environment: BaseEnvironment) -> None:
             result = await environment.exec("mkdir -p /logs/agent /tmp", timeout_sec=30)
