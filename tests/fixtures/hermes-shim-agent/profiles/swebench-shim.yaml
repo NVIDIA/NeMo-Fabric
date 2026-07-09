@@ -18,8 +18,6 @@ harness:
     new_file_contents: "patched by Fabric\n"
 
 runtime:
-  mode: oneshot
-  transport: library
   input_schema: swe_bench_task
   output_schema: patch_result
   artifacts: ./artifacts/swebench

@@ -69,16 +69,35 @@ def test_load_payload_falls_back_to_stdin(
 @pytest.mark.parametrize(
     ("runtime_context", "expected"),
     [
-        ({"session_id": "caller-session", "runtime_id": "runtime-1"}, "caller-session"),
         ({"runtime_id": "runtime-1"}, "runtime-1"),
-        ({}, None),
     ],
 )
-def test_runtime_session_id_prefers_caller_session_id(
+def test_runtime_id_reads_required_runtime_context(
     runtime_context: dict[str, object],
-    expected: str | None,
+    expected: str,
 ):
-    assert common_utils.runtime_session_id({"runtime_context": runtime_context}) == expected
+    assert common_utils.runtime_id({"runtime_context": runtime_context}) == expected
+
+
+def test_runtime_id_requires_runtime_context():
+    with pytest.raises(ValueError, match="runtime_context.runtime_id"):
+        common_utils.runtime_id({"runtime_context": {}})
+
+
+def test_runtime_state_directory_is_scoped_to_runtime(
+    tmp_path: Path,
+):
+    first = common_utils.runtime_state_directory(
+        tmp_path / "hermes-home",
+        {"runtime_context": {"runtime_id": "runtime-1"}},
+    )
+    second = common_utils.runtime_state_directory(
+        tmp_path / "hermes-home",
+        {"runtime_context": {"runtime_id": "runtime-2"}},
+    )
+
+    assert first == tmp_path / "hermes-home" / "runtimes" / "runtime-1"
+    assert second == tmp_path / "hermes-home" / "runtimes" / "runtime-2"
 
 
 def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(

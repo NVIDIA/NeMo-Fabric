@@ -25,7 +25,7 @@ from shutil import copytree
 import yaml
 
 from nemo_fabric import (
-    FabricClient,
+    Fabric,
     FabricConfig,
     FabricProfileConfig,
     RunRequest,
@@ -58,8 +58,6 @@ def _repository_adapter_config() -> FabricConfig:
                 }
             },
             "runtime": {
-                "mode": "oneshot",
-                "transport": "library",
                 "input_schema": "chat",
                 "output_schema": "message",
                 "artifacts": "./artifacts",
@@ -90,7 +88,7 @@ def _shim_adapter_config() -> FabricConfig:
     return FabricConfig.from_mapping(config)
 
 
-async def resolves_and_diagnoses_without_a_directory(client: FabricClient) -> None:
+async def resolves_and_diagnoses_without_a_directory(client: Fabric) -> None:
     """plan / doctor resolve a maintained adapter with no package."""
 
     config = _repository_adapter_config()
@@ -116,7 +114,7 @@ async def resolves_and_diagnoses_without_a_directory(client: FabricClient) -> No
     assert report["status"] in {"pass", "warn", "fail"}, report["status"]
 
 
-async def runs_without_an_agent_package(client: FabricClient) -> None:
+async def runs_without_an_agent_package(client: Fabric) -> None:
     """run drives a core run with only an adapter dir (no agent.yaml)."""
 
     config = _shim_adapter_config()
@@ -146,15 +144,15 @@ async def runs_without_an_agent_package(client: FabricClient) -> None:
     assert result["output"]["received"] == "hello typed"
 
 
-def sdk_and_cli_profile_stacks_match(client: FabricClient) -> None:
+def sdk_and_cli_profile_stacks_match(client: Fabric) -> None:
     """The same config/profile stack plans identically through CLI and SDK."""
 
     config = FabricConfig.from_mapping(_load_yaml(SHIM_AGENT / "agent.yaml"))
     profiles = [
-        FabricProfileConfig.from_mapping(
+        FabricProfileConfig.model_validate(
             _load_yaml(SHIM_AGENT / "profiles" / "env-local.yaml")
         ),
-        FabricProfileConfig.from_mapping(
+        FabricProfileConfig.model_validate(
             _load_yaml(SHIM_AGENT / "profiles" / "mcp-github.yaml")
         ),
     ]
@@ -182,10 +180,10 @@ def sdk_and_cli_profile_stacks_match(client: FabricClient) -> None:
 
 
 async def test_typed_config():
-    async with FabricClient() as client:
-        sdk_and_cli_profile_stacks_match(client)
-        await resolves_and_diagnoses_without_a_directory(client)
-        await runs_without_an_agent_package(client)
+    client = Fabric()
+    sdk_and_cli_profile_stacks_match(client)
+    await resolves_and_diagnoses_without_a_directory(client)
+    await runs_without_an_agent_package(client)
 
 
 def _load_yaml(path: Path) -> dict:

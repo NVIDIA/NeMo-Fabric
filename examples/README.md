@@ -5,28 +5,34 @@ SPDX-License-Identifier: Apache-2.0
 
 # Examples
 
-This directory holds sample Fabric agent packages and single-file configs used tests and demos.
+This directory holds runnable Fabric examples.
 
-The first example focuses on the shared Fabric contract:
+## Code review agent
 
-- validating `agent.yaml`;
-- resolving named profiles from configured profile directories;
-- resolving direct profile YAML paths into run plans;
-- resolving an environment context without requiring Fabric to provision it;
-- resolving maintained Hermes adapters from the repository adapter registry.
+[`code_review_agent`](code_review_agent/README.md) demonstrates the
+application-facing Python SDK contract:
+
+- constructing complete `FabricConfig` values with Pydantic models;
+- creating harness, environment, capability, and telemetry variants from deep
+  copies;
+- resolving relative workspace and skill paths with `base_dir`;
+- running maintained Hermes and Codex adapters through the Python SDK.
 
 Start with:
 
 ```bash
-just build-rust
-export PATH="$HOME/.cargo/bin:$PATH"
-
-fabric validate examples/code-review-agent
-fabric inspect examples/code-review-agent
-fabric plan examples/code-review-agent
-fabric plan examples/code-review-agent --profile env_local --profile mcp_github
-fabric plan examples/code-review-agent --profile hermes_cli
+just build-all
+.venv/bin/python -m examples.code_review_agent \
+  --input "Reply with exactly: fabric works"
 ```
 
-The dependency-free Hermes shim used by tests lives under
-`tests/fixtures/hermes-shim-agent`; it is not a maintained adapter.
+## Harbor
+
+[`harbor`](harbor/README.md) demonstrates the installed `FabricAgent`
+integration through a complete Harbor task, config matrix, verifier, and
+multi-harness demo.
+
+Portable manifest and profile behavior is covered by
+`tests/fixtures/file-config-agent`. The dependency-free Hermes shim used by
+runtime tests lives under `tests/fixtures/hermes-shim-agent`; neither fixture is
+a public SDK example.

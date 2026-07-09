@@ -1,12 +1,16 @@
 # Codex CLI Adapter
 
-Runs an installed Codex CLI through Fabric's Python-adapter lifecycle. The
-same adapter supports one-shot and session runtime modes.
+Runs an installed Codex CLI through Fabric's Python-adapter lifecycle. One
+Fabric runtime maps to one Codex thread.
+
+Keep `fabric-adapter.json` aligned with the adapter implementation.
+`contract_version` must match the adapter contract supported by Fabric core;
+`adapter_id` is the stable id selected by `harness.adapter_id`.
 
 Install Fabric with the adapter dependency before running it:
 
 ```bash
-python3 -m pip install -e ".[codex]"
+python3 -m pip install -e ".[runtime,codex]"
 ```
 
 ## Authentication and Codex Config
@@ -35,17 +39,13 @@ Fabric adds only explicitly configured invocation overrides:
 `codex_command`, `codex_state_dir`, `cwd`, `env`, and
 `skip_git_repo_check` are available for prepared environments and tests.
 
-## Runtime Modes
+## Execution Paths
 
-One-shot mode runs `codex exec --json --ephemeral` and returns the final agent
-message, usage, and thread ID in the normalized Fabric result.
-
-Session mode omits `--ephemeral`. The first invocation records Codex's generated
-thread ID against Fabric's session ID; later invocations use
+The first invocation records Codex's generated thread ID against the Fabric
+runtime ID. Later invocations on the same runtime use
 `codex exec resume <thread-id>`. Codex owns its transcript and authentication;
-Fabric owns the lifecycle and the session-to-thread correlation record.
-Both modes accept text input; Codex owns conversation history for session runs.
+Fabric owns the runtime lifecycle and runtime-to-thread correlation record.
+Both `fabric run` and stateful runtime paths accept text input.
 
-Use the `codex_cli` and `codex_cli_session` profiles under
-`examples/code-review-agent/profiles/` for local one-shot and `fabric chat`
-examples.
+Use `codex_cli_config()` from `examples.code_review_agent` for local one-shot
+and multi-turn examples.

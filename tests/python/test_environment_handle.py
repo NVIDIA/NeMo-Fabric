@@ -6,26 +6,20 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
-from nemo_fabric import FabricClient
-
-ROOT = Path(__file__).resolve().parents[2]
+from examples.code_review_agent import BASE_DIR, base_config
+from nemo_fabric import Fabric
 
 
 async def test_environment_handle():
-    async with FabricClient() as client:
-        session = await client.start_session(
-            ROOT / "examples" / "code-review-agent",
-            profiles=["env_local"],
-        )
-        try:
-            workspace = session.runtime["environment"]["workspace"]
-        finally:
-            await session.stop()
+    runtime = await Fabric().start_runtime(
+        base_config(),
+        base_dir=BASE_DIR,
+    )
+    try:
+        workspace = runtime.handle["environment"]["workspace"]
+    finally:
+        await runtime.stop()
 
     assert os.path.isabs(workspace), f"workspace not absolute: {workspace}"
-    assert "code-review-agent/examples/code-review-agent" not in workspace, (
-        f"workspace path is doubled: {workspace}"
-    )
-    assert workspace.endswith("repos/my-service"), workspace
+    assert workspace == str((BASE_DIR / "repos" / "my-service").resolve())

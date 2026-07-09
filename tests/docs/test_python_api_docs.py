@@ -11,6 +11,7 @@ from inspect import getdoc, getmembers, isclass, isfunction, ismethod, getattr_s
 from pathlib import Path
 
 import nemo_fabric
+from pydantic import BaseModel
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,7 +20,8 @@ LANDING_PAGE = ROOT / "docs" / "getting-started" / "overview.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
-    "nemo_fabric.session": "/reference/api/python-library-reference/sessions",
+    "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
+    "nemo_fabric.models": "/reference/api/python-library-reference/models",
     "nemo_fabric.types": "/reference/api/python-library-reference/types",
     "nemo_fabric.errors": "/reference/api/python-library-reference/errors",
 }
@@ -75,7 +77,15 @@ def test_exported_sdk_classes_and_public_members_have_docstrings() -> None:
                 or isinstance(raw_member, property)
             ):
                 continue
+            if issubclass(exported, BaseModel) and hasattr(BaseModel, member_name):
+                continue
             assert getdoc(member), f"{export_name}.{member_name}"
+
+
+def test_generated_reference_uses_valid_heading_order() -> None:
+    for page in REFERENCE_DIR.glob("*.md"):
+        text = page.read_text(encoding="utf-8")
+        assert "#### <kbd>property</kbd>" not in text, page
 
 
 def test_landing_page_routes_new_users_through_the_product() -> None:
@@ -97,8 +107,15 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
 
     for destination in (
         "/reference/api/python-library-reference/client",
-        "/reference/api/python-library-reference/sessions",
+        "/reference/api/python-library-reference/runtime",
         "/reference/api/python-library-reference/types",
         "/reference/api/python-library-reference/errors",
     ):
         assert destination in landing
+
+    quick_start = landing.split("## Quick start", maxsplit=1)[1].split(
+        "## Choose your interface", maxsplit=1
+    )[0]
+    assert "client.plan(" not in quick_start
+    assert "client.doctor(" not in quick_start
+    assert "/sdk/python" in quick_start

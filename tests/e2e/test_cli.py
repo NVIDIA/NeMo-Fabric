@@ -14,10 +14,10 @@ from _utils.utils import assert_relay_disabled_native_observability, run_fabric_
 
 def test_cli(
     tmp_path: Path,
-    code_review_agent_dir: Path,
+    file_config_agent_dir: Path,
     hermes_shim_agent_dir: Path,
 ):
-    temp_example = code_review_agent_dir
+    temp_example = file_config_agent_dir
     temp_fixture = hermes_shim_agent_dir
 
     assert call_text("validate", temp_example).startswith("validated")
@@ -73,7 +73,7 @@ def test_cli(
         descriptor = profile_plan["adapter_descriptor"]["descriptor"]
         assert descriptor["adapter_id"] == adapter_id
         assert descriptor["adapter_kind"] == adapter_kind
-        assert profile_plan["config"]["runtime"]["mode"] == "oneshot"
+        assert "mode" not in profile_plan["config"]["runtime"]
         assert profile_plan["capability_plan"]["native"]["skill_paths"]
         assert "github" in profile_plan["capability_plan"]["native"]["mcp_servers"]
         telemetry_plan = profile_plan["telemetry_plan"]
@@ -111,6 +111,17 @@ def test_cli(
     assert hermes["output"]["managed_mcp_servers"] == []
     assert_relay_disabled_native_observability(hermes)
 
+    second_run = call_json(
+        "run",
+        temp_fixture,
+        "--profile",
+        "env_local",
+        "--input",
+        "hello runtime hermes",
+    )
+    assert second_run["status"] == "succeeded"
+    assert second_run["output"]["runtime_id"] == second_run["runtime_id"]
+
     request = json.dumps(
         {
             "request_id": "cli-structured-request",
@@ -130,22 +141,20 @@ def test_cli(
         temp_fixture,
         "--profile",
         "env_local",
-        "--session-id",
-        "cli-session-123",
         "--verbose",
     )
     assert chat.stdout == ""
     assert '"received": "hello chat"' in chat.stderr
-    assert '"session_id": "cli-session-123"' in chat.stderr
+    assert '"runtime_id": "runtime-' in chat.stderr
     assert "NEMO FABRIC" in chat.stderr
-    assert "interactive runtime session" in chat.stderr
+    assert "interactive runtime" in chat.stderr
     assert "agent: hermes-shim-agent" in chat.stderr
     assert "profile: env_local" in chat.stderr
     assert "harness: hermes" in chat.stderr
     assert "adapter: python" in chat.stderr
-    assert chat.stderr.count("session_id: cli-session-123 (provided)") >= 2
-    assert "you[env_local:cli-session-123]> " in chat.stderr
-    assert "you[env_local:cli-session-123]> \nagent> {" in chat.stderr
+    assert chat.stderr.count("runtime_id: runtime-") >= 2
+    assert "you[env_local:runtime-" in chat.stderr
+    assert "> \nagent> {" in chat.stderr
     assert "agent> {" in chat.stderr
     assert "runtime_id: runtime-" in chat.stderr
     assert "/verbose on|off" in chat.stderr
@@ -159,12 +168,6 @@ def test_cli(
     assert "| request_id: request-" in chat.stderr
     assert "| invocation_id: invocation-" in chat.stderr
     assert "| artifact_count:" in chat.stderr
-
-    rejected_chat = run_raw("", "chat", temp_example, "--profile", "hermes_sdk")
-    assert rejected_chat.returncode != 0
-    assert rejected_chat.stdout == ""
-    assert "fabric chat requires runtime.mode=session" in rejected_chat.stderr
-
 
 def call_text(*args: object) -> str:
     completed = run(*args)

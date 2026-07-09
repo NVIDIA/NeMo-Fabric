@@ -1,62 +1,31 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Smoke test: the README "Use Fabric" examples stay accurate and runnable."""
+"""Smoke test: the README quick start stays accurate and runnable."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from nemo_fabric import FabricClient, FabricConfig
+from examples.code_review_agent import BASE_DIR, hermes_sdk_config
+from nemo_fabric import Fabric
 
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
-EXAMPLE_AGENT = ROOT / "examples" / "code-review-agent"
 
-# Exact invocations the README documents and this smoke mirrors. If the README
-# changes any of these, update the executable mirror below (and vice versa).
+# The README stays a quick start and routes detailed SDK usage to canonical docs.
 DOCUMENTED_SNIPPETS = [
-    "fabric plan examples/code-review-agent --profile hermes_sdk",
-    "fabric plan examples/code-review-agent --profile env_local --profile mcp_github",
-    "fabric doctor examples/code-review-agent --profile hermes_sdk",
-    'plan = client.plan(agent, profiles=["hermes_sdk"])',
-    'report = await client.doctor(agent, profiles=["hermes_sdk"])',
-    "config = FabricConfig.from_mapping(",
-    "plan = client.plan(",
-    "result = await client.run(",
-    '"harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},',
-    'base_dir="examples/code-review-agent",',
-    "### Multi-Turn SDK Sessions",
-    "### Interactive CLI Chat",
-    "FabricClient().start_session(",
-    'profiles=["hermes_session"],',
-    'session_id="review-session-123",',
-    "fabric chat examples/code-review-agent \\",
-    "--profile hermes_cli_session",
-    "--session-id review-session-123",
-    "--verbose",
-    "requires `runtime.mode: session`; use `fabric run`",
-    "The CLI is a separate interface over the same Rust",
+    ".venv/bin/python -m examples.code_review_agent \\",
+    "examples/code_review_agent/config.py",
+    "[Python SDK guide](docs/sdk/python.mdx)",
+    "[generated Python API reference](docs/reference/api/python-library-reference/index.md)",
 ]
 
-# The exact typed-config dict shown in the README example.
-README_PLAN_CONFIG = {
-    "schema_version": "fabric.agent/v1alpha1",
-    "metadata": {"name": "code-review-agent"},
-    "harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},
-    "models": {
-        "default": {
-            "provider": "nvidia",
-            "model": "nvidia/nemotron-3-nano-30b-a3b",
-        }
-    },
-    "runtime": {
-        "mode": "session",
-        "transport": "library",
-        "input_schema": "chat",
-        "output_schema": "message",
-    },
-}
+DETAILED_SDK_SNIPPETS = (
+    "config = FabricConfig(",
+    "request = RunRequest(",
+    "### Multi-Turn SDK Runtimes",
+)
 
 
 def readme_documents_each_example() -> None:
@@ -65,25 +34,20 @@ def readme_documents_each_example() -> None:
     text = README.read_text(encoding="utf-8")
     missing = [snippet for snippet in DOCUMENTED_SNIPPETS if snippet not in text]
     assert not missing, f"README no longer documents these examples verbatim: {missing}"
+    duplicates = [snippet for snippet in DETAILED_SDK_SNIPPETS if snippet in text]
+    assert not duplicates, f"README duplicates detailed SDK guide examples: {duplicates}"
 
 
 async def readme_python_examples_run() -> None:
-    """The documented Python SDK examples execute and return documented shapes."""
+    """The README quick-start package remains resolvable and diagnosable."""
 
-    agent = EXAMPLE_AGENT
-    async with FabricClient() as client:
-        plan = client.plan(agent, profiles=["hermes_sdk"])
-        report = await client.doctor(agent, profiles=["hermes_sdk"])
-        typed_plan = client.plan(
-            FabricConfig.from_mapping(README_PLAN_CONFIG),
-            base_dir=agent,
-        )
+    config = hermes_sdk_config()
+    client = Fabric()
+    plan = client.plan(config, base_dir=BASE_DIR)
+    report = await client.doctor(config, base_dir=BASE_DIR)
 
-    # README prints plan["agent_name"] and report["checks"].
     assert plan["agent_name"] == "code-review-agent", plan["agent_name"]
     assert report["checks"], "doctor returned no checks"
-    assert typed_plan["agent_name"] == "code-review-agent"
-    assert typed_plan.adapter.adapter_id == "nvidia.fabric.hermes.sdk"
 
 
 async def test_readme_examples():

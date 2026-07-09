@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import json
 from inspect import signature
+from pathlib import Path
 from typing import Any, get_overloads
 
 import pytest
+from pydantic import ValidationError
 
+import nemo_fabric
 import nemo_fabric.errors as fabric_errors
 
 from nemo_fabric import (
@@ -18,7 +21,7 @@ from nemo_fabric import (
     DoctorReport,
     EffectiveConfig,
     EnvironmentConfig,
-    FabricClient,
+    Fabric,
     FabricCapabilityError,
     FabricConfig,
     FabricConfigError,
@@ -28,27 +31,31 @@ from nemo_fabric import (
     FabricRuntimeError,
     FabricStateError,
     HarnessConfig,
+    McpConfig,
     MetadataConfig,
     RunPlan,
     RunRequest,
     RunResult,
     RuntimeCapabilities,
     RuntimeConfig,
+    Runtime,
     RuntimeHandle,
-    RuntimeUpdate,
-    Session,
-    SessionInfo,
+    SkillConfig,
+    TelemetryConfig,
 )
 
 
 def test_public_contract_has_no_unreleased_aliases():
-    assert list(signature(FabricClient).parameters) == []
+    assert list(signature(Fabric).parameters) == []
+    assert not hasattr(Fabric, "__aenter__")
+    assert not hasattr(Fabric, "__aexit__")
     assert not hasattr(RunRequest, "from_text")
+    assert not hasattr(nemo_fabric, "RunRequestModel")
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
-        assert not hasattr(FabricClient, name)
+        assert not hasattr(Fabric, name)
 
-    for name in ("resolve", "plan", "doctor", "run", "start_session", "start_service"):
-        assert len(get_overloads(getattr(FabricClient, name))) == 2, name
+    for name in ("resolve", "plan", "doctor", "run", "start_runtime"):
+        assert len(get_overloads(getattr(Fabric, name))) == 2, name
 
     assert not hasattr(fabric_errors, "FabricCliError")
 
@@ -58,7 +65,7 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
         "schema_version": "fabric.agent/v1alpha1",
         "metadata": {"name": "demo", "owner": "sdk"},
         "harness": {"adapter_id": "test.fabric.shim", "future": True},
-        "runtime": {"mode": "session"},
+        "runtime": {},
         "future_top_level": {"enabled": True},
     }
 
@@ -69,7 +76,6 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
     assert config.environment is None
     assert config.metadata.name == "demo"
     assert config.metadata.description is None
-    assert config.runtime.transport is None
     assert "transport" not in config.runtime.to_mapping()
     assert config.metadata.extra_fields == {"owner": "sdk"}
     assert config.harness.extra_fields == {"future": True}
@@ -77,40 +83,30 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
     assert config.to_mapping()["future_top_level"] == {"enabled": True}
     assert "models" not in config.to_mapping()
 
-    runtime = RuntimeConfig(mode="service")
+    runtime = RuntimeConfig(input_schema="http")
     config.runtime = runtime
-    config["future_runtime"] = {"enabled": True}
+    config.future_runtime = {"enabled": True}
     assert isinstance(config.runtime, RuntimeConfig)
     assert config.extra_fields["future_runtime"] == {"enabled": True}
 
-    with pytest.raises(TypeError):
-        FabricConfig(  # type: ignore[call-arg]
-            metadata=MetadataConfig(name="demo"),
-            harness=HarnessConfig(adapter_id="test.fabric.shim"),
-            unexpected=True,
-        )
-    with pytest.raises(FabricConfigError, match="metadata"):
+    with pytest.raises(ValidationError, match="metadata"):
         FabricConfig.from_mapping({"harness": {"adapter_id": "test.fabric.shim"}})
-    with pytest.raises(FabricConfigError, match="adapter_id"):
+    with pytest.raises(ValidationError, match="adapter_id"):
         HarnessConfig(adapter_id="")
-    with pytest.raises(FabricConfigError, match="runtime mode"):
-        RuntimeConfig(mode="invalid")
-    with pytest.raises(FabricConfigError, match="harness settings"):
+    with pytest.raises(ValidationError, match="settings"):
         HarnessConfig(
             adapter_id="test.fabric.shim",
             settings=[],  # type: ignore[arg-type]
         )
-    with pytest.raises(FabricConfigError, match="extra_fields"):
-        MetadataConfig(name="demo", extra_fields=[])  # type: ignore[arg-type]
-    with pytest.raises(FabricConfigError, match="environment settings"):
+    with pytest.raises(ValidationError, match="settings"):
         EnvironmentConfig(settings=[])  # type: ignore[arg-type]
-    with pytest.raises(FabricConfigError, match="runtime must be"):
+    with pytest.raises(ValidationError, match="runtime"):
         FabricConfig(
             metadata=MetadataConfig(name="demo"),
             harness=HarnessConfig(adapter_id="test.fabric.shim"),
             runtime=[],  # type: ignore[arg-type]
         )
-    with pytest.raises(FabricConfigError, match="models"):
+    with pytest.raises(ValidationError, match="models"):
         FabricConfig(
             metadata=MetadataConfig(name="demo"),
             harness=HarnessConfig(adapter_id="test.fabric.shim"),
@@ -118,19 +114,136 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
         )
 
 
-def test_typed_profile_preserves_partial_overlay_sections():
-    profile = FabricProfileConfig.from_mapping(
-        {
-            "name": "session",
-            "harness": {"settings": {"timeout_seconds": 30}},
-            "runtime": {"mode": "session"},
-        }
+def test_typed_config_authoring_helpers_emit_schema_shape():
+    config = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        models={
+            "default": {
+                "provider": "test",
+                "model": "test-model",
+            }
+        },
     )
 
-    assert profile.to_mapping()["harness"] == {
-        "settings": {"timeout_seconds": 30}
+    config.add_skill_path("./skills/review").add_skill_path("./skills/review")
+    config.add_mcp_server(
+        "github",
+        transport="streamable-http",
+        url="${GITHUB_MCP_URL}",
+        exposure="fabric_managed",
+    )
+    config.enable_relay(
+        project="fabric-tests",
+        output_dir="./artifacts/relay",
+        config={"version": 1},
+    )
+
+    assert isinstance(config.mcp, McpConfig)
+    assert isinstance(config.skills, SkillConfig)
+    assert isinstance(config.telemetry, TelemetryConfig)
+
+    assert config.to_mapping()["skills"] == {"paths": ["./skills/review"]}
+    assert config.to_mapping()["mcp"] == {
+        "servers": {
+            "github": {
+                "transport": "streamable-http",
+                "url": "${GITHUB_MCP_URL}",
+                "exposure": "fabric_managed",
+            }
+        }
     }
-    assert profile.to_mapping()["runtime"] == {"mode": "session"}
+    assert config.to_mapping()["telemetry"] == {
+        "enabled": True,
+        "provider": "relay",
+        "project": "fabric-tests",
+        "output_dir": "./artifacts/relay",
+        "config": {"version": 1},
+    }
+
+    config.remove_mcp_server("github").remove_mcp_server("missing")
+    config.remove_skill_path("./skills/review").remove_skill_path("./skills/missing")
+    assert config.mcp is None
+    assert config.skills is None
+    assert "mcp" not in config.to_mapping()
+    assert "skills" not in config.to_mapping()
+
+    with pytest.raises(ValidationError, match="exposure"):
+        config.add_mcp_server(
+            "bad",
+            transport="streamable-http",
+            url="http://example.invalid",
+            exposure="sideways",
+        )
+    with pytest.raises(ValidationError, match="provider"):
+        TelemetryConfig(provider="sideways")
+
+
+def test_config_emits_schema_shape_and_validates():
+    config = FabricConfig(
+        metadata={"name": "demo", "owner": "sdk"},
+        harness={"adapter_id": "test.fabric.shim", "future": True},
+        models={
+            "default": {
+                "provider": "test",
+                "model": "test-model",
+                "temperature": 0.0,
+            }
+        },
+        future_top_level={"enabled": True},
+    )
+    config.add_skill_path("./skills/review")
+    config.add_mcp_server(
+        "github",
+        transport="streamable-http",
+        url="${GITHUB_MCP_URL}",
+        exposure="fabric_managed",
+    )
+    config.enable_relay(project="fabric-tests", output_dir="./artifacts/relay")
+
+    emitted = config.to_mapping()
+
+    assert emitted["schema_version"] == "fabric.agent/v1alpha1"
+    assert emitted["metadata"]["owner"] == "sdk"
+    assert emitted["harness"]["future"] is True
+    assert emitted["runtime"] == {}
+    assert emitted["models"]["default"]["model"] == "test-model"
+    assert emitted["skills"] == {"paths": ["./skills/review"]}
+    assert emitted["mcp"]["servers"]["github"]["exposure"] == "fabric_managed"
+    assert emitted["telemetry"]["provider"] == "relay"
+    assert config.extra_fields == {"future_top_level": {"enabled": True}}
+
+    normalized = FabricConfig.model_validate(config)
+    assert normalized.to_mapping()["future_top_level"] == {"enabled": True}
+
+    with pytest.raises(ValidationError):
+        FabricConfig(metadata={"name": "missing-harness"})  # type: ignore[call-arg]
+    with pytest.raises(ValidationError):
+        config.add_mcp_server(
+            "bad",
+            transport="streamable-http",
+            url="http://example.invalid",
+            exposure="sideways",  # type: ignore[arg-type]
+        )
+
+
+def test_agent_model_tracks_rust_schema_top_level_fields():
+    schema = json.loads(Path("schemas/agent.schema.json").read_text(encoding="utf-8"))
+    pydantic_schema = FabricConfig.model_json_schema()
+
+    assert set(pydantic_schema["properties"]).issuperset(schema["properties"])
+    assert set(pydantic_schema["required"]) == {"metadata", "harness"}
+    assert set(schema["required"]) == {"schema_version", "metadata", "harness", "runtime"}
+
+
+def test_environment_model_defines_extension_field_ownership():
+    properties = EnvironmentConfig.model_json_schema()["properties"]
+
+    assert "environment provider" in properties["settings"]["description"]
+    assert "without Fabric semantics" in properties["metadata"]["description"]
+    assert "existing environment" in properties["connection"]["description"]
+    assert "environment teardown" in properties["ownership"]["description"]
+    assert "outside or inside" in properties["control_location"]["description"]
 
 
 def test_inspection_models_are_typed_read_only_mappings():
@@ -147,7 +260,7 @@ def test_inspection_models_are_typed_read_only_mappings():
                 "config": {
                     "metadata": {"name": "demo"},
                     "harness": {"adapter_id": "test.fabric.shim"},
-                    "runtime": {"mode": "session"},
+                    "runtime": {"input_schema": "chat"},
                 },
             },
             "adapter_descriptor": {
@@ -159,12 +272,10 @@ def test_inspection_models_are_typed_read_only_mappings():
                 }
             },
             "capabilities": {
-                "session": True,
                 "service": False,
                 "streaming": False,
                 "updates": False,
                 "cancellation": False,
-                "concurrent_invocations": False,
                 "future_capability": "declared",
             },
         }
@@ -192,7 +303,6 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
             "runtime_binding": "binding-1",
             "agent_name": "demo",
             "harness": "hermes",
-            "mode": "session",
             "adapter_kind": "python",
             "adapter_id": "test.fabric.shim",
             "environment": {
@@ -215,7 +325,6 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
         "runtime_binding",
         "agent_name",
         "harness",
-        "mode",
         "adapter_kind",
         "environment",
     ),
@@ -234,7 +343,6 @@ def test_runtime_handle_requires_native_contract_fields(field):
         (EffectiveConfig, {"config": {}}),
         (DoctorReport, {}),
         (RunResult, {}),
-        (SessionInfo, {}),
     ),
 )
 def test_snapshot_models_require_profiles(model, payload):
@@ -251,8 +359,8 @@ def test_run_plan_requires_profiles():
 
 
 def test_runtime_capabilities_reject_non_boolean_values():
-    with pytest.raises(FabricConfigError, match="session capability"):
-        RuntimeCapabilities.from_mapping({"session": "false"})
+    with pytest.raises(FabricConfigError, match="streaming capability"):
+        RuntimeCapabilities.from_mapping({"streaming": "false"})
 
 
 def test_doctor_report_and_errors_expose_typed_contract_fields():
@@ -263,7 +371,7 @@ def test_doctor_report_and_errors_expose_typed_contract_fields():
             "status": "warn",
             "checks": [
                 {
-                    "name": "runtime.mode",
+                    "name": "runtime.adapter",
                     "status": "warn",
                     "message": "not implemented",
                 }
@@ -278,7 +386,7 @@ def test_doctor_report_and_errors_expose_typed_contract_fields():
         details={"adapter_id": "test.fabric.shim"},
     )
 
-    assert report.checks[0].name == "runtime.mode"
+    assert report.checks[0].name == "runtime.adapter"
     assert error.stage == "invoke"
     assert error.code == "adapter_failed"
     assert error.retryable is True
@@ -290,8 +398,6 @@ def _plan() -> dict[str, Any]:
         "metadata": {"name": "demo"},
         "harness": {"adapter_id": "test.fabric.shim"},
         "runtime": {
-            "mode": "session",
-            "transport": "library",
             "input_schema": "chat",
             "output_schema": "message",
         },
@@ -316,12 +422,10 @@ def _plan() -> dict[str, Any]:
             }
         },
         "capabilities": {
-            "session": True,
             "service": False,
             "streaming": False,
             "updates": False,
             "cancellation": False,
-            "concurrent_invocations": False,
         },
     }
 
@@ -332,7 +436,6 @@ def _runtime() -> dict[str, Any]:
         "runtime_binding": "fabric-runtime-binding-test",
         "agent_name": "demo",
         "harness": "hermes",
-        "mode": "session",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
         "environment": {
@@ -367,7 +470,7 @@ def _fabric_config() -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="demo"),
         harness=HarnessConfig(adapter_id="test.fabric.shim"),
-        runtime=RuntimeConfig(mode="session"),
+        runtime=RuntimeConfig(),
     )
 
 
@@ -375,6 +478,7 @@ class NativeRecorder:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self.path_profile_calls: list[Any] = []
+        self.config_profile_calls: list[Any] = []
         self.stopped = 0
         self.fail_invoke = False
 
@@ -395,6 +499,9 @@ class NativeRecorder:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
+        self.config_profile_calls.append(
+            None if profiles_json is None else json.loads(profiles_json)
+        )
         return json.dumps(_plan()["effective_config"])
 
     def plan_config(
@@ -404,6 +511,9 @@ class NativeRecorder:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
+        self.config_profile_calls.append(
+            None if profiles_json is None else json.loads(profiles_json)
+        )
         return json.dumps(_plan())
 
     def start_runtime(self, plan_json: str) -> str:
@@ -454,7 +564,7 @@ class NativeRecorder:
         return json.dumps([])
 
 
-class NativeClient(FabricClient):
+class NativeClient(Fabric):
     def __init__(self, native: NativeRecorder) -> None:
         super().__init__()
         self.native = native
@@ -466,7 +576,7 @@ class NativeClient(FabricClient):
         return self.native
 
 
-def test_run_request_is_mapping_compatible_and_json_safe():
+def test_run_request_is_validated_and_json_safe():
     context = {"run_id": "run-1", "labels": ["sdk"]}
     overrides = {"temperature": 0, "limits": {"turns": 1}}
     request = RunRequest(
@@ -478,7 +588,6 @@ def test_run_request_is_mapping_compatible_and_json_safe():
     context["labels"].append("mutated")
     overrides["limits"]["turns"] = 2
 
-    assert request["request_id"] == "request-1"
     assert request.request_id == "request-1"
     assert request.to_mapping()["input"] == {
         "messages": [{"role": "user", "content": "hello"}]
@@ -489,7 +598,7 @@ def test_run_request_is_mapping_compatible_and_json_safe():
         "limits": {"turns": 1},
     }
 
-    copied = request.to_dict()
+    copied = request.to_mapping()
     copied["context"]["run_id"] = "changed"
     assert request.to_mapping()["context"] == {"run_id": "run-1", "labels": ["sdk"]}
 
@@ -507,24 +616,24 @@ def test_run_request_from_mapping_copies_and_validates_context():
     assert request.input == "hello"
     assert request.context == {"job_id": "job-1"}
 
-    with pytest.raises(FabricConfigError, match="request context"):
+    with pytest.raises(ValidationError, match="request context"):
         RunRequest.from_mapping({"input": "bad", "context": "not-a-mapping"})
 
 
 def test_run_request_constructor_validates_context_and_overrides():
-    with pytest.raises(FabricConfigError, match="request context"):
+    with pytest.raises(ValidationError, match="request context"):
         RunRequest(input="bad", context="not-a-mapping")  # type: ignore[arg-type]
 
-    with pytest.raises(FabricConfigError, match="request overrides"):
+    with pytest.raises(ValidationError, match="request overrides"):
         RunRequest(input="bad", overrides="not-a-mapping")  # type: ignore[arg-type]
 
-    with pytest.raises(FabricConfigError, match="request context"):
+    with pytest.raises(ValidationError, match="request context"):
         RunRequest(input="bad", context=[])  # type: ignore[arg-type]
 
-    with pytest.raises(FabricConfigError, match="request extra_fields"):
-        RunRequest(input="bad", extra_fields=[])  # type: ignore[arg-type]
+    with pytest.raises(ValidationError, match="JSON-compatible"):
+        RunRequest(input="bad", future_request=object())
 
-    with pytest.raises(FabricConfigError, match="finite"):
+    with pytest.raises(ValidationError, match="finite"):
         RunRequest(input=float("nan"))
 
 
@@ -534,6 +643,30 @@ def test_run_request_constructor_generates_request_metadata():
     assert request.input == "hello"
     assert request.request_id.startswith("request-")
     assert request.context == {}
+
+
+def test_run_request_preserves_extension_fields():
+    request = RunRequest(
+        input={"messages": [{"role": "user", "content": "hello"}]},
+        request_id="request-1",
+        context={"job_id": "job-1"},
+        future_request={"enabled": True},
+    )
+
+    assert request.to_mapping()["input"] == {
+        "messages": [{"role": "user", "content": "hello"}]
+    }
+    assert request.context == {"job_id": "job-1"}
+    assert request.extra_fields["future_request"] == {"enabled": True}
+
+
+@pytest.mark.parametrize("value", [{}, []])
+def test_run_request_preserves_empty_structured_input(value):
+    assert RunRequest(input=value).to_mapping()["input"] == value
+
+
+def test_run_request_defaults_missing_input_to_empty_text():
+    assert RunRequest().to_mapping()["input"] == ""
 
 
 def test_run_result_wraps_nested_error_and_keeps_mapping_access():
@@ -643,13 +776,6 @@ async def test_run_accepts_full_run_request_on_native_path():
     native = NativeRecorder()
     client = NativeClient(native)
 
-    with pytest.raises(FabricConfigError, match="complete request"):
-        await client.run(
-            "agent",
-            request=RunRequest(input="hello"),
-            context={"turn_id": "turn-4"},
-        )
-
     result = await client.run(
         "agent",
         request=RunRequest(
@@ -670,15 +796,17 @@ async def test_run_accepts_full_run_request_on_native_path():
     }
 
 
-async def test_typed_source_accepts_granular_request_fields_and_returns_result():
+async def test_typed_source_accepts_run_request_and_returns_result():
     native = NativeRecorder()
     client = NativeClient(native)
     result = await client.run(
         _fabric_config(),
-        input="hello",
-        request_id="request-1",
-        context={"job_id": "job-1"},
-        overrides={"max_iterations": 1},
+        request=RunRequest(
+            input="hello",
+            request_id="request-1",
+            context={"job_id": "job-1"},
+            overrides={"max_iterations": 1},
+        ),
     )
 
     assert isinstance(result, RunResult)
@@ -690,20 +818,6 @@ async def test_typed_source_accepts_granular_request_fields_and_returns_result()
         "context": {"job_id": "job-1"},
         "overrides": {"max_iterations": 1},
     }
-
-
-async def test_invalid_request_context_raises_config_error():
-    native = NativeRecorder()
-    client = NativeClient(native)
-
-    with pytest.raises(FabricConfigError, match="request context"):
-        await client.run(
-            _fabric_config(),
-            input="hello",
-            context="not-a-mapping",  # type: ignore[arg-type]
-        )
-
-    assert native.requests == []
 
 
 async def test_native_runtime_errors_use_typed_exception_and_stop_runtime():
@@ -719,27 +833,6 @@ async def test_native_runtime_errors_use_typed_exception_and_stop_runtime():
     assert native.stopped == 1
 
 
-async def test_start_service_reports_capability_failure_contract():
-    client = NativeClient(NativeRecorder())
-
-    with pytest.raises(FabricCapabilityError) as caught:
-        await client.start_service("agent", service_id="service-1")
-
-    assert caught.value.stage == "start"
-    assert caught.value.code == "service_not_supported"
-    assert caught.value.details == {"service": False, "service_id": "service-1"}
-
-
-async def test_start_service_validates_overrides_before_planning():
-    native = NativeRecorder()
-    client = NativeClient(native)
-
-    with pytest.raises(FabricConfigError, match="service overrides"):
-        await client.start_service("agent", overrides=[])  # type: ignore[arg-type]
-
-    assert native.path_profile_calls == []
-
-
 def test_public_sdk_exceptions_share_a_common_base():
     assert issubclass(FabricConfigError, FabricError)
     assert issubclass(FabricRuntimeError, FabricError)
@@ -748,17 +841,16 @@ def test_public_sdk_exceptions_share_a_common_base():
     assert issubclass(FabricNativeUnavailableError, FabricError)
 
 
-async def test_session_invoke_accepts_run_request_and_turn_fields():
+async def test_runtime_invoke_accepts_run_request():
     native = NativeRecorder()
-    session = Session(
+    runtime = Runtime(
         client=NativeClient(native),
         plan=_plan(),
         runtime=_runtime(),
-        overrides={"session": True, "limits": {"session": 1}},
-        session_id="session-1",
+        overrides={"runtime": True, "limits": {"runtime": 1}},
     )
 
-    result = await session.invoke(
+    result = await runtime.invoke(
         request=RunRequest(
             input="hello",
             request_id="request-2",
@@ -772,57 +864,45 @@ async def test_session_invoke_accepts_run_request_and_turn_fields():
     assert native.requests[0] == {
         "input": "hello",
         "request_id": "request-2",
-        "context": {
-            "job_id": "job-2",
-            "session_id": "session-1",
-        },
+        "context": {"job_id": "job-2"},
         "overrides": {
-            "session": True,
+            "runtime": True,
             "request": True,
-            "limits": {"session": 1, "request": 1},
+            "limits": {"runtime": 1, "request": 1},
         },
     }
 
-    with pytest.raises(FabricConfigError, match="complete request"):
-        await session.invoke(
-            request=RunRequest(input="hello"),
-            context={"turn_id": "turn-1"},
-        )
-
-
-async def test_session_info_stream_and_capability_errors_are_typed():
-    session = Session(
+async def test_runtime_handle_is_typed_and_detached():
+    runtime = Runtime(
         client=NativeClient(NativeRecorder()),
         plan=RunPlan.from_mapping(_plan()),
         runtime=_runtime(),
-        session_id="session-1",
     )
 
-    assert isinstance(session.info, SessionInfo)
-    assert session.info.profiles == ("typed",)
-    assert session.info.harness == "hermes"
-    assert session.info.adapter_id == "test.fabric.shim"
-
-    streamed = [item async for item in session.stream(input="hello")]
-    assert streamed[0].kind == "invocation_end"
-    assert isinstance(streamed[-1], RunResult)
-
-    with pytest.raises(FabricCapabilityError, match="cancellation"):
-        await session.cancel()
-    assert session.info.status == "active"
-
-    with pytest.raises(FabricCapabilityError, match="updates"):
-        await session.update(RuntimeUpdate.from_mapping({"overrides": {"x": 1}}))
+    assert isinstance(runtime.handle, RuntimeHandle)
+    assert runtime.handle.harness == "hermes"
+    assert runtime.handle.adapter_id == "test.fabric.shim"
+    assert runtime.handle is not runtime.handle
 
 
 async def test_run_rejects_multiple_primary_input_sources():
     client = NativeClient(NativeRecorder())
 
-    with pytest.raises(FabricConfigError, match="at most one input source"):
+    with pytest.raises(FabricConfigError, match="mutually exclusive"):
         await client.run(
             _fabric_config(),
             input="hello",
             request={"input": "request"},
+        )
+
+
+async def test_run_rejects_raw_mapping_request():
+    client = NativeClient(NativeRecorder())
+
+    with pytest.raises(FabricConfigError, match="request must be a RunRequest"):
+        await client.run(
+            _fabric_config(),
+            request={"input": "request"},  # type: ignore[arg-type]
         )
 
 
@@ -832,8 +912,7 @@ async def test_unified_agent_source_dispatches_fabric_config_to_runtime_path():
 
     result = await client.run(
         _fabric_config(),
-        input="hello",
-        request_id="request-5",
+        request=RunRequest(input="hello", request_id="request-5"),
     )
 
     assert result.request_id == "request-5"
@@ -850,12 +929,13 @@ async def test_lifecycle_methods_reject_raw_mapping_agent_source():
     assert native.requests == []
 
 
-def test_config_methods_reject_raw_mappings_and_pydantic_like_objects():
+def test_config_methods_accept_real_pydantic_models_and_reject_lookalikes():
     class ModelDumpLike:
         def model_dump(self, *, mode: str, exclude_none: bool) -> dict[str, Any]:
             return {"metadata": {"name": "demo"}}
 
-    client = NativeClient(NativeRecorder())
+    native = NativeRecorder()
+    client = NativeClient(native)
 
     with pytest.raises(FabricConfigError, match="FabricConfig.from_mapping"):
         client.plan({"metadata": {"name": "demo"}})
@@ -863,26 +943,45 @@ def test_config_methods_reject_raw_mappings_and_pydantic_like_objects():
     with pytest.raises(FabricConfigError, match="FabricConfig"):
         client.plan(ModelDumpLike())
 
+    config = FabricConfig(
+        metadata={"name": "demo"},
+        harness={"adapter_id": "test.fabric.shim"},
+    )
+    client.plan(config, profiles=[FabricProfileConfig(name="typed")])
 
-def test_profile_configs_require_explicit_profile_config_conversion():
+    assert native.config_profile_calls == [[{"schema_version": "fabric.profile/v1alpha1", "name": "typed"}]]
+
+
+def test_typed_config_profiles_require_profile_models():
     client = NativeClient(NativeRecorder())
 
-    with pytest.raises(FabricConfigError, match="FabricProfileConfig values"):
-        client.plan(_fabric_config(), profiles="typed_relay")  # type: ignore[arg-type]
+    client.plan(
+        _fabric_config(),
+        profiles=[FabricProfileConfig(name="typed_relay")],
+    )
 
-    with pytest.raises(FabricConfigError, match="FabricProfileConfig.from_mapping"):
+    with pytest.raises(FabricConfigError, match="FabricProfileConfig"):
         client.plan(
             _fabric_config(),
-            profiles=[{"name": "typed_relay"}],
+            profiles=[{"name": "typed_relay"}],  # type: ignore[list-item]
+        )
+
+    with pytest.raises(FabricConfigError, match="FabricProfileConfig"):
+        client.plan(_fabric_config(), profiles="typed_relay")  # type: ignore[arg-type]
+
+    with pytest.raises(FabricConfigError, match="FabricProfileConfig"):
+        client.plan(
+            _fabric_config(),
+            profiles=["typed_relay"],  # type: ignore[list-item]
         )
 
 
 def test_path_source_accepts_single_profile_name():
     native = NativeRecorder()
 
-    NativeClient(native).plan("agent", profiles="hermes_session")
+    NativeClient(native).plan("agent", profiles="hermes_runtime")
 
-    assert native.path_profile_calls == [["hermes_session"]]
+    assert native.path_profile_calls == [["hermes_runtime"]]
 
 
 def test_path_source_rejects_mapping_profiles_before_native_planning():
@@ -891,7 +990,7 @@ def test_path_source_rejects_mapping_profiles_before_native_planning():
     with pytest.raises(FabricConfigError, match="profile names"):
         NativeClient(native).plan(
             "agent",
-            profiles={"name": "hermes_session"},  # type: ignore[arg-type]
+            profiles={"name": "hermes_runtime"},  # type: ignore[arg-type]
         )
 
     assert native.path_profile_calls == []
@@ -906,8 +1005,6 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
             settings={"workspace": "./ws"},
         ),
         runtime=RuntimeConfig(
-            mode="oneshot",
-            transport="cli",
             input_schema="chat",
             output_schema="message",
         ),
@@ -915,17 +1012,14 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
     copied = config.to_mapping()
     copied["harness"]["settings"]["workspace"] = "mutated"
 
-    assert config["schema_version"] == "fabric.agent/v1alpha1"
-    assert config["metadata"] == {"name": "demo"}
-    assert config["harness"]["adapter_id"] == "test.fabric.shim"
-    assert config["runtime"]["mode"] == "oneshot"
-    assert config["harness"]["settings"]["workspace"] == "./ws"
+    assert config.schema_version == "fabric.agent/v1alpha1"
+    assert config.metadata.to_mapping() == {"name": "demo"}
+    assert config.harness.adapter_id == "test.fabric.shim"
+    assert config.runtime.input_schema == "chat"
+    assert config.harness.settings["workspace"] == "./ws"
 
-    profile = FabricProfileConfig.from_mapping({"name": "typed_relay"})
-    assert profile.to_mapping() == {
-        "schema_version": "fabric.profile/v1alpha1",
-        "name": "typed_relay",
-    }
+    client = NativeClient(NativeRecorder())
+    client.plan(config, profiles=[FabricProfileConfig(name="typed_relay")])
 
 
 def test_resolve_accepts_path_and_fabric_config_sources():
@@ -934,27 +1028,24 @@ def test_resolve_accepts_path_and_fabric_config_sources():
     path_config = client.resolve("agent")
     typed_config = client.resolve(_fabric_config())
 
-    assert path_config["config"]["runtime"]["mode"] == "session"
-    assert typed_config["config"]["runtime"]["mode"] == "session"
+    assert path_config["config"]["runtime"]["input_schema"] == "chat"
+    assert typed_config["config"]["runtime"]["input_schema"] == "chat"
 
 
-async def test_start_session_alias_returns_session_and_info_includes_session_id():
-    session = await NativeClient(NativeRecorder()).start_session(
-        "agent",
-        session_id="session-1",
-    )
+async def test_start_runtime_returns_runtime_with_typed_handle():
+    runtime = await NativeClient(NativeRecorder()).start_runtime("agent")
 
-    assert session.session_id == "session-1"
-    assert session.info["session_id"] == "session-1"
+    assert runtime.runtime_id == "runtime-1"
+    assert isinstance(runtime.handle, RuntimeHandle)
 
 
-async def test_session_state_errors_use_sdk_error_hierarchy():
-    session = Session(
+async def test_runtime_state_errors_use_sdk_error_hierarchy():
+    runtime = Runtime(
         client=NativeClient(NativeRecorder()),
         plan=_plan(),
         runtime=_runtime(),
     )
-    await session.stop()
+    await runtime.stop()
 
-    with pytest.raises(FabricStateError, match="cannot invoke a stopped session"):
-        await session.invoke(input="hello")
+    with pytest.raises(FabricStateError, match="cannot invoke a stopped runtime"):
+        await runtime.invoke(input="hello")

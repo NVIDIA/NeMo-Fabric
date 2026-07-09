@@ -106,26 +106,6 @@
           "type": "string"
         }
       ]
-    },
-    "RuntimeMode": {
-      "description": "Runtime lifecycle mode.",
-      "oneOf": [
-        {
-          "const": "oneshot",
-          "description": "Request is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "service",
-          "description": "Long-running process or service is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "session",
-          "description": "Session is the lifecycle boundary.",
-          "type": "string"
-        }
-      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -154,10 +134,6 @@
       "description": "Stable machine-readable harness identifier.",
       "type": "string"
     },
-    "mode": {
-      "$ref": "#/$defs/RuntimeMode",
-      "description": "Runtime mode."
-    },
     "runtime_binding": {
       "description": "Fabric-owned opaque binding for this runtime handle.",
       "type": "string"
@@ -172,7 +148,6 @@
     "runtime_binding",
     "agent_name",
     "harness",
-    "mode",
     "adapter_kind",
     "environment"
   ],

@@ -1,20 +1,21 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Smoke test: the SDK core stays consumer-neutral and dependency-free.
+"""Smoke test: the SDK core stays consumer-neutral.
 
 WS4 guardrail. The public SDK core -- the ``nemo_fabric`` package outside the
-``integrations`` subpackage -- must not depend on any third-party package: no
-harness (Hermes), no consumer (Harbor/Platform), no telemetry backend (Relay).
-Adapters are loaded dynamically at runtime via importlib, and consumer glue
-lives under ``nemo_fabric.integrations`` behind an optional extra; the core
-never imports any of them.
+``integrations`` subpackage -- may depend on Pydantic and typing-extensions for
+its typed authoring models, but not on a harness (Hermes), consumer
+(Harbor/Platform), or telemetry backend (Relay). Adapters are loaded dynamically
+at runtime via importlib, and consumer glue lives under
+``nemo_fabric.integrations`` behind an optional extra; the core never imports
+any of them.
 
 Two checks:
 
-1. Static -- every top-level import in the core resolves to the standard library
-   or ``nemo_fabric`` itself. This also pins the SDK's zero-dependency contract
-   (pyproject ``dependencies = []``).
+1. Static -- every top-level import in the core resolves to the standard
+   library, ``nemo_fabric``, or a declared authoring dependency. This also pins
+   the SDK's direct dependency contract.
 2. Runtime -- a plain ``import nemo_fabric`` (what a consumer like Platform does)
    pulls in no consumer/harness package.
 """
@@ -30,7 +31,13 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 SDK_ROOT = ROOT_DIR / "python" / "src" / "nemo_fabric"
 PYPROJECT = ROOT_DIR / "python" / "pyproject.toml"
-ALLOWED = set(sys.stdlib_module_names) | {"nemo_fabric", "__future__"}
+ALLOWED = set(sys.stdlib_module_names) | {
+    "nemo_fabric",
+    "pydantic",
+    "typing_extensions",
+    "__future__",
+}
+EXPECTED_DEPENDENCIES = ["pydantic>=2.10,<3", "typing-extensions>=4.12"]
 # Consumer/harness packages that must never leak into a plain ``import nemo_fabric``.
 CONSUMER_SPECIFIC = [
     "harbor",
@@ -54,8 +61,8 @@ def _top_level_imports(tree: ast.AST) -> set[str]:
     return roots
 
 
-def core_imports_only_stdlib_and_self() -> None:
-    """Static: no third-party import anywhere in the core (non-integrations)."""
+def core_imports_only_allowed_dependencies() -> None:
+    """Static: core imports stay within the declared SDK dependency boundary."""
 
     core = sorted(
         path
@@ -75,21 +82,23 @@ def core_imports_only_stdlib_and_self() -> None:
             offenders[path.name] = bad
 
     assert not offenders, (
-        "SDK core must import only the standard library and nemo_fabric "
+        "SDK core must import only the standard library, nemo_fabric, and "
+        "declared authoring dependencies "
         "(consumer glue belongs under nemo_fabric.integrations); "
         f"found third-party imports: {offenders}"
     )
 
-    # Pin the declared contract too: a dependency added to pyproject would slip
-    # past the import scan above if nothing in the core imports it yet. Assert the
-    # structure explicitly so a missing [project]/dependencies fails loudly
-    # instead of defaulting to an empty list and hiding a metadata regression.
+    # Pin the declared contract too: an unused dependency would not be detected
+    # by the import scan above.
     pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
     assert "project" in pyproject, f"{PYPROJECT} is missing the [project] table"
     project = pyproject["project"]
     assert "dependencies" in project, f"{PYPROJECT} [project] is missing 'dependencies'"
     deps = project["dependencies"]
-    assert deps == [], f"SDK must stay zero-dependency; found dependencies={deps!r}"
+    assert deps == EXPECTED_DEPENDENCIES, (
+        "SDK direct dependencies changed; "
+        f"expected={EXPECTED_DEPENDENCIES!r}, found={deps!r}"
+    )
 
 
 def importing_the_sdk_pulls_in_no_consumer_package() -> None:
@@ -114,5 +123,5 @@ def importing_the_sdk_pulls_in_no_consumer_package() -> None:
 
 
 def test_consumer_neutral():
-    core_imports_only_stdlib_and_self()
+    core_imports_only_allowed_dependencies()
     importing_the_sdk_pulls_in_no_consumer_package()

@@ -3,6 +3,7 @@
 
 import os
 import shutil
+import sys
 import types
 from collections.abc import Iterator
 from pathlib import Path
@@ -10,6 +11,9 @@ from pathlib import Path
 import pytest
 
 CUR_DIR = Path(__file__).parent.resolve()
+REPO_ROOT = CUR_DIR.parent.resolve()
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 @pytest.fixture(name="restore_environ", autouse=True)
 def restore_environ_fixture():
@@ -79,20 +83,44 @@ def hermes_shim_agent_dir_fixture(
 @pytest.fixture(name="code_review_agent_dir")
 def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
     """
-    Creates a temporary copy of the example code review agent directory for testing.
+    Creates a writable copy of the example's assets for runtime tests.
     """
-    return _copy_agent_dir(repo_root / "examples" / "code-review-agent", tmp_path, "code-review-agent")
+    return _copy_agent_dir(
+        repo_root / "examples" / "code_review_agent",
+        tmp_path,
+        "code-review-agent",
+    )
+
+
+@pytest.fixture(name="file_config_agent_dir_src", scope="session")
+def file_config_agent_dir_src_fixture(repo_root: Path) -> Path:
+    """Return the test-only portable config package."""
+
+    return repo_root / "tests" / "fixtures" / "file-config-agent"
+
+
+@pytest.fixture(name="file_config_agent_dir")
+def file_config_agent_dir_fixture(
+    file_config_agent_dir_src: Path,
+    tmp_path: Path,
+) -> Path:
+    """Create a writable copy for CLI and file-profile tests."""
+
+    return _copy_agent_dir(file_config_agent_dir_src, tmp_path, "file-config-agent")
 
 @pytest.fixture(name="hermes_cli_profile", scope="session")
 def hermes_cli_profile_fixture() -> str:
     return "env_local"
 
-@pytest.fixture(name="hermes_cli_session_profile")
-def hermes_cli_session_profile_fixture(repo_root: Path, hermes_agent_dir: Path) -> str:
-    src_yaml = repo_root / "examples/code-review-agent/profiles/hermes-cli-session.yaml"
-    assert src_yaml.exists(), f"Missing hermes-cli-session.yaml profile: {src_yaml}"
-    shutil.copy(src_yaml, hermes_agent_dir / "profiles/hermes-cli-session.yaml")
-    return "hermes_cli_session"
+@pytest.fixture(name="hermes_cli_runtime_profile")
+def hermes_cli_runtime_profile_fixture(hermes_agent_dir: Path) -> str:
+    import yaml
+
+    config_path = hermes_agent_dir / "agent.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["harness"]["settings"]["prepare_runtime_state"] = True
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    return "env_local"
 
 
 @pytest.fixture(name="hermes_command")

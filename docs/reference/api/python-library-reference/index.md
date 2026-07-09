@@ -11,44 +11,49 @@ SPDX-License-Identifier: Apache-2.0 */}
 ## Modules
 
 - [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NeMo Fabric agents.
-- [`nemo_fabric.session`](./nemo_fabric.session.md#module-nemo_fabricsession): Session lifecycle support for the Fabric Python SDK.
+- [`nemo_fabric.runtime`](./nemo_fabric.runtime.md#module-nemo_fabricruntime): Runtime lifecycle support for the Fabric Python SDK.
+- [`nemo_fabric.models`](./nemo_fabric.models.md#module-nemo_fabricmodels): Pydantic SDK models for NeMo Fabric configuration and requests.
 - [`nemo_fabric.types`](./nemo_fabric.types.md#module-nemo_fabrictypes): Public data contracts for the NeMo Fabric Python SDK.
 - [`nemo_fabric.errors`](./nemo_fabric.errors.md#module-nemo_fabricerrors): Public exception hierarchy for the NeMo Fabric Python SDK.
 
 ## Classes
 
-- [`client.FabricClient`](./nemo_fabric.client.md#class-fabricclient): Primary Python entrypoint for NeMo Fabric.
-- [`session.Session`](./nemo_fabric.session.md#class-session): One ordered multi-turn conversation over a Fabric runtime.
-- [`session.SessionStatus`](./nemo_fabric.session.md#class-sessionstatus): Lifecycle state of a session runtime.
+- [`client.Fabric`](./nemo_fabric.client.md#class-fabric): Primary Python entrypoint for NeMo Fabric.
+- [`runtime.Runtime`](./nemo_fabric.runtime.md#class-runtime): One logical, stateful harness execution.
+- [`runtime.RuntimeStatus`](./nemo_fabric.runtime.md#class-runtimestatus): Lifecycle state of a runtime.
+- [`models.EnvironmentConfig`](./nemo_fabric.models.md#class-environmentconfig): Execution environment configuration supplied by the consumer.
+- [`models.FabricBaseModel`](./nemo_fabric.models.md#class-fabricbasemodel): Base class for SDK-facing Pydantic models.
+- [`models.FabricConfig`](./nemo_fabric.models.md#class-fabricconfig): SDK-facing typed Fabric agent configuration.
+- [`models.FabricProfileConfig`](./nemo_fabric.models.md#class-fabricprofileconfig): Typed profile overlay used when a Python caller wants file-style overlays.
+- [`models.HarnessConfig`](./nemo_fabric.models.md#class-harnessconfig): Harness adapter selection plus adapter-owned settings.
+- [`models.McpConfig`](./nemo_fabric.models.md#class-mcpconfig): MCP capability configuration.
+- [`models.McpServerConfig`](./nemo_fabric.models.md#class-mcpserverconfig): MCP server configuration.
+- [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
+- [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Model alias configuration.
+- [`models.ProfileRegistryConfig`](./nemo_fabric.models.md#class-profileregistryconfig): Profile discovery config for portable file-backed agent packages.
+- [`models.RunRequest`](./nemo_fabric.models.md#class-runrequest): One validated Fabric invocation request.
+- [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Runtime input/output contract.
+- [`models.SkillConfig`](./nemo_fabric.models.md#class-skillconfig): Skill capability configuration.
+- [`models.TelemetryConfig`](./nemo_fabric.models.md#class-telemetryconfig): Telemetry configuration.
 - [`types.AdapterInfo`](./nemo_fabric.types.md#class-adapterinfo): Resolved adapter identity attached to a run plan.
 - [`types.ArtifactManifest`](./nemo_fabric.types.md#class-artifactmanifest): Normalized collection of artifacts produced by a run.
 - [`types.ArtifactRef`](./nemo_fabric.types.md#class-artifactref): Reference to one artifact produced by a run.
 - [`types.DoctorCheck`](./nemo_fabric.types.md#class-doctorcheck): One diagnostic check in a ``DoctorReport``.
 - [`types.DoctorReport`](./nemo_fabric.types.md#class-doctorreport): Aggregate preflight diagnostics for a resolved run plan.
 - [`types.EffectiveConfig`](./nemo_fabric.types.md#class-effectiveconfig): Immutable result of config loading and ordered profile application.
-- [`types.EnvironmentConfig`](./nemo_fabric.types.md#class-environmentconfig): Execution environment configuration.
 - [`types.ErrorInfo`](./nemo_fabric.types.md#class-errorinfo): Structured failure returned inside a normalized ``RunResult``.
-- [`types.FabricConfig`](./nemo_fabric.types.md#class-fabricconfig): Mutable typed representation of a Fabric agent configuration.
 - [`types.FabricEvent`](./nemo_fabric.types.md#class-fabricevent): One normalized lifecycle or invocation event.
-- [`types.FabricProfileConfig`](./nemo_fabric.types.md#class-fabricprofileconfig): Mutable, partial overlay applied to a typed ``FabricConfig``.
-- [`types.HarnessConfig`](./nemo_fabric.types.md#class-harnessconfig): Harness adapter selection and adapter-owned settings.
-- [`types.MetadataConfig`](./nemo_fabric.types.md#class-metadataconfig): Agent identity and human-readable metadata.
 - [`types.RunPlan`](./nemo_fabric.types.md#class-runplan): Immutable execution plan produced before a runtime is started.
-- [`types.RunRequest`](./nemo_fabric.types.md#class-runrequest): One normalized invocation request.
 - [`types.RunResult`](./nemo_fabric.types.md#class-runresult): Normalized terminal result from one Fabric invocation.
 - [`types.RuntimeCapabilities`](./nemo_fabric.types.md#class-runtimecapabilities): Operations declared by the resolved runtime and adapter.
-- [`types.RuntimeConfig`](./nemo_fabric.types.md#class-runtimeconfig): Runtime lifecycle mode and input/output contract.
 - [`types.RuntimeHandle`](./nemo_fabric.types.md#class-runtimehandle): Opaque identity and binding for one started runtime.
-- [`types.RuntimeUpdate`](./nemo_fabric.types.md#class-runtimeupdate): Capability-gated update requested for a running session.
-- [`types.RuntimeUpdateResult`](./nemo_fabric.types.md#class-runtimeupdateresult): Normalized outcome of a runtime update request.
-- [`types.SessionInfo`](./nemo_fabric.types.md#class-sessioninfo): Read-only metadata snapshot for an active or stopped session.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.
 - [`errors.FabricCapabilityError`](./nemo_fabric.errors.md#class-fabriccapabilityerror): Operation rejected by resolved runtime capabilities or implementation status.
 - [`errors.FabricConfigError`](./nemo_fabric.errors.md#class-fabricconfigerror): Invalid SDK input, request shape, profile stack, or resolved config.
 - [`errors.FabricError`](./nemo_fabric.errors.md#class-fabricerror): Base class for structured SDK-level Fabric errors.
 - [`errors.FabricNativeUnavailableError`](./nemo_fabric.errors.md#class-fabricnativeunavailableerror): SDK call requires the PyO3 extension, but it is not installed or importable.
 - [`errors.FabricRuntimeError`](./nemo_fabric.errors.md#class-fabricruntimeerror): Failure while starting, invoking, stopping, or otherwise driving a runtime.
-- [`errors.FabricStateError`](./nemo_fabric.errors.md#class-fabricstateerror): Operation rejected because a local session handle is in the wrong state.
+- [`errors.FabricStateError`](./nemo_fabric.errors.md#class-fabricstateerror): Operation rejected because a local runtime is in the wrong state.
 
 ## Functions
 
