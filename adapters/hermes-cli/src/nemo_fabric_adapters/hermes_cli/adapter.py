@@ -137,7 +137,6 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
         relay_artifacts = common_utils.collect_relay_artifacts(relay_plugin_config)
         output["relay_runtime"] = {
             "enabled": True,
-            "mode": os.environ.get("FABRIC_RELAY_MODE"),
             "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
             "emitter": "hermes.observability/nemo_relay",
         }

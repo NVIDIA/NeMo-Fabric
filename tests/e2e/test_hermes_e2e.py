@@ -83,7 +83,6 @@ class BaseTestHermesE2E:
         assert output["base_url"] == f"{self.api_server}/v1"
         assert output["error"] is None
         assert output["relay_runtime"]["enabled"] is True
-        assert output["relay_runtime"]["mode"] == "sdk"
         assert output["relay_runtime"]["emitter"] == "hermes.observability/nemo_relay"        
         assert output["failed"] is False
         
