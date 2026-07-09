@@ -73,11 +73,23 @@ cargo install just --locked
 Refer to the [official installation guide](https://just.systems/man/en/installation.html)
 for more details.
 
+Ensure that the Cargo bin directory is in your `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+```
+
 Install the Python SDK with its native binding and the CLI from a source
 checkout:
 
 ```bash
-export PATH="$HOME/.cargo/bin:$PATH"
 just build-all
 ```
 
