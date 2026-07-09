@@ -148,9 +148,7 @@ pub enum FabricError {
         source: serde_json::Error,
     },
     /// The default Python adapter interpreter path was invalid.
-    #[error(
-        "environment variable `ADAPTER_PYTHON` (`{value}`) must point to a valid file"
-    )]
+    #[error("environment variable `ADAPTER_PYTHON` (`{value}`) must point to a valid file")]
     InvalidAdapterPython {
         /// Value read from `ADAPTER_PYTHON`.
         value: String,
