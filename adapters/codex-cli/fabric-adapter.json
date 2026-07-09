@@ -2,11 +2,10 @@
   "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "nvidia.fabric.codex.cli",
   "harness": "codex",
-  "adapter_kind": "process",
+  "adapter_kind": "python",
   "runner": {
-    "command": "python3",
-    "script": "src/nemo_fabric_adapters/codex_cli/adapter.py",
-    "stdin_payload": "fabric_request"
+    "module": "nemo_fabric_adapters.codex_cli.adapter",
+    "callable": "run_codex"
   },
   "requirements": {
     "binaries": ["codex"]

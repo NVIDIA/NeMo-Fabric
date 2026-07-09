@@ -1,6 +1,6 @@
 # Codex CLI Adapter
 
-Runs an installed Codex CLI through Fabric's process-adapter lifecycle. One
+Runs an installed Codex CLI through Fabric's Python-adapter lifecycle. One
 Fabric runtime maps to one Codex thread.
 
 Keep `fabric-adapter.json` aligned with the adapter implementation.

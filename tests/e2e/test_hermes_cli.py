@@ -17,19 +17,19 @@ def test_hermes_cli(hermes_agent_dir: Path):
         plan["adapter_descriptor"]["descriptor"]["adapter_id"]
         == "nvidia.fabric.hermes.cli"
     )
-    assert plan["adapter_descriptor"]["descriptor"]["adapter_kind"] == "process"
+    assert plan["adapter_descriptor"]["descriptor"]["adapter_kind"] == "python"
     assert plan["adapter_descriptor"]["source"] == "repository"
 
     result = call_json(
         "run", hermes_agent_dir, "--profile", "env_local", "--input", "hello cli"
     )
     assert result["status"] == "succeeded"
-    assert result["adapter_kind"] == "process"
-    assert result["metadata"]["adapter_runner"] == "process"
+    assert result["adapter_kind"] == "python"
+    assert result["metadata"]["adapter_runner"] == "python"
     assert result["output"]["harness"] == "hermes"
     assert result["output"]["adapter"] == "cli"
     assert result["output"]["mode"] == "hermes_cli_runtime"
-    assert Path(result["output"]["fabric_invocation"]).is_file()
+    assert result["output"]["fabric_invocation"] is None
     assert result["output"]["hermes_native_config"]["mcp_servers"] == ["github"]
     assert result["output"]["hermes_native_config"]["skill_dirs"]
 

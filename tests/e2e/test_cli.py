@@ -62,9 +62,9 @@ def test_cli(
 
     profile_plans = [
         (("hermes_sdk",), "nvidia.fabric.hermes.sdk", "python", False),
-        (("hermes_cli",), "nvidia.fabric.hermes.cli", "process", False),
+        (("hermes_cli",), "nvidia.fabric.hermes.cli", "python", False),
         (("hermes_sdk", "relay"), "nvidia.fabric.hermes.sdk", "python", True),
-        (("hermes_cli", "relay"), "nvidia.fabric.hermes.cli", "process", True),
+        (("hermes_cli", "relay"), "nvidia.fabric.hermes.cli", "python", True),
     ]
     for profiles, adapter_id, adapter_kind, relay_enabled in profile_plans:
         profile_args = [arg for profile in profiles for arg in ("--profile", profile)]

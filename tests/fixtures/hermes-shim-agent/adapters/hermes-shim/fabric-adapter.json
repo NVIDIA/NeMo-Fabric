@@ -6,7 +6,10 @@
   "runner": {
     "module": "nemo_fabric_test_adapters.hermes_shim.adapter",
     "callable": "run",
-    "script": "src/nemo_fabric_test_adapters/hermes_shim/adapter.py"
+    "cwd": ".",
+    "env": {
+      "PYTHONPATH": "adapters/hermes-shim/src"
+    }
   },
   "requirements": {
     "binaries": [

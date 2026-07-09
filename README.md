@@ -55,8 +55,8 @@ and runs one input through the Hermes SDK adapter.
 Prerequisites:
 
 - Rust and Cargo
-- Python 3.10+ for Fabric
-- Python 3.11-3.13 for Hermes
+- Python 3.11+ for Fabric
+- Python 3.11-3.13 for Hermes Agent
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - `just` 1.50.0+
 - `NVIDIA_API_KEY` for NVIDIA-hosted model access

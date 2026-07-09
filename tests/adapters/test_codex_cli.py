@@ -5,17 +5,12 @@ import importlib.util
 import json
 import os
 import subprocess
+import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock, call
 
 import pytest
 import yaml
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
-    import tomli as tomllib
-
 from nemo_fabric import Fabric, FabricConfig
 
 ROOT = Path(__file__).resolve().parents[2]

@@ -136,25 +136,6 @@ def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
     with mock_api_server(unused_tcp_port) as base_url:
         yield base_url
 
-@pytest.fixture(name="adapters_common_src_dir", scope="session")
-def adapters_common_src_dir_fixture() -> Path:
-    adapters_common_src_dir = CUR_DIR.parent / "adapters" / "common" / "src"
-    assert adapters_common_src_dir.exists(), f"Missing adapters common src directory: {adapters_common_src_dir}"
-    return adapters_common_src_dir.resolve()
-
-@pytest.fixture(name="adapters_common", scope="session")
-def adapters_common_fixture(adapters_common_src_dir: Path) -> str:
-    adapters_common = adapters_common_src_dir.as_posix()
-    if adapters_common not in sys.path:
-        sys.path.append(adapters_common)
-
-    return adapters_common
-
-@pytest.fixture(name="hermes_common", scope="session")
-def hermes_common_fixture(adapters_common: str) -> types.ModuleType:
-    import nemo_fabric_adapters.common.hermes as hermes_common  # noqa: E402
-    return hermes_common
-
 @pytest.fixture(name="nemo_relay")
 def nemo_relay_fixture() -> types.ModuleType:
     return pytest.importorskip("nemo_relay", reason="nemo-relay extra is required")
