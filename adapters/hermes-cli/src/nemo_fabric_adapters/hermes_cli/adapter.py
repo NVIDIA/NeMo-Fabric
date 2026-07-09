@@ -181,11 +181,22 @@ def build_command(
 
 def build_env(settings: dict[str, Any], hermes_home: Path) -> dict[str, str]:
     env = os.environ.copy()
-    env.update({str(key): str(value) for key, value in (settings.get("env") or {}).items()})
+
+    # If we are in a virtual env those values take precedence over the current environment variables
+    virtual_env_vars = common_utils.virtualenv_subprocess_env()
+    if len(virtual_env_vars) > 0:
+        env.pop("PYTHONHOME", None)
+        env.update(virtual_env_vars)
+
+    env.update({
+        str(key): str(value)
+        for key, value in (settings.get("env") or {}).items()
+    })
     env["HOME"] = str(hermes_home)
     env["HERMES_HOME"] = str(hermes_home)
     env.setdefault("HERMES_YOLO_MODE", "1")
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
+
     return env
 
 

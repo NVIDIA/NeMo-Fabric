@@ -488,15 +488,26 @@ def build_env(
     *,
     relay_gateway_url: str | None = None,
 ) -> dict[str, str]:
-    env = {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
+    env = {
+        name: os.environ[name]
+        for name in INHERITED_ENV_NAMES if name in os.environ
+    }
+
+    # If we are in a virtual env those values take precedence over the current environment variables
+    env.update(common_utils.virtualenv_subprocess_env())
+
     configured = common_utils.settings_payload(payload).get("env")
     if configured is None:
         configured = {}
+
     if not isinstance(configured, Mapping):
         raise ValueError("env must be a mapping of variable names to values")
+
     env.update({str(key): str(value) for key, value in configured.items()})
+
     if relay_gateway_url is not None:
         env["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
+
     return env
 
 
