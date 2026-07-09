@@ -13,7 +13,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_README = ROOT / "README.md"
-DEMO_ROOT = ROOT / "integrations" / "harbor" / "demo"
+DEMO_ROOT = ROOT / "examples" / "harbor" / "demo"
 DEMO_README = DEMO_ROOT / "README.md"
 DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
 DEMO_HOST_GATEWAY = DEMO_ROOT / "host-gateway.compose.yaml"
@@ -35,7 +35,7 @@ RELAY_CONFIG = (
     / "configs"
     / "hermes-relay.yaml"
 )
-INTEGRATION_README = ROOT / "integrations" / "harbor" / "README.md"
+INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
     ROOT
     / "python"
@@ -432,5 +432,5 @@ def test_root_readme_routes_to_sdk_and_harbor_guides():
 
     assert "runtime execution layer" in readme
     assert "docs/sdk/python.mdx" in readme
-    assert "integrations/harbor/README.md" in readme
-    assert "integrations/harbor/demo/README.md" in readme
+    assert "examples/harbor/README.md" in readme
+    assert "examples/harbor/demo/README.md" in readme

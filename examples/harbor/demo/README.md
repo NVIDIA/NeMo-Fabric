@@ -22,7 +22,7 @@ its Docker context. Export committed `HEAD` so the image installs the exact
 Fabric revision under test:
 
 ```bash
-DEMO_DIR="$PWD/integrations/harbor/demo"
+DEMO_DIR="$PWD/examples/harbor/demo"
 TASK_DIR="$DEMO_DIR/task"
 RUNS_DIR="$DEMO_DIR/runs"
 VENDOR_DIR="$TASK_DIR/environment/vendor/nemo-fabric"

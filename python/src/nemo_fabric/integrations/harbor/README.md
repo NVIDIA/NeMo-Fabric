@@ -38,7 +38,7 @@ unique specification and result paths.
 - `fabric_install_command`: optional environment bootstrap command;
 - `fabric_timeout_sec`: optional timeout for bootstrap and execution.
 
-See [`integrations/harbor/README.md`](../../../../../integrations/harbor/README.md)
+See [`examples/harbor/README.md`](../../../../../examples/harbor/README.md)
 for installation and usage, and
-[`integrations/harbor/demo/README.md`](../../../../../integrations/harbor/demo/README.md)
+[`examples/harbor/demo/README.md`](../../../../../examples/harbor/demo/README.md)
 for runnable Harbor commands.

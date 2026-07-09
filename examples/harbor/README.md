@@ -3,10 +3,11 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Harbor Integration
+# Harbor Example
 
-Use `nemo_fabric.integrations.harbor:FabricAgent` to run a Fabric harness inside
-a Harbor task environment.
+This example shows how to use the installed
+[`FabricAgent`](../../python/src/nemo_fabric/integrations/harbor/fabric_agent.py)
+to run a Fabric harness inside a Harbor task environment.
 
 Harbor owns task and dataset materialization, container lifecycle, verification,
 rewards, retries, concurrency, and job layout. Fabric owns config validation,

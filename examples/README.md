@@ -5,9 +5,12 @@ SPDX-License-Identifier: Apache-2.0
 
 # Examples
 
-This directory holds runnable Fabric SDK examples.
+This directory holds runnable Fabric examples.
 
-The code-review example demonstrates the application-facing contract:
+## Code review agent
+
+[`code_review_agent`](code_review_agent/README.md) demonstrates the
+application-facing Python SDK contract:
 
 - constructing complete `FabricConfig` values with Pydantic models;
 - creating harness, environment, capability, and telemetry variants from deep
@@ -22,6 +25,12 @@ just build-all
 .venv/bin/python -m examples.code_review_agent \
   --input "Reply with exactly: fabric works"
 ```
+
+## Harbor
+
+[`harbor`](harbor/README.md) demonstrates the installed `FabricAgent`
+integration through a complete Harbor task, config matrix, verifier, and
+multi-harness demo.
 
 Portable manifest and profile behavior is covered by
 `tests/fixtures/file-config-agent`. The dependency-free Hermes shim used by

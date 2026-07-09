@@ -5,7 +5,7 @@ schema_version: fabric.agent/v1alpha1
 
 metadata:
   name: harbor-calculator-demo
-  description: Deterministic Harbor and Fabric pipeline check.
+  description: Deterministic Harbor example pipeline check.
 
 harness:
   adapter_id: demo.fabric.scripted

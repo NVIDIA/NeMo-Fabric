@@ -146,8 +146,8 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
 - [Getting Started overview](docs/getting-started/overview.mdx): interface
   selection and the end-to-end Fabric workflow.
-- [Harbor integration guide](integrations/harbor/README.md) and
-  [multi-harness demo](integrations/harbor/demo/README.md): ownership,
+- [Harbor example](examples/harbor/README.md) and
+  [multi-harness demo](examples/harbor/demo/README.md): ownership,
   installation, and complete command matrices.
 - Adapter guides: [Hermes SDK](adapters/hermes-sdk/README.md),
   [Hermes CLI](adapters/hermes-cli/README.md), and

@@ -5,7 +5,7 @@ schema_version: fabric.agent/v1alpha1
 
 metadata:
   name: harbor-calculator-demo
-  description: Hermes CLI with Relay telemetry in a Harbor task environment.
+  description: Hermes CLI and Relay example in a Harbor task environment.
 
 harness:
   adapter_id: nvidia.fabric.hermes.cli
