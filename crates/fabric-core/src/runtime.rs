@@ -24,7 +24,6 @@ use crate::config::{
 use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-const RELAY_RUNTIME_MODE: &str = "sdk";
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -1737,7 +1736,6 @@ fn prepare_relay_runtime_config(
         "schema_version": "fabric.relay/v1alpha1",
         "relay": {
             "enabled": true,
-            "mode": RELAY_RUNTIME_MODE,
             "project": telemetry.relay_project.clone(),
             "output_dir": telemetry
                 .relay_output_dir
@@ -1775,10 +1773,6 @@ fn prepare_relay_runtime_config(
         path: path.clone(),
         env: BTreeMap::from([
             ("FABRIC_RELAY_ENABLED".to_string(), "true".to_string()),
-            (
-                "FABRIC_RELAY_MODE".to_string(),
-                RELAY_RUNTIME_MODE.to_string(),
-            ),
             (
                 "FABRIC_RELAY_CONFIG_PATH".to_string(),
                 path.to_string_lossy().into_owned(),
