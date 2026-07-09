@@ -147,6 +147,16 @@ pub enum FabricError {
         /// Underlying JSON parse error.
         source: serde_json::Error,
     },
+    /// The default Python adapter interpreter path was invalid.
+    #[error(
+        "environment variable `ADAPTER_PYTHON` must point to a file, but `{value}` resolved to `{path}`"
+    )]
+    InvalidAdapterPython {
+        /// Value read from `ADAPTER_PYTHON`.
+        value: String,
+        /// Path resolved from the configured value.
+        path: PathBuf,
+    },
     /// A process runner failed to start or complete.
     #[error("process runner failed for `{command}`: {source}")]
     ProcessRunner {

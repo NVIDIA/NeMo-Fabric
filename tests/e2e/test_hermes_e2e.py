@@ -44,7 +44,7 @@ class BaseTestHermesE2E:
     ):
         pytest.importorskip("run_agent", reason="hermes extra is required")
 
-        os.environ["HERMES_PYTHON"] = sys.executable
+        os.environ["ADAPTER_PYTHON"] = sys.executable
 
         self.code_review_agent_dir = code_review_agent_dir
         self.api_server = api_server
