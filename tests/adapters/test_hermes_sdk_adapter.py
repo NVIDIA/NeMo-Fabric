@@ -32,7 +32,7 @@ async def test_hermes_sdk_rejects_native_telemetry():
         await adapter.run_hermes_sdk(payload)
 
 
-async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
+async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -149,9 +149,9 @@ async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
                 },
             },
         },
-        "runtime_context": {
-            "runtime_id": "runtime-fabric-123",
-            "environment": {"workspace": str(tmp_path)},
+            "runtime_context": {
+                "runtime_id": "runtime-fabric-123",
+                "environment": {"workspace": str(tmp_path)},
         },
         "request": {
             "input": "hello",
@@ -170,3 +170,6 @@ async def test_runtime_id_drives_hermes_session_id_and_hermes_db_history(
     assert captured["init"]["platform"] == "fabric"
     assert captured["conversation"]["conversation_history"] == db_history
     assert "session_id" not in output
+    assert Path(output["hermes_home"]) == (
+        tmp_path / "hermes-home" / "runtimes" / "runtime-fabric-123"
+    )

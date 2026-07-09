@@ -1,0 +1,434 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Pydantic SDK models for NeMo Fabric configuration and requests.
+
+The Rust core remains the source of truth for persisted schema snapshots. These
+models provide the Python SDK's typed authoring surface and intentionally keep
+extension fields so consumers can carry adapter- or application-owned data
+without waiting for a schema release.
+"""
+
+from __future__ import annotations
+
+import math
+import uuid
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing_extensions import Self
+
+
+def _json_value(value: Any, name: str) -> Any:
+    """Validate and detach a JSON-compatible value."""
+
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{name} must contain only finite JSON numbers")
+        return value
+    if isinstance(value, list):
+        return [_json_value(item, name) for item in value]
+    if isinstance(value, Mapping):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{name} JSON object keys must be strings")
+            result[key] = _json_value(item, name)
+        return result
+    raise ValueError(f"{name} must be JSON-compatible")
+
+
+class FabricBaseModel(BaseModel):
+    """Base class for SDK-facing Pydantic models."""
+
+    model_config = ConfigDict(
+        extra="allow",
+        validate_assignment=True,
+        populate_by_name=True,
+        use_enum_values=True,
+        allow_inf_nan=False,
+    )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> Self:
+        """Validate a mapping using this Pydantic model."""
+
+        return cls.model_validate(value)
+
+    @property
+    def extra_fields(self) -> dict[str, Any]:
+        """Return fields preserved by the extension point for this model."""
+
+        return dict(self.model_extra or {})
+
+    def to_mapping(self) -> dict[str, Any]:
+        """Return a detached JSON-compatible mapping for Rust/core calls."""
+
+        data = self.model_dump(mode="json", exclude_none=True)
+        return {key: item for key, item in data.items() if item not in ({}, [])}
+
+
+class MetadataConfig(FabricBaseModel):
+    """Human-readable agent identity."""
+
+    name: str = Field(min_length=1)
+    description: str | None = None
+
+
+class HarnessConfig(FabricBaseModel):
+    """Harness adapter selection plus adapter-owned settings."""
+
+    adapter_id: str = Field(min_length=1)
+    resolution: (
+        Literal[
+            "preinstalled",
+            "image_provided",
+            "pip_uv",
+            "npm",
+            "source",
+            "service",
+            "native_plugin",
+        ]
+        | None
+    ) = None
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class RuntimeConfig(FabricBaseModel):
+    """Runtime input/output contract."""
+
+    input_schema: str | None = None
+    output_schema: str | None = None
+    artifacts: str | Path | None = None
+
+
+class EnvironmentConfig(FabricBaseModel):
+    """Execution environment configuration supplied by the consumer.
+
+    ``provider`` selects the environment implementation. ``workspace`` is the
+    path visible to the harness, while ``artifacts`` is the provider-specific
+    output location. ``settings`` configures the selected provider;
+    ``connection`` describes how Fabric reaches an existing environment; and
+    ``metadata`` carries consumer-owned values that Fabric does not interpret.
+    ``ownership`` identifies who tears the environment down, and
+    ``control_location`` identifies whether Fabric control code runs inside or
+    outside it.
+    """
+
+    provider: str = Field(
+        default="local",
+        min_length=1,
+        description="Environment provider, such as local, docker, opensandbox, or k8s.",
+    )
+    workspace: str | Path | None = Field(
+        default=None,
+        description="Workspace path visible to the harness.",
+    )
+    artifacts: str | Path | None = Field(
+        default=None,
+        description="Environment-specific artifact path.",
+    )
+    settings: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Provider-specific configuration interpreted by the environment provider.",
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Consumer-owned environment metadata passed through without Fabric semantics.",
+    )
+    connection: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Connection data for an existing environment, such as URL, namespace, or credential reference.",
+    )
+    ownership: Literal["caller_owned", "fabric_owned"] = Field(
+        default="caller_owned",
+        description="Whether the caller or Fabric owns environment teardown.",
+    )
+    control_location: Literal["external_control", "in_env_control"] = Field(
+        default="in_env_control",
+        description="Whether Fabric control code runs outside or inside the environment.",
+    )
+
+
+class ModelConfig(FabricBaseModel):
+    """Model alias configuration."""
+
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    api_key_env: str | None = None
+    temperature: float | None = None
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class SkillConfig(FabricBaseModel):
+    """Skill capability configuration."""
+
+    paths: list[str | Path] = Field(default_factory=list)
+
+    def add_path(self, path: str | Path) -> Self:
+        """Add a skill path if absent."""
+
+        value = str(path)
+        paths = [str(item) for item in self.paths]
+        if value not in paths:
+            self.paths = [*paths, value]
+        return self
+
+    def remove_path(self, path: str | Path) -> Self:
+        """Remove a skill path if present."""
+
+        value = str(path)
+        self.paths = [item for item in self.paths if str(item) != value]
+        return self
+
+
+class McpServerConfig(FabricBaseModel):
+    """MCP server configuration."""
+
+    transport: str = Field(min_length=1)
+    url: str = Field(min_length=1)
+    exposure: Literal["harness_native", "fabric_managed"] = "harness_native"
+
+
+class McpConfig(FabricBaseModel):
+    """MCP capability configuration."""
+
+    servers: dict[str, McpServerConfig] = Field(default_factory=dict)
+
+    def add_server(
+        self,
+        name: str,
+        *,
+        transport: str,
+        url: str,
+        exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> Self:
+        """Add or replace a named MCP server."""
+
+        self.servers[name] = McpServerConfig(
+            transport=transport,
+            url=url,
+            exposure=exposure,
+            **dict(extra_fields or {}),
+        )
+        return self
+
+    def remove_server(self, name: str) -> Self:
+        """Remove a named MCP server if present."""
+
+        self.servers.pop(name, None)
+        return self
+
+
+class TelemetryConfig(FabricBaseModel):
+    """Telemetry configuration."""
+
+    enabled: bool = False
+    provider: Literal["relay", "native"] | None = None
+    project: str | None = None
+    output_dir: str | Path | None = None
+    config: dict[str, Any] | None = None
+
+    def enable_relay(
+        self,
+        *,
+        project: str | None = None,
+        output_dir: str | Path | None = None,
+        config: Mapping[str, Any] | None = None,
+    ) -> Self:
+        """Enable NeMo Relay telemetry for subsequently started runtimes."""
+
+        self.enabled = True
+        self.provider = "relay"
+        if project is not None:
+            self.project = project
+        if output_dir is not None:
+            self.output_dir = output_dir
+        if config is not None:
+            self.config = dict(config)
+        return self
+
+    def enable_native(self) -> Self:
+        """Let the selected adapter handle telemetry natively."""
+
+        self.enabled = True
+        self.provider = "native"
+        return self
+
+    def disable(self) -> Self:
+        """Disable telemetry."""
+
+        self.enabled = False
+        return self
+
+
+class ProfileRegistryConfig(FabricBaseModel):
+    """Profile discovery config for portable file-backed agent packages."""
+
+    directories: list[str | Path] = Field(default_factory=list)
+
+
+class FabricConfig(FabricBaseModel):
+    """SDK-facing typed Fabric agent configuration."""
+
+    schema_version: str = "fabric.agent/v1alpha1"
+    metadata: MetadataConfig
+    harness: HarnessConfig
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    environment: EnvironmentConfig | None = None
+    models: dict[str, ModelConfig | dict[str, Any]] = Field(default_factory=dict)
+    mcp: McpConfig | None = None
+    skills: SkillConfig | None = None
+    telemetry: TelemetryConfig | None = None
+    profiles: ProfileRegistryConfig | dict[str, Any] | None = None
+    tools: Any = None
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> Self:
+        """Validate the public agent config mapping shape."""
+
+        return cls.model_validate(value)
+
+    def to_mapping(self) -> dict[str, Any]:
+        """Return a detached mapping matching the Rust ``FabricConfig`` schema."""
+
+        data = super().to_mapping()
+        data.setdefault("schema_version", "fabric.agent/v1alpha1")
+        data.setdefault("runtime", {})
+        return data
+
+    def add_mcp_server(
+        self,
+        name: str,
+        *,
+        transport: str,
+        url: str,
+        exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> Self:
+        """Add or replace a named MCP server and return this config."""
+
+        if self.mcp is None:
+            self.mcp = McpConfig()
+        self.mcp.add_server(
+            name,
+            transport=transport,
+            url=url,
+            exposure=exposure,
+            extra_fields=extra_fields,
+        )
+        return self
+
+    def remove_mcp_server(self, name: str) -> Self:
+        """Remove a named MCP server and return this config."""
+
+        if self.mcp is not None:
+            self.mcp.remove_server(name)
+            if not self.mcp.servers:
+                self.mcp = None
+        return self
+
+    def add_skill_path(self, path: str | Path) -> Self:
+        """Add a skill path and return this config."""
+
+        if self.skills is None:
+            self.skills = SkillConfig()
+        self.skills.add_path(path)
+        return self
+
+    def remove_skill_path(self, path: str | Path) -> Self:
+        """Remove a skill path and return this config."""
+
+        if self.skills is not None:
+            self.skills.remove_path(path)
+            if not self.skills.paths:
+                self.skills = None
+        return self
+
+    def enable_relay(
+        self,
+        *,
+        project: str | None = None,
+        output_dir: str | Path | None = None,
+        config: Mapping[str, Any] | None = None,
+    ) -> Self:
+        """Enable NeMo Relay telemetry and return this config."""
+
+        if self.telemetry is None:
+            self.telemetry = TelemetryConfig()
+        self.telemetry.enable_relay(
+            project=project,
+            output_dir=output_dir,
+            config=config,
+        )
+        return self
+
+
+class FabricProfileConfig(FabricBaseModel):
+    """Typed profile overlay used when a Python caller wants file-style overlays."""
+
+    schema_version: str = "fabric.profile/v1alpha1"
+    name: str = Field(min_length=1)
+    description: str | None = None
+    harness: HarnessConfig | dict[str, Any] | None = None
+    runtime: RuntimeConfig | dict[str, Any] | None = None
+    environment: EnvironmentConfig | dict[str, Any] | None = None
+    models: dict[str, ModelConfig | dict[str, Any]] | None = None
+    mcp: McpConfig | dict[str, Any] | None = None
+    skills: SkillConfig | dict[str, Any] | None = None
+    telemetry: TelemetryConfig | dict[str, Any] | None = None
+    tools: Any = None
+
+
+class RunRequest(FabricBaseModel):
+    """One validated Fabric invocation request."""
+
+    input: Any = ""
+    request_id: str = Field(
+        default_factory=lambda: f"request-{uuid.uuid4().hex}",
+        min_length=1,
+    )
+    context: dict[str, Any] = Field(default_factory=dict)
+    overrides: dict[str, Any] | None = None
+
+    @field_validator("input", mode="before")
+    @classmethod
+    def _validate_input(cls, value: Any) -> Any:
+        return _json_value("" if value is None else value, "request input")
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def _validate_context(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            raise ValueError("request context must be a JSON object")
+        return _json_value(value, "request context")
+
+    @field_validator("overrides", mode="before")
+    @classmethod
+    def _validate_overrides(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if not isinstance(value, Mapping):
+            raise ValueError("request overrides must be a JSON object")
+        return _json_value(value, "request overrides")
+
+    @model_validator(mode="after")
+    def _validate_extensions(self) -> Self:
+        for name, value in (self.model_extra or {}).items():
+            _json_value(value, f"request extension {name!r}")
+        return self
+
+    def to_mapping(self) -> dict[str, Any]:
+        """Return a detached request mapping for the Rust runtime."""
+
+        data = _json_value(
+            self.model_dump(mode="python", exclude_none=True),
+            "request",
+        )
+        assert isinstance(data, dict)
+        return data

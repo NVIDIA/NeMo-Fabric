@@ -28,7 +28,7 @@ def test_hermes_cli(hermes_agent_dir: Path):
     assert result["metadata"]["adapter_runner"] == "python"
     assert result["output"]["harness"] == "hermes"
     assert result["output"]["adapter"] == "cli"
-    assert result["output"]["mode"] == "hermes_cli_oneshot"
+    assert result["output"]["mode"] == "hermes_cli_runtime"
     assert result["output"]["fabric_invocation"] is None
     assert result["output"]["hermes_native_config"]["mcp_servers"] == ["github"]
     assert result["output"]["hermes_native_config"]["skill_dirs"]

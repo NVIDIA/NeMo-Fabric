@@ -26,10 +26,15 @@ before calling the CLI. It maps:
 - Fabric MCP servers as Hermes MCP server config;
 - selected CLI flags and environment variables from harness settings.
 
+`hermes_home` configures a base directory. The adapter creates a child under
+`runtimes/<runtime_id>` so invocations in one Fabric runtime share Hermes state
+without sharing config or the session database with another runtime.
+
 ## Maintaining The Adapter
 
 Keep `fabric-adapter.json` aligned with the Python implementation:
 
+- `contract_version` must match the adapter contract supported by Fabric core.
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
 - `adapter_kind` is `python` because Fabric invokes the adapter with Python.
 - `runner.module` names the module that Fabric invokes with `python -m`.

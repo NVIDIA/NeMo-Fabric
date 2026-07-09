@@ -11,12 +11,13 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from nemo_fabric.errors import FabricConfigError
-from nemo_fabric.types import FabricConfig, FabricProfileConfig
+from nemo_fabric.models import FabricConfig, FabricProfileConfig
 
 PathSource = str | os.PathLike[str]
-AgentSource = PathSource | FabricConfig
-ProfileSource = str | FabricProfileConfig
+TypedConfigSource = FabricConfig
+AgentSource = PathSource | TypedConfigSource
 PathProfiles = str | Sequence[str]
+TypedProfiles = Sequence[FabricProfileConfig]
 
 
 def is_config_source(value: Any) -> bool:
@@ -31,7 +32,9 @@ def path_arg(value: Any) -> str:
             "agent mappings are not accepted directly; "
             "use FabricConfig.from_mapping(...) first"
         )
-    raise FabricConfigError("agent must be a path-like source or FabricConfig")
+    raise FabricConfigError(
+        "agent must be a path-like source or FabricConfig"
+    )
 
 
 def path_profiles(profiles: PathProfiles | None) -> list[str]:
@@ -51,7 +54,7 @@ def path_profiles(profiles: PathProfiles | None) -> list[str]:
 
 
 def config_profiles(
-    profiles: Sequence[FabricProfileConfig] | None,
+    profiles: TypedProfiles | None,
 ) -> list[FabricProfileConfig]:
     if profiles is None:
         return []
@@ -62,22 +65,21 @@ def config_profiles(
     values = list(profiles)
     if not all(isinstance(profile, FabricProfileConfig) for profile in values):
         raise FabricConfigError(
-            "FabricConfig profiles must contain FabricProfileConfig values; "
-            "use FabricProfileConfig.from_mapping(...) for mappings"
+            "FabricConfig profiles must contain FabricProfileConfig values"
         )
     return values
 
 
 def validate_base_dir(agent: AgentSource, base_dir: PathSource | None) -> str | None:
-    if not isinstance(agent, FabricConfig):
+    if not is_config_source(agent):
         if base_dir is not None:
-            raise FabricConfigError("base_dir is only valid with a FabricConfig source")
+            raise FabricConfigError("base_dir is only valid with a typed config source")
         return None
     return None if base_dir is None else os.fspath(base_dir)
 
 
-def config_json(config: FabricConfig) -> str:
-    if not isinstance(config, FabricConfig):
+def config_json(config: TypedConfigSource) -> str:
+    if not is_config_source(config):
         raise FabricConfigError("config must be a FabricConfig")
     return json.dumps(config.to_mapping())
 

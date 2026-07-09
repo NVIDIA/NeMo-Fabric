@@ -14,6 +14,7 @@ harness:
     hermes_command: ./bin/fake-hermes.py
     workspace: ./repos/my-service
     hermes_home: ./artifacts/hermes-cli/home
+    prepare_runtime_state: false
     enabled_toolsets: []
 
 models:
@@ -23,8 +24,6 @@ models:
     temperature: 0.0
 
 runtime:
-  mode: oneshot
-  transport: cli
   input_schema: chat
   output_schema: message
   artifacts: ./artifacts/hermes-cli

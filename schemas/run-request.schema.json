@@ -4,7 +4,7 @@
   "properties": {
     "context": {
       "additionalProperties": true,
-      "description": "Runtime context such as task, rollout, session, or caller metadata.",
+      "description": "Runtime context such as task, rollout, workflow, or caller metadata.",
       "type": "object"
     },
     "input": {
