@@ -59,7 +59,7 @@ class FabricRuntimeError(FabricError):
 
 
 class FabricStateError(FabricRuntimeError):
-    """Operation rejected because a local session handle is in the wrong state."""
+    """Operation rejected because a local runtime is in the wrong state."""
 
 
 class FabricCapabilityError(FabricRuntimeError):

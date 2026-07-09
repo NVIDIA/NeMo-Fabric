@@ -9,7 +9,10 @@ build-backend = "maturin"
 name = "nemo-fabric-runtime"
 description = "Python SDK and native bindings for NeMo Fabric"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "pydantic>=2.10,<3",
+  "typing-extensions>=4.12",
+]
 dynamic = ["version"]
 
 [tool.maturin]

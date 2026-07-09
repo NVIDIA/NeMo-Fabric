@@ -22,7 +22,8 @@ PYTHONPATH="python/src" lazydocs \
   --output-path "$out" \
   --overview-file "index.md" \
   "nemo_fabric.client" \
-  "nemo_fabric.session" \
+  "nemo_fabric.runtime" \
+  "nemo_fabric.models" \
   "nemo_fabric.types" \
   "nemo_fabric.errors"
 
@@ -35,6 +36,9 @@ perl -0pi -e 's/<!--.*?-->//gs' "$out"/*.md
 perl -pi -e 's/<object object at 0x[0-9A-Fa-f]+>/.../g' "$out"/*.md
 perl -pi -e 's/[ \t]+$//' "$out"/*.md
 perl -0pi -e 's/\A\s+//' "$out"/*.md
+# lazydocs nests properties at h4 directly under h2 class sections. Flatten
+# those headings to h3 so generated pages satisfy markdown heading order.
+perl -pi -e 's/^#### (<kbd>property<\/kbd>)/### $1/' "$out"/*.md
 
 add_frontmatter() {
   local file="$1"
@@ -61,13 +65,18 @@ add_frontmatter \
 add_frontmatter \
   "$out/nemo_fabric.client.md" \
   "Client" \
-  "Resolve, plan, diagnose, and run agents with FabricClient." \
+  "Resolve, plan, diagnose, and run agents with Fabric." \
   "/reference/api/python-library-reference/client"
 add_frontmatter \
-  "$out/nemo_fabric.session.md" \
-  "Sessions" \
-  "Drive stateful multi-turn runtimes through the Session API." \
-  "/reference/api/python-library-reference/sessions"
+  "$out/nemo_fabric.runtime.md" \
+  "Runtime" \
+  "Drive stateful multi-turn execution through the Runtime API." \
+  "/reference/api/python-library-reference/runtime"
+add_frontmatter \
+  "$out/nemo_fabric.models.md" \
+  "Models" \
+  "Pydantic authoring models for Fabric config and request inputs." \
+  "/reference/api/python-library-reference/models"
 add_frontmatter \
   "$out/nemo_fabric.types.md" \
   "Types" \

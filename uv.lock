@@ -1746,6 +1746,16 @@ requires-dist = [
 [[package]]
 name = "nemo-fabric-runtime"
 source = { directory = "python" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic", specifier = ">=2.10,<3" },
+    { name = "typing-extensions", specifier = ">=4.12" },
+]
 
 [[package]]
 name = "nemo-relay"

@@ -3,7 +3,7 @@
 
 """Python SDK surface for NeMo Fabric."""
 
-from nemo_fabric.client import FabricClient
+from nemo_fabric.client import Fabric
 from nemo_fabric.errors import (
     FabricCapabilityError,
     FabricConfigError,
@@ -12,7 +12,23 @@ from nemo_fabric.errors import (
     FabricRuntimeError,
     FabricStateError,
 )
-from nemo_fabric.session import Session, SessionStatus
+from nemo_fabric.runtime import Runtime, RuntimeStatus
+from nemo_fabric.models import (
+    EnvironmentConfig,
+    FabricBaseModel,
+    FabricConfig,
+    FabricProfileConfig,
+    HarnessConfig,
+    McpConfig,
+    McpServerConfig,
+    MetadataConfig,
+    ModelConfig,
+    ProfileRegistryConfig,
+    RunRequest,
+    RuntimeConfig,
+    SkillConfig,
+    TelemetryConfig,
+)
 from nemo_fabric.types import (
     AdapterInfo,
     ArtifactManifest,
@@ -20,22 +36,12 @@ from nemo_fabric.types import (
     DoctorCheck,
     DoctorReport,
     EffectiveConfig,
-    EnvironmentConfig,
     ErrorInfo,
-    FabricConfig,
     FabricEvent,
-    FabricProfileConfig,
-    HarnessConfig,
-    MetadataConfig,
     RunPlan,
-    RunRequest,
     RunResult,
     RuntimeCapabilities,
     RuntimeHandle,
-    RuntimeConfig,
-    RuntimeUpdate,
-    RuntimeUpdateResult,
-    SessionInfo,
     TelemetryRef,
 )
 
@@ -48,15 +54,20 @@ __all__ = [
     "EffectiveConfig",
     "EnvironmentConfig",
     "ErrorInfo",
+    "Fabric",
+    "FabricBaseModel",
     "FabricConfig",
+    "FabricProfileConfig",
     "FabricCapabilityError",
-    "FabricClient",
     "FabricConfigError",
     "FabricError",
     "FabricEvent",
-    "FabricProfileConfig",
     "HarnessConfig",
+    "McpConfig",
+    "McpServerConfig",
     "MetadataConfig",
+    "ModelConfig",
+    "ProfileRegistryConfig",
     "FabricNativeUnavailableError",
     "FabricRuntimeError",
     "FabricStateError",
@@ -66,10 +77,9 @@ __all__ = [
     "RuntimeCapabilities",
     "RuntimeHandle",
     "RuntimeConfig",
-    "RuntimeUpdate",
-    "RuntimeUpdateResult",
-    "Session",
-    "SessionInfo",
-    "SessionStatus",
+    "Runtime",
+    "RuntimeStatus",
+    "SkillConfig",
+    "TelemetryConfig",
     "TelemetryRef",
 ]

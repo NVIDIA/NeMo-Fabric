@@ -228,6 +228,7 @@ mod tests {
     fn adapter_descriptor_schema_rejects_empty_identifiers() {
         let schema = generate_schema(SchemaName::AdapterDescriptor).expect("schema generation");
 
+        assert_eq!(schema["properties"]["contract_version"]["minLength"], 1);
         assert_eq!(schema["properties"]["adapter_id"]["minLength"], 1);
         assert_eq!(schema["properties"]["harness"]["minLength"], 1);
     }

@@ -131,7 +131,7 @@ Initialize a structured Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricStateError`
-Operation rejected because a local session handle is in the wrong state.
+Operation rejected because a local runtime is in the wrong state.
 
 
 ### <kbd>method</kbd> `__init__`

@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use fabric_core::{
-    AdapterKind, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle, RuntimeMode, SchemaName,
-    doctor_plan, generate_all_schemas, generate_schema_json, invoke_runtime,
+    AdapterKind, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle, SchemaName, doctor_plan,
+    generate_all_schemas, generate_schema_json, invoke_runtime,
     resolve_effective_config_with_profiles, resolve_run_plan_with_profiles, run_plan,
     start_runtime, stop_runtime, validate_agent_directory, write_schema_snapshots,
 };
@@ -63,16 +63,13 @@ enum Command {
         #[arg(long = "profile")]
         profile: Vec<String>,
     },
-    /// Start an interactive multi-turn session.
+    /// Start an interactive multi-turn runtime.
     Chat {
         /// Path to an agent directory or YAML config.
         path: PathBuf,
         /// Profile name from configured profile directories, or a YAML profile path.
         #[arg(long = "profile")]
         profile: Vec<String>,
-        /// Caller-provided harness conversation id.
-        #[arg(long = "session-id")]
-        session_id: Option<String>,
         /// Show per-turn runtime, invocation, artifact, and telemetry details.
         #[arg(long)]
         verbose: bool,
@@ -146,10 +143,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::Chat {
             path,
             profile,
-            session_id,
             verbose,
         }) => {
-            run_chat(path, &profile, session_id, verbose)?;
+            run_chat(path, &profile, verbose)?;
         }
         Some(Command::Run {
             path,
@@ -234,18 +230,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 fn run_chat(
     path: PathBuf,
     profile: &[String],
-    session_id: Option<String>,
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let plan = resolve_run_plan_with_profiles(path, profile)?;
-    if plan.config.runtime.mode != RuntimeMode::Session {
-        return Err(
-            "fabric chat requires runtime.mode=session; use `fabric run` for oneshot profiles"
-                .into(),
-        );
-    }
     let runtime = start_runtime(&plan)?;
-    let chat_result = chat_loop(&plan, &runtime, session_id.as_deref(), verbose);
+    let chat_result = chat_loop(&plan, &runtime, verbose);
     let stop_result = stop_runtime(&plan, &runtime);
     if let Err(error) = chat_result {
         return Err(error);
@@ -257,14 +246,9 @@ fn run_chat(
 fn chat_loop(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
-    session_id: Option<&str>,
     mut verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let harness_session_id = session_id
-        .unwrap_or(runtime.runtime_id.as_str())
-        .to_string();
-    let session_provided = session_id.is_some();
-    let prompt = chat_prompt(plan, &harness_session_id);
+    let prompt = chat_prompt(plan, &runtime.runtime_id);
     let interrupted = Arc::new(AtomicBool::new(false));
     {
         let interrupted = Arc::clone(&interrupted);
@@ -274,7 +258,7 @@ fn chat_loop(
     }
     let input_is_terminal = io::stdin().is_terminal();
     let lines = stdin_lines();
-    print_chat_info(plan, runtime, &harness_session_id, session_provided);
+    print_chat_info(plan, runtime);
     eprintln!();
     let mut turn_count = 0_u64;
 
@@ -294,7 +278,7 @@ fn chat_loop(
                 continue;
             }
             "/info" => {
-                print_chat_info(plan, runtime, &harness_session_id, session_provided);
+                print_chat_info(plan, runtime);
                 continue;
             }
             "/clear" => {
@@ -333,11 +317,7 @@ fn chat_loop(
             continue;
         }
 
-        let mut request = RunRequest::text(input);
-        request.context.insert(
-            "session_id".to_string(),
-            Value::String(harness_session_id.clone()),
-        );
+        let request = RunRequest::text(input);
         let result = invoke_runtime(plan, runtime, request)?;
         turn_count += 1;
         if !input_is_terminal {
@@ -366,30 +346,16 @@ fn chat_loop(
     Ok(())
 }
 
-fn print_chat_info(
-    plan: &RunPlan,
-    runtime: &RuntimeHandle,
-    session_id: &str,
-    session_provided: bool,
-) {
+fn print_chat_info(plan: &RunPlan, runtime: &RuntimeHandle) {
     eprintln!("+================================================================+");
     eprintln!("| NEMO FABRIC                                                    |");
-    eprintln!("| interactive runtime session                                    |");
+    eprintln!("| interactive runtime                                            |");
     eprintln!("+----------------------------------------------------------------+");
     eprintln!("| agent: {}", plan.agent_name);
     eprintln!("| profile: {}", profile_label(plan));
     eprintln!("| harness: {}", runtime.harness);
     eprintln!("| adapter: {}", adapter_kind_label(runtime.adapter_kind));
     eprintln!("| runtime_id: {}", runtime.runtime_id);
-    eprintln!(
-        "| session_id: {} ({})",
-        session_id,
-        if session_provided {
-            "provided"
-        } else {
-            "runtime_id default"
-        }
-    );
     eprintln!("| commands: /help, /info, /verbose on|off, /clear, /exit, /quit");
     eprintln!("+----------------------------------------------------------------");
 }
@@ -397,11 +363,11 @@ fn print_chat_info(
 fn print_chat_help() {
     eprintln!("Commands:");
     eprintln!("  /help             show this help");
-    eprintln!("  /info             show session/runtime info");
+    eprintln!("  /info             show runtime info");
     eprintln!("  /verbose on|off   toggle per-turn metadata");
     eprintln!("  /clear            clear the terminal");
     eprintln!("  /exit, /quit      stop the runtime and exit");
-    eprintln!("Type a non-empty message to invoke the same runtime session.");
+    eprintln!("Type a non-empty message to invoke the same runtime.");
 }
 
 fn print_turn_verbose(turn: u64, result: &RunResult) {
@@ -427,11 +393,11 @@ fn print_turn_verbose(turn: u64, result: &RunResult) {
     eprintln!("+----------------------------------------------------------------");
 }
 
-fn chat_prompt(plan: &RunPlan, session_id: &str) -> String {
+fn chat_prompt(plan: &RunPlan, runtime_id: &str) -> String {
     format!(
         "you[{}:{}]",
         profile_label(plan),
-        short_prompt_label(session_id)
+        short_prompt_label(runtime_id)
     )
 }
 

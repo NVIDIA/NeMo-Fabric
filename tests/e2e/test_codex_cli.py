@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Opt-in real Codex CLI smoke for Fabric one-shot and session modes.
+"""Opt-in real Codex CLI smoke for Fabric one-shot and multi-turn runtimes.
 
 RUN_FABRIC_CODEX_INTEGRATION=1 pytest tests/e2e/test_codex_cli.py
 """
@@ -12,11 +12,8 @@ import importlib.util
 import os
 import shutil
 import uuid
-from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[2]
 
 
 async def test_codex_cli():
@@ -30,37 +27,37 @@ async def test_codex_cli():
 
 
 async def _run() -> None:
-    from nemo_fabric import FabricClient
+    from examples.code_review_agent import BASE_DIR, codex_cli_config
+    from nemo_fabric import Fabric
 
-    agent = ROOT / "examples" / "code-review-agent"
+    config = codex_cli_config()
     nonce = f"fabric-{uuid.uuid4().hex[:8]}"
-    async with FabricClient() as client:
-        oneshot = await client.run(
-            agent,
-            profiles=["codex_cli"],
-            input="Reply with exactly: FABRIC_CODEX_ONESHOT_OK",
-        )
-        assert oneshot["status"] == "succeeded", oneshot.to_mapping()
-        assert "fabric_codex_oneshot_ok" in oneshot["output"]["response"].lower(), (
-            oneshot.to_mapping()
-        )
-        assert "--ephemeral" in oneshot["output"]["command"], oneshot.to_mapping()
+    client = Fabric()
+    oneshot = await client.run(
+        config,
+        base_dir=BASE_DIR,
+        input="Reply with exactly: FABRIC_CODEX_ONESHOT_OK",
+    )
+    assert oneshot["status"] == "succeeded", oneshot.to_mapping()
+    assert "fabric_codex_oneshot_ok" in oneshot["output"]["response"].lower(), (
+        oneshot.to_mapping()
+    )
+    assert "--ephemeral" not in oneshot["output"]["command"], oneshot.to_mapping()
 
-        async with await client.start_session(
-            agent,
-            profiles=["codex_cli_session"],
-            session_id=nonce,
-        ) as session:
-            first = await session.invoke(input=f"Remember this value: {nonce}")
-            second = await session.invoke(
-                input="Reply with only the value I asked you to remember."
-            )
+    async with await client.start_runtime(
+        config,
+        base_dir=BASE_DIR,
+    ) as runtime:
+        first = await runtime.invoke(input=f"Remember this value: {nonce}")
+        second = await runtime.invoke(
+            input="Reply with only the value I asked you to remember."
+        )
 
-        results = (first.to_mapping(), second.to_mapping())
-        assert first["status"] == second["status"] == "succeeded", results
-        assert first["output"]["thread_id"] == second["output"]["thread_id"], results
-        assert nonce in second["output"]["response"], second.to_mapping()
-        assert second["output"]["command"][-3:-1] == [
-            "resume",
-            first["output"]["thread_id"],
-        ], second.to_mapping()
+    results = (first.to_mapping(), second.to_mapping())
+    assert first["status"] == second["status"] == "succeeded", results
+    assert first["output"]["thread_id"] == second["output"]["thread_id"], results
+    assert nonce in second["output"]["response"], second.to_mapping()
+    assert second["output"]["command"][-3:-1] == [
+        "resume",
+        first["output"]["thread_id"],
+    ], second.to_mapping()

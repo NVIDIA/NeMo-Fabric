@@ -4,17 +4,16 @@
 import types
 from pathlib import Path
 
-from nemo_fabric import FabricClient
+from nemo_fabric import Fabric
 
 
 async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, hermes_cli_profile: str):
     # Ensure the hermes_cli adapter returns expected fields
-    async with FabricClient() as client:
-        result = await client.run(
-            hermes_agent_dir,
-            profiles=[hermes_cli_profile],
-            input="who are you?",
-        )
+    result = await Fabric().run(
+        hermes_agent_dir,
+        profiles=[hermes_cli_profile],
+        input="who are you?",
+    )
 
     assert result["status"] == "succeeded"
     assert result["adapter_kind"] == "python"
@@ -24,7 +23,7 @@ async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, h
     assert output["adapter"] == "cli"
     assert output["command"][0] == hermes_command.as_posix()
     assert output["harness"] == "hermes"
-    assert output["mode"] == "hermes_cli_oneshot"
+    assert output["mode"] == "hermes_cli_runtime"
     assert output["model"] == "test-model"
 
     assert output["fabric_home"] is None
@@ -39,6 +38,8 @@ async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, h
     for field in ("base_url", "enabled_toolsets", "error", "response"):
         # Ensure these fields are present in the output, even if they are None
         assert field in output, f"Missing field in output: {field}"
+
+    assert Path(output["hermes_home"]).parts[-2:] == ("runtimes", result["runtime_id"])
 
 
 async def test_hermes_cli_rejects_native_telemetry(
@@ -57,12 +58,11 @@ telemetry:
         encoding="utf-8",
     )
 
-    async with FabricClient() as client:
-        result = await client.run(
-            hermes_agent_dir,
-            profiles=[hermes_cli_profile, "native_telemetry"],
-            input="who are you?",
-        )
+    result = await Fabric().run(
+        hermes_agent_dir,
+        profiles=[hermes_cli_profile, "native_telemetry"],
+        input="who are you?",
+    )
 
     assert result["status"] == "failed"
     assert "only relay telemetry is supported for Hermes" in result["error"]["message"]
@@ -70,24 +70,24 @@ telemetry:
 
 async def test_hermes_cli_multi_turn(
     hermes_agent_dir: Path,
-    hermes_cli_session_profile: str,
+    hermes_cli_runtime_profile: str,
     hermes_state: types.ModuleType,
 ):
     """
-    Test that multi-turn sessions are tracked in the hermes session database when using the hermes_cli adapter.
+    Test that multi-turn runtime state is tracked in the Hermes session database.
 
     This test calls the fake-hermes.py script rather than hermes itself, thus it doesn't require an API key, however
     the hermes_cli adapter does use the hermes_state module, so we can test that the session is recorded propperly.
     """
-    async with await FabricClient().start_session(
+    async with await Fabric().start_runtime(
         hermes_agent_dir,
-        profiles=[hermes_cli_session_profile],
-    ) as session:
-        runtime_id = session.runtime["runtime_id"]
-        await session.invoke(input="prompt1")
-        await session.invoke(input="prompt2")
+        profiles=[hermes_cli_runtime_profile],
+    ) as runtime:
+        runtime_id = runtime.runtime_id
+        await runtime.invoke(input="prompt1")
+        result = await runtime.invoke(input="prompt2")
 
-    session_db_path = hermes_agent_dir / "artifacts/hermes-home/state.db"
+    session_db_path = Path(result["output"]["hermes_home"]) / "state.db"
     assert session_db_path.exists(), f"Expected session DB at {session_db_path} does not exist"
 
     session_db = hermes_state.SessionDB(db_path=session_db_path)

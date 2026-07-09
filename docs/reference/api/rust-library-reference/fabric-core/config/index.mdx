@@ -36,7 +36,7 @@ Fabric config models and loading helpers.
 - [ResolvedAdapterDescriptor](/reference/api/rust-library-reference/fabric-core/config/struct-resolvedadapterdescriptor): Adapter descriptor selected for a run plan.
 - [RunPlan](/reference/api/rust-library-reference/fabric-core/config/struct-runplan): Resolved Fabric run plan.
 - [RuntimeCapabilities](/reference/api/rust-library-reference/fabric-core/config/struct-runtimecapabilities): Lifecycle behavior implemented by a resolved runtime path.
-- [RuntimeConfig](/reference/api/rust-library-reference/fabric-core/config/struct-runtimeconfig): Runtime mode and input/output contract.
+- [RuntimeConfig](/reference/api/rust-library-reference/fabric-core/config/struct-runtimeconfig): Runtime input/output contract.
 - [SkillConfig](/reference/api/rust-library-reference/fabric-core/config/struct-skillconfig): Skill capability configuration.
 - [TelemetryConfig](/reference/api/rust-library-reference/fabric-core/config/struct-telemetryconfig): Telemetry configuration.
 - [TelemetryPlan](/reference/api/rust-library-reference/fabric-core/config/struct-telemetryplan): Resolved telemetry plan.
@@ -52,8 +52,11 @@ Fabric config models and loading helpers.
 - [FabricDocument](/reference/api/rust-library-reference/fabric-core/config/enum-fabricdocument): A loaded Fabric document with resolved source path and agent root.
 - [McpExposure](/reference/api/rust-library-reference/fabric-core/config/enum-mcpexposure): MCP exposure strategy.
 - [ResolutionStrategy](/reference/api/rust-library-reference/fabric-core/config/enum-resolutionstrategy): Adapter install or availability strategy.
-- [RuntimeMode](/reference/api/rust-library-reference/fabric-core/config/enum-runtimemode): Runtime lifecycle mode.
-- [Transport](/reference/api/rust-library-reference/fabric-core/config/enum-transport): Runtime transport.
+- [TelemetryProvider](/reference/api/rust-library-reference/fabric-core/config/enum-telemetryprovider): Telemetry runtime provider.
+
+## Constants
+
+- [ADAPTER_CONTRACT_VERSION](/reference/api/rust-library-reference/fabric-core/config/constant-adapter-contract-version): Adapter descriptor contract version supported by this core.
 
 ## Functions
 

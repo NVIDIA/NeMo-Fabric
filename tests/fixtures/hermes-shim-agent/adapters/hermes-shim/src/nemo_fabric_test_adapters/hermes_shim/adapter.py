@@ -74,7 +74,7 @@ def run_shim(payload: dict[str, Any]) -> dict[str, Any]:
         "adapter": "test-shim",
         "mode": "shim",
         "received": request.get("input"),
-        "session_id": context.get("session_id") or context.get("runtime_id"),
+        "runtime_id": context.get("runtime_id"),
         "workspace": environment.get("workspace") or settings.get("workspace"),
         "native_skill_paths": (capabilities.get("native") or {}).get("skill_paths", []),
         "native_mcp_servers": sorted((capabilities.get("native") or {}).get("mcp_servers", {}).keys()),
