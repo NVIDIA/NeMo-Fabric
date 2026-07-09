@@ -100,7 +100,7 @@ export ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
   --input "Reply with exactly: fabric works"
 ```
 
-``ADAPTER_PYTHON`` selects the interpreter used to launch any Python adapter.
+`ADAPTER_PYTHON` selects the interpreter used to launch any Python adapter.
 An explicit `harness.settings.python` or `harness.settings.python_env` takes
 precedence. If none is configured and `ADAPTER_PYTHON` is unset, Fabric falls
 back to `python3`. 
