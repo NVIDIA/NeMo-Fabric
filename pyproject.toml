@@ -26,6 +26,10 @@ adapters-codex-cli = [
   "nemo-fabric-adapters-codex-cli == 0.1.0",
 ]
 
+adapters-deepagents = [
+  "nemo-fabric-adapters-deepagents == 0.1.0",
+]
+
 adapters-hermes-cli = [
   "nemo-fabric-adapters-hermes-cli == 0.1.0",
 ]
@@ -36,6 +40,10 @@ adapters-hermes-sdk = [
 
 codex = [
   "nemo-fabric-adapters-codex-cli == 0.1.0",
+]
+
+deepagents = [
+  "nemo-fabric-adapters-deepagents == 0.1.0",
 ]
 
 harbor = [
@@ -62,6 +70,7 @@ runtime = [
 adapters = [
   "nemo-fabric-adapters-common",
   "nemo-fabric-adapters-codex-cli",
+  "nemo-fabric-adapters-deepagents",
   "nemo-fabric-adapters-hermes-cli",
   "nemo-fabric-adapters-hermes-sdk",
 ]
@@ -92,6 +101,7 @@ default-groups = ["adapters", "dev", "test"]
 nemo-fabric-runtime = { path = "python" }
 nemo-fabric-adapters-common = { path = "adapters/common" }
 nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli" }
+nemo-fabric-adapters-deepagents = { path = "adapters/deepagents" }
 nemo-fabric-adapters-hermes-cli = { path = "adapters/hermes-cli" }
 nemo-fabric-adapters-hermes-sdk = { path = "adapters/hermes-sdk" }
 

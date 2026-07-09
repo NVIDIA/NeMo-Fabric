@@ -119,7 +119,8 @@ config and clone-based variants live in
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
   The Hermes SDK and CLI adapters live under `adapters/hermes-sdk/` and
   `adapters/hermes-cli/`; the Codex CLI adapter lives under
-  `adapters/codex-cli/`. Harness-specific extensions belong under
+  `adapters/codex-cli/`; the LangChain Deep Agents adapter lives under
+  `adapters/deepagents/`. Harness-specific extensions belong under
   `harness.settings` so the normalized contract can remain stable.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
