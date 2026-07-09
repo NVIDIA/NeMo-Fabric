@@ -6,6 +6,8 @@ navigation:
     contents:
       - page: Overview
         path: ./getting-started/overview.mdx
+      - page: Install
+        path: ./getting-started/install.mdx
   - section: SDK
     contents:
       - page: Python SDK
