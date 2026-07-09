@@ -24,6 +24,19 @@ Harbor task
   -> Harbor metadata and verifier
 ```
 
+## Where the Fabric SDK runs
+
+`FabricAgent` runs on Harbor's host side, so it does not open the Fabric config
+or task workspace itself. It packages the instruction and Harbor-owned inputs
+into a `HarborRunSpec`, uploads that file, and starts the Fabric runner inside
+the task environment.
+
+The runner can access the task files. It loads the YAML as a `FabricConfig`,
+applies Harbor's model, MCP server, and skill inputs to a copy, and calls
+`Fabric().run(...)`. That call handles the complete start, invoke, and stop
+lifecycle for one independent Fabric runtime. The integration therefore does
+not call `start_runtime()` directly.
+
 ## Install
 
 Install the Harbor dependency with Fabric:
