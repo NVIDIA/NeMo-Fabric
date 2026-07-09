@@ -1,0 +1,19 @@
+{
+  "adapter_id": "nvidia.fabric.langchain.react",
+  "harness": "langchain-react",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "nemo_fabric_adapters.langchain_react.adapter",
+    "callable": "run",
+    "script": "src/nemo_fabric_adapters/langchain_react/adapter.py"
+  },
+  "requirements": {
+    "env": []
+  },
+  "config": {
+    "accepts": ["models", "tools", "telemetry"]
+  },
+  "telemetry": {
+    "supports": ["relay", "atif", "otel", "openinference"]
+  }
+}

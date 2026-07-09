@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+
+metadata:
+  name: calculator-native-tools
+
+harness:
+  adapter_id: nvidia.fabric.langchain.react
+  settings:
+    workflow:
+      tool_names: [calculator, current_datetime]
+      use_native_tool_calling: true
+    tools:
+      calculator:
+        kind: function_group
+        include: [add, subtract, multiply, divide, compare]
+      current_datetime:
+        kind: current_datetime

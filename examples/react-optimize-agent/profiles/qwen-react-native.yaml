@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+
+metadata:
+  name: qwen-react-native
+  description: react-optimize parity (wiki + clock) with Qwen native tool calling.
+
+models:
+  default:
+    max_tokens: 512
+
+harness:
+  settings:
+    workflow:
+      tool_names: [wiki, clock]
+      use_native_tool_calling: true
+      max_tool_calls: 8
+    tools:
+      wiki:
+        kind: wiki_search
+        max_results: 2
+      clock:
+        kind: current_datetime

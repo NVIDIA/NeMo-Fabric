@@ -19,6 +19,7 @@ build/
 
 examples/*/artifacts/
 tests/fixtures/*/artifacts/
+artifacts/
 integrations/harbor/demo/runs/
 integrations/harbor/demo/task/environment/vendor/
 
