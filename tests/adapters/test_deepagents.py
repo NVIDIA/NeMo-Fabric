@@ -43,11 +43,13 @@ class _FakeAgent:
         self.kwargs = kwargs
         self._recorder = recorder
 
-    async def ainvoke(self, inputs: dict[str, Any], config: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def astream(
+        self, inputs: dict[str, Any], config: dict[str, Any] | None = None, *, stream_mode: Any = None
+    ):
         self._recorder["config"] = config
         self._recorder["checkpointer"] = self.kwargs.get("checkpointer")
         user = inputs["messages"][-1]["content"]
-        return {
+        final = {
             "messages": [
                 {"role": "user", "content": user},
                 {
@@ -57,6 +59,8 @@ class _FakeAgent:
                 },
             ]
         }
+        yield ("updates", {"agent": {"messages": []}})
+        yield ("values", final)
 
 
 @pytest.fixture(name="fake_sdks", autouse=True)
@@ -153,6 +157,9 @@ async def test_oneshot_normalizes_response_usage_and_thread(
     assert output["response"] == "reply to hello"
     assert output["message_count"] == 2
     assert output["usage"] == {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12}
+    # streamed events are buffered
+    assert output["events"] == [{"nodes": ["agent"]}]
+    assert output["event_count"] == 1
     assert output["runtime_id"] == "run-1"
     # a LangGraph thread id is assigned and reported; a fresh runtime is not a resume
     assert output["thread_id"]
@@ -330,22 +337,77 @@ async def test_mcp_servers_become_tools_filtered_by_allowed(
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
 
     payload = _payload(tmp_path)
+    # McpServerPlan carries the URL/command in ``url``; the allow-list lives in config.tools.
     payload["capability_plan"] = {
         "native": {
-            "mcp_servers": {"fs": {"transport": "streamable-http", "url": "http://localhost:9/mcp"}},
-            "tools": ["read_file"],  # allow-list filters out write_file
+            "mcp_servers": {
+                "fs": {"transport": "streamable-http", "url": "http://localhost:9/mcp"},
+                "local": {"transport": "stdio", "url": "my-server --flag"},
+            }
         }
     }
+    payload["effective_config"]["config"]["tools"] = ["read_file"]  # filters out write_file
 
     output = await adapter.run_deepagents(payload)
 
     assert output["failed"] is False
-    # Fabric MCP transport is normalized for langchain-mcp-adapters
+    # Fabric MCP transport is normalized; stdio command/args come from ``url``
     assert _FakeMCPClient.connections == {
-        "fs": {"transport": "streamable_http", "url": "http://localhost:9/mcp"}
+        "fs": {"transport": "streamable_http", "url": "http://localhost:9/mcp"},
+        "local": {"transport": "stdio", "command": "my-server", "args": ["--flag"]},
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file"]
+
+
+async def test_openai_provider_keeps_openai_endpoint(tmp_path: Path, monkeypatch, fake_sdks) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    payload = _payload(tmp_path)
+    payload["effective_config"]["config"]["models"]["default"] = {
+        "provider": "openai",
+        "model": "gpt-4o",
+        "api_key_env": "OPENAI_API_KEY",
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    # openai must NOT be redirected to NVIDIA's endpoint
+    assert output["base_url"] is None
+    assert "base_url" not in fake_sdks["create_kwargs"]["model"].kwargs
+
+
+async def test_skill_paths_map_to_skills(tmp_path: Path, fake_sdks: dict[str, Any]) -> None:
+    payload = _payload(tmp_path)
+    payload["capability_plan"] = {"native": {"skill_paths": ["/skills/a", "/skills/b"]}}
+
+    await adapter.run_deepagents(payload)
+
+    assert fake_sdks["create_kwargs"]["skills"] == ["/skills/a", "/skills/b"]
+
+
+async def test_cost_is_extracted_from_response_metadata(tmp_path: Path, monkeypatch) -> None:
+    import deepagents
+
+    class _CostAgent:
+        async def astream(self, inputs, config=None, *, stream_mode=None):
+            yield (
+                "values",
+                {
+                    "messages": [
+                        {
+                            "role": "ai",
+                            "content": "done",
+                            "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                            "response_metadata": {"cost": 0.0025},
+                        }
+                    ]
+                },
+            )
+
+    monkeypatch.setattr(deepagents, "create_deep_agent", lambda **_kw: _CostAgent())
+    output = await adapter.run_deepagents(_payload(tmp_path))
+
+    assert output["usage"]["cost"] == 0.0025
 
 
 async def test_runtime_resume_reuses_thread_id(tmp_path: Path, fake_sdks: dict[str, Any]) -> None:

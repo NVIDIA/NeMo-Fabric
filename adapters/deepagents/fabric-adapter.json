@@ -7,9 +7,7 @@
     "module": "nemo_fabric_adapters.deepagents.adapter",
     "callable": "run"
   },
-  "requirements": {
-    "env": ["NVIDIA_API_KEY"]
-  },
+  "requirements": {},
   "config": {
     "accepts": ["models", "tools", "mcp", "skills", "telemetry"]
   },

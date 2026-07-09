@@ -16,6 +16,7 @@ import hashlib
 import inspect
 import json
 import os
+import shlex
 import uuid
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -26,6 +27,8 @@ HARNESS = "deepagents"
 DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 # Providers we serve through the OpenAI-compatible ``ChatOpenAI`` client.
 OPENAI_COMPATIBLE_PROVIDERS = {"", "nvidia", "openai", "openai-compatible"}
+# Providers whose default endpoint is NVIDIA's OpenAI-compatible gateway.
+NVIDIA_DEFAULT_PROVIDERS = {"", "nvidia"}
 
 
 def main() -> None:
@@ -86,7 +89,9 @@ def resolve_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> 
     if base_url:
         return base_url
     provider = (settings.get("provider") or model_config.get("provider") or "").lower()
-    if provider in OPENAI_COMPATIBLE_PROVIDERS:
+    # Only NVIDIA (or an unspecified provider) defaults to NVIDIA's endpoint; a
+    # plain ``openai`` provider must fall through to ChatOpenAI's own default.
+    if provider in NVIDIA_DEFAULT_PROVIDERS:
         return DEFAULT_NVIDIA_BASE_URL
     return None
 
@@ -154,9 +159,9 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
 async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
     """Resolve Fabric MCP servers into Deep Agents tools, filtered by allowed tools.
 
-    ``config.tools`` (surfaced as ``capability_plan.native.tools``) is treated as an
-    allow-list of tool names: when present, only tools whose name is listed are
-    exposed to the agent.
+    Fabric's ``config.tools`` is treated as an allow-list of tool names: when
+    present, only adapter-provided (MCP) tools whose name is listed are exposed.
+    (Deep Agents' built-in filesystem/shell tools are not name-restricted here.)
     """
 
     tools = await _mcp_tools(payload)
@@ -167,14 +172,21 @@ async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
 
 
 def _allowed_tool_names(payload: dict[str, Any]) -> set[str] | None:
-    native = common_utils.capability_plan(payload).get("native") or {}
-    tools = native.get("tools")
-    if tools is None:
-        tools = common_utils.settings_payload(payload).get("tools")
+    # The routed plan only marks ``native.tools_configured``; the value lives in
+    # ``effective_config.config.tools``.
+    tools = common_utils.fabric_config(payload).get("tools")
     if not isinstance(tools, (list, str)):
         return None
     names = set(common_utils.normalize_list(tools))
     return names or None
+
+
+def resolve_skills(payload: dict[str, Any]) -> list[str] | None:
+    """Map routed ``native.skill_paths`` onto the Deep Agents ``skills`` sources."""
+
+    native = common_utils.capability_plan(payload).get("native") or {}
+    skills = [str(path) for path in (native.get("skill_paths") or [])]
+    return skills or None
 
 
 async def _mcp_tools(payload: dict[str, Any]) -> list[Any]:
@@ -197,22 +209,18 @@ def _mcp_connection(spec: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(spec, dict):
         return None
     transport = str(spec.get("transport") or "").strip().lower().replace("-", "_")
-    url = spec.get("url")
-    command = spec.get("command")
-    if transport in ("stdio", "command", "process") or (command and not url):
-        resolved = os.path.expandvars(str(command or "")).strip()
-        if not resolved:
-            return None
-        connection: dict[str, Any] = {"transport": "stdio", "command": resolved}
-        args = spec.get("args")
-        if args:
-            connection["args"] = [str(arg) for arg in args]
-        return connection
-    if not url:
+    # McpServerPlan carries the URL or command in ``url``; there is no ``command``.
+    target = os.path.expandvars(str(spec.get("url") or "")).strip()
+    if not target:
         return None
+    if transport in ("stdio", "command", "process"):
+        parts = shlex.split(target)
+        if not parts:
+            return None
+        return {"transport": "stdio", "command": parts[0], "args": parts[1:]}
     if transport in ("", "http", "streamable_http", "streamablehttp"):
         transport = "streamable_http"
-    return {"transport": transport, "url": os.path.expandvars(str(url))}
+    return {"transport": transport, "url": target}
 
 
 # --- runtime / resume state ------------------------------------------------
@@ -316,14 +324,20 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
         "tools": await resolve_tools(payload),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": settings.get("system_prompt"),
+        "skills": resolve_skills(payload),
         "backend": resolve_backend(payload),
     }
     if checkpointer is not None:
         agent_kwargs["checkpointer"] = checkpointer
+    # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through.
+    extra = settings.get("deepagents")
+    if isinstance(extra, dict):
+        agent_kwargs.update(extra)
     agent_kwargs = {key: value for key, value in agent_kwargs.items() if value is not None}
 
     observability = resolve_observability(payload, telemetry_provider, relay_enabled)
     result_state: Any = None
+    events: list[dict[str, Any]] = []
     error: str | None = None
     try:
         if observability is not None:
@@ -333,9 +347,9 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
 
             wrapped = add_nemo_relay_integration(agent_kwargs)
             async with plugin.plugin(api_config):
-                result_state = await invoke_agent(wrapped, user_message, thread_id)
+                result_state, events = await invoke_agent(wrapped, user_message, thread_id)
         else:
-            result_state = await invoke_agent(agent_kwargs, user_message, thread_id)
+            result_state, events = await invoke_agent(agent_kwargs, user_message, thread_id)
     except Exception as exc:  # normalized adapter failure
         error = f"{type(exc).__name__}: {exc}"
     finally:
@@ -363,22 +377,37 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
         thread_id=thread_id,
         resumed=bool(prior_thread_id),
         result_state=result_state,
+        events=events,
         error=error,
         telemetry_runtime=telemetry_runtime,
         relay_artifacts=relay_artifacts,
     )
 
 
-async def invoke_agent(agent_kwargs: dict[str, Any], user_message: str, thread_id: str | None) -> Any:
+async def invoke_agent(
+    agent_kwargs: dict[str, Any], user_message: str, thread_id: str | None
+) -> tuple[Any, list[dict[str, Any]]]:
+    """Run the agent, buffering per-step events and returning the final state."""
+
     from deepagents import create_deep_agent
 
     agent = create_deep_agent(**_supported_kwargs(create_deep_agent, agent_kwargs))
     inputs = {"messages": [{"role": "user", "content": user_message}]}
     config = {"configurable": {"thread_id": thread_id}} if thread_id else None
 
-    if hasattr(agent, "ainvoke"):
-        return await agent.ainvoke(inputs, config) if config else await agent.ainvoke(inputs)
-    return agent.invoke(inputs, config) if config else agent.invoke(inputs)
+    events: list[dict[str, Any]] = []
+    final: Any = None
+    stream = (
+        agent.astream(inputs, config, stream_mode=["updates", "values"])
+        if config
+        else agent.astream(inputs, stream_mode=["updates", "values"])
+    )
+    async for mode, chunk in stream:
+        if mode == "updates" and isinstance(chunk, dict):
+            events.append({"nodes": [str(node) for node in chunk]})
+        elif mode == "values":
+            final = chunk
+    return final, events
 
 
 class Observability(NamedTuple):
@@ -423,6 +452,7 @@ def normalize_output(
     thread_id: str | None,
     resumed: bool,
     result_state: Any,
+    events: list[dict[str, Any]],
     error: str | None,
     telemetry_runtime: dict[str, Any] | None,
     relay_artifacts: list[dict[str, str]] | None,
@@ -440,6 +470,8 @@ def normalize_output(
         "response": response,
         "messages": messages,
         "message_count": len(messages),
+        "events": events,
+        "event_count": len(events),
         "usage": usage,
         "runtime_id": runtime_id,
         "thread_id": thread_id,
@@ -475,6 +507,9 @@ def _message_to_dict(message: Any) -> dict[str, Any]:
     usage = getattr(message, "usage_metadata", None)
     if isinstance(usage, dict):
         entry["usage"] = usage
+    metadata = getattr(message, "response_metadata", None)
+    if isinstance(metadata, dict) and metadata:
+        entry["response_metadata"] = metadata
     return entry
 
 
@@ -486,12 +521,12 @@ def _final_response(messages: list[dict[str, Any]]) -> Any:
     return messages[-1].get("content") if messages else None
 
 
-def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, int] | None:
-    totals: dict[str, int] = {}
+def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    totals: dict[str, Any] = {}
+    cost = 0.0
+    has_cost = False
     for message in messages:
-        usage = message.get("usage")
-        if not isinstance(usage, dict):
-            continue
+        usage = message.get("usage") if isinstance(message.get("usage"), dict) else {}
         for source, target in (
             ("input_tokens", "prompt_tokens"),
             ("output_tokens", "completion_tokens"),
@@ -499,8 +534,25 @@ def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, int] | None:
         ):
             value = usage.get(source)
             if isinstance(value, int):
-                totals[target] = totals.get(target, 0) + value
+                totals[target] = int(totals.get(target, 0)) + value
+        # Cost is not part of LangChain's UsageMetadata; surface it only when a
+        # model/provider reports it on the usage or response metadata.
+        candidate = usage.get("total_cost") or usage.get("cost") or _metadata_cost(message)
+        if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+            cost += float(candidate)
+            has_cost = True
+    if has_cost:
+        totals["cost"] = cost
     return totals or None
+
+
+def _metadata_cost(message: dict[str, Any]) -> float | None:
+    metadata = message.get("response_metadata")
+    if isinstance(metadata, dict):
+        value = metadata.get("cost")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return None
 
 
 def _supported_kwargs(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, Any]:

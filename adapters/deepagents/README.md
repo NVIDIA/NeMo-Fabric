@@ -18,12 +18,18 @@ python3 -m pip install -e ".[deepagents]"
 ## Model and Authentication
 
 The adapter builds a LangChain chat model from Fabric's `models.default` config.
-By default it targets NVIDIA-hosted, OpenAI-compatible endpoints
-(`https://integrate.api.nvidia.com/v1`) via `ChatOpenAI`; set
-`models.default.api_key_env` (default `NVIDIA_API_KEY`) to the environment
+For `nvidia` (or an unspecified provider) it targets NVIDIA-hosted,
+OpenAI-compatible endpoints (`https://integrate.api.nvidia.com/v1`) via
+`ChatOpenAI`; a plain `openai` provider uses ChatOpenAI's own default endpoint.
+Set `models.default.api_key_env` (default `NVIDIA_API_KEY`) to the environment
 variable holding the key. Providers other than `nvidia`/`openai` are constructed
 through `langchain.chat_models.init_chat_model` so additional backends can be
 added without changing the adapter.
+
+Because `models.default.api_key_env` is provider-specific, the adapter declares no
+static env requirement; a runtime **preflight** verifies that the `deepagents`
+package is importable and the configured credential is set, and returns a
+normalized failure otherwise. `fabric doctor` validates adapter resolution.
 
 Fabric maps the following into the harness:
 
@@ -34,9 +40,16 @@ Fabric maps the following into the harness:
 - `harness.settings.system_prompt` becomes the Deep Agents `system_prompt`.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=...)`).
+- Routed `skills` (`native.skill_paths`) become the Deep Agents `skills` sources.
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`.
-- `tools` (Fabric's allowed-tools list) filters the exposed tools by name.
+- `tools` (Fabric's `config.tools` allow-list) filters the exposed adapter tools by name.
+- `harness.settings.deepagents` is an escape hatch passed through to
+  `create_deep_agent` (e.g. `subagents`, `interrupt_on`).
+
+The normalized result includes the final response, buffered messages and
+per-step events, LangGraph thread id, token usage (and cost when the provider
+reports it), and errors.
 
 ## Runtime Modes
 

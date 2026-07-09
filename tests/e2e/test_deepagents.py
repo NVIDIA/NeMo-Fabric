@@ -70,5 +70,6 @@ async def test_deepagents_doctor() -> None:
     client = Fabric()
     report = await client.doctor(config, base_dir=BASE_DIR)
 
+    # The adapter declares no static env requirement (auth is provider-specific and
+    # validated by the runtime preflight), so doctor resolves without failures.
     assert report.status == "pass", report
-    assert any(check.name == "requirement.env" for check in report.checks), report
