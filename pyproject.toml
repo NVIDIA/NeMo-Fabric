@@ -26,6 +26,10 @@ adapters-codex-cli = [
   "nemo-fabric-adapters-codex-cli == 0.1.0",
 ]
 
+adapters-claude = [
+  "nemo-fabric-adapters-claude == 0.1.0",
+]
+
 adapters-hermes-cli = [
   "nemo-fabric-adapters-hermes-cli == 0.1.0",
 ]
@@ -36,6 +40,10 @@ adapters-hermes-sdk = [
 
 codex = [
   "nemo-fabric-adapters-codex-cli == 0.1.0",
+]
+
+claude = [
+  "nemo-fabric-adapters-claude == 0.1.0",
 ]
 
 harbor = [
@@ -61,6 +69,7 @@ runtime = [
 [dependency-groups]
 adapters = [
   "nemo-fabric-adapters-common",
+  "nemo-fabric-adapters-claude",
   "nemo-fabric-adapters-codex-cli",
   "nemo-fabric-adapters-hermes-cli",
   "nemo-fabric-adapters-hermes-sdk",
@@ -91,6 +100,7 @@ default-groups = ["adapters", "dev", "test"]
 [tool.uv.sources]
 nemo-fabric-runtime = { path = "python", editable = true }
 nemo-fabric-adapters-common = { path = "adapters/common", editable = true }
+nemo-fabric-adapters-claude = { path = "adapters/claude", editable = true }
 nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli", editable = true }
 nemo-fabric-adapters-hermes-cli = { path = "adapters/hermes-cli", editable = true }
 nemo-fabric-adapters-hermes-sdk = { path = "adapters/hermes-sdk", editable = true }
