@@ -1,0 +1,82 @@
+---
+title: "Install NeMo Fabric"
+description: "Install guide."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+# Install NeMo Fabric
+
+## Prerequisites:
+- Rust and Cargo
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- `just` 1.50.0+
+
+## Source Installation Method
+
+1. Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+```
+
+2. Build the Rust core and Python libraries.
+```bash
+just build-all
+```
+
+The above command will install only those dependencies that are strictly necessary for the build. 
+Alternately If you want to install all optional dependencies, you can run:
+
+```bash
+uv sync --all-groups --all-extras
+```
+
+Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
+
+```bash
+just build-all no_uv=true
+```
+
+## Package Installation Method
+
+Note: Fabric is currently not available on PyPI, as such for the time being wheels must first be built from source.
+
+Build the wheels from source:
+
+```bash
+just wheels
+```
+
+This will create wheel files in the `dist` directory. 
+
+### Installing Fabric Runtime
+
+This installs Fabric itself.
+
+```bash
+uv pip install --find-links <path_to_dist_directory> nemo-fabric[runtime]
+```
+
+### Installing the Fabric Adapters
+This will install the Fabric adapter and it's dependencies, adapters intentionally have minimal dependencies,
+and are intended to be installed in the same environment as the agent harness (which may or may not be the same environment as the Fabric runtime).
+
+At time of writing, the following adapter packages are available:
+* adapters-codex-cli
+* adapters-hermes-cli
+* adapters-hermes-sdk
+
+```bash
+uv pip install --find-links <path_to_dist_directory> nemo-fabric[<adapter_name>]
+```
+
+For example, to install the Hermes SDK adapter:
+
+```bash
+uv pip install --find-links <path_to_dist_directory> nemo-fabric[adapters-hermes-sdk]
+```
+
+

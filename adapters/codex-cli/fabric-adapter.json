@@ -1,4 +1,5 @@
 {
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "nvidia.fabric.codex.cli",
   "harness": "codex",
   "adapter_kind": "python",

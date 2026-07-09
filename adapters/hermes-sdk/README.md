@@ -24,10 +24,15 @@ configuration for:
 - Fabric MCP servers as Hermes MCP server config;
 - optional NeMo Relay telemetry plugin configuration.
 
+`hermes_home` configures a base directory. The adapter creates a child under
+`runtimes/<runtime_id>` so invocations in one Fabric runtime share Hermes state
+without sharing config or the session database with another runtime.
+
 ## Maintaining The Adapter
 
 Keep `fabric-adapter.json` aligned with the Python implementation:
 
+- `contract_version` must match the adapter contract supported by Fabric core.
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
 - `adapter_kind` is `python` because Fabric can invoke it through Python.
 - `runner.module` names the module that Fabric invokes with `python -m`.

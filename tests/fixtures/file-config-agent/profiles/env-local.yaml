@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+name: env_local
+description: Test local environment file-profile resolution.
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/local
+
+telemetry:
+  enabled: false

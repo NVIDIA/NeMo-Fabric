@@ -197,42 +197,41 @@ def relay_model_name(payload: dict[str, Any]) -> str:
     return settings.get("model_name") or model_config.get("model") or "unknown"
 
 
-def ensure_hermes_session(
-    fabric_session_id: str,
+def ensure_hermes_runtime_session(
+    fabric_runtime_id: str,
     model_name: str,
     model_config: dict[str, Any],
     hermes_home: Path,
 ) -> dict[str, Any]:
     """
-    Ensure that Hermes has a session mapped from Fabric's session key.
+    Ensure that Hermes has a native session mapped from a Fabric runtime.
 
-    Fabric chooses this key from runtime_context.session_id when the caller
-    supplies one, otherwise from runtime_context.runtime_id. The adapter maps
-    that Fabric-owned key onto Hermes' session id/title.
+    The adapter maps ``runtime_context.runtime_id`` onto Hermes' native session
+    id/title. Fabric neither exposes nor interprets the Hermes session id.
 
     If the session does not exist, it will be created.
 
     When creating a new session, Hermes allows us to provide our own session_id (as long as it's unique), which for
-    convenience will be set to the Fabric session key.
+    convenience will be set to the Fabric runtime id.
 
     However when Hermes compresses a session, it will return a new session_id, so we can't depend on the
-    Fabric session key being the same as the session_id after a session has been compressed.
+    Fabric runtime id being the same as the session_id after a session has been compressed.
 
     However looking up a session by title will always return the most recent session, so after creating the session
-    we will set the title to the Fabric session key, and then we can always look up the session by title.
+    we set the title to the Fabric runtime id and can always look up the session by title.
     """
     from hermes_state import SessionDB
 
     session_db = SessionDB(db_path=hermes_home / "state.db")
-    session = session_db.get_session_by_title(fabric_session_id)
+    session = session_db.get_session_by_title(fabric_runtime_id)
     if session is None:
         session_db.ensure_session(
-            fabric_session_id,
+            fabric_runtime_id,
             source="fabric",
             model=model_name,
             model_config=model_config,
         )
-        session_db.set_session_title(session_id=fabric_session_id, title=fabric_session_id)
-        session = session_db.get_session_by_title(fabric_session_id)
+        session_db.set_session_title(session_id=fabric_runtime_id, title=fabric_runtime_id)
+        session = session_db.get_session_by_title(fabric_runtime_id)
 
     return session

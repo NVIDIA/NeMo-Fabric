@@ -15,6 +15,8 @@ use serde_json::Value;
 use crate::error::{FabricError, Result};
 
 const AGENT_YAML: &str = "agent.yaml";
+/// Adapter descriptor contract version supported by this core.
+pub const ADAPTER_CONTRACT_VERSION: &str = "fabric.adapter/v1alpha1";
 
 /// A loaded Fabric document with resolved source path and agent root.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -43,7 +45,7 @@ pub struct FabricConfig {
     /// Model aliases.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, ModelConfig>,
-    /// Runtime mode and input/output contract.
+    /// Runtime input/output contract.
     pub runtime: RuntimeConfig,
     /// Environment where the harness or its tools execute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +119,9 @@ pub struct HarnessConfig {
 /// Language-neutral adapter descriptor for a harness integration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterDescriptor {
+    /// Adapter descriptor contract version.
+    #[schemars(length(min = 1))]
+    pub contract_version: String,
     /// Unique id for this adapter implementation.
     #[schemars(length(min = 1))]
     pub adapter_id: String,
@@ -137,6 +142,9 @@ pub struct AdapterDescriptor {
     /// Telemetry support declared by this adapter.
     #[serde(default)]
     pub telemetry: AdapterTelemetrySupport,
+    /// Runtime lifecycle operations supported by this adapter.
+    #[serde(default)]
+    pub capabilities: RuntimeCapabilities,
     /// Additive adapter descriptor fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
@@ -483,14 +491,9 @@ pub struct ModelConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Runtime mode and input/output contract.
+/// Runtime input/output contract.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeConfig {
-    /// Runtime mode.
-    pub mode: RuntimeMode,
-    /// Transport used to operate the harness.
-    #[serde(default = "default_runtime_transport")]
-    pub transport: Transport,
     /// Input schema label.
     #[serde(default = "default_input_schema")]
     pub input_schema: String,
@@ -505,42 +508,12 @@ pub struct RuntimeConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-fn default_runtime_transport() -> Transport {
-    Transport::Library
-}
-
 fn default_input_schema() -> String {
     "text".to_string()
 }
 
 fn default_output_schema() -> String {
     "text".to_string()
-}
-
-/// Runtime lifecycle mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeMode {
-    /// Request is the lifecycle boundary.
-    Oneshot,
-    /// Long-running process or service is the lifecycle boundary.
-    Service,
-    /// Session is the lifecycle boundary.
-    Session,
-}
-
-/// Runtime transport.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Transport {
-    /// In-process library/SDK call.
-    Library,
-    /// CLI process.
-    Cli,
-    /// HTTP service.
-    Http,
-    /// Harness-native plugin surface.
-    NativePlugin,
 }
 
 /// Execution environment configuration.
@@ -560,7 +533,7 @@ pub struct EnvironmentConfig {
     /// Artifact path inside or outside the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<PathBuf>,
-    /// Provider connection metadata, such as server URL, session id, or namespace.
+    /// Provider connection metadata, such as server URL, credential reference, or namespace.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub connection: serde_json::Map<String, Value>,
     /// Consumer-provided environment metadata.
@@ -1068,6 +1041,16 @@ fn validate_adapter_descriptor(
 }
 
 fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path) -> Result<()> {
+    if descriptor.contract_version.trim().is_empty() {
+        return invalid_adapter_descriptor(path, "contract_version must not be empty");
+    }
+    if descriptor.contract_version != ADAPTER_CONTRACT_VERSION {
+        return Err(FabricError::AdapterDescriptorUnsupported {
+            adapter_id: descriptor.adapter_id.clone(),
+            field: "contract_version",
+            value: descriptor.contract_version.clone(),
+        });
+    }
     if descriptor.adapter_id.trim().is_empty() {
         return invalid_adapter_descriptor(path, "adapter_id must not be empty");
     }
@@ -1092,7 +1075,7 @@ fn validate_control_location(
 }
 
 fn resolve_runtime_capabilities(
-    config: &FabricConfig,
+    _config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
 ) -> RuntimeCapabilities {
     let implemented_runtime = descriptor.is_some_and(|descriptor| {
@@ -1100,18 +1083,16 @@ fn resolve_runtime_capabilities(
             descriptor.adapter_kind,
             AdapterKind::Process | AdapterKind::Python
         )
-    }) && matches!(
-        config.runtime.transport,
-        Transport::Library | Transport::Cli
-    );
+    });
+    let descriptor_capabilities = descriptor
+        .map(|descriptor| descriptor.capabilities.clone())
+        .unwrap_or_default();
     RuntimeCapabilities {
-        session: implemented_runtime && config.runtime.mode == RuntimeMode::Session,
-        service: false,
-        streaming: false,
-        updates: false,
-        cancellation: false,
-        concurrent_invocations: false,
-        metadata: BTreeMap::new(),
+        service: implemented_runtime && descriptor_capabilities.service,
+        streaming: implemented_runtime && descriptor_capabilities.streaming,
+        updates: implemented_runtime && descriptor_capabilities.updates,
+        cancellation: implemented_runtime && descriptor_capabilities.cancellation,
+        metadata: descriptor_capabilities.metadata,
     }
 }
 
@@ -1373,18 +1354,18 @@ pub struct RunPlan {
 /// Lifecycle behavior implemented by a resolved runtime path.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeCapabilities {
-    /// Whether the selected runtime supports session lifecycle operations.
-    pub session: bool,
     /// Whether the selected runtime supports service lifecycle operations.
+    #[serde(default)]
     pub service: bool,
     /// Whether invocations can emit progressive output.
+    #[serde(default)]
     pub streaming: bool,
     /// Whether a running runtime can accept config updates.
+    #[serde(default)]
     pub updates: bool,
     /// Whether an in-flight invocation can be cancelled.
+    #[serde(default)]
     pub cancellation: bool,
-    /// Whether the runtime accepts concurrent invocations.
-    pub concurrent_invocations: bool,
     /// Additional adapter-specific capability metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub metadata: BTreeMap<String, Value>,
@@ -1529,8 +1510,8 @@ pub struct TelemetryPlan {
 mod tests {
     use super::*;
 
-    fn example_agent_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/code-review-agent")
+    fn file_config_agent_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/file-config-agent")
     }
 
     fn example_adapter_descriptor_path() -> PathBuf {
@@ -1549,8 +1530,6 @@ harness:
   settings:
     workspace: ./workspace
 runtime:
-  mode: oneshot
-  transport: library
   input_schema: chat
   output_schema: message
 tools:
@@ -1567,12 +1546,12 @@ future_top_level:
         let profile: ProfileConfig = serde_yaml::from_str(
             r#"
 schema_version: fabric.profile/v1alpha1
-name: session
+name: overlay
 harness:
   settings:
     timeout_seconds: 30
 runtime:
-  mode: session
+  input_schema: prompt
 tools:
   enabled: [profile]
   cleared: null
@@ -1592,9 +1571,8 @@ future_top_level:
         .expect("effective config");
         let value = serde_json::to_value(&effective.config).expect("config json");
 
-        assert_eq!(effective.profiles, ["session"]);
-        assert_eq!(value["runtime"]["mode"], "session");
-        assert_eq!(value["runtime"]["transport"], "library");
+        assert_eq!(effective.profiles, ["overlay"]);
+        assert_eq!(value["runtime"]["input_schema"], "prompt");
         assert_eq!(value["harness"]["settings"]["workspace"], "./workspace");
         assert_eq!(value["harness"]["settings"]["timeout_seconds"], 30);
         assert_eq!(value["tools"]["enabled"], serde_json::json!(["profile"]));
@@ -1615,12 +1593,10 @@ metadata:
 harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
-  mode: oneshot
 "#,
         )
         .expect("minimal config");
 
-        assert_eq!(config.runtime.transport, Transport::Library);
         assert_eq!(config.runtime.input_schema, "text");
         assert_eq!(config.runtime.output_schema, "text");
     }
@@ -1635,7 +1611,6 @@ metadata:
 harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
-  mode: oneshot
 telemetry:
   enabled: true
   config:
@@ -1666,7 +1641,6 @@ metadata:
 harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
-  mode: oneshot
 telemetry:
   enabled: true
   provider: native
@@ -1699,34 +1673,11 @@ provider: unsupported
     }
 
     #[test]
-    fn unsupported_transports_do_not_claim_session_capability() {
-        let mut config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.hermes.sdk
-runtime:
-  mode: session
-"#,
-        )
-        .expect("session config");
-        let descriptor =
-            load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
-
-        assert!(resolve_runtime_capabilities(&config, Some(&descriptor)).session);
-        for transport in [Transport::Http, Transport::NativePlugin] {
-            config.runtime.transport = transport;
-            assert!(!resolve_runtime_capabilities(&config, Some(&descriptor)).session);
-        }
-    }
-
-    #[test]
     fn loads_adapter_descriptor() {
         let descriptor =
             load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
 
+        assert_eq!(descriptor.contract_version, ADAPTER_CONTRACT_VERSION);
         assert_eq!(descriptor.adapter_id, "nvidia.fabric.hermes.sdk");
         assert_eq!(descriptor.harness, "hermes");
         assert_eq!(descriptor.adapter_kind, AdapterKind::Python);
@@ -1750,7 +1701,7 @@ runtime:
 
     #[test]
     fn resolves_base_config_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), None).expect("run plan");
+        let plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
 
         assert_eq!(plan.agent_name, "code-review-agent");
         assert!(plan.profiles.is_empty());
@@ -1759,12 +1710,10 @@ runtime:
         assert_eq!(
             plan_json["capabilities"],
             serde_json::json!({
-                "session": true,
                 "service": false,
                 "streaming": false,
                 "updates": false,
-                "cancellation": false,
-                "concurrent_invocations": false
+                "cancellation": false
             })
         );
         assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");
@@ -1816,7 +1765,7 @@ runtime:
 
     #[test]
     fn resolves_hermes_sdk_adapter_descriptor() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("hermes_sdk")).expect("run plan");
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes_sdk")).expect("run plan");
         let adapter = plan
             .adapter_descriptor
             .as_ref()
@@ -1846,8 +1795,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
-  transport: cli
   input_schema: text
   output_schema: message
 environment:
@@ -1858,6 +1805,7 @@ environment:
         std::fs::write(
             root.join("adapters/reviewer-process/fabric-adapter.json"),
             r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "acme.fabric.reviewer.process",
   "harness": "reviewer",
   "adapter_kind": "process"
@@ -1884,7 +1832,7 @@ environment:
     #[test]
     fn resolves_env_profile_from_agent_directory() {
         let plan =
-            resolve_run_plan(example_agent_dir(), Some("env_opensandbox")).expect("run plan");
+            resolve_run_plan(file_config_agent_dir(), Some("env_opensandbox")).expect("run plan");
 
         assert_eq!(plan.profiles, vec!["env_opensandbox"]);
         assert!(plan.config_path.ends_with("agent.yaml"));
@@ -1899,7 +1847,7 @@ environment:
 
     #[test]
     fn resolves_mcp_profile_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("mcp_github")).expect("run plan");
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("mcp_github")).expect("run plan");
 
         assert_eq!(plan.profiles, vec!["mcp_github"]);
         let plan_json = serde_json::to_value(&plan).expect("plan json");
@@ -1927,7 +1875,7 @@ environment:
     fn resolves_ordered_profiles_from_agent_directory() {
         let profiles = vec!["env_local".to_string(), "mcp_github".to_string()];
         let plan =
-            resolve_run_plan_with_profiles(example_agent_dir(), &profiles).expect("run plan");
+            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
 
         assert_eq!(plan.profiles, profiles);
         assert_eq!(
@@ -1954,7 +1902,7 @@ environment:
     #[test]
     fn resolves_in_memory_config_with_typed_profiles() {
         let FabricDocument::FabricConfig { config, root, .. } =
-            load_fabric_document(example_agent_dir()).expect("agent config");
+            load_fabric_document(file_config_agent_dir()).expect("agent config");
         let profile = read_yaml::<ProfileConfig>(&root.join("profiles/mcp-github.yaml"))
             .expect("profile config");
 
@@ -1999,8 +1947,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
-  transport: cli
   input_schema: text
   output_schema: text
 tools:
@@ -2020,6 +1966,7 @@ mcp:
         std::fs::write(
             root.join("adapters/minimal/fabric-adapter.json"),
             r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "acme.fabric.minimal",
   "harness": "minimal",
   "adapter_kind": "process"
@@ -2056,7 +2003,7 @@ mcp:
     fn later_profiles_override_earlier_profiles() {
         let profiles = vec!["env_opensandbox".to_string(), "env_local".to_string()];
         let plan =
-            resolve_run_plan_with_profiles(example_agent_dir(), &profiles).expect("run plan");
+            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
 
         assert_eq!(plan.profiles, profiles);
         assert_eq!(
@@ -2081,7 +2028,7 @@ mcp:
 
         let profiles = vec!["env_local".to_string(), "env_opensandbox".to_string()];
         let plan =
-            resolve_run_plan_with_profiles(example_agent_dir(), &profiles).expect("run plan");
+            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
 
         assert_eq!(
             plan.environment_plan
@@ -2099,7 +2046,7 @@ mcp:
 
     #[test]
     fn resolves_hermes_sdk_profile_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("hermes_sdk")).expect("run plan");
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes_sdk")).expect("run plan");
 
         assert_eq!(plan.profiles, vec!["hermes_sdk"]);
         assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");
@@ -2141,7 +2088,7 @@ mcp:
 
     #[test]
     fn resolves_direct_profile_path_from_agent_directory() {
-        let plan = resolve_run_plan(example_agent_dir(), Some("./profiles/hermes-sdk.yaml"))
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("./profiles/hermes-sdk.yaml"))
             .expect("run plan");
 
         assert_eq!(plan.profiles, vec!["./profiles/hermes-sdk.yaml"]);
@@ -2156,7 +2103,7 @@ mcp:
 
     #[test]
     fn errors_for_unknown_manifest_profile() {
-        let error = resolve_run_plan(example_agent_dir(), Some("missing")).expect_err("error");
+        let error = resolve_run_plan(file_config_agent_dir(), Some("missing")).expect_err("error");
 
         assert!(matches!(error, FabricError::UnknownProfile { .. }));
     }
@@ -2181,8 +2128,6 @@ models:
     provider: test
     model: test-model
 runtime:
-  mode: oneshot
-  transport: cli
   input_schema: text
   output_schema: message
 environment:
@@ -2193,6 +2138,7 @@ environment:
         std::fs::write(
             root.join("adapters/invalid-process/fabric-adapter.json"),
             r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "   ",
   "harness": "invalid",
   "adapter_kind": "process"
@@ -2222,6 +2168,7 @@ environment:
         std::fs::write(
             &descriptor_path,
             r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
   "adapter_id": "",
   "harness": "invalid",
   "adapter_kind": "process"
@@ -2234,6 +2181,39 @@ environment:
             error,
             FabricError::InvalidAdapterDescriptor { message, .. }
                 if message.contains("adapter_id")
+        ));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_unsupported_adapter_contract_version() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-invalid-adapter-contract-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create temp root");
+        let descriptor_path = root.join("fabric-adapter.json");
+        std::fs::write(
+            &descriptor_path,
+            r#"{
+  "contract_version": "fabric.adapter/v9",
+  "adapter_id": "acme.fabric.future",
+  "harness": "future",
+  "adapter_kind": "process"
+}"#,
+        )
+        .expect("write adapter descriptor");
+
+        let error = load_adapter_descriptor(&descriptor_path).expect_err("invalid descriptor");
+        assert!(matches!(
+            error,
+            FabricError::AdapterDescriptorUnsupported {
+                field,
+                value,
+                ..
+            } if field == "contract_version" && value == "fabric.adapter/v9"
         ));
 
         let _ = std::fs::remove_dir_all(root);

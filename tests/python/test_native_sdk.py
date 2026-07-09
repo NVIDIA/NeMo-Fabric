@@ -8,27 +8,25 @@ from __future__ import annotations
 from pathlib import Path
 
 import nemo_fabric._native as native
-from nemo_fabric import FabricClient, FabricConfig, FabricProfileConfig
-
-ROOT = Path(__file__).resolve().parents[2]
+from examples.code_review_agent import BASE_DIR, base_config
+from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig
 
 
 async def test_native_sdk(hermes_shim_agent_dir: Path):
     assert native.version()
 
-    async with FabricClient() as client:
-        await smoke(client, hermes_shim_agent_dir)
+    await smoke(Fabric(), hermes_shim_agent_dir)
 
 
-async def smoke(client: FabricClient, fixture_agent: Path) -> None:
-    example_agent = ROOT / "examples" / "code-review-agent"
+async def smoke(client: Fabric, fixture_agent: Path) -> None:
+    example_config = base_config()
 
-    inspected = client.resolve(example_agent, profiles=["env_local"])
+    inspected = client.resolve(example_config, base_dir=BASE_DIR)
     assert inspected["agent_name"] == "code-review-agent"
-    assert inspected.profiles == ("env_local",)
+    assert inspected.profiles == ()
     assert inspected["config"]["metadata"]["name"] == "code-review-agent"
 
-    plan = client.plan(example_agent, profiles=["env_local"])
+    plan = client.plan(example_config, base_dir=BASE_DIR)
     assert plan["agent_name"] == "code-review-agent"
     assert (
         plan["adapter_descriptor"]["descriptor"]["adapter_id"]
@@ -48,8 +46,6 @@ async def smoke(client: FabricClient, fixture_agent: Path) -> None:
         }
     )
     minimal_resolved = client.resolve(minimal)
-    assert minimal_resolved.config.runtime.mode == "oneshot"
-    assert minimal_resolved.config.runtime.transport == "library"
     assert minimal_resolved.config.runtime.input_schema == "text"
     assert minimal_resolved.config.runtime.output_schema == "text"
 
@@ -70,8 +66,6 @@ async def smoke(client: FabricClient, fixture_agent: Path) -> None:
                 }
             },
             "runtime": {
-                "mode": "session",
-                "transport": "library",
                 "input_schema": "chat",
                 "output_schema": "message",
                 "artifacts": "./artifacts",
@@ -97,16 +91,14 @@ async def smoke(client: FabricClient, fixture_agent: Path) -> None:
             },
         }
     )
-    typed_profile = FabricProfileConfig.from_mapping(
-        {
-            "name": "typed_relay",
-            "harness": {"settings": {"timeout_seconds": 30}},
-            "telemetry": {"enabled": True, "output_dir": "./artifacts/relay"},
-            "consumer_extension": {
-                "profile": True,
-                "nested": {"second": 2},
-            },
-        }
+    typed_profile = FabricProfileConfig(
+        name="typed_relay",
+        harness={"settings": {"timeout_seconds": 30}},
+        telemetry={"enabled": True, "output_dir": "./artifacts/relay"},
+        consumer_extension={
+            "profile": True,
+            "nested": {"second": 2},
+        },
     )
     typed_config_resolved = client.resolve(
         typed_config,
@@ -138,12 +130,12 @@ async def smoke(client: FabricClient, fixture_agent: Path) -> None:
         profiles=["env_local"],
         input="hello native",
     )
-    async with await client.start_session(
+    async with await client.start_runtime(
         fixture_agent,
         profiles=["env_local"],
-    ) as session:
-        first = await session.invoke(input="hello session one")
-        second = await session.invoke(input="hello session two")
+    ) as runtime:
+        first = await runtime.invoke(input="hello runtime one")
+        second = await runtime.invoke(input="hello runtime two")
 
     assert result["status"] == "succeeded"
     assert result.profiles == ("env_local",)
@@ -158,4 +150,4 @@ async def smoke(client: FabricClient, fixture_agent: Path) -> None:
     assert first.profiles == ("env_local",)
     assert first.harness == "hermes"
     assert first["runtime_id"] == second["runtime_id"]
-    assert session.runtime["runtime_id"] == first["runtime_id"]
+    assert runtime.handle["runtime_id"] == first["runtime_id"]

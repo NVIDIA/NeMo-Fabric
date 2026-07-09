@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Map Fabric one-shot and session invocations onto ``codex exec``."""
+"""Map Fabric runtime invocations onto ``codex exec``."""
 
 from __future__ import annotations
 
@@ -90,14 +90,6 @@ class CodexSettings(NamedTuple):
     relay_plugin_config: dict[str, Any] | None
 
 
-def runtime_mode(payload: dict[str, Any]) -> str:
-    runtime = common_utils.fabric_config(payload).get("runtime") or {}
-    mode = str(runtime.get("mode") or "oneshot")
-    if mode not in {"oneshot", "session"}:
-        raise ValueError("Codex CLI adapter supports only oneshot and session modes")
-    return mode
-
-
 def state_dir(payload: dict[str, Any]) -> Path:
     settings = common_utils.settings_payload(payload)
     config_root = Path(common_utils.config_root(payload)).resolve()
@@ -112,28 +104,33 @@ def state_dir(payload: dict[str, Any]) -> Path:
     return config_root / "artifacts" / "codex-cli" / ".fabric"
 
 
-def session_state_path(payload: dict[str, Any], session_id: str) -> Path:
-    key = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
-    return state_dir(payload) / "sessions" / f"{key}.json"
+def runtime_state_path(payload: dict[str, Any], runtime_id: str) -> Path:
+    key = hashlib.sha256(runtime_id.encode("utf-8")).hexdigest()
+    return state_dir(payload) / "runtimes" / f"{key}.json"
 
 
-def load_thread_id(payload: dict[str, Any], session_id: str) -> str | None:
-    path = session_state_path(payload, session_id)
+def load_thread_id(payload: dict[str, Any], runtime_id: str) -> str | None:
+    path = runtime_state_path(payload, runtime_id)
     if not path.is_file():
         return None
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if value.get("session_id") != session_id or not value.get("thread_id"):
-        raise RuntimeError(f"invalid Codex session state in {path}")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"invalid Codex runtime state in {path}") from error
+    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get(
+        "thread_id"
+    ):
+        raise RuntimeError(f"invalid Codex runtime state in {path}")
     return str(value["thread_id"])
 
 
-def save_thread_id(payload: dict[str, Any], session_id: str, thread_id: str) -> None:
-    path = session_state_path(payload, session_id)
+def save_thread_id(payload: dict[str, Any], runtime_id: str, thread_id: str) -> None:
+    path = runtime_state_path(payload, runtime_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     invocation_id = common_utils.runtime_context(payload).get("invocation_id") or "pending"
     temporary = path.with_suffix(f".{invocation_id}.tmp")
     temporary.write_text(
-        json.dumps({"session_id": session_id, "thread_id": thread_id}, indent=2),
+        json.dumps({"runtime_id": runtime_id, "thread_id": thread_id}, indent=2),
         encoding="utf-8",
     )
     os.replace(temporary, path)
@@ -160,7 +157,6 @@ def build_command(
 ) -> list[str]:
     settings = common_utils.settings_payload(payload)
     command = resolve_command(payload, settings.get("codex_command") or "codex")
-    mode = runtime_mode(payload)
     sandbox = str(settings.get("sandbox") or "read-only")
     if sandbox not in SANDBOXES:
         raise ValueError(
@@ -169,8 +165,6 @@ def build_command(
 
     args = [command, "exec", "--json"]
 
-    if mode == "oneshot":
-        args.append("--ephemeral")
     args.extend(["--sandbox", sandbox])
 
     if codex_settings.codex_profile_name is not None:
@@ -600,11 +594,8 @@ def exception_output(value: str | bytes | None) -> str:
 
 
 def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
-    mode = runtime_mode(payload)
-    session_id = common_utils.runtime_session_id(payload) if mode == "session" else None
-    if mode == "session" and not session_id:
-        raise RuntimeError("runtime.mode=session requires a session_id or runtime_id")
-    prior_thread_id = load_thread_id(payload, session_id) if session_id else None
+    runtime_id = common_utils.runtime_id(payload)
+    prior_thread_id = load_thread_id(payload, runtime_id)
     cwd = resolve_cwd(payload)
     codex_settings = write_config_files(payload)
     relay_gateway_process = None
@@ -667,23 +658,22 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
         error = error or completed.stderr.strip() or "Codex CLI exited with a non-zero status"
     if parsed["response"] is None:
         error = error or "Codex invocation did not return a final agent message"
-    if session_id and not thread_id:
-        error = error or "Codex session invocation did not return a thread identity"
-    if session_id and prior_thread_id and thread_id != prior_thread_id:
-        error = (
+    if not thread_id:
+        error = error or "Codex runtime invocation did not return a thread identity"
+    if prior_thread_id and thread_id != prior_thread_id:
+        error = error or (
             f"Codex resumed thread {thread_id}, expected persisted thread {prior_thread_id}"
         )
-    if session_id and thread_id and not error:
-        save_thread_id(payload, session_id, thread_id)
+    if thread_id and not error:
+        save_thread_id(payload, runtime_id, thread_id)
 
     output = {
         "harness": "codex",
         "adapter": "cli",
-        "mode": f"codex_cli_{mode}",
+        "mode": "codex_cli_runtime",
         "command": redact_command(command),
         "cwd": str(cwd),
         "model": selected_model(payload),
-        "session_id": session_id,
         "thread_id": thread_id,
         "response": parsed["response"],
         "usage": parsed["usage"],

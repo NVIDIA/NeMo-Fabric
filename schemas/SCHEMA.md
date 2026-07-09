@@ -8,6 +8,11 @@ SPDX-License-Identifier: Apache-2.0
 This directory contains committed JSON Schema snapshots for the public Fabric
 contract. The files are generated from the Rust core types, not edited by hand.
 
+The Python SDK exposes Pydantic authoring models for application callers. Those
+models are hand-maintained against these Rust-generated schemas for now. When a
+schema-backed Rust type changes, update the matching Pydantic model and its
+schema-alignment tests in the same change.
+
 ## Exported Schemas
 
 `fabric schema` exports the current public typed contract.
@@ -16,7 +21,9 @@ contract. The files are generated from the Rust core types, not edited by hand.
 
 - `agent`: portable base `agent.yaml` config.
 - `profile`: profile config applied over an agent config.
-- `adapter-descriptor`: minimal adapter descriptor consumed by Fabric.
+- `adapter-descriptor`: minimal adapter descriptor consumed by Fabric. Each
+  descriptor declares a `contract_version`; Fabric rejects descriptors for
+  unsupported adapter contracts during planning.
 - `effective-config`: merged config after profile resolution.
 - `run-plan`: executable plan derived from effective config.
 
@@ -31,7 +38,7 @@ contract. The files are generated from the Rust core types, not edited by hand.
 ### Runtime Lifecycle
 
 - `environment-handle`: prepared execution environment context.
-- `runtime-handle`: active or resumable harness runtime.
+- `runtime-handle`: active harness runtime identity and opaque adapter binding.
 - `invocation-handle`: one request/turn sent to a runtime.
 
 ### Results, Artifacts, And Diagnostics

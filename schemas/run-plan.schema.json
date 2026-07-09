@@ -34,10 +34,25 @@
           "$ref": "#/$defs/AdapterKind",
           "description": "Adapter implementation kind."
         },
+        "capabilities": {
+          "$ref": "#/$defs/RuntimeCapabilities",
+          "default": {
+            "cancellation": false,
+            "service": false,
+            "streaming": false,
+            "updates": false
+          },
+          "description": "Runtime lifecycle operations supported by this adapter."
+        },
         "config": {
           "$ref": "#/$defs/AdapterConfigSupport",
           "default": {},
           "description": "Fabric config areas this adapter consumes or generates."
+        },
+        "contract_version": {
+          "description": "Adapter descriptor contract version.",
+          "minLength": 1,
+          "type": "string"
         },
         "harness": {
           "description": "Stable machine-readable harness identifier implemented by this adapter.",
@@ -61,6 +76,7 @@
         }
       },
       "required": [
+        "contract_version",
         "adapter_id",
         "harness",
         "adapter_kind"
@@ -378,7 +394,7 @@
         },
         "connection": {
           "additionalProperties": true,
-          "description": "Provider connection metadata, such as server URL, session id, or namespace.",
+          "description": "Provider connection metadata, such as server URL, credential reference, or namespace.",
           "type": "object"
         },
         "control_location": {
@@ -532,7 +548,7 @@
         },
         "runtime": {
           "$ref": "#/$defs/RuntimeConfig",
-          "description": "Runtime mode and input/output contract."
+          "description": "Runtime input/output contract."
         },
         "schema_version": {
           "description": "Config schema version.",
@@ -824,11 +840,8 @@
       "description": "Lifecycle behavior implemented by a resolved runtime path.",
       "properties": {
         "cancellation": {
+          "default": false,
           "description": "Whether an in-flight invocation can be cancelled.",
-          "type": "boolean"
-        },
-        "concurrent_invocations": {
-          "description": "Whether the runtime accepts concurrent invocations.",
           "type": "boolean"
         },
         "metadata": {
@@ -837,35 +850,26 @@
           "type": "object"
         },
         "service": {
+          "default": false,
           "description": "Whether the selected runtime supports service lifecycle operations.",
           "type": "boolean"
         },
-        "session": {
-          "description": "Whether the selected runtime supports session lifecycle operations.",
-          "type": "boolean"
-        },
         "streaming": {
+          "default": false,
           "description": "Whether invocations can emit progressive output.",
           "type": "boolean"
         },
         "updates": {
+          "default": false,
           "description": "Whether a running runtime can accept config updates.",
           "type": "boolean"
         }
       },
-      "required": [
-        "session",
-        "service",
-        "streaming",
-        "updates",
-        "cancellation",
-        "concurrent_invocations"
-      ],
       "type": "object"
     },
     "RuntimeConfig": {
       "additionalProperties": true,
-      "description": "Runtime mode and input/output contract.",
+      "description": "Runtime input/output contract.",
       "properties": {
         "artifacts": {
           "description": "Artifact directory.",
@@ -879,45 +883,13 @@
           "description": "Input schema label.",
           "type": "string"
         },
-        "mode": {
-          "$ref": "#/$defs/RuntimeMode",
-          "description": "Runtime mode."
-        },
         "output_schema": {
           "default": "text",
           "description": "Output schema label.",
           "type": "string"
-        },
-        "transport": {
-          "$ref": "#/$defs/Transport",
-          "default": "library",
-          "description": "Transport used to operate the harness."
         }
       },
-      "required": [
-        "mode"
-      ],
       "type": "object"
-    },
-    "RuntimeMode": {
-      "description": "Runtime lifecycle mode.",
-      "oneOf": [
-        {
-          "const": "oneshot",
-          "description": "Request is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "service",
-          "description": "Long-running process or service is the lifecycle boundary.",
-          "type": "string"
-        },
-        {
-          "const": "session",
-          "description": "Session is the lifecycle boundary.",
-          "type": "string"
-        }
-      ]
     },
     "SkillConfig": {
       "additionalProperties": true,
@@ -1020,31 +992,6 @@
         {
           "const": "native",
           "description": "Let the selected adapter handle telemetry natively.",
-          "type": "string"
-        }
-      ]
-    },
-    "Transport": {
-      "description": "Runtime transport.",
-      "oneOf": [
-        {
-          "const": "library",
-          "description": "In-process library/SDK call.",
-          "type": "string"
-        },
-        {
-          "const": "cli",
-          "description": "CLI process.",
-          "type": "string"
-        },
-        {
-          "const": "http",
-          "description": "HTTP service.",
-          "type": "string"
-        },
-        {
-          "const": "native_plugin",
-          "description": "Harness-native plugin surface.",
           "type": "string"
         }
       ]

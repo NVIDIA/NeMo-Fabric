@@ -188,13 +188,6 @@
       "description": "Runtime handle id.",
       "type": "string"
     },
-    "session_id": {
-      "description": "Optional caller-provided harness conversation id.",
-      "type": [
-        "string",
-        "null"
-      ]
-    },
     "telemetry": {
       "anyOf": [
         {

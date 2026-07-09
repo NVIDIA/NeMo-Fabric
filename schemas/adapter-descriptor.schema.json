@@ -101,6 +101,37 @@
         }
       },
       "type": "object"
+    },
+    "RuntimeCapabilities": {
+      "description": "Lifecycle behavior implemented by a resolved runtime path.",
+      "properties": {
+        "cancellation": {
+          "default": false,
+          "description": "Whether an in-flight invocation can be cancelled.",
+          "type": "boolean"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Additional adapter-specific capability metadata.",
+          "type": "object"
+        },
+        "service": {
+          "default": false,
+          "description": "Whether the selected runtime supports service lifecycle operations.",
+          "type": "boolean"
+        },
+        "streaming": {
+          "default": false,
+          "description": "Whether invocations can emit progressive output.",
+          "type": "boolean"
+        },
+        "updates": {
+          "default": false,
+          "description": "Whether a running runtime can accept config updates.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -116,10 +147,25 @@
       "$ref": "#/$defs/AdapterKind",
       "description": "Adapter implementation kind."
     },
+    "capabilities": {
+      "$ref": "#/$defs/RuntimeCapabilities",
+      "default": {
+        "cancellation": false,
+        "service": false,
+        "streaming": false,
+        "updates": false
+      },
+      "description": "Runtime lifecycle operations supported by this adapter."
+    },
     "config": {
       "$ref": "#/$defs/AdapterConfigSupport",
       "default": {},
       "description": "Fabric config areas this adapter consumes or generates."
+    },
+    "contract_version": {
+      "description": "Adapter descriptor contract version.",
+      "minLength": 1,
+      "type": "string"
     },
     "harness": {
       "description": "Stable machine-readable harness identifier implemented by this adapter.",
@@ -143,6 +189,7 @@
     }
   },
   "required": [
+    "contract_version",
     "adapter_id",
     "harness",
     "adapter_kind"
