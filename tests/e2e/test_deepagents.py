@@ -29,24 +29,31 @@ def _require_integration_fixture() -> None:
 
 
 @pytest.mark.usefixtures("_require_integration")
-async def test_deepagents_oneshot_and_runtime():
+async def test_deepagents_oneshot():
     from examples.code_review_agent import BASE_DIR, deepagents_config
     from nemo_fabric import Fabric
 
-    config = deepagents_config()
-    nonce = f"fabric-{uuid.uuid4().hex[:8]}"
     client = Fabric()
-
     oneshot = await client.run(
-        config,
+        deepagents_config(),
         base_dir=BASE_DIR,
         input="Reply with exactly: FABRIC_DEEPAGENTS_ONESHOT_OK",
     )
     assert oneshot["status"] == "succeeded", oneshot.to_mapping()
     assert oneshot["output"]["response"], oneshot.to_mapping()
+    # each one-shot run gets a fresh runtime, so it is never a resume
     assert oneshot["output"]["resumed"] is False, oneshot.to_mapping()
 
-    async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
+
+@pytest.mark.usefixtures("_require_integration")
+async def test_deepagents_multi_turn():
+    from examples.code_review_agent import BASE_DIR, deepagents_config
+    from nemo_fabric import Fabric
+
+    client = Fabric()
+    nonce = f"fabric-{uuid.uuid4().hex[:8]}"
+
+    async with await client.start_runtime(deepagents_config(), base_dir=BASE_DIR) as runtime:
         first = await runtime.invoke(input=f"Remember this value: {nonce}")
         second = await runtime.invoke(
             input="Reply with only the value I asked you to remember."
@@ -54,8 +61,10 @@ async def test_deepagents_oneshot_and_runtime():
 
     results = (first.to_mapping(), second.to_mapping())
     assert first["status"] == second["status"] == "succeeded", results
-    # the LangGraph thread id is stable across turns in the same runtime
+    # one started runtime keeps a stable LangGraph thread across turns
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results
+    # the first turn opens the runtime; the second resumes and recalls turn one
+    assert first["output"]["resumed"] is False, results
     assert second["output"]["resumed"] is True, results
     assert nonce in second["output"]["response"], second.to_mapping()
 
