@@ -767,6 +767,11 @@ def test_run_output_preserves_explicit_null_response():
     assert output.to_mapping() == {"response": None}
 
 
+def test_run_output_rejects_non_string_response():
+    with pytest.raises(FabricConfigError, match="run output response must be a string or null"):
+        RunOutput.from_mapping({"response": 123})
+
+
 def test_run_result_preserves_non_object_output():
     result = RunResult.from_mapping(_run_result(output="hello"))
 

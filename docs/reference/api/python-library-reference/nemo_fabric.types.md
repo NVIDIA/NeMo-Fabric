@@ -856,6 +856,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunOutput`
+
 Normalized adapter output.
 
 ``response`` is the canonical user-facing response text when present. Additional keys are adapter-specific extension fields.
