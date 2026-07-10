@@ -86,6 +86,8 @@ adapters = [
 
 dev = [
     "ipython~=8.20",
+    "pip-licenses>=5,<6",
+    "pre-commit~=4.0",
 ]
 
 docs = [
