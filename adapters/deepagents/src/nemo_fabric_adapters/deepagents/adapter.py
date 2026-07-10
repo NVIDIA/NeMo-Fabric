@@ -49,11 +49,12 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def preflight_check(payload: dict[str, Any]) -> None:
-    """Fail fast with clear errors before invoking the harness.
+    """Validate invocation-time prerequisites and fail fast with clear errors.
 
-    Covers the same ground as ``fabric doctor`` for this adapter: the
-    ``deepagents`` package must be importable and the configured model-provider
-    credential must be present in the environment.
+    These are runtime preflight checks, not ``fabric doctor`` checks: Fabric core
+    has no adapter-doctor hook, so doctor cannot verify these. At invocation time
+    the ``deepagents`` package must be importable and the configured
+    model-provider credential must be present in the environment.
     """
 
     import importlib.util
@@ -369,6 +370,7 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
     observability = resolve_observability(payload, telemetry_provider, relay_enabled)
     result_state: Any = None
     events: list[dict[str, Any]] = []
+    turn_messages: list[dict[str, Any]] = []
     error: str | None = None
     checkpointer = None
     try:
@@ -387,9 +389,13 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
 
             wrapped = add_nemo_relay_integration(agent_kwargs)
             async with plugin.plugin(api_config):
-                result_state, events = await invoke_agent(wrapped, user_message, thread_id)
+                result_state, events, turn_messages = await invoke_agent(
+                    wrapped, user_message, thread_id
+                )
         else:
-            result_state, events = await invoke_agent(agent_kwargs, user_message, thread_id)
+            result_state, events, turn_messages = await invoke_agent(
+                agent_kwargs, user_message, thread_id
+            )
     except Exception as exc:  # normalized adapter failure
         error = f"{type(exc).__name__}: {exc}"
     finally:
@@ -418,6 +424,7 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
         resumed=bool(prior_thread_id),
         result_state=result_state,
         events=events,
+        turn_messages=turn_messages,
         error=error,
         telemetry_runtime=telemetry_runtime,
         relay_artifacts=relay_artifacts,
@@ -426,8 +433,13 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
 
 async def invoke_agent(
     agent_kwargs: dict[str, Any], user_message: str, thread_id: str | None
-) -> tuple[Any, list[dict[str, Any]]]:
-    """Run the agent, buffering per-step events and returning the final state."""
+) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
+    """Run the agent; return the final state, per-step events, and this turn's messages.
+
+    On a resumed run the final ``values`` state also replays prior-turn messages,
+    so usage/cost must be aggregated from the messages emitted *this* turn — the
+    ``updates`` deltas — rather than the full final state.
+    """
 
     from deepagents import create_deep_agent
 
@@ -436,6 +448,7 @@ async def invoke_agent(
     config = {"configurable": {"thread_id": thread_id}} if thread_id else None
 
     events: list[dict[str, Any]] = []
+    turn_messages: list[Any] = []
     final: Any = None
     stream = (
         agent.astream(inputs, config, stream_mode=["updates", "values"])
@@ -445,9 +458,16 @@ async def invoke_agent(
     async for mode, chunk in stream:
         if mode == "updates" and isinstance(chunk, dict):
             events.append({"nodes": [str(node) for node in chunk]})
+            for node_output in chunk.values():
+                if isinstance(node_output, dict):
+                    new = node_output.get("messages")
+                    if isinstance(new, list):
+                        turn_messages.extend(new)
+                    elif new is not None:
+                        turn_messages.append(new)
         elif mode == "values":
             final = chunk
-    return final, events
+    return final, events, _messages_to_dicts(turn_messages)
 
 
 class Observability(NamedTuple):
@@ -493,13 +513,16 @@ def normalize_output(
     resumed: bool,
     result_state: Any,
     events: list[dict[str, Any]],
+    turn_messages: list[dict[str, Any]],
     error: str | None,
     telemetry_runtime: dict[str, Any] | None,
     relay_artifacts: list[dict[str, str]] | None,
 ) -> dict[str, Any]:
     messages = _extract_messages(result_state)
     response = _final_response(messages)
-    usage = _aggregate_usage(messages)
+    # Aggregate usage/cost from this turn's messages only; the resumed final state
+    # replays prior-turn messages that must not be re-counted.
+    usage = _aggregate_usage(turn_messages)
 
     output: dict[str, Any] = {
         "harness": HARNESS,
@@ -530,11 +553,13 @@ def normalize_output(
 def _extract_messages(result_state: Any) -> list[dict[str, Any]]:
     if not isinstance(result_state, dict):
         return []
-    raw = result_state.get("messages") or []
-    messages: list[dict[str, Any]] = []
-    for item in raw:
-        messages.append(item if isinstance(item, dict) else _message_to_dict(item))
-    return messages
+    return _messages_to_dicts(result_state.get("messages") or [])
+
+
+def _messages_to_dicts(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    return [item if isinstance(item, dict) else _message_to_dict(item) for item in raw]
 
 
 def _message_to_dict(message: Any) -> dict[str, Any]:

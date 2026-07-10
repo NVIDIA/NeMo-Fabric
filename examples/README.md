@@ -16,7 +16,7 @@ application-facing Python SDK contract:
 - creating harness, environment, capability, and telemetry variants from deep
   copies;
 - resolving relative workspace and skill paths with `base_dir`;
-- running maintained Hermes and Codex adapters through the Python SDK.
+- running maintained Hermes, Codex, and Deep Agents adapters through the Python SDK.
 
 Start with:
 

@@ -52,20 +52,15 @@ def fake_sdks_fixture(monkeypatch):
             recorder["config"] = config
             recorder["checkpointer"] = kwargs.get("checkpointer")
             user = inputs["messages"][-1]["content"]
-            yield ("updates", {"agent": {"messages": []}})
-            yield (
-                "values",
-                {
-                    "messages": [
-                        {"role": "user", "content": user},
-                        {
-                            "role": "ai",
-                            "content": f"reply to {user}",
-                            "usage": {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
-                        },
-                    ]
-                },
-            )
+            ai = {
+                "role": "ai",
+                "content": f"reply to {user}",
+                "usage": {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
+            }
+            # ``updates`` carries the message produced this turn; ``values`` is the
+            # full (on resume, replayed) state.
+            yield ("updates", {"agent": {"messages": [ai]}})
+            yield ("values", {"messages": [{"role": "user", "content": user}, ai]})
 
         agent = MagicMock()
         agent.astream = astream
@@ -502,20 +497,16 @@ async def test_skill_paths_map_to_skills(tmp_path, make_payload, fake_sdks):
 async def test_cost_is_extracted_from_response_metadata(tmp_path, make_payload, monkeypatch):
     import deepagents
 
+    message = {
+        "role": "ai",
+        "content": "done",
+        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        "response_metadata": {"cost": 0.0025},
+    }
+
     async def astream(inputs, config=None, *, stream_mode=None):
-        yield (
-            "values",
-            {
-                "messages": [
-                    {
-                        "role": "ai",
-                        "content": "done",
-                        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-                        "response_metadata": {"cost": 0.0025},
-                    }
-                ]
-            },
-        )
+        yield ("updates", {"agent": {"messages": [message]}})
+        yield ("values", {"messages": [message]})
 
     agent = MagicMock()
     agent.astream = astream
@@ -523,6 +514,46 @@ async def test_cost_is_extracted_from_response_metadata(tmp_path, make_payload, 
     output = await adapter.run_deepagents(make_payload(tmp_path))
 
     assert output["usage"]["cost"] == 0.0025
+
+
+async def test_resumed_usage_counts_current_turn_only(tmp_path, make_payload, monkeypatch):
+    # On a resumed run the final state replays the prior turn's messages; usage and
+    # cost must reflect only the message emitted this turn, not the replayed one.
+    import deepagents
+
+    prior = {
+        "role": "ai",
+        "content": "prior",
+        "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        "response_metadata": {"cost": 0.001},
+    }
+    current = {
+        "role": "ai",
+        "content": "now",
+        "usage": {"input_tokens": 2, "output_tokens": 2, "total_tokens": 4},
+        "response_metadata": {"cost": 0.002},
+    }
+
+    async def astream(inputs, config=None, *, stream_mode=None):
+        # Only the current turn's message is emitted as an update...
+        yield ("updates", {"agent": {"messages": [current]}})
+        # ...but the resumed final state also replays the prior turn.
+        yield ("values", {"messages": [prior, current]})
+
+    agent = MagicMock()
+    agent.astream = astream
+    monkeypatch.setattr(deepagents, "create_deep_agent", MagicMock(return_value=agent))
+
+    output = await adapter.run_deepagents(make_payload(tmp_path))
+
+    assert output["usage"] == {
+        "prompt_tokens": 2,
+        "completion_tokens": 2,
+        "total_tokens": 4,
+        "cost": 0.002,
+    }
+    # the full transcript is still returned
+    assert output["message_count"] == 2
 
 
 async def test_runtime_resume_reuses_thread_id(tmp_path, make_payload, fake_sdks):
