@@ -722,3 +722,18 @@ async def test_openai_provider_defaults_to_openai_key(
     assert output["failed"] is False, output["error"]
     assert output["base_url"] is None
     assert "base_url" not in fake_sdks["chat_openai"].call_args.kwargs
+
+
+async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_payload):
+    # openai-compatible uses ChatOpenAI but has no default credential var, so it must
+    # set api_key_env explicitly rather than silently falling back to NVIDIA_API_KEY.
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["models"]["default"] = {
+        "provider": "openai-compatible",
+        "model": "some/model",
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "api_key_env" in output["error"]

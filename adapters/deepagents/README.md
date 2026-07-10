@@ -20,20 +20,22 @@ python3 -m pip install -e ".[deepagents]"
 The adapter builds a LangChain chat model from Fabric's `models.default` config.
 For `nvidia` (or an unspecified provider) it targets NVIDIA-hosted,
 OpenAI-compatible endpoints (`https://integrate.api.nvidia.com/v1`) via
-`ChatOpenAI`; a plain `openai` provider uses ChatOpenAI's own default endpoint.
-Set `models.default.api_key_env` (default `NVIDIA_API_KEY`) to the environment
-variable holding the key. Providers other than `nvidia`/`openai` are constructed
-through `langchain.chat_models.init_chat_model` so additional backends can be
-added without changing the adapter.
+`ChatOpenAI`; `openai` and `openai-compatible` also use `ChatOpenAI` with the
+provider's own default endpoint. Any other provider is constructed through
+`langchain.chat_models.init_chat_model`, so additional backends can be added
+without changing the adapter.
+
+`models.default.api_key_env` names the environment variable holding the API key,
+and defaults **per provider** — `NVIDIA_API_KEY` for `nvidia` (or an unspecified
+provider) and `OPENAI_API_KEY` for `openai`. Every other provider — including
+`openai-compatible` and any `init_chat_model` backend — must set `api_key_env`
+explicitly (a missing one is a normalized configuration failure), so a key is
+never sent to the wrong endpoint.
 
 Because `models.default.api_key_env` is provider-specific, the adapter declares no
 static env requirement; a runtime **preflight** verifies that the `deepagents`
 package is importable and the configured credential is set, and returns a
 normalized failure otherwise. `fabric doctor` validates adapter resolution.
-
-`api_key_env` defaults per provider — `NVIDIA_API_KEY` for `nvidia` (or an
-unspecified provider) and `OPENAI_API_KEY` for `openai`. Any other provider must
-set `api_key_env` explicitly so a key is never sent to the wrong endpoint.
 
 Fabric maps the following into the harness:
 

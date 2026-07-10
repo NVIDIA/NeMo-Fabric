@@ -102,8 +102,9 @@ def preflight_check(payload: dict[str, Any]) -> None:
     api_key_env = resolve_api_key_env(settings, model_config)
     if api_key_env not in os.environ:
         raise RuntimeError(
-            f"api_key_env={api_key_env} is defined in the configuration but is not set in the "
-            "environment. Please set it to your API key."
+            f"the model-provider credential env var '{api_key_env}' is not set in the "
+            "environment. Set it to your API key, or set models.default.api_key_env to the "
+            "variable that holds it."
         )
 
 
