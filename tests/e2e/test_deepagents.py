@@ -16,7 +16,8 @@ import uuid
 import pytest
 
 
-def _require_integration() -> None:
+@pytest.fixture(name="_require_integration")
+def _require_integration_fixture() -> None:
     if os.environ.get("RUN_FABRIC_DEEPAGENTS_INTEGRATION") != "1":
         pytest.skip("set RUN_FABRIC_DEEPAGENTS_INTEGRATION=1 to run")
     if importlib.util.find_spec("deepagents") is None:
@@ -27,9 +28,8 @@ def _require_integration() -> None:
         pytest.fail("NVIDIA_API_KEY is required")
 
 
-async def test_deepagents_oneshot_and_runtime() -> None:
-    _require_integration()
-
+@pytest.mark.usefixtures("_require_integration")
+async def test_deepagents_oneshot_and_runtime():
     from examples.code_review_agent import BASE_DIR, deepagents_config
     from nemo_fabric import Fabric
 
@@ -60,9 +60,8 @@ async def test_deepagents_oneshot_and_runtime() -> None:
     assert nonce in second["output"]["response"], second.to_mapping()
 
 
-async def test_deepagents_doctor() -> None:
-    _require_integration()
-
+@pytest.mark.usefixtures("_require_integration")
+async def test_deepagents_doctor():
     from examples.code_review_agent import BASE_DIR, deepagents_config
     from nemo_fabric import Fabric
 

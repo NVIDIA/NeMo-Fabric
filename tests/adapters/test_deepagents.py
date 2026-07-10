@@ -15,7 +15,7 @@ import importlib.machinery
 import sys
 import types
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -65,7 +65,7 @@ class _FakeAgent:
 
 @pytest.fixture(name="fake_sdks", autouse=True)
 def fake_sdks_fixture(monkeypatch) -> dict[str, Any]:
-    recorder: dict[str, Any] = {}
+    recorder: dict[str, Any] = {"saver_exits": 0}
 
     def create_deep_agent(**kwargs: Any) -> _FakeAgent:
         recorder["create_kwargs"] = kwargs
@@ -84,7 +84,7 @@ def fake_sdks_fixture(monkeypatch) -> dict[str, Any]:
     langchain_openai_mod.ChatOpenAI = _FakeChatOpenAI
     monkeypatch.setitem(sys.modules, "langchain_openai", langchain_openai_mod)
 
-    _install_fake_langgraph(monkeypatch)
+    _install_fake_langgraph(monkeypatch, recorder)
 
     monkeypatch.setenv("NVIDIA_API_KEY", "test123")
     return recorder
@@ -95,25 +95,29 @@ class _FakeSaver:
 
 
 class _FakeAsyncSaverCM:
-    async def __aenter__(self) -> "_FakeSaver":
+    def __init__(self, recorder: dict[str, Any]) -> None:
+        self._recorder = recorder
+
+    async def __aenter__(self) -> _FakeSaver:
         return _FakeSaver()
 
     async def __aexit__(self, *_exc: Any) -> bool:
+        # Record cleanup so tests can assert the connection is always closed.
+        self._recorder["saver_exits"] += 1
         return False
 
 
-class _FakeAsyncSqliteSaver:
-    @classmethod
-    def from_conn_string(cls, _conn: str) -> _FakeAsyncSaverCM:
-        return _FakeAsyncSaverCM()
+def _install_fake_langgraph(monkeypatch, recorder: dict[str, Any]) -> None:
+    class _AsyncSqliteSaver:
+        @classmethod
+        def from_conn_string(cls, _conn: str) -> _FakeAsyncSaverCM:
+            return _FakeAsyncSaverCM(recorder)
 
-
-def _install_fake_langgraph(monkeypatch) -> None:
     langgraph_mod = types.ModuleType("langgraph")
     checkpoint_mod = types.ModuleType("langgraph.checkpoint")
     sqlite_mod = types.ModuleType("langgraph.checkpoint.sqlite")
     aio_mod = types.ModuleType("langgraph.checkpoint.sqlite.aio")
-    aio_mod.AsyncSqliteSaver = _FakeAsyncSqliteSaver
+    aio_mod.AsyncSqliteSaver = _AsyncSqliteSaver
     sqlite_mod.aio = aio_mod
     checkpoint_mod.sqlite = sqlite_mod
     langgraph_mod.checkpoint = checkpoint_mod
@@ -151,7 +155,7 @@ def _payload(tmp_path: Path, *, runtime_id: str = "run-1") -> dict[str, Any]:
 
 async def test_oneshot_normalizes_response_usage_and_thread(
     tmp_path: Path, fake_sdks: dict[str, Any]
-) -> None:
+):
     output = await adapter.run_deepagents(_payload(tmp_path))
 
     assert output["harness"] == "deepagents"
@@ -171,11 +175,11 @@ async def test_oneshot_normalizes_response_usage_and_thread(
     assert output["failed"] is False
     assert output["error"] is None
     # system prompt must reach deepagents under the real param name (not ``instructions``)
-    assert fake_sdks["create_kwargs"].get("system_prompt") == "be concise"
+    assert fake_sdks["create_kwargs"]["system_prompt"] == "be concise"
     assert "instructions" not in fake_sdks["create_kwargs"]
 
 
-async def test_missing_api_key_raises(tmp_path: Path, monkeypatch) -> None:
+async def test_missing_api_key_raises(tmp_path: Path, monkeypatch):
     # Missing model-provider auth is caught by the adapter preflight (doctor's
     # requirement.env check is the up-front guard for `fabric doctor`).
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
@@ -183,7 +187,7 @@ async def test_missing_api_key_raises(tmp_path: Path, monkeypatch) -> None:
         await adapter.run_deepagents(_payload(tmp_path))
 
 
-async def test_missing_deepagents_package_raises(tmp_path: Path, monkeypatch) -> None:
+async def test_missing_deepagents_package_raises(tmp_path: Path, monkeypatch):
     # Preflight reports a clear error when the deepagents package is absent.
     # Force find_spec("deepagents") -> None so the test holds whether or not the
     # real package is installed in the environment.
@@ -201,7 +205,7 @@ async def test_missing_deepagents_package_raises(tmp_path: Path, monkeypatch) ->
         await adapter.run_deepagents(_payload(tmp_path))
 
 
-async def test_invocation_error_is_normalized(tmp_path: Path, monkeypatch) -> None:
+async def test_invocation_error_is_normalized(tmp_path: Path, monkeypatch):
     # Errors raised during the agent run are normalized into the Fabric result.
     import deepagents
 
@@ -248,7 +252,7 @@ def _install_fake_relay(monkeypatch, calls: dict[str, Any]) -> None:
 
 async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     tmp_path: Path, monkeypatch, fake_sdks: dict[str, Any]
-) -> None:
+):
     calls: dict[str, Any] = {}
     _install_fake_relay(monkeypatch, calls)
     artifacts = [{"kind": "atof", "path": str(tmp_path / "events.atof.jsonl")}]
@@ -259,7 +263,8 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
 
     output = await adapter.run_deepagents(_payload(tmp_path))
 
-    assert calls.get("wrapped") and calls.get("plugin_open")
+    assert calls["wrapped"]
+    assert calls["plugin_open"]
     assert output["telemetry"] == {
         "enabled": True,
         "provider": "relay",
@@ -267,12 +272,12 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     }
     assert output["relay_artifacts"] == artifacts
     # the relay middleware reached the deepagents kwargs
-    assert "relay-mw" in fake_sdks["create_kwargs"].get("middleware", [])
+    assert "relay-mw" in fake_sdks["create_kwargs"]["middleware"]
 
 
 async def test_native_telemetry_exports_without_artifacts(
     tmp_path: Path, monkeypatch, fake_sdks: dict[str, Any]
-) -> None:
+):
     calls: dict[str, Any] = {}
     _install_fake_relay(monkeypatch, calls)
     monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
@@ -301,7 +306,8 @@ async def test_native_telemetry_exports_without_artifacts(
 
     output = await adapter.run_deepagents(payload)
 
-    assert calls.get("wrapped") and calls.get("plugin_open")
+    assert calls["wrapped"]
+    assert calls["plugin_open"]
     assert output["telemetry"] == {
         "enabled": True,
         "provider": "native",
@@ -309,24 +315,42 @@ async def test_native_telemetry_exports_without_artifacts(
     }
     # native telemetry exports directly; no ATOF/ATIF relay artifacts are written
     assert "relay_artifacts" not in output
-    assert "relay-mw" in fake_sdks["create_kwargs"].get("middleware", [])
+    assert "relay-mw" in fake_sdks["create_kwargs"]["middleware"]
 
 
-async def test_workspace_roots_filesystem_backend(tmp_path: Path, fake_sdks: dict[str, Any]) -> None:
+async def test_workspace_roots_filesystem_backend(tmp_path: Path, fake_sdks: dict[str, Any]):
     await adapter.run_deepagents(_payload(tmp_path))
     backend = fake_sdks["create_kwargs"]["backend"]
     assert backend.root_dir == str(tmp_path)
 
 
+async def test_checkpointer_closed_on_success_and_failure(
+    tmp_path: Path, monkeypatch, fake_sdks: dict[str, Any]
+):
+    # The async checkpointer must be closed on both the success and error paths.
+    await adapter.run_deepagents(_payload(tmp_path))
+    assert fake_sdks["saver_exits"] == 1
+
+    import deepagents
+
+    def _boom(**_kwargs: Any) -> Any:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(deepagents, "create_deep_agent", _boom)
+    output = await adapter.run_deepagents(_payload(tmp_path))
+    assert output["failed"] is True
+    assert fake_sdks["saver_exits"] == 2
+
+
 async def test_mcp_servers_become_tools_filtered_by_allowed(
     tmp_path: Path, monkeypatch, fake_sdks: dict[str, Any]
-) -> None:
+):
     class _Tool:
         def __init__(self, name: str) -> None:
             self.name = name
 
     class _FakeMCPClient:
-        connections: dict[str, Any] = {}
+        connections: ClassVar[dict[str, Any]] = {}
 
         def __init__(self, connections: dict[str, Any]) -> None:
             _FakeMCPClient.connections = connections
@@ -377,7 +401,7 @@ def _use_real_langgraph(monkeypatch) -> None:
 
 async def test_allowed_tools_recorded_as_middleware(
     tmp_path: Path, monkeypatch, fake_sdks: dict[str, Any]
-) -> None:
+):
     # An allow-list is enforced by a gating middleware over the full tool surface,
     # not by filtering the passed tools list.
     _use_real_langgraph(monkeypatch)
@@ -388,10 +412,10 @@ async def test_allowed_tools_recorded_as_middleware(
 
     await adapter.run_deepagents(payload)
 
-    assert fake_sdks["create_kwargs"].get("middleware"), "gating middleware not attached"
+    assert fake_sdks["create_kwargs"]["middleware"], "gating middleware not attached"
 
 
-async def test_allowed_tools_middleware_blocks_disallowed_tools(monkeypatch) -> None:
+async def test_allowed_tools_middleware_blocks_disallowed_tools(monkeypatch):
     _use_real_langgraph(monkeypatch)
     pytest.importorskip("langchain.agents.middleware")
     from langchain_core.messages import ToolMessage
@@ -419,13 +443,13 @@ async def test_allowed_tools_middleware_blocks_disallowed_tools(monkeypatch) -> 
     assert denied.status == "error"
 
 
-def test_empty_tools_is_deny_all_not_none() -> None:
+def test_empty_tools_is_deny_all_not_none():
     # An explicitly empty tools list is a deny-all allow-list, not "no allow-list".
     assert adapter._allowed_tool_names({"effective_config": {"config": {"tools": []}}}) == set()
     assert adapter._allowed_tool_names({"effective_config": {"config": {}}}) is None
 
 
-async def test_real_langgraph_async_checkpointer(tmp_path: Path, monkeypatch) -> None:
+async def test_real_langgraph_async_checkpointer(tmp_path: Path, monkeypatch):
     # Regression: driving astream with the sync SqliteSaver raises NotImplementedError.
     # Exercise the adapter against a real compiled LangGraph graph + AsyncSqliteSaver.
     # Drop the fake langgraph stubs FIRST so the real package resolves (or we skip).
@@ -453,18 +477,20 @@ async def test_real_langgraph_async_checkpointer(tmp_path: Path, monkeypatch) ->
         graph.add_node("respond", _respond)
         graph.add_edge(START, "respond")
         graph.add_edge("respond", END)
-        return graph.compile(checkpointer=kwargs.get("checkpointer"))
+        checkpointer = kwargs["checkpointer"]
+        assert checkpointer is not None
+        return graph.compile(checkpointer=checkpointer)
 
     monkeypatch.setattr(deepagents, "create_deep_agent", _build)
 
     output = await adapter.run_deepagents(_payload(tmp_path))
 
-    assert output["failed"] is False, output.get("error")
+    assert output["failed"] is False, output["error"]
     assert output["response"] == "ok"
     assert output["thread_id"]
 
 
-async def test_openai_provider_keeps_openai_endpoint(tmp_path: Path, monkeypatch, fake_sdks) -> None:
+async def test_openai_provider_keeps_openai_endpoint(tmp_path: Path, monkeypatch, fake_sdks):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     payload = _payload(tmp_path)
     payload["effective_config"]["config"]["models"]["default"] = {
@@ -480,7 +506,7 @@ async def test_openai_provider_keeps_openai_endpoint(tmp_path: Path, monkeypatch
     assert "base_url" not in fake_sdks["create_kwargs"]["model"].kwargs
 
 
-async def test_skill_paths_map_to_skills(tmp_path: Path, fake_sdks: dict[str, Any]) -> None:
+async def test_skill_paths_map_to_skills(tmp_path: Path, fake_sdks: dict[str, Any]):
     payload = _payload(tmp_path)
     payload["capability_plan"] = {"native": {"skill_paths": ["/skills/a", "/skills/b"]}}
 
@@ -489,7 +515,7 @@ async def test_skill_paths_map_to_skills(tmp_path: Path, fake_sdks: dict[str, An
     assert fake_sdks["create_kwargs"]["skills"] == ["/skills/a", "/skills/b"]
 
 
-async def test_cost_is_extracted_from_response_metadata(tmp_path: Path, monkeypatch) -> None:
+async def test_cost_is_extracted_from_response_metadata(tmp_path: Path, monkeypatch):
     import deepagents
 
     class _CostAgent:
@@ -514,7 +540,7 @@ async def test_cost_is_extracted_from_response_metadata(tmp_path: Path, monkeypa
     assert output["usage"]["cost"] == 0.0025
 
 
-async def test_runtime_resume_reuses_thread_id(tmp_path: Path, fake_sdks: dict[str, Any]) -> None:
+async def test_runtime_resume_reuses_thread_id(tmp_path: Path, fake_sdks: dict[str, Any]):
     # Two invocations of the same runtime_id (a started runtime) resume the same
     # LangGraph thread; a one-shot run gets a fresh runtime_id and never resumes.
     payload = _payload(tmp_path, runtime_id="run-42")
