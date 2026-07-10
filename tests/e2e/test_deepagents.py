@@ -70,6 +70,46 @@ async def test_deepagents_multi_turn():
 
 
 @pytest.mark.usefixtures("_require_integration")
+async def test_deepagents_subagent_delegation():
+    # Exercise the real delegated-subagent path end to end: a `task`-delegating run
+    # under the adapter's gating wiring. Subagents inherit the parent's model, tools,
+    # workspace, and the config.tools policy, so a subagent cannot broaden capabilities.
+    # Deterministic verification of the inherited tool-gating is covered by the mock
+    # tests in tests/adapters/test_deepagents.py; a fuller real-subagent contract
+    # (independently configured subagent tools/skills/models) is future work.
+    from examples.code_review_agent import BASE_DIR, deepagents_config
+    from nemo_fabric import Fabric
+
+    config = deepagents_config()
+    config.harness.settings["deepagents"] = {
+        "subagents": [
+            {
+                "name": "echoer",
+                "description": (
+                    "Echoes a short phrase back verbatim. Use to delegate an echo task."
+                ),
+                "system_prompt": "You echo the exact phrase you are given and nothing else.",
+            }
+        ]
+    }
+
+    client = Fabric()
+    result = await client.run(
+        config,
+        base_dir=BASE_DIR,
+        input=(
+            "Delegate to the `echoer` subagent via the task tool to echo the phrase "
+            "FABRIC_DEEPAGENTS_SUBAGENT_OK, then reply with its result."
+        ),
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    assert result["output"]["response"], result.to_mapping()
+    # delegated steps are folded into this turn's usage aggregation
+    assert result["output"]["resumed"] is False, result.to_mapping()
+
+
+@pytest.mark.usefixtures("_require_integration")
 async def test_deepagents_doctor():
     from examples.code_review_agent import BASE_DIR, deepagents_config
     from nemo_fabric import Fabric

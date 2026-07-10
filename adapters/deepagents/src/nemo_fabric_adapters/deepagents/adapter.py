@@ -37,6 +37,17 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
 }
 # MCP transports langchain-mcp-adapters accepts (after normalization).
 VALID_MCP_TRANSPORTS = {"stdio", "sse", "streamable_http", "websocket"}
+# create_deep_agent arguments Fabric derives from normalized config; the
+# harness.settings.deepagents passthrough must not override them (doing so would
+# bypass the normalized model config, MCP tool resolution, workspace confinement,
+# or tool gating).
+FABRIC_OWNED_AGENT_KEYS = frozenset(
+    {"model", "tools", "backend", "skills", "system_prompt", "middleware", "checkpointer"}
+)
+# Documented, JSON-serializable create_deep_agent options callers may forward
+# through harness.settings.deepagents. Executable objects (AgentMiddleware, BaseTool,
+# Python callables) cannot cross the SDK->JSON->payload boundary and are excluded.
+DEEPAGENTS_PASSTHROUGH_KEYS = frozenset({"subagents", "interrupt_on"})
 
 
 class AdapterConfigError(RuntimeError):
@@ -380,10 +391,11 @@ async def build_agent_kwargs(
         "skills": resolve_skills(payload),
         "backend": resolve_backend(payload),
     }
-    # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through.
+    # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through,
+    # after validation against the documented JSON-serializable allow-list.
     extra = settings.get("deepagents")
-    if isinstance(extra, dict):
-        kwargs.update(extra)
+    if extra is not None:
+        kwargs.update(_validated_passthrough(extra))
     allowed = _allowed_tool_names(payload)
     if allowed is not None:
         # Gate the main agent AND every configured subagent, so the allow-list
@@ -397,6 +409,35 @@ async def build_agent_kwargs(
         if isinstance(subagents, list):
             kwargs["subagents"] = [_gate_subagent(sub, allowed) for sub in subagents]
     return {key: value for key, value in kwargs.items() if value is not None}
+
+
+def _validated_passthrough(extra: Any) -> dict[str, Any]:
+    """Validate the harness.settings.deepagents passthrough and return the safe subset.
+
+    Only documented, JSON-serializable create_deep_agent options are forwarded.
+    Fabric-owned keys cannot be overridden (that would bypass the normalized model
+    config, MCP tool resolution, workspace confinement, and tool gating), and unknown
+    keys fail clearly instead of being silently dropped.
+    """
+
+    if not isinstance(extra, dict):
+        raise AdapterConfigError(
+            "harness.settings.deepagents must be a mapping of JSON-serializable options, "
+            f"not {type(extra).__name__}."
+        )
+    reserved = sorted(FABRIC_OWNED_AGENT_KEYS.intersection(extra))
+    if reserved:
+        raise AdapterConfigError(
+            f"harness.settings.deepagents cannot override Fabric-owned keys {reserved}; "
+            "they are derived from the normalized Fabric config."
+        )
+    unknown = sorted(set(extra) - DEEPAGENTS_PASSTHROUGH_KEYS)
+    if unknown:
+        raise AdapterConfigError(
+            f"harness.settings.deepagents has unsupported option(s) {unknown}; supported "
+            f"passthrough keys are {sorted(DEEPAGENTS_PASSTHROUGH_KEYS)}."
+        )
+    return dict(extra)
 
 
 def _gate_subagent(subagent: Any, allowed: set[str]) -> Any:

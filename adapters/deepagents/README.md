@@ -58,16 +58,35 @@ Fabric maps the following into the harness:
   list are blocked, so tools routed through the `task` tool cannot run ungated. A
   non-list `tools` value is a normalized configuration failure rather than a
   silently disabled allow-list.
-- `harness.settings.deepagents` is an escape hatch passed through to
-  `create_deep_agent` (e.g. `subagents`, `interrupt_on`).
+- `harness.settings.deepagents` forwards a small set of **documented,
+  JSON-serializable** `create_deep_agent` options (currently `subagents` and
+  `interrupt_on`). It is not a general Python-object escape hatch: the SDK config
+  round-trips through JSON and Rust planning, so `AgentMiddleware`, `BaseTool`
+  instances, and Python callables cannot cross the boundary. Fabric-owned
+  arguments (`model`, `tools`, `backend`, `skills`, `system_prompt`, `middleware`,
+  `checkpointer`) cannot be overridden through this passthrough, and an unknown or
+  unsupported key is a normalized configuration failure rather than a silently
+  dropped setting.
+
+### Subagents
+
+Deep Agents can delegate to subagents through its built-in `task` tool. Subagents
+**inherit** the parent run's model, tools, skills, workspace, telemetry, and
+permissions — in particular, the parent `config.tools` allow-list applies to
+delegated execution, so a subagent cannot broaden capabilities beyond the parent.
+Independently configured subagent tools, skills, models, MCP servers, middleware,
+or permissions are **not** exposed through the Fabric SDK yet; a `subagents`
+definition here only carries JSON-shaped fields. Deterministic verification of
+delegated tool-gating is currently mock-based (see the adapter tests); a fuller
+real-subagent contract is future work.
 
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
 reports it), and errors. Usage aggregates the current turn across the main agent
 and any delegated subagents (streamed with `subgraphs=True`). Configuration and
 preflight failures (a missing credential, an absent `deepagents` package, an
-invalid allow-list or MCP server) are returned as a normalized failure result
-rather than a raw traceback.
+invalid allow-list, MCP server, or passthrough option) are returned as a
+normalized failure result rather than a raw traceback.
 
 ## Runtime Modes
 

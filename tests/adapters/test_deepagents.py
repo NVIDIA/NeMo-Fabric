@@ -609,6 +609,45 @@ async def test_subagents_are_gated_by_allow_list(tmp_path, make_payload, fake_sd
     assert subagents[0]["middleware"], "subagent gating middleware not attached"
 
 
+async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):
+    # Documented JSON-serializable options reach create_deep_agent unchanged.
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+        "interrupt_on": {"write_file": True}
+    }
+
+    await adapter.run_deepagents(payload)
+
+    assert fake_sdks["create_kwargs"]["interrupt_on"] == {"write_file": True}
+
+
+async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(tmp_path, make_payload):
+    # Overriding a Fabric-owned key (here backend) would defeat workspace confinement;
+    # it must fail loudly rather than silently replacing the derived value.
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"root_dir": "/etc"}
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "backend" in output["error"]
+
+
+async def test_deepagents_passthrough_rejects_unknown_option(tmp_path, make_payload):
+    # A typo or unsupported option must fail clearly instead of being silently dropped.
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+        "interupt_on": {}  # note the typo
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "interupt_on" in output["error"]
+
+
 async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monkeypatch):
     # Usage from a delegated subagent is emitted under a subgraph namespace; folding
     # it into this turn keeps usage/cost accurate. Duplicate ids are counted once.
