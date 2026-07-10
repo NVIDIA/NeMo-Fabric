@@ -165,12 +165,12 @@ async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
 
 def _allowed_tool_names(payload: dict[str, Any]) -> set[str] | None:
     # The routed plan only marks ``native.tools_configured``; the value lives in
-    # ``effective_config.config.tools``.
+    # ``effective_config.config.tools``. Return ``None`` only when tools are not
+    # configured; an explicitly empty list is a deny-all allow-list, not "no list".
     tools = common_utils.fabric_config(payload).get("tools")
     if not isinstance(tools, (list, str)):
         return None
-    names = set(common_utils.normalize_list(tools))
-    return names or None
+    return set(common_utils.normalize_list(tools))
 
 
 def allowed_tools_middleware(allowed: set[str]) -> Any:

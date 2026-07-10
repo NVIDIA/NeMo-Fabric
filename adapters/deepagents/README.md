@@ -55,8 +55,9 @@ reports it), and errors.
 
 ## Runtime Modes
 
-A one-shot `run` executes a single `ainvoke` and returns the final agent message,
-buffered messages, usage, and the LangGraph thread ID in the normalized Fabric
+A one-shot `run` streams the agent with `astream` (buffering `updates` events and
+`values` snapshots) and returns the final agent message, buffered messages and
+per-step events, usage, and the LangGraph thread ID in the normalized Fabric
 result. Each one-shot run gets a fresh Fabric `runtime_id`, so `resumed` is
 `false`.
 

@@ -412,6 +412,18 @@ async def test_allowed_tools_middleware_blocks_disallowed_tools(monkeypatch) -> 
     allowed = await middleware.awrap_tool_call(_Req("read_file"), _handler)
     assert allowed == "executed"
 
+    # An explicitly empty allow-list denies every tool.
+    deny_all = adapter.allowed_tools_middleware(set())
+    denied = await deny_all.awrap_tool_call(_Req("read_file"), _handler)
+    assert isinstance(denied, ToolMessage)
+    assert denied.status == "error"
+
+
+def test_empty_tools_is_deny_all_not_none() -> None:
+    # An explicitly empty tools list is a deny-all allow-list, not "no allow-list".
+    assert adapter._allowed_tool_names({"effective_config": {"config": {"tools": []}}}) == set()
+    assert adapter._allowed_tool_names({"effective_config": {"config": {}}}) is None
+
 
 async def test_real_langgraph_async_checkpointer(tmp_path: Path, monkeypatch) -> None:
     # Regression: driving astream with the sync SqliteSaver raises NotImplementedError.
