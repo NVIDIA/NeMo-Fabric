@@ -43,7 +43,9 @@ Fabric maps the following into the harness:
 - Routed `skills` (`native.skill_paths`) become the Deep Agents `skills` sources.
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`.
-- `tools` (Fabric's `config.tools` allow-list) filters the exposed adapter tools by name.
+- `tools` (Fabric's `config.tools` allow-list) is enforced by a gating middleware
+  across the full tool surface (Deep Agents built-ins and MCP tools); tool calls
+  whose name is not on the list are blocked.
 - `harness.settings.deepagents` is an escape hatch passed through to
   `create_deep_agent` (e.g. `subagents`, `interrupt_on`).
 

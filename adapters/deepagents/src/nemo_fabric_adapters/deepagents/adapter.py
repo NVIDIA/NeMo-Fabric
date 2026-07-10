@@ -157,17 +157,9 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
 
 
 async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
-    """Resolve Fabric MCP servers into Deep Agents tools, filtered by allowed tools.
-
-    Fabric's ``config.tools`` is treated as an allow-list of tool names: when
-    present, only adapter-provided (MCP) tools whose name is listed are exposed.
-    (Deep Agents' built-in filesystem/shell tools are not name-restricted here.)
-    """
+    """Resolve Fabric MCP servers into Deep Agents tools."""
 
     tools = await _mcp_tools(payload)
-    allowed = _allowed_tool_names(payload)
-    if allowed is not None:
-        tools = [tool for tool in tools if getattr(tool, "name", None) in allowed]
     return tools or None
 
 
@@ -179,6 +171,40 @@ def _allowed_tool_names(payload: dict[str, Any]) -> set[str] | None:
         return None
     names = set(common_utils.normalize_list(tools))
     return names or None
+
+
+def allowed_tools_middleware(allowed: set[str]) -> Any:
+    """Middleware that blocks tool calls whose name is not in the allow-list.
+
+    Enforces Fabric's ``config.tools`` allow-list across the *full* tool surface
+    (Deep Agents built-ins such as ``write_file``/``execute``/``task`` and MCP
+    tools alike), since the built-ins are contributed by middleware rather than the
+    ``tools`` argument and cannot be pre-filtered out of the ``tools`` list.
+    """
+
+    from langchain.agents.middleware import AgentMiddleware
+    from langchain_core.messages import ToolMessage
+
+    def _blocked(request: Any) -> Any:
+        name = request.tool_call.get("name")
+        return ToolMessage(
+            content=f"Tool '{name}' is not permitted by the configured tools allow-list.",
+            tool_call_id=request.tool_call.get("id", ""),
+            status="error",
+        )
+
+    class AllowedToolsMiddleware(AgentMiddleware):  # type: ignore[misc]
+        async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+            if request.tool_call.get("name") not in allowed:
+                return _blocked(request)
+            return await handler(request)
+
+        def wrap_tool_call(self, request: Any, handler: Any) -> Any:
+            if request.tool_call.get("name") not in allowed:
+                return _blocked(request)
+            return handler(request)
+
+    return AllowedToolsMiddleware()
 
 
 def resolve_skills(payload: dict[str, Any]) -> list[str] | None:
@@ -274,26 +300,53 @@ def save_thread_id(payload: dict[str, Any], runtime_id: str, thread_id: str) -> 
     os.replace(tmp, json_path)
 
 
-def open_checkpointer(state_sqlite: Path) -> Any:
-    """Open a persistent LangGraph checkpointer so resume works across processes."""
+async def open_checkpointer(state_sqlite: Path) -> Any:
+    """Open a persistent async LangGraph checkpointer so resume works across processes.
 
-    from langgraph.checkpoint.sqlite import SqliteSaver
+    The agent is driven with ``astream``, so the checkpointer must be async: the
+    synchronous ``SqliteSaver`` raises ``NotImplementedError`` from its async methods.
+    """
+
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
     state_sqlite.parent.mkdir(parents=True, exist_ok=True)
-    saver_cm = SqliteSaver.from_conn_string(str(state_sqlite))
-    saver = saver_cm.__enter__()
+    saver_cm = AsyncSqliteSaver.from_conn_string(str(state_sqlite))
+    saver = await saver_cm.__aenter__()
     # Keep the context manager alive for the duration of the invocation.
     saver._fabric_cm = saver_cm  # type: ignore[attr-defined]
     return saver
 
 
-def close_checkpointer(checkpointer: Any) -> None:
+async def close_checkpointer(checkpointer: Any) -> None:
     saver_cm = getattr(checkpointer, "_fabric_cm", None)
     if saver_cm is not None:
-        saver_cm.__exit__(None, None, None)
+        await saver_cm.__aexit__(None, None, None)
 
 
 # --- invocation ------------------------------------------------------------
+
+
+async def build_agent_kwargs(
+    payload: dict[str, Any], model: Any, settings: dict[str, Any]
+) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "tools": await resolve_tools(payload),
+        # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
+        "system_prompt": settings.get("system_prompt"),
+        "skills": resolve_skills(payload),
+        "backend": resolve_backend(payload),
+    }
+    # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through.
+    extra = settings.get("deepagents")
+    if isinstance(extra, dict):
+        kwargs.update(extra)
+    allowed = _allowed_tool_names(payload)
+    if allowed is not None:
+        middleware = list(kwargs.get("middleware") or [])
+        middleware.append(allowed_tools_middleware(allowed))
+        kwargs["middleware"] = middleware
+    return {key: value for key, value in kwargs.items() if value is not None}
 
 
 async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
@@ -311,35 +364,22 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
 
     runtime_id = common_utils.runtime_context(payload).get("runtime_id")
     prior_thread_id = load_thread_id(payload, runtime_id) if runtime_id else None
-
-    checkpointer = None
-    thread_id = None
-    if runtime_id:
-        _, state_sqlite = runtime_state_paths(payload, runtime_id)
-        thread_id = prior_thread_id or uuid.uuid4().hex
-        checkpointer = open_checkpointer(state_sqlite)
-
-    agent_kwargs: dict[str, Any] = {
-        "model": model,
-        "tools": await resolve_tools(payload),
-        # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
-        "system_prompt": settings.get("system_prompt"),
-        "skills": resolve_skills(payload),
-        "backend": resolve_backend(payload),
-    }
-    if checkpointer is not None:
-        agent_kwargs["checkpointer"] = checkpointer
-    # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through.
-    extra = settings.get("deepagents")
-    if isinstance(extra, dict):
-        agent_kwargs.update(extra)
-    agent_kwargs = {key: value for key, value in agent_kwargs.items() if value is not None}
+    thread_id = (prior_thread_id or uuid.uuid4().hex) if runtime_id else None
 
     observability = resolve_observability(payload, telemetry_provider, relay_enabled)
     result_state: Any = None
     events: list[dict[str, Any]] = []
     error: str | None = None
+    checkpointer = None
     try:
+        agent_kwargs = await build_agent_kwargs(payload, model, settings)
+        # Acquire the async checkpointer inside the guarded scope so a setup failure
+        # (tools, backend, observability) can never leak the SQLite connection.
+        if runtime_id:
+            _, state_sqlite = runtime_state_paths(payload, runtime_id)
+            checkpointer = await open_checkpointer(state_sqlite)
+            agent_kwargs["checkpointer"] = checkpointer
+
         if observability is not None:
             api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
             from nemo_relay import plugin
@@ -354,7 +394,7 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
         error = f"{type(exc).__name__}: {exc}"
     finally:
         if checkpointer is not None:
-            close_checkpointer(checkpointer)
+            await close_checkpointer(checkpointer)
 
     if error is None and runtime_id and thread_id:
         save_thread_id(payload, runtime_id, thread_id)

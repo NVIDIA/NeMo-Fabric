@@ -90,34 +90,37 @@ def fake_sdks_fixture(monkeypatch) -> dict[str, Any]:
     return recorder
 
 
-class _FakeSaverCM:
-    def __enter__(self) -> "_FakeSaver":
+class _FakeSaver:
+    """Minimal stand-in for langgraph's async SqliteSaver checkpointer."""
+
+
+class _FakeAsyncSaverCM:
+    async def __aenter__(self) -> "_FakeSaver":
         return _FakeSaver()
 
-    def __exit__(self, *_exc: Any) -> bool:
+    async def __aexit__(self, *_exc: Any) -> bool:
         return False
 
 
-class _FakeSaver:
-    """Minimal stand-in for langgraph's SqliteSaver checkpointer."""
-
-
-class _FakeSqliteSaver:
+class _FakeAsyncSqliteSaver:
     @classmethod
-    def from_conn_string(cls, _conn: str) -> _FakeSaverCM:
-        return _FakeSaverCM()
+    def from_conn_string(cls, _conn: str) -> _FakeAsyncSaverCM:
+        return _FakeAsyncSaverCM()
 
 
 def _install_fake_langgraph(monkeypatch) -> None:
     langgraph_mod = types.ModuleType("langgraph")
     checkpoint_mod = types.ModuleType("langgraph.checkpoint")
     sqlite_mod = types.ModuleType("langgraph.checkpoint.sqlite")
-    sqlite_mod.SqliteSaver = _FakeSqliteSaver
+    aio_mod = types.ModuleType("langgraph.checkpoint.sqlite.aio")
+    aio_mod.AsyncSqliteSaver = _FakeAsyncSqliteSaver
+    sqlite_mod.aio = aio_mod
     checkpoint_mod.sqlite = sqlite_mod
     langgraph_mod.checkpoint = checkpoint_mod
     monkeypatch.setitem(sys.modules, "langgraph", langgraph_mod)
     monkeypatch.setitem(sys.modules, "langgraph.checkpoint", checkpoint_mod)
     monkeypatch.setitem(sys.modules, "langgraph.checkpoint.sqlite", sqlite_mod)
+    monkeypatch.setitem(sys.modules, "langgraph.checkpoint.sqlite.aio", aio_mod)
 
 
 def _payload(tmp_path: Path, *, runtime_id: str = "run-1") -> dict[str, Any]:
@@ -337,7 +340,7 @@ async def test_mcp_servers_become_tools_filtered_by_allowed(
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
 
     payload = _payload(tmp_path)
-    # McpServerPlan carries the URL/command in ``url``; the allow-list lives in config.tools.
+    # McpServerPlan carries the URL/command in ``url``.
     payload["capability_plan"] = {
         "native": {
             "mcp_servers": {
@@ -346,7 +349,6 @@ async def test_mcp_servers_become_tools_filtered_by_allowed(
             }
         }
     }
-    payload["effective_config"]["config"]["tools"] = ["read_file"]  # filters out write_file
 
     output = await adapter.run_deepagents(payload)
 
@@ -357,7 +359,97 @@ async def test_mcp_servers_become_tools_filtered_by_allowed(
         "local": {"transport": "stdio", "command": "my-server", "args": ["--flag"]},
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
-    assert tool_names == ["read_file"]
+    assert tool_names == ["read_file", "write_file"]
+
+
+def _use_real_langgraph(monkeypatch) -> None:
+    # Drop the fake langgraph stubs so real langchain/langgraph packages resolve.
+    for name in (
+        "langgraph",
+        "langgraph.checkpoint",
+        "langgraph.checkpoint.sqlite",
+        "langgraph.checkpoint.sqlite.aio",
+        "langgraph.graph",
+        "langgraph.graph.message",
+    ):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+
+async def test_allowed_tools_recorded_as_middleware(
+    tmp_path: Path, monkeypatch, fake_sdks: dict[str, Any]
+) -> None:
+    # An allow-list is enforced by a gating middleware over the full tool surface,
+    # not by filtering the passed tools list.
+    _use_real_langgraph(monkeypatch)
+    pytest.importorskip("langchain.agents.middleware")
+    pytest.importorskip("langgraph.checkpoint.sqlite.aio")
+    payload = _payload(tmp_path)
+    payload["effective_config"]["config"]["tools"] = ["read_file"]
+
+    await adapter.run_deepagents(payload)
+
+    assert fake_sdks["create_kwargs"].get("middleware"), "gating middleware not attached"
+
+
+async def test_allowed_tools_middleware_blocks_disallowed_tools(monkeypatch) -> None:
+    _use_real_langgraph(monkeypatch)
+    pytest.importorskip("langchain.agents.middleware")
+    from langchain_core.messages import ToolMessage
+
+    middleware = adapter.allowed_tools_middleware({"read_file"})
+
+    async def _handler(_request: Any) -> str:
+        return "executed"
+
+    class _Req:
+        def __init__(self, name: str) -> None:
+            self.tool_call = {"name": name, "id": "call-1", "args": {}}
+
+    blocked = await middleware.awrap_tool_call(_Req("write_file"), _handler)
+    assert isinstance(blocked, ToolMessage)
+    assert blocked.status == "error"
+
+    allowed = await middleware.awrap_tool_call(_Req("read_file"), _handler)
+    assert allowed == "executed"
+
+
+async def test_real_langgraph_async_checkpointer(tmp_path: Path, monkeypatch) -> None:
+    # Regression: driving astream with the sync SqliteSaver raises NotImplementedError.
+    # Exercise the adapter against a real compiled LangGraph graph + AsyncSqliteSaver.
+    # Drop the fake langgraph stubs FIRST so the real package resolves (or we skip).
+    for name in (
+        "langgraph",
+        "langgraph.checkpoint",
+        "langgraph.checkpoint.sqlite",
+        "langgraph.checkpoint.sqlite.aio",
+        "langgraph.graph",
+        "langgraph.graph.message",
+    ):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    pytest.importorskip("langgraph.graph")
+    pytest.importorskip("langgraph.checkpoint.sqlite.aio")
+
+    import deepagents
+    from langchain_core.messages import AIMessage
+    from langgraph.graph import END, START, MessagesState, StateGraph
+
+    def _respond(_state: Any) -> dict[str, Any]:
+        return {"messages": [AIMessage(content="ok")]}
+
+    def _build(**kwargs: Any) -> Any:
+        graph = StateGraph(MessagesState)
+        graph.add_node("respond", _respond)
+        graph.add_edge(START, "respond")
+        graph.add_edge("respond", END)
+        return graph.compile(checkpointer=kwargs.get("checkpointer"))
+
+    monkeypatch.setattr(deepagents, "create_deep_agent", _build)
+
+    output = await adapter.run_deepagents(_payload(tmp_path))
+
+    assert output["failed"] is False, output.get("error")
+    assert output["response"] == "ok"
+    assert output["thread_id"]
 
 
 async def test_openai_provider_keeps_openai_endpoint(tmp_path: Path, monkeypatch, fake_sdks) -> None:
