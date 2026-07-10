@@ -6,7 +6,7 @@ name: Create nightly alpha tag
 on:
   workflow_dispatch:
   schedule:
-    # Create the nightly alpha tag at 08:12 UTC (12:12 PST / 1:12 PDT).
+    # Create the nightly alpha tag at 08:12 UTC (00:12 PST / 01:12 PDT).
     - cron: '12 8 * * *'
 
 concurrency:
