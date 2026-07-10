@@ -157,6 +157,33 @@ def codex_cli_config() -> FabricConfig:
     return config
 
 
+def deepagents_config() -> FabricConfig:
+    """Return the complete LangChain Deep Agents variant."""
+
+    config = base_config().model_copy(deep=True)
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.langchain.deepagents",
+        resolution="preinstalled",
+        settings={
+            "workspace": WORKSPACE,
+            "system_prompt": "You are a concise smoke test assistant.",
+        },
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts="./artifacts/deepagents",
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/deepagents",
+    )
+    config.remove_mcp_server("github")
+    config.remove_skill_path(SKILL_PATH)
+    return config
+
+
 def with_opensandbox(base: FabricConfig) -> FabricConfig:
     """Return a copy configured for an externally controlled OpenSandbox."""
 

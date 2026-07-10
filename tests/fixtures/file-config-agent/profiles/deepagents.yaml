@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.profile/v1alpha1
+name: deepagents
+description: Test Deep Agents file-profile resolution.
+
+harness:
+  adapter_id: nvidia.fabric.langchain.deepagents
+  resolution: preinstalled
+  settings:
+    workspace: ./repos/my-service
+    system_prompt: You are a concise smoke test assistant.
+
+models:
+  default:
+    provider: nvidia
+    model: nvidia/nemotron-3-nano-30b-a3b
+    temperature: 0.0
+    api_key_env: NVIDIA_API_KEY
+
+skills: null
+mcp: null
+
+runtime:
+  input_schema: chat
+  output_schema: message
+  artifacts: ./artifacts/deepagents
+
+environment:
+  provider: local
+  workspace: ./repos/my-service
+  artifacts: ./artifacts/deepagents
+
+telemetry:
+  enabled: false
