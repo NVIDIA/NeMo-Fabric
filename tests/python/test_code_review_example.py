@@ -22,7 +22,7 @@ from examples.code_review_agent import (
     with_relay_openinference,
     with_relay_otel,
 )
-from nemo_fabric import Fabric, FabricConfig
+from nemo_fabric import Fabric, FabricConfig, RunOutput
 
 
 def test_variant_builders_return_independent_complete_configs():
@@ -123,8 +123,8 @@ async def test_example_entrypoint_shows_response_after_normalized_output(
     capsys,
 ):
     result = MagicMock()
-    result.output = {"response": "visible response"}
-    result.to_mapping.return_value = {"output": result.output}
+    result.output = RunOutput.from_mapping({"response": "visible response"})
+    result.to_mapping.return_value = {"output": result.output.to_mapping()}
     mock_fabric = MagicMock()
     mock_fabric.run = AsyncMock(return_value=result)
     monkeypatch.setattr(main_module, "Fabric", lambda: mock_fabric)
