@@ -152,8 +152,7 @@ maintenance updates.
 Every commit in a pull request must include a Developer Certificate of Origin
 sign-off.
 
-Use the `-s`/`--signoff` flag with `git commit` when creating commits, or add a `Signed-off-by:` trailer when
-fixing an older commit before review.
+Use `git commit --signoff` when creating commits, or add a `Signed-off-by:` trailer when fixing an older commit before review.
 
 ## Pull Request Process
 
