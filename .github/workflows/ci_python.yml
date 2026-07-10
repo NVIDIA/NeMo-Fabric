@@ -71,10 +71,6 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
-      - name: Set version from tag
-        if: ${{ (inputs.ref_type || github.ref_type) == 'tag' }}
-        run: just set-version "${{ inputs.ref_name || github.ref_name }}"
-
       - name: Cache cargo build
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -133,7 +129,9 @@ jobs:
 
       - name: Set version from tag
         if: ${{ (inputs.ref_type || github.ref_type) == 'tag' }}
-        run: just set-version "${{ inputs.ref_name || github.ref_name }}"
+        env:
+          RELEASE_VERSION: ${{ inputs.ref_name || github.ref_name }}
+        run: just set-version "$RELEASE_VERSION"
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
