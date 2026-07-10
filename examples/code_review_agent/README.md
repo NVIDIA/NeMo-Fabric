@@ -61,6 +61,7 @@ The entrypoint exposes the three complete harness configs defined in
 | Hermes SDK | `--variant hermes-sdk` | Installed [Hermes SDK adapter requirements](../../adapters/hermes-sdk/README.md) and `NVIDIA_API_KEY`|
 | Hermes CLI | `--variant hermes-cli` | Installed [Hermes CLI adapter requirements](../../adapters/hermes-cli/README.md) and `NVIDIA_API_KEY`|
 | Codex CLI | `--variant codex-cli` | Installed and authenticated [Codex CLI](../../adapters/codex-cli/README.md) |
+| Deep Agents | `--variant deepagents` | Installed [Deep Agents adapter requirements](../../adapters/deepagents/README.md) and `NVIDIA_API_KEY` |
 
 Add `--relay` to any variant to enable the Relay ATOF and ATIF configuration:
 

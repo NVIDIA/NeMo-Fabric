@@ -72,7 +72,30 @@ LangGraph owns the transcript.
 
 The `deepagents_config()` builder in `examples/code_review_agent` is the SDK
 example; the `deepagents` profile under
-`tests/fixtures/file-config-agent/profiles/` covers file-based resolution.
+`tests/fixtures/file-config-agent/profiles/` covers file-based resolution. Run it
+from the CLI with `python -m examples.code_review_agent --variant deepagents
+--input "..."`, or drive the SDK directly:
+
+```python
+from examples.code_review_agent import BASE_DIR, deepagents_config
+from nemo_fabric import Fabric
+
+config = deepagents_config()
+client = Fabric()
+
+# One-shot: each run gets a fresh runtime, so `resumed` is False.
+result = await client.run(
+    config, base_dir=BASE_DIR, input="Review the workspace changes."
+)
+print(result["output"]["response"])
+
+# Multi-turn + resume: one started runtime keeps the LangGraph thread across turns.
+async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
+    await runtime.invoke(input="Remember the value 42.")
+    reply = await runtime.invoke(input="What value did I ask you to remember?")
+    # reply["output"]["resumed"] is True and the response recalls "42".
+    print(reply["output"]["resumed"], reply["output"]["response"])
+```
 
 ## Telemetry
 

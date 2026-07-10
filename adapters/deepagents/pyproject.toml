@@ -20,9 +20,9 @@ dependencies = [
   "langchain-mcp-adapters>=0.1,<0.3.0",
   "langchain-openai>=0.3",
   "langgraph>=1.2,<2.0",
-  # <4.0, not <3.0: the 2.x line is incompatible with the langgraph core that
-  # deepagents pulls (AsyncSqliteSaver fails with 'Connection has no is_alive').
-  "langgraph-checkpoint-sqlite>=2.0,<4.0",
+  # Requires 3.x: the 2.x line is incompatible with the langgraph core deepagents
+  # pulls (AsyncSqliteSaver fails with 'Connection has no attribute is_alive').
+  "langgraph-checkpoint-sqlite>=3.0,<4.0",
   "nemo-relay~=0.4",
 ]
 

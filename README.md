@@ -172,8 +172,9 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
   [multi-harness demo](examples/harbor/demo/README.md): ownership,
   installation, and complete command matrices.
 - Adapter guides: [Hermes SDK](adapters/hermes-sdk/README.md),
-  [Hermes CLI](adapters/hermes-cli/README.md), and
-  [Codex CLI](adapters/codex-cli/README.md).
+  [Hermes CLI](adapters/hermes-cli/README.md),
+  [Codex CLI](adapters/codex-cli/README.md), and
+  [Deep Agents](adapters/deepagents/README.md).
 
 ## Tests
 

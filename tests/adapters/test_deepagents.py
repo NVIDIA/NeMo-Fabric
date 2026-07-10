@@ -180,8 +180,9 @@ async def test_oneshot_normalizes_response_usage_and_thread(
 
 
 async def test_missing_api_key_raises(tmp_path: Path, monkeypatch):
-    # Missing model-provider auth is caught by the adapter preflight (doctor's
-    # requirement.env check is the up-front guard for `fabric doctor`).
+    # Missing model-provider auth is caught by the adapter preflight. The
+    # descriptor declares no static env requirement because the credential is
+    # provider-specific.
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="NVIDIA_API_KEY"):
         await adapter.run_deepagents(_payload(tmp_path))
