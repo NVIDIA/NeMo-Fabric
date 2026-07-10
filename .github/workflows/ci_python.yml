@@ -20,6 +20,7 @@ jobs:
   test:
     name: Test (${{ matrix.arch }})
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: x86_64
@@ -72,6 +73,7 @@ jobs:
   build-wheels:
     name: Build wheels (${{ matrix.arch }})
     strategy:
+      fail-fast: false
       matrix:
         include:
           - arch: x86_64
