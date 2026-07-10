@@ -8,23 +8,22 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nemo-fabric-adapters-hermes-cli"
+name = "nemo-fabric-adapters-claude"
 version = "0.1.0"
-description = "Hermes CLI adapter for NeMo Fabric"
+description = "Claude adapter for NeMo Fabric"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "nemo-fabric-adapters-common == 0.1.0",
-  "pyyaml>=6.0", # needed for writing hermes config files
-  "tomli-w~=1.2", # Needed by adapters to write relay config files
+  "claude-agent-sdk==0.2.114",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["nemo_fabric_adapters.hermes_cli*"]
+include = ["nemo_fabric_adapters.claude*"]
 
 [tool.setuptools.data-files]
-"share/nemo-fabric/adapters/hermes-cli" = ["fabric-adapter.json"]
+"share/nemo-fabric/adapters/claude" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
 nemo-fabric-adapters-common = { path = "../common", editable = true }

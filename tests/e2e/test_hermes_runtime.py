@@ -36,7 +36,7 @@ async def test_hermes_runtime():
     if importlib.util.find_spec("run_agent") is None:
         pytest.skip(
             "skipping: Hermes (run_agent) is not importable; run with the Hermes "
-            "venv python (set HERMES_PYTHON or invoke it directly)"
+            "venv python (set ADAPTER_PYTHON or invoke it directly)"
         )
     hermes_state_spec = importlib.util.find_spec("hermes_state")
     if hermes_state_spec is None:

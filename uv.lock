@@ -419,6 +419,24 @@ wheels = [
 ]
 
 [[package]]
+name = "claude-agent-sdk"
+version = "0.2.114"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "mcp" },
+    { name = "sniffio" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c6/f3/a74b32b52f3c0013e317afe27b44946b9bbceb16b53c2a8d9614bfc0e7ad/claude_agent_sdk-0.2.114.tar.gz", hash = "sha256:53263a25bddd52b354ba2975b348cc978493bf29cb21a8c74a1b92b06f88faa3", size = 268633, upload-time = "2026-07-08T21:35:01.546Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/57/ded5a6e02940b73775e8235cc69c3f1f9aca15871b73951ea184f26b68b7/claude_agent_sdk-0.2.114-py3-none-macosx_11_0_arm64.whl", hash = "sha256:5170a7cf8e5f30cdd59d60505b82e444abd655e8391e92e8390b1d539c100550", size = 69490216, upload-time = "2026-07-08T21:35:05.659Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/ee/646435d91960e83cf6989d70adc6e9b47295a1e93bb1c2d7be366c8786c8/claude_agent_sdk-0.2.114-py3-none-macosx_11_0_x86_64.whl", hash = "sha256:42b76e889d8219cf741789205adc9306b62524af205080362eb75b1bc09aa10b", size = 74389245, upload-time = "2026-07-08T21:35:10.367Z" },
+    { url = "https://files.pythonhosted.org/packages/38/d0/f0c5ced2a1dcf28ad0da9643d81e535e9fa7c9cf70c09ae7573429e4bcdf/claude_agent_sdk-0.2.114-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:f583f04a8d7db22b5dc826c135225199e99c46092e563492aa2a13d52b81e8ed", size = 79425407, upload-time = "2026-07-08T21:35:15.18Z" },
+    { url = "https://files.pythonhosted.org/packages/1d/7a/2dc6f13a153187ec4ca0a2fd76e7e20cd3fb43d72eb8e01401fd4ab7a335/claude_agent_sdk-0.2.114-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:a3ec58cfff233c70782437a900fb152ef971b92887e03b03d218266285ad387a", size = 80450013, upload-time = "2026-07-08T21:35:20.331Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/25/3cc0ea8ff94bdbc28cd0da69d4d6b4bd382b6f7d182b94351a313d59ceac/claude_agent_sdk-0.2.114-py3-none-win_amd64.whl", hash = "sha256:60096c88ead0ff7f05ae5cf90d7a75e47a02cbc16a97d0c813bc0409cbb0e334", size = 79985117, upload-time = "2026-07-08T21:35:25.45Z" },
+]
+
+[[package]]
 name = "click"
 version = "8.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1547,7 +1565,7 @@ wheels = [
 
 [[package]]
 name = "langgraph"
-version = "1.2.8"
+version = "1.2.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain-core" },
@@ -1557,9 +1575,9 @@ dependencies = [
     { name = "pydantic" },
     { name = "xxhash" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/ad/583fda4c69501390b989770a465ccd0bdab1c1612eba582c012002ddf9b6/langgraph-1.2.8.tar.gz", hash = "sha256:f79d3575f45b404899358976e4fac0294eb75f8df1bfe8cd11286be7539c4548", size = 722464, upload-time = "2026-07-06T20:40:19.487Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/4b/0d1130e26b41a99dcc88353bbe7162a1f255c4db746bd94024268e6af27b/langgraph-1.2.9.tar.gz", hash = "sha256:385f87bc1802c35af7e0aa479278ecba8582d103515eb48256cb2ddcd42d0bd4", size = 722869, upload-time = "2026-07-10T01:30:14.985Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/36/49/b958a9963606807e5a20cc75fced14aa77c5cbcc470d5bf8ae13277cd298/langgraph-1.2.8-py3-none-any.whl", hash = "sha256:aa8de1d4df44162353d117589ae0bf6930ca009b62d2d6e26cc32580794c5be6", size = 246983, upload-time = "2026-07-06T20:40:18.242Z" },
+    { url = "https://files.pythonhosted.org/packages/41/16/0b8dc48823f1326f3e0c8012a3c07a40da6f194299e2ec080df236287baf/langgraph-1.2.9-py3-none-any.whl", hash = "sha256:c2d98ad94333937922ba04148641c1da2bfe45b5b8e55d7b6dcb0bb2df809e76", size = 247473, upload-time = "2026-07-10T01:30:13.733Z" },
 ]
 
 [[package]]
@@ -1962,6 +1980,9 @@ version = "0.1.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
+adapters-claude = [
+    { name = "nemo-fabric-adapters-claude" },
+]
 adapters-codex-cli = [
     { name = "nemo-fabric-adapters-codex-cli" },
 ]
@@ -1976,6 +1997,9 @@ adapters-hermes-cli = [
 ]
 adapters-hermes-sdk = [
     { name = "nemo-fabric-adapters-hermes-sdk" },
+]
+claude = [
+    { name = "nemo-fabric-adapters-claude" },
 ]
 codex = [
     { name = "nemo-fabric-adapters-codex-cli" },
@@ -2002,6 +2026,7 @@ runtime = [
 
 [package.dev-dependencies]
 adapters = [
+    { name = "nemo-fabric-adapters-claude" },
     { name = "nemo-fabric-adapters-codex-cli" },
     { name = "nemo-fabric-adapters-common" },
     { name = "nemo-fabric-adapters-deepagents" },
@@ -2029,29 +2054,32 @@ test = [
 requires-dist = [
     { name = "harbor", marker = "python_full_version >= '3.12' and extra == 'harbor'", specifier = ">=0.16.1" },
     { name = "hermes-agent", marker = "extra == 'hermes'", specifier = ">=0.17.0" },
-    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'adapters-codex-cli'", directory = "adapters/codex-cli" },
-    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'codex'", directory = "adapters/codex-cli" },
-    { name = "nemo-fabric-adapters-common", marker = "extra == 'adapters-common'", directory = "adapters/common" },
-    { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'adapters-deepagents'", directory = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", directory = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'adapters-hermes-cli'", directory = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'hermes'", directory = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'adapters-hermes-sdk'", directory = "adapters/hermes-sdk" },
-    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'hermes'", directory = "adapters/hermes-sdk" },
-    { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", directory = "python" },
+    { name = "nemo-fabric-adapters-claude", marker = "extra == 'adapters-claude'", editable = "adapters/claude" },
+    { name = "nemo-fabric-adapters-claude", marker = "extra == 'claude'", editable = "adapters/claude" },
+    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'adapters-codex-cli'", editable = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'codex'", editable = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-common", marker = "extra == 'adapters-common'", editable = "adapters/common" },
+    { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'adapters-deepagents'", editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'adapters-hermes-cli'", editable = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'hermes'", editable = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'adapters-hermes-sdk'", editable = "adapters/hermes-sdk" },
+    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'hermes'", editable = "adapters/hermes-sdk" },
+    { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = "~=0.4" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
     { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
 ]
-provides-extras = ["adapters-common", "adapters-codex-cli", "adapters-deepagents", "adapters-hermes-cli", "adapters-hermes-sdk", "codex", "deepagents", "harbor", "hermes", "relay", "runtime"]
+provides-extras = ["adapters-common", "adapters-codex-cli", "adapters-claude", "adapters-deepagents", "adapters-hermes-cli", "adapters-hermes-sdk", "codex", "claude", "deepagents", "harbor", "hermes", "relay", "runtime"]
 
 [package.metadata.requires-dev]
 adapters = [
-    { name = "nemo-fabric-adapters-codex-cli", directory = "adapters/codex-cli" },
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
-    { name = "nemo-fabric-adapters-deepagents", directory = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-hermes-cli", directory = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-sdk", directory = "adapters/hermes-sdk" },
+    { name = "nemo-fabric-adapters-claude", editable = "adapters/claude" },
+    { name = "nemo-fabric-adapters-codex-cli", editable = "adapters/codex-cli" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
+    { name = "nemo-fabric-adapters-deepagents", editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-hermes-cli", editable = "adapters/hermes-cli" },
+    { name = "nemo-fabric-adapters-hermes-sdk", editable = "adapters/hermes-sdk" },
 ]
 dev = [{ name = "ipython", specifier = "~=8.20" }]
 docs = [
@@ -2069,9 +2097,24 @@ test = [
 ]
 
 [[package]]
+name = "nemo-fabric-adapters-claude"
+version = "0.1.0"
+source = { editable = "adapters/claude" }
+dependencies = [
+    { name = "claude-agent-sdk" },
+    { name = "nemo-fabric-adapters-common" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "claude-agent-sdk", specifier = "==0.2.114" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
+]
+
+[[package]]
 name = "nemo-fabric-adapters-codex-cli"
 version = "0.1.0"
-source = { directory = "adapters/codex-cli" }
+source = { editable = "adapters/codex-cli" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
     { name = "tomli-w" },
@@ -2079,19 +2122,19 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
 version = "0.1.0"
-source = { directory = "adapters/common" }
+source = { editable = "adapters/common" }
 
 [[package]]
 name = "nemo-fabric-adapters-deepagents"
 version = "0.1.0"
-source = { directory = "adapters/deepagents" }
+source = { editable = "adapters/deepagents" }
 dependencies = [
     { name = "deepagents" },
     { name = "langchain" },
@@ -2111,14 +2154,14 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=0.3" },
     { name = "langgraph", specifier = ">=1.2,<2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=2.0,<4.0" },
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "nemo-relay", specifier = "~=0.4" },
 ]
 
 [[package]]
 name = "nemo-fabric-adapters-hermes-cli"
 version = "0.1.0"
-source = { directory = "adapters/hermes-cli" }
+source = { editable = "adapters/hermes-cli" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
     { name = "pyyaml" },
@@ -2127,7 +2170,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
@@ -2135,7 +2178,7 @@ requires-dist = [
 [[package]]
 name = "nemo-fabric-adapters-hermes-sdk"
 version = "0.1.0"
-source = { directory = "adapters/hermes-sdk" }
+source = { editable = "adapters/hermes-sdk" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
     { name = "pyyaml" },
@@ -2143,13 +2186,13 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", directory = "adapters/common" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]
 name = "nemo-fabric-runtime"
-source = { directory = "python" }
+source = { editable = "python" }
 dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },

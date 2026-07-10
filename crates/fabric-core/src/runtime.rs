@@ -4,6 +4,7 @@
 //! Runtime invocation helpers.
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -23,6 +24,7 @@ use crate::config::{
 use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -584,6 +586,12 @@ struct PythonAdapterSettings {
     env: BTreeMap<String, String>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct PythonCommand {
+    path: PathBuf,
+    adapter_python_value: Option<String>,
+}
+
 impl RuntimeAdapter for ProcessAdapter {
     fn start(&self, plan: &RunPlan, environment: EnvironmentHandle) -> Result<RuntimeHandle> {
         if environment.provider != "local" {
@@ -639,6 +647,7 @@ impl RuntimeAdapter for PythonAdapter {
                 adapter_kind: AdapterKind::Python,
             });
         }
+        preflight_python_adapter(plan)?;
         let runtime_id = new_id("runtime");
         let runtime_binding = runtime_binding(&runtime_id, plan, &environment)?;
         Ok(RuntimeHandle {
@@ -926,7 +935,7 @@ fn run_python_adapter(
         .or_else(|| runtime.environment.workspace.clone())
         .unwrap_or_else(|| plan.agent_root.clone());
 
-    let python = resolve_python_command(&plan.config_root, &settings);
+    let python = resolve_python_command(&plan.config_root, &settings).path;
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
     let relay_config = prepare_relay_runtime_config(
@@ -1319,16 +1328,61 @@ fn resolve_command_path(root: &Path, path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-fn resolve_python_command(root: &Path, settings: &PythonAdapterSettings) -> PathBuf {
-    if let Some(path) = settings.python.as_ref() {
-        return resolve_command_path(root, path);
-    }
-    if let Some(env_name) = settings.python_env.as_ref() {
-        if let Some(path) = std::env::var_os(env_name) {
-            return resolve_command_path(root, Path::new(&path));
+fn preflight_python_adapter(plan: &RunPlan) -> Result<()> {
+    let settings = parse_python_settings(plan)?;
+    let command = resolve_python_command(&plan.config_root, &settings);
+    validate_python_command(command)
+}
+
+fn validate_python_command(command: PythonCommand) -> Result<()> {
+    if let Some(value) = command.adapter_python_value {
+        if !command.path.is_file() {
+            return Err(FabricError::InvalidAdapterPython {
+                value,
+                path: command.path,
+            });
         }
     }
-    PathBuf::from("python3")
+    Ok(())
+}
+
+fn resolve_python_command(root: &Path, settings: &PythonAdapterSettings) -> PythonCommand {
+    resolve_python_command_with_env(root, settings, |name| std::env::var_os(name))
+}
+
+fn resolve_python_command_with_env(
+    root: &Path,
+    settings: &PythonAdapterSettings,
+    env: impl Fn(&str) -> Option<OsString>,
+) -> PythonCommand {
+    if let Some(path) = settings.python.as_ref() {
+        return PythonCommand {
+            path: resolve_command_path(root, path),
+            adapter_python_value: None,
+        };
+    }
+    if let Some(env_name) = settings.python_env.as_ref() {
+        if let Some(path) = env(env_name) {
+            return PythonCommand {
+                path: resolve_command_path(root, Path::new(&path)),
+                adapter_python_value: None,
+            };
+        }
+        return PythonCommand {
+            path: PathBuf::from("python3"),
+            adapter_python_value: None,
+        };
+    }
+    if let Some(value) = env(ADAPTER_PYTHON_ENV) {
+        return PythonCommand {
+            path: resolve_command_path(root, Path::new(&value)),
+            adapter_python_value: Some(value.to_string_lossy().into_owned()),
+        };
+    }
+    PythonCommand {
+        path: PathBuf::from("python3"),
+        adapter_python_value: None,
+    }
 }
 
 fn absolute_path(path: PathBuf) -> Result<PathBuf> {
@@ -2499,6 +2553,93 @@ runtime:
         );
         assert_eq!(error.metadata.get("exit_code"), Some(&Value::from(7)));
         assert_eq!(artifact_content(&result, "stderr"), "adapter exploded\n");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn python_settings() -> PythonAdapterSettings {
+        PythonAdapterSettings {
+            module: "test.adapter".to_string(),
+            python: None,
+            python_env: None,
+            args: Vec::new(),
+            cwd: None,
+            env: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn python_command_uses_adapter_python_as_default_python_env() {
+        let root = Path::new("/config");
+        let settings = python_settings();
+        let command = resolve_python_command_with_env(root, &settings, |name| {
+            (name == ADAPTER_PYTHON_ENV).then(|| OsString::from("venv/bin/python"))
+        });
+
+        assert_eq!(command.path, root.join("venv/bin/python"));
+        assert_eq!(
+            command.adapter_python_value.as_deref(),
+            Some("venv/bin/python")
+        );
+
+        let command = resolve_python_command_with_env(root, &settings, |_| None);
+        assert_eq!(command.path, PathBuf::from("python3"));
+        assert_eq!(command.adapter_python_value, None);
+    }
+
+    #[test]
+    fn explicit_python_settings_override_adapter_python() {
+        let root = Path::new("/config");
+        let mut settings = python_settings();
+        settings.python_env = Some("CUSTOM_PYTHON".to_string());
+        let command = resolve_python_command_with_env(root, &settings, |name| match name {
+            "CUSTOM_PYTHON" => Some(OsString::from("/custom/python")),
+            ADAPTER_PYTHON_ENV => Some(OsString::from("/adapter/python")),
+            _ => None,
+        });
+        assert_eq!(command.path, PathBuf::from("/custom/python"));
+        assert_eq!(command.adapter_python_value, None);
+
+        let command = resolve_python_command_with_env(root, &settings, |name| {
+            (name == ADAPTER_PYTHON_ENV).then(|| OsString::from("/adapter/python"))
+        });
+        assert_eq!(command.path, PathBuf::from("python3"));
+        assert_eq!(command.adapter_python_value, None);
+
+        settings.python = Some(PathBuf::from("/configured/python"));
+        let command = resolve_python_command_with_env(root, &settings, |_| {
+            Some(OsString::from("/environment/python"))
+        });
+        assert_eq!(command.path, PathBuf::from("/configured/python"));
+        assert_eq!(command.adapter_python_value, None);
+    }
+
+    #[test]
+    fn adapter_python_preflight_requires_a_file() {
+        let root = std::env::temp_dir().join(new_id("fabric-adapter-python-test"));
+        fs::create_dir_all(&root).expect("create test directory");
+        let interpreter = root.join("python");
+        fs::write(&interpreter, "").expect("create interpreter file");
+
+        validate_python_command(PythonCommand {
+            path: interpreter,
+            adapter_python_value: Some("python".to_string()),
+        })
+        .expect("file path should pass preflight");
+
+        let error = validate_python_command(PythonCommand {
+            path: root.join("missing-python"),
+            adapter_python_value: Some("missing-python".to_string()),
+        })
+        .expect_err("missing path should fail preflight");
+        assert!(matches!(error, FabricError::InvalidAdapterPython { .. }));
+
+        let error = validate_python_command(PythonCommand {
+            path: root.clone(),
+            adapter_python_value: Some(root.to_string_lossy().into_owned()),
+        })
+        .expect_err("directory path should fail preflight");
+        assert!(matches!(error, FabricError::InvalidAdapterPython { .. }));
 
         let _ = fs::remove_dir_all(root);
     }

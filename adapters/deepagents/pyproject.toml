@@ -34,4 +34,4 @@ include = ["nemo_fabric_adapters.deepagents*"]
 "share/nemo-fabric/adapters/deepagents" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
-nemo-fabric-adapters-common = { path = "../common" }
+nemo-fabric-adapters-common = { path = "../common", editable = true }

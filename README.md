@@ -94,16 +94,36 @@ Run the code-review example:
 
 ```bash
 export NVIDIA_API_KEY=...
-export HERMES_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
+export ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
 
 .venv/bin/python -m examples.code_review_agent \
   --input "Reply with exactly: fabric works"
 ```
 
+`ADAPTER_PYTHON` selects the interpreter used to launch any Python adapter.
+An explicit `harness.settings.python` or `harness.settings.python_env` takes
+precedence. If none is configured and `ADAPTER_PYTHON` is unset, Fabric falls
+back to `python3`. 
+
+Use `ADAPTER_PYTHON` when the harness is installed in a separate environment from Fabric. The environment must have the adapter package installed, the adapters tend to be small and self-contained with minimal dependencies.
+
 The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
 under `examples/code_review_agent/artifacts/hermes-sdk/`. Its complete base
 config and clone-based variants live in
 `examples/code_review_agent/config.py`.
+
+## Claude Adapter
+
+Build the local wheels and install Fabric with the independent Claude adapter:
+
+```bash
+just wheels
+python -m pip install --find-links dist "nemo-fabric[claude]"
+```
+
+Refer to the [Claude adapter guide](adapters/claude/README.md) for
+typed configuration, normalized tools, MCP and skills, multi-turn resume,
+authentication, and execution details.
 
 ## Core Concepts
 
@@ -119,7 +139,8 @@ config and clone-based variants live in
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
   The Hermes SDK and CLI adapters live under `adapters/hermes-sdk/` and
   `adapters/hermes-cli/`; the Codex CLI adapter lives under
-  `adapters/codex-cli/`; the LangChain Deep Agents adapter lives under
+  `adapters/codex-cli/`; the [Claude adapter](adapters/claude/README.md)
+  lives under `adapters/claude/`; the LangChain Deep Agents adapter lives under
   `adapters/deepagents/`. Harness-specific extensions belong under
   `harness.settings` so the normalized contract can remain stable.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
