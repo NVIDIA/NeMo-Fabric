@@ -767,9 +767,26 @@ def test_run_output_preserves_explicit_null_response():
     assert output.to_mapping() == {"response": None}
 
 
-def test_run_output_rejects_non_string_response():
-    with pytest.raises(FabricConfigError, match="run output response must be a string or null"):
-        RunOutput.from_mapping({"response": 123})
+def test_run_output_preserves_non_string_response_without_raising():
+    output = RunOutput.from_mapping({"response": {"text": "hello"}})
+
+    assert output.response == {"text": "hello"}
+    assert output["response"] == {"text": "hello"}
+    assert output.to_mapping() == {"response": {"text": "hello"}}
+
+
+def test_run_result_preserves_structured_response_from_core_valid_output():
+    result = RunResult.from_mapping(
+        _run_result(output={"response": {"text": "hello"}, "usage": {"tokens": 1}})
+    )
+
+    assert isinstance(result.output, RunOutput)
+    assert result.output.response == {"text": "hello"}
+    assert result.output["response"] == {"text": "hello"}
+    assert result.to_mapping()["output"] == {
+        "response": {"text": "hello"},
+        "usage": {"tokens": 1},
+    }
 
 
 def test_run_result_preserves_non_object_output():

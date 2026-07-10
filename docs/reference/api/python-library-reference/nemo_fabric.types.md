@@ -859,7 +859,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 Normalized adapter output.
 
-``response`` is the canonical user-facing response text when present. Additional keys are adapter-specific extension fields.
+``response`` is a known adapter response field whose value follows the core Fabric JSON contract. Other keys are adapter-specific extensions.
 
 
 ### <kbd>method</kbd> `__init__`
@@ -883,7 +883,7 @@ Return an immutable view of preserved extension fields.
 
 ### <kbd>property</kbd> response
 
-Return the canonical response text, or ``None`` when absent.
+Return the raw ``response`` JSON value, or ``None`` when absent.
 
 
 

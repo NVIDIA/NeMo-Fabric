@@ -1208,27 +1208,19 @@ class RuntimeHandle(FabricMapping):
 class RunOutput(FabricMapping):
     """Normalized adapter output.
 
-    ``response`` is the canonical user-facing response text when present.
-    Additional keys are adapter-specific extension fields.
+    ``response`` is a known adapter response field whose value follows the
+    core Fabric JSON contract. Other keys are adapter-specific extensions.
     """
 
-    response: str | None
+    response: JSONValue | None
     _fields = frozenset({"response"})
-
-    @classmethod
-    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        if "response" in data:
-            response = data["response"]
-            if response is not None and not isinstance(response, str):
-                raise FabricConfigError("run output response must be a string or null")
-        return data
+    _json_fields = frozenset({"response"})
 
     @property
-    def response(self) -> str | None:
-        """Return the canonical response text, or ``None`` when absent."""
+    def response(self) -> JSONValue | None:
+        """Return the raw ``response`` JSON value, or ``None`` when absent."""
 
-        value = self._data.get("response")
-        return None if value is None else value
+        return _snapshot_value(self._data.get("response"), json_value=True)
 
 
 class RunResult(FabricMapping):
