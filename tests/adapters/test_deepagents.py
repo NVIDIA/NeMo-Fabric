@@ -48,8 +48,9 @@ def fake_sdks_fixture(monkeypatch):
     def build_agent(**kwargs):
         recorder["create_kwargs"] = kwargs
 
-        async def astream(inputs, config=None, *, stream_mode=None):
+        async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
             recorder["config"] = config
+            recorder["subgraphs"] = subgraphs
             recorder["checkpointer"] = kwargs.get("checkpointer")
             user = inputs["messages"][-1]["content"]
             ai = {
@@ -57,10 +58,11 @@ def fake_sdks_fixture(monkeypatch):
                 "content": f"reply to {user}",
                 "usage": {"input_tokens": 5, "output_tokens": 7, "total_tokens": 12},
             }
-            # ``updates`` carries the message produced this turn; ``values`` is the
-            # full (on resume, replayed) state.
-            yield ("updates", {"agent": {"messages": [ai]}})
-            yield ("values", {"messages": [{"role": "user", "content": user}, ai]})
+            # subgraphs=True yields 3-tuples ``(namespace, mode, chunk)``; the main
+            # graph has an empty namespace. ``updates`` carries the message produced
+            # this turn; ``values`` is the full (on resume, replayed) state.
+            yield ((), "updates", {"agent": {"messages": [ai]}})
+            yield ((), "values", {"messages": [{"role": "user", "content": user}, ai]})
 
         agent = MagicMock()
         agent.astream = astream
@@ -220,19 +222,22 @@ async def test_oneshot_normalizes_response_usage_and_thread(tmp_path, make_paylo
     assert "instructions" not in fake_sdks["create_kwargs"]
 
 
-async def test_missing_api_key_raises(tmp_path, make_payload, monkeypatch):
-    # Missing model-provider auth is caught by the adapter preflight. The
-    # descriptor declares no static env requirement because the credential is
-    # provider-specific.
+async def test_missing_api_key_is_normalized(tmp_path, make_payload, monkeypatch):
+    # Missing model-provider auth is caught by the adapter preflight. Because the
+    # preflight runs inside the guarded scope, the failure is normalized into the
+    # Fabric result rather than raising a raw traceback.
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
-    with pytest.raises(RuntimeError, match="NVIDIA_API_KEY"):
-        await adapter.run_deepagents(make_payload(tmp_path))
+    output = await adapter.run_deepagents(make_payload(tmp_path))
+
+    assert output["failed"] is True
+    assert output["completed"] is False
+    assert "NVIDIA_API_KEY" in output["error"]
 
 
-async def test_missing_deepagents_package_raises(tmp_path, make_payload, monkeypatch):
-    # Preflight reports a clear error when the deepagents package is absent.
-    # Force find_spec("deepagents") -> None so the test holds whether or not the
-    # real package is installed in the environment.
+async def test_missing_deepagents_package_is_normalized(tmp_path, make_payload, monkeypatch):
+    # Preflight reports a clear, normalized error when the deepagents package is
+    # absent. Force find_spec("deepagents") -> None so the test holds whether or
+    # not the real package is installed in the environment.
     import importlib.util as importlib_util
 
     real_find_spec = importlib_util.find_spec
@@ -243,8 +248,10 @@ async def test_missing_deepagents_package_raises(tmp_path, make_payload, monkeyp
         return real_find_spec(name, *args, **kwargs)
 
     monkeypatch.setattr(importlib_util, "find_spec", fake_find_spec)
-    with pytest.raises(RuntimeError, match="deepagents"):
-        await adapter.run_deepagents(make_payload(tmp_path))
+    output = await adapter.run_deepagents(make_payload(tmp_path))
+
+    assert output["failed"] is True
+    assert "deepagents" in output["error"]
 
 
 async def test_invocation_error_is_normalized(tmp_path, make_payload, monkeypatch):
@@ -330,7 +337,11 @@ async def test_native_telemetry_exports_without_artifacts(
 
 async def test_workspace_roots_filesystem_backend(tmp_path, make_payload, fake_sdks):
     await adapter.run_deepagents(make_payload(tmp_path))
-    assert fake_sdks["fs_backend"].call_args.kwargs["root_dir"] == str(tmp_path)
+    backend_kwargs = fake_sdks["fs_backend"].call_args.kwargs
+    assert backend_kwargs["root_dir"] == str(tmp_path)
+    # virtual_mode=True confines the agent to root_dir: absolute paths and ``..``
+    # cannot escape the workspace (and it does not rely on the deprecated default).
+    assert backend_kwargs["virtual_mode"] is True
 
 
 async def test_checkpointer_closed_on_success_and_failure(
@@ -504,9 +515,9 @@ async def test_cost_is_extracted_from_response_metadata(tmp_path, make_payload, 
         "response_metadata": {"cost": 0.0025},
     }
 
-    async def astream(inputs, config=None, *, stream_mode=None):
-        yield ("updates", {"agent": {"messages": [message]}})
-        yield ("values", {"messages": [message]})
+    async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
+        yield ((), "updates", {"agent": {"messages": [message]}})
+        yield ((), "values", {"messages": [message]})
 
     agent = MagicMock()
     agent.astream = astream
@@ -534,11 +545,11 @@ async def test_resumed_usage_counts_current_turn_only(tmp_path, make_payload, mo
         "response_metadata": {"cost": 0.002},
     }
 
-    async def astream(inputs, config=None, *, stream_mode=None):
+    async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
         # Only the current turn's message is emitted as an update...
-        yield ("updates", {"agent": {"messages": [current]}})
+        yield ((), "updates", {"agent": {"messages": [current]}})
         # ...but the resumed final state also replays the prior turn.
-        yield ("values", {"messages": [prior, current]})
+        yield ((), "values", {"messages": [prior, current]})
 
     agent = MagicMock()
     agent.astream = astream
@@ -571,3 +582,143 @@ async def test_runtime_resume_reuses_thread_id(tmp_path, make_payload, fake_sdks
     second = await adapter.run_deepagents(payload)
     assert second["resumed"] is True
     assert second["thread_id"] == thread_id
+
+
+async def test_stream_requests_subgraphs(tmp_path, make_payload, fake_sdks):
+    # Streaming must opt into subgraphs so delegated (subagent) steps are visible
+    # for usage aggregation.
+    await adapter.run_deepagents(make_payload(tmp_path))
+    assert fake_sdks["subgraphs"] is True
+
+
+async def test_subagents_are_gated_by_allow_list(tmp_path, make_payload, fake_sdks):
+    # The allow-list must gate delegated subagents too, not only the main agent,
+    # so tools routed through the ``task`` tool cannot run ungated.
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["tools"] = ["read_file"]
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+        "subagents": [{"name": "researcher", "prompt": "research"}]
+    }
+
+    await adapter.run_deepagents(payload)
+
+    create_kwargs = fake_sdks["create_kwargs"]
+    assert create_kwargs["middleware"], "main agent gating middleware not attached"
+    subagents = create_kwargs["subagents"]
+    assert len(subagents) == 1
+    assert subagents[0]["middleware"], "subagent gating middleware not attached"
+
+
+async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monkeypatch):
+    # Usage from a delegated subagent is emitted under a subgraph namespace; folding
+    # it into this turn keeps usage/cost accurate. Duplicate ids are counted once.
+    import deepagents
+
+    sub_ai = {
+        "role": "ai",
+        "content": "subagent work",
+        "id": "sub-1",
+        "usage": {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30},
+    }
+    main_ai = {
+        "role": "ai",
+        "content": "final",
+        "id": "main-1",
+        "usage": {"input_tokens": 2, "output_tokens": 3, "total_tokens": 5},
+    }
+
+    async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
+        assert subgraphs is True
+        # subagent step under a subgraph namespace, emitted twice (dedup by id)
+        yield (("task:researcher",), "updates", {"agent": {"messages": [sub_ai]}})
+        yield (("task:researcher",), "updates", {"agent": {"messages": [sub_ai]}})
+        # main graph step + replayed final state
+        yield ((), "updates", {"agent": {"messages": [main_ai]}})
+        yield ((), "values", {"messages": [main_ai]})
+
+    agent = MagicMock()
+    agent.astream = astream
+    monkeypatch.setattr(deepagents, "create_deep_agent", MagicMock(return_value=agent))
+
+    output = await adapter.run_deepagents(make_payload(tmp_path))
+
+    # subagent (10/20/30) + main (2/3/5), the duplicate subagent message counted once
+    assert output["usage"] == {
+        "prompt_tokens": 12,
+        "completion_tokens": 23,
+        "total_tokens": 35,
+    }
+    # the subgraph step is recorded with its namespace label
+    assert any(evt.get("subgraph") == "task:researcher" for evt in output["events"])
+
+
+async def test_dict_tools_is_normalized_failure(tmp_path, make_payload):
+    # A dict-shaped tools value must fail loudly, not silently disable gating.
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["tools"] = {"read_file": True}
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "tools" in output["error"]
+
+
+async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):
+    # A misconfigured MCP server must fail loudly, not be silently dropped.
+    payload = make_payload(tmp_path)
+    payload["capability_plan"] = {
+        "native": {"mcp_servers": {"bad": {"transport": "carrier-pigeon", "url": "http://x/mcp"}}}
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "transport" in output["error"]
+
+
+async def test_empty_mcp_url_is_normalized_failure(tmp_path, make_payload):
+    payload = make_payload(tmp_path)
+    payload["capability_plan"] = {
+        "native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "url" in output["error"]
+
+
+async def test_unknown_provider_requires_api_key_env(tmp_path, make_payload, monkeypatch):
+    # An unknown provider with no explicit api_key_env must fail loudly rather than
+    # defaulting to NVIDIA_API_KEY and sending the wrong key to the endpoint.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-x")
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["models"]["default"] = {
+        "provider": "anthropic",
+        "model": "claude-x",
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "api_key_env" in output["error"]
+
+
+async def test_openai_provider_defaults_to_openai_key(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    # provider openai with no explicit api_key_env defaults to OPENAI_API_KEY, never
+    # NVIDIA_API_KEY, and keeps ChatOpenAI's own endpoint.
+    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["models"]["default"] = {
+        "provider": "openai",
+        "model": "gpt-4o",
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is False, output["error"]
+    assert output["base_url"] is None
+    assert "base_url" not in fake_sdks["chat_openai"].call_args.kwargs

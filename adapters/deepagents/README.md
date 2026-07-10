@@ -31,6 +31,10 @@ static env requirement; a runtime **preflight** verifies that the `deepagents`
 package is importable and the configured credential is set, and returns a
 normalized failure otherwise. `fabric doctor` validates adapter resolution.
 
+`api_key_env` defaults per provider — `NVIDIA_API_KEY` for `nvidia` (or an
+unspecified provider) and `OPENAI_API_KEY` for `openai`. Any other provider must
+set `api_key_env` explicitly so a key is never sent to the wrong endpoint.
+
 Fabric maps the following into the harness:
 
 - `models.default.model` / `harness.settings.model_name` selects the model.
@@ -39,19 +43,29 @@ Fabric maps the following into the harness:
 - `harness.settings.base_url` overrides the model endpoint.
 - `harness.settings.system_prompt` becomes the Deep Agents `system_prompt`.
 - `environment.workspace` roots the Deep Agents filesystem backend
-  (`FilesystemBackend(root_dir=...)`).
+  (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
+  confines the agent to the workspace: absolute paths and `..` cannot escape
+  `root_dir`.
 - Routed `skills` (`native.skill_paths`) become the Deep Agents `skills` sources.
 - Configured MCP servers are loaded as Deep Agents tools via
-  `langchain-mcp-adapters`.
+  `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
+  unsupported transport) is a normalized configuration failure, not a silent drop.
 - `tools` (Fabric's `config.tools` allow-list) is enforced by a gating middleware
-  across the full tool surface (Deep Agents built-ins and MCP tools); tool calls
-  whose name is not on the list are blocked.
+  across the full tool surface — Deep Agents built-ins (including `task`), MCP
+  tools, and **delegated subagents** alike; tool calls whose name is not on the
+  list are blocked, so tools routed through the `task` tool cannot run ungated. A
+  non-list `tools` value is a normalized configuration failure rather than a
+  silently disabled allow-list.
 - `harness.settings.deepagents` is an escape hatch passed through to
   `create_deep_agent` (e.g. `subagents`, `interrupt_on`).
 
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
-reports it), and errors.
+reports it), and errors. Usage aggregates the current turn across the main agent
+and any delegated subagents (streamed with `subgraphs=True`). Configuration and
+preflight failures (a missing credential, an absent `deepagents` package, an
+invalid allow-list or MCP server) are returned as a normalized failure result
+rather than a raw traceback.
 
 ## Runtime Modes
 

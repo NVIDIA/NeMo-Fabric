@@ -29,6 +29,38 @@ DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 OPENAI_COMPATIBLE_PROVIDERS = {"", "nvidia", "openai", "openai-compatible"}
 # Providers whose default endpoint is NVIDIA's OpenAI-compatible gateway.
 NVIDIA_DEFAULT_PROVIDERS = {"", "nvidia"}
+# Conventional credential env var per provider; others must set api_key_env.
+PROVIDER_DEFAULT_API_KEY_ENV = {
+    "": "NVIDIA_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
+# MCP transports langchain-mcp-adapters accepts (after normalization).
+VALID_MCP_TRANSPORTS = {"stdio", "sse", "streamable_http", "websocket"}
+
+
+class AdapterConfigError(RuntimeError):
+    """Raised for invalid Deep Agents adapter configuration (normalized to a failure)."""
+
+
+def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) -> str:
+    """Resolve the credential env var, defaulting per provider.
+
+    An explicit ``api_key_env`` always wins. Otherwise nvidia/unspecified default
+    to ``NVIDIA_API_KEY`` and openai to ``OPENAI_API_KEY``; any other provider must
+    set ``api_key_env`` explicitly so a key is never sent to the wrong endpoint.
+    """
+
+    explicit = settings.get("api_key_env") or model_config.get("api_key_env")
+    if explicit:
+        return str(explicit)
+    provider = (settings.get("provider") or model_config.get("provider") or "").lower()
+    default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
+    if default is None:
+        raise AdapterConfigError(
+            f"models.default.api_key_env is required for provider '{provider}'."
+        )
+    return default
 
 
 def main() -> None:
@@ -67,7 +99,7 @@ def preflight_check(payload: dict[str, Any]) -> None:
 
     settings = common_utils.settings_payload(payload)
     model_config = selected_model_config(payload)
-    api_key_env = settings.get("api_key_env") or model_config.get("api_key_env") or "NVIDIA_API_KEY"
+    api_key_env = resolve_api_key_env(settings, model_config)
     if api_key_env not in os.environ:
         raise RuntimeError(
             f"api_key_env={api_key_env} is defined in the configuration but is not set in the "
@@ -112,7 +144,7 @@ def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
     if not model_name:
         raise RuntimeError("models.default.model is required for the Deep Agents adapter")
 
-    api_key_env = settings.get("api_key_env") or model_config.get("api_key_env") or "NVIDIA_API_KEY"
+    api_key_env = resolve_api_key_env(settings, model_config)
     api_key = os.environ.get(api_key_env)
     if not api_key:
         raise RuntimeError(f"{api_key_env} is required for the Deep Agents adapter")
@@ -154,7 +186,9 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
         root = Path(common_utils.config_root(payload)) / root
     from deepagents.backends import FilesystemBackend
 
-    return FilesystemBackend(root_dir=str(root))
+    # virtual_mode=True confines the agent to root_dir; absolute paths and ``..``
+    # cannot escape it (and it silences the deepagents 0.6 default-flip warning).
+    return FilesystemBackend(root_dir=str(root), virtual_mode=True)
 
 
 async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
@@ -168,9 +202,15 @@ def _allowed_tool_names(payload: dict[str, Any]) -> set[str] | None:
     # The routed plan only marks ``native.tools_configured``; the value lives in
     # ``effective_config.config.tools``. Return ``None`` only when tools are not
     # configured; an explicitly empty list is a deny-all allow-list, not "no list".
+    # A wrong-shaped value must fail loudly rather than silently disable gating.
     tools = common_utils.fabric_config(payload).get("tools")
-    if not isinstance(tools, (list, str)):
+    if tools is None:
         return None
+    if not isinstance(tools, (list, str)):
+        raise AdapterConfigError(
+            "config.tools must be a list of tool names (a deny/allow-list), "
+            f"not {type(tools).__name__}."
+        )
     return set(common_utils.normalize_list(tools))
 
 
@@ -219,11 +259,7 @@ def resolve_skills(payload: dict[str, Any]) -> list[str] | None:
 async def _mcp_tools(payload: dict[str, Any]) -> list[Any]:
     native = common_utils.capability_plan(payload).get("native") or {}
     servers = native.get("mcp_servers") or {}
-    connections = {
-        name: connection
-        for name, connection in ((name, _mcp_connection(spec)) for name, spec in servers.items())
-        if connection
-    }
+    connections = {name: _mcp_connection(name, spec) for name, spec in servers.items()}
     if not connections:
         return []
     from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -232,21 +268,26 @@ async def _mcp_tools(payload: dict[str, Any]) -> list[Any]:
     return list(await client.get_tools())
 
 
-def _mcp_connection(spec: dict[str, Any]) -> dict[str, Any] | None:
+def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
+    # A misconfigured server must fail loudly, not be silently dropped.
     if not isinstance(spec, dict):
-        return None
+        raise AdapterConfigError(f"MCP server '{name}' must be a mapping.")
     transport = str(spec.get("transport") or "").strip().lower().replace("-", "_")
     # McpServerPlan carries the URL or command in ``url``; there is no ``command``.
     target = os.path.expandvars(str(spec.get("url") or "")).strip()
     if not target:
-        return None
+        raise AdapterConfigError(f"MCP server '{name}' requires a url (or command in url).")
     if transport in ("stdio", "command", "process"):
         parts = shlex.split(target)
         if not parts:
-            return None
+            raise AdapterConfigError(f"MCP server '{name}' has an empty stdio command.")
         return {"transport": "stdio", "command": parts[0], "args": parts[1:]}
     if transport in ("", "http", "streamable_http", "streamablehttp"):
         transport = "streamable_http"
+    if transport not in VALID_MCP_TRANSPORTS:
+        raise AdapterConfigError(
+            f"MCP server '{name}' has unsupported transport '{transport}'."
+        )
     return {"transport": transport, "url": target}
 
 
@@ -344,14 +385,28 @@ async def build_agent_kwargs(
         kwargs.update(extra)
     allowed = _allowed_tool_names(payload)
     if allowed is not None:
+        # Gate the main agent AND every configured subagent, so the allow-list
+        # covers the full tool surface. The built-in ``task`` tool (which spawns
+        # the general-purpose subagent) is itself gated on the main agent, so a
+        # list that omits ``task`` blocks all delegation.
         middleware = list(kwargs.get("middleware") or [])
         middleware.append(allowed_tools_middleware(allowed))
         kwargs["middleware"] = middleware
+        subagents = kwargs.get("subagents")
+        if isinstance(subagents, list):
+            kwargs["subagents"] = [_gate_subagent(sub, allowed) for sub in subagents]
     return {key: value for key, value in kwargs.items() if value is not None}
 
 
+def _gate_subagent(subagent: Any, allowed: set[str]) -> Any:
+    if not isinstance(subagent, dict):
+        return subagent
+    gated = dict(subagent)
+    gated["middleware"] = [*(gated.get("middleware") or []), allowed_tools_middleware(allowed)]
+    return gated
+
+
 async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
-    preflight_check(payload)
     settings = common_utils.settings_payload(payload)
     request = payload.get("request") or {}
     telemetry_provider = common_utils.telemetry_provider(payload)
@@ -361,19 +416,27 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(user_message, str):
         user_message = json.dumps(user_message, sort_keys=True)
 
-    model, model_name, base_url = build_chat_model(payload)
-
     runtime_id = common_utils.runtime_context(payload).get("runtime_id")
-    prior_thread_id = load_thread_id(payload, runtime_id) if runtime_id else None
-    thread_id = (prior_thread_id or uuid.uuid4().hex) if runtime_id else None
-
-    observability = resolve_observability(payload, telemetry_provider, relay_enabled)
+    model_name: str | None = None
+    base_url: str | None = None
+    prior_thread_id: str | None = None
+    thread_id: str | None = None
+    observability: Observability | None = None
     result_state: Any = None
     events: list[dict[str, Any]] = []
     turn_messages: list[dict[str, Any]] = []
     error: str | None = None
     checkpointer = None
     try:
+        # Preflight, model construction, and resume-state load run inside the guarded
+        # scope so a misconfiguration (e.g. a missing credential) returns a normalized
+        # failure result rather than raising a raw traceback.
+        preflight_check(payload)
+        model, model_name, base_url = build_chat_model(payload)
+        prior_thread_id = load_thread_id(payload, runtime_id) if runtime_id else None
+        thread_id = (prior_thread_id or uuid.uuid4().hex) if runtime_id else None
+        observability = resolve_observability(payload, telemetry_provider, relay_enabled)
+
         agent_kwargs = await build_agent_kwargs(payload, model, settings)
         # Acquire the async checkpointer inside the guarded scope so a setup failure
         # (tools, backend, observability) can never leak the SQLite connection.
@@ -450,14 +513,21 @@ async def invoke_agent(
     events: list[dict[str, Any]] = []
     turn_messages: list[Any] = []
     final: Any = None
+    # subgraphs=True surfaces subagent (delegated ``task``) steps as 3-tuples whose
+    # namespace identifies the subgraph. Folding their message deltas into this turn
+    # keeps usage/cost accurate for delegating runs; the final ``values`` state is
+    # taken from the main graph only (empty namespace).
     stream = (
-        agent.astream(inputs, config, stream_mode=["updates", "values"])
+        agent.astream(inputs, config, stream_mode=["updates", "values"], subgraphs=True)
         if config
-        else agent.astream(inputs, stream_mode=["updates", "values"])
+        else agent.astream(inputs, stream_mode=["updates", "values"], subgraphs=True)
     )
-    async for mode, chunk in stream:
+    async for namespace, mode, chunk in stream:
         if mode == "updates" and isinstance(chunk, dict):
-            events.append({"nodes": [str(node) for node in chunk]})
+            event: dict[str, Any] = {"nodes": [str(node) for node in chunk]}
+            if namespace:
+                event["subgraph"] = "/".join(str(part) for part in namespace)
+            events.append(event)
             for node_output in chunk.values():
                 if isinstance(node_output, dict):
                     new = node_output.get("messages")
@@ -465,9 +535,9 @@ async def invoke_agent(
                         turn_messages.extend(new)
                     elif new is not None:
                         turn_messages.append(new)
-        elif mode == "values":
+        elif mode == "values" and not namespace:
             final = chunk
-    return final, events, _messages_to_dicts(turn_messages)
+    return final, events, _dedup_messages(_messages_to_dicts(turn_messages))
 
 
 class Observability(NamedTuple):
@@ -506,7 +576,7 @@ def resolve_observability(
 
 def normalize_output(
     *,
-    model_name: str,
+    model_name: str | None,
     base_url: str | None,
     runtime_id: str | None,
     thread_id: str | None,
@@ -562,10 +632,33 @@ def _messages_to_dicts(raw: Any) -> list[dict[str, Any]]:
     return [item if isinstance(item, dict) else _message_to_dict(item) for item in raw]
 
 
+def _dedup_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop duplicate messages by id, preserving first-seen order.
+
+    With ``subgraphs=True`` the same message can surface in both a subgraph's
+    updates and the parent stream; de-duplicating by id keeps usage aggregation
+    from counting a message twice. Messages without an id are always kept.
+    """
+
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for message in messages:
+        message_id = message.get("id")
+        if isinstance(message_id, str):
+            if message_id in seen:
+                continue
+            seen.add(message_id)
+        unique.append(message)
+    return unique
+
+
 def _message_to_dict(message: Any) -> dict[str, Any]:
     role = getattr(message, "type", None) or getattr(message, "role", None) or "assistant"
     content = getattr(message, "content", "")
     entry: dict[str, Any] = {"role": role, "content": content}
+    message_id = getattr(message, "id", None)
+    if message_id is not None:
+        entry["id"] = message_id
     tool_calls = getattr(message, "tool_calls", None)
     if tool_calls:
         entry["tool_calls"] = tool_calls
