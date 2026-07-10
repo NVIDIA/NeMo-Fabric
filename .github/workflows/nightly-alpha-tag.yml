@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Create nightly alpha tag
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Create the nightly alpha tag at 08:12 UTC (12:12 PST / 1:12 PDT).
+    - cron: '12 8 * * *'
+
+concurrency:
+  group: '${{ github.workflow }} @ ${{ github.ref }}'
+  cancel-in-progress: false
+
+jobs:
+  tag-nightly-alpha:
+    name: Tag nightly alpha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          ref: main
+
+      - name: Create nightly alpha tag
+        id: tag
+        run: |
+          set -euo pipefail
+
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          if [[ -z "$version" ]]; then
+            echo "Error: failed to read workspace version from Cargo.toml" >&2
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: workspace version must be a stable SemVer base for nightly alpha tags: ${version}" >&2
+            exit 1
+          fi
+
+          tag_date="$(date -u +%Y%m%d)"
+          tag="${version}-alpha.${tag_date}"
+          target_sha="$(git rev-parse HEAD)"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            existing_sha="$(git ls-remote --tags origin "refs/tags/${tag}^{}" | awk '{print $1}' || true)"
+            if [[ -z "$existing_sha" ]]; then
+              existing_sha="$(git ls-remote --tags origin "refs/tags/${tag}" | awk '{print $1}' || true)"
+            fi
+            if [[ "$existing_sha" == "$target_sha" ]]; then
+              echo "Nightly alpha tag already exists for main: ${tag}"
+              exit 0
+            fi
+            echo "Error: nightly alpha tag ${tag} already exists at ${existing_sha}, not main HEAD ${target_sha}" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag \
+            --annotate \
+            --message "NeMo Fabric ${version} Nightly ${tag_date}" \
+            "$tag" \
+            "$target_sha"
+          git push origin "refs/tags/${tag}"
+          echo "Created nightly alpha tag for main: ${tag}"
+
+  python-ci:
+    name: Python
+    needs: tag-nightly-alpha
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci_python.yml
+    with:
+      ref: refs/tags/${{ needs.tag-nightly-alpha.outputs.tag }}
+      ref_name: ${{ needs.tag-nightly-alpha.outputs.tag }}
+      ref_type: tag
