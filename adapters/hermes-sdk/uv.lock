@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 [[package]]
 name = "nemo-fabric-adapters-common"
 version = "0.1.0"
-source = { directory = "../common" }
+source = { editable = "../common" }
 
 [[package]]
 name = "nemo-fabric-adapters-hermes-sdk"
@@ -18,7 +18,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", directory = "../common" },
+    { name = "nemo-fabric-adapters-common", editable = "../common" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 
