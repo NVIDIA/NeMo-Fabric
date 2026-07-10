@@ -13,14 +13,14 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "nemo-fabric-adapters-common", directory = "../common" },
+    { name = "nemo-fabric-adapters-common", editable = "../common" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
 version = "0.1.0"
-source = { directory = "../common" }
+source = { editable = "../common" }
 
 [[package]]
 name = "tomli-w"
