@@ -48,6 +48,14 @@
         "null"
       ]
     },
+    "relay": {
+      "additionalProperties": true,
+      "description": "Partial Relay integration overlay.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "runtime": {
       "additionalProperties": true,
       "description": "Partial runtime overlay.",

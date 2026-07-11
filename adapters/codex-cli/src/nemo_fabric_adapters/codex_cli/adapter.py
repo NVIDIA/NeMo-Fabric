@@ -18,7 +18,8 @@ import urllib.error
 import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
+from typing import NamedTuple
 
 import nemo_fabric_adapters.common.utils as common_utils
 import tomli_w
@@ -87,9 +88,7 @@ def load_thread_id(payload: dict[str, Any], runtime_id: str) -> str | None:
         value = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
         raise RuntimeError(f"invalid Codex runtime state in {path}") from error
-    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get(
-        "thread_id"
-    ):
+    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get("thread_id"):
         raise RuntimeError(f"invalid Codex runtime state in {path}")
     return str(value["thread_id"])
 
@@ -129,9 +128,7 @@ def build_command(
     command = resolve_command(payload, settings.get("codex_command") or "codex")
     sandbox = str(settings.get("sandbox") or "read-only")
     if sandbox not in SANDBOXES:
-        raise ValueError(
-            f"unsupported Codex sandbox {sandbox!r}; expected one of {sorted(SANDBOXES)}"
-        )
+        raise ValueError(f"unsupported Codex sandbox {sandbox!r}; expected one of {sorted(SANDBOXES)}")
 
     args = [command, "exec", "--json"]
 
@@ -172,11 +169,10 @@ def config_overrides(settings: dict[str, Any]) -> Mapping[str, Any]:
 
 
 def native_codex_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
-    telemetry = common_utils.telemetry_payload(payload)
-    if not telemetry.get("enabled") or common_utils.telemetry_provider(payload) != "native":
+    if "native" not in common_utils.telemetry_providers(payload):
         return {}
 
-    telemetry_config = telemetry.get("config") or {}
+    telemetry_config = common_utils.native_telemetry_config(payload)
     components = telemetry_config.get("components") or []
     for component in components:
         if (
@@ -202,13 +198,14 @@ def native_codex_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
             if transport == "http_binary":
                 exporter = "otlp-http"
                 protocol = "binary"
+            elif transport == "grpc":
+                exporter = "otlp-grpc"
+                protocol = "grpc"
             elif transport == "http_json":
                 exporter = "otlp-http"
                 protocol = "json"
             else:
-                raise ValueError(
-                    f"unsupported Codex native OpenTelemetry transport {transport!r}"
-                )
+                raise ValueError(f"unsupported Codex native OpenTelemetry transport {transport!r}")
             otel["trace_exporter"] = {
                 exporter: {
                     "endpoint": endpoint,
@@ -232,9 +229,7 @@ def apply_config_overrides(
         for part in parts[:-1]:
             existing = target.setdefault(part, {})
             if not isinstance(existing, dict):
-                raise ValueError(
-                    f"Codex config override {dotted_key!r} conflicts with {part!r}"
-                )
+                raise ValueError(f"Codex config override {dotted_key!r} conflicts with {part!r}")
             target = existing
         target[parts[-1]] = value
 
@@ -266,14 +261,12 @@ def load_codex_profile(settings: dict[str, Any]) -> dict[str, Any]:
 
 def write_config_files(payload: dict[str, Any]) -> CodexSettings:
     settings = common_utils.settings_payload(payload)
-    telemetry_provider = common_utils.telemetry_provider(payload)
-    relay_enabled = (
-        telemetry_provider == "relay"
-        and os.environ.get("FABRIC_RELAY_ENABLED") == "true"
-    )
+    telemetry_providers = common_utils.telemetry_providers(payload)
+    telemetry_provider = telemetry_providers[0] if telemetry_providers else "relay"
+    relay_enabled = common_utils.relay_enabled(payload)
     overrides = config_overrides(settings)
     config = load_codex_profile(settings)
-    if telemetry_provider == "native":
+    if "native" in telemetry_providers:
         merge_config(config, native_codex_telemetry_config(payload))
 
     codex_profile_name = None
@@ -298,9 +291,7 @@ def write_config_files(payload: dict[str, Any]) -> CodexSettings:
                 plugin_config=relay_plugin_config,
             )
             if relay_config_path is None:
-                raise RuntimeError(
-                    "NeMo Relay configuration did not produce a gateway config"
-                )
+                raise RuntimeError("NeMo Relay configuration did not produce a gateway config")
 
             relay_command = resolve_command(
                 payload,
@@ -337,7 +328,7 @@ def write_config_files(payload: dict[str, Any]) -> CodexSettings:
                     },
                     "features": {"hooks": True},
                     "hooks": hooks,
-                }
+                },
             )
 
         apply_config_overrides(config, overrides)
@@ -363,9 +354,7 @@ def write_config_files(payload: dict[str, Any]) -> CodexSettings:
 def get_codex_profile_path(payload: dict[str, Any]) -> tuple[str, Path]:
     runtime_id = common_utils.runtime_context(payload).get("runtime_id")
     if not runtime_id:
-        raise RuntimeError(
-            "runtime_context.runtime_id is required for generated Codex profiles"
-        )
+        raise RuntimeError("runtime_context.runtime_id is required for generated Codex profiles")
 
     name = f"fabric-{runtime_id}"
     return name, codex_home() / f"{name}.config.toml"
@@ -392,9 +381,7 @@ def toml_value(value: Any) -> str:
     try:
         document = tomli_w.dumps({"value": value})
     except TypeError as error:
-        raise ValueError(
-            "Codex config override values must be a TOML scalar or array"
-        ) from error
+        raise ValueError("Codex config override values must be a TOML scalar or array") from error
     prefix = "value = "
     if not document.startswith(prefix):
         raise ValueError("Codex config override values must be a TOML scalar or array")
@@ -491,9 +478,7 @@ def wait_for_relay_gateway(
     while time.monotonic() < deadline:
         returncode = process.poll()
         if returncode is not None:
-            raise RuntimeError(
-                f"NeMo Relay gateway exited with status {returncode} before becoming ready"
-            )
+            raise RuntimeError(f"NeMo Relay gateway exited with status {returncode} before becoming ready")
         try:
             with urllib.request.urlopen(health_url, timeout=1) as response:
                 if 200 <= response.status < 300:
@@ -549,15 +534,8 @@ def start_relay_gateway(
 
 
 def process_timeout(payload: dict[str, Any]) -> float:
-    value = common_utils.settings_payload(payload).get(
-        "timeout_seconds", DEFAULT_TIMEOUT_SECONDS
-    )
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value <= 0
-    ):
+    value = common_utils.settings_payload(payload).get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
         raise ValueError("timeout_seconds must be a positive finite number")
     return float(value)
 
@@ -636,9 +614,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     if not thread_id:
         error = error or "Codex runtime invocation did not return a thread identity"
     if prior_thread_id and thread_id != prior_thread_id:
-        error = error or (
-            f"Codex resumed thread {thread_id}, expected persisted thread {prior_thread_id}"
-        )
+        error = error or (f"Codex resumed thread {thread_id}, expected persisted thread {prior_thread_id}")
     if thread_id and not error:
         save_thread_id(payload, runtime_id, thread_id)
 
@@ -659,9 +635,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
     if codex_settings.relay_plugin_config is not None:
-        relay_artifacts = common_utils.collect_relay_artifacts(
-            codex_settings.relay_plugin_config
-        )
+        relay_artifacts = common_utils.collect_relay_artifacts(codex_settings.relay_plugin_config)
         output["relay_runtime"] = {
             "enabled": True,
             "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
@@ -676,8 +650,7 @@ def redact_command(command: list[str]) -> list[str]:
     redacted = list(command)
     for index, value in enumerate(redacted[:-1]):
         if value == "--config" and any(
-            marker in redacted[index + 1].lower()
-            for marker in ("key", "token", "secret", "password")
+            marker in redacted[index + 1].lower() for marker in ("key", "token", "secret", "password")
         ):
             redacted[index + 1] = "<redacted>"
     return redacted

@@ -62,6 +62,9 @@ pub struct FabricConfig {
     /// Telemetry configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<TelemetryConfig>,
+    /// First-class NeMo Relay integration configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relay: Option<RelayConfig>,
     /// Optional profile discovery config.
     #[serde(default, skip_serializing_if = "ProfileRegistryConfig::is_empty")]
     pub profiles: ProfileRegistryConfig,
@@ -408,6 +411,8 @@ struct ProfileConfigSchema {
     mcp: Option<BTreeMap<String, Value>>,
     /// Partial telemetry overlay.
     telemetry: Option<BTreeMap<String, Value>>,
+    /// Partial Relay integration overlay.
+    relay: Option<BTreeMap<String, Value>>,
     /// Additive config overlays.
     #[serde(flatten)]
     extensions: BTreeMap<String, Value>,
@@ -604,28 +609,398 @@ pub enum McpExposure {
 /// Telemetry configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TelemetryConfig {
-    /// Whether telemetry is enabled for this run.
-    #[serde(default)]
-    pub enabled: bool,
-    /// Telemetry provider responsible for runtime integration.
-    #[serde(default)]
-    pub provider: TelemetryProvider,
-    /// Optional project name for telemetry backends.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project: Option<String>,
-    /// Optional telemetry output directory.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_dir: Option<PathBuf>,
-    /// Pass-through telemetry backend config.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub config: Option<Value>,
+    /// Telemetry providers enabled for this run.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub providers: BTreeMap<TelemetryProvider, TelemetryProviderConfig>,
     /// Additive telemetry fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Telemetry runtime provider.
+/// Provider-specific telemetry configuration.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TelemetryProviderConfig {
+    /// Provider-specific pass-through config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<Value>,
+    /// Additive provider fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// NeMo Relay integration configuration.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayConfig {
+    /// Optional project name for Relay backends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// Optional Relay output directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_dir: Option<PathBuf>,
+    /// Relay observability component configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observability: Option<RelayObservabilityConfig>,
+    /// Additional Relay plugin components.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<RelayComponentConfig>,
+    /// Relay plugin validation policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<RelayConfigPolicy>,
+    /// Additive Relay fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Generic NeMo Relay plugin component configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayComponentConfig {
+    /// Registered Relay plugin kind.
+    pub kind: String,
+    /// Whether this Relay component should be activated.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// Component-local Relay plugin config.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub config: BTreeMap<String, Value>,
+    /// Additive component fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// NeMo Relay observability component configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayObservabilityConfig {
+    /// Relay observability config version.
+    #[serde(default = "default_relay_config_version")]
+    pub version: u32,
+    /// ATOF export configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atof: Option<RelayAtofConfig>,
+    /// ATIF export configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atif: Option<RelayAtifConfig>,
+    /// OpenTelemetry export configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opentelemetry: Option<RelayOtlpConfig>,
+    /// OpenInference export configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openinference: Option<RelayOtlpConfig>,
+    /// Relay config validation policy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<RelayConfigPolicy>,
+    /// Additive observability fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+impl Default for RelayObservabilityConfig {
+    fn default() -> Self {
+        Self {
+            version: default_relay_config_version(),
+            atof: None,
+            atif: None,
+            opentelemetry: None,
+            openinference: None,
+            policy: None,
+            extensions: BTreeMap::new(),
+        }
+    }
+}
+
+/// Relay ATOF export configuration.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayAtofConfig {
+    /// Whether ATOF export is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Directory used for ATOF files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_directory: Option<PathBuf>,
+    /// ATOF file name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filename: Option<String>,
+    /// File write mode.
+    #[serde(default)]
+    pub mode: RelayAtofMode,
+    /// Optional remote ATOF endpoints.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endpoints: Vec<RelayAtofEndpointConfig>,
+    /// Additive ATOF fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Relay ATOF endpoint configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayAtofEndpointConfig {
+    /// Endpoint URL.
+    pub url: String,
+    /// Endpoint transport.
+    #[serde(default)]
+    pub transport: RelayAtofEndpointTransport,
+    /// Endpoint headers.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
+    /// Request timeout in milliseconds.
+    #[serde(default = "default_relay_timeout_millis")]
+    pub timeout_millis: u64,
+    /// Field-name handling policy.
+    #[serde(default)]
+    pub field_name_policy: RelayAtofEndpointFieldNamePolicy,
+    /// Additive endpoint fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Relay ATIF export configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayAtifConfig {
+    /// Whether ATIF export is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Agent name written into ATIF.
+    #[serde(default = "default_relay_atif_agent_name")]
+    pub agent_name: String,
+    /// Agent version written into ATIF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_version: Option<String>,
+    /// Model name written into ATIF.
+    #[serde(default = "default_relay_atif_model_name")]
+    pub model_name: String,
+    /// Tool definitions written into ATIF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_definitions: Option<Vec<Value>>,
+    /// Extra ATIF metadata.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra: Option<Value>,
+    /// Directory used for ATIF files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_directory: Option<PathBuf>,
+    /// ATIF file name template.
+    #[serde(default = "default_relay_atif_filename_template")]
+    pub filename_template: String,
+    /// Optional ATIF remote storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub storage: Option<Vec<RelayAtifStorageConfig>>,
+    /// Additive ATIF fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+impl Default for RelayAtifConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            agent_name: default_relay_atif_agent_name(),
+            agent_version: None,
+            model_name: default_relay_atif_model_name(),
+            tool_definitions: None,
+            extra: None,
+            output_directory: None,
+            filename_template: default_relay_atif_filename_template(),
+            storage: None,
+            extensions: BTreeMap::new(),
+        }
+    }
+}
+
+/// Relay ATIF remote storage configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RelayAtifStorageConfig {
+    /// Upload ATIF artifacts to HTTP storage.
+    Http {
+        /// HTTP storage endpoint.
+        #[serde(default)]
+        endpoint: String,
+        /// Static HTTP headers.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        headers: BTreeMap<String, String>,
+        /// Environment-variable-backed HTTP headers.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        header_env: BTreeMap<String, String>,
+        /// Request timeout in milliseconds.
+        #[serde(default = "default_relay_timeout_millis")]
+        timeout_millis: u64,
+        /// Additive HTTP storage fields.
+        #[serde(default, flatten)]
+        extensions: BTreeMap<String, Value>,
+    },
+    /// Upload ATIF artifacts to S3-compatible storage.
+    S3 {
+        /// S3 bucket name.
+        #[serde(default)]
+        bucket: String,
+        /// Optional S3 object key prefix.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key_prefix: Option<String>,
+        /// AWS access key id.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        access_key_id: Option<String>,
+        /// Environment variable containing the AWS secret access key.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        secret_access_key_var: Option<String>,
+        /// Environment variable containing the AWS session token.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_token_var: Option<String>,
+        /// AWS region.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        region: Option<String>,
+        /// S3-compatible endpoint URL.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoint_url: Option<String>,
+        /// Allow HTTP endpoints for S3-compatible storage.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_http: Option<bool>,
+        /// Additive S3 storage fields.
+        #[serde(default, flatten)]
+        extensions: BTreeMap<String, Value>,
+    },
+}
+
+/// Relay OpenTelemetry/OpenInference export configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayOtlpConfig {
+    /// Whether OTLP export is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+    /// OTLP transport.
+    #[serde(default)]
+    pub transport: RelayOtlpTransport,
+    /// OTLP endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// OTLP headers.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
+    /// OTLP resource attributes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub resource_attributes: BTreeMap<String, String>,
+    /// OTLP service name.
+    #[serde(default = "default_relay_service_name")]
+    pub service_name: String,
+    /// OTLP service namespace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_namespace: Option<String>,
+    /// OTLP service version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_version: Option<String>,
+    /// OTLP instrumentation scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instrumentation_scope: Option<String>,
+    /// Request timeout in milliseconds.
+    #[serde(default = "default_relay_timeout_millis")]
+    pub timeout_millis: u64,
+    /// Additive OTLP fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+impl Default for RelayOtlpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            transport: RelayOtlpTransport::default(),
+            endpoint: None,
+            headers: BTreeMap::new(),
+            resource_attributes: BTreeMap::new(),
+            service_name: default_relay_service_name(),
+            service_namespace: None,
+            service_version: None,
+            instrumentation_scope: None,
+            timeout_millis: default_relay_timeout_millis(),
+            extensions: BTreeMap::new(),
+        }
+    }
+}
+
+/// Relay validation policy.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayConfigPolicy {
+    /// Policy for unknown components.
+    #[serde(default)]
+    pub unknown_component: RelayUnsupportedBehavior,
+    /// Policy for unknown fields.
+    #[serde(default)]
+    pub unknown_field: RelayUnsupportedBehavior,
+    /// Policy for unsupported values.
+    #[serde(default = "default_relay_unsupported_value_behavior")]
+    pub unsupported_value: RelayUnsupportedBehavior,
+}
+
+impl Default for RelayConfigPolicy {
+    fn default() -> Self {
+        Self {
+            unknown_component: RelayUnsupportedBehavior::default(),
+            unknown_field: RelayUnsupportedBehavior::default(),
+            unsupported_value: default_relay_unsupported_value_behavior(),
+        }
+    }
+}
+
+/// Relay unsupported/unknown config handling.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayUnsupportedBehavior {
+    /// Ignore the unsupported or unknown value.
+    Ignore,
+    /// Warn on the unsupported or unknown value.
+    #[default]
+    Warn,
+    /// Error on the unsupported or unknown value.
+    Error,
+}
+
+/// Relay ATOF file mode.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayAtofMode {
+    /// Append to an existing ATOF file.
+    #[default]
+    Append,
+    /// Overwrite an existing ATOF file.
+    Overwrite,
+}
+
+/// Relay ATOF endpoint transport.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayAtofEndpointTransport {
+    /// HTTP POST transport.
+    #[default]
+    HttpPost,
+    /// WebSocket transport.
+    Websocket,
+    /// NDJSON transport.
+    Ndjson,
+}
+
+/// Relay ATOF endpoint field-name policy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayAtofEndpointFieldNamePolicy {
+    /// Preserve field names.
+    #[default]
+    Preserve,
+    /// Replace dots in field names.
+    ReplaceDots,
+}
+
+/// Relay OTLP transport.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayOtlpTransport {
+    /// OTLP HTTP binary transport.
+    #[default]
+    HttpBinary,
+    /// OTLP gRPC transport.
+    Grpc,
+}
+
+/// Telemetry runtime provider.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum TelemetryProvider {
     /// Use NeMo Relay for telemetry integration.
@@ -643,6 +1018,38 @@ impl TelemetryProvider {
             Self::Native => "native",
         }
     }
+}
+
+fn default_relay_config_version() -> u32 {
+    1
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+fn default_relay_atif_agent_name() -> String {
+    "NeMo Relay".to_string()
+}
+
+fn default_relay_atif_model_name() -> String {
+    "unknown".to_string()
+}
+
+fn default_relay_atif_filename_template() -> String {
+    "nemo-relay-atif-{session_id}.json".to_string()
+}
+
+fn default_relay_timeout_millis() -> u64 {
+    3000
+}
+
+fn default_relay_service_name() -> String {
+    "nemo-relay".to_string()
+}
+
+fn default_relay_unsupported_value_behavior() -> RelayUnsupportedBehavior {
+    RelayUnsupportedBehavior::Error
 }
 
 /// Load a Fabric document from an agent directory or single agent config.
@@ -1271,16 +1678,69 @@ fn resolve_telemetry_plan(
     adapter_descriptor: Option<&AdapterDescriptor>,
 ) -> Option<TelemetryPlan> {
     let telemetry = config.telemetry.as_ref()?;
+    if telemetry.providers.is_empty() {
+        return None;
+    }
+    let relay_provider = telemetry.providers.get(&TelemetryProvider::Relay);
+    let native_provider = telemetry.providers.get(&TelemetryProvider::Native);
+    let relay = config.relay.as_ref();
+    let relay_enabled = relay_provider.is_some();
+    let providers = [TelemetryProvider::Relay, TelemetryProvider::Native]
+        .into_iter()
+        .filter(|provider| telemetry.providers.contains_key(provider))
+        .collect();
     Some(TelemetryPlan {
-        provider: telemetry.provider,
-        relay_enabled: telemetry.enabled && telemetry.provider == TelemetryProvider::Relay,
-        relay_project: telemetry.project.clone(),
-        relay_output_dir: telemetry.output_dir.clone(),
-        relay_config: telemetry.config.clone(),
+        providers,
+        relay_enabled,
+        relay_project: relay_enabled
+            .then(|| relay.and_then(|relay| relay.project.clone()))
+            .flatten(),
+        relay_output_dir: relay_enabled
+            .then(|| relay.and_then(|relay| relay.output_dir.clone()))
+            .flatten(),
+        relay_config: relay_enabled
+            .then(|| resolve_relay_plugin_config(relay))
+            .flatten(),
+        native_config: native_provider.and_then(|provider| provider.config.clone()),
         adapter_outputs: adapter_descriptor
             .map(|descriptor| descriptor.telemetry.supports.clone())
             .unwrap_or_default(),
     })
+}
+
+fn resolve_relay_plugin_config(relay: Option<&RelayConfig>) -> Option<Value> {
+    let relay = relay?;
+    let mut components = Vec::new();
+
+    if let Some(observability) = relay.observability.as_ref() {
+        components.push(serde_json::json!({
+            "kind": "observability",
+            "enabled": true,
+            "config": serde_json::to_value(observability).unwrap_or(Value::Null),
+        }));
+    }
+
+    for component in &relay.components {
+        components.push(serde_json::to_value(component).unwrap_or(Value::Null));
+    }
+
+    if !components.is_empty() || relay.policy.is_some() {
+        let mut plugin_config = serde_json::json!({
+            "version": 1,
+            "components": components,
+        });
+        if let Some(policy) = relay.policy.as_ref()
+            && let Some(object) = plugin_config.as_object_mut()
+        {
+            object.insert(
+                "policy".to_string(),
+                serde_json::to_value(policy).unwrap_or(Value::Null),
+            );
+        }
+        return Some(plugin_config);
+    }
+
+    None
 }
 
 fn resolve_path(root: &Path, path: &Path) -> PathBuf {
@@ -1488,8 +1948,8 @@ pub struct McpServerPlan {
 /// Resolved telemetry plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TelemetryPlan {
-    /// Telemetry provider selected for this run.
-    pub provider: TelemetryProvider,
+    /// Telemetry providers selected for this run.
+    pub providers: Vec<TelemetryProvider>,
     /// Whether Relay is enabled.
     pub relay_enabled: bool,
     /// Relay project, when configured.
@@ -1501,6 +1961,9 @@ pub struct TelemetryPlan {
     /// Relay pass-through config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay_config: Option<Value>,
+    /// Native telemetry pass-through config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_config: Option<Value>,
     /// Telemetry outputs declared by the selected adapter descriptor.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub adapter_outputs: Vec<String>,
@@ -1602,7 +2065,7 @@ runtime:
     }
 
     #[test]
-    fn telemetry_provider_defaults_to_relay() {
+    fn relay_telemetry_provider_is_enabled_by_presence() {
         let config: FabricConfig = serde_yaml::from_str(
             r#"
 schema_version: fabric.agent/v1alpha1
@@ -1612,27 +2075,23 @@ harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
 telemetry:
-  enabled: true
-  config:
-    exporter: test
+  providers:
+    relay: {}
 "#,
         )
-        .expect("config with default telemetry provider");
+        .expect("config with relay telemetry provider");
 
         let telemetry = config.telemetry.as_ref().expect("telemetry config");
         let plan = resolve_telemetry_plan(&config, None).expect("telemetry plan");
 
-        assert_eq!(telemetry.provider, TelemetryProvider::Relay);
-        assert_eq!(plan.provider, TelemetryProvider::Relay);
+        assert!(telemetry.providers.contains_key(&TelemetryProvider::Relay));
+        assert_eq!(plan.providers, vec![TelemetryProvider::Relay]);
         assert!(plan.relay_enabled);
-        assert_eq!(
-            plan.relay_config,
-            Some(serde_json::json!({"exporter": "test"}))
-        );
+        assert_eq!(plan.relay_config, None);
     }
 
     #[test]
-    fn native_telemetry_provider_skips_relay_and_preserves_config() {
+    fn native_telemetry_provider_skips_relay_config() {
         let config: FabricConfig = serde_yaml::from_str(
             r#"
 schema_version: fabric.agent/v1alpha1
@@ -1642,30 +2101,113 @@ harness:
   adapter_id: nvidia.fabric.hermes.sdk
 runtime:
 telemetry:
-  enabled: true
-  provider: native
-  config:
-    exporter: test
+  providers:
+    native:
+      config:
+        exporter: test
+relay:
+  project: relay-project
+  output_dir: ./relay-output
 "#,
         )
         .expect("config with native telemetry provider");
 
         let plan = resolve_telemetry_plan(&config, None).expect("telemetry plan");
 
-        assert_eq!(plan.provider, TelemetryProvider::Native);
+        assert_eq!(plan.providers, vec![TelemetryProvider::Native]);
         assert!(!plan.relay_enabled);
+        assert_eq!(plan.relay_project, None);
+        assert_eq!(plan.relay_output_dir, None);
+        assert_eq!(plan.relay_config, None);
         assert_eq!(
-            plan.relay_config,
+            plan.native_config,
             Some(serde_json::json!({"exporter": "test"}))
         );
     }
 
     #[test]
-    fn telemetry_provider_rejects_unknown_values() {
+    fn relay_telemetry_config_generates_relay_plugin_config() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.hermes.sdk
+runtime:
+telemetry:
+  providers:
+    relay: {}
+relay:
+  project: typed-project
+  output_dir: ./typed-relay
+  observability:
+    atof:
+      enabled: true
+      output_directory: ./typed-relay
+      filename: events.atof.jsonl
+      mode: overwrite
+    atif:
+      enabled: true
+      output_directory: ./typed-relay
+      filename_template: trajectory-{session_id}.atif.json
+      agent_name: code-review-agent
+    opentelemetry:
+      enabled: true
+      endpoint: http://localhost:4318/v1/traces
+  components:
+    - kind: switchyard
+      enabled: true
+      config:
+        route: canary
+  policy:
+    unknown_component: error
+"#,
+        )
+        .expect("config with typed relay telemetry");
+
+        let plan = resolve_telemetry_plan(&config, None).expect("telemetry plan");
+        let relay_config = plan.relay_config.expect("relay plugin config");
+
+        assert_eq!(plan.relay_project.as_deref(), Some("typed-project"));
+        assert_eq!(plan.relay_output_dir, Some(PathBuf::from("./typed-relay")));
+        assert_eq!(relay_config["version"], serde_json::json!(1));
+        assert_eq!(
+            relay_config["components"][0]["kind"],
+            serde_json::json!("observability")
+        );
+        assert_eq!(
+            relay_config["components"][0]["config"]["atof"]["mode"],
+            serde_json::json!("overwrite")
+        );
+        assert_eq!(
+            relay_config["components"][0]["config"]["atif"]["agent_name"],
+            serde_json::json!("code-review-agent")
+        );
+        assert_eq!(
+            relay_config["components"][0]["config"]["opentelemetry"]["endpoint"],
+            serde_json::json!("http://localhost:4318/v1/traces")
+        );
+        assert_eq!(
+            relay_config["components"][1],
+            serde_json::json!({
+                "kind": "switchyard",
+                "enabled": true,
+                "config": {"route": "canary"}
+            })
+        );
+        assert_eq!(
+            relay_config["policy"]["unknown_component"],
+            serde_json::json!("error")
+        );
+    }
+
+    #[test]
+    fn telemetry_provider_rejects_unknown_provider_keys() {
         let result = serde_yaml::from_str::<TelemetryConfig>(
             r#"
-enabled: true
-provider: unsupported
+providers:
+  unsupported: {}
 "#,
         );
 
@@ -1758,8 +2300,8 @@ provider: unsupported
             plan.config
                 .telemetry
                 .as_ref()
-                .map(|telemetry| telemetry.enabled),
-            Some(false)
+                .map(|telemetry| telemetry.providers.is_empty()),
+            None
         );
     }
 
@@ -2023,7 +2565,7 @@ mcp:
             plan.telemetry_plan
                 .as_ref()
                 .map(|telemetry| telemetry.relay_enabled),
-            Some(false)
+            None
         );
 
         let profiles = vec!["env_local".to_string(), "env_opensandbox".to_string()];
@@ -2073,7 +2615,7 @@ mcp:
             plan.telemetry_plan
                 .as_ref()
                 .map(|telemetry| telemetry.relay_enabled),
-            Some(false)
+            None
         );
         assert!(
             plan.capability_plan

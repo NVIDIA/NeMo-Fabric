@@ -33,5 +33,4 @@ environment:
   workspace: /app
   artifacts: /logs/agent/fabric-artifacts/hermes
 
-telemetry:
-  enabled: false
+telemetry: null

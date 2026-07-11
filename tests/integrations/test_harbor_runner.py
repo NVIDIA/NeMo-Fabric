@@ -19,32 +19,10 @@ DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
 DEMO_HOST_GATEWAY = DEMO_ROOT / "host-gateway.compose.yaml"
 DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
 DEMO_CONFIGS = DEMO_ROOT / "task" / "environment" / "fabric" / "configs"
-CODEX_CONFIG = (
-    DEMO_ROOT
-    / "task"
-    / "environment"
-    / "fabric"
-    / "configs"
-    / "codex.yaml"
-)
-RELAY_CONFIG = (
-    DEMO_ROOT
-    / "task"
-    / "environment"
-    / "fabric"
-    / "configs"
-    / "hermes-relay.yaml"
-)
+CODEX_CONFIG = DEMO_ROOT / "task" / "environment" / "fabric" / "configs" / "codex.yaml"
+RELAY_CONFIG = DEMO_ROOT / "task" / "environment" / "fabric" / "configs" / "hermes-relay.yaml"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
-SDK_INTEGRATION_README = (
-    ROOT
-    / "python"
-    / "src"
-    / "nemo_fabric"
-    / "integrations"
-    / "harbor"
-    / "README.md"
-)
+SDK_INTEGRATION_README = ROOT / "python" / "src" / "nemo_fabric" / "integrations" / "harbor" / "README.md"
 HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
 
 
@@ -59,8 +37,10 @@ def load_codex_adapter():
 
 def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
     from nemo_fabric import RunRequest
-    from nemo_fabric.integrations.harbor.models import HarborMcpServer, HarborRunSpec
-    from nemo_fabric.integrations.harbor.runner import compose_config, load_config
+    from nemo_fabric.integrations.harbor.models import HarborMcpServer
+    from nemo_fabric.integrations.harbor.models import HarborRunSpec
+    from nemo_fabric.integrations.harbor.runner import compose_config
+    from nemo_fabric.integrations.harbor.runner import load_config
 
     config_path = tmp_path / "agent.yaml"
     config_path.write_text(
@@ -122,13 +102,12 @@ def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
     assert config.mcp.servers["local"].extra_fields["args"] == ["--stdio"]
     assert config.skills is not None
     assert config.skills.paths == [str(tmp_path / "skills")]
-    assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == (
-        "harbor-demo"
-    )
+    assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == ("harbor-demo")
 
 
 def test_runner_preserves_config_capabilities_without_harbor_replacements(tmp_path):
-    from nemo_fabric import FabricConfig, RunRequest
+    from nemo_fabric import FabricConfig
+    from nemo_fabric import RunRequest
     from nemo_fabric.integrations.harbor.models import HarborRunSpec
     from nemo_fabric.integrations.harbor.runner import compose_config
 
@@ -176,10 +155,10 @@ def test_runner_rejects_malformed_config(tmp_path):
 
 
 def test_harbor_transport_models_validate_mcp_targets():
-    from pydantic import ValidationError
-
     from nemo_fabric import RunRequest
-    from nemo_fabric.integrations.harbor.models import HarborMcpServer, HarborRunSpec
+    from nemo_fabric.integrations.harbor.models import HarborMcpServer
+    from nemo_fabric.integrations.harbor.models import HarborRunSpec
+    from pydantic import ValidationError
 
     spec = HarborRunSpec.model_validate_json(
         HarborRunSpec(
@@ -328,9 +307,7 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
         "--skip-git-repo-check",
         "-",
     ]
-    assert tomllib.loads(profile_path.read_text(encoding="utf-8")) == {
-        "model_reasoning_effort": "high"
-    }
+    assert tomllib.loads(profile_path.read_text(encoding="utf-8")) == {"model_reasoning_effort": "high"}
     assert adapter.resolve_cwd(payload) == tmp_path
 
 
@@ -344,7 +321,7 @@ def test_codex_demo_uses_current_adapter_contract():
     assert settings["skip_git_repo_check"] is True
     assert settings["config_overrides"]["model_reasoning_effort"] == "high"
     dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
-    assert 'nemo-fabric[codex,harbor,hermes,relay,runtime]' in dockerfile
+    assert "nemo-fabric[codex,harbor,hermes,relay,runtime]" in dockerfile
     assert "@openai/codex@0.142.4" in dockerfile
 
 
@@ -366,9 +343,11 @@ def test_harbor_demo_uses_complete_configs_without_profiles():
 
 
 def test_harbor_smoke_config_resolves_its_local_adapter():
-    from nemo_fabric import Fabric, RunRequest
+    from nemo_fabric import Fabric
+    from nemo_fabric import RunRequest
     from nemo_fabric.integrations.harbor.models import HarborRunSpec
-    from nemo_fabric.integrations.harbor.runner import compose_config, load_config
+    from nemo_fabric.integrations.harbor.runner import compose_config
+    from nemo_fabric.integrations.harbor.runner import load_config
 
     config_path = DEMO_CONFIGS / "smoke.yaml"
     spec = HarborRunSpec(config_path=config_path, request=RunRequest(input="fix it"))
@@ -416,7 +395,8 @@ def test_harbor_demo_setup_and_solution_fail_fast():
 def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
     config = yaml.safe_load(RELAY_CONFIG.read_text(encoding="utf-8"))
     host_gateway = yaml.safe_load(DEMO_HOST_GATEWAY.read_text(encoding="utf-8"))
-    observability = config["telemetry"]["config"]["components"][0]["config"]
+    assert "relay" in config["telemetry"]["providers"]
+    observability = config["relay"]["observability"]
     demo = DEMO_README.read_text(encoding="utf-8")
 
     assert observability["openinference"] == {

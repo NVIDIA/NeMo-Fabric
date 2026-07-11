@@ -91,24 +91,26 @@ def test_selected_model_config(
     assert hermes_common.selected_model_config(payload) == expected
 
 
-@pytest.mark.parametrize("provider", [None, "relay"])
+@pytest.mark.parametrize("providers", [None, {"relay": {}}])
 def test_validate_hermes_telemetry_provider_accepts_relay(
-    provider: str | None,
+    providers: dict[str, object] | None,
 ):
-    telemetry = {"enabled": True}
-    if provider is not None:
-        telemetry["provider"] = provider
-    payload = {"effective_config": {"config": {"telemetry": telemetry}}}
+    payload = {}
+    if providers is not None:
+        payload["telemetry_plan"] = {"providers": list(providers)}
 
     hermes_common.validate_hermes_telemetry_provider(payload)
 
 
 def test_validate_hermes_telemetry_provider_rejects_native():
-    payload = {
-        "effective_config": {
-            "config": {"telemetry": {"enabled": True, "provider": "native"}}
-        }
-    }
+    payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
+
+    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+        hermes_common.validate_hermes_telemetry_provider(payload)
+
+
+def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
+    payload = {"telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}}
 
     with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
         hermes_common.validate_hermes_telemetry_provider(payload)
@@ -273,12 +275,8 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     }
     assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
-    assert observability["atof"]["output_directory"] == str(
-        tmp_path / "relay" / "atof" / "runtime-matrix"
-    )
-    assert observability["atif"]["output_directory"] == str(
-        tmp_path / "relay" / "atif" / "runtime-matrix"
-    )
+    assert observability["atof"]["output_directory"] == str(tmp_path / "relay" / "atof" / "runtime-matrix")
+    assert observability["atif"]["output_directory"] == str(tmp_path / "relay" / "atif" / "runtime-matrix")
     assert observability["atif"]["agent_name"] == "matrix-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
@@ -415,9 +413,9 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
         ),
         encoding="utf-8",
     )
-    os.environ["FABRIC_RELAY_ENABLED"] = "true"
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(config_path)
     payload = {
+        "telemetry_plan": {"providers": ["relay"], "relay_enabled": True},
         "runtime_context": {"runtime_id": "runtime-relay"},
         "effective_config": {
             "agent_name": "review-agent",
@@ -426,22 +424,18 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
                 "harness": {"settings": {"model": "review"}},
                 "models": {"review": {"model": "nvidia/review-model"}},
             },
-        }
+        },
     }
 
     plugin_config = hermes_common.configure_hermes_relay(payload)
 
     assert plugin_config is not None
     assert os.environ["HERMES_NEMO_RELAY_ATOF_ENABLED"] == "1"
-    assert os.environ["HERMES_NEMO_RELAY_ATOF_OUTPUT_DIRECTORY"] == str(
-        tmp_path / "atof" / "runtime-relay"
-    )
+    assert os.environ["HERMES_NEMO_RELAY_ATOF_OUTPUT_DIRECTORY"] == str(tmp_path / "atof" / "runtime-relay")
     assert os.environ["HERMES_NEMO_RELAY_ATOF_FILENAME"] == "custom.atof.jsonl"
     assert os.environ["HERMES_NEMO_RELAY_ATOF_MODE"] == "append"
     assert os.environ["HERMES_NEMO_RELAY_ATIF_ENABLED"] == "1"
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] == str(
-        tmp_path / "atif" / "runtime-relay"
-    )
+    assert os.environ["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] == str(tmp_path / "atif" / "runtime-relay")
     assert os.environ["HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE"] == "trace-{session_id}.atif.json"
     assert os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_NAME"] == "review-agent"
     assert os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"] == "1.2.3"
@@ -449,6 +443,4 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
 
 
 def test_configure_hermes_relay_returns_none_when_disabled():
-    os.environ.pop("FABRIC_RELAY_ENABLED", None)
-
     assert hermes_common.configure_hermes_relay({}) is None

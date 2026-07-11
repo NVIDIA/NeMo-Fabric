@@ -23,14 +23,11 @@ from pathlib import Path
 from shutil import copytree
 
 import yaml
-
-from nemo_fabric import (
-    Fabric,
-    FabricConfig,
-    FabricProfileConfig,
-    RunRequest,
-    RunResult,
-)
+from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
+from nemo_fabric import FabricProfileConfig
+from nemo_fabric import RunRequest
+from nemo_fabric import RunResult
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
@@ -67,7 +64,7 @@ def _repository_adapter_config() -> FabricConfig:
                 "workspace": "./ws",
                 "artifacts": "./artifacts/local",
             },
-            "telemetry": {"enabled": False},
+            "telemetry": None,
         }
     )
 

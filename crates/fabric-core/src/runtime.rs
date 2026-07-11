@@ -1280,8 +1280,14 @@ fn runtime_telemetry_context(
     let telemetry = plan.telemetry_plan.as_ref()?;
     let mut metadata = BTreeMap::new();
     metadata.insert(
-        "telemetry_provider".to_string(),
-        Value::String(telemetry.provider.as_str().to_string()),
+        "telemetry_providers".to_string(),
+        Value::Array(
+            telemetry
+                .providers
+                .iter()
+                .map(|provider| Value::String(provider.as_str().to_string()))
+                .collect(),
+        ),
     );
     if let Some(project) = &telemetry.relay_project {
         metadata.insert("relay_project".to_string(), Value::String(project.clone()));
@@ -1795,8 +1801,14 @@ fn telemetry_ref(
     let telemetry = plan.telemetry_plan.as_ref()?;
     let mut metadata = BTreeMap::new();
     metadata.insert(
-        "telemetry_provider".to_string(),
-        Value::String(telemetry.provider.as_str().to_string()),
+        "telemetry_providers".to_string(),
+        Value::Array(
+            telemetry
+                .providers
+                .iter()
+                .map(|provider| Value::String(provider.as_str().to_string()))
+                .collect(),
+        ),
     );
     if let Some(project) = &telemetry.relay_project {
         metadata.insert("relay_project".to_string(), Value::String(project.clone()));
@@ -2080,10 +2092,13 @@ environment:
         config.push_str(
             r#"
 telemetry:
-  enabled: true
-  provider: native
-  config:
-    exporter: test
+  providers:
+    native:
+      config:
+        exporter: test
+relay:
+  project: relay-project
+  output_dir: ./relay-output
 "#,
         );
         fs::write(&config_path, config).expect("write native telemetry config");
@@ -2126,16 +2141,29 @@ telemetry:
                 .iter()
                 .any(|artifact| artifact.name == "relay_config")
         );
-        assert_eq!(payload["telemetry_plan"]["provider"], "native");
+        assert_eq!(
+            payload["telemetry_plan"]["providers"],
+            serde_json::json!(["native"])
+        );
         assert_eq!(payload["telemetry_plan"]["relay_enabled"], false);
         assert_eq!(
-            payload["effective_config"]["config"]["telemetry"]["config"],
+            payload["effective_config"]["config"]["telemetry"]["providers"]["native"]["config"],
             serde_json::json!({"exporter": "test"})
         );
         assert!(payload["runtime_context"]["telemetry"].get("env").is_none());
         assert_eq!(
-            payload["runtime_context"]["telemetry"]["metadata"]["telemetry_provider"],
-            "native"
+            payload["runtime_context"]["telemetry"]["metadata"]["telemetry_providers"],
+            serde_json::json!(["native"])
+        );
+        assert!(
+            payload["runtime_context"]["telemetry"]["metadata"]
+                .get("relay_project")
+                .is_none()
+        );
+        assert!(
+            payload["runtime_context"]["telemetry"]["metadata"]
+                .get("relay_output_dir")
+                .is_none()
         );
 
         let _ = fs::remove_dir_all(root);

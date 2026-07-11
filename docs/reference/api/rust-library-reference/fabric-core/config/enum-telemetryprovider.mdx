@@ -102,6 +102,26 @@ Return the stable configuration value for this provider.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn inline_schema() -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
 
+### `impl Ord for TelemetryProvider`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.Ord.html\">Ord</a> for <a href=\"enum-telemetryprovider\">TelemetryProvider</a>"}} /></pre>
+
+#### `cmp`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.Ord.html#tymethod.cmp\">cmp</a>(&amp;self, other: &amp;<a href=\"enum-telemetryprovider\">TelemetryProvider</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/enum.Ordering.html\">Ordering</a>"}} /></pre>
+
+#### `max`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.Ord.html#method.max\">max</a>(self, other: Self) -&gt; Selfwhere\n    Self: <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.Sized.html\">Sized</a>,"}} /></pre>
+
+#### `min`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.Ord.html#method.min\">min</a>(self, other: Self) -&gt; Selfwhere\n    Self: <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.Sized.html\">Sized</a>,"}} /></pre>
+
+#### `clamp`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.Ord.html#method.clamp\">clamp</a>(self, min: Self, max: Self) -&gt; Selfwhere\n    Self: <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.Sized.html\">Sized</a>,"}} /></pre>
+
 ### `impl PartialEq for TelemetryProvider`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"enum-telemetryprovider\">TelemetryProvider</a>"}} /></pre>
@@ -113,6 +133,30 @@ Return the stable configuration value for this provider.
 #### `ne`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#method.ne\">ne</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl PartialOrd for TelemetryProvider`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialOrd.html\">PartialOrd</a> for <a href=\"enum-telemetryprovider\">TelemetryProvider</a>"}} /></pre>
+
+#### `partial_cmp`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialOrd.html#tymethod.partial_cmp\">partial_cmp</a>(&amp;self, other: &amp;<a href=\"enum-telemetryprovider\">TelemetryProvider</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/enum.Ordering.html\">Ordering</a>&gt;"}} /></pre>
+
+#### `lt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialOrd.html#method.lt\">lt</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+#### `le`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialOrd.html#method.le\">le</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+#### `gt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialOrd.html#method.gt\">gt</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+#### `ge`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialOrd.html#method.ge\">ge</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
 
 ### `impl Serialize for TelemetryProvider`
 

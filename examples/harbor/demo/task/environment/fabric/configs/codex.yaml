@@ -32,5 +32,4 @@ environment:
   workspace: /app
   artifacts: /logs/agent/fabric-artifacts/codex
 
-telemetry:
-  enabled: false
+telemetry: null

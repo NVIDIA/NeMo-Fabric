@@ -30,5 +30,4 @@ environment:
   workspace: ./repos/my-service
   artifacts: ./artifacts/hermes-sdk
 
-telemetry:
-  enabled: false
+telemetry: null

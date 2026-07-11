@@ -51,9 +51,8 @@ async def test_hermes_cli_rejects_native_telemetry(
         """schema_version: fabric.profile/v1alpha1
 name: native_telemetry
 telemetry:
-  enabled: true
-  provider: native
-  config: {}
+  providers:
+    native: {}
 """,
         encoding="utf-8",
     )
@@ -93,7 +92,7 @@ async def test_hermes_cli_multi_turn(
     session_db = hermes_state.SessionDB(db_path=session_db_path)
     session = session_db.get_session_by_title(runtime_id)
     assert session is not None
-    assert session['id'] == runtime_id
-    assert session['model'] == 'test-model'
-    assert session['source'] == 'fabric'
-    assert session['title'] == runtime_id
+    assert session["id"] == runtime_id
+    assert session["model"] == "test-model"
+    assert session["source"] == "fabric"
+    assert session["title"] == runtime_id

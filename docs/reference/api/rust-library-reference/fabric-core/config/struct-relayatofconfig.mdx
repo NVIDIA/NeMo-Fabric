@@ -1,0 +1,122 @@
+---
+title: "Struct Relay Atof Config"
+sidebar-title: "RelayAtofConfig"
+description: "Relay ATOF export configuration."
+position: 21
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Generated from `cargo doc --no-deps -p fabric-core`.
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RelayAtofConfig &#123;\n    pub enabled: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub output_directory: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub filename: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub mode: <a href=\"enum-relayatofmode\">RelayAtofMode</a>,\n    pub endpoints: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-relayatofendpointconfig\">RelayAtofEndpointConfig</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
+
+Relay ATOF export configuration.
+
+## Fields
+
+### `enabled: bool`
+
+Whether ATOF export is enabled.
+
+### `output_directory: Option<PathBuf>`
+
+Directory used for ATOF files.
+
+### `filename: Option<String>`
+
+ATOF file name.
+
+### `mode: RelayAtofMode`
+
+File write mode.
+
+### `endpoints: Vec<RelayAtofEndpointConfig>`
+
+Optional remote ATOF endpoints.
+
+### `extensions: BTreeMap<String, Value>`
+
+Additive ATOF fields.
+
+## Trait Implementations
+
+### `impl Clone for RelayAtofConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html\">Clone</a> for <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>
+
+#### `clone`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>
+
+#### `clone_from`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html#method.clone_from\">clone_from</a>(&amp;mut self, source: &amp;Self)"}} /></pre>
+
+### `impl Debug for RelayAtofConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>
+
+#### `fmt`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html#tymethod.fmt\">fmt</a>(&amp;self, f: &amp;mut <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/struct.Formatter.html\">Formatter</a>&lt;'_&gt;) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/type.Result.html\">Result</a>"}} /></pre>
+
+### `impl Default for RelayAtofConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/default/trait.Default.html\">Default</a> for <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>
+
+#### `default`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/default/trait.Default.html#tymethod.default\">default</a>() -&gt; Self"}} /></pre>
+
+### `impl<'de> Deserialize<'de> for RelayAtofConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>
+
+#### `deserialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html#tymethod.deserialize\">deserialize</a>&lt;__D&gt;(__deserializer: __D) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/result/enum.Result.html\">Result</a>&lt;Self, __D::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserializer.html#associatedtype.Error\">Error</a>&gt;where\n    __D: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserializer.html\">Deserializer</a>&lt;'de&gt;,"}} /></pre>
+
+### `impl JsonSchema for RelayAtofConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>
+
+#### `schema_name`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_name() -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>&gt;"}} /></pre>
+
+#### `schema_id`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn schema_id() -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/alloc/borrow/enum.Cow.html\">Cow</a>&lt;'static, <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>&gt;"}} /></pre>
+
+#### `json_schema`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn json_schema(generator: &amp;mut SchemaGenerator) -&gt; Schema"}} /></pre>
+
+#### `inline_schema`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn inline_schema() -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl PartialEq for RelayAtofConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>
+
+#### `eq`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"struct-relayatofconfig\">RelayAtofConfig</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+#### `ne`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#method.ne\">ne</a>(&amp;self, other: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.reference.html\">&amp;Rhs</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+
+### `impl Serialize for RelayAtofConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>
+
+#### `serialize`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html#tymethod.serialize\">serialize</a>&lt;__S&gt;(&amp;self, __serializer: __S) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/core/result/enum.Result.html\">Result</a>&lt;__S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Ok\">Ok</a>, __S::<a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html#associatedtype.Error\">Error</a>&gt;where\n    __S: <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serializer.html\">Serializer</a>,"}} /></pre>
+
+### `impl StructuralPartialEq for RelayAtofConfig`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"struct-relayatofconfig\">RelayAtofConfig</a>"}} /></pre>

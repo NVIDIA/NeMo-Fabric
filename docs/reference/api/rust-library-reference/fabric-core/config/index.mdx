@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "Fabric config models and loading helpers."
-position: 74
+position: 75
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -32,6 +32,14 @@ Fabric config models and loading helpers.
 - [ModelConfig](/reference/api/rust-library-reference/fabric-core/config/struct-modelconfig): Model configuration.
 - [ProfileConfig](/reference/api/rust-library-reference/fabric-core/config/struct-profileconfig): Profile config applied on top of a Fabric config.
 - [ProfileRegistryConfig](/reference/api/rust-library-reference/fabric-core/config/struct-profileregistryconfig): Profile discovery config for curated package profiles.
+- [RelayAtifConfig](/reference/api/rust-library-reference/fabric-core/config/struct-relayatifconfig): Relay ATIF export configuration.
+- [RelayAtofConfig](/reference/api/rust-library-reference/fabric-core/config/struct-relayatofconfig): Relay ATOF export configuration.
+- [RelayAtofEndpointConfig](/reference/api/rust-library-reference/fabric-core/config/struct-relayatofendpointconfig): Relay ATOF endpoint configuration.
+- [RelayComponentConfig](/reference/api/rust-library-reference/fabric-core/config/struct-relaycomponentconfig): Generic NeMo Relay plugin component configuration.
+- [RelayConfig](/reference/api/rust-library-reference/fabric-core/config/struct-relayconfig): NeMo Relay integration configuration.
+- [RelayConfigPolicy](/reference/api/rust-library-reference/fabric-core/config/struct-relayconfigpolicy): Relay validation policy.
+- [RelayObservabilityConfig](/reference/api/rust-library-reference/fabric-core/config/struct-relayobservabilityconfig): NeMo Relay observability component configuration.
+- [RelayOtlpConfig](/reference/api/rust-library-reference/fabric-core/config/struct-relayotlpconfig): Relay OpenTelemetry/OpenInference export configuration.
 - [ResolveContext](/reference/api/rust-library-reference/fabric-core/config/struct-resolvecontext): Source context used when resolving an in-memory Fabric config.
 - [ResolvedAdapterDescriptor](/reference/api/rust-library-reference/fabric-core/config/struct-resolvedadapterdescriptor): Adapter descriptor selected for a run plan.
 - [RunPlan](/reference/api/rust-library-reference/fabric-core/config/struct-runplan): Resolved Fabric run plan.
@@ -40,6 +48,7 @@ Fabric config models and loading helpers.
 - [SkillConfig](/reference/api/rust-library-reference/fabric-core/config/struct-skillconfig): Skill capability configuration.
 - [TelemetryConfig](/reference/api/rust-library-reference/fabric-core/config/struct-telemetryconfig): Telemetry configuration.
 - [TelemetryPlan](/reference/api/rust-library-reference/fabric-core/config/struct-telemetryplan): Resolved telemetry plan.
+- [TelemetryProviderConfig](/reference/api/rust-library-reference/fabric-core/config/struct-telemetryproviderconfig): Provider-specific telemetry configuration.
 
 ## Enums
 
@@ -51,6 +60,12 @@ Fabric config models and loading helpers.
 - [EnvironmentOwnership](/reference/api/rust-library-reference/fabric-core/config/enum-environmentownership): Whether Fabric owns the underlying environment resource.
 - [FabricDocument](/reference/api/rust-library-reference/fabric-core/config/enum-fabricdocument): A loaded Fabric document with resolved source path and agent root.
 - [McpExposure](/reference/api/rust-library-reference/fabric-core/config/enum-mcpexposure): MCP exposure strategy.
+- [RelayAtifStorageConfig](/reference/api/rust-library-reference/fabric-core/config/enum-relayatifstorageconfig): Relay ATIF remote storage configuration.
+- [RelayAtofEndpointFieldNamePolicy](/reference/api/rust-library-reference/fabric-core/config/enum-relayatofendpointfieldnamepolicy): Relay ATOF endpoint field-name policy.
+- [RelayAtofEndpointTransport](/reference/api/rust-library-reference/fabric-core/config/enum-relayatofendpointtransport): Relay ATOF endpoint transport.
+- [RelayAtofMode](/reference/api/rust-library-reference/fabric-core/config/enum-relayatofmode): Relay ATOF file mode.
+- [RelayOtlpTransport](/reference/api/rust-library-reference/fabric-core/config/enum-relayotlptransport): Relay OTLP transport.
+- [RelayUnsupportedBehavior](/reference/api/rust-library-reference/fabric-core/config/enum-relayunsupportedbehavior): Relay unsupported/unknown config handling.
 - [ResolutionStrategy](/reference/api/rust-library-reference/fabric-core/config/enum-resolutionstrategy): Adapter install or availability strategy.
 - [TelemetryProvider](/reference/api/rust-library-reference/fabric-core/config/enum-telemetryprovider): Telemetry runtime provider.
 

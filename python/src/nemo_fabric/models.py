@@ -13,12 +13,19 @@ from __future__ import annotations
 
 import math
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated
+from typing import Any
+from typing import Literal
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from typing_extensions import Self
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+from pydantic import field_validator
+from pydantic import model_validator
 
 
 def _json_value(value: Any, name: str) -> Any:
@@ -225,45 +232,159 @@ class McpConfig(FabricBaseModel):
         return self
 
 
+class RelayConfigPolicy(FabricBaseModel):
+    """NeMo Relay config validation policy."""
+
+    unknown_component: Literal["ignore", "warn", "error"] = "warn"
+    unknown_field: Literal["ignore", "warn", "error"] = "warn"
+    unsupported_value: Literal["ignore", "warn", "error"] = "error"
+
+
+class RelayAtofEndpointConfig(FabricBaseModel):
+    """NeMo Relay ATOF remote endpoint configuration."""
+
+    url: str
+    transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
+    headers: dict[str, str] = Field(default_factory=dict)
+    timeout_millis: int = 3000
+    field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
+
+
+class RelayAtofConfig(FabricBaseModel):
+    """NeMo Relay ATOF export configuration."""
+
+    enabled: bool = False
+    output_directory: str | Path | None = None
+    filename: str | None = None
+    mode: Literal["append", "overwrite"] = "append"
+    endpoints: list[RelayAtofEndpointConfig | dict[str, Any]] | None = None
+
+
+class RelayS3StorageConfig(FabricBaseModel):
+    """NeMo Relay ATIF S3 storage configuration."""
+
+    type: Literal["s3"] = "s3"
+    bucket: str = ""
+    key_prefix: str | None = None
+    access_key_id: str | None = None
+    secret_access_key_var: str | None = None
+    session_token_var: str | None = None
+    region: str | None = None
+    endpoint_url: str | None = None
+    allow_http: bool | None = None
+
+
+class RelayHttpStorageConfig(FabricBaseModel):
+    """NeMo Relay ATIF HTTP storage configuration."""
+
+    type: Literal["http"] = "http"
+    endpoint: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    header_env: dict[str, str] = Field(default_factory=dict)
+    timeout_millis: int = 3000
+
+
+class RelayAtifConfig(FabricBaseModel):
+    """NeMo Relay ATIF export configuration."""
+
+    enabled: bool = False
+    agent_name: str = "NeMo Relay"
+    agent_version: str | None = None
+    model_name: str = "unknown"
+    tool_definitions: list[dict[str, Any]] | None = None
+    extra: dict[str, Any] | None = None
+    output_directory: str | Path | None = None
+    filename_template: str = "nemo-relay-atif-{session_id}.json"
+    storage: (
+        list[
+            Annotated[
+                RelayS3StorageConfig | RelayHttpStorageConfig,
+                Field(discriminator="type"),
+            ]
+            | dict[str, Any]
+        ]
+        | None
+    ) = None
+
+
+class RelayOtlpConfig(FabricBaseModel):
+    """NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference."""
+
+    enabled: bool = False
+    transport: Literal["http_binary", "grpc"] = "http_binary"
+    endpoint: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    resource_attributes: dict[str, str] = Field(default_factory=dict)
+    service_name: str = "nemo-relay"
+    service_namespace: str | None = None
+    service_version: str | None = None
+    instrumentation_scope: str | None = None
+    timeout_millis: int = 3000
+
+
+class RelayObservabilityConfig(FabricBaseModel):
+    """NeMo Relay observability component configuration."""
+
+    version: int = 1
+    atof: RelayAtofConfig | dict[str, Any] | None = None
+    atif: RelayAtifConfig | dict[str, Any] | None = None
+    opentelemetry: RelayOtlpConfig | dict[str, Any] | None = None
+    openinference: RelayOtlpConfig | dict[str, Any] | None = None
+    policy: RelayConfigPolicy | dict[str, Any] | None = None
+
+
+class RelayComponentConfig(FabricBaseModel):
+    """Generic NeMo Relay plugin component configuration."""
+
+    kind: str = Field(min_length=1)
+    enabled: bool = True
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class RelayConfig(FabricBaseModel):
+    """First-class NeMo Relay integration configuration."""
+
+    project: str | None = None
+    output_dir: str | Path | None = None
+    observability: RelayObservabilityConfig | dict[str, Any] | None = None
+    components: list[RelayComponentConfig | dict[str, Any]] = Field(default_factory=list)
+    policy: RelayConfigPolicy | dict[str, Any] | None = None
+
+
+class TelemetryProviderConfig(FabricBaseModel):
+    """Provider-specific telemetry configuration."""
+
+    config: dict[str, Any] | None = None
+
+
 class TelemetryConfig(FabricBaseModel):
     """Telemetry configuration."""
 
-    enabled: bool = False
-    provider: Literal["relay", "native"] | None = None
-    project: str | None = None
-    output_dir: str | Path | None = None
-    config: dict[str, Any] | None = None
+    providers: dict[Literal["relay", "native"], TelemetryProviderConfig | dict[str, Any]] = Field(default_factory=dict)
 
     def enable_relay(
         self,
-        *,
-        project: str | None = None,
-        output_dir: str | Path | None = None,
-        config: Mapping[str, Any] | None = None,
     ) -> Self:
         """Enable NeMo Relay telemetry for subsequently started runtimes."""
 
-        self.enabled = True
-        self.provider = "relay"
-        if project is not None:
-            self.project = project
-        if output_dir is not None:
-            self.output_dir = output_dir
-        if config is not None:
-            self.config = dict(config)
+        self.providers["relay"] = TelemetryProviderConfig()
         return self
 
-    def enable_native(self) -> Self:
+    def enable_native(self, *, config: Mapping[str, Any] | None = None) -> Self:
         """Let the selected adapter handle telemetry natively."""
 
-        self.enabled = True
-        self.provider = "native"
+        provider_config = self.providers.get("native", TelemetryProviderConfig())
+        if not isinstance(provider_config, TelemetryProviderConfig):
+            provider_config = TelemetryProviderConfig.model_validate(provider_config)
+        if config is not None:
+            provider_config.config = dict(config)
+        self.providers["native"] = provider_config
         return self
 
-    def disable(self) -> Self:
-        """Disable telemetry."""
+    def remove_provider(self, provider: Literal["relay", "native"]) -> Self:
+        """Remove a configured telemetry provider."""
 
-        self.enabled = False
+        self.providers.pop(provider, None)
         return self
 
 
@@ -285,6 +406,7 @@ class FabricConfig(FabricBaseModel):
     mcp: McpConfig | None = None
     skills: SkillConfig | None = None
     telemetry: TelemetryConfig | None = None
+    relay: RelayConfig | dict[str, Any] | None = None
     profiles: ProfileRegistryConfig | dict[str, Any] | None = None
     tools: Any = None
 
@@ -355,16 +477,30 @@ class FabricConfig(FabricBaseModel):
         *,
         project: str | None = None,
         output_dir: str | Path | None = None,
-        config: Mapping[str, Any] | None = None,
+        observability: RelayObservabilityConfig | Mapping[str, Any] | None = None,
+        components: Sequence[RelayComponentConfig | Mapping[str, Any]] | None = None,
+        policy: RelayConfigPolicy | Mapping[str, Any] | None = None,
     ) -> Self:
         """Enable NeMo Relay telemetry and return this config."""
 
         if self.telemetry is None:
             self.telemetry = TelemetryConfig()
-        self.telemetry.enable_relay(
+        self.telemetry.enable_relay()
+        relay_observability = (
+            observability
+            if observability is None or isinstance(observability, RelayObservabilityConfig)
+            else dict(observability)
+        )
+        relay_components = [
+            item if isinstance(item, RelayComponentConfig) else dict(item) for item in (components or [])
+        ]
+        relay_policy = policy if policy is None or isinstance(policy, RelayConfigPolicy) else dict(policy)
+        self.relay = RelayConfig(
             project=project,
             output_dir=output_dir,
-            config=config,
+            observability=relay_observability,
+            components=relay_components,
+            policy=relay_policy,
         )
         return self
 
@@ -382,6 +518,7 @@ class FabricProfileConfig(FabricBaseModel):
     mcp: McpConfig | dict[str, Any] | None = None
     skills: SkillConfig | dict[str, Any] | None = None
     telemetry: TelemetryConfig | dict[str, Any] | None = None
+    relay: RelayConfig | dict[str, Any] | None = None
     tools: Any = None
 
 

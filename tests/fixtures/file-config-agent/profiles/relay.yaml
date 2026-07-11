@@ -6,24 +6,20 @@ name: relay
 description: Test Relay ATOF/ATIF file-profile resolution.
 
 telemetry:
-  enabled: true
-  provider: relay
+  providers:
+    relay: {}
+
+relay:
   output_dir: ./artifacts/relay
-  config:
-    version: 1
-    components:
-      - kind: observability
-        enabled: true
-        config:
-          version: 1
-          atif:
-            enabled: true
-            output_directory: ./artifacts/relay
-            filename_template: "trajectory-{session_id}.atif.json"
-            agent_name: code-review-agent
-            agent_version: fabric-poc
-          atof:
-            enabled: true
-            output_directory: ./artifacts/relay
-            filename: events.atof.jsonl
-            mode: overwrite
+  observability:
+    atif:
+      enabled: true
+      output_directory: ./artifacts/relay
+      filename_template: "trajectory-{session_id}.atif.json"
+      agent_name: code-review-agent
+      agent_version: fabric-poc
+    atof:
+      enabled: true
+      output_directory: ./artifacts/relay
+      filename: events.atof.jsonl
+      mode: overwrite

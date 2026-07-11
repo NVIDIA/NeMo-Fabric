@@ -44,9 +44,9 @@ def assert_relay_disabled_native_observability(result: dict):
     event_kinds = {event["kind"] for event in result["events"]}
     assert {"runtime_start", "invocation_start", "invocation_end"} <= event_kinds
 
-    telemetry = result["telemetry"]
-    assert telemetry is not None
-    assert telemetry["relay_enabled"] is False
+    telemetry = result.get("telemetry")
+    if telemetry is not None:
+        assert telemetry["relay_enabled"] is False
 
 
 def assert_process_adapter_native_observability(result: dict):

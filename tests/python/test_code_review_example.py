@@ -6,23 +6,24 @@
 import json
 import subprocess
 import sys
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
+from examples.code_review_agent import BASE_DIR
 from examples.code_review_agent import __main__ as main_module
-from examples.code_review_agent import (
-    BASE_DIR,
-    base_config,
-    codex_cli_config,
-    hermes_cli_config,
-    hermes_sdk_config,
-    with_fabric_managed_github_mcp,
-    with_native_otel,
-    with_opensandbox,
-    with_relay,
-    with_relay_openinference,
-    with_relay_otel,
-)
-from nemo_fabric import Fabric, FabricConfig, RunOutput
+from examples.code_review_agent import base_config
+from examples.code_review_agent import codex_cli_config
+from examples.code_review_agent import hermes_cli_config
+from examples.code_review_agent import hermes_sdk_config
+from examples.code_review_agent import with_fabric_managed_github_mcp
+from examples.code_review_agent import with_native_otel
+from examples.code_review_agent import with_opensandbox
+from examples.code_review_agent import with_relay
+from examples.code_review_agent import with_relay_openinference
+from examples.code_review_agent import with_relay_otel
+from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
+from nemo_fabric import RunOutput
 
 
 def test_variant_builders_return_independent_complete_configs():
@@ -59,7 +60,7 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     )
 
     assert base.telemetry is not None
-    assert base.telemetry.enabled is False
+    assert base.telemetry.providers == {}
     assert base.environment is not None
     assert base.environment.provider == "local"
     assert base.mcp is not None
@@ -68,11 +69,11 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     assert variants[0].mcp is not None
     assert variants[0].mcp.servers["github"].exposure == "fabric_managed"
     assert variants[1].telemetry is not None
-    assert variants[1].telemetry.provider == "native"
+    assert "native" in variants[1].telemetry.providers
     assert variants[2].environment is not None
     assert variants[2].environment.provider == "opensandbox"
     assert variants[3].telemetry is not None
-    assert variants[3].telemetry.provider == "relay"
+    assert "relay" in variants[3].telemetry.providers
 
 
 def test_variants_plan_without_file_profiles():
@@ -112,10 +113,12 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         plan = json.loads(completed.stdout)
         assert plan["agent_name"] == "code-review-agent"
         assert plan["profiles"] == []
-        assert (
-            plan["adapter_descriptor"]["descriptor"]["adapter_id"] == adapter_id
-        )
-        assert plan["telemetry_plan"]["relay_enabled"] is relay_enabled
+        assert plan["adapter_descriptor"]["descriptor"]["adapter_id"] == adapter_id
+        telemetry_plan = plan.get("telemetry_plan")
+        if relay_enabled:
+            assert telemetry_plan["relay_enabled"] is True
+        else:
+            assert telemetry_plan is None
 
 
 async def test_example_entrypoint_shows_response_after_normalized_output(
