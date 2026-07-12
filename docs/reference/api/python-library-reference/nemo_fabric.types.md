@@ -855,6 +855,75 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `RunOutput`
+
+Normalized adapter output.
+
+``response`` is a known adapter response field whose value follows the core Fabric JSON contract. Other keys are adapter-specific extensions.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+__init__(mapping: 'Mapping[str, Any]') → None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+---
+
+### <kbd>property</kbd> response
+
+Return the raw ``response`` JSON value, or ``None`` when absent.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+to_dict() → dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `RunResult`
 Normalized terminal result from one Fabric invocation.
 
@@ -873,7 +942,7 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`invocation_id`</b>:  Identifier for this invocation.
  - <b>`request_id`</b>:  Correlated request identifier.
  - <b>`status`</b>:  Terminal invocation status.
- - <b>`output`</b>:  JSON-compatible harness output.
+ - <b>`output`</b>:  Object-shaped adapter output as ``RunOutput``; non-object values  are preserved as-is.
  - <b>`error`</b>:  Structured failure, or ``None`` on success.
  - <b>`artifacts`</b>:  Normalized artifact manifest.
  - <b>`telemetry`</b>:  Ordered telemetry references.

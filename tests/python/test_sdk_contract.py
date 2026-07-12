@@ -33,6 +33,7 @@ from nemo_fabric import (
     HarnessConfig,
     McpConfig,
     MetadataConfig,
+    RunOutput,
     RunPlan,
     RunRequest,
     RunResult,
@@ -714,9 +715,85 @@ def test_run_result_exposes_detached_json_values():
     metadata["labels"].append("mutated")
     future["values"].append(2)
 
-    assert result.output == {"plugins": ["observability/nemo_relay"]}
+    assert result.output.to_mapping() == {"plugins": ["observability/nemo_relay"]}
     assert result.metadata == {"labels": ["sdk"]}
     assert result.extra_fields["future"] == {"values": [1]}
+
+
+def test_run_output_exposes_response_and_preserves_extensions():
+    output = RunOutput.from_mapping(
+        {
+            "response": "hello",
+            "thread_id": "abc",
+        }
+    )
+
+    assert output.response == "hello"
+    assert output["response"] == "hello"
+    assert output["thread_id"] == "abc"
+    assert output.to_mapping() == {
+        "response": "hello",
+        "thread_id": "abc",
+    }
+
+
+def test_run_result_wraps_object_output_as_run_output():
+    result = RunResult.from_mapping(
+        _run_result(output={"response": "hello", "usage": {"tokens": 1}})
+    )
+
+    assert isinstance(result.output, RunOutput)
+    assert result.output.response == "hello"
+    assert result.output["response"] == "hello"
+    assert result.output["usage"] == {"tokens": 1}
+    assert result.to_mapping()["output"] == {
+        "response": "hello",
+        "usage": {"tokens": 1},
+    }
+
+
+def test_run_output_omits_missing_response_from_mapping():
+    output = RunOutput.from_mapping({"thread_id": "abc"})
+
+    assert output.response is None
+    assert "response" not in output.to_mapping()
+    assert output.to_mapping() == {"thread_id": "abc"}
+
+
+def test_run_output_preserves_explicit_null_response():
+    output = RunOutput.from_mapping({"response": None})
+
+    assert output.response is None
+    assert output.to_mapping() == {"response": None}
+
+
+def test_run_output_preserves_non_string_response_without_raising():
+    output = RunOutput.from_mapping({"response": {"text": "hello"}})
+
+    assert output.response == {"text": "hello"}
+    assert output["response"] == {"text": "hello"}
+    assert output.to_mapping() == {"response": {"text": "hello"}}
+
+
+def test_run_result_preserves_structured_response_from_core_valid_output():
+    result = RunResult.from_mapping(
+        _run_result(output={"response": {"text": "hello"}, "usage": {"tokens": 1}})
+    )
+
+    assert isinstance(result.output, RunOutput)
+    assert result.output.response == {"text": "hello"}
+    assert result.output["response"] == {"text": "hello"}
+    assert result.to_mapping()["output"] == {
+        "response": {"text": "hello"},
+        "usage": {"tokens": 1},
+    }
+
+
+def test_run_result_preserves_non_object_output():
+    result = RunResult.from_mapping(_run_result(output="hello"))
+
+    assert result.output == "hello"
+    assert result.to_mapping()["output"] == "hello"
 
 
 def test_run_result_normalizes_core_telemetry_reference():

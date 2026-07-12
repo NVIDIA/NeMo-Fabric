@@ -1205,6 +1205,24 @@ class RuntimeHandle(FabricMapping):
         return data
 
 
+class RunOutput(FabricMapping):
+    """Normalized adapter output.
+
+    ``response`` is a known adapter response field whose value follows the
+    core Fabric JSON contract. Other keys are adapter-specific extensions.
+    """
+
+    response: JSONValue | None
+    _fields = frozenset({"response"})
+    _json_fields = frozenset({"response"})
+
+    @property
+    def response(self) -> JSONValue | None:
+        """Return the raw ``response`` JSON value, or ``None`` when absent."""
+
+        return _snapshot_value(self._data.get("response"), json_value=True)
+
+
 class RunResult(FabricMapping):
     """Normalized terminal result from one Fabric invocation.
 
@@ -1222,7 +1240,8 @@ class RunResult(FabricMapping):
         invocation_id: Identifier for this invocation.
         request_id: Correlated request identifier.
         status: Terminal invocation status.
-        output: JSON-compatible harness output.
+        output: Object-shaped adapter output as ``RunOutput``; non-object values
+            are preserved as-is.
         error: Structured failure, or ``None`` on success.
         artifacts: Normalized artifact manifest.
         telemetry: Ordered telemetry references.
@@ -1239,7 +1258,7 @@ class RunResult(FabricMapping):
     invocation_id: str
     request_id: str
     status: str
-    output: Any
+    output: RunOutput | JSONValue
     error: ErrorInfo | None
     artifacts: ArtifactManifest
     telemetry: Sequence[TelemetryRef]
@@ -1264,7 +1283,7 @@ class RunResult(FabricMapping):
             "metadata",
         }
     )
-    _json_fields = frozenset({"output", "metadata"})
+    _json_fields = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -1298,4 +1317,9 @@ class RunResult(FabricMapping):
             FabricEvent.from_mapping(event) for event in data.get("events", [])
         )
         data["metadata"] = _mapping(data.get("metadata", {}), "result metadata")
+        raw_output = data.get("output")
+        if isinstance(raw_output, RunOutput):
+            data["output"] = raw_output
+        elif isinstance(raw_output, Mapping):
+            data["output"] = RunOutput.from_mapping(raw_output)
         return data
