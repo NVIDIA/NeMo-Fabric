@@ -10,7 +10,7 @@ no_uv := "false"
 # When set, versioning and packaging targets use this exact release version.
 ref_name := ""
 
-python_projects := ". python adapters/common adapters/codex-cli adapters/hermes-cli adapters/hermes-sdk"
+python_projects := ". python adapters/common adapters/claude adapters/codex-cli adapters/hermes-cli adapters/hermes-sdk"
 
 bash_helpers := '''
 set -euo pipefail
@@ -271,12 +271,15 @@ build-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" == "true" ]]; then
+        editable_projects=()
+        for project in {{ python_projects }}; do
+            editable_projects+=(--editable "$project")
+        done
         uv pip install --python .venv/bin/python --no-deps --reinstall \
             --group adapters \
-            --editable ./python \
-            --editable .
+            "${editable_projects[@]}"
     else
-        uv sync --no-default-groups --group adapters --extra runtime \
+        uv sync --no-default-groups --group adapters --extra claude --extra runtime \
             --reinstall-package nemo-fabric \
             --reinstall-package nemo-fabric-runtime
     fi
@@ -328,7 +331,7 @@ test-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
-        uv sync --group test --no-group dev --extra codex --extra harbor --extra hermes --extra relay --extra runtime
+        uv sync --group test --no-group dev --extra claude --extra codex --extra harbor --extra hermes --extra relay --extra runtime
     fi
     uv run --no-sync pytest
 

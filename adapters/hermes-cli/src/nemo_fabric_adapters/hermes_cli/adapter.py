@@ -179,12 +179,17 @@ def build_command(
 
 
 def build_env(settings: dict[str, Any], hermes_home: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    env.update({str(key): str(value) for key, value in (settings.get("env") or {}).items()})
+    env = common_utils.virtualenv_subprocess_env()
+
+    env.update({
+        str(key): str(value)
+        for key, value in (settings.get("env") or {}).items()
+    })
     env["HOME"] = str(hermes_home)
     env["HERMES_HOME"] = str(hermes_home)
     env.setdefault("HERMES_YOLO_MODE", "1")
     env.setdefault("HERMES_ACCEPT_HOOKS", "1")
+
     return env
 
 

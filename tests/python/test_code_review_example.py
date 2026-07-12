@@ -6,7 +6,9 @@
 import json
 import subprocess
 import sys
+from unittest.mock import AsyncMock, MagicMock
 
+from examples.code_review_agent import __main__ as main_module
 from examples.code_review_agent import (
     BASE_DIR,
     base_config,
@@ -114,3 +116,30 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
             plan["adapter_descriptor"]["descriptor"]["adapter_id"] == adapter_id
         )
         assert plan["telemetry_plan"]["relay_enabled"] is relay_enabled
+
+
+async def test_example_entrypoint_shows_response_after_normalized_output(
+    monkeypatch,
+    capsys,
+):
+    result = MagicMock()
+    result.output = {"response": "visible response"}
+    result.to_mapping.return_value = {"output": result.output}
+    mock_fabric = MagicMock()
+    mock_fabric.run = AsyncMock(return_value=result)
+    monkeypatch.setattr(main_module, "Fabric", lambda: mock_fabric)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["code_review_agent", "--show-output", "--input", "review this"],
+    )
+
+    await main_module.main()
+
+    captured = capsys.readouterr()
+    lines = captured.out.splitlines()
+    assert captured.err == ""
+    assert lines[-1] == "visible response"
+    assert json.loads("\n".join(lines[:-1])) == {
+        "output": {"response": "visible response"}
+    }
