@@ -9,12 +9,17 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
+from typing import cast
 
 import yaml
 
-from nemo_fabric import Fabric, FabricConfig, ModelConfig, RunResult
+from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
+from nemo_fabric import ModelConfig
+from nemo_fabric import RunResult
 from nemo_fabric.integrations.harbor.models import HarborRunSpec
+from nemo_fabric.integrations.harbor.telemetry import publish_telemetry_evidence
 
 
 def load_config(path: Path) -> FabricConfig:
@@ -28,10 +33,16 @@ def compose_config(base: FabricConfig, spec: HarborRunSpec) -> FabricConfig:
 
     config = base.model_copy(deep=True)
     if spec.model_name:
-        config.models["default"] = ModelConfig(
-            provider=model_provider(spec.model_name),
+        current = config.models.get("default")
+        values = current.to_mapping() if current is not None else {}
+        provider = model_provider(spec.model_name)
+        if current is not None and current.provider != provider:
+            values.pop("api_key_env", None)
+        values.update(
+            provider=provider,
             model=spec.model_name,
         )
+        config.models["default"] = ModelConfig.model_validate(values)
 
     if spec.mcp_servers:
         config.mcp = None
@@ -78,6 +89,12 @@ async def run(spec: HarborRunSpec) -> RunResult:
         config,
         base_dir=spec.config_path.parent,
         request=spec.request,
+    )
+    publish_telemetry_evidence(
+        result,
+        spec.logs_dir,
+        harbor_session_id=spec.request.context.get("harbor_session_id"),
+        harbor_context_id=spec.request.context.get("harbor_context_id"),
     )
     return result
 

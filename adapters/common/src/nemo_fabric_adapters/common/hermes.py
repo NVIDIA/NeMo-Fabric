@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -124,7 +125,8 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
 
     config: dict[str, Any] = {"enabled": True}
     if transport in {"stdio", "command", "process"}:
-        config["command"] = target
+        args = common_utils.normalize_list(server.get("args"))
+        config["command"] = shlex.join([target, *args]) if args else target
     else:
         config["url"] = target
         if transport:

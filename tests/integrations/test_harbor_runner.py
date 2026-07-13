@@ -19,6 +19,8 @@ DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
 DEMO_HOST_GATEWAY = DEMO_ROOT / "host-gateway.compose.yaml"
 DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
 DEMO_CONFIGS = DEMO_ROOT / "task" / "environment" / "fabric" / "configs"
+SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
+SWEBENCH_CONFIGS = SWEBENCH_ROOT / "configs"
 CODEX_CONFIG = DEMO_ROOT / "task" / "environment" / "fabric" / "configs" / "codex.yaml"
 RELAY_CONFIG = DEMO_ROOT / "task" / "environment" / "fabric" / "configs" / "hermes-relay.yaml"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
@@ -49,7 +51,14 @@ def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
                 "metadata": {"name": "harbor-demo"},
                 "harness": {"adapter_id": "demo.fabric.smoke"},
                 "runtime": {},
-                "models": {"default": {"provider": "demo", "model": "demo"}},
+                "models": {
+                    "default": {
+                        "provider": "demo",
+                        "model": "demo",
+                        "api_key_env": "DEMO_API_KEY",
+                        "temperature": 0.25,
+                    }
+                },
                 "mcp": {
                     "servers": {
                         "base": {
@@ -89,12 +98,15 @@ def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
     assert base.models["default"].to_mapping() == {
         "provider": "demo",
         "model": "demo",
+        "api_key_env": "DEMO_API_KEY",
+        "temperature": 0.25,
     }
     assert base.mcp is not None and "base" in base.mcp.servers
     assert base.skills is not None and base.skills.paths == ["./base-skill"]
     assert config.models["default"].to_mapping() == {
         "provider": "openai",
         "model": "openai/gpt-5.4",
+        "temperature": 0.25,
     }
     assert config.mcp is not None
     assert set(config.mcp.servers) == {"remote", "local"}
@@ -229,6 +241,11 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
             return FakeResult(runtime_id)
 
     monkeypatch.setattr(runner, "Fabric", FakeFabric)
+    monkeypatch.setattr(
+        runner,
+        "publish_telemetry_evidence",
+        lambda result, path, **kwargs: {},
+    )
     from nemo_fabric.integrations.harbor.models import HarborRunSpec
 
     specs = [
@@ -365,21 +382,25 @@ def test_harbor_demo_documents_explicit_cli_commands():
 
     assert "run.sh" not in demo
     assert "demo/run.sh" not in integration
-    assert demo.count("uv run --extra runtime --extra harbor harbor run") == 4
+    assert demo.count("uv run --extra runtime --extra harbor harbor run") == 1
     for flag in (
         "--path",
         "--agent",
         "--ak",
-        "--ae",
-        "--model",
-        "--mounts",
         "--job-name",
     ):
         assert flag in demo
-    assert "OPENAI_API_KEY" not in demo
-    assert "CODEX_API_KEY" not in demo
-    assert "CODEX_HOME" in demo
-    assert "open http://localhost:6006" not in demo
+    for value in (
+        "swe-bench/swe-bench-verified",
+        "django__django-13741",
+        "--include-task-name",
+        "--skill",
+        "--mcp-config",
+        "harbor job resume",
+        "telemetry-validation.json",
+        "agent/trajectory.json",
+    ):
+        assert value in integration
 
 
 def test_harbor_demo_setup_and_solution_fail_fast():
@@ -397,7 +418,7 @@ def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
     host_gateway = yaml.safe_load(DEMO_HOST_GATEWAY.read_text(encoding="utf-8"))
     assert "relay" in config["telemetry"]["providers"]
     observability = config["relay"]["observability"]
-    demo = DEMO_README.read_text(encoding="utf-8")
+    integration = INTEGRATION_README.read_text(encoding="utf-8")
 
     assert observability["openinference"] == {
         "enabled": True,
@@ -413,12 +434,9 @@ def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
             }
         }
     }
-    assert '--extra-docker-compose "$DEMO_DIR/host-gateway.compose.yaml"' in demo
-    assert "Docker Desktop's" not in demo
-    assert "arizephoenix/phoenix" in demo
-    assert "http://localhost:6006" in demo
-    assert "events.atof.jsonl" in demo
-    assert "*.atif.json" in demo
+    assert "ATOF JSONL" in integration
+    assert "telemetry-validation.json" in integration
+    assert "canonical ATIF" in integration
 
 
 def test_harbor_sdk_package_documents_execution_boundary():
@@ -430,12 +448,59 @@ def test_harbor_sdk_package_documents_execution_boundary():
     assert FabricAgent.name() == "fabric"
     assert FabricAgent.__module__ == "nemo_fabric.integrations.harbor.fabric_agent"
     assert "nemo_fabric.integrations.harbor:FabricAgent" in readme
-    assert "nemo_fabric.integrations.harbor.runner" in readme
+    assert "runner.py" in readme
     assert "calls `Fabric.run()` directly" in readme
     assert "fabric_profile_paths" not in readme
     assert "`fabric_agent.py`" in readme
     assert "class FabricAgent" not in package_init
     assert "fabric_agent import FabricAgent" in package_init
+
+
+def test_swebench_matrix_uses_complete_configs_and_one_fixed_task():
+    from nemo_fabric import FabricConfig
+
+    configs = sorted(SWEBENCH_CONFIGS.glob("*.yaml"))
+    assert [path.name for path in configs] == [
+        "codex.yaml",
+        "hermes-relay.yaml",
+        "hermes-tools.yaml",
+        "hermes.yaml",
+    ]
+    for path in configs:
+        config = FabricConfig.model_validate(yaml.safe_load(path.read_text()))
+        assert config.profiles is None
+        assert config.environment is not None
+        assert str(config.environment.workspace) == "/app"
+
+    readme = INTEGRATION_README.read_text(encoding="utf-8")
+    assert readme.count("django__django-13741") >= 4
+    assert "500 tasks" in readme
+    assert "--n-tasks 5" in readme
+
+
+def test_harbor_018_factory_loads_fabric_agent(tmp_path: Path):
+    from harbor.agents.factory import AgentFactory
+
+    agent = AgentFactory.create_agent_from_import_path(
+        "nemo_fabric.integrations.harbor:FabricAgent",
+        logs_dir=tmp_path,
+        fabric_config_path="/opt/fabric/agent.yaml",
+    )
+
+    assert agent.name() == "fabric"
+    assert agent.SUPPORTS_ATIF is True
+
+
+def test_harbor_018_loads_swebench_mcp_config():
+    from harbor.cli.utils import load_mcp_servers
+
+    servers = load_mcp_servers(SWEBENCH_ROOT / "mcp.json")
+
+    assert len(servers) == 1
+    assert servers[0].name == "fabric-repo-inspector"
+    assert servers[0].transport == "stdio"
+    assert servers[0].command == "python3"
+    assert servers[0].args == ["/tmp/nemo-fabric-config/mcp/repo_inspector.py"]
 
 
 def test_root_readme_routes_to_sdk_and_harbor_guides():
@@ -445,3 +510,4 @@ def test_root_readme_routes_to_sdk_and_harbor_guides():
     assert "docs/sdk/python.mdx" in readme
     assert "examples/harbor/README.md" in readme
     assert "examples/harbor/demo/README.md" in readme
+

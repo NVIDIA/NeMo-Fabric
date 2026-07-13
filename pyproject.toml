@@ -71,7 +71,7 @@ deepagents = [
 ]
 
 harbor = [
-  "harbor>=0.16.1; python_version >= '3.12'",
+  "harbor>=0.18,<0.19; python_version >= '3.12'",
   "pyyaml>=6.0",
 ]
 

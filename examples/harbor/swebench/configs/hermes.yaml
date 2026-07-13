@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: harbor-swebench-hermes
+  description: Hermes CLI baseline for one Harbor SWE-Bench task.
+harness:
+  adapter_id: nvidia.fabric.hermes.cli
+  resolution: preinstalled
+  settings:
+    cwd: /app
+    hermes_home: /tmp/fabric-hermes
+    base_url: https://integrate.api.nvidia.com/v1
+    max_iterations: 50
+    terminal_timeout: 300
+models:
+  default:
+    provider: nvidia
+    model: nvidia/nemotron-3-nano-30b-a3b
+    temperature: 0.0
+runtime:
+  input_schema: text
+  output_schema: message
+  artifacts: /logs/agent/fabric-artifacts/swebench/hermes
+environment:
+  provider: local
+  workspace: /app
+  artifacts: /logs/agent/fabric-artifacts/swebench/hermes
+telemetry:
+  enabled: false

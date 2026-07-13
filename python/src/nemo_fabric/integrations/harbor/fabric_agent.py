@@ -9,11 +9,15 @@ import importlib.metadata
 import json
 import shlex
 import uuid
+import warnings
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
-from nemo_fabric import RunRequest, RunResult
-from nemo_fabric.integrations.harbor.models import HarborMcpServer, HarborRunSpec
+from nemo_fabric import RunRequest
+from nemo_fabric import RunResult
+from nemo_fabric.integrations.harbor.models import HarborMcpServer
+from nemo_fabric.integrations.harbor.models import HarborRunSpec
 
 try:
     from harbor.agents.base import BaseAgent
@@ -49,11 +53,17 @@ else:
         reward calculation. Fabric owns the selected agent harness invocation.
         """
 
+        SUPPORTS_ATIF = True
+
         def __init__(
             self,
             logs_dir: Path,
             fabric_config_path: str,
+            fabric_config_bundle: Path | None = None,
+            fabric_config_target: str = "/tmp/nemo-fabric-config",
             fabric_python: str = "python3",
+            fabric_package: str | None = None,
+            fabric_venv_path: str = "/tmp/nemo-fabric-venv",
             fabric_install_command: str | None = None,
             fabric_cwd: str | None = None,
             fabric_timeout_sec: int | None = None,
@@ -62,10 +72,23 @@ else:
         ) -> None:
             super().__init__(logs_dir=logs_dir, *args, **kwargs)
             self.fabric_config_path = fabric_config_path
+            self.fabric_config_bundle = fabric_config_bundle
+            self.fabric_config_target = fabric_config_target
             self.fabric_python = fabric_python
+            self.fabric_package = fabric_package
+            self.fabric_venv_path = fabric_venv_path
             self.fabric_install_command = fabric_install_command
             self.fabric_cwd = fabric_cwd
             self.fabric_timeout_sec = fabric_timeout_sec
+            if fabric_package and fabric_install_command:
+                raise ValueError("fabric_package and fabric_install_command are mutually exclusive")
+            if fabric_install_command:
+                warnings.warn(
+                    "fabric_install_command is deprecated; use fabric_package",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            self._environment_config_path = self._resolve_environment_config_path()
 
         @staticmethod
         def name() -> str:
@@ -78,9 +101,27 @@ else:
                 return None
 
         async def setup(self, environment: BaseEnvironment) -> None:
-            result = await environment.exec("mkdir -p /logs/agent /tmp", timeout_sec=30)
+            setup_dirs = ["/logs/agent", "/tmp"]
+            if self.fabric_config_bundle is not None:
+                setup_dirs.append(self.fabric_config_target)
+            result = await environment.exec(
+                "mkdir -p " + " ".join(shlex.quote(path) for path in setup_dirs),
+                timeout_sec=30,
+            )
             ensure_success("Fabric setup failed", result)
-            if self.fabric_install_command:
+            if self.fabric_package:
+                result = await environment.exec(
+                    fabric_install_command(
+                        fabric_python=self.fabric_python,
+                        package=self.fabric_package,
+                        venv_path=self.fabric_venv_path,
+                    ),
+                    cwd=self.fabric_cwd,
+                    env=self.extra_env,
+                    timeout_sec=self.fabric_timeout_sec,
+                )
+                ensure_success("Fabric package installation failed", result)
+            elif self.fabric_install_command:
                 result = await environment.exec(
                     self.fabric_install_command,
                     cwd=self.fabric_cwd,
@@ -88,6 +129,11 @@ else:
                     timeout_sec=self.fabric_timeout_sec,
                 )
                 ensure_success("Fabric install command failed", result)
+            if self.fabric_config_bundle is not None:
+                await environment.upload_dir(
+                    self.fabric_config_bundle,
+                    self.fabric_config_target,
+                )
 
         async def run(
             self,
@@ -107,9 +153,10 @@ else:
 
             result = await environment.exec(
                 fabric_runner_command(
-                    fabric_python=self.fabric_python,
+                    fabric_python=self._runner_python,
                     spec_path=remote_spec_path,
                     result_path=remote_result_path,
+                    path_prefix=self._runner_path_prefix,
                 ),
                 cwd=self.fabric_cwd,
                 env=self.extra_env,
@@ -121,19 +168,64 @@ else:
             populate_context_from_result(context, host_result_path)
 
         def _build_request(self, instruction: str) -> RunRequest:
-            return RunRequest(input=instruction, context={"source": "harbor"})
+            context = {"source": "harbor"}
+            if self.session_id is not None:
+                context["harbor_session_id"] = self.session_id
+            if self.context_id is not None:
+                context["harbor_context_id"] = str(self.context_id)
+            return RunRequest(input=instruction, context=context)
 
         def _build_spec(self, instruction: str) -> HarborRunSpec:
             return HarborRunSpec(
-                config_path=self.fabric_config_path,
+                config_path=self._environment_config_path,
                 request=self._build_request(instruction),
                 model_name=self.model_name,
                 skills_dir=self.skills_dir,
                 mcp_servers=tuple(
-                    HarborMcpServer.model_validate(server.model_dump(mode="python"))
-                    for server in self.mcp_servers
+                    HarborMcpServer.model_validate(server.model_dump(mode="python")) for server in self.mcp_servers
                 ),
             )
+
+        def _resolve_environment_config_path(self) -> str:
+            if self.fabric_config_bundle is None:
+                return self.fabric_config_path
+
+            bundle = Path(self.fabric_config_bundle)
+            if not bundle.is_dir():
+                raise ValueError(f"fabric_config_bundle must be an existing directory: {bundle}")
+            entrypoint = PurePosixPath(self.fabric_config_path)
+            target = PurePosixPath(self.fabric_config_target)
+            if not target.is_absolute() or ".." in target.parts:
+                raise ValueError("fabric_config_target must be an absolute task-environment path")
+            if entrypoint.is_absolute() or ".." in entrypoint.parts:
+                raise ValueError("fabric_config_path must be relative and stay within fabric_config_bundle")
+            config_source = bundle / Path(*entrypoint.parts)
+            if not config_source.is_file():
+                raise ValueError(f"fabric config does not exist in bundle: {self.fabric_config_path}")
+            if not config_source.resolve().is_relative_to(bundle.resolve()):
+                raise ValueError("fabric config symlink must stay within its bundle")
+            return str(target / entrypoint)
+
+        def populate_context_post_run(self, context: AgentContext) -> None:
+            """Populate Harbor token and cost fields from canonical ATIF."""
+
+            populate_context_from_trajectory(context, self.logs_dir / "trajectory.json")
+            populate_context_from_telemetry_summary(
+                context,
+                self.logs_dir / "telemetry-validation.json",
+            )
+
+        @property
+        def _runner_python(self) -> str:
+            if self.fabric_package is None:
+                return self.fabric_python
+            return str(PurePosixPath(self.fabric_venv_path) / "bin" / "python")
+
+        @property
+        def _runner_path_prefix(self) -> str | None:
+            if self.fabric_package is None:
+                return None
+            return str(PurePosixPath(self.fabric_venv_path) / "bin")
 
 
 def fabric_runner_command(
@@ -141,6 +233,7 @@ def fabric_runner_command(
     fabric_python: str,
     spec_path: str,
     result_path: str,
+    path_prefix: str | None = None,
 ) -> str:
     """Build the sandbox-local runner command."""
 
@@ -153,7 +246,26 @@ def fabric_runner_command(
         "--result",
         shlex.quote(result_path),
     ]
-    return " ".join(parts)
+    command = " ".join(parts)
+    if path_prefix is not None:
+        return f"PATH={shlex.quote(path_prefix)}:$PATH {command}"
+    return command
+
+
+def fabric_install_command(*, fabric_python: str, package: str, venv_path: str) -> str:
+    """Build a shell-safe pip installation command for one package requirement."""
+
+    if not package.strip():
+        raise ValueError("fabric_package must not be empty")
+    venv = PurePosixPath(venv_path)
+    if not venv.is_absolute() or ".." in venv.parts:
+        raise ValueError("fabric_venv_path must be an absolute task-environment path")
+    venv_python = venv / "bin" / "python"
+    return (
+        f"{shlex.quote(fabric_python)} -m venv {shlex.quote(str(venv))} && "
+        f"{shlex.quote(str(venv_python))} -m pip install "
+        f"--disable-pip-version-check {shlex.quote(package)}"
+    )
 
 
 def ensure_success(message: str, result: Any) -> None:
@@ -185,3 +297,31 @@ def populate_context_from_result(context: AgentContext, path: Path) -> RunResult
         "error": mapping.get("error"),
     }
     return result
+
+
+def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
+    """Backfill Harbor usage fields from a canonical ATIF trajectory when present."""
+
+    if not path.is_file():
+        return
+    value = json.loads(path.read_text(encoding="utf-8"))
+    metrics = value.get("final_metrics")
+    if not isinstance(metrics, dict):
+        return
+    context.n_input_tokens = metrics.get("total_prompt_tokens")
+    context.n_cache_tokens = metrics.get("total_cached_tokens")
+    context.n_output_tokens = metrics.get("total_completion_tokens")
+    context.cost_usd = metrics.get("total_cost_usd")
+
+
+def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -> None:
+    """Attach telemetry quality evidence to Fabric's Harbor metadata."""
+
+    if not path.is_file():
+        return
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    if context.metadata is None:
+        context.metadata = {}
+    fabric = context.metadata.setdefault("fabric", {})
+    if isinstance(fabric, dict):
+        fabric["telemetry_validation"] = summary

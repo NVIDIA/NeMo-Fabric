@@ -7,9 +7,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from typing_extensions import Self
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+from pydantic import model_validator
 
 from nemo_fabric import RunRequest
 
@@ -41,6 +44,7 @@ class HarborRunSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     config_path: Path
+    logs_dir: Path = Path("/logs/agent")
     request: RunRequest
     model_name: str | None = None
     skills_dir: Path | None = None

@@ -124,7 +124,11 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             "native": {
                 "skill_paths": ["skills/review"],
                 "mcp_servers": {
-                    "github": {"transport": "stdio", "url": "github-mcp --stdio"},
+                    "github": {
+                        "transport": "stdio",
+                        "url": "github-mcp",
+                        "args": ["--stdio", "path with spaces"],
+                    },
                     "memory": {"transport": "sse", "url": "${MCP_URL}"},
                 },
             }
@@ -175,7 +179,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         "mcp_servers": {
             "github": {
                 "enabled": True,
-                "command": "github-mcp --stdio",
+                "command": "github-mcp --stdio 'path with spaces'",
             },
             "memory": {
                 "enabled": True,
@@ -444,3 +448,4 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
 
 def test_configure_hermes_relay_returns_none_when_disabled():
     assert hermes_common.configure_hermes_relay({}) is None
+
