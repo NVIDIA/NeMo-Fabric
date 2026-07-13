@@ -8,6 +8,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Command-line interface for NeMo Fabric."
+readme = "README.md"
 
 [[bin]]
 name = "fabric"

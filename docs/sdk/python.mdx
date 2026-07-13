@@ -149,6 +149,8 @@ capability_config.enable_relay(
 Config helpers edit the typed config before planning or starting a runtime. They
 do not modify already-started runtimes. Use `remove_mcp_server(name)` and
 `remove_skill_path(path)` to remove capabilities from a copied config.
+Telemetry is enabled by adding entries to `telemetry.providers`; Relay-specific
+settings live in the top-level `relay` block.
 
 For evaluation or deployment variations, use ordinary Python functions and
 copies of the typed config. Supply the final config to Fabric when the variation
@@ -169,6 +171,23 @@ def review_agent_config(base, *, github_mcp: bool, relay: bool):
     return config
 
 variant = review_agent_config(config, github_mcp=True, relay=True)
+```
+
+Relay observability is represented directly in the SDK config's top-level
+`relay` block, and additional Relay plugin components can be supplied
+generically when their component package is available in the runtime
+environment:
+
+```python
+from nemo_fabric import RelayComponentConfig
+
+relay_config = config.model_copy(deep=True)
+relay_config.enable_relay(
+    output_dir="./artifacts/relay",
+    components=[
+        RelayComponentConfig(kind="switchyard", config={"route": "canary"}),
+    ],
+)
 ```
 
 The repository's

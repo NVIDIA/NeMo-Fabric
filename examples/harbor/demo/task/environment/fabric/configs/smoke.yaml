@@ -21,5 +21,4 @@ environment:
   workspace: /app
   artifacts: /logs/agent/fabric-artifacts/smoke
 
-telemetry:
-  enabled: false
+telemetry: null

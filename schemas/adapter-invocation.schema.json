@@ -417,6 +417,17 @@
           "$ref": "#/$defs/ProfileRegistryConfig",
           "description": "Optional profile discovery config."
         },
+        "relay": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelayConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "First-class NeMo Relay integration configuration."
+        },
         "runtime": {
           "$ref": "#/$defs/RuntimeConfig",
           "description": "Runtime input/output contract."
@@ -639,6 +650,577 @@
       },
       "type": "object"
     },
+    "RelayAtifConfig": {
+      "additionalProperties": true,
+      "description": "Relay ATIF export configuration.",
+      "properties": {
+        "agent_name": {
+          "default": "NeMo Relay",
+          "description": "Agent name written into ATIF.",
+          "type": "string"
+        },
+        "agent_version": {
+          "description": "Agent version written into ATIF.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "default": false,
+          "description": "Whether ATIF export is enabled.",
+          "type": "boolean"
+        },
+        "extra": {
+          "description": "Extra ATIF metadata."
+        },
+        "filename_template": {
+          "default": "nemo-relay-atif-{session_id}.json",
+          "description": "ATIF file name template.",
+          "type": "string"
+        },
+        "model_name": {
+          "default": "unknown",
+          "description": "Model name written into ATIF.",
+          "type": "string"
+        },
+        "output_directory": {
+          "description": "Directory used for ATIF files.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "storage": {
+          "description": "Optional ATIF remote storage.",
+          "items": {
+            "$ref": "#/$defs/RelayAtifStorageConfig"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "tool_definitions": {
+          "description": "Tool definitions written into ATIF.",
+          "items": true,
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RelayAtifStorageConfig": {
+      "description": "Relay ATIF remote storage configuration.",
+      "oneOf": [
+        {
+          "additionalProperties": true,
+          "description": "Upload ATIF artifacts to HTTP storage.",
+          "properties": {
+            "endpoint": {
+              "default": "",
+              "description": "HTTP storage endpoint.",
+              "type": "string"
+            },
+            "header_env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Environment-variable-backed HTTP headers.",
+              "type": "object"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Static HTTP headers.",
+              "type": "object"
+            },
+            "timeout_millis": {
+              "default": 3000,
+              "description": "Request timeout in milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "http",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "description": "Upload ATIF artifacts to S3-compatible storage.",
+          "properties": {
+            "access_key_id": {
+              "description": "AWS access key id.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "allow_http": {
+              "description": "Allow HTTP endpoints for S3-compatible storage.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "bucket": {
+              "default": "",
+              "description": "S3 bucket name.",
+              "type": "string"
+            },
+            "endpoint_url": {
+              "description": "S3-compatible endpoint URL.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "key_prefix": {
+              "description": "Optional S3 object key prefix.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "region": {
+              "description": "AWS region.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "secret_access_key_var": {
+              "description": "Environment variable containing the AWS secret access key.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "session_token_var": {
+              "description": "Environment variable containing the AWS session token.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "s3",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RelayAtofConfig": {
+      "additionalProperties": true,
+      "description": "Relay ATOF export configuration.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Whether ATOF export is enabled.",
+          "type": "boolean"
+        },
+        "endpoints": {
+          "description": "Optional remote ATOF endpoints.",
+          "items": {
+            "$ref": "#/$defs/RelayAtofEndpointConfig"
+          },
+          "type": "array"
+        },
+        "filename": {
+          "description": "ATOF file name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/$defs/RelayAtofMode",
+          "default": "append",
+          "description": "File write mode."
+        },
+        "output_directory": {
+          "description": "Directory used for ATOF files.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RelayAtofEndpointConfig": {
+      "additionalProperties": true,
+      "description": "Relay ATOF endpoint configuration.",
+      "properties": {
+        "field_name_policy": {
+          "$ref": "#/$defs/RelayAtofEndpointFieldNamePolicy",
+          "default": "preserve",
+          "description": "Field-name handling policy."
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Endpoint headers.",
+          "type": "object"
+        },
+        "timeout_millis": {
+          "default": 3000,
+          "description": "Request timeout in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "transport": {
+          "$ref": "#/$defs/RelayAtofEndpointTransport",
+          "default": "http_post",
+          "description": "Endpoint transport."
+        },
+        "url": {
+          "description": "Endpoint URL.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "RelayAtofEndpointFieldNamePolicy": {
+      "description": "Relay ATOF endpoint field-name policy.",
+      "oneOf": [
+        {
+          "const": "preserve",
+          "description": "Preserve field names.",
+          "type": "string"
+        },
+        {
+          "const": "replace_dots",
+          "description": "Replace dots in field names.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelayAtofEndpointTransport": {
+      "description": "Relay ATOF endpoint transport.",
+      "oneOf": [
+        {
+          "const": "http_post",
+          "description": "HTTP POST transport.",
+          "type": "string"
+        },
+        {
+          "const": "websocket",
+          "description": "WebSocket transport.",
+          "type": "string"
+        },
+        {
+          "const": "ndjson",
+          "description": "NDJSON transport.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelayAtofMode": {
+      "description": "Relay ATOF file mode.",
+      "oneOf": [
+        {
+          "const": "append",
+          "description": "Append to an existing ATOF file.",
+          "type": "string"
+        },
+        {
+          "const": "overwrite",
+          "description": "Overwrite an existing ATOF file.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelayComponentConfig": {
+      "additionalProperties": true,
+      "description": "Generic NeMo Relay plugin component configuration.",
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "description": "Component-local Relay plugin config.",
+          "type": "object"
+        },
+        "enabled": {
+          "default": true,
+          "description": "Whether this Relay component should be activated.",
+          "type": "boolean"
+        },
+        "kind": {
+          "description": "Registered Relay plugin kind.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "RelayConfig": {
+      "additionalProperties": true,
+      "description": "NeMo Relay integration configuration.",
+      "properties": {
+        "components": {
+          "description": "Additional Relay plugin components.",
+          "items": {
+            "$ref": "#/$defs/RelayComponentConfig"
+          },
+          "type": "array"
+        },
+        "observability": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelayObservabilityConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Relay observability component configuration."
+        },
+        "output_dir": {
+          "description": "Optional Relay output directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelayConfigPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Relay plugin validation policy."
+        },
+        "project": {
+          "description": "Optional project name for Relay backends.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "RelayConfigPolicy": {
+      "description": "Relay validation policy.",
+      "properties": {
+        "unknown_component": {
+          "$ref": "#/$defs/RelayUnsupportedBehavior",
+          "default": "warn",
+          "description": "Policy for unknown components."
+        },
+        "unknown_field": {
+          "$ref": "#/$defs/RelayUnsupportedBehavior",
+          "default": "warn",
+          "description": "Policy for unknown fields."
+        },
+        "unsupported_value": {
+          "$ref": "#/$defs/RelayUnsupportedBehavior",
+          "default": "error",
+          "description": "Policy for unsupported values."
+        }
+      },
+      "type": "object"
+    },
+    "RelayObservabilityConfig": {
+      "additionalProperties": true,
+      "description": "NeMo Relay observability component configuration.",
+      "properties": {
+        "atif": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelayAtifConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "ATIF export configuration."
+        },
+        "atof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelayAtofConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "ATOF export configuration."
+        },
+        "openinference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelayOtlpConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "OpenInference export configuration."
+        },
+        "opentelemetry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelayOtlpConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "OpenTelemetry export configuration."
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelayConfigPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Relay config validation policy."
+        },
+        "version": {
+          "default": 1,
+          "description": "Relay observability config version.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "RelayOtlpConfig": {
+      "additionalProperties": true,
+      "description": "Relay OpenTelemetry/OpenInference export configuration.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "description": "Whether OTLP export is enabled.",
+          "type": "boolean"
+        },
+        "endpoint": {
+          "description": "OTLP endpoint.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "OTLP headers.",
+          "type": "object"
+        },
+        "instrumentation_scope": {
+          "description": "OTLP instrumentation scope.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resource_attributes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "OTLP resource attributes.",
+          "type": "object"
+        },
+        "service_name": {
+          "default": "nemo-relay",
+          "description": "OTLP service name.",
+          "type": "string"
+        },
+        "service_namespace": {
+          "description": "OTLP service namespace.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "service_version": {
+          "description": "OTLP service version.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeout_millis": {
+          "default": 3000,
+          "description": "Request timeout in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "transport": {
+          "$ref": "#/$defs/RelayOtlpTransport",
+          "default": "http_binary",
+          "description": "OTLP transport."
+        }
+      },
+      "type": "object"
+    },
+    "RelayOtlpTransport": {
+      "description": "Relay OTLP transport.",
+      "oneOf": [
+        {
+          "const": "http_binary",
+          "description": "OTLP HTTP binary transport.",
+          "type": "string"
+        },
+        {
+          "const": "grpc",
+          "description": "OTLP gRPC transport.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelayUnsupportedBehavior": {
+      "description": "Relay unsupported/unknown config handling.",
+      "oneOf": [
+        {
+          "const": "ignore",
+          "description": "Ignore the unsupported or unknown value.",
+          "type": "string"
+        },
+        {
+          "const": "warn",
+          "description": "Warn on the unsupported or unknown value.",
+          "type": "string"
+        },
+        {
+          "const": "error",
+          "description": "Error on the unsupported or unknown value.",
+          "type": "string"
+        }
+      ]
+    },
     "ResolutionStrategy": {
       "description": "Adapter install or availability strategy.",
       "oneOf": [
@@ -822,32 +1404,12 @@
       "additionalProperties": true,
       "description": "Telemetry configuration.",
       "properties": {
-        "config": {
-          "description": "Pass-through telemetry backend config."
-        },
-        "enabled": {
-          "default": false,
-          "description": "Whether telemetry is enabled for this run.",
-          "type": "boolean"
-        },
-        "output_dir": {
-          "description": "Optional telemetry output directory.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "project": {
-          "description": "Optional project name for telemetry backends.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "provider": {
-          "$ref": "#/$defs/TelemetryProvider",
-          "default": "relay",
-          "description": "Telemetry provider responsible for runtime integration."
+        "providers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/TelemetryProviderConfig"
+          },
+          "description": "Telemetry providers enabled for this run.",
+          "type": "object"
         }
       },
       "type": "object"
@@ -862,9 +1424,15 @@
           },
           "type": "array"
         },
-        "provider": {
-          "$ref": "#/$defs/TelemetryProvider",
-          "description": "Telemetry provider selected for this run."
+        "native_config": {
+          "description": "Native telemetry pass-through config."
+        },
+        "providers": {
+          "description": "Telemetry providers selected for this run.",
+          "items": {
+            "$ref": "#/$defs/TelemetryProvider"
+          },
+          "type": "array"
         },
         "relay_config": {
           "description": "Relay pass-through config."
@@ -889,7 +1457,7 @@
         }
       },
       "required": [
-        "provider",
+        "providers",
         "relay_enabled"
       ],
       "type": "object"
@@ -908,6 +1476,16 @@
           "type": "string"
         }
       ]
+    },
+    "TelemetryProviderConfig": {
+      "additionalProperties": true,
+      "description": "Provider-specific telemetry configuration.",
+      "properties": {
+        "config": {
+          "description": "Provider-specific pass-through config."
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

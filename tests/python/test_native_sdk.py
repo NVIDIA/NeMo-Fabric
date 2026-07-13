@@ -11,8 +11,12 @@ from pathlib import Path
 
 import nemo_fabric._native as native
 import pytest
-from examples.code_review_agent import BASE_DIR, base_config
-from nemo_fabric import Fabric, FabricConfig, FabricProfileConfig, FabricRuntimeError
+from examples.code_review_agent import BASE_DIR
+from examples.code_review_agent import base_config
+from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
+from nemo_fabric import FabricProfileConfig
+from nemo_fabric import FabricRuntimeError
 
 
 async def test_native_sdk(hermes_shim_agent_dir: Path):
@@ -116,7 +120,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
                     }
                 }
             },
-            "telemetry": {"enabled": False},
+            "telemetry": None,
             "consumer_extension": {
                 "base": True,
                 "nested": {"first": 1},
@@ -126,7 +130,8 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     typed_profile = FabricProfileConfig(
         name="typed_relay",
         harness={"settings": {"timeout_seconds": 30}},
-        telemetry={"enabled": True, "output_dir": "./artifacts/relay"},
+        telemetry={"providers": {"relay": {}}},
+        relay={"output_dir": "./artifacts/relay"},
         consumer_extension={
             "profile": True,
             "nested": {"second": 2},

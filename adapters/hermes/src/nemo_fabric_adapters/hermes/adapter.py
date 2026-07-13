@@ -186,7 +186,7 @@ async def run_hermes(payload: dict[str, Any]) -> dict[str, Any]:
     os.environ["HERMES_SESSION_SOURCE"] = "fabric"
     os.environ.setdefault("TERMINAL_ENV", settings.get("terminal_backend", "local"))
     os.environ.setdefault("TERMINAL_TIMEOUT", str(settings.get("terminal_timeout", 60)))
-    relay_enabled = os.environ.get("FABRIC_RELAY_ENABLED", "").strip().lower() == "true"
+    relay_enabled = common_utils.relay_enabled(payload)
 
     relay_plugin_config = None
     if relay_enabled:
@@ -223,9 +223,7 @@ async def run_hermes(payload: dict[str, Any]) -> dict[str, Any]:
         from nemo_relay import plugin
 
         async with plugin.plugin(relay_api_config):
-            (result, enabled_toolsets, relay_artifacts, adapter_stdout) = _invoke_hermes(
-                **hermes_kwargs
-            )
+            (result, enabled_toolsets, relay_artifacts, adapter_stdout) = _invoke_hermes(**hermes_kwargs)
     else:
         (result, enabled_toolsets, relay_artifacts, adapter_stdout) = _invoke_hermes(**hermes_kwargs)
 
@@ -274,7 +272,8 @@ def _invoke_hermes(
     relay_plugin_config: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], list[str] | None, list[dict[str, str]], str]:
     from hermes_cli.config import load_config
-    from hermes_cli.plugins import discover_plugins, invoke_hook
+    from hermes_cli.plugins import discover_plugins
+    from hermes_cli.plugins import invoke_hook
     from hermes_state import SessionDB
     from run_agent import AIAgent
 

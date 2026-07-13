@@ -9,17 +9,16 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING
+from typing import Any
 
 if TYPE_CHECKING:
     from nemo_relay import plugin
-    from nemo_relay.observability import (
-        AtifConfig,
-        AtofConfig,
-        HttpStorageConfig,
-        OtlpConfig,
-        S3StorageConfig,
-    )
+    from nemo_relay.observability import AtifConfig
+    from nemo_relay.observability import AtofConfig
+    from nemo_relay.observability import HttpStorageConfig
+    from nemo_relay.observability import OtlpConfig
+    from nemo_relay.observability import S3StorageConfig
 
 
 def current_virtualenv() -> Path | None:
@@ -40,7 +39,7 @@ def virtualenv_subprocess_env() -> dict[str, str]:
     env = os.environ.copy()
     virtualenv = current_virtualenv()
     if virtualenv is None:
-        return env   
+        return env
 
     scripts = virtualenv / ("Scripts" if os.name == "nt" else "bin")
     path = env.get("PATH")
@@ -141,8 +140,25 @@ def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return telemetry if isinstance(telemetry, dict) else {}
 
 
-def telemetry_provider(payload: dict[str, Any]) -> str:
-    return str(telemetry_payload(payload).get("provider") or "relay")
+def telemetry_plan(payload: dict[str, Any]) -> dict[str, Any]:
+    plan = payload.get("telemetry_plan") or {}
+    return plan if isinstance(plan, dict) else {}
+
+
+def telemetry_providers(payload: dict[str, Any]) -> list[str]:
+    providers = telemetry_plan(payload).get("providers")
+    if isinstance(providers, list):
+        return [str(provider) for provider in providers if str(provider)]
+    return []
+
+
+def relay_enabled(payload: dict[str, Any]) -> bool:
+    return telemetry_plan(payload).get("relay_enabled") is True
+
+
+def native_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
+    config = telemetry_plan(payload).get("native_config") or {}
+    return config if isinstance(config, dict) else {}
 
 
 def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -166,6 +182,7 @@ def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
 def dump_yaml(value: dict[str, Any]) -> str:
     try:
         import yaml
+
         return yaml.safe_dump(value, sort_keys=False)
     except ImportError:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
@@ -232,11 +249,9 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
 
 def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
     from nemo_relay import plugin
-    from nemo_relay.observability import (
-        ComponentSpec,
-        ConfigPolicy,
-        ObservabilityConfig,
-    )
+    from nemo_relay.observability import ComponentSpec
+    from nemo_relay.observability import ConfigPolicy
+    from nemo_relay.observability import ObservabilityConfig
 
     components: list[Any] = []
     for component in plugin_config.get("components", []):
@@ -295,7 +310,8 @@ def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfi
 def _relay_api_atof_config(value: Any) -> AtofConfig | None:
     if not isinstance(value, dict):
         return None
-    from nemo_relay.observability import AtofConfig, AtofEndpointConfig
+    from nemo_relay.observability import AtofConfig
+    from nemo_relay.observability import AtofEndpointConfig
 
     endpoint_configs = value.get("endpoints")
     endpoints = None
@@ -327,11 +343,7 @@ def _relay_api_atif_config(value: Any) -> AtifConfig | None:
     storage_configs = value.get("storage")
     storage = None
     if isinstance(storage_configs, list):
-        storage = [
-            _relay_api_storage_config(item)
-            for item in storage_configs
-            if isinstance(item, dict)
-        ]
+        storage = [_relay_api_storage_config(item) for item in storage_configs if isinstance(item, dict)]
     return AtifConfig(
         enabled=bool(value.get("enabled", False)),
         agent_name=value.get("agent_name", "NeMo Relay"),

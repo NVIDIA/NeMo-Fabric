@@ -27,5 +27,4 @@ environment:
   workspace: ./repos/my-service
   artifacts: ./artifacts/swebench
 
-telemetry:
-  enabled: false
+telemetry: null

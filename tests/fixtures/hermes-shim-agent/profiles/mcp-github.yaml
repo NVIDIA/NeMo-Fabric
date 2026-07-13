@@ -13,5 +13,8 @@ mcp:
       exposure: harness_native
 
 telemetry:
-  enabled: true
+  providers:
+    relay: {}
+
+relay:
   output_dir: ./artifacts/relay

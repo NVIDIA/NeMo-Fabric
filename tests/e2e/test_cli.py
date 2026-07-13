@@ -9,7 +9,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from _utils.utils import assert_relay_disabled_native_observability, run_fabric_cli
+from _utils.utils import assert_relay_disabled_native_observability
+from _utils.utils import run_fabric_cli
 
 
 def test_cli(
@@ -74,12 +75,12 @@ def test_cli(
         assert "mode" not in profile_plan["config"]["runtime"]
         assert profile_plan["capability_plan"]["native"]["skill_paths"]
         assert "github" in profile_plan["capability_plan"]["native"]["mcp_servers"]
-        telemetry_plan = profile_plan["telemetry_plan"]
-        assert telemetry_plan["relay_enabled"] is relay_enabled
         if relay_enabled:
+            telemetry_plan = profile_plan["telemetry_plan"]
+            assert telemetry_plan["relay_enabled"] is True
             assert telemetry_plan["relay_output_dir"]
         else:
-            assert not telemetry_plan.get("relay_output_dir")
+            assert profile_plan.get("telemetry_plan") is None
 
     multi_plan = call_json(
         "plan",

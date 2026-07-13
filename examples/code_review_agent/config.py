@@ -7,15 +7,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nemo_fabric import (
-    EnvironmentConfig,
-    FabricConfig,
-    HarnessConfig,
-    MetadataConfig,
-    ModelConfig,
-    RuntimeConfig,
-    TelemetryConfig,
-)
+from nemo_fabric import EnvironmentConfig
+from nemo_fabric import FabricConfig
+from nemo_fabric import HarnessConfig
+from nemo_fabric import MetadataConfig
+from nemo_fabric import ModelConfig
+from nemo_fabric import RelayAtifConfig
+from nemo_fabric import RelayAtofConfig
+from nemo_fabric import RelayObservabilityConfig
+from nemo_fabric import RelayOtlpConfig
+from nemo_fabric import RuntimeConfig
+from nemo_fabric import TelemetryConfig
 
 BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE = "./repos/my-service"
@@ -53,7 +55,7 @@ def base_config() -> FabricConfig:
             workspace=WORKSPACE,
             artifacts="./artifacts/local",
         ),
-        telemetry=TelemetryConfig(enabled=False),
+        telemetry=TelemetryConfig(),
     )
     config.add_skill_path(SKILL_PATH)
     config.add_mcp_server(
@@ -110,9 +112,7 @@ def codex_cli_config() -> FabricConfig:
             "config_overrides": {"model_reasoning_effort": "high"},
         },
     )
-    config.models = {
-        "default": ModelConfig(provider="openai", model="openai/gpt-5.4")
-    }
+    config.models = {"default": ModelConfig(provider="openai", model="openai/gpt-5.4")}
     config.runtime = RuntimeConfig(
         input_schema="text",
         output_schema="message",
@@ -191,31 +191,21 @@ def with_relay(base: FabricConfig) -> FabricConfig:
     config = base.model_copy(deep=True)
     config.enable_relay(
         output_dir="./artifacts/relay",
-        config={
-            "version": 1,
-            "components": [
-                {
-                    "kind": "observability",
-                    "enabled": True,
-                    "config": {
-                        "version": 1,
-                        "atif": {
-                            "enabled": True,
-                            "output_directory": "./artifacts/relay",
-                            "filename_template": "trajectory-{session_id}.atif.json",
-                            "agent_name": "code-review-agent",
-                            "agent_version": "fabric-sdk-example",
-                        },
-                        "atof": {
-                            "enabled": True,
-                            "output_directory": "./artifacts/relay",
-                            "filename": "events.atof.jsonl",
-                            "mode": "overwrite",
-                        },
-                    },
-                }
-            ],
-        },
+        observability=RelayObservabilityConfig(
+            atif=RelayAtifConfig(
+                enabled=True,
+                output_directory="./artifacts/relay",
+                filename_template="trajectory-{session_id}.atif.json",
+                agent_name="code-review-agent",
+                agent_version="fabric-sdk-example",
+            ),
+            atof=RelayAtofConfig(
+                enabled=True,
+                output_directory="./artifacts/relay",
+                filename="events.atof.jsonl",
+                mode="overwrite",
+            ),
+        ),
     )
     return config
 
@@ -226,29 +216,19 @@ def with_relay_otel(base: FabricConfig) -> FabricConfig:
     config = base.model_copy(deep=True)
     config.enable_relay(
         output_dir="./artifacts/relay-otel",
-        config={
-            "version": 1,
-            "components": [
-                {
-                    "kind": "observability",
-                    "enabled": True,
-                    "config": {
-                        "version": 1,
-                        "opentelemetry": {
-                            "enabled": True,
-                            "transport": "http_binary",
-                            "endpoint": "http://localhost:4318/v1/traces",
-                            "service_name": "code-review-agent",
-                            "service_namespace": "fabric",
-                            "service_version": "fabric-sdk-example",
-                            "instrumentation_scope": "nemo-relay-otel",
-                            "timeout_millis": 3000,
-                            "resource_attributes": {"deployment.environment": "dev"},
-                        },
-                    },
-                }
-            ],
-        },
+        observability=RelayObservabilityConfig(
+            opentelemetry=RelayOtlpConfig(
+                enabled=True,
+                transport="http_binary",
+                endpoint="http://localhost:4318/v1/traces",
+                service_name="code-review-agent",
+                service_namespace="fabric",
+                service_version="fabric-sdk-example",
+                instrumentation_scope="nemo-relay-otel",
+                timeout_millis=3000,
+                resource_attributes={"deployment.environment": "dev"},
+            ),
+        ),
     )
     return config
 
@@ -257,16 +237,24 @@ def with_relay_openinference(base: FabricConfig) -> FabricConfig:
     """Return a copy with Relay OpenInference export enabled."""
 
     config = with_relay(base)
-    assert config.telemetry is not None and config.telemetry.config is not None
-    component = config.telemetry.config["components"][0]["config"]
-    component["openinference"] = {
-        "enabled": True,
-        "transport": "http_binary",
-        "endpoint": "http://localhost:6006/v1/traces",
-    }
-    config.telemetry.output_dir = "./artifacts/relay-openinference"
-    component["atif"]["output_directory"] = "./artifacts/relay-openinference"
-    component["atof"]["output_directory"] = "./artifacts/relay-openinference"
+    assert config.telemetry is not None
+    assert config.relay is not None
+    relay = config.relay
+    assert not isinstance(relay, dict)
+    assert relay.observability is not None
+    observability = relay.observability
+    assert not isinstance(observability, dict)
+
+    relay.output_dir = "./artifacts/relay-openinference"
+    observability.openinference = RelayOtlpConfig(
+        enabled=True,
+        transport="http_binary",
+        endpoint="http://localhost:6006/v1/traces",
+    )
+    if isinstance(observability.atif, RelayAtifConfig):
+        observability.atif.output_directory = "./artifacts/relay-openinference"
+    if isinstance(observability.atof, RelayAtofConfig):
+        observability.atof.output_directory = "./artifacts/relay-openinference"
     return config
 
 
@@ -275,25 +263,27 @@ def with_native_otel(base: FabricConfig) -> FabricConfig:
 
     config = base.model_copy(deep=True)
     config.telemetry = TelemetryConfig(
-        enabled=True,
-        provider="native",
-        config={
-            "version": 1,
-            "components": [
-                {
-                    "kind": "observability",
-                    "enabled": True,
-                    "config": {
-                        "version": 1,
-                        "opentelemetry": {
+        providers={
+            "native": {
+                "config": {
+                    "version": 1,
+                    "components": [
+                        {
+                            "kind": "observability",
                             "enabled": True,
-                            "transport": "http_binary",
-                            "endpoint": "http://localhost:4318/v1/traces",
-                            "resource_attributes": {"deployment.environment": "dev"},
+                            "config": {
+                                "version": 1,
+                                "opentelemetry": {
+                                    "enabled": True,
+                                    "transport": "http_binary",
+                                    "endpoint": "http://localhost:4318/v1/traces",
+                                    "resource_attributes": {"deployment.environment": "dev"},
+                                },
+                            },
                         },
-                    },
-                }
-            ],
+                    ],
+                },
+            }
         },
     )
     return config

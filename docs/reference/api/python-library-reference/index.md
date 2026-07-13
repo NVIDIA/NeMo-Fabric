@@ -31,10 +31,21 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
 - [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Model alias configuration.
 - [`models.ProfileRegistryConfig`](./nemo_fabric.models.md#class-profileregistryconfig): Profile discovery config for portable file-backed agent packages.
+- [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
+- [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
+- [`models.RelayAtofEndpointConfig`](./nemo_fabric.models.md#class-relayatofendpointconfig): NeMo Relay ATOF remote endpoint configuration.
+- [`models.RelayComponentConfig`](./nemo_fabric.models.md#class-relaycomponentconfig): Generic NeMo Relay plugin component configuration.
+- [`models.RelayConfig`](./nemo_fabric.models.md#class-relayconfig): First-class NeMo Relay integration configuration.
+- [`models.RelayConfigPolicy`](./nemo_fabric.models.md#class-relayconfigpolicy): NeMo Relay config validation policy.
+- [`models.RelayHttpStorageConfig`](./nemo_fabric.models.md#class-relayhttpstorageconfig): NeMo Relay ATIF HTTP storage configuration.
+- [`models.RelayObservabilityConfig`](./nemo_fabric.models.md#class-relayobservabilityconfig): NeMo Relay observability component configuration.
+- [`models.RelayOtlpConfig`](./nemo_fabric.models.md#class-relayotlpconfig): NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference.
+- [`models.RelayS3StorageConfig`](./nemo_fabric.models.md#class-relays3storageconfig): NeMo Relay ATIF S3 storage configuration.
 - [`models.RunRequest`](./nemo_fabric.models.md#class-runrequest): One validated Fabric invocation request.
 - [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Runtime input/output contract.
 - [`models.SkillConfig`](./nemo_fabric.models.md#class-skillconfig): Skill capability configuration.
 - [`models.TelemetryConfig`](./nemo_fabric.models.md#class-telemetryconfig): Telemetry configuration.
+- [`models.TelemetryProviderConfig`](./nemo_fabric.models.md#class-telemetryproviderconfig): Provider-specific telemetry configuration.
 - [`types.AdapterInfo`](./nemo_fabric.types.md#class-adapterinfo): Resolved adapter identity attached to a run plan.
 - [`types.ArtifactManifest`](./nemo_fabric.types.md#class-artifactmanifest): Normalized collection of artifacts produced by a run.
 - [`types.ArtifactRef`](./nemo_fabric.types.md#class-artifactref): Reference to one artifact produced by a run.

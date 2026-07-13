@@ -134,11 +134,11 @@ async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
 
 ## Telemetry
 
-- **Relay** (`telemetry.provider: relay`): the agent is wrapped with
+- **Relay** (`telemetry.providers.relay`): the agent is wrapped with
   `nemo_relay.integrations.deepagents.add_nemo_relay_integration`, emitting
   ATOF/ATIF artifacts referenced in the `ArtifactManifest`. OTel/OpenInference
   export is available through the relay plugin config (see the `relay-otel` and
   `relay-openinference` profiles).
-- **Native** (`telemetry.provider: native`): the `telemetry.config`
+- **Native** (`telemetry.providers.native.config`): the provider config
   OpenTelemetry/OpenInference exporter is applied and spans export directly to
   the configured collector, without writing ATOF/ATIF relay artifacts.

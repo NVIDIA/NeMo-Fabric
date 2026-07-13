@@ -6,11 +6,14 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator
+from collections.abc import Mapping
+from collections.abc import Sequence
 from copy import deepcopy
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, TypeVar
+from typing import Any
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -101,12 +104,9 @@ class _ConfigMapping(dict[str, Any]):
         extras = _mapping({} if extra_fields is None else extra_fields, "extra_fields")
         overlap = self._fields.intersection(extras)
         if overlap:
-            raise FabricConfigError(
-                f"extra_fields duplicates known fields: {', '.join(sorted(overlap))}"
-            )
+            raise FabricConfigError(f"extra_fields duplicates known fields: {', '.join(sorted(overlap))}")
         stored = {
-            key: deepcopy(item) if isinstance(item, _ConfigMapping) else _plain(item)
-            for key, item in values.items()
+            key: deepcopy(item) if isinstance(item, _ConfigMapping) else _plain(item) for key, item in values.items()
         }
         super().__init__({**stored, **extras})
 
@@ -130,11 +130,7 @@ class _ConfigMapping(dict[str, Any]):
     def extra_fields(self) -> dict[str, Any]:
         """Return preserved schema-extension fields as a deep copy."""
 
-        return {
-            key: _plain(value)
-            for key, value in self.items()
-            if key not in self._fields
-        }
+        return {key: _plain(value) for key, value in self.items() if key not in self._fields}
 
     def to_mapping(self) -> dict[str, Any]:
         """Return a detached, JSON-compatible mapping for serialization."""
@@ -265,11 +261,7 @@ class _RuntimeConfig(_ConfigMapping):
             input_schema=data.get("input_schema"),
             output_schema=data.get("output_schema"),
             artifacts=data.get("artifacts"),
-            extra_fields={
-                key: item
-                for key, item in data.items()
-                if key not in cls._fields
-            },
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
         )
 
 
@@ -285,9 +277,7 @@ class _EnvironmentConfig(_ConfigMapping):
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
 
-    _fields = frozenset(
-        {"provider", "workspace", "artifacts", "settings", "metadata"}
-    )
+    _fields = frozenset({"provider", "workspace", "artifacts", "settings", "metadata"})
     _omit_if_empty = frozenset({"settings", "metadata"})
 
     def __init__(
@@ -348,9 +338,7 @@ class _SkillConfig(_ConfigMapping):
         paths: Sequence[str | Path] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        values: dict[str, Any] = {
-            "paths": [str(path) for path in ([] if paths is None else paths)]
-        }
+        values: dict[str, Any] = {"paths": [str(path) for path in ([] if paths is None else paths)]}
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
@@ -394,9 +382,7 @@ class _McpConfig(_ConfigMapping):
         servers: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        values: dict[str, Any] = {
-            "servers": _mapping({} if servers is None else servers, "mcp servers")
-        }
+        values: dict[str, Any] = {"servers": _mapping({} if servers is None else servers, "mcp servers")}
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
@@ -451,28 +437,16 @@ class _McpConfig(_ConfigMapping):
 class _TelemetryConfig(_ConfigMapping):
     """Telemetry configuration with authoring helpers."""
 
-    _fields = frozenset({"enabled", "provider", "project", "output_dir", "config"})
+    _fields = frozenset({"providers"})
     _PROVIDERS = frozenset({"relay", "native"})
 
     def __init__(
         self,
         *,
-        enabled: bool = False,
-        provider: str | None = None,
-        project: str | None = None,
-        output_dir: str | Path | None = None,
-        config: Mapping[str, Any] | None = None,
+        providers: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        values: dict[str, Any] = {"enabled": _boolean(enabled, "telemetry enabled")}
-        if provider is not None:
-            values["provider"] = self._provider(provider)
-        if project is not None:
-            values["project"] = project
-        if output_dir is not None:
-            values["output_dir"] = output_dir
-        if config is not None:
-            values["config"] = config
+        values: dict[str, Any] = {"providers": self._providers(providers or {})}
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
@@ -481,13 +455,49 @@ class _TelemetryConfig(_ConfigMapping):
 
         data = _mapping(value, "telemetry")
         return cls(
-            enabled=data.get("enabled", False),
-            provider=data.get("provider"),
-            project=data.get("project"),
-            output_dir=data.get("output_dir"),
-            config=data.get("config"),
+            providers=data.get("providers", {}),
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
         )
+
+    @classmethod
+    def _providers(cls, providers: Mapping[str, Any]) -> dict[str, Any]:
+        values: dict[str, Any] = {}
+        for key, value in _mapping(providers, "telemetry providers").items():
+            provider = _required_text(key, "telemetry provider")
+            if provider not in cls._PROVIDERS:
+                allowed = ", ".join(sorted(cls._PROVIDERS))
+                raise FabricConfigError(f"telemetry provider must be one of: {allowed}")
+            values[provider] = _mapping(value, f"{provider} telemetry provider")
+        return values
+
+    def enable_relay(
+        self,
+    ) -> "_TelemetryConfig":
+        """Enable NeMo Relay telemetry for subsequently started runtimes."""
+
+        providers = dict(self.get("providers", {}))
+        providers["relay"] = {}
+        self["providers"] = providers
+        return self
+
+    def enable_native(self, *, config: Mapping[str, Any] | None = None) -> "_TelemetryConfig":
+        """Let the selected harness adapter handle telemetry natively."""
+
+        providers = dict(self.get("providers", {}))
+        provider_config: dict[str, Any] = dict(providers.get("native", {}))
+        if config is not None:
+            provider_config["config"] = _mapping(config, "native telemetry config")
+        providers["native"] = provider_config
+        self["providers"] = providers
+        return self
+
+    def remove_provider(self, provider: str) -> "_TelemetryConfig":
+        """Remove a configured telemetry provider."""
+
+        providers = dict(self.get("providers", {}))
+        providers.pop(self._provider(provider), None)
+        self["providers"] = providers
+        return self
 
     @classmethod
     def _provider(cls, provider: str) -> str:
@@ -496,38 +506,6 @@ class _TelemetryConfig(_ConfigMapping):
             allowed = ", ".join(sorted(cls._PROVIDERS))
             raise FabricConfigError(f"telemetry provider must be one of: {allowed}")
         return value
-
-    def enable_relay(
-        self,
-        *,
-        project: str | None = None,
-        output_dir: str | Path | None = None,
-        config: Mapping[str, Any] | None = None,
-    ) -> "_TelemetryConfig":
-        """Enable NeMo Relay telemetry for subsequently started runtimes."""
-
-        self["enabled"] = True
-        self["provider"] = "relay"
-        if project is not None:
-            self["project"] = project
-        if output_dir is not None:
-            self["output_dir"] = str(output_dir)
-        if config is not None:
-            self["config"] = _mapping(config, "telemetry config")
-        return self
-
-    def enable_native(self) -> "_TelemetryConfig":
-        """Let the selected harness adapter handle telemetry natively."""
-
-        self["enabled"] = True
-        self["provider"] = "native"
-        return self
-
-    def disable(self) -> "_TelemetryConfig":
-        """Disable telemetry for subsequently started runtimes."""
-
-        self["enabled"] = False
-        return self
 
 
 class _ResolvedFabricConfig(_ConfigMapping):
@@ -547,6 +525,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
         mcp: Optional MCP configuration.
         skills: Optional skill configuration.
         telemetry: Optional telemetry configuration.
+        relay: Optional Relay integration configuration.
         profiles: Optional profile-discovery configuration.
         tools: Optional harness-neutral tool configuration.
         extra_fields: Preserved extension fields not recognized by this SDK.
@@ -563,6 +542,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
             "mcp",
             "skills",
             "telemetry",
+            "relay",
             "profiles",
             "tools",
         }
@@ -581,6 +561,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
         mcp: Mapping[str, Any] | None = None,
         skills: Mapping[str, Any] | None = None,
         telemetry: Mapping[str, Any] | None = None,
+        relay: Mapping[str, Any] | None = None,
         profiles: Mapping[str, Any] | None = None,
         tools: Any = None,
         extra_fields: Mapping[str, Any] | None = None,
@@ -592,18 +573,11 @@ class _ResolvedFabricConfig(_ConfigMapping):
             _RuntimeConfig() if runtime is None else runtime,
             "runtime",
         )
-        environment_value = (
-            None
-            if environment is None
-            else _coerce(_EnvironmentConfig, environment, "environment")
-        )
+        environment_value = None if environment is None else _coerce(_EnvironmentConfig, environment, "environment")
         mcp_value = None if mcp is None else _coerce(_McpConfig, mcp, "mcp")
         skills_value = None if skills is None else _coerce(_SkillConfig, skills, "skills")
-        telemetry_value = (
-            None
-            if telemetry is None
-            else _coerce(_TelemetryConfig, telemetry, "telemetry")
-        )
+        telemetry_value = None if telemetry is None else _coerce(_TelemetryConfig, telemetry, "telemetry")
+        relay_value = None if relay is None else _mapping(relay, "relay")
         values: dict[str, Any] = {
             "schema_version": _required_text(schema_version, "schema_version"),
             "metadata": metadata_value,
@@ -616,6 +590,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
             ("mcp", mcp_value),
             ("skills", skills_value),
             ("telemetry", telemetry_value),
+            ("relay", relay_value),
             ("profiles", profiles),
             ("tools", tools),
         ):
@@ -642,6 +617,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
             mcp=data.get("mcp"),
             skills=data.get("skills"),
             telemetry=data.get("telemetry"),
+            relay=data.get("relay"),
             profiles=data.get("profiles"),
             tools=data.get("tools"),
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
@@ -718,15 +694,25 @@ class _ResolvedFabricConfig(_ConfigMapping):
         *,
         project: str | None = None,
         output_dir: str | Path | None = None,
-        config: Mapping[str, Any] | None = None,
+        observability: Mapping[str, Any] | None = None,
+        components: Sequence[Mapping[str, Any]] | None = None,
+        policy: Mapping[str, Any] | None = None,
     ) -> "_ResolvedFabricConfig":
         """Enable NeMo Relay telemetry and return this config."""
 
-        self.telemetry.enable_relay(
-            project=project,
-            output_dir=output_dir,
-            config=config,
-        )
+        self.telemetry.enable_relay()
+        relay = dict(self.get("relay") or {})
+        if project is not None:
+            relay["project"] = project
+        if output_dir is not None:
+            relay["output_dir"] = str(output_dir)
+        if observability is not None:
+            relay["observability"] = _mapping(observability, "relay observability")
+        if components is not None:
+            relay["components"] = [_mapping(component, "relay component") for component in components]
+        if policy is not None:
+            relay["policy"] = _mapping(policy, "relay policy")
+        self["relay"] = relay
         return self
 
 
@@ -815,13 +801,7 @@ class FabricMapping(Mapping[str, Any]):
     def extra_fields(self) -> Mapping[str, Any]:
         """Return an immutable view of preserved extension fields."""
 
-        return MappingProxyType(
-            {
-                key: _thaw(value)
-                for key, value in self._data.items()
-                if key not in self._fields
-            }
-        )
+        return MappingProxyType({key: _thaw(value) for key, value in self._data.items() if key not in self._fields})
 
     def to_mapping(self) -> dict[str, Any]:
         """Return a detached, JSON-compatible mapping for serialization."""
@@ -922,18 +902,14 @@ class EffectiveConfig(FabricMapping):
     config_path: Path | None
     config_root: Path
     config: _ResolvedFabricConfig
-    _fields = frozenset(
-        {"agent_name", "profiles", "agent_root", "config_path", "config_root", "config"}
-    )
+    _fields = frozenset({"agent_name", "profiles", "agent_root", "config_path", "config_root", "config"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
         data["profiles"] = _required_profiles(data, "EffectiveConfig")
         data["agent_root"] = Path(data.get("agent_root", "."))
         data["config_root"] = Path(data.get("config_root", "."))
-        data["config_path"] = (
-            None if data.get("config_path") is None else Path(data["config_path"])
-        )
+        data["config_path"] = None if data.get("config_path") is None else Path(data["config_path"])
         data["config"] = _ResolvedFabricConfig.from_mapping(data.get("config", {}))
         return data
 
@@ -954,9 +930,7 @@ class RunPlan(FabricMapping):
     profiles: Sequence[str]
     adapter: AdapterInfo
     capabilities: RuntimeCapabilities
-    _fields = frozenset(
-        {"effective_config", "agent_name", "profiles", "adapter", "capabilities"}
-    )
+    _fields = frozenset({"effective_config", "agent_name", "profiles", "adapter", "capabilities"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -1012,9 +986,7 @@ class DoctorReport(FabricMapping):
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
         data["profiles"] = _required_profiles(data, "DoctorReport")
-        data["checks"] = tuple(
-            DoctorCheck.from_mapping(check) for check in data.get("checks", [])
-        )
+        data["checks"] = tuple(DoctorCheck.from_mapping(check) for check in data.get("checks", []))
         return data
 
 
@@ -1084,9 +1056,7 @@ class ArtifactManifest(FabricMapping):
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
         data["root"] = None if data.get("root") is None else Path(data["root"])
-        data["artifacts"] = tuple(
-            ArtifactRef.from_mapping(artifact) for artifact in data.get("artifacts", [])
-        )
+        data["artifacts"] = tuple(ArtifactRef.from_mapping(artifact) for artifact in data.get("artifacts", []))
         return data
 
 
@@ -1113,9 +1083,13 @@ class TelemetryRef(FabricMapping):
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
         metadata = _mapping(data.get("metadata", {}), "telemetry metadata")
         if "relay_enabled" in data:
+            providers = metadata.get("telemetry_providers")
+            provider = (
+                providers[0] if isinstance(providers, list) and providers and isinstance(providers[0], str) else "relay"
+            )
             metadata.setdefault("relay_enabled", data["relay_enabled"])
             data = {
-                "provider": metadata.get("telemetry_provider", "relay"),
+                "provider": provider,
                 "kind": "trace",
                 "uri": metadata.get("relay_output_dir"),
                 "trace_id": metadata.get("trace_id"),
@@ -1298,24 +1272,16 @@ class RunResult(FabricMapping):
             "status",
         ):
             data[field] = _required_text(data.get(field), field.replace("_", " "))
-        data["error"] = (
-            None if data.get("error") is None else ErrorInfo.from_mapping(data["error"])
-        )
-        data["artifacts"] = ArtifactManifest.from_mapping(
-            data.get("artifacts", {"artifacts": []})
-        )
+        data["error"] = None if data.get("error") is None else ErrorInfo.from_mapping(data["error"])
+        data["artifacts"] = ArtifactManifest.from_mapping(data.get("artifacts", {"artifacts": []}))
         telemetry = data.get("telemetry")
         if telemetry is None:
             data["telemetry"] = ()
         elif isinstance(telemetry, Mapping):
             data["telemetry"] = (TelemetryRef.from_mapping(telemetry),)
         else:
-            data["telemetry"] = tuple(
-                TelemetryRef.from_mapping(item) for item in telemetry
-            )
-        data["events"] = tuple(
-            FabricEvent.from_mapping(event) for event in data.get("events", [])
-        )
+            data["telemetry"] = tuple(TelemetryRef.from_mapping(item) for item in telemetry)
+        data["events"] = tuple(FabricEvent.from_mapping(event) for event in data.get("events", []))
         data["metadata"] = _mapping(data.get("metadata", {}), "result metadata")
         raw_output = data.get("output")
         if isinstance(raw_output, RunOutput):

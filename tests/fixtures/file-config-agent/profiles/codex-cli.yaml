@@ -34,5 +34,4 @@ environment:
   workspace: ./repos/my-service
   artifacts: ./artifacts/codex-cli
 
-telemetry:
-  enabled: false
+telemetry: null

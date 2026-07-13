@@ -19,7 +19,8 @@ import os
 import shlex
 import uuid
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
+from typing import NamedTuple
 
 import nemo_fabric_adapters.common.utils as common_utils
 
@@ -451,8 +452,9 @@ def _gate_subagent(subagent: Any, allowed: set[str]) -> Any:
 async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
     settings = common_utils.settings_payload(payload)
     request = payload.get("request") or {}
-    telemetry_provider = common_utils.telemetry_provider(payload)
-    relay_enabled = os.environ.get("FABRIC_RELAY_ENABLED", "").strip().lower() == "true"
+    telemetry_providers = common_utils.telemetry_providers(payload)
+    relay_enabled = common_utils.relay_enabled(payload)
+    telemetry_provider = "relay" if relay_enabled else ("native" if "native" in telemetry_providers else "")
 
     user_message = request.get("input") or ""
     if not isinstance(user_message, str):
@@ -594,9 +596,10 @@ def resolve_observability(
     """Resolve the nemo_relay observability plugin config for relay or native telemetry.
 
     Relay telemetry loads its plugin config from ``FABRIC_RELAY_CONFIG_PATH`` and
-    collects ATOF/ATIF artifacts. Native telemetry reads ``telemetry.config`` from
-    the payload (e.g. an OpenTelemetry/OpenInference exporter) and exports spans
-    directly to the configured collector without writing relay artifacts.
+    collects ATOF/ATIF artifacts. Native telemetry reads
+    ``telemetry_plan.native_config`` from the payload (e.g. an
+    OpenTelemetry/OpenInference exporter) and exports spans directly to the
+    configured collector without writing relay artifacts.
     """
 
     if relay_enabled and telemetry_provider == "relay":
@@ -605,10 +608,9 @@ def resolve_observability(
             "deepagents.observability/nemo_relay",
             True,
         )
-    telemetry = common_utils.telemetry_payload(payload)
-    if telemetry.get("enabled") and telemetry_provider == "native":
-        native_config = telemetry.get("config") or {}
-        if isinstance(native_config, dict) and native_config.get("components"):
+    if telemetry_provider == "native":
+        native_config = common_utils.native_telemetry_config(payload)
+        if native_config.get("components"):
             return Observability(native_config, "deepagents.observability/native", False)
     return None
 
