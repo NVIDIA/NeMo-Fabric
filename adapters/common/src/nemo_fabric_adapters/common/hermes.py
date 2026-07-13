@@ -149,89 +149,8 @@ def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
-    if os.environ.get("FABRIC_RELAY_ENABLED") != "true":
-        return None
-
-    relay_plugin_config = common_utils.load_relay_plugin_config(payload)
-    (_, relay_plugins_toml_path) = common_utils.write_relay_configs(plugin_config=relay_plugin_config)
-    if relay_plugins_toml_path is not None:
-        os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = str(relay_plugins_toml_path)
-
-    observability = next(
-        (
-            component.get("config") or {}
-            for component in relay_plugin_config.get("components", [])
-            if component.get("kind") == "observability" and component.get("enabled", True)
-        ),
-        {},
-    )
-    atof = observability.get("atof") if isinstance(observability, dict) else None
-    atif = observability.get("atif") if isinstance(observability, dict) else None
-
-    if isinstance(atof, dict) and atof.get("enabled"):
-        os.environ["HERMES_NEMO_RELAY_ATOF_ENABLED"] = "1"
-        os.environ["HERMES_NEMO_RELAY_ATOF_OUTPUT_DIRECTORY"] = str(atof["output_directory"])
-        os.environ["HERMES_NEMO_RELAY_ATOF_FILENAME"] = str(atof.get("filename", "events.atof.jsonl"))
-        os.environ["HERMES_NEMO_RELAY_ATOF_MODE"] = str(atof.get("mode", "overwrite"))
-
-    if isinstance(atif, dict) and atif.get("enabled"):
-        os.environ["HERMES_NEMO_RELAY_ATIF_ENABLED"] = "1"
-        os.environ["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] = str(atif["output_directory"])
-        os.environ["HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE"] = str(
-            atif.get("filename_template", "trajectory-{session_id}.atif.json")
-        )
-        os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_NAME"] = str(
-            atif.get("agent_name") or common_utils.agent_name(payload)
-        )
-        os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"] = str(atif.get("agent_version", "fabric-poc"))
-        os.environ["HERMES_NEMO_RELAY_ATIF_MODEL_NAME"] = str(atif.get("model_name") or relay_model_name(payload))
-
-    return relay_plugin_config
-
-
 def relay_model_name(payload: dict[str, Any]) -> str:
     settings = common_utils.settings_payload(payload)
     models = common_utils.models_payload(payload)
     model_config = models.get(settings.get("model", "default"), {})
     return settings.get("model_name") or model_config.get("model") or "unknown"
-
-
-def ensure_hermes_runtime_session(
-    fabric_runtime_id: str,
-    model_name: str,
-    model_config: dict[str, Any],
-    hermes_home: Path,
-) -> dict[str, Any]:
-    """
-    Ensure that Hermes has a native session mapped from a Fabric runtime.
-
-    The adapter maps ``runtime_context.runtime_id`` onto Hermes' native session
-    id/title. Fabric neither exposes nor interprets the Hermes session id.
-
-    If the session does not exist, it will be created.
-
-    When creating a new session, Hermes allows us to provide our own session_id (as long as it's unique), which for
-    convenience will be set to the Fabric runtime id.
-
-    However when Hermes compresses a session, it will return a new session_id, so we can't depend on the
-    Fabric runtime id being the same as the session_id after a session has been compressed.
-
-    However looking up a session by title will always return the most recent session, so after creating the session
-    we set the title to the Fabric runtime id and can always look up the session by title.
-    """
-    from hermes_state import SessionDB
-
-    session_db = SessionDB(db_path=hermes_home / "state.db")
-    session = session_db.get_session_by_title(fabric_runtime_id)
-    if session is None:
-        session_db.ensure_session(
-            fabric_runtime_id,
-            source="fabric",
-            model=model_name,
-            model_config=model_config,
-        )
-        session_db.set_session_title(session_id=fabric_runtime_id, title=fabric_runtime_id)
-        session = session_db.get_session_by_title(fabric_runtime_id)
-
-    return session
