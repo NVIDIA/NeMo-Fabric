@@ -35,8 +35,8 @@
     <rect x="56" y="286" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="160" y="306">Codex</text>
     <rect x="56" y="326" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="160" y="346">Claude</text>
 
-    <rect x="316" y="206" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="420" y="226">Skills — add / remove</text>
-    <rect x="316" y="246" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="420" y="266">MCP servers — add / remove</text>
+    <rect x="316" y="206" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="420" y="226">Skills</text>
+    <rect x="316" y="246" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="420" y="266">MCP servers</text>
 
     <rect x="576" y="206" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="680" y="226">NeMo Relay tracing</text>
     <rect x="576" y="246" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="680" y="266">ATOF + ATIF traces</text>
