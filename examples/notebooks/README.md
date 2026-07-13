@@ -52,8 +52,9 @@ Jupyter, run it with the `.venv` interpreter so `nemo_fabric` is importable:
 ```
 
 Committed notebooks are kept output-free. Run artifacts land under gitignored
-`artifacts/` directories: the quickstart writes to `examples/notebooks/artifacts/`,
-and the variations notebook reuses the code-review example's builders, so its runs
-(including Relay traces) write under `examples/code_review_agent/artifacts/`.
+`artifacts/` directories: the quickstart and the variations notebook's Relay
+traces write to `examples/notebooks/artifacts/`, while the variations notebook's
+harness runs reuse the code-review example's builders and write under
+`examples/code_review_agent/artifacts/`.
 
 For the complete API, see the [Python SDK guide](../../docs/sdk/python.mdx).
