@@ -8,6 +8,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Core config and runtime contract for NeMo Fabric."
+readme = "README.md"
 
 [lints]
 workspace = true

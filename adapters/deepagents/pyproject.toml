@@ -3,7 +3,7 @@
 
 [build-system]
 requires = [
-  "setuptools>=64",
+  "setuptools>=77",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -11,6 +11,17 @@ build-backend = "setuptools.build_meta"
 name = "nemo-fabric-adapters-deepagents"
 version = "0.1.0"
 description = "LangChain Deep Agents adapter for NeMo Fabric"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
+keywords = ["agents", "ai", "nemo-fabric", "runtime", "tools"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -25,6 +36,10 @@ dependencies = [
   "langgraph-checkpoint-sqlite>=3.0,<4.0",
   "nemo-relay~=0.4",
 ]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/nemo-fabric/"
+Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
 
 [tool.setuptools.packages.find]
 where = ["src"]

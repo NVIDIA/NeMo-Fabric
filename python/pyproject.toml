@@ -2,18 +2,34 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [build-system]
-requires = ["maturin>=1.0,<2.0"]
+requires = ["maturin>=1.9.3,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "nemo-fabric-runtime"
 description = "Python SDK and native bindings for NeMo Fabric"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
+keywords = ["agents", "ai", "nemo-fabric", "runtime", "tools"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.10,<3",
   "typing-extensions>=4.12",
 ]
 dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/nemo-fabric/"
+Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
 
 [tool.maturin]
 manifest-path = "../crates/fabric-python/Cargo.toml"
