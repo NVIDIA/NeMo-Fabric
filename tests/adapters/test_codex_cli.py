@@ -1,7 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-import importlib.util
 import json
 import os
 import subprocess
@@ -13,17 +12,7 @@ from unittest.mock import call
 import pytest
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
-
-ROOT = Path(__file__).resolve().parents[2]
-ADAPTER_PATH = ROOT / "adapters" / "codex-cli" / "src" / "nemo_fabric_adapters" / "codex_cli" / "adapter.py"
-
-
-def load_codex_adapter():
-    spec = importlib.util.spec_from_file_location("fabric_codex_adapter", ADAPTER_PATH)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+from nemo_fabric_adapters.codex_cli import adapter
 
 
 @pytest.fixture(name="codex_payload")
@@ -154,7 +143,6 @@ def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(
     codex_payload,
     tmp_path,
 ):
-    adapter = load_codex_adapter()
     codex_settings = adapter.write_config_files(codex_payload)
 
     command = adapter.build_command(
@@ -179,7 +167,6 @@ def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(
 
 
 def test_configured_codex_profile_is_base_for_generated_profile(codex_payload):
-    adapter = load_codex_adapter()
     codex_home = Path(os.environ["CODEX_HOME"])
     source_profile = codex_home / "team.toml"
     source_profile.write_text(
@@ -215,7 +202,6 @@ shell_snapshot = true
 
 
 def test_relative_codex_command_resolves_from_config_root(codex_payload):
-    adapter = load_codex_adapter()
     settings = codex_payload["effective_config"]["config"]["harness"]["settings"]
     settings["codex_command"] = "./tools/codex"
     settings["config_overrides"] = {}
@@ -230,7 +216,6 @@ def test_relative_codex_command_resolves_from_config_root(codex_payload):
 
 
 def test_codex_home_uses_environment(tmp_path):
-    adapter = load_codex_adapter()
     os.environ["CODEX_HOME"] = str(tmp_path / "custom-codex-home")
 
     name, path = adapter.get_codex_profile_path({"runtime_context": {"runtime_id": "runtime-1"}})
@@ -240,7 +225,6 @@ def test_codex_home_uses_environment(tmp_path):
 
 
 def test_codex_home_defaults_to_user_codex_directory():
-    adapter = load_codex_adapter()
     os.environ.pop("CODEX_HOME", None)
 
     name, path = adapter.get_codex_profile_path({"runtime_context": {"runtime_id": "runtime-1"}})
@@ -254,7 +238,6 @@ def test_relay_routes_codex_through_standalone_gateway(
     monkeypatch,
     tmp_path,
 ):
-    adapter = load_codex_adapter()
     codex_payload["telemetry_plan"] = {
         "providers": ["relay"],
         "relay_enabled": True,
@@ -330,7 +313,6 @@ def test_native_otel_profile_writes_codex_telemetry_config(
     from examples.code_review_agent import codex_cli_config
     from examples.code_review_agent import with_native_otel
 
-    adapter = load_codex_adapter()
     config = codex_payload["effective_config"]["config"]
     typed = with_native_otel(codex_cli_config())
     assert typed.telemetry is not None
@@ -365,7 +347,6 @@ def test_native_otel_profile_writes_codex_telemetry_config(
 
 
 def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
-    adapter = load_codex_adapter()
     relay_plugin_config = {"version": 1, "components": []}
     relay_config_path = tmp_path / "relay-config" / "config.toml"
     mock_gateway = MagicMock()
@@ -434,7 +415,6 @@ def test_start_relay_gateway_waits_for_health_and_starts_process_group(
     monkeypatch,
     tmp_path,
 ):
-    adapter = load_codex_adapter()
     relay_config_path = tmp_path / "relay-config" / "config.toml"
     relay_config_path.parent.mkdir()
     relay_config_path.write_text('[agents.codex]\ncommand = "codex"\n', encoding="utf-8")
@@ -476,7 +456,6 @@ def test_start_relay_gateway_waits_for_health_and_starts_process_group(
 
 
 def test_wait_for_relay_gateway_times_out():
-    adapter = load_codex_adapter()
     mock_process = MagicMock()
     mock_process.poll.return_value = None
     health_url = "http://127.0.0.1:43210/healthz"
@@ -486,7 +465,6 @@ def test_wait_for_relay_gateway_times_out():
 
 
 def test_stop_relay_gateway_terminates_process():
-    adapter = load_codex_adapter()
     mock_process = MagicMock()
     mock_process.poll.return_value = None
 
@@ -497,7 +475,6 @@ def test_stop_relay_gateway_terminates_process():
 
 
 def test_stop_relay_gateway_kills_process_after_timeout():
-    adapter = load_codex_adapter()
     mock_process = MagicMock()
     mock_process.poll.return_value = None
     mock_process.wait.side_effect = [subprocess.TimeoutExpired("nemo-relay", 5), None]
@@ -510,7 +487,6 @@ def test_stop_relay_gateway_kills_process_after_timeout():
 
 
 def test_reported_command_redacts_secret_config_overrides():
-    adapter = load_codex_adapter()
 
     command = ["codex", "exec", "--config", 'provider.api_key="secret"', "-"]
 
@@ -519,7 +495,6 @@ def test_reported_command_redacts_secret_config_overrides():
 
 
 def test_config_override_values_use_tomli_writer():
-    adapter = load_codex_adapter()
 
     assert adapter.toml_value("café") == '"café"'
     encoded = adapter.toml_value([1, "two"])
@@ -530,14 +505,12 @@ def test_config_override_values_use_tomli_writer():
 
 @pytest.mark.parametrize("value", [[float("nan")], [1, [float("inf")]]])
 def test_config_override_values_reject_nested_non_finite_numbers(value):
-    adapter = load_codex_adapter()
 
     with pytest.raises(ValueError, match="finite numbers"):
         adapter.toml_value(value)
 
 
 def test_runtime_reuses_codex_thread_across_invocations(codex_payload, monkeypatch, tmp_path):
-    adapter = load_codex_adapter()
     mock_run = MagicMock(
         side_effect=[
             subprocess.CompletedProcess(
@@ -588,7 +561,6 @@ def test_runtime_reuses_codex_thread_across_invocations(codex_payload, monkeypat
 
 
 def test_runtime_rejects_corrupt_codex_thread_state(codex_payload):
-    adapter = load_codex_adapter()
     state_path = adapter.runtime_state_path(codex_payload, "runtime-1")
     state_path.parent.mkdir(parents=True)
     state_path.write_text("{", encoding="utf-8")
@@ -598,7 +570,6 @@ def test_runtime_rejects_corrupt_codex_thread_state(codex_payload):
 
 
 def test_runtime_persists_codex_thread_state(codex_payload, monkeypatch):
-    adapter = load_codex_adapter()
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
             args=[],
@@ -620,7 +591,6 @@ def test_runtime_persists_codex_thread_state(codex_payload, monkeypatch):
 
 
 def test_adapter_rejects_structured_input_until_chat_is_supported(codex_payload):
-    adapter = load_codex_adapter()
     codex_payload["request"]["input"] = {"messages": [{"role": "user", "content": "Inspect the change."}]}
 
     with pytest.raises(ValueError, match="requires text input"):
@@ -629,7 +599,6 @@ def test_adapter_rejects_structured_input_until_chat_is_supported(codex_payload)
 
 @pytest.mark.parametrize("env", [[], "CODEX_FLAG=1"])
 def test_adapter_rejects_non_mapping_env(codex_payload, env):
-    adapter = load_codex_adapter()
     settings = codex_payload["effective_config"]["config"]["harness"]["settings"]
     settings["env"] = env
 
@@ -649,7 +618,6 @@ def test_adapter_rejects_non_mapping_env(codex_payload, env):
     ],
 )
 def test_process_launch_failures_return_structured_results(codex_payload, monkeypatch, error, message, returncode):
-    adapter = load_codex_adapter()
     monkeypatch.setattr(adapter.subprocess, "run", MagicMock(side_effect=error))
 
     output = adapter.run_codex(codex_payload)
@@ -662,7 +630,6 @@ def test_process_launch_failures_return_structured_results(codex_payload, monkey
 
 
 def test_thread_mismatch_preserves_process_error(codex_payload, monkeypatch):
-    adapter = load_codex_adapter()
     adapter.save_thread_id(codex_payload, "runtime-1", "thread-persisted")
     monkeypatch.setattr(
         adapter.subprocess,
@@ -685,7 +652,6 @@ def test_thread_mismatch_preserves_process_error(codex_payload, monkeypatch):
 
 @pytest.mark.parametrize("timeout", [0, -1, float("inf"), "30"])
 def test_adapter_rejects_invalid_timeout(codex_payload, timeout):
-    adapter = load_codex_adapter()
     settings = codex_payload["effective_config"]["config"]["harness"]["settings"]
     settings["timeout_seconds"] = timeout
 
@@ -694,7 +660,6 @@ def test_adapter_rejects_invalid_timeout(codex_payload, timeout):
 
 
 def test_runtime_fails_if_codex_does_not_return_thread_identity(codex_payload, monkeypatch):
-    adapter = load_codex_adapter()
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
             args=[],
@@ -717,7 +682,6 @@ def test_runtime_fails_if_codex_does_not_return_thread_identity(codex_payload, m
 
 
 def test_successful_process_without_final_response_is_failed(codex_payload, monkeypatch):
-    adapter = load_codex_adapter()
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
             args=[],
