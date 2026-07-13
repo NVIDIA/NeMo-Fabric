@@ -70,6 +70,87 @@ def test_virtualenv_subprocess_env_preserves_environment_outside_virtualenv(
     assert env is not os.environ
 
 
+def test_request_payload():
+    assert common_utils.request_payload({"request": {"input": "hello"}}) == {"input": "hello"}
+    assert common_utils.request_payload({}) == {}
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        ("nvidia", "https://integrate.api.nvidia.com/v1"),
+        ("openai", None),
+        (None, None),
+    ],
+)
+def test_default_base_url(
+    provider: str | None,
+    expected: str | None,
+):
+    assert common_utils.default_base_url(provider) == expected
+
+
+@pytest.mark.parametrize(
+    ("settings", "model_config", "expected"),
+    [
+        (
+            {"base_url": "https://settings.example/v1"},
+            {"provider": "nvidia", "settings": {"base_url": "https://model.example/v1"}},
+            "https://settings.example/v1",
+        ),
+        (
+            {},
+            {"provider": "openai", "settings": {"base_url": "https://model.example/v1"}},
+            "https://model.example/v1",
+        ),
+        ({}, {"provider": "nvidia"}, "https://integrate.api.nvidia.com/v1"),
+        ({}, {"provider": "other"}, None),
+    ],
+)
+def test_get_base_url(
+    settings: dict[str, object],
+    model_config: dict[str, object],
+    expected: str | None,
+):
+    assert common_utils.get_base_url(settings, model_config) == expected
+
+
+@pytest.mark.parametrize(
+    ("selected_model", "models", "expected"),
+    [
+        (
+            "fast",
+            {"fast": {"provider": "nvidia", "model": "fast-model"}},
+            {"provider": "nvidia", "model": "fast-model"},
+        ),
+        (
+            None,
+            {"default": {"provider": "nvidia", "model": "default-model"}},
+            {"provider": "nvidia", "model": "default-model"},
+        ),
+        ("bad", {"bad": "not-a-model-config"}, {}),
+    ],
+)
+def test_selected_model_config(
+    selected_model: str | None,
+    models: dict[str, object],
+    expected: dict[str, object],
+):
+    settings = {}
+    if selected_model is not None:
+        settings["model"] = selected_model
+    payload = {
+        "effective_config": {
+            "config": {
+                "harness": {"settings": settings},
+                "models": models,
+            }
+        }
+    }
+
+    assert common_utils.selected_model_config(payload) == expected
+
+
 def test_payload_accessors_prefer_effective_config():
     payload = {
         "agent_name": "outer-agent",
@@ -188,6 +269,10 @@ def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
 )
 def test_normalize_list(value: object, expected: list[str]):
     assert common_utils.normalize_list(value) == expected
+
+
+def test_without_none():
+    assert common_utils.without_none({"a": 1, "b": None, "c": False}) == {"a": 1, "c": False}
 
 
 def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config(

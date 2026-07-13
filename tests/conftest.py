@@ -101,13 +101,6 @@ def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
 def nemo_relay_fixture() -> types.ModuleType:
     return pytest.importorskip("nemo_relay", reason="nemo-relay extra is required")
 
-@pytest.fixture(name="hermes_state", scope="session")
-def require_hermes_state_fixture() -> types.ModuleType:
-    """
-    Fixture to ensure that the hermes_state module is available for tests that require it.
-    """
-    return pytest.importorskip("hermes_state", reason="hermes extra is required")
-
 @pytest.fixture(name="mock_nvidia_api_key")
 def mock_nvidia_api_key_fixture() -> str:
     nak = "test123"
