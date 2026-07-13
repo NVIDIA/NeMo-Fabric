@@ -486,22 +486,25 @@ class FabricConfig(FabricBaseModel):
         if self.telemetry is None:
             self.telemetry = TelemetryConfig()
         self.telemetry.enable_relay()
-        relay_observability = (
-            observability
-            if observability is None or isinstance(observability, RelayObservabilityConfig)
-            else dict(observability)
-        )
-        relay_components = [
-            item if isinstance(item, RelayComponentConfig) else dict(item) for item in (components or [])
-        ]
-        relay_policy = policy if policy is None or isinstance(policy, RelayConfigPolicy) else dict(policy)
-        self.relay = RelayConfig(
-            project=project,
-            output_dir=output_dir,
-            observability=relay_observability,
-            components=relay_components,
-            policy=relay_policy,
-        )
+        if self.relay is None:
+            relay = RelayConfig()
+        elif isinstance(self.relay, RelayConfig):
+            relay = self.relay.model_copy(deep=True)
+        else:
+            relay = RelayConfig.from_mapping(self.relay)
+        if project is not None:
+            relay.project = project
+        if output_dir is not None:
+            relay.output_dir = output_dir
+        if observability is not None:
+            relay.observability = (
+                observability if isinstance(observability, RelayObservabilityConfig) else dict(observability)
+            )
+        if components is not None:
+            relay.components = [item if isinstance(item, RelayComponentConfig) else dict(item) for item in components]
+        if policy is not None:
+            relay.policy = policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
+        self.relay = relay
         return self
 
 
