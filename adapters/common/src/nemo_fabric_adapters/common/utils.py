@@ -133,6 +133,16 @@ def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("capability_plan") or payload.get("capabilities") or {}
 
 
+def tools_config(payload: dict[str, Any]) -> dict[str, Any]:
+    tools = fabric_config(payload).get("tools") or {}
+    return tools if isinstance(tools, dict) else {}
+
+
+def blocked_tools(payload: dict[str, Any]) -> list[str]:
+    blocked = tools_config(payload).get("blocked")
+    return normalize_list(blocked)
+
+
 def normalize_list(value: Any) -> list[str]:
     if value is None:
         return []
@@ -141,6 +151,15 @@ def normalize_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         value = [value]
     return [str(item) for item in value if str(item)]
+
+
+def merge_unique(*values: Any) -> list[str]:
+    merged: list[str] = []
+    for value in values:
+        for item in normalize_list(value):
+            if item not in merged:
+                merged.append(item)
+    return merged
 
 
 def dump_yaml(value: dict[str, Any]) -> str:

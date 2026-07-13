@@ -11,17 +11,15 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from claude_agent_sdk import (
-    AssistantMessage,
-    CLIConnectionError,
-    CLIJSONDecodeError,
-    CLINotFoundError,
-    ClaudeSDKError,
-    ProcessError,
-    ResultMessage,
-    SystemMessage,
-    TextBlock,
-)
+from claude_agent_sdk import AssistantMessage
+from claude_agent_sdk import ClaudeSDKError
+from claude_agent_sdk import CLIConnectionError
+from claude_agent_sdk import CLIJSONDecodeError
+from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import ProcessError
+from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import SystemMessage
+from claude_agent_sdk import TextBlock
 from claude_agent_sdk._errors import MessageParseError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -129,8 +127,6 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
 
 
 def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_payload):
-    skill_path = Path(claude_payload["capability_plan"]["native"]["skill_paths"][0])
-
     options = adapter.build_options(claude_payload, resume="claude-session")
 
     assert options.resume == "claude-session"
@@ -159,6 +155,15 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
         "docs": {"type": "http", "url": "https://mcp.example.test"},
         "repo": {"type": "stdio", "command": "repo-mcp", "args": ["--root", "."]},
     }
+
+
+def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
+    claude_payload["effective_config"]["config"]["tools"] = {"blocked": ["Bash", "WebFetch"]}
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.tools is None
+    assert options.disallowed_tools == ["Bash", "WebFetch"]
 
 
 @pytest.mark.parametrize(

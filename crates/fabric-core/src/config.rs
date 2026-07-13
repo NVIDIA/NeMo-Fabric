@@ -52,7 +52,7 @@ pub struct FabricConfig {
     pub environment: Option<EnvironmentConfig>,
     /// Tool capability configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Value>,
+    pub tools: Option<ToolsConfig>,
     /// Skill capability configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skills: Option<SkillConfig>,
@@ -88,6 +88,17 @@ impl ProfileRegistryConfig {
     fn is_empty(&self) -> bool {
         self.directories.is_empty() && self.extensions.is_empty()
     }
+}
+
+/// Harness-neutral tool capability configuration.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolsConfig {
+    /// Adapter-native tool names or toolset names to block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked: Vec<String>,
+    /// Additive tool configuration fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
 }
 
 /// Human-readable metadata.
@@ -404,7 +415,7 @@ struct ProfileConfigSchema {
     /// Partial environment overlay.
     environment: Option<BTreeMap<String, Value>>,
     /// Tool capability overlay.
-    tools: Option<Value>,
+    tools: Option<ToolsConfig>,
     /// Partial skill overlay.
     skills: Option<BTreeMap<String, Value>>,
     /// Partial MCP overlay.
@@ -1579,13 +1590,19 @@ fn resolve_capability_plan(
                 .collect()
         })
         .unwrap_or_default();
-    let tools_are_native = config.tools.is_some() && accepts("tools");
+    let blocked_tools = config
+        .tools
+        .as_ref()
+        .map(|tools| tools.blocked.clone())
+        .unwrap_or_default();
+    let tools_configured = !blocked_tools.is_empty();
+    let tools_are_native = tools_configured && accepts("tools");
     let mut native = CapabilityTargetPlan::default();
     let managed = CapabilityTargetPlan::default();
     let mut unsupported = CapabilityTargetPlan::default();
     let mut routes = Vec::new();
 
-    if config.tools.is_some() {
+    if tools_configured {
         if tools_are_native {
             native.tools_configured = true;
             routes.push(CapabilityRoute {
@@ -1656,7 +1673,10 @@ fn resolve_capability_plan(
     }
 
     CapabilityPlan {
-        tools_configured: config.tools.is_some(),
+        tools: ToolsPlan {
+            blocked: blocked_tools,
+        },
+        tools_configured,
         skill_paths,
         mcp_servers,
         native,
@@ -1860,6 +1880,9 @@ pub struct EnvironmentPlan {
 /// Resolved capability configuration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityPlan {
+    /// Normalized tool policy.
+    #[serde(default)]
+    pub tools: ToolsPlan,
     /// Whether tool configuration was provided.
     #[serde(default)]
     pub tools_configured: bool,
@@ -1881,6 +1904,14 @@ pub struct CapabilityPlan {
     /// Routing decisions made while resolving the effective config.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<CapabilityRoute>,
+}
+
+/// Normalized tool policy for a run.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolsPlan {
+    /// Adapter-native tool names or toolset names to block.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked: Vec<String>,
 }
 
 /// Capabilities routed to one target.
@@ -1996,8 +2027,8 @@ runtime:
   input_schema: chat
   output_schema: message
 tools:
-  enabled: [base]
-  cleared:
+  blocked: [base]
+  future:
     value: true
 future_top_level:
   base: true
@@ -2016,8 +2047,8 @@ harness:
 runtime:
   input_schema: prompt
 tools:
-  enabled: [profile]
-  cleared: null
+  blocked: [profile]
+  future: null
 future_top_level:
   profile: true
   nested:
@@ -2038,8 +2069,8 @@ future_top_level:
         assert_eq!(value["runtime"]["input_schema"], "prompt");
         assert_eq!(value["harness"]["settings"]["workspace"], "./workspace");
         assert_eq!(value["harness"]["settings"]["timeout_seconds"], 30);
-        assert_eq!(value["tools"]["enabled"], serde_json::json!(["profile"]));
-        assert!(value["tools"]["cleared"].is_null());
+        assert_eq!(value["tools"]["blocked"], serde_json::json!(["profile"]));
+        assert!(value["tools"]["future"].is_null());
         assert_eq!(value["future_top_level"]["base"], true);
         assert_eq!(value["future_top_level"]["profile"], true);
         assert_eq!(value["future_top_level"]["nested"]["first"], 1);
@@ -2492,7 +2523,8 @@ runtime:
   input_schema: text
   output_schema: text
 tools:
-  - name: shell
+  blocked:
+    - shell
 skills:
   paths:
     - ./skills/review
@@ -2521,6 +2553,7 @@ mcp:
         assert!(!plan.capability_plan.managed.tools_configured);
         assert!(plan.capability_plan.managed.skill_paths.is_empty());
         assert!(plan.capability_plan.managed.mcp_servers.is_empty());
+        assert_eq!(plan.capability_plan.tools.blocked, vec!["shell"]);
         assert!(plan.capability_plan.unsupported.tools_configured);
         assert_eq!(plan.capability_plan.unsupported.skill_paths.len(), 1);
         assert!(
@@ -2537,6 +2570,71 @@ mcp:
             "{:?}",
             plan.capability_plan.routes
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn blocked_tools_route_to_native_only_when_non_empty_and_supported() {
+        let root = std::env::temp_dir().join(format!(
+            "fabric-blocked-tools-capability-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("adapters/tools")).expect("create adapters");
+        std::fs::write(
+            root.join("adapters/tools/fabric-adapter.json"),
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.tools",
+  "harness": "tools",
+  "adapter_kind": "process",
+  "config": {"accepts": ["tools"]}
+}"#,
+        )
+        .expect("write adapter descriptor");
+        std::fs::write(
+            root.join("agent.yaml"),
+            r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: blocked-tools-agent
+harness:
+  adapter_id: acme.fabric.tools
+runtime:
+tools:
+  blocked:
+    - browser
+"#,
+        )
+        .expect("write agent config");
+
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+
+        assert_eq!(plan.capability_plan.tools.blocked, vec!["browser"]);
+        assert!(plan.capability_plan.tools_configured);
+        assert!(plan.capability_plan.native.tools_configured);
+        assert!(!plan.capability_plan.unsupported.tools_configured);
+
+        std::fs::write(
+            root.join("agent.yaml"),
+            r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: blocked-tools-agent
+harness:
+  adapter_id: acme.fabric.tools
+runtime:
+tools:
+  blocked: []
+"#,
+        )
+        .expect("write empty tools config");
+
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+
+        assert!(plan.capability_plan.tools.blocked.is_empty());
+        assert!(!plan.capability_plan.tools_configured);
+        assert!(!plan.capability_plan.native.tools_configured);
+        assert!(plan.capability_plan.routes.is_empty());
 
         let _ = std::fs::remove_dir_all(root);
     }

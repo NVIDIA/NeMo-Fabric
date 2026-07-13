@@ -45,6 +45,14 @@ def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
         raise ValueError("only relay telemetry is supported for Hermes")
 
 
+def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
+    settings = common_utils.settings_payload(payload)
+    return common_utils.merge_unique(
+        common_utils.blocked_tools(payload),
+        settings.get("disabled_toolsets"),
+    )
+
+
 def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False) -> dict[str, Any]:
     settings = common_utils.settings_payload(payload)
     model_config = selected_model_config(payload)
@@ -55,6 +63,7 @@ def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False)
     provider = settings.get("provider") or model_config.get("provider")
     base_url = get_base_url(settings, model_config)
 
+    blocked_toolsets = disabled_toolsets(payload)
     config: dict[str, Any] = {
         "model": without_none(
             {
@@ -66,7 +75,7 @@ def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False)
         "agent": without_none(
             {
                 "max_turns": settings.get("max_iterations"),
-                "disabled_toolsets": settings.get("disabled_toolsets"),
+                "disabled_toolsets": blocked_toolsets or None,
             }
         ),
         "terminal": without_none(
@@ -144,6 +153,7 @@ def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
         "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),
         "plugins": (config.get("plugins") or {}).get("enabled", []),
         "platform_toolsets": config.get("platform_toolsets", {}),
+        "disabled_toolsets": (config.get("agent") or {}).get("disabled_toolsets", []),
     }
 
 

@@ -22,6 +22,8 @@ configuration for:
 - workspace and terminal settings;
 - Fabric skills as Hermes external skill directories;
 - Fabric MCP servers as Hermes MCP server config;
+- `tools.blocked` as Hermes disabled toolsets, unioned with
+  `harness.settings.disabled_toolsets`;
 - optional NeMo Relay telemetry plugin configuration.
 
 `hermes_home` configures a base directory. The adapter creates a child under

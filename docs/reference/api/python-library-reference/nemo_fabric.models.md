@@ -1421,6 +1421,66 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `ToolsConfig`
+Harness-neutral tool capability configuration.
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(value: 'Mapping[str, Any]') → Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `FabricConfig`
 SDK-facing typed Fabric agent configuration.
 
@@ -1482,6 +1542,17 @@ add_skill_path(path: 'str | Path') → Self
 ```
 
 Add a skill path and return this config.
+
+---
+
+
+### <kbd>method</kbd> `block_tools`
+
+```python
+block_tools(*tools: 'str') → Self
+```
+
+Block adapter-native tool names or toolsets and return this config.
 
 ---
 

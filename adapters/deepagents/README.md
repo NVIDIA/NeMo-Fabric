@@ -52,12 +52,9 @@ Fabric maps the following into the harness:
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
-- `tools` (Fabric's `config.tools` allow-list) is enforced by a gating middleware
-  across the full tool surface — Deep Agents built-ins (including `task`), MCP
-  tools, and **delegated subagents** alike; tool calls whose name is not on the
-  list are blocked, so tools routed through the `task` tool cannot run ungated. A
-  non-list `tools` value is a normalized configuration failure rather than a
-  silently disabled allow-list.
+- `tools.blocked` is enforced by middleware across the full tool surface — Deep
+  Agents built-ins (including `task`), MCP tools, and **delegated subagents**
+  alike. Use Deep Agents/native tool names in the blocked list.
 - `harness.settings.deepagents` forwards a small set of **documented,
   JSON-serializable** `create_deep_agent` options (currently `subagents` and
   `interrupt_on`). It is not a general Python-object escape hatch: the SDK config
@@ -72,7 +69,7 @@ Fabric maps the following into the harness:
 
 Deep Agents can delegate to subagents through its built-in `task` tool. Subagents
 **inherit** the parent run's model, tools, skills, workspace, telemetry, and
-permissions — in particular, the parent `config.tools` allow-list applies to
+permissions — in particular, the parent `tools.blocked` policy applies to
 delegated execution, so a subagent cannot broaden capabilities beyond the parent.
 Independently configured subagent tools, skills, models, MCP servers, middleware,
 or permissions are **not** exposed through the Fabric SDK yet; a `subagents`
@@ -139,6 +136,6 @@ async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
   ATOF/ATIF artifacts referenced in the `ArtifactManifest`. OTel/OpenInference
   export is available through the relay plugin config (see the `relay-otel` and
   `relay-openinference` profiles).
-- **Native** (`telemetry.providers.native.config`): the provider config
+- **Native** (`telemetry.providers.native.config`): the configured
   OpenTelemetry/OpenInference exporter is applied and spans export directly to
   the configured collector, without writing ATOF/ATIF relay artifacts.

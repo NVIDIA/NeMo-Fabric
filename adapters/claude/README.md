@@ -37,7 +37,9 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
   `provider="anthropic"`; normalized hosted/custom provider resolution is
   tracked in [FABRIC-64](https://linear.app/nvidia/issue/FABRIC-64/add-normalized-model-provider-resolution-and-harness-compatibility).
 - `environment.workspace` sets the Claude working directory.
-- `tools` sets the base Claude tool list.
+- `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool
+  names. Adapter-specific `harness.settings.disallowed_tools` remains supported;
+  when both are present, the effective deny-list is the union.
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
   Fabric parses `url` as a command plus arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter

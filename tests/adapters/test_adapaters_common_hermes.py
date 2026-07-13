@@ -102,15 +102,15 @@ def test_validate_hermes_telemetry_provider_accepts_relay(
     hermes_common.validate_hermes_telemetry_provider(payload)
 
 
-def test_validate_hermes_telemetry_provider_rejects_native():
-    payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
-
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
-        hermes_common.validate_hermes_telemetry_provider(payload)
-
-
-def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
-    payload = {"telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}}
+@pytest.mark.parametrize(
+    ("providers", "relay_enabled"),
+    [(["native"], False), (["relay", "native"], True)],
+)
+def test_validate_hermes_telemetry_provider_rejects_native(
+    providers: list[str],
+    relay_enabled: bool,
+):
+    payload = {"telemetry_plan": {"providers": providers, "relay_enabled": relay_enabled}}
 
     with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
         hermes_common.validate_hermes_telemetry_provider(payload)
@@ -143,6 +143,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                         "plugins_enabled": ["custom/plugin"],
                     }
                 },
+                "tools": {"blocked": ["shell", "browser"]},
                 "models": {
                     "review": {
                         "provider": "nvidia",
@@ -164,7 +165,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         },
         "agent": {
             "max_turns": 4,
-            "disabled_toolsets": ["browser"],
+            "disabled_toolsets": ["shell", "browser"],
         },
         "terminal": {
             "backend": "local",
@@ -374,6 +375,7 @@ def test_summarize_hermes_config():
         "mcp_servers": ["a", "z"],
         "plugins": ["observability/nemo_relay"],
         "platform_toolsets": {"cli": ["git"]},
+        "disabled_toolsets": [],
     }
 
 

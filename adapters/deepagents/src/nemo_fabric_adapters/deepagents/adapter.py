@@ -219,12 +219,44 @@ def _allowed_tool_names(payload: dict[str, Any]) -> set[str] | None:
     tools = common_utils.fabric_config(payload).get("tools")
     if tools is None:
         return None
+    if isinstance(tools, dict) and "blocked" in tools:
+        return None
     if not isinstance(tools, (list, str)):
         raise AdapterConfigError(
             "config.tools must be a list of tool names (a deny/allow-list), "
             f"not {type(tools).__name__}."
         )
     return set(common_utils.normalize_list(tools))
+
+
+def _blocked_tool_names(payload: dict[str, Any]) -> set[str]:
+    return set(common_utils.blocked_tools(payload))
+
+
+def _tool_gate_middleware(is_blocked: Any, message: Any) -> Any:
+    from langchain.agents.middleware import AgentMiddleware
+    from langchain_core.messages import ToolMessage
+
+    def _blocked(request: Any) -> Any:
+        name = request.tool_call.get("name")
+        return ToolMessage(
+            content=message(name),
+            tool_call_id=request.tool_call.get("id", ""),
+            status="error",
+        )
+
+    class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
+        async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+            if is_blocked(request.tool_call.get("name")):
+                return _blocked(request)
+            return await handler(request)
+
+        def wrap_tool_call(self, request: Any, handler: Any) -> Any:
+            if is_blocked(request.tool_call.get("name")):
+                return _blocked(request)
+            return handler(request)
+
+    return ToolGateMiddleware()
 
 
 def allowed_tools_middleware(allowed: set[str]) -> Any:
@@ -236,29 +268,19 @@ def allowed_tools_middleware(allowed: set[str]) -> Any:
     ``tools`` argument and cannot be pre-filtered out of the ``tools`` list.
     """
 
-    from langchain.agents.middleware import AgentMiddleware
-    from langchain_core.messages import ToolMessage
+    return _tool_gate_middleware(
+        lambda name: name not in allowed,
+        lambda name: f"Tool '{name}' is not permitted by the configured tools allow-list.",
+    )
 
-    def _blocked(request: Any) -> Any:
-        name = request.tool_call.get("name")
-        return ToolMessage(
-            content=f"Tool '{name}' is not permitted by the configured tools allow-list.",
-            tool_call_id=request.tool_call.get("id", ""),
-            status="error",
-        )
 
-    class AllowedToolsMiddleware(AgentMiddleware):  # type: ignore[misc]
-        async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
-            if request.tool_call.get("name") not in allowed:
-                return _blocked(request)
-            return await handler(request)
+def blocked_tools_middleware(blocked: set[str]) -> Any:
+    """Middleware that blocks explicitly denied tool calls across the full tool surface."""
 
-        def wrap_tool_call(self, request: Any, handler: Any) -> Any:
-            if request.tool_call.get("name") not in allowed:
-                return _blocked(request)
-            return handler(request)
-
-    return AllowedToolsMiddleware()
+    return _tool_gate_middleware(
+        lambda name: name in blocked,
+        lambda name: f"Tool '{name}' is blocked by the configured tools policy.",
+    )
 
 
 def resolve_skills(payload: dict[str, Any]) -> list[str] | None:
@@ -398,6 +420,7 @@ async def build_agent_kwargs(
     if extra is not None:
         kwargs.update(_validated_passthrough(extra))
     allowed = _allowed_tool_names(payload)
+    blocked = _blocked_tool_names(payload)
     if allowed is not None:
         # Gate the main agent AND every configured subagent, so the allow-list
         # covers the full tool surface. The built-in ``task`` tool (which spawns
@@ -409,6 +432,13 @@ async def build_agent_kwargs(
         subagents = kwargs.get("subagents")
         if isinstance(subagents, list):
             kwargs["subagents"] = [_gate_subagent(sub, allowed) for sub in subagents]
+    if blocked:
+        middleware = list(kwargs.get("middleware") or [])
+        middleware.append(blocked_tools_middleware(blocked))
+        kwargs["middleware"] = middleware
+        subagents = kwargs.get("subagents")
+        if isinstance(subagents, list):
+            kwargs["subagents"] = [_block_subagent(sub, blocked) for sub in subagents]
     return {key: value for key, value in kwargs.items() if value is not None}
 
 
@@ -446,6 +476,14 @@ def _gate_subagent(subagent: Any, allowed: set[str]) -> Any:
         return subagent
     gated = dict(subagent)
     gated["middleware"] = [*(gated.get("middleware") or []), allowed_tools_middleware(allowed)]
+    return gated
+
+
+def _block_subagent(subagent: Any, blocked: set[str]) -> Any:
+    if not isinstance(subagent, dict):
+        return subagent
+    gated = dict(subagent)
+    gated["middleware"] = [*(gated.get("middleware") or []), blocked_tools_middleware(blocked)]
     return gated
 
 

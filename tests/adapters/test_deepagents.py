@@ -455,6 +455,27 @@ async def test_allowed_tools_middleware_blocks_disallowed_tools():
     assert denied.status == "error"
 
 
+@pytest.mark.usefixtures("use_real_langgraph")
+async def test_blocked_tools_middleware_blocks_configured_tools():
+    pytest.importorskip("langchain.agents.middleware")
+    from langchain_core.messages import ToolMessage
+
+    middleware = adapter.blocked_tools_middleware({"write_file"})
+
+    async def handler(_request):
+        return "executed"
+
+    def request(name):
+        return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
+
+    blocked = await middleware.awrap_tool_call(request("write_file"), handler)
+    assert isinstance(blocked, ToolMessage)
+    assert blocked.status == "error"
+
+    allowed = await middleware.awrap_tool_call(request("read_file"), handler)
+    assert allowed == "executed"
+
+
 def test_empty_tools_is_deny_all_not_none():
     # An explicitly empty tools list is a deny-all allow-list, not "no allow-list".
     assert adapter._allowed_tool_names({"effective_config": {"config": {"tools": []}}}) == set()
@@ -623,6 +644,22 @@ async def test_subagents_are_gated_by_allow_list(tmp_path, make_payload, fake_sd
     subagents = create_kwargs["subagents"]
     assert len(subagents) == 1
     assert subagents[0]["middleware"], "subagent gating middleware not attached"
+
+
+async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload, fake_sdks):
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+        "subagents": [{"name": "researcher", "prompt": "research"}]
+    }
+
+    await adapter.run_deepagents(payload)
+
+    create_kwargs = fake_sdks["create_kwargs"]
+    assert create_kwargs["middleware"], "main agent blocked-tools middleware not attached"
+    subagents = create_kwargs["subagents"]
+    assert len(subagents) == 1
+    assert subagents[0]["middleware"], "subagent blocked-tools middleware not attached"
 
 
 async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):

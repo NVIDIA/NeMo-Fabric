@@ -178,6 +178,7 @@ def _invoke_hermes(
         discover_plugins(force=True)
         loaded_hermes_config = load_config()
         enabled_toolsets = resolve_hermes_toolsets(settings, loaded_hermes_config)
+        disabled_toolsets = hermes_common.disabled_toolsets(payload)
         session_id = common_utils.runtime_id(payload)
         session_db = SessionDB()
         conversation_history = load_runtime_history(session_db, session_id)
@@ -191,7 +192,7 @@ def _invoke_hermes(
                 model=settings.get("model_name") or model_config.get("model", ""),
                 max_iterations=int(settings.get("max_iterations", 1)),
                 enabled_toolsets=enabled_toolsets,
-                disabled_toolsets=settings.get("disabled_toolsets"),
+                disabled_toolsets=disabled_toolsets or None,
                 quiet_mode=True,
                 skip_context_files=True,
                 skip_memory=True,

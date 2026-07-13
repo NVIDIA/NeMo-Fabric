@@ -45,7 +45,9 @@ from nemo_fabric import RuntimeConfig
 from nemo_fabric import RuntimeHandle
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
+from nemo_fabric import ToolsConfig
 from nemo_fabric.types import _ResolvedFabricConfig
+from nemo_fabric.types import _ToolsConfig
 from pydantic import ValidationError
 
 
@@ -141,11 +143,14 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         project="fabric-tests",
         output_dir="./artifacts/relay",
     )
+    config.block_tools("browser", "shell", "browser")
 
     assert isinstance(config.mcp, McpConfig)
     assert isinstance(config.skills, SkillConfig)
     assert isinstance(config.telemetry, TelemetryConfig)
+    assert isinstance(config.tools, ToolsConfig)
 
+    assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
     assert config.to_mapping()["skills"] == {"paths": ["./skills/review"]}
     assert config.to_mapping()["mcp"] == {
         "servers": {
@@ -181,6 +186,31 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         )
     with pytest.raises(ValidationError, match="providers"):
         TelemetryConfig(providers={"sideways": {}})
+
+
+def test_typed_tools_config_serializes_blocked_policy():
+    config = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        tools=ToolsConfig(blocked=["browser"]),
+    )
+
+    config.block_tools("shell", "browser")
+
+    assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
+
+
+def test_run_plan_config_block_tools_emits_canonical_shape():
+    config = _ResolvedFabricConfig.from_mapping(_plan()["config"])
+
+    config.block_tools("browser", "shell", "browser")
+
+    assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
+
+
+def test_run_plan_tools_config_rejects_scalar_blocked_value():
+    with pytest.raises(FabricConfigError, match="tools blocked"):
+        _ToolsConfig(blocked="browser")  # type: ignore[arg-type]
 
 
 def test_fabric_config_authors_first_class_relay_observability():

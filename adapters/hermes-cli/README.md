@@ -24,6 +24,8 @@ before calling the CLI. It maps:
 - workspace and terminal settings;
 - Fabric skills as Hermes external skill directories;
 - Fabric MCP servers as Hermes MCP server config;
+- `tools.blocked` as Hermes disabled toolsets in the generated config, unioned
+  with `harness.settings.disabled_toolsets`;
 - selected CLI flags and environment variables from harness settings.
 
 `hermes_home` configures a base directory. The adapter creates a child under

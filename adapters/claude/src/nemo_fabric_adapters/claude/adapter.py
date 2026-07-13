@@ -11,26 +11,23 @@ import math
 import os
 import shlex
 import shutil
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
+from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import (
-    CLIConnectionError,
-    CLIJSONDecodeError,
-    CLINotFoundError,
-    ClaudeAgentOptions,
-    ClaudeSDKError,
-    Message,
-    ProcessError,
-    ResultMessage,
-    query,
-)
-from claude_agent_sdk._errors import MessageParseError
-
 import nemo_fabric_adapters.common.utils as common_utils
-
+from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk import ClaudeSDKError
+from claude_agent_sdk import CLIConnectionError
+from claude_agent_sdk import CLIJSONDecodeError
+from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import Message
+from claude_agent_sdk import ProcessError
+from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import query
+from claude_agent_sdk._errors import MessageParseError
 
 PERMISSION_MODES = {"default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"}
 SETTING_SOURCES = {"user", "project", "local"}
@@ -233,12 +230,21 @@ def _normalized_tools(
         if include_skills and "Skill" not in normalized:
             normalized.append("Skill")
         return normalized
+    if isinstance(tools, dict) and "blocked" in tools:
+        return None
     if isinstance(tools, dict) and tools != {"type": "preset", "preset": "claude_code"}:
         raise AdapterConfigError(
             "claude_invalid_configuration",
             "tools preset must be {'type': 'preset', 'preset': 'claude_code'}",
         )
     return tools
+
+
+def _disallowed_tools(payload: dict[str, Any], settings: dict[str, Any]) -> list[str]:
+    return common_utils.merge_unique(
+        common_utils.blocked_tools(payload),
+        _string_list(settings.get("disallowed_tools"), name="disallowed_tools"),
+    )
 
 
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
@@ -338,7 +344,7 @@ def build_options(payload: dict[str, Any], *, resume: str | None) -> ClaudeAgent
         system_prompt=system_prompt,
         tools=_normalized_tools(payload, include_skills=bool(plugins)),
         allowed_tools=_string_list(settings.get("allowed_tools"), name="allowed_tools"),
-        disallowed_tools=_string_list(settings.get("disallowed_tools"), name="disallowed_tools"),
+        disallowed_tools=_disallowed_tools(payload, settings),
         permission_mode=permission_mode,
         max_turns=max_turns,
         max_budget_usd=max_budget,

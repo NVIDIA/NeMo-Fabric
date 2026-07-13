@@ -856,7 +856,6 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunOutput`
-
 Normalized adapter output.
 
 ``response`` is a known adapter response field whose value follows the core Fabric JSON contract. Other keys are adapter-specific extensions.
