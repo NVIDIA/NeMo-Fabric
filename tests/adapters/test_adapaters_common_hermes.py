@@ -5,14 +5,14 @@ import json
 import os
 from pathlib import Path
 
-import nemo_fabric_adapters.common.hermes as hermes_common
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.hermes import adapter as hermes_adapter
 import pytest
 
 
 def test_request_payload():
-    assert hermes_common.request_payload({"request": {"input": "hello"}}) == {"input": "hello"}
-    assert hermes_common.request_payload({}) == {}
+    assert common_utils.request_payload({"request": {"input": "hello"}}) == {"input": "hello"}
+    assert common_utils.request_payload({}) == {}
 
 
 @pytest.mark.parametrize(
@@ -27,7 +27,7 @@ def test_default_base_url(
     provider: str | None,
     expected: str | None,
 ):
-    assert hermes_common.default_base_url(provider) == expected
+    assert common_utils.default_base_url(provider) == expected
 
 
 @pytest.mark.parametrize(
@@ -52,7 +52,7 @@ def test_get_base_url(
     model_config: dict[str, object],
     expected: str | None,
 ):
-    assert hermes_common.get_base_url(settings, model_config) == expected
+    assert common_utils.get_base_url(settings, model_config) == expected
 
 
 @pytest.mark.parametrize(
@@ -88,7 +88,7 @@ def test_selected_model_config(
         }
     }
 
-    assert hermes_common.selected_model_config(payload) == expected
+    assert common_utils.selected_model_config(payload) == expected
 
 
 @pytest.mark.parametrize("provider", [None, "relay"])
@@ -100,7 +100,7 @@ def test_validate_hermes_telemetry_provider_accepts_relay(
         telemetry["provider"] = provider
     payload = {"effective_config": {"config": {"telemetry": telemetry}}}
 
-    hermes_common.validate_hermes_telemetry_provider(payload)
+    hermes_adapter.validate_hermes_telemetry_provider(payload)
 
 
 def test_validate_hermes_telemetry_provider_rejects_native():
@@ -111,7 +111,7 @@ def test_validate_hermes_telemetry_provider_rejects_native():
     }
 
     with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
-        hermes_common.validate_hermes_telemetry_provider(payload)
+        hermes_adapter.validate_hermes_telemetry_provider(payload)
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -152,7 +152,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         },
     }
 
-    config = hermes_common.build_hermes_config(payload, relay_enabled=True)
+    config = hermes_adapter.build_hermes_config(payload, relay_enabled=True)
 
     assert config == {
         "model": {
@@ -252,7 +252,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         },
     }
 
-    config = hermes_common.build_hermes_config(payload, relay_enabled=True)
+    config = hermes_adapter.build_hermes_config(payload, relay_enabled=True)
     plugin_config = common_utils.load_relay_plugin_config(payload)
     observability = plugin_config["components"][0]["config"]
 
@@ -293,7 +293,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
         }
     }
 
-    config_path, config = hermes_common.write_hermes_config(payload, tmp_path / "hermes-home")
+    config_path, config = hermes_adapter.write_hermes_config(payload, tmp_path / "hermes-home")
 
     assert config_path == tmp_path / "hermes-home" / "config.yaml"
     assert config_path.exists()
@@ -338,7 +338,7 @@ def test_hermes_mcp_server_config(
     server: dict[str, str],
     expected: dict[str, object],
 ):
-    assert hermes_common.hermes_mcp_server_config(server) == expected
+    assert hermes_adapter.hermes_mcp_server_config(server) == expected
 
 
 @pytest.mark.parametrize(
@@ -352,15 +352,15 @@ def test_hermes_mcp_server_config_rejects_unsupported_mappings(
     server: dict[str, str],
 ):
     with pytest.raises(ValueError, match="requires url or command"):
-        hermes_common.hermes_mcp_server_config(server)
+        hermes_adapter.hermes_mcp_server_config(server)
 
 
 def test_without_none():
-    assert hermes_common.without_none({"a": 1, "b": None, "c": False}) == {"a": 1, "c": False}
+    assert common_utils.without_none({"a": 1, "b": None, "c": False}) == {"a": 1, "c": False}
 
 
 def test_summarize_hermes_config():
-    assert hermes_common.summarize_hermes_config(
+    assert hermes_adapter.summarize_hermes_config(
         {
             "model": {"default": "demo"},
             "terminal": {"backend": "local"},

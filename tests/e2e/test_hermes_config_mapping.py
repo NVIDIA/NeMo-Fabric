@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import nemo_fabric_adapters.common.hermes as hermes_common
+from nemo_fabric_adapters.hermes import adapter as hermes_adapter
 import yaml
 
 
 def test_hermes_config_mapping(tmp_path: Path):
     hermes_home = tmp_path / "home"
-    config_path, config = hermes_common.write_hermes_config(
+    config_path, config = hermes_adapter.write_hermes_config(
         payload(str(tmp_path)),
         hermes_home,
         relay_enabled=True,
