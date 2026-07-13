@@ -56,13 +56,6 @@ async def main() -> None:
     else:
         output = await fabric.run(config, base_dir=BASE_DIR, input=args.input)
     print(json.dumps(output.to_mapping(), indent=2))
-    if args.show_output and not args.plan:
-        if isinstance(output.output, dict) and "response" in output.output:
-            print(f"\n{output.output['response']}")
-        elif output.error is not None:
-            print(f"\n{output.error.message}")
-        else:
-            print("\n(run succeeded but output has no 'response' field)")
 
     if args.show_output and not args.plan:
         response = getattr(output.output, "response", None)
