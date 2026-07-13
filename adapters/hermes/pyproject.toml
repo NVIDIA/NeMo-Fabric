@@ -8,7 +8,7 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nemo-fabric-adapters-hermes-sdk"
+name = "nemo-fabric-adapters-hermes"
 version = "0.1.0"
 description = "Hermes SDK adapter for NeMo Fabric"
 readme = "README.md"
@@ -23,7 +23,7 @@ where = ["src"]
 include = ["nemo_fabric_adapters.hermes_sdk*"]
 
 [tool.setuptools.data-files]
-"share/nemo-fabric/adapters/hermes-sdk" = ["fabric-adapter.json"]
+"share/nemo-fabric/adapters/hermes" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
 nemo-fabric-adapters-common = { path = "../common", editable = true }
