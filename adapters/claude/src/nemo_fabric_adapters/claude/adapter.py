@@ -208,28 +208,6 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _normalized_tools(payload: dict[str, Any], *, include_skills: bool) -> list[str] | dict[str, Any] | None:
-    native = _mapping(common_utils.capability_plan(payload), name="capability_plan").get("native") or {}
-    if not _mapping(native, name="capability_plan.native").get("tools_configured"):
-        return None
-    tools = common_utils.fabric_config(payload).get("tools")
-    if tools is not None and not isinstance(tools, (list, dict)):
-        raise AdapterConfigError("claude_invalid_configuration", "tools is invalid")
-    if isinstance(tools, list):
-        normalized = _string_list(tools, name="tools")
-        if include_skills and "Skill" not in normalized:
-            normalized.append("Skill")
-        return normalized
-    if isinstance(tools, dict) and "blocked" in tools:
-        return None
-    if isinstance(tools, dict) and tools != {"type": "preset", "preset": "claude_code"}:
-        raise AdapterConfigError(
-            "claude_invalid_configuration",
-            "tools preset must be {'type': 'preset', 'preset': 'claude_code'}",
-        )
-    return tools
-
-
 def _disallowed_tools(payload: dict[str, Any], settings: dict[str, Any]) -> list[str]:
     return common_utils.merge_unique(
         common_utils.blocked_tools(payload),
@@ -322,7 +300,7 @@ def build_options(payload: dict[str, Any], *, resume: str | None) -> ClaudeAgent
         cwd=resolve_cwd(payload),
         model=selected_model(payload),
         system_prompt=system_prompt,
-        tools=_normalized_tools(payload, include_skills=bool(plugins)),
+        tools=None,
         allowed_tools=_string_list(settings.get("allowed_tools"), name="allowed_tools"),
         disallowed_tools=_disallowed_tools(payload, settings),
         permission_mode=permission_mode,

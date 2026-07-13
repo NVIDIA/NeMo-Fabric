@@ -81,6 +81,7 @@ from nemo_fabric import (
     ModelConfig,
     RuntimeConfig,
     SkillConfig,
+    ToolsConfig,
 )
 
 base_dir = Path("/workspace/review-agent")
@@ -104,7 +105,7 @@ config = FabricConfig(
     },
     runtime=RuntimeConfig(artifacts="./artifacts"),
     environment=EnvironmentConfig(provider="local", workspace="."),
-    tools=["Read", "Glob", "Grep"],
+    tools=ToolsConfig(blocked=["WebFetch"]),
     mcp=McpConfig(
         servers={
             "repo": McpServerConfig(

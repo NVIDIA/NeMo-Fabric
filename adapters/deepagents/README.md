@@ -82,7 +82,7 @@ per-step events, LangGraph thread id, token usage (and cost when the provider
 reports it), and errors. Usage aggregates the current turn across the main agent
 and any delegated subagents (streamed with `subgraphs=True`). Configuration and
 preflight failures (a missing credential, an absent `deepagents` package, an
-invalid allow-list, MCP server, or passthrough option) are returned as a
+invalid MCP server, or passthrough option) are returned as a
 normalized failure result rather than a raw traceback.
 
 ## Runtime Modes

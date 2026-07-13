@@ -369,7 +369,7 @@ async def test_checkpointer_closed_on_success_and_failure(tmp_path, make_payload
     assert fake_sdks["saver_exits"] == 2
 
 
-async def test_mcp_servers_become_tools_filtered_by_allowed(tmp_path, make_payload, monkeypatch, fake_sdks):
+async def test_mcp_servers_become_adapter_tools(tmp_path, make_payload, monkeypatch, fake_sdks):
     tool_read = MagicMock()
     tool_read.name = "read_file"
     tool_write = MagicMock()
@@ -407,57 +407,16 @@ async def test_mcp_servers_become_tools_filtered_by_allowed(tmp_path, make_paylo
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
-async def test_allowed_tools_recorded_as_middleware(tmp_path, make_payload, fake_sdks):
-    # An allow-list is enforced by a gating middleware over the full tool surface,
-    # not by filtering the passed tools list.
-    pytest.importorskip("langchain.agents.middleware")
-    pytest.importorskip("langgraph.checkpoint.sqlite.aio")
-    payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = ["read_file"]
-
-    await adapter.run_deepagents(payload)
-
-    assert fake_sdks["create_kwargs"]["middleware"], "gating middleware not attached"
-
-
-@pytest.mark.usefixtures("use_real_langgraph")
-async def test_allowed_tools_middleware_blocks_disallowed_tools():
-    pytest.importorskip("langchain.agents.middleware")
-    from langchain_core.messages import ToolMessage
-
-    middleware = adapter.allowed_tools_middleware({"read_file"})
-
-    async def handler(_request):
-        return "executed"
-
-    def request(name):
-        return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
-
-    blocked = await middleware.awrap_tool_call(request("write_file"), handler)
-    assert isinstance(blocked, ToolMessage)
-    assert blocked.status == "error"
-
-    allowed = await middleware.awrap_tool_call(request("read_file"), handler)
-    assert allowed == "executed"
-
-    # An explicitly empty allow-list denies every tool.
-    deny_all = adapter.allowed_tools_middleware(set())
-    denied = await deny_all.awrap_tool_call(request("read_file"), handler)
-    assert isinstance(denied, ToolMessage)
-    assert denied.status == "error"
-
-
-@pytest.mark.usefixtures("use_real_langgraph")
 async def test_blocked_tools_middleware_blocks_configured_tools():
     pytest.importorskip("langchain.agents.middleware")
     from langchain_core.messages import ToolMessage
 
     middleware = adapter.blocked_tools_middleware({"write_file"})
 
-    async def handler(_request):
+    async def handler(_request: Any) -> str:
         return "executed"
 
-    def request(name):
+    def request(name: str) -> Any:
         return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
 
     blocked = await middleware.awrap_tool_call(request("write_file"), handler)
@@ -466,12 +425,6 @@ async def test_blocked_tools_middleware_blocks_configured_tools():
 
     allowed = await middleware.awrap_tool_call(request("read_file"), handler)
     assert allowed == "executed"
-
-
-def test_empty_tools_is_deny_all_not_none():
-    # An explicitly empty tools list is a deny-all allow-list, not "no allow-list".
-    assert adapter._allowed_tool_names({"effective_config": {"config": {"tools": []}}}) == set()
-    assert adapter._allowed_tool_names({"effective_config": {"config": {}}}) is None
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
@@ -620,38 +573,35 @@ async def test_stream_requests_subgraphs(tmp_path, make_payload, fake_sdks):
     assert fake_sdks["subgraphs"] is True
 
 
-async def test_subagents_are_gated_by_allow_list(tmp_path, make_payload, fake_sdks):
-    # The allow-list must gate delegated subagents too, not only the main agent,
-    # so tools routed through the ``task`` tool cannot run ungated.
-    payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = ["read_file"]
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
-        "subagents": [{"name": "researcher", "prompt": "research"}]
-    }
-
-    await adapter.run_deepagents(payload)
-
-    create_kwargs = fake_sdks["create_kwargs"]
-    assert create_kwargs["middleware"], "main agent gating middleware not attached"
-    subagents = create_kwargs["subagents"]
-    assert len(subagents) == 1
-    assert subagents[0]["middleware"], "subagent gating middleware not attached"
-
-
+@pytest.mark.usefixtures("use_real_langgraph")
 async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload, fake_sdks):
+    pytest.importorskip("langchain.agents.middleware")
+    from langchain_core.messages import ToolMessage
+
     payload = make_payload(tmp_path)
     payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
     payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
         "subagents": [{"name": "researcher", "prompt": "research"}]
     }
 
-    await adapter.run_deepagents(payload)
-
-    create_kwargs = fake_sdks["create_kwargs"]
+    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
     assert create_kwargs["middleware"], "main agent blocked-tools middleware not attached"
     subagents = create_kwargs["subagents"]
     assert len(subagents) == 1
     assert subagents[0]["middleware"], "subagent blocked-tools middleware not attached"
+
+    async def handler(_request: Any) -> str:
+        return "executed"
+
+    def request(name: str) -> Any:
+        return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
+
+    for middleware in (create_kwargs["middleware"][-1], subagents[0]["middleware"][-1]):
+        blocked = await middleware.awrap_tool_call(request("write_file"), handler)
+        assert isinstance(blocked, ToolMessage)
+        assert blocked.status == "error"
+        assert await middleware.awrap_tool_call(request("read_file"), handler) == "executed"
 
 
 async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):
@@ -730,17 +680,6 @@ async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monke
     }
     # the subgraph step is recorded with its namespace label
     assert any(evt.get("subgraph") == "task:researcher" for evt in output["events"])
-
-
-async def test_dict_tools_is_normalized_failure(tmp_path, make_payload):
-    # A dict-shaped tools value must fail loudly, not silently disable gating.
-    payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = {"read_file": True}
-
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "tools" in output["error"]
 
 
 async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):

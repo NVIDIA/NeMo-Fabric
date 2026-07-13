@@ -87,7 +87,7 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                         "api_key_env": "ANTHROPIC_API_KEY",
                     }
                 },
-                "tools": ["Read", "Glob", "Grep"],
+                "tools": {"blocked": ["Bash"]},
             },
         },
         "runtime_context": {
@@ -125,9 +125,9 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert options.cwd == Path(claude_payload["runtime_context"]["environment"]["workspace"])
     assert options.model == "claude-test-model"
     assert options.system_prompt == "Review carefully."
-    assert options.tools == ["Read", "Glob", "Grep", "Skill"]
+    assert options.tools is None
     assert options.allowed_tools == ["Read"]
-    assert options.disallowed_tools == ["WebFetch"]
+    assert options.disallowed_tools == ["Bash", "WebFetch"]
     assert options.permission_mode == "dontAsk"
     assert options.max_turns == 4
     assert options.max_budget_usd == 1.5
@@ -183,30 +183,12 @@ def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload)
         adapter.build_options(claude_payload, resume=None)
 
 
-def test_build_options_rejects_unknown_normalized_tool_preset(claude_payload):
-    claude_payload["effective_config"]["config"]["tools"] = {
-        "type": "preset",
-        "preset": "unknown",
-    }
-
-    with pytest.raises(adapter.AdapterConfigError, match="tools preset"):
-        adapter.build_options(claude_payload, resume=None)
-
-
 def test_selected_model_rejects_unsupported_provider(claude_payload):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model["provider"] = "nvidia"
 
     with pytest.raises(adapter.AdapterConfigError, match="provider must be anthropic"):
         adapter.selected_model(claude_payload)
-
-
-def test_build_options_ignores_tools_not_routed_to_adapter(claude_payload):
-    claude_payload["capability_plan"]["native"]["tools_configured"] = False
-
-    options = adapter.build_options(claude_payload, resume=None)
-
-    assert options.tools is None
 
 
 def test_state_round_trip_is_keyed_by_fabric_runtime(claude_payload):

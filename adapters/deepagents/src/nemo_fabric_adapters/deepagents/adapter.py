@@ -207,23 +207,6 @@ async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
     return tools or None
 
 
-def _allowed_tool_names(payload: dict[str, Any]) -> set[str] | None:
-    # The routed plan only marks ``native.tools_configured``; the value lives in
-    # ``effective_config.config.tools``. Return ``None`` only when tools are not
-    # configured; an explicitly empty list is a deny-all allow-list, not "no list".
-    # A wrong-shaped value must fail loudly rather than silently disable gating.
-    tools = common_utils.fabric_config(payload).get("tools")
-    if tools is None:
-        return None
-    if isinstance(tools, dict) and "blocked" in tools:
-        return None
-    if not isinstance(tools, (list, str)):
-        raise AdapterConfigError(
-            f"config.tools must be a list of tool names (a deny/allow-list), not {type(tools).__name__}."
-        )
-    return set(common_utils.normalize_list(tools))
-
-
 def _blocked_tool_names(payload: dict[str, Any]) -> set[str]:
     return set(common_utils.blocked_tools(payload))
 
@@ -252,21 +235,6 @@ def _tool_gate_middleware(is_blocked: Any, message: Any) -> Any:
             return handler(request)
 
     return ToolGateMiddleware()
-
-
-def allowed_tools_middleware(allowed: set[str]) -> Any:
-    """Middleware that blocks tool calls whose name is not in the allow-list.
-
-    Enforces Fabric's ``config.tools`` allow-list across the *full* tool surface
-    (Deep Agents built-ins such as ``write_file``/``execute``/``task`` and MCP
-    tools alike), since the built-ins are contributed by middleware rather than the
-    ``tools`` argument and cannot be pre-filtered out of the ``tools`` list.
-    """
-
-    return _tool_gate_middleware(
-        lambda name: name not in allowed,
-        lambda name: f"Tool '{name}' is not permitted by the configured tools allow-list.",
-    )
 
 
 def blocked_tools_middleware(blocked: set[str]) -> Any:
@@ -406,19 +374,7 @@ async def build_agent_kwargs(payload: dict[str, Any], model: Any, settings: dict
     extra = settings.get("deepagents")
     if extra is not None:
         kwargs.update(_validated_passthrough(extra))
-    allowed = _allowed_tool_names(payload)
     blocked = _blocked_tool_names(payload)
-    if allowed is not None:
-        # Gate the main agent AND every configured subagent, so the allow-list
-        # covers the full tool surface. The built-in ``task`` tool (which spawns
-        # the general-purpose subagent) is itself gated on the main agent, so a
-        # list that omits ``task`` blocks all delegation.
-        middleware = list(kwargs.get("middleware") or [])
-        middleware.append(allowed_tools_middleware(allowed))
-        kwargs["middleware"] = middleware
-        subagents = kwargs.get("subagents")
-        if isinstance(subagents, list):
-            kwargs["subagents"] = [_gate_subagent(sub, allowed) for sub in subagents]
     if blocked:
         middleware = list(kwargs.get("middleware") or [])
         middleware.append(blocked_tools_middleware(blocked))
@@ -455,14 +411,6 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
             f"passthrough keys are {sorted(DEEPAGENTS_PASSTHROUGH_KEYS)}."
         )
     return dict(extra)
-
-
-def _gate_subagent(subagent: Any, allowed: set[str]) -> Any:
-    if not isinstance(subagent, dict):
-        return subagent
-    gated = dict(subagent)
-    gated["middleware"] = [*(gated.get("middleware") or []), allowed_tools_middleware(allowed)]
-    return gated
 
 
 def _block_subagent(subagent: Any, blocked: set[str]) -> Any:

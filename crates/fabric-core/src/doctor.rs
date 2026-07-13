@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::{
-    AdapterKind, CapabilityTarget, ControlLocation, EnvironmentOwnership, ResolutionStrategy,
-    RunPlan,
+    AdapterKind, CapabilityKind, CapabilityTarget, ControlLocation, EnvironmentOwnership,
+    ResolutionStrategy, RunPlan,
 };
 
 /// Diagnostic status.
@@ -186,9 +186,14 @@ fn check_capability_routes(plan: &RunPlan) -> Vec<DoctorCheck> {
         .iter()
         .filter(|route| route.target == CapabilityTarget::Unsupported)
         .map(|route| {
+            let status = if route.kind == CapabilityKind::Tools {
+                DoctorStatus::Fail
+            } else {
+                DoctorStatus::Warn
+            };
             check(
                 "capability.unsupported",
-                DoctorStatus::Warn,
+                status,
                 format!(
                     "{:?} capability `{}` is configured but not executable: {}",
                     route.kind, route.name, route.reason
@@ -469,7 +474,10 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use crate::config::{AdapterKind, ResolutionStrategy, resolve_run_plan};
+    use crate::config::{
+        AdapterKind, CapabilityKind, CapabilityRoute, CapabilityTarget, ResolutionStrategy,
+        resolve_run_plan,
+    };
 
     fn file_config_agent_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/file-config-agent")
@@ -570,6 +578,26 @@ mod tests {
                 && check.status == DoctorStatus::Warn
                 && check.message.contains("modeled but not implemented")
                 && check.message.contains("service")
+        }));
+    }
+
+    #[test]
+    fn unsupported_blocked_tools_fail_doctor() {
+        let mut plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
+        plan.capability_plan.routes.push(CapabilityRoute {
+            kind: CapabilityKind::Tools,
+            name: "blocked".to_string(),
+            target: CapabilityTarget::Unsupported,
+            reason: "adapter does not accept tools".to_string(),
+        });
+
+        let report = doctor_plan(&plan);
+
+        assert_eq!(report.status, DoctorStatus::Fail);
+        assert!(report.checks.iter().any(|check| {
+            check.name == "capability.unsupported"
+                && check.status == DoctorStatus::Fail
+                && check.message.contains("adapter does not accept tools")
         }));
     }
 }

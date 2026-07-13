@@ -1422,6 +1422,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `ToolsConfig`
+
 Harness-neutral tool capability configuration.
 
 
