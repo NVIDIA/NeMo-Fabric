@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Hermes SDK adapter for Fabric.
+"""Hermes adapter for Fabric.
 
 This adapter maps Fabric's normalized config into Hermes' native Python SDK
 surface and invokes the installed Hermes runtime.
@@ -35,7 +35,7 @@ def main() -> None:
 def run(payload: dict[str, Any]) -> dict[str, Any]:
     """Fabric adapter entrypoint used by script and native SDK runtime calls."""
 
-    return asyncio.run(run_hermes_sdk(payload))
+    return asyncio.run(run_hermes(payload))
 
 
 def resolve_hermes_toolsets(settings: dict[str, Any], config: dict[str, Any]) -> list[str] | None:
@@ -64,7 +64,7 @@ def load_runtime_history(session_db: Any, session_id: str | None) -> list[dict[s
     return messages or None
 
 
-async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
+async def run_hermes(payload: dict[str, Any]) -> dict[str, Any]:
     hermes_common.validate_hermes_telemetry_provider(payload)
     settings = common_utils.settings_payload(payload)
     request = hermes_common.request_payload(payload)
@@ -96,7 +96,7 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     api_key_env = settings.get("api_key_env") or model_config.get("api_key_env") or "NVIDIA_API_KEY"
     api_key = os.environ.get(api_key_env)
     if not api_key:
-        raise RuntimeError(f"{api_key_env} is required for Hermes SDK mode")
+        raise RuntimeError(f"{api_key_env} is required for Hermes mode")
 
     base_url = hermes_common.get_base_url(settings, model_config)
     user_message = request.get("input") or ""
@@ -132,7 +132,7 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     output = {
         "harness": "hermes",
         "adapter": "python",
-        "mode": "hermes_sdk",
+        "mode": "hermes",
         "model": model_config.get("model"),
         "base_url": base_url,
         "response": response,

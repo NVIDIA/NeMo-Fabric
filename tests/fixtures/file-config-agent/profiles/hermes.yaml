@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 schema_version: fabric.profile/v1alpha1
-name: hermes_sdk
-description: Test Hermes SDK file-profile resolution.
+name: hermes
+description: Test Hermes file-profile resolution.
 
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
   resolution: preinstalled
   settings:
     workspace: ./repos/my-service
@@ -23,12 +23,12 @@ harness:
 runtime:
   input_schema: chat
   output_schema: message
-  artifacts: ./artifacts/hermes-sdk
+  artifacts: ./artifacts/hermes
 
 environment:
   provider: local
   workspace: ./repos/my-service
-  artifacts: ./artifacts/hermes-sdk
+  artifacts: ./artifacts/hermes
 
 telemetry:
   enabled: false

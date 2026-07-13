@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for the Hermes SDK adapter's Fabric runtime mapping."""
+"""Unit tests for the Hermes adapter's Fabric runtime mapping."""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ from typing import Any
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-HERMES_SDK_SRC = ROOT / "adapters" / "hermes-sdk" / "src"
-if str(HERMES_SDK_SRC) not in sys.path:
-    sys.path.insert(0, str(HERMES_SDK_SRC))
+HERMES_SRC = ROOT / "adapters" / "hermes" / "src"
+if str(HERMES_SRC) not in sys.path:
+    sys.path.insert(0, str(HERMES_SRC))
 
-from nemo_fabric_adapters.hermes_sdk import adapter  # noqa: E402
+from nemo_fabric_adapters.hermes import adapter  # noqa: E402
 
 
-async def test_hermes_sdk_rejects_native_telemetry():
+async def test_hermes_rejects_native_telemetry():
     payload = {
         "effective_config": {
             "config": {"telemetry": {"enabled": True, "provider": "native"}}
@@ -29,7 +29,7 @@ async def test_hermes_sdk_rejects_native_telemetry():
     }
 
     with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
-        await adapter.run_hermes_sdk(payload)
+        await adapter.run_hermes(payload)
 
 
 async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
@@ -160,7 +160,7 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
         "capability_plan": {"native": {}},
     }
 
-    output = await adapter.run_hermes_sdk(payload)
+    output = await adapter.run_hermes(payload)
 
     assert captured["db_resolve_session"] == "runtime-fabric-123"
     assert captured["db_get_session"] == ["runtime-resolved-456"]
