@@ -26,3 +26,6 @@ integrations/harbor/demo/task/environment/vendor/
 
 # vscode settings
 .vscode/
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/

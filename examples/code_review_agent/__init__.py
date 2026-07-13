@@ -6,6 +6,7 @@
 from examples.code_review_agent.config import (
     BASE_DIR,
     base_config,
+    claude_config,
     codex_cli_config,
     deepagents_config,
     hermes_cli_config,
@@ -21,6 +22,7 @@ from examples.code_review_agent.config import (
 __all__ = [
     "BASE_DIR",
     "base_config",
+    "claude_config",
     "codex_cli_config",
     "deepagents_config",
     "hermes_cli_config",

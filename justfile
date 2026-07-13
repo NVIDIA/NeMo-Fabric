@@ -325,6 +325,11 @@ docs:
     uv run --no-sync python scripts/docs/generate_rust_library_reference.py
     npx --prefix docs --no-install fern check
 
+# Launch Jupyter Lab for the onboarding notebooks under examples/notebooks/.
+# Jupyter is fetched on demand so it stays out of the project lockfile.
+notebooks:
+    uv run --no-sync --with jupyterlab --with ipykernel jupyter lab examples/notebooks
+
 # Run the Python test suite with the same optional integrations used by CI.
 # --set [no_uv=true|false]
 test-python:

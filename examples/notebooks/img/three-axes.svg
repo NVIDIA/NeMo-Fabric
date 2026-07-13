@@ -1,0 +1,49 @@
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0 -->
+<svg viewBox="0 0 840 470" width="620" height="347" xmlns="http://www.w3.org/2000/svg" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <title>The value of Fabric: switch and configure along three axes</title>
+  <desc>One typed FabricConfig can be varied along three axes — swap the harness, vary skills and MCP capabilities, and add Relay telemetry — without changing application code, always returning the same result shape.</desc>
+  <defs>
+    <marker id="agrn2" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#76B900"/></marker>
+  </defs>
+
+  <rect x="1.5" y="1.5" width="837" height="467" rx="16" fill="#FBFCFD" stroke="#E3E6EA"/>
+
+  <rect x="290" y="26" width="260" height="56" rx="10" fill="#FFFFFF" stroke="#76B900" stroke-width="2.5"/>
+  <text x="420" y="50" text-anchor="middle" font-size="16" font-weight="800" fill="#1B2026">One typed agent</text>
+  <text x="420" y="70" text-anchor="middle" font-size="12.5" fill="#5B6670" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">FabricConfig</text>
+  <text x="420" y="106" text-anchor="middle" font-size="13" fill="#3A4149">Change how it runs — no application code changes</text>
+
+  <line x1="420" y1="118" x2="162" y2="150" stroke="#76B900" stroke-width="2" marker-end="url(#agrn2)"/>
+  <line x1="420" y1="118" x2="420" y2="150" stroke="#76B900" stroke-width="2" marker-end="url(#agrn2)"/>
+  <line x1="420" y1="118" x2="678" y2="150" stroke="#76B900" stroke-width="2" marker-end="url(#agrn2)"/>
+
+  <rect x="40" y="152" width="240" height="218" rx="10" fill="#FFFFFF" stroke="#D5DBE1"/>
+  <rect x="300" y="152" width="240" height="218" rx="10" fill="#FFFFFF" stroke="#D5DBE1"/>
+  <rect x="560" y="152" width="240" height="218" rx="10" fill="#FFFFFF" stroke="#D5DBE1"/>
+  <path d="M40,190 L40,162 Q40,152 50,152 L270,152 Q280,152 280,162 L280,190 Z" fill="#F0F7E0"/>
+  <path d="M300,190 L300,162 Q300,152 310,152 L530,152 Q540,152 540,162 L540,190 Z" fill="#F0F7E0"/>
+  <path d="M560,190 L560,162 Q560,152 570,152 L790,152 Q800,152 800,162 L800,190 Z" fill="#F0F7E0"/>
+  <g text-anchor="middle" font-size="14" font-weight="800" fill="#4A7A00">
+    <text x="160" y="177">1 &#183; Harness</text>
+    <text x="420" y="177">2 &#183; Capabilities</text>
+    <text x="680" y="177">3 &#183; Telemetry</text>
+  </g>
+
+  <g font-size="13" fill="#2E3338" text-anchor="middle">
+    <rect x="56" y="206" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="160" y="226">Hermes SDK</text>
+    <rect x="56" y="246" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="160" y="266">Deep Agents</text>
+    <rect x="56" y="286" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="160" y="306">Codex</text>
+    <rect x="56" y="326" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="160" y="346">Claude</text>
+
+    <rect x="316" y="212" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="420" y="232">Skills — add / remove</text>
+    <rect x="316" y="254" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="420" y="274">MCP servers — add / remove</text>
+    <rect x="316" y="296" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="420" y="316">Composed per run</text>
+
+    <rect x="576" y="212" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="680" y="232">NeMo Relay tracing</text>
+    <rect x="576" y="254" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="680" y="274">ATOF + ATIF traces</text>
+    <rect x="576" y="296" width="208" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="680" y="316">Toggle on / off</text>
+  </g>
+
+  <rect x="40" y="388" width="760" height="52" rx="10" fill="#EFF6E0" stroke="#76B900"/>
+  <text x="420" y="420" text-anchor="middle" font-size="13.5" font-weight="600" fill="#3A4149">Same agent, same RunResult shape — the basis for comparison, evaluation &amp; ablation</text>
+</svg>

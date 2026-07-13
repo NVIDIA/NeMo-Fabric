@@ -1,0 +1,41 @@
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0 -->
+<svg viewBox="0 0 840 520" width="620" height="384" xmlns="http://www.w3.org/2000/svg" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <title>Where NeMo Fabric sits between your agent and the harnesses</title>
+  <desc>Your application builds a FabricConfig and passes it to NeMo Fabric, which exposes plan, doctor, run and start_runtime, resolves an adapter, drives one of several harnesses, and returns a normalized RunResult.</desc>
+  <defs>
+    <marker id="agrn" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#76B900"/></marker>
+    <marker id="agry" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#98A2AD"/></marker>
+  </defs>
+
+  <rect x="1.5" y="1.5" width="837" height="517" rx="16" fill="#FBFCFD" stroke="#E3E6EA"/>
+
+  <rect x="40" y="34" width="760" height="70" rx="10" fill="#EDF0F3" stroke="#CBD2D9"/>
+  <text x="420" y="64" text-anchor="middle" font-size="17" font-weight="700" fill="#1B2026">Your application</text>
+  <text x="420" y="88" text-anchor="middle" font-size="13" fill="#5B6670">Builds a typed FabricConfig</text>
+
+  <line x1="300" y1="104" x2="300" y2="149" stroke="#76B900" stroke-width="2.5" marker-end="url(#agrn)"/>
+  <text x="312" y="132" font-size="12.5" font-weight="600" fill="#5E9400">FabricConfig</text>
+  <line x1="560" y1="149" x2="560" y2="104" stroke="#98A2AD" stroke-width="2.5" marker-end="url(#agry)"/>
+  <text x="470" y="132" font-size="12.5" font-weight="600" fill="#6B7680">RunResult</text>
+
+  <rect x="40" y="150" width="760" height="214" rx="12" fill="#FFFFFF" stroke="#76B900" stroke-width="2.5"/>
+  <text x="420" y="184" text-anchor="middle" font-size="19" font-weight="800" fill="#1B2026">NeMo Fabric<tspan font-size="13" font-weight="400" fill="#5B6670"> — one typed contract</tspan></text>
+
+  <g text-anchor="middle" font-size="13.5" fill="#3A4149">
+    <text x="420" y="224"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#5E9400">plan()</tspan><tspan> — inspect adapter &amp; capabilities</tspan></text>
+    <text x="420" y="258"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#5E9400">doctor()</tspan><tspan> — preflight the environment</tspan></text>
+    <text x="420" y="292"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#5E9400">run()</tspan><tspan> — one start &#8594; invoke &#8594; stop</tspan></text>
+    <text x="420" y="326"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#5E9400">start_runtime()</tspan><tspan> — stateful, multi-turn</tspan></text>
+  </g>
+
+  <line x1="420" y1="364" x2="420" y2="407" stroke="#98A2AD" stroke-width="2.5" marker-end="url(#agry)"/>
+  <text x="432" y="390" font-size="12.5" fill="#5B6670">resolves an adapter</text>
+
+  <g font-size="14.5" font-weight="700" fill="#1B2026" text-anchor="middle">
+    <rect x="40" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="129" y="459">Hermes SDK</text>
+    <rect x="234" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="323" y="459">Deep Agents</text>
+    <rect x="428" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="517" y="459">Codex</text>
+    <rect x="622" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="711" y="459">Claude</text>
+  </g>
+  <text x="420" y="503" text-anchor="middle" font-size="12.5" fill="#8A939C">Agent harnesses — the same contract drives them all</text>
+</svg>
