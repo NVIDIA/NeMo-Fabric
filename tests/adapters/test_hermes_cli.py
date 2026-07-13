@@ -4,7 +4,9 @@
 import types
 from pathlib import Path
 
+import pytest
 from nemo_fabric import Fabric
+from nemo_fabric import FabricConfigError
 
 
 async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, hermes_cli_profile: str):
@@ -51,21 +53,20 @@ async def test_hermes_cli_rejects_native_telemetry(
         """schema_version: fabric.profile/v1alpha1
 name: native_telemetry
 telemetry:
-  enabled: true
-  provider: native
-  config: {}
+  providers:
+    native: {}
 """,
         encoding="utf-8",
     )
 
-    result = await Fabric().run(
-        hermes_agent_dir,
-        profiles=[hermes_cli_profile, "native_telemetry"],
-        input="who are you?",
-    )
-
-    assert result["status"] == "failed"
-    assert "only relay telemetry is supported for Hermes" in result["error"]["message"]
+    with pytest.raises(
+        FabricConfigError,
+        match=r"does not support `telemetry\.providers` value `native`",
+    ):
+        Fabric().plan(
+            hermes_agent_dir,
+            profiles=[hermes_cli_profile, "native_telemetry"],
+        )
 
 
 async def test_hermes_cli_multi_turn(
@@ -93,7 +94,7 @@ async def test_hermes_cli_multi_turn(
     session_db = hermes_state.SessionDB(db_path=session_db_path)
     session = session_db.get_session_by_title(runtime_id)
     assert session is not None
-    assert session['id'] == runtime_id
-    assert session['model'] == 'test-model'
-    assert session['source'] == 'fabric'
-    assert session['title'] == runtime_id
+    assert session["id"] == runtime_id
+    assert session["model"] == "test-model"
+    assert session["source"] == "fabric"
+    assert session["title"] == runtime_id

@@ -44,7 +44,8 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
 - `requirements` powers `fabric doctor`; keep required env vars and the `hermes`
   binary requirement current.
 - `config.accepts` must match the Fabric sections this adapter maps into Hermes.
-- `telemetry.supports` lists telemetry paths the adapter can produce or forward.
+- `telemetry.providers` declares provider-specific outputs and integration modes
+  the adapter can produce or forward.
 
 When Hermes CLI flags or config files change, update the mapping code and the
 descriptor together. User-facing run variations belong in `agent.yaml` or

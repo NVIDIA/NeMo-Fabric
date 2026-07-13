@@ -13,21 +13,18 @@ mcp:
       exposure: fabric_managed
 
 telemetry:
-  enabled: true
+  providers:
+    relay: {}
+
+relay:
   output_dir: ./artifacts/mcp-github
-  config:
-    version: 1
-    components:
-      - kind: observability
-        enabled: true
-        config:
-          version: 1
-          atif:
-            enabled: true
-            output_directory: ./artifacts/mcp-github
-            filename_template: "trajectory-{session_id}.atif.json"
-          atof:
-            enabled: true
-            output_directory: ./artifacts/mcp-github
-            filename: events.atof.jsonl
-            mode: overwrite
+  observability:
+    atif:
+      enabled: true
+      output_directory: ./artifacts/mcp-github
+      filename_template: "trajectory-{session_id}.atif.json"
+    atof:
+      enabled: true
+      output_directory: ./artifacts/mcp-github
+      filename: events.atof.jsonl
+      mode: overwrite

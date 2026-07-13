@@ -28,5 +28,4 @@ environment:
     source: harbor_swebench
     instance_id: django__django-13741
 
-telemetry:
-  enabled: false
+telemetry: null

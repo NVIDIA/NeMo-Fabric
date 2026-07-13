@@ -8,42 +8,45 @@ from __future__ import annotations
 import json
 from inspect import signature
 from pathlib import Path
-from typing import Any, get_overloads
-
-import pytest
-from pydantic import ValidationError
+from typing import Any
+from typing import get_overloads
 
 import nemo_fabric
 import nemo_fabric.errors as fabric_errors
-
-from nemo_fabric import (
-    AdapterInfo,
-    DoctorReport,
-    EffectiveConfig,
-    EnvironmentConfig,
-    Fabric,
-    FabricCapabilityError,
-    FabricConfig,
-    FabricConfigError,
-    FabricError,
-    FabricProfileConfig,
-    FabricNativeUnavailableError,
-    FabricRuntimeError,
-    FabricStateError,
-    HarnessConfig,
-    McpConfig,
-    MetadataConfig,
-    RunOutput,
-    RunPlan,
-    RunRequest,
-    RunResult,
-    RuntimeCapabilities,
-    RuntimeConfig,
-    Runtime,
-    RuntimeHandle,
-    SkillConfig,
-    TelemetryConfig,
-)
+import pytest
+from nemo_fabric import AdapterInfo
+from nemo_fabric import DoctorReport
+from nemo_fabric import EffectiveConfig
+from nemo_fabric import EnvironmentConfig
+from nemo_fabric import Fabric
+from nemo_fabric import FabricCapabilityError
+from nemo_fabric import FabricConfig
+from nemo_fabric import FabricConfigError
+from nemo_fabric import FabricError
+from nemo_fabric import FabricNativeUnavailableError
+from nemo_fabric import FabricProfileConfig
+from nemo_fabric import FabricRuntimeError
+from nemo_fabric import FabricStateError
+from nemo_fabric import HarnessConfig
+from nemo_fabric import McpConfig
+from nemo_fabric import MetadataConfig
+from nemo_fabric import RelayAtifConfig
+from nemo_fabric import RelayAtofConfig
+from nemo_fabric import RelayComponentConfig
+from nemo_fabric import RelayConfigPolicy
+from nemo_fabric import RelayObservabilityConfig
+from nemo_fabric import RunOutput
+from nemo_fabric import RunPlan
+from nemo_fabric import RunRequest
+from nemo_fabric import RunResult
+from nemo_fabric import Runtime
+from nemo_fabric import RuntimeCapabilities
+from nemo_fabric import RuntimeConfig
+from nemo_fabric import RuntimeHandle
+from nemo_fabric import SkillConfig
+from nemo_fabric import TelemetryConfig
+from nemo_fabric.types import _ResolvedFabricConfig
+from pydantic import ValidationError
 
 
 def test_public_contract_has_no_unreleased_aliases():
@@ -137,7 +140,6 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
     config.enable_relay(
         project="fabric-tests",
         output_dir="./artifacts/relay",
-        config={"version": 1},
     )
 
     assert isinstance(config.mcp, McpConfig)
@@ -155,11 +157,12 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         }
     }
     assert config.to_mapping()["telemetry"] == {
-        "enabled": True,
-        "provider": "relay",
+        "providers": {"relay": {}},
+    }
+    assert config.to_mapping()["relay"] == {
         "project": "fabric-tests",
         "output_dir": "./artifacts/relay",
-        "config": {"version": 1},
+        "components": [],
     }
 
     config.remove_mcp_server("github").remove_mcp_server("missing")
@@ -176,8 +179,103 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
             url="http://example.invalid",
             exposure="sideways",
         )
-    with pytest.raises(ValidationError, match="provider"):
-        TelemetryConfig(provider="sideways")
+    with pytest.raises(ValidationError, match="providers"):
+        TelemetryConfig(providers={"sideways": {}})
+
+
+def test_fabric_config_authors_first_class_relay_observability():
+    config = _fabric_config()
+
+    config.enable_relay(
+        output_dir="./artifacts/relay",
+        observability=RelayObservabilityConfig(
+            atof=RelayAtofConfig(
+                enabled=True,
+                output_directory="./artifacts/relay",
+                filename="events.atof.jsonl",
+                mode="overwrite",
+            ),
+            atif=RelayAtifConfig(
+                enabled=True,
+                output_directory="./artifacts/relay",
+                filename_template="trajectory-{session_id}.atif.json",
+                agent_name="fabric-tests",
+            ),
+        ),
+        components=[
+            RelayComponentConfig(kind="switchyard", config={"route": "canary"}),
+        ],
+        policy=RelayConfigPolicy(unknown_component="error"),
+    )
+
+    assert config.to_mapping()["telemetry"] == {
+        "providers": {"relay": {}},
+    }
+    assert config.to_mapping()["relay"] == {
+        "output_dir": "./artifacts/relay",
+        "observability": {
+            "version": 1,
+            "atof": {
+                "enabled": True,
+                "output_directory": "./artifacts/relay",
+                "filename": "events.atof.jsonl",
+                "mode": "overwrite",
+            },
+            "atif": {
+                "enabled": True,
+                "agent_name": "fabric-tests",
+                "model_name": "unknown",
+                "output_directory": "./artifacts/relay",
+                "filename_template": "trajectory-{session_id}.atif.json",
+            },
+        },
+        "components": [
+            {
+                "kind": "switchyard",
+                "enabled": True,
+                "config": {"route": "canary"},
+            },
+        ],
+        "policy": {
+            "unknown_component": "error",
+            "unknown_field": "warn",
+            "unsupported_value": "error",
+        },
+    }
+
+
+def test_fabric_config_enable_relay_preserves_omitted_fields():
+    config = _fabric_config()
+
+    config.enable_relay(
+        project="fabric-tests",
+        output_dir="./artifacts/relay",
+        observability={"atif": {"enabled": True}},
+        components=[{"kind": "switchyard"}],
+    )
+    initial = config.to_mapping()["relay"]
+    config.enable_relay(policy={"unknown_component": "error"})
+
+    relay = config.to_mapping()["relay"]
+    assert relay["project"] == initial["project"]
+    assert relay["output_dir"] == initial["output_dir"]
+    assert relay["observability"] == initial["observability"]
+    assert relay["components"] == initial["components"]
+    assert relay["policy"]["unknown_component"] == "error"
+
+    config.enable_relay(components=[])
+    assert config.to_mapping()["relay"]["components"] == []
+
+
+def test_telemetry_config_enable_native_preserves_existing_config():
+    telemetry = TelemetryConfig()
+
+    telemetry.enable_native(config={"components": [{"kind": "observability"}]})
+    telemetry.enable_native()
+
+    assert telemetry.to_mapping()["providers"]["native"]["config"] == {
+        "components": [{"kind": "observability"}],
+    }
 
 
 def test_config_emits_schema_shape_and_validates():
@@ -211,7 +309,12 @@ def test_config_emits_schema_shape_and_validates():
     assert emitted["models"]["default"]["model"] == "test-model"
     assert emitted["skills"] == {"paths": ["./skills/review"]}
     assert emitted["mcp"]["servers"]["github"]["exposure"] == "fabric_managed"
-    assert emitted["telemetry"]["provider"] == "relay"
+    assert emitted["telemetry"]["providers"] == {"relay": {}}
+    assert emitted["relay"] == {
+        "project": "fabric-tests",
+        "output_dir": "./artifacts/relay",
+        "components": [],
+    }
     assert config.extra_fields == {"future_top_level": {"enabled": True}}
 
     normalized = FabricConfig.model_validate(config)
@@ -359,6 +462,33 @@ def test_run_plan_requires_profiles():
         RunPlan.from_mapping(raw)
 
 
+def test_run_plan_config_enable_relay_preserves_existing_relay_fields():
+    config = _ResolvedFabricConfig.from_mapping(_plan()["config"])
+
+    config.enable_relay(
+        output_dir="./artifacts/relay",
+        observability={"atif": {"enabled": True}},
+    )
+    config.enable_relay(policy={"unknown_component": "error"})
+
+    assert config.to_mapping()["relay"] == {
+        "output_dir": "./artifacts/relay",
+        "observability": {"atif": {"enabled": True}},
+        "policy": {"unknown_component": "error"},
+    }
+
+
+def test_run_plan_config_enable_native_preserves_existing_native_config():
+    config = _ResolvedFabricConfig.from_mapping(_plan()["config"])
+
+    config.telemetry.enable_native(config={"components": [{"kind": "observability"}]})
+    config.telemetry.enable_native()
+
+    assert config.to_mapping()["telemetry"]["providers"]["native"]["config"] == {
+        "components": [{"kind": "observability"}],
+    }
+
+
 def test_runtime_capabilities_reject_non_boolean_values():
     with pytest.raises(FabricConfigError, match="streaming capability"):
         RuntimeCapabilities.from_mapping({"streaming": "false"})
@@ -500,9 +630,7 @@ class NativeRecorder:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
-        self.config_profile_calls.append(
-            None if profiles_json is None else json.loads(profiles_json)
-        )
+        self.config_profile_calls.append(None if profiles_json is None else json.loads(profiles_json))
         return json.dumps(_plan()["effective_config"])
 
     def plan_config(
@@ -512,18 +640,14 @@ class NativeRecorder:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
-        self.config_profile_calls.append(
-            None if profiles_json is None else json.loads(profiles_json)
-        )
+        self.config_profile_calls.append(None if profiles_json is None else json.loads(profiles_json))
         return json.dumps(_plan())
 
     def start_runtime(self, plan_json: str) -> str:
         assert json.loads(plan_json)["agent_name"] == "demo"
         return json.dumps(_runtime())
 
-    def invoke_runtime(
-        self, plan_json: str, runtime_json: str, request_json: str
-    ) -> str:
+    def invoke_runtime(self, plan_json: str, runtime_json: str, request_json: str) -> str:
         if self.fail_invoke:
             raise RuntimeError("native invoke failed")
         request = json.loads(request_json)
@@ -590,9 +714,7 @@ def test_run_request_is_validated_and_json_safe():
     overrides["limits"]["turns"] = 2
 
     assert request.request_id == "request-1"
-    assert request.to_mapping()["input"] == {
-        "messages": [{"role": "user", "content": "hello"}]
-    }
+    assert request.to_mapping()["input"] == {"messages": [{"role": "user", "content": "hello"}]}
     assert request.to_mapping()["context"] == {"run_id": "run-1", "labels": ["sdk"]}
     assert request.to_mapping()["overrides"] == {
         "temperature": 0,
@@ -654,9 +776,7 @@ def test_run_request_preserves_extension_fields():
         future_request={"enabled": True},
     )
 
-    assert request.to_mapping()["input"] == {
-        "messages": [{"role": "user", "content": "hello"}]
-    }
+    assert request.to_mapping()["input"] == {"messages": [{"role": "user", "content": "hello"}]}
     assert request.context == {"job_id": "job-1"}
     assert request.extra_fields["future_request"] == {"enabled": True}
 
@@ -738,9 +858,7 @@ def test_run_output_exposes_response_and_preserves_extensions():
 
 
 def test_run_result_wraps_object_output_as_run_output():
-    result = RunResult.from_mapping(
-        _run_result(output={"response": "hello", "usage": {"tokens": 1}})
-    )
+    result = RunResult.from_mapping(_run_result(output={"response": "hello", "usage": {"tokens": 1}}))
 
     assert isinstance(result.output, RunOutput)
     assert result.output.response == "hello"
@@ -776,9 +894,7 @@ def test_run_output_preserves_non_string_response_without_raising():
 
 
 def test_run_result_preserves_structured_response_from_core_valid_output():
-    result = RunResult.from_mapping(
-        _run_result(output={"response": {"text": "hello"}, "usage": {"tokens": 1}})
-    )
+    result = RunResult.from_mapping(_run_result(output={"response": {"text": "hello"}, "usage": {"tokens": 1}}))
 
     assert isinstance(result.output, RunOutput)
     assert result.output.response == {"text": "hello"}
@@ -820,7 +936,7 @@ def test_run_result_preserves_native_telemetry_provider():
         _run_result(
             telemetry={
                 "relay_enabled": False,
-                "metadata": {"telemetry_provider": "native"},
+                "metadata": {"telemetry_providers": ["native"]},
             },
         )
     )
@@ -948,6 +1064,7 @@ async def test_runtime_invoke_accepts_run_request():
             "limits": {"runtime": 1, "request": 1},
         },
     }
+
 
 async def test_runtime_handle_is_typed_and_detached():
     runtime = Runtime(

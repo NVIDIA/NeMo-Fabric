@@ -6,18 +6,18 @@ name: native_otel
 description: Test native telemetry file-profile resolution.
 
 telemetry:
-  enabled: true
-  provider: native
-  config:
-    version: 1
-    components:
-      - kind: observability
-        enabled: true
-        config:
-          version: 1
-          opentelemetry:
+  providers:
+    native:
+      config:
+        version: 1
+        components:
+          - kind: observability
             enabled: true
-            transport: http_binary
-            endpoint: http://localhost:4318/v1/traces
-            resource_attributes:
-              deployment.environment: dev
+            config:
+              version: 1
+              opentelemetry:
+                enabled: true
+                transport: http_binary
+                endpoint: http://localhost:4318/v1/traces
+                resource_attributes:
+                  deployment.environment: dev

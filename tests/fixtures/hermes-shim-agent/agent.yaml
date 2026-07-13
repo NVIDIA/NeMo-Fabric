@@ -40,8 +40,7 @@ mcp:
       url: ${GITHUB_MCP_URL}
       exposure: harness_native
 
-telemetry:
-  enabled: false
+telemetry: null
 
 profiles:
   directories:

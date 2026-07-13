@@ -5725,7 +5725,7 @@ OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## nemo-relay (0.4.0)
+## nemo-relay (0.5.0)
 
 ### Licenses
 License: `Apache-2.0`

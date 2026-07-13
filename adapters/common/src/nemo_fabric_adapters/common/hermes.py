@@ -40,7 +40,8 @@ def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
-    if common_utils.telemetry_provider(payload) != "relay":
+    providers = common_utils.telemetry_providers(payload)
+    if any(provider != "relay" for provider in providers):
         raise ValueError("only relay telemetry is supported for Hermes")
 
 
@@ -83,10 +84,7 @@ def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False)
 
     mcp_servers = native.get("mcp_servers") or {}
     if mcp_servers:
-        config["mcp_servers"] = {
-            name: hermes_mcp_server_config(server)
-            for name, server in sorted(mcp_servers.items())
-        }
+        config["mcp_servers"] = {name: hermes_mcp_server_config(server) for name, server in sorted(mcp_servers.items())}
 
     if "enabled_toolsets" in settings:
         config["platform_toolsets"] = {
@@ -150,7 +148,7 @@ def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def configure_hermes_relay(payload: dict[str, Any]) -> dict[str, Any] | None:
-    if os.environ.get("FABRIC_RELAY_ENABLED") != "true":
+    if not common_utils.relay_enabled(payload):
         return None
 
     relay_plugin_config = common_utils.load_relay_plugin_config(payload)

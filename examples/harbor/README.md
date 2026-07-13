@@ -59,7 +59,10 @@ task image; the [multi-harness demo](demo/README.md) shows one complete setup.
 
 ## Prepare a Fabric config
 
-Create one complete config for the execution path. For example:
+Create one complete config for the execution path. Harbor runs one Fabric
+harness at a time; to switch from Hermes CLI to Hermes SDK, Codex CLI, or a
+Relay-enabled variant, pass a different complete config through
+`fabric_config_path`. For example:
 
 ```yaml
 schema_version: fabric.agent/v1alpha1
@@ -89,13 +92,42 @@ environment:
   workspace: /app
   artifacts: /logs/agent/fabric-artifacts
 
-telemetry:
-  enabled: false
+# Omit telemetry when no telemetry provider is required.
 ```
 
 Copy the config into the task image, for example at
 `/opt/fabric/configs/hermes.yaml`. `fabric_config_path` always refers to the
 path inside the task environment, not the host checkout.
+
+Relay integration settings live in the first-class top-level `relay` block:
+
+```yaml
+telemetry:
+  providers:
+    relay: {}
+
+relay:
+  output_dir: /logs/agent/fabric-artifacts/relay
+  observability:
+    atif:
+      enabled: true
+      output_directory: /logs/agent/fabric-artifacts/relay
+    atof:
+      enabled: true
+      output_directory: /logs/agent/fabric-artifacts/relay
+      filename: events.atof.jsonl
+      mode: overwrite
+```
+
+Use `relay.components` for additional Relay plugin components such as Switchyard:
+
+```yaml
+relay:
+  components:
+    - kind: switchyard
+      config:
+        route: canary
+```
 
 ## Run the task
 

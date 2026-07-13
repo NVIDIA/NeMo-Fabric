@@ -15,6 +15,10 @@
     "accepts": ["tools", "mcp", "skills", "telemetry"]
   },
   "telemetry": {
-    "supports": ["relay", "atif", "otel", "openinference"]
+    "providers": {
+      "relay": {
+        "outputs": ["atif", "otel", "openinference"]
+      }
+    }
   }
 }

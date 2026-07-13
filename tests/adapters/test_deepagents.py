@@ -16,7 +16,8 @@ import sys
 import types
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -132,7 +133,6 @@ def make_payload_fixture():
                             "api_key_env": "NVIDIA_API_KEY",
                         }
                     },
-                    "telemetry": {"enabled": False},
                 },
             },
             "runtime_context": {
@@ -278,9 +278,18 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     )
     monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
     monkeypatch.setattr(adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts)
-    monkeypatch.setenv("FABRIC_RELAY_ENABLED", "true")
+    payload = make_payload(tmp_path)
+    payload["telemetry_plan"] = {
+        "providers": ["relay"],
+        "relay_enabled": True,
+        "relay_project": None,
+        "relay_output_dir": None,
+        "relay_config": {},
+        "native_config": None,
+        "adapter_outputs": [],
+    }
 
-    output = await adapter.run_deepagents(make_payload(tmp_path))
+    output = await adapter.run_deepagents(payload)
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
@@ -300,10 +309,13 @@ async def test_native_telemetry_exports_without_artifacts(
     monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
 
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["telemetry"] = {
-        "enabled": True,
-        "provider": "native",
-        "config": {
+    payload["telemetry_plan"] = {
+        "providers": ["native"],
+        "relay_enabled": False,
+        "relay_project": None,
+        "relay_output_dir": None,
+        "relay_config": None,
+        "native_config": {
             "version": 1,
             "components": [
                 {
@@ -319,6 +331,7 @@ async def test_native_telemetry_exports_without_artifacts(
                 }
             ],
         },
+        "adapter_outputs": [],
     }
 
     output = await adapter.run_deepagents(payload)
@@ -457,7 +470,10 @@ async def test_real_langgraph_async_checkpointer(tmp_path, make_payload, monkeyp
 
     import deepagents
     from langchain_core.messages import AIMessage
-    from langgraph.graph import END, START, MessagesState, StateGraph
+    from langgraph.graph import END
+    from langgraph.graph import START
+    from langgraph.graph import MessagesState
+    from langgraph.graph import StateGraph
 
     def respond(_state):
         return {"messages": [AIMessage(content="ok")]}

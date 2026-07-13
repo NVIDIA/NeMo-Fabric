@@ -23,9 +23,17 @@ from nemo_fabric_adapters.hermes_sdk import adapter  # noqa: E402
 
 async def test_hermes_sdk_rejects_native_telemetry():
     payload = {
-        "effective_config": {
-            "config": {"telemetry": {"enabled": True, "provider": "native"}}
-        }
+        "effective_config": {"config": {}},
+        "runtime_context": {"runtime_id": "runtime-1", "invocation_id": "invocation-1"},
+        "telemetry_plan": {
+            "providers": ["native"],
+            "relay_enabled": False,
+            "relay_project": None,
+            "relay_output_dir": None,
+            "relay_config": None,
+            "native_config": {},
+            "adapter_outputs": [],
+        },
     }
 
     with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):

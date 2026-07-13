@@ -6,24 +6,20 @@ name: relay_otel
 description: Test Relay OpenTelemetry file-profile resolution.
 
 telemetry:
-  enabled: true
-  provider: relay
+  providers:
+    relay: {}
+
+relay:
   output_dir: ./artifacts/relay-otel
-  config:
-    version: 1
-    components:
-      - kind: observability
-        enabled: true
-        config:
-          version: 1
-          opentelemetry:
-            enabled: true
-            transport: http_binary
-            endpoint: http://localhost:4318/v1/traces
-            service_name: code-review-agent
-            service_namespace: fabric
-            service_version: fabric-poc
-            instrumentation_scope: nemo-relay-otel
-            timeout_millis: 3000
-            resource_attributes:
-              deployment.environment: dev
+  observability:
+    opentelemetry:
+      enabled: true
+      transport: http_binary
+      endpoint: http://localhost:4318/v1/traces
+      service_name: code-review-agent
+      service_namespace: fabric
+      service_version: fabric-poc
+      instrumentation_scope: nemo-relay-otel
+      timeout_millis: 3000
+      resource_attributes:
+        deployment.environment: dev

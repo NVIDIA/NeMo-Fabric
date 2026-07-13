@@ -15,15 +15,12 @@ environment:
     image: nvcr.io/nvidia/nemo/fabric-hermes:latest
 
 telemetry:
-  enabled: true
+  providers:
+    relay: {}
+
+relay:
   output_dir: ./artifacts/opensandbox
-  config:
-    version: 1
-    components:
-      - kind: observability
-        enabled: true
-        config:
-          version: 1
-          atif:
-            enabled: true
-            output_directory: ./artifacts/opensandbox
+  observability:
+    atif:
+      enabled: true
+      output_directory: ./artifacts/opensandbox

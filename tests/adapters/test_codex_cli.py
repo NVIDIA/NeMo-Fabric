@@ -7,22 +7,15 @@ import os
 import subprocess
 import tomllib
 from pathlib import Path
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
+from unittest.mock import call
 
 import pytest
-import yaml
-from nemo_fabric import Fabric, FabricConfig
+from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
 
 ROOT = Path(__file__).resolve().parents[2]
-ADAPTER_PATH = (
-    ROOT
-    / "adapters"
-    / "codex-cli"
-    / "src"
-    / "nemo_fabric_adapters"
-    / "codex_cli"
-    / "adapter.py"
-)
+ADAPTER_PATH = ROOT / "adapters" / "codex-cli" / "src" / "nemo_fabric_adapters" / "codex_cli" / "adapter.py"
 
 
 def load_codex_adapter():
@@ -179,9 +172,7 @@ def test_oneshot_command_uses_fabric_overrides_and_codex_owned_auth(
     assert "--dangerously-bypass-hook-trust" not in command
     assert ["--model", "gpt-5.4"] == command[-3:-1]
     assert command[-1] == "-"
-    assert tomllib.loads(
-        codex_settings.codex_profile_path.read_text(encoding="utf-8")
-    ) == {
+    assert tomllib.loads(codex_settings.codex_profile_path.read_text(encoding="utf-8")) == {
         "features": {"web_search": False},
         "model_reasoning_effort": "high",
     }
@@ -205,9 +196,7 @@ shell_snapshot = true
     codex_settings = adapter.write_config_files(codex_payload)
 
     assert codex_settings.codex_profile_name == "fabric-runtime-1"
-    assert tomllib.loads(
-        codex_settings.codex_profile_path.read_text(encoding="utf-8")
-    ) == {
+    assert tomllib.loads(codex_settings.codex_profile_path.read_text(encoding="utf-8")) == {
         "approval_policy": "never",
         "model_reasoning_effort": "high",
         "features": {
@@ -244,9 +233,7 @@ def test_codex_home_uses_environment(tmp_path):
     adapter = load_codex_adapter()
     os.environ["CODEX_HOME"] = str(tmp_path / "custom-codex-home")
 
-    name, path = adapter.get_codex_profile_path(
-        {"runtime_context": {"runtime_id": "runtime-1"}}
-    )
+    name, path = adapter.get_codex_profile_path({"runtime_context": {"runtime_id": "runtime-1"}})
 
     assert name == "fabric-runtime-1"
     assert path == tmp_path / "custom-codex-home" / "fabric-runtime-1.config.toml"
@@ -256,9 +243,7 @@ def test_codex_home_defaults_to_user_codex_directory():
     adapter = load_codex_adapter()
     os.environ.pop("CODEX_HOME", None)
 
-    name, path = adapter.get_codex_profile_path(
-        {"runtime_context": {"runtime_id": "runtime-1"}}
-    )
+    name, path = adapter.get_codex_profile_path({"runtime_context": {"runtime_id": "runtime-1"}})
 
     assert name == "fabric-runtime-1"
     assert path == Path.home() / ".codex" / "fabric-runtime-1.config.toml"
@@ -270,15 +255,16 @@ def test_relay_routes_codex_through_standalone_gateway(
     tmp_path,
 ):
     adapter = load_codex_adapter()
-    os.environ["FABRIC_RELAY_ENABLED"] = "true"
+    codex_payload["telemetry_plan"] = {
+        "providers": ["relay"],
+        "relay_enabled": True,
+    }
     mock_find_port = MagicMock(return_value=43210)
     monkeypatch.setattr(adapter, "find_available_tcp_port", mock_find_port)
     relay_plugin_config = {"version": 1, "components": []}
     relay_config_path = tmp_path / "relay-config" / "config.toml"
     mock_load_config = MagicMock(return_value=relay_plugin_config)
-    mock_write_config = MagicMock(
-        return_value=(relay_config_path, tmp_path / "plugins.toml")
-    )
+    mock_write_config = MagicMock(return_value=(relay_config_path, tmp_path / "plugins.toml"))
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
@@ -303,9 +289,7 @@ def test_relay_routes_codex_through_standalone_gateway(
     assert "--config" not in command
     assert command[command.index("--profile") + 1] == "fabric-runtime-1"
 
-    config = tomllib.loads(
-        codex_settings.codex_profile_path.read_text(encoding="utf-8")
-    )
+    config = tomllib.loads(codex_settings.codex_profile_path.read_text(encoding="utf-8"))
     assert config["model_provider"] == "nemo-relay-openai"
     assert config["model_providers"]["nemo-relay-openai"] == {
         "name": "NeMo Relay OpenAI",
@@ -329,14 +313,34 @@ def test_relay_routes_codex_through_standalone_gateway(
     )
 
 
-def test_native_otel_profile_writes_codex_telemetry_config(codex_payload, tmp_path):
-    from examples.code_review_agent import codex_cli_config, with_native_otel
+@pytest.mark.parametrize(
+    ("transport", "expected_exporter", "expected_protocol"),
+    [
+        ("http_binary", "otlp-http", "binary"),
+        ("grpc", "otlp-grpc", "grpc"),
+    ],
+)
+def test_native_otel_profile_writes_codex_telemetry_config(
+    codex_payload,
+    tmp_path,
+    transport,
+    expected_exporter,
+    expected_protocol,
+):
+    from examples.code_review_agent import codex_cli_config
+    from examples.code_review_agent import with_native_otel
 
     adapter = load_codex_adapter()
     config = codex_payload["effective_config"]["config"]
     typed = with_native_otel(codex_cli_config())
     assert typed.telemetry is not None
-    config["telemetry"] = typed.telemetry.to_mapping()
+    native_config = typed.telemetry.to_mapping()["providers"]["native"]["config"]
+    native_config["components"][0]["config"]["opentelemetry"]["transport"] = transport
+    codex_payload["telemetry_plan"] = {
+        "providers": ["native"],
+        "relay_enabled": False,
+        "native_config": native_config,
+    }
     config["harness"]["settings"]["config_overrides"] = {}
     codex_settings = adapter.write_config_files(codex_payload)
 
@@ -347,15 +351,13 @@ def test_native_otel_profile_writes_codex_telemetry_config(codex_payload, tmp_pa
 
     assert command[command.index("--profile") + 1] == "fabric-runtime-1"
     assert "--dangerously-bypass-hook-trust" not in command
-    assert tomllib.loads(
-        codex_settings.codex_profile_path.read_text(encoding="utf-8")
-    ) == {
+    assert tomllib.loads(codex_settings.codex_profile_path.read_text(encoding="utf-8")) == {
         "otel": {
             "environment": "dev",
             "trace_exporter": {
-                "otlp-http": {
+                expected_exporter: {
                     "endpoint": "http://localhost:4318/v1/traces",
-                    "protocol": "binary",
+                    "protocol": expected_protocol,
                 }
             },
         }
@@ -435,7 +437,7 @@ def test_start_relay_gateway_waits_for_health_and_starts_process_group(
     adapter = load_codex_adapter()
     relay_config_path = tmp_path / "relay-config" / "config.toml"
     relay_config_path.parent.mkdir()
-    relay_config_path.write_text("[agents.codex]\ncommand = \"codex\"\n", encoding="utf-8")
+    relay_config_path.write_text('[agents.codex]\ncommand = "codex"\n', encoding="utf-8")
     mock_process = MagicMock()
     mock_popen = MagicMock(return_value=mock_process)
     mock_wait = MagicMock()
@@ -555,9 +557,8 @@ def test_runtime_reuses_codex_thread_across_invocations(codex_payload, monkeypat
     monkeypatch.setattr(adapter.subprocess, "run", mock_run)
     os.environ.pop("OPENAI_API_KEY", None)
     os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
-    codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
-        "CODEX_EXPLICIT": "forward-me"
-    }
+    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
+    codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {"CODEX_EXPLICIT": "forward-me"}
 
     first = adapter.run_codex(codex_payload)
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
@@ -620,9 +621,7 @@ def test_runtime_persists_codex_thread_state(codex_payload, monkeypatch):
 
 def test_adapter_rejects_structured_input_until_chat_is_supported(codex_payload):
     adapter = load_codex_adapter()
-    codex_payload["request"]["input"] = {
-        "messages": [{"role": "user", "content": "Inspect the change."}]
-    }
+    codex_payload["request"]["input"] = {"messages": [{"role": "user", "content": "Inspect the change."}]}
 
     with pytest.raises(ValueError, match="requires text input"):
         adapter.request_to_prompt(codex_payload)
@@ -649,9 +648,7 @@ def test_adapter_rejects_non_mapping_env(codex_payload, env):
         ),
     ],
 )
-def test_process_launch_failures_return_structured_results(
-    codex_payload, monkeypatch, error, message, returncode
-):
+def test_process_launch_failures_return_structured_results(codex_payload, monkeypatch, error, message, returncode):
     adapter = load_codex_adapter()
     monkeypatch.setattr(adapter.subprocess, "run", MagicMock(side_effect=error))
 
@@ -696,9 +693,7 @@ def test_adapter_rejects_invalid_timeout(codex_payload, timeout):
         adapter.run_codex(codex_payload)
 
 
-def test_runtime_fails_if_codex_does_not_return_thread_identity(
-    codex_payload, monkeypatch
-):
+def test_runtime_fails_if_codex_does_not_return_thread_identity(codex_payload, monkeypatch):
     adapter = load_codex_adapter()
     mock_run = MagicMock(
         return_value=subprocess.CompletedProcess(
@@ -779,17 +774,15 @@ async def test_fabric_oneshot_uses_cached_codex_auth(tmp_path):
     )
 
     assert report.status == "pass"
-    assert any(
-        check.name == "requirement.binary" and "codex_command" in check.message
-        for check in report.checks
-    )
+    assert any(check.name == "requirement.binary" and "codex_command" in check.message for check in report.checks)
     assert not any(check.name == "requirement.env" for check in report.checks)
     assert result.output["response"] == "thread-fake:inspect"
     assert "--ephemeral" not in result.output["command"]
 
 
 def test_codex_profile_resolves_runtime_adapter():
-    from examples.code_review_agent import BASE_DIR, codex_cli_config
+    from examples.code_review_agent import BASE_DIR
+    from examples.code_review_agent import codex_cli_config
 
     plan = Fabric().plan(
         codex_cli_config(),

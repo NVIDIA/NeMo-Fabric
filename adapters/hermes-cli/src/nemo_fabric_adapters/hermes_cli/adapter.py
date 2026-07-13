@@ -63,7 +63,7 @@ def run_hermes_cli(payload: dict[str, Any]) -> dict[str, Any]:
     hermes_config_path, hermes_config = hermes_common.write_hermes_config(
         payload,
         hermes_home,
-        relay_enabled=relay_plugin_config is not None,
+        relay_enabled=common_utils.relay_enabled(payload),
     )
 
     if settings.get("prepare_runtime_state", True):
