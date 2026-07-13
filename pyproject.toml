@@ -3,7 +3,7 @@
 
 [build-system]
 requires = [
-  "setuptools>=64",
+  "setuptools>=77",
 ]
 build-backend = "setuptools.build_meta"
 
@@ -11,6 +11,8 @@ build-backend = "setuptools.build_meta"
 name = "nemo-fabric"
 version = "0.1.0"
 description = "Python SDK distribution for NeMo Fabric"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = []
 
