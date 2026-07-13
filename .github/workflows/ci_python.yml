@@ -82,7 +82,7 @@ jobs:
       - name: Build SDK with native extension
         run: |
           uv venv --python 3.12 .venv
-          uv sync --group test --no-group dev --extra claude --extra codex --extra harbor --extra hermes --extra relay --extra runtime
+          uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents --extra harbor --extra hermes --extra relay --extra runtime
 
       - name: Run pytest
         run: |

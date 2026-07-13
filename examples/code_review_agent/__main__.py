@@ -15,6 +15,7 @@ from nemo_fabric import Fabric, FabricConfig
 from examples.code_review_agent.config import (
     BASE_DIR,
     codex_cli_config,
+    deepagents_config,
     hermes_cli_config,
     hermes_sdk_config,
     with_relay,
@@ -24,6 +25,7 @@ CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "hermes-sdk": hermes_sdk_config,
     "hermes-cli": hermes_cli_config,
     "codex-cli": codex_cli_config,
+    "deepagents": deepagents_config,
 }
 
 
@@ -57,6 +59,15 @@ async def main() -> None:
     if args.show_output and not args.plan:
         if isinstance(output.output, dict) and "response" in output.output:
             print(f"\n{output.output['response']}")
+        elif output.error is not None:
+            print(f"\n{output.error.message}")
+        else:
+            print("\n(run succeeded but output has no 'response' field)")
+
+    if args.show_output and not args.plan:
+        response = getattr(output.output, "response", None)
+        if response is not None:
+            print(f"\n{response}")
         elif output.error is not None:
             print(f"\n{output.error.message}")
         else:

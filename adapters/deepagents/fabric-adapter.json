@@ -1,0 +1,17 @@
+{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "nvidia.fabric.langchain.deepagents",
+  "harness": "deepagents",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "nemo_fabric_adapters.deepagents.adapter",
+    "callable": "run"
+  },
+  "requirements": {},
+  "config": {
+    "accepts": ["models", "tools", "mcp", "skills", "telemetry"]
+  },
+  "telemetry": {
+    "supports": ["relay", "atif", "otel", "openinference"]
+  }
+}

@@ -140,7 +140,8 @@ authentication, and execution details.
   The Hermes SDK and CLI adapters live under `adapters/hermes-sdk/` and
   `adapters/hermes-cli/`; the Codex CLI adapter lives under
   `adapters/codex-cli/`; the [Claude adapter](adapters/claude/README.md)
-  lives under `adapters/claude/`. Harness-specific extensions belong under
+  lives under `adapters/claude/`; the LangChain Deep Agents adapter lives under
+  `adapters/deepagents/`. Harness-specific extensions belong under
   `harness.settings` so the normalized contract can remain stable.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
@@ -171,8 +172,9 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
   [multi-harness demo](examples/harbor/demo/README.md): ownership,
   installation, and complete command matrices.
 - Adapter guides: [Hermes SDK](adapters/hermes-sdk/README.md),
-  [Hermes CLI](adapters/hermes-cli/README.md), and
-  [Codex CLI](adapters/codex-cli/README.md).
+  [Hermes CLI](adapters/hermes-cli/README.md),
+  [Codex CLI](adapters/codex-cli/README.md), and
+  [Deep Agents](adapters/deepagents/README.md).
 
 ## Tests
 
