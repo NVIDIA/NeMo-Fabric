@@ -24,7 +24,8 @@ import nemo_fabric_adapters.common.utils as common_utils
 
 
 def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
-    if common_utils.telemetry_provider(payload) != "relay":
+    providers = common_utils.telemetry_providers(payload)
+    if any(provider != "relay" for provider in providers):
         raise ValueError("only relay telemetry is supported for Hermes")
 
 
