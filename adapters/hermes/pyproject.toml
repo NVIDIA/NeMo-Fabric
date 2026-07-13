@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nemo-fabric-adapters-hermes"
 version = "0.1.0"
-description = "Hermes SDK adapter for NeMo Fabric"
+description = "Hermes Agent adapter for NeMo Fabric"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -20,7 +20,7 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["nemo_fabric_adapters.hermes_sdk*"]
+include = ["nemo_fabric_adapters.hermes*"]
 
 [tool.setuptools.data-files]
 "share/nemo-fabric/adapters/hermes" = ["fabric-adapter.json"]

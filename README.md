@@ -47,10 +47,10 @@ flowchart TB
   Harness -. harness telemetry .-> Relay
 ```
 
-## Quick Start: Hermes SDK
+## Quick Start: Hermes Agent
 
-This path installs Fabric, installs Hermes in a separate Python environment,
-and runs one input through the Hermes SDK adapter.
+This path installs Fabric, installs Hermes Agent in a separate Python environment,
+and runs one input through the Hermes Agent adapter.
 
 Prerequisites:
 
@@ -108,7 +108,7 @@ back to `python3`.
 Use `ADAPTER_PYTHON` when the harness is installed in a separate environment from Fabric. The environment must have the adapter package installed, the adapters tend to be small and self-contained with minimal dependencies.
 
 The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
-under `examples/code_review_agent/artifacts/hermes-sdk/`. Its complete base
+under `examples/code_review_agent/artifacts/hermes/`. Its complete base
 config and clone-based variants live in
 `examples/code_review_agent/config.py`.
 
@@ -137,7 +137,7 @@ authentication, and execution details.
   harness, model, MCP, tools, skills, telemetry, or environment context without
   editing `agent.yaml`.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
-  The Hermes SDK adapter lives under `adapters/hermes-sdk/`; the Codex CLI
+  The Hermes adapter lives under `adapters/hermes/`; the Codex CLI
   adapter lives under `adapters/codex-cli/`; the
   [Claude adapter](adapters/claude/README.md)
   lives under `adapters/claude/`; the LangChain Deep Agents adapter lives under
@@ -171,7 +171,7 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 - [Harbor example](examples/harbor/README.md) and
   [multi-harness demo](examples/harbor/demo/README.md): ownership,
   installation, and complete command matrices.
-- Adapter guides: [Hermes SDK](adapters/hermes-sdk/README.md),
+- Adapter guides: [Hermes](adapters/hermes/README.md),
   [Codex CLI](adapters/codex-cli/README.md), and
   [Deep Agents](adapters/deepagents/README.md).
 

@@ -16,12 +16,12 @@ from examples.code_review_agent.config import (
     BASE_DIR,
     codex_cli_config,
     deepagents_config,
-    hermes_sdk_config,
+    hermes_config,
     with_relay,
 )
 
 CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
-    "hermes-sdk": hermes_sdk_config,
+    "hermes": hermes_config,
     "codex-cli": codex_cli_config,
     "deepagents": deepagents_config,
 }
@@ -29,7 +29,7 @@ CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--variant", choices=CONFIG_BUILDERS, default="hermes-sdk")
+    parser.add_argument("--variant", choices=CONFIG_BUILDERS, default="hermes")
     parser.add_argument("--relay", action="store_true")
     parser.add_argument(
         "--plan",

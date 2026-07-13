@@ -34,8 +34,8 @@ adapters-deepagents = [
   "nemo-fabric-adapters-deepagents == 0.1.0",
 ]
 
-adapters-hermes-sdk = [
-  "nemo-fabric-adapters-hermes-sdk == 0.1.0",
+adapters-hermes = [
+  "nemo-fabric-adapters-hermes == 0.1.0",
 ]
 
 codex = [
@@ -56,7 +56,7 @@ harbor = [
 ]
 
 hermes = [
-  "nemo-fabric-adapters-hermes-sdk == 0.1.0",
+  "nemo-fabric-adapters-hermes == 0.1.0",
   "hermes-agent>=0.17.0",
 ]
 
@@ -75,7 +75,7 @@ adapters = [
   "nemo-fabric-adapters-claude",
   "nemo-fabric-adapters-codex-cli",
   "nemo-fabric-adapters-deepagents",
-  "nemo-fabric-adapters-hermes-sdk",
+  "nemo-fabric-adapters-hermes",
 ]
 
 dev = [
@@ -110,7 +110,7 @@ nemo-fabric-adapters-common = { path = "adapters/common", editable = true }
 nemo-fabric-adapters-claude = { path = "adapters/claude", editable = true }
 nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli", editable = true }
 nemo-fabric-adapters-deepagents = { path = "adapters/deepagents", editable = true }
-nemo-fabric-adapters-hermes-sdk = { path = "adapters/hermes-sdk", editable = true }
+nemo-fabric-adapters-hermes = { path = "adapters/hermes", editable = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

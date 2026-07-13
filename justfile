@@ -10,7 +10,7 @@ no_uv := "false"
 # When set, versioning and packaging targets use this exact release version.
 ref_name := ""
 
-python_projects := ". python adapters/common adapters/claude adapters/codex-cli adapters/deepagents adapters/hermes-sdk"
+python_projects := ". python adapters/common adapters/claude adapters/codex-cli adapters/deepagents adapters/hermes"
 
 bash_helpers := '''
 set -euo pipefail

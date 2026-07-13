@@ -5,10 +5,10 @@ schema_version: fabric.agent/v1alpha1
 
 metadata:
   name: harbor-calculator-demo
-  description: Hermes SDK code-repair example in a Harbor task environment.
+  description: Hermes code-repair example in a Harbor task environment.
 
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
   resolution: preinstalled
   settings:
     cwd: /app

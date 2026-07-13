@@ -33,7 +33,7 @@ def test_cli(
     assert plan["adapter_descriptor"]["source"] == "repository"
     assert (
         plan["adapter_descriptor"]["descriptor"]["adapter_id"]
-        == "nvidia.fabric.hermes.sdk"
+        == "nvidia.fabric.hermes"
     )
 
     agent_schema = call_json("schema", "--name", "agent")
@@ -52,17 +52,17 @@ def test_cli(
     assert (schema_dir / "error-info.schema.json").is_file()
     assert (schema_dir / "fabric-event.schema.json").is_file()
 
-    direct_profile = temp_example / "profiles" / "hermes-sdk.yaml"
+    direct_profile = temp_example / "profiles" / "hermes.yaml"
     direct_plan = call_json("plan", temp_example, "--profile", direct_profile)
     assert direct_plan["profiles"] == [str(direct_profile)]
     assert (
         direct_plan["adapter_descriptor"]["descriptor"]["adapter_id"]
-        == "nvidia.fabric.hermes.sdk"
+        == "nvidia.fabric.hermes"
     )
 
     profile_plans = [
-        (("hermes_sdk",), "nvidia.fabric.hermes.sdk", "python", False),
-        (("hermes_sdk", "relay"), "nvidia.fabric.hermes.sdk", "python", True),
+        (("hermes",), "nvidia.fabric.hermes", "python", False),
+        (("hermes", "relay"), "nvidia.fabric.hermes", "python", True),
     ]
     for profiles, adapter_id, adapter_kind, relay_enabled in profile_plans:
         profile_args = [arg for profile in profiles for arg in ("--profile", profile)]

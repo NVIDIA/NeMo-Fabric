@@ -42,7 +42,7 @@ from nemo_fabric import (
 
 config = FabricConfig(
     metadata=MetadataConfig(name="review-agent"),
-    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes.sdk"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
     models={
         "default": ModelConfig(
             provider="nvidia",
@@ -173,7 +173,7 @@ variant = review_agent_config(config, github_mcp=True, relay=True)
 
 The repository's
 [code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
-uses this pattern for complete Hermes SDK, Codex CLI, Deep Agents,
+uses this pattern for complete Hermes, Codex CLI, Deep Agents,
 environment, MCP, and telemetry variants.
 
 When an in-memory caller needs the same ordered overlay behavior as file-backed

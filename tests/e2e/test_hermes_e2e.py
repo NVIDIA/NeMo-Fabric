@@ -14,7 +14,7 @@ import pytest
 import yaml
 
 from examples.code_review_agent import (
-    hermes_sdk_config,
+    hermes_config,
     with_relay,
 )
 from nemo_fabric import Fabric, FabricConfig
@@ -208,11 +208,11 @@ class BaseTestHermesE2E:
         assert last_step["extra"]["invocation"]["status"] == "completed"
         
 
-class TestHermesSdkE2E(BaseTestHermesE2E):
-    config_builder = staticmethod(hermes_sdk_config)
+class TestHermesE2E(BaseTestHermesE2E):
+    config_builder = staticmethod(hermes_config)
     adapter_kind = "python"
     adapter_runner = "python"
     output_adapter = "python"
-    mode = "hermes_sdk"
-    artifact_dir = "hermes-sdk"
+    mode = "hermes"
+    artifact_dir = "hermes"
     atof_platform = "fabric"

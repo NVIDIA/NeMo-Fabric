@@ -1,10 +1,10 @@
 {
   "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "nvidia.fabric.hermes.sdk",
+  "adapter_id": "nvidia.fabric.hermes",
   "harness": "hermes",
   "adapter_kind": "python",
   "runner": {
-    "module": "nemo_fabric_adapters.hermes_sdk.adapter",
+    "module": "nemo_fabric_adapters.hermes.adapter",
     "callable": "run"
   },
   "requirements": {

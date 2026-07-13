@@ -3,7 +3,7 @@
 
 """Opt-in integration smoke for the SDK multi-turn Runtime path (real Hermes).
 
-Drives ``Fabric.start -> invoke -> invoke -> stop`` against the Hermes SDK
+Drives ``Fabric.start -> invoke -> invoke -> stop`` against the Hermes
 adapter and asserts the runtime carries conversation memory across turns
 through the same Fabric runtime handle.
 
@@ -62,11 +62,11 @@ async def _run() -> None:
 
 
 async def _run_sdk_runtime() -> None:
-    from examples.code_review_agent import BASE_DIR, hermes_sdk_config
+    from examples.code_review_agent import BASE_DIR, hermes_config
     from nemo_fabric import Fabric, RuntimeStatus
 
     async with await Fabric().start_runtime(
-        hermes_sdk_config(),
+        hermes_config(),
         base_dir=BASE_DIR,
     ) as runtime:
         assert runtime.status is RuntimeStatus.ACTIVE, runtime.status

@@ -27,7 +27,7 @@ Adapters are distributed as optional extras. For example, install the Hermes
 SDK adapter with:
 
 ```bash
-uv pip install --find-links dist "nemo-fabric[adapters-hermes-sdk]"
+uv pip install --find-links dist "nemo-fabric[adapters-hermes]"
 ```
 
 Refer to the [installation guide](docs/getting-started/install.mdx) for the
@@ -252,7 +252,7 @@ Examples:
 ```text
 feat: add typed runtime configuration overlays
 fix: preserve adapter errors in run results
-docs: clarify Hermes SDK adapter installation
+docs: clarify Hermes adapter installation
 test: cover concurrent Python runtime invocations
 ```
 

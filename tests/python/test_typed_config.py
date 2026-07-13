@@ -47,7 +47,7 @@ def _repository_adapter_config() -> FabricConfig:
             "schema_version": "fabric.agent/v1alpha1",
             "metadata": {"name": "typed-only-agent"},
             "harness": {
-                "adapter_id": "nvidia.fabric.hermes.sdk",
+                "adapter_id": "nvidia.fabric.hermes",
                 "resolution": "preinstalled",
             },
             "models": {
@@ -105,7 +105,7 @@ async def resolves_and_diagnoses_without_a_directory(client: Fabric) -> None:
         report = await client.doctor(config, base_dir=empty)
 
     descriptor = plan["adapter_descriptor"]
-    assert descriptor["descriptor"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
+    assert descriptor["descriptor"]["adapter_id"] == "nvidia.fabric.hermes"
     # "repository" (not "local") proves it resolved without any on-disk package.
     assert descriptor["source"] == "repository", descriptor["source"]
 
