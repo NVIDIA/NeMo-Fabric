@@ -197,7 +197,7 @@ def claude_config() -> FabricConfig:
         adapter_id="nvidia.fabric.claude",
         resolution="preinstalled",
         settings={
-            "system_prompt": "You are a concise smoke test assistant.",
+            "system_prompt": "You are a concise code reviewer. Point out correctness bugs and risks.",
             "permission_mode": "dontAsk",
         },
     )
