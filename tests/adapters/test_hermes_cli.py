@@ -4,7 +4,9 @@
 import types
 from pathlib import Path
 
+import pytest
 from nemo_fabric import Fabric
+from nemo_fabric import FabricConfigError
 
 
 async def test_hermes_cli_fields(hermes_command: Path, hermes_agent_dir: Path, hermes_cli_profile: str):
@@ -57,14 +59,14 @@ telemetry:
         encoding="utf-8",
     )
 
-    result = await Fabric().run(
-        hermes_agent_dir,
-        profiles=[hermes_cli_profile, "native_telemetry"],
-        input="who are you?",
-    )
-
-    assert result["status"] == "failed"
-    assert "only relay telemetry is supported for Hermes" in result["error"]["message"]
+    with pytest.raises(
+        FabricConfigError,
+        match=r"does not support `telemetry\.providers` value `native`",
+    ):
+        Fabric().plan(
+            hermes_agent_dir,
+            profiles=[hermes_cli_profile, "native_telemetry"],
+        )
 
 
 async def test_hermes_cli_multi_turn(
