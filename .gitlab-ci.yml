@@ -63,6 +63,12 @@ collect:github-artifacts:
         sleep "$NEMO_FABRIC_CI_GITHUB_RUN_POLL_SECONDS"
       done
 
+      tag_sha="$(
+        gh api \
+          "repos/${NEMO_FABRIC_CI_GITHUB_REPOSITORY}/commits/${tag}" \
+          --jq '.sha'
+      )"
+
       echo "Waiting for ${NEMO_FABRIC_CI_GITHUB_WORKFLOW_FILE} run for tag ${tag}"
       run_id=""
       while [ -z "$run_id" ]; do
@@ -70,7 +76,7 @@ collect:github-artifacts:
           gh run list \
             --repo "$NEMO_FABRIC_CI_GITHUB_REPOSITORY" \
             --workflow "$NEMO_FABRIC_CI_GITHUB_WORKFLOW_FILE" \
-            --event workflow_dispatch \
+            --commit "$tag_sha" \
             --limit 1 \
             --json databaseId \
             --jq '.[0].databaseId // ""'

@@ -107,7 +107,7 @@ def main() -> int:
     else:
         print("All wheels uploaded to Artifactory.")
 
-    if os.environ.get("CI_COMMIT_TAG") is not None or os.environ.get("NEMO_FABRIC_CI_GITHUB_TAG") is not None:
+    if os.environ.get("CI_COMMIT_TAG") is not None:
         print("Performing release of published wheels to KitMaker...", flush=True)
         perform_release(published_wheels)
     else:
