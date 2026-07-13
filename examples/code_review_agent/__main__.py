@@ -16,14 +16,12 @@ from examples.code_review_agent.config import (
     BASE_DIR,
     codex_cli_config,
     deepagents_config,
-    hermes_cli_config,
     hermes_sdk_config,
     with_relay,
 )
 
 CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "hermes-sdk": hermes_sdk_config,
-    "hermes-cli": hermes_cli_config,
     "codex-cli": codex_cli_config,
     "deepagents": deepagents_config,
 }

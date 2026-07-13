@@ -68,7 +68,7 @@ metadata:
   name: harbor-review-agent
 
 harness:
-  adapter_id: nvidia.fabric.hermes.cli
+  adapter_id: nvidia.fabric.hermes.sdk
   resolution: preinstalled
   settings:
     cwd: /app
@@ -159,7 +159,7 @@ harbor view <jobs-directory>
 ## Demo and tests
 
 The [multi-harness demo](demo/README.md) provides complete configs and commands
-for a credential-free smoke run, Hermes CLI, Hermes with Relay, and Codex CLI.
+for a credential-free smoke run, Hermes SDK, Hermes with Relay, and Codex CLI.
 
 Run the lightweight integration tests with:
 

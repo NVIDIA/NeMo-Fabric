@@ -14,7 +14,6 @@ import pytest
 import yaml
 
 from examples.code_review_agent import (
-    hermes_cli_config,
     hermes_sdk_config,
     with_relay,
 )
@@ -208,24 +207,6 @@ class BaseTestHermesE2E:
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"
         
-
-class TestHermesCliE2E(BaseTestHermesE2E):
-    config_builder = staticmethod(hermes_cli_config)
-    adapter_kind = "python"
-    adapter_runner = "python"
-    output_adapter = "cli"
-    mode = "hermes_cli_runtime"
-    artifact_dir = "hermes-cli"
-    atof_platform = "cli"
-
-    async def _additional_artifact_tests(self, artifact_by_name: dict[str, dict[str, str]]):
-        assert self.output["returncode"] == 0
-
-        assert self.output["fabric_invocation"] is None
-
-        relay_config_path = Path(artifact_by_name["relay_config"]["path"]).resolve()
-        assert (relay_config_path.parent / "relay-config" / "plugins.toml").exists()
-
 
 class TestHermesSdkE2E(BaseTestHermesE2E):
     config_builder = staticmethod(hermes_sdk_config)

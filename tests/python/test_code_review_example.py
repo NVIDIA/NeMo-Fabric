@@ -13,7 +13,6 @@ from examples.code_review_agent import (
     BASE_DIR,
     base_config,
     codex_cli_config,
-    hermes_cli_config,
     hermes_sdk_config,
     with_fabric_managed_github_mcp,
     with_native_otel,
@@ -28,10 +27,9 @@ from nemo_fabric import Fabric, FabricConfig, RunOutput
 def test_variant_builders_return_independent_complete_configs():
     base = base_config()
     sdk = hermes_sdk_config()
-    cli = hermes_cli_config()
     codex = codex_cli_config()
 
-    for config in (base, sdk, cli, codex):
+    for config in (base, sdk, codex):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -39,7 +37,6 @@ def test_variant_builders_return_independent_complete_configs():
 
     assert sdk is not base
     assert sdk.harness is not base.harness
-    assert cli.harness.adapter_id == "nvidia.fabric.hermes.cli"
     assert codex.harness.adapter_id == "nvidia.fabric.codex.cli"
     assert codex.mcp is None
     assert codex.skills is None
@@ -78,7 +75,7 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
 def test_variants_plan_without_file_profiles():
     client = Fabric()
 
-    for config in (hermes_sdk_config(), hermes_cli_config(), codex_cli_config()):
+    for config in (hermes_sdk_config(), codex_cli_config()):
         plan = client.plan(config, base_dir=BASE_DIR)
         assert plan.profiles == ()
         assert plan.agent_name == "code-review-agent"
@@ -88,7 +85,6 @@ def test_variants_plan_without_file_profiles():
 def test_example_entrypoint_plans_without_starting_a_runtime():
     cases = (
         ([], "nvidia.fabric.hermes.sdk", False),
-        (["--variant", "hermes-cli"], "nvidia.fabric.hermes.cli", False),
         (["--variant", "codex-cli"], "nvidia.fabric.codex.cli", False),
         (["--relay"], "nvidia.fabric.hermes.sdk", True),
     )

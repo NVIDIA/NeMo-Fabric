@@ -4,8 +4,8 @@
 """Opt-in integration smoke for the SDK multi-turn Runtime path (real Hermes).
 
 Drives ``Fabric.start -> invoke -> invoke -> stop`` against the Hermes SDK
-and CLI adapters and asserts the runtime carries conversation memory across
-turns through the same Fabric runtime handle.
+adapter and asserts the runtime carries conversation memory across turns
+through the same Fabric runtime handle.
 
 This test must run in an interpreter that has both the nemo_fabric native
 extension and Hermes importable:
@@ -59,7 +59,6 @@ async def test_hermes_runtime():
 
 async def _run() -> None:
     await _run_sdk_runtime()
-    await _run_cli_runtime()
 
 
 async def _run_sdk_runtime() -> None:
@@ -83,30 +82,6 @@ async def _run_sdk_runtime() -> None:
         # Hermes should return a transcript that includes the prior turn.
         assert len(runtime.messages) > len(after_turn1), runtime.messages
         # And the model must recall the name supplied in turn 1.
-        response = (r2["output"].get("response") or "").lower()
-        assert "robin" in response, response
-
-    assert runtime.status is RuntimeStatus.STOPPED, runtime.status
-
-
-async def _run_cli_runtime() -> None:
-    from examples.code_review_agent import BASE_DIR, hermes_cli_config
-    from nemo_fabric import Fabric, RuntimeStatus
-
-    async with await Fabric().start_runtime(
-        hermes_cli_config(),
-        base_dir=BASE_DIR,
-    ) as runtime:
-        assert runtime.status is RuntimeStatus.ACTIVE, runtime.status
-
-        r1 = await runtime.invoke(input="My name is Robin. Please remember it for later.")
-        assert r1["status"] == "succeeded", r1
-        assert r1["output"]["mode"] == "hermes_cli_runtime", r1
-
-        r2 = await runtime.invoke(input="What is my name? Reply with just the name.")
-        assert r2["status"] == "succeeded", r2
-        assert r2["runtime_id"] == r1["runtime_id"], (r1, r2)
-
         response = (r2["output"].get("response") or "").lower()
         assert "robin" in response, response
 

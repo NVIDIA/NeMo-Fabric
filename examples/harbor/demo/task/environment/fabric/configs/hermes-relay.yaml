@@ -5,17 +5,16 @@ schema_version: fabric.agent/v1alpha1
 
 metadata:
   name: harbor-calculator-demo
-  description: Hermes CLI and Relay example in a Harbor task environment.
+  description: Hermes SDK and Relay example in a Harbor task environment.
 
 harness:
-  adapter_id: nvidia.fabric.hermes.cli
+  adapter_id: nvidia.fabric.hermes.sdk
   resolution: preinstalled
   settings:
     cwd: /app
     hermes_home: /tmp/fabric-hermes
     base_url: https://integrate.api.nvidia.com/v1
     max_iterations: 4
-    terminal_timeout: 120
 
 models:
   default:

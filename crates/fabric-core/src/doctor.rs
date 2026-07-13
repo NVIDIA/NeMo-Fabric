@@ -529,18 +529,24 @@ mod tests {
 
     #[test]
     fn binary_requirement_can_use_harness_command_setting() {
-        let plan = resolve_run_plan(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hermes-cli-agent"),
-            Some("env_local"),
-        )
-        .expect("run plan");
+        let mut plan =
+            resolve_run_plan(file_config_agent_dir(), Some("codex_cli")).expect("run plan");
+        plan.config.harness.settings.insert(
+            "codex_command".to_string(),
+            Value::String(
+                std::env::current_exe()
+                    .expect("current executable")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        );
 
         let report = doctor_plan(&plan);
 
         assert!(report.checks.iter().any(|check| {
             check.name == "requirement.binary"
                 && check.status == DoctorStatus::Pass
-                && check.message.contains("hermes_command")
+                && check.message.contains("codex_command")
         }));
     }
 

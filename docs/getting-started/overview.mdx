@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 NeMo Fabric is the harness-management layer that turns multiple agent runtimes
 into one configurable, observable execution surface. Applications use the same
 versioned config, lifecycle, result, artifact, and telemetry contracts whether
-the selected harness is Hermes SDK, Hermes CLI, Codex CLI, or a custom adapter.
+the selected harness is Hermes SDK, Codex CLI, or a custom adapter.
 
 Fabric owns the seam between an application and its harness. It resolves
 configuration, selects an adapter, drives the runtime lifecycle,
@@ -51,7 +51,7 @@ NeMo Fabric Rust core
         |
         |  resolved adapter contract
         v
-Hermes SDK | Hermes CLI | Codex CLI | custom harness
+Hermes SDK | Codex CLI | custom harness
         |
         v
 RunResult + artifacts + events + telemetry references
