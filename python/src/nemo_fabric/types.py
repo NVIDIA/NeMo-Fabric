@@ -381,9 +381,7 @@ class _ToolsConfig(_ConfigMapping):
         blocked: Sequence[str] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        if blocked is not None and (
-            isinstance(blocked, (str, bytes)) or not isinstance(blocked, Sequence)
-        ):
+        if blocked is not None and (isinstance(blocked, (str, bytes)) or not isinstance(blocked, Sequence)):
             raise FabricConfigError("tools blocked must be an ordered sequence of strings")
         values: dict[str, Any] = {"blocked": [_required_text(tool, "blocked tool") for tool in (blocked or [])]}
         super().__init__(values, extra_fields=extra_fields)

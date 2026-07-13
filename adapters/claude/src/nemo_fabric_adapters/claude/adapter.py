@@ -103,9 +103,7 @@ def _string_list(value: Any, *, name: str) -> list[str]:
     if value is None:
         return []
     if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
-        raise AdapterConfigError(
-            "claude_invalid_configuration", f"{name} must be a list of non-empty strings"
-        )
+        raise AdapterConfigError("claude_invalid_configuration", f"{name} must be a list of non-empty strings")
     return list(value)
 
 
@@ -187,9 +185,7 @@ def selected_model(payload: dict[str, Any]) -> str | None:
 
 
 def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
-    native = _mapping(
-        common_utils.capability_plan(payload), name="capability_plan"
-    ).get("native") or {}
+    native = _mapping(common_utils.capability_plan(payload), name="capability_plan").get("native") or {}
     servers = _mapping(native, name="capability_plan.native").get("mcp_servers") or {}
     result: dict[str, Any] = {}
     for name, raw in sorted(_mapping(servers, name="native MCP servers").items()):
@@ -208,18 +204,12 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
         elif transport == "sse":
             result[name] = {"type": "sse", "url": url}
         else:
-            raise AdapterConfigError(
-                "claude_invalid_configuration", f"unsupported MCP transport: {transport}"
-            )
+            raise AdapterConfigError("claude_invalid_configuration", f"unsupported MCP transport: {transport}")
     return result
 
 
-def _normalized_tools(
-    payload: dict[str, Any], *, include_skills: bool
-) -> list[str] | dict[str, Any] | None:
-    native = _mapping(
-        common_utils.capability_plan(payload), name="capability_plan"
-    ).get("native") or {}
+def _normalized_tools(payload: dict[str, Any], *, include_skills: bool) -> list[str] | dict[str, Any] | None:
+    native = _mapping(common_utils.capability_plan(payload), name="capability_plan").get("native") or {}
     if not _mapping(native, name="capability_plan.native").get("tools_configured"):
         return None
     tools = common_utils.fabric_config(payload).get("tools")
@@ -248,16 +238,10 @@ def _disallowed_tools(payload: dict[str, Any], settings: dict[str, Any]) -> list
 
 
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
-    native = _mapping(
-        common_utils.capability_plan(payload), name="capability_plan"
-    ).get("native") or {}
+    native = _mapping(common_utils.capability_plan(payload), name="capability_plan").get("native") or {}
     values = _mapping(native, name="capability_plan.native").get("skill_paths") or []
-    if not isinstance(values, list) or any(
-        not isinstance(value, (str, Path)) for value in values
-    ):
-        raise AdapterConfigError(
-            "claude_invalid_configuration", "native skill_paths must be a list of paths"
-        )
+    if not isinstance(values, list) or any(not isinstance(value, (str, Path)) for value in values):
+        raise AdapterConfigError("claude_invalid_configuration", "native skill_paths must be a list of paths")
     return [_resolve_path(payload, value) for value in values]
 
 
@@ -276,9 +260,7 @@ def _stage_skill_plugin(payload: dict[str, Any]) -> list[dict[str, str]]:
             )
         name = skill_path.name
         if name in names:
-            raise AdapterConfigError(
-                "claude_invalid_configuration", f"Fabric skill names must be unique: {name}"
-            )
+            raise AdapterConfigError("claude_invalid_configuration", f"Fabric skill names must be unique: {name}")
         names.add(name)
         skills.append((name, skill_path))
 
@@ -317,9 +299,7 @@ def build_options(payload: dict[str, Any], *, resume: str | None) -> ClaudeAgent
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:
         raise AdapterConfigError("claude_invalid_configuration", "permission_mode is invalid")
     max_turns = settings.get("max_turns")
-    if max_turns is not None and (
-        isinstance(max_turns, bool) or not isinstance(max_turns, int) or max_turns <= 0
-    ):
+    if max_turns is not None and (isinstance(max_turns, bool) or not isinstance(max_turns, int) or max_turns <= 0):
         raise AdapterConfigError("claude_invalid_configuration", "max_turns must be positive")
     max_budget = settings.get("max_budget_usd")
     if max_budget is not None:
@@ -392,14 +372,10 @@ def load_claude_session_id(payload: dict[str, Any], fabric_runtime_id: str) -> s
             raise ValueError("missing Claude session")
         return session_id
     except (OSError, ValueError, json.JSONDecodeError) as error:
-        raise AdapterStateError(
-            "claude_invalid_runtime_state", "Claude runtime state is invalid"
-        ) from error
+        raise AdapterStateError("claude_invalid_runtime_state", "Claude runtime state is invalid") from error
 
 
-def save_claude_session_id(
-    payload: dict[str, Any], fabric_runtime_id: str, claude_session_id: str
-) -> None:
+def save_claude_session_id(payload: dict[str, Any], fabric_runtime_id: str, claude_session_id: str) -> None:
     if not claude_session_id:
         raise AdapterStateError("claude_invalid_runtime_state", "Claude session ID is missing")
     path = runtime_state_path(payload, fabric_runtime_id)
@@ -434,13 +410,9 @@ def normalize_message(message: Message) -> dict[str, Any]:
     return {"type": type(message).__name__, "message": _json_safe(message)}
 
 
-def normalize_result(
-    payload: dict[str, Any], messages: list[Message], result: ResultMessage
-) -> dict[str, Any]:
+def normalize_result(payload: dict[str, Any], messages: list[Message], result: ResultMessage) -> dict[str, Any]:
     del payload
-    failed = bool(result.is_error) or (
-        isinstance(result.subtype, str) and result.subtype.startswith("error_")
-    )
+    failed = bool(result.is_error) or (isinstance(result.subtype, str) and result.subtype.startswith("error_"))
     error = None
     if failed:
         error = {
@@ -510,22 +482,14 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
 
 def child_environment(payload: dict[str, Any]) -> dict[str, str]:
     values = {name: "" for name in os.environ}
-    values.update(
-        {
-            name: value
-            for name in INHERITED_ENV_NAMES
-            if (value := os.environ.get(name))
-        }
-    )
+    values.update({name: value for name in INHERITED_ENV_NAMES if (value := os.environ.get(name))})
     model = _selected_model_config(payload)
     api_key_env = model.get("api_key_env")
     if isinstance(api_key_env, str) and api_key_env in os.environ:
         values[api_key_env] = os.environ[api_key_env]
     configured = _mapping(_settings(payload).get("env"), name="harness.settings.env")
     if any(not isinstance(key, str) or not isinstance(value, str) for key, value in configured.items()):
-        raise AdapterConfigError(
-            "claude_invalid_configuration", "harness.settings.env must contain strings"
-        )
+        raise AdapterConfigError("claude_invalid_configuration", "harness.settings.env must contain strings")
     values.update(configured)
     return values
 
@@ -565,18 +529,14 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     except ClaudeAdapterError as error:
         return adapter_failure(error)
     except Exception:  # Adapter boundary must always return normalized JSON.
-        return _failure(
-            "claude_adapter_internal_error", "Claude adapter failed unexpectedly"
-        )
+        return _failure("claude_adapter_internal_error", "Claude adapter failed unexpectedly")
 
 
 def main() -> None:
     try:
         payload = common_utils.load_payload()
     except Exception:  # Malformed invocation input must still satisfy the process contract.
-        output = _failure(
-            "claude_adapter_internal_error", "Claude adapter failed unexpectedly"
-        )
+        output = _failure("claude_adapter_internal_error", "Claude adapter failed unexpectedly")
     else:
         output = run(payload)
     print(json.dumps(output, sort_keys=True))

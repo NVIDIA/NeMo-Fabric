@@ -44,9 +44,7 @@ def virtualenv_subprocess_env() -> dict[str, str]:
     scripts = virtualenv / ("Scripts" if os.name == "nt" else "bin")
     path = env.get("PATH")
     env["VIRTUAL_ENV"] = str(virtualenv)
-    env["PATH"] = os.pathsep.join(
-        part for part in (str(scripts), path) if part
-    )
+    env["PATH"] = os.pathsep.join(part for part in (str(scripts), path) if part)
     env.pop("PYTHONHOME", None)
     return env
 

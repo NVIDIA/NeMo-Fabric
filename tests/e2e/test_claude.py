@@ -48,9 +48,7 @@ def fabric_config(tmp_path, *, cli_path=None):
             resolution="preinstalled",
             settings=settings,
         ),
-        models={
-            "default": ModelConfig(provider="anthropic", model="claude-test-model")
-        },
+        models={"default": ModelConfig(provider="anthropic", model="claude-test-model")},
         runtime=RuntimeConfig(artifacts=tmp_path / "artifacts"),
         environment=EnvironmentConfig(
             provider="local",
@@ -85,10 +83,7 @@ async def test_fabric_session_launches_fresh_processes_and_resumes(tmp_path):
     assert first.output["usage"] == {"input_tokens": 1, "output_tokens": 2}
     assert first.output["cost_usd"] == 0.001
     assert [event["type"] for event in first.output["events"]] == ["AssistantMessage"]
-    arguments = [
-        json.loads(line)
-        for line in (tmp_path / "claude-args.jsonl").read_text().splitlines()
-    ]
+    arguments = [json.loads(line) for line in (tmp_path / "claude-args.jsonl").read_text().splitlines()]
     assert len(arguments) == 2
     assert "--resume" not in arguments[0]
     assert arguments[1][arguments[1].index("--resume") + 1] == SESSION_ID
@@ -113,9 +108,7 @@ async def test_live_claude_one_shot_and_session(tmp_path):
     assert one_shot.status == "succeeded"
 
     session_root = tmp_path / "session"
-    async with await fabric.start_runtime(
-        fabric_config(session_root), base_dir=session_root
-    ) as session:
+    async with await fabric.start_runtime(fabric_config(session_root), base_dir=session_root) as session:
         first = await session.invoke(input="Remember token FABRIC-CONTINUITY-7")
         second = await session.invoke(input="Reply only with the token I asked you to remember")
     assert first.status == second.status == "succeeded"

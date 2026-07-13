@@ -273,9 +273,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
     artifacts = [{"kind": "atof", "path": str(tmp_path / "events.atof.jsonl")}]
-    monkeypatch.setattr(
-        adapter.common_utils, "load_relay_plugin_config", lambda _p: {"version": 1, "components": []}
-    )
+    monkeypatch.setattr(adapter.common_utils, "load_relay_plugin_config", lambda _p: {"version": 1, "components": []})
     monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
     monkeypatch.setattr(adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts)
     payload = make_payload(tmp_path)
@@ -303,9 +301,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     assert "relay-mw" in fake_sdks["create_kwargs"]["middleware"]
 
 
-async def test_native_telemetry_exports_without_artifacts(
-    tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
-):
+async def test_native_telemetry_exports_without_artifacts(tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay):
     monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
 
     payload = make_payload(tmp_path)
@@ -357,9 +353,7 @@ async def test_workspace_roots_filesystem_backend(tmp_path, make_payload, fake_s
     assert backend_kwargs["virtual_mode"] is True
 
 
-async def test_checkpointer_closed_on_success_and_failure(
-    tmp_path, make_payload, monkeypatch, fake_sdks
-):
+async def test_checkpointer_closed_on_success_and_failure(tmp_path, make_payload, monkeypatch, fake_sdks):
     # The async checkpointer must be closed on both the success and error paths.
     await adapter.run_deepagents(make_payload(tmp_path))
     assert fake_sdks["saver_exits"] == 1
@@ -375,9 +369,7 @@ async def test_checkpointer_closed_on_success_and_failure(
     assert fake_sdks["saver_exits"] == 2
 
 
-async def test_mcp_servers_become_tools_filtered_by_allowed(
-    tmp_path, make_payload, monkeypatch, fake_sdks
-):
+async def test_mcp_servers_become_tools_filtered_by_allowed(tmp_path, make_payload, monkeypatch, fake_sdks):
     tool_read = MagicMock()
     tool_read.name = "read_file"
     tool_write = MagicMock()
@@ -665,9 +657,7 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload, fake
 async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):
     # Documented JSON-serializable options reach create_deep_agent unchanged.
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
-        "interrupt_on": {"write_file": True}
-    }
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {"interrupt_on": {"write_file": True}}
 
     await adapter.run_deepagents(payload)
 
@@ -678,9 +668,7 @@ async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(tmp_path
     # Overriding a Fabric-owned key (here backend) would defeat workspace confinement;
     # it must fail loudly rather than silently replacing the derived value.
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
-        "backend": {"root_dir": "/etc"}
-    }
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {"backend": {"root_dir": "/etc"}}
 
     output = await adapter.run_deepagents(payload)
 
@@ -770,9 +758,7 @@ async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):
 
 async def test_empty_mcp_url_is_normalized_failure(tmp_path, make_payload):
     payload = make_payload(tmp_path)
-    payload["capability_plan"] = {
-        "native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}
-    }
+    payload["capability_plan"] = {"native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}}
 
     output = await adapter.run_deepagents(payload)
 
@@ -796,9 +782,7 @@ async def test_unknown_provider_requires_api_key_env(tmp_path, make_payload, mon
     assert "api_key_env" in output["error"]
 
 
-async def test_openai_provider_defaults_to_openai_key(
-    tmp_path, make_payload, monkeypatch, fake_sdks
-):
+async def test_openai_provider_defaults_to_openai_key(tmp_path, make_payload, monkeypatch, fake_sdks):
     # provider openai with no explicit api_key_env defaults to OPENAI_API_KEY, never
     # NVIDIA_API_KEY, and keeps ChatOpenAI's own endpoint.
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)

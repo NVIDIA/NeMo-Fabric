@@ -11,6 +11,17 @@
     "binaries": ["codex"]
   },
   "config": {
-    "accepts": ["models"]
+    "accepts": ["models", "telemetry"]
+  },
+  "telemetry": {
+    "providers": {
+      "relay": {
+        "outputs": ["atif", "otel", "openinference"],
+        "integration_modes": ["hooks", "gateway"]
+      },
+      "native": {
+        "outputs": ["otel"]
+      }
+    }
   }
 }

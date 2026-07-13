@@ -24,6 +24,7 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['*']
 
 concurrency:
   group: ci-python-${{ inputs.ref || github.ref }}

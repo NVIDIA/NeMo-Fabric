@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import FabricConfig
@@ -15,7 +14,6 @@ from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
-from nemo_fabric import RelayConfig
 from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RelayOtlpConfig
 from nemo_fabric import RuntimeConfig
@@ -270,9 +268,11 @@ def with_relay_openinference(base: FabricConfig) -> FabricConfig:
     config = with_relay(base)
     assert config.telemetry is not None
     assert config.relay is not None
-    relay = cast("RelayConfig", config.relay)
+    relay = config.relay
+    assert not isinstance(relay, dict)
     assert relay.observability is not None
-    observability = cast("RelayObservabilityConfig", relay.observability)
+    observability = relay.observability
+    assert not isinstance(observability, dict)
 
     relay.output_dir = "./artifacts/relay-openinference"
     observability.openinference = RelayOtlpConfig(
@@ -280,10 +280,10 @@ def with_relay_openinference(base: FabricConfig) -> FabricConfig:
         transport="http_binary",
         endpoint="http://localhost:6006/v1/traces",
     )
-    atif = cast("RelayAtifConfig", observability.atif)
-    atof = cast("RelayAtofConfig", observability.atof)
-    atif.output_directory = "./artifacts/relay-openinference"
-    atof.output_directory = "./artifacts/relay-openinference"
+    if isinstance(observability.atif, RelayAtifConfig):
+        observability.atif.output_directory = "./artifacts/relay-openinference"
+    if isinstance(observability.atof, RelayAtofConfig):
+        observability.atof.output_directory = "./artifacts/relay-openinference"
     return config
 
 

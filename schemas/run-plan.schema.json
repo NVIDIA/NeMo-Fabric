@@ -165,16 +165,37 @@
       },
       "type": "object"
     },
-    "AdapterTelemetrySupport": {
+    "AdapterTelemetryProviderSupport": {
       "additionalProperties": true,
-      "description": "Adapter telemetry support.",
+      "description": "Telemetry capabilities for one adapter-supported provider.",
       "properties": {
-        "supports": {
-          "description": "Telemetry outputs supported by this adapter.",
+        "integration_modes": {
+          "description": "Integration modes implemented by the adapter for this provider.",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "outputs": {
+          "description": "Telemetry outputs the adapter can produce or forward for this provider.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "AdapterTelemetrySupport": {
+      "additionalProperties": true,
+      "description": "Adapter telemetry support.",
+      "properties": {
+        "providers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AdapterTelemetryProviderSupport"
+          },
+          "description": "Provider-specific telemetry capabilities supported by this adapter.",
+          "type": "object"
         }
       },
       "type": "object"

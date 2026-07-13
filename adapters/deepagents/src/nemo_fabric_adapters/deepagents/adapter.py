@@ -69,9 +69,7 @@ def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) 
     provider = (settings.get("provider") or model_config.get("provider") or "").lower()
     default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
     if default is None:
-        raise AdapterConfigError(
-            f"models.default.api_key_env is required for provider '{provider}'."
-        )
+        raise AdapterConfigError(f"models.default.api_key_env is required for provider '{provider}'.")
     return default
 
 
@@ -128,9 +126,7 @@ def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 def resolve_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
     base_url = (
-        settings.get("base_url")
-        or (model_config.get("settings") or {}).get("base_url")
-        or model_config.get("base_url")
+        settings.get("base_url") or (model_config.get("settings") or {}).get("base_url") or model_config.get("base_url")
     )
     if base_url:
         return base_url
@@ -223,8 +219,7 @@ def _allowed_tool_names(payload: dict[str, Any]) -> set[str] | None:
         return None
     if not isinstance(tools, (list, str)):
         raise AdapterConfigError(
-            "config.tools must be a list of tool names (a deny/allow-list), "
-            f"not {type(tools).__name__}."
+            f"config.tools must be a list of tool names (a deny/allow-list), not {type(tools).__name__}."
         )
     return set(common_utils.normalize_list(tools))
 
@@ -320,9 +315,7 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
     if transport in ("", "http", "streamable_http", "streamablehttp"):
         transport = "streamable_http"
     if transport not in VALID_MCP_TRANSPORTS:
-        raise AdapterConfigError(
-            f"MCP server '{name}' has unsupported transport '{transport}'."
-        )
+        raise AdapterConfigError(f"MCP server '{name}' has unsupported transport '{transport}'.")
     return {"transport": transport, "url": target}
 
 
@@ -359,9 +352,7 @@ def load_thread_id(payload: dict[str, Any], runtime_id: str) -> str | None:
     if not json_path.is_file():
         return None
     value = json.loads(json_path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get(
-        "thread_id"
-    ):
+    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get("thread_id"):
         raise RuntimeError(f"invalid Deep Agents runtime state in {json_path}")
     return str(value["thread_id"])
 
@@ -371,9 +362,7 @@ def save_thread_id(payload: dict[str, Any], runtime_id: str, thread_id: str) -> 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     invocation_id = common_utils.runtime_context(payload).get("invocation_id") or "pending"
     tmp = json_path.with_suffix(f".{invocation_id}.tmp")
-    tmp.write_text(
-        json.dumps({"runtime_id": runtime_id, "thread_id": thread_id}, indent=2), encoding="utf-8"
-    )
+    tmp.write_text(json.dumps({"runtime_id": runtime_id, "thread_id": thread_id}, indent=2), encoding="utf-8")
     os.replace(tmp, json_path)
 
 
@@ -403,9 +392,7 @@ async def close_checkpointer(checkpointer: Any) -> None:
 # --- invocation ------------------------------------------------------------
 
 
-async def build_agent_kwargs(
-    payload: dict[str, Any], model: Any, settings: dict[str, Any]
-) -> dict[str, Any]:
+async def build_agent_kwargs(payload: dict[str, Any], model: Any, settings: dict[str, Any]) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
         "tools": await resolve_tools(payload),
@@ -453,8 +440,7 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
 
     if not isinstance(extra, dict):
         raise AdapterConfigError(
-            "harness.settings.deepagents must be a mapping of JSON-serializable options, "
-            f"not {type(extra).__name__}."
+            f"harness.settings.deepagents must be a mapping of JSON-serializable options, not {type(extra).__name__}."
         )
     reserved = sorted(FABRIC_OWNED_AGENT_KEYS.intersection(extra))
     if reserved:
@@ -534,13 +520,9 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
 
             wrapped = add_nemo_relay_integration(agent_kwargs)
             async with plugin.plugin(api_config):
-                result_state, events, turn_messages = await invoke_agent(
-                    wrapped, user_message, thread_id
-                )
+                result_state, events, turn_messages = await invoke_agent(wrapped, user_message, thread_id)
         else:
-            result_state, events, turn_messages = await invoke_agent(
-                agent_kwargs, user_message, thread_id
-            )
+            result_state, events, turn_messages = await invoke_agent(agent_kwargs, user_message, thread_id)
     except Exception as exc:  # normalized adapter failure
         error = f"{type(exc).__name__}: {exc}"
     finally:

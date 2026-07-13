@@ -136,6 +136,6 @@ async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
   ATOF/ATIF artifacts referenced in the `ArtifactManifest`. OTel/OpenInference
   export is available through the relay plugin config (see the `relay-otel` and
   `relay-openinference` profiles).
-- **Native** (`telemetry.providers.native.config`): the configured
+- **Native** (`telemetry.providers.native.config`): the provider config
   OpenTelemetry/OpenInference exporter is applied and spans export directly to
   the configured collector, without writing ATOF/ATIF relay artifacts.

@@ -4,7 +4,7 @@
 //! Fabric config models and loading helpers.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -372,10 +372,24 @@ pub struct AdapterConfigSupport {
 /// Adapter telemetry support.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterTelemetrySupport {
-    /// Telemetry outputs supported by this adapter.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub supports: Vec<String>,
+    /// Provider-specific telemetry capabilities supported by this adapter.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub providers: BTreeMap<TelemetryProvider, AdapterTelemetryProviderSupport>,
     /// Additive adapter telemetry fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Telemetry capabilities for one adapter-supported provider.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterTelemetryProviderSupport {
+    /// Telemetry outputs the adapter can produce or forward for this provider.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outputs: Vec<String>,
+    /// Integration modes implemented by the adapter for this provider.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub integration_modes: Vec<String>,
+    /// Additive provider capability fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
@@ -1306,7 +1320,7 @@ pub fn resolve_run_plan_from_effective_config(
     let capability_plan =
         resolve_capability_plan(&config, &config_root, adapter_descriptor.as_ref());
     let capabilities = resolve_runtime_capabilities(&config, descriptor);
-    let telemetry_plan = resolve_telemetry_plan(&config, descriptor);
+    let telemetry_plan = resolve_telemetry_plan(&config, descriptor)?;
     Ok(RunPlan {
         agent_name: effective_config.agent_name.clone(),
         profiles: effective_config.profiles.clone(),
@@ -1696,10 +1710,12 @@ fn mcp_exposure_name(exposure: McpExposure) -> &'static str {
 fn resolve_telemetry_plan(
     config: &FabricConfig,
     adapter_descriptor: Option<&AdapterDescriptor>,
-) -> Option<TelemetryPlan> {
-    let telemetry = config.telemetry.as_ref()?;
+) -> Result<Option<TelemetryPlan>> {
+    let Some(telemetry) = config.telemetry.as_ref() else {
+        return Ok(None);
+    };
     if telemetry.providers.is_empty() {
-        return None;
+        return Ok(None);
     }
     let relay_provider = telemetry.providers.get(&TelemetryProvider::Relay);
     let native_provider = telemetry.providers.get(&TelemetryProvider::Native);
@@ -1708,8 +1724,30 @@ fn resolve_telemetry_plan(
     let providers = [TelemetryProvider::Relay, TelemetryProvider::Native]
         .into_iter()
         .filter(|provider| telemetry.providers.contains_key(provider))
-        .collect();
-    Some(TelemetryPlan {
+        .collect::<Vec<_>>();
+    if let Some(descriptor) = adapter_descriptor {
+        for provider in &providers {
+            if !descriptor.telemetry.providers.contains_key(provider) {
+                return Err(FabricError::AdapterDescriptorUnsupported {
+                    adapter_id: descriptor.adapter_id.clone(),
+                    field: "telemetry.providers",
+                    value: provider.as_str().to_string(),
+                });
+            }
+        }
+    }
+    let adapter_outputs = adapter_descriptor
+        .map(|descriptor| {
+            providers
+                .iter()
+                .filter_map(|provider| descriptor.telemetry.providers.get(provider))
+                .flat_map(|support| support.outputs.iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(Some(TelemetryPlan {
         providers,
         relay_enabled,
         relay_project: relay_enabled
@@ -1722,10 +1760,8 @@ fn resolve_telemetry_plan(
             .then(|| resolve_relay_plugin_config(relay))
             .flatten(),
         native_config: native_provider.and_then(|provider| provider.config.clone()),
-        adapter_outputs: adapter_descriptor
-            .map(|descriptor| descriptor.telemetry.supports.clone())
-            .unwrap_or_default(),
-    })
+        adapter_outputs,
+    }))
 }
 
 fn resolve_relay_plugin_config(relay: Option<&RelayConfig>) -> Option<Value> {
@@ -2113,7 +2149,9 @@ telemetry:
         .expect("config with relay telemetry provider");
 
         let telemetry = config.telemetry.as_ref().expect("telemetry config");
-        let plan = resolve_telemetry_plan(&config, None).expect("telemetry plan");
+        let plan = resolve_telemetry_plan(&config, None)
+            .expect("resolve telemetry plan")
+            .expect("telemetry plan");
 
         assert!(telemetry.providers.contains_key(&TelemetryProvider::Relay));
         assert_eq!(plan.providers, vec![TelemetryProvider::Relay]);
@@ -2143,7 +2181,9 @@ relay:
         )
         .expect("config with native telemetry provider");
 
-        let plan = resolve_telemetry_plan(&config, None).expect("telemetry plan");
+        let plan = resolve_telemetry_plan(&config, None)
+            .expect("resolve telemetry plan")
+            .expect("telemetry plan");
 
         assert_eq!(plan.providers, vec![TelemetryProvider::Native]);
         assert!(!plan.relay_enabled);
@@ -2197,7 +2237,9 @@ relay:
         )
         .expect("config with typed relay telemetry");
 
-        let plan = resolve_telemetry_plan(&config, None).expect("telemetry plan");
+        let plan = resolve_telemetry_plan(&config, None)
+            .expect("resolve telemetry plan")
+            .expect("telemetry plan");
         let relay_config = plan.relay_config.expect("relay plugin config");
 
         assert_eq!(plan.relay_project.as_deref(), Some("typed-project"));
@@ -2246,6 +2288,90 @@ providers:
     }
 
     #[test]
+    fn telemetry_plan_rejects_provider_not_declared_by_adapter() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.claude
+runtime:
+telemetry:
+  providers:
+    relay: {}
+"#,
+        )
+        .expect("config with relay telemetry provider");
+        let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
+            "contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_id": "nvidia.fabric.claude",
+            "harness": "claude",
+            "adapter_kind": "python"
+        }))
+        .expect("adapter descriptor");
+
+        let error = resolve_telemetry_plan(&config, Some(&descriptor))
+            .expect_err("unsupported relay provider");
+
+        assert!(matches!(
+            error,
+            FabricError::AdapterDescriptorUnsupported {
+                adapter_id,
+                field: "telemetry.providers",
+                value,
+            } if adapter_id == "nvidia.fabric.claude" && value == "relay"
+        ));
+    }
+
+    #[test]
+    fn telemetry_plan_uses_outputs_for_selected_adapter_providers() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.codex.cli
+runtime:
+telemetry:
+  providers:
+    relay: {}
+    native: {}
+"#,
+        )
+        .expect("config with relay and native telemetry providers");
+        let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
+            "contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_id": "nvidia.fabric.codex.cli",
+            "harness": "codex",
+            "adapter_kind": "python",
+            "telemetry": {
+                "providers": {
+                    "relay": {
+                        "outputs": ["atif", "otel"],
+                        "integration_modes": ["hooks", "gateway"]
+                    },
+                    "native": {
+                        "outputs": ["otel"]
+                    }
+                }
+            }
+        }))
+        .expect("adapter descriptor");
+
+        let plan = resolve_telemetry_plan(&config, Some(&descriptor))
+            .expect("resolve telemetry plan")
+            .expect("telemetry plan");
+
+        assert_eq!(
+            plan.providers,
+            vec![TelemetryProvider::Relay, TelemetryProvider::Native]
+        );
+        assert_eq!(plan.adapter_outputs, vec!["atif", "otel"]);
+    }
+
+    #[test]
     fn loads_adapter_descriptor() {
         let descriptor =
             load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
@@ -2269,7 +2395,12 @@ providers:
             Some("run")
         );
         assert!(descriptor.config.accepts.contains(&"telemetry".to_string()));
-        assert!(descriptor.telemetry.supports.contains(&"relay".to_string()));
+        let relay = descriptor
+            .telemetry
+            .providers
+            .get(&TelemetryProvider::Relay)
+            .expect("relay telemetry support");
+        assert!(relay.outputs.contains(&"atif".to_string()));
     }
 
     #[test]

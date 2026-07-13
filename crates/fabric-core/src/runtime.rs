@@ -2088,6 +2088,23 @@ environment:
     fn native_telemetry_skips_relay_and_reaches_adapter_payload() {
         let root = temp_process_agent_dir();
         let config_path = root.join("agent.yaml");
+        fs::write(
+            root.join("adapters/process/fabric-adapter.json"),
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.process",
+  "harness": "process",
+  "adapter_kind": "process",
+  "telemetry": {
+    "providers": {
+      "native": {
+        "outputs": ["otel"]
+      }
+    }
+  }
+}"#,
+        )
+        .expect("write adapter telemetry support");
         let mut config = fs::read_to_string(&config_path).expect("read agent config");
         config.push_str(
             r#"

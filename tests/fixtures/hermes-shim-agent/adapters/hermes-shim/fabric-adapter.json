@@ -20,7 +20,13 @@
     "accepts": [
       "tools",
       "mcp",
-      "skills"
+      "skills",
+      "telemetry"
     ]
+  },
+  "telemetry": {
+    "providers": {
+      "relay": {}
+    }
   }
 }

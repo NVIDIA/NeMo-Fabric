@@ -23,15 +23,7 @@ from claude_agent_sdk import TextBlock
 from claude_agent_sdk._errors import MessageParseError
 
 ROOT = Path(__file__).resolve().parents[2]
-ADAPTER_PATH = (
-    ROOT
-    / "adapters"
-    / "claude"
-    / "src"
-    / "nemo_fabric_adapters"
-    / "claude"
-    / "adapter.py"
-)
+ADAPTER_PATH = ROOT / "adapters" / "claude" / "src" / "nemo_fabric_adapters" / "claude" / "adapter.py"
 
 
 def load_claude_adapter():
@@ -176,9 +168,7 @@ def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
         ("skills", "FabricConfig.skills"),
     ],
 )
-def test_build_options_rejects_normalized_capabilities_in_harness_settings(
-    claude_payload, name, normalized_field
-):
+def test_build_options_rejects_normalized_capabilities_in_harness_settings(claude_payload, name, normalized_field):
     claude_payload["effective_config"]["config"]["harness"]["settings"][name] = []
 
     with pytest.raises(adapter.AdapterConfigError, match=normalized_field.replace(".", r"\.")):
@@ -310,9 +300,7 @@ async def test_run_claude_resumes_and_persists_session(claude_payload, monkeypat
     assert os.environ["FABRIC_UNRELATED_SECRET"] == "do-not-forward"
 
 
-def test_build_options_forwards_default_anthropic_api_key(
-    claude_payload, monkeypatch
-):
+def test_build_options_forwards_default_anthropic_api_key(claude_payload, monkeypatch):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model.pop("api_key_env")
     settings = claude_payload["effective_config"]["config"]["harness"]["settings"]

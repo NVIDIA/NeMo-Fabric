@@ -2,18 +2,22 @@
 title: "Struct Capability Plan"
 sidebar-title: "CapabilityPlan"
 description: "Resolved capability configuration."
-position: 8
+position: 9
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct CapabilityPlan &#123;\n    pub tools_configured: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub skill_paths: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub mcp_servers: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-mcpserverplan\">McpServerPlan</a>&gt;,\n    pub native: <a href=\"struct-capabilitytargetplan\">CapabilityTargetPlan</a>,\n    pub managed: <a href=\"struct-capabilitytargetplan\">CapabilityTargetPlan</a>,\n    pub unsupported: <a href=\"struct-capabilitytargetplan\">CapabilityTargetPlan</a>,\n    pub routes: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-capabilityroute\">CapabilityRoute</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct CapabilityPlan &#123;\n    pub tools: <a href=\"struct-toolsplan\">ToolsPlan</a>,\n    pub tools_configured: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub skill_paths: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub mcp_servers: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-mcpserverplan\">McpServerPlan</a>&gt;,\n    pub native: <a href=\"struct-capabilitytargetplan\">CapabilityTargetPlan</a>,\n    pub managed: <a href=\"struct-capabilitytargetplan\">CapabilityTargetPlan</a>,\n    pub unsupported: <a href=\"struct-capabilitytargetplan\">CapabilityTargetPlan</a>,\n    pub routes: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"struct-capabilityroute\">CapabilityRoute</a>&gt;,\n&#125;"}} /></pre>
 
 Resolved capability configuration.
 
 ## Fields
+
+### `tools: ToolsPlan`
+
+Normalized tool policy.
 
 ### `tools_configured: bool`
 

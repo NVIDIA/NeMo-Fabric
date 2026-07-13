@@ -274,6 +274,29 @@ def test_fabric_config_authors_first_class_relay_observability():
     }
 
 
+def test_fabric_config_enable_relay_preserves_omitted_fields():
+    config = _fabric_config()
+
+    config.enable_relay(
+        project="fabric-tests",
+        output_dir="./artifacts/relay",
+        observability={"atif": {"enabled": True}},
+        components=[{"kind": "switchyard"}],
+    )
+    initial = config.to_mapping()["relay"]
+    config.enable_relay(policy={"unknown_component": "error"})
+
+    relay = config.to_mapping()["relay"]
+    assert relay["project"] == initial["project"]
+    assert relay["output_dir"] == initial["output_dir"]
+    assert relay["observability"] == initial["observability"]
+    assert relay["components"] == initial["components"]
+    assert relay["policy"]["unknown_component"] == "error"
+
+    config.enable_relay(components=[])
+    assert config.to_mapping()["relay"]["components"] == []
+
+
 def test_telemetry_config_enable_native_preserves_existing_config():
     telemetry = TelemetryConfig()
 
@@ -865,9 +888,7 @@ def test_run_output_exposes_response_and_preserves_extensions():
 
 
 def test_run_result_wraps_object_output_as_run_output():
-    result = RunResult.from_mapping(
-        _run_result(output={"response": "hello", "usage": {"tokens": 1}})
-    )
+    result = RunResult.from_mapping(_run_result(output={"response": "hello", "usage": {"tokens": 1}}))
 
     assert isinstance(result.output, RunOutput)
     assert result.output.response == "hello"
@@ -903,9 +924,7 @@ def test_run_output_preserves_non_string_response_without_raising():
 
 
 def test_run_result_preserves_structured_response_from_core_valid_output():
-    result = RunResult.from_mapping(
-        _run_result(output={"response": {"text": "hello"}, "usage": {"tokens": 1}})
-    )
+    result = RunResult.from_mapping(_run_result(output={"response": {"text": "hello"}, "usage": {"tokens": 1}}))
 
     assert isinstance(result.output, RunOutput)
     assert result.output.response == {"text": "hello"}
