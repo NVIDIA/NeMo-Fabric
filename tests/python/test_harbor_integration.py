@@ -15,9 +15,6 @@ from typing import Any
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "python" / "src"))
-
 
 def install_harbor_stubs() -> None:
     """Install minimal Harbor stubs for this smoke when Harbor is not present."""
