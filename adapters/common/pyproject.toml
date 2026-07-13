@@ -11,9 +11,16 @@ build-backend = "setuptools.build_meta"
 name = "nemo-fabric-adapters-common"
 version = "0.1.0"
 description = "Shared Python helpers for NeMo Fabric adapters"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/nemo-fabric/"
+Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
 
 [tool.setuptools.packages.find]
 where = ["src"]

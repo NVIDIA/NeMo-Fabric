@@ -11,6 +11,9 @@ build-backend = "setuptools.build_meta"
 name = "nemo-fabric-adapters-hermes-cli"
 version = "0.1.0"
 description = "Hermes CLI adapter for NeMo Fabric"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "README.md"
@@ -20,6 +23,10 @@ dependencies = [
   "pyyaml>=6.0", # needed for writing hermes config files
   "tomli-w~=1.2", # Needed by adapters to write relay config files
 ]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/nemo-fabric/"
+Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
 
 [tool.setuptools.packages.find]
 where = ["src"]

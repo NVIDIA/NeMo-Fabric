@@ -8,6 +8,9 @@ build-backend = "maturin"
 [project]
 name = "nemo-fabric-runtime"
 description = "Python SDK and native bindings for NeMo Fabric"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
@@ -16,6 +19,10 @@ dependencies = [
   "typing-extensions>=4.12",
 ]
 dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/nemo-fabric/"
+Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
 
 [tool.maturin]
 manifest-path = "../crates/fabric-python/Cargo.toml"

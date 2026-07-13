@@ -11,6 +11,9 @@ build-backend = "setuptools.build_meta"
 name = "nemo-fabric-adapters-claude"
 version = "0.1.0"
 description = "Claude adapter for NeMo Fabric"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "README.md"
@@ -19,6 +22,10 @@ dependencies = [
   "nemo-fabric-adapters-common == 0.1.0",
   "claude-agent-sdk==0.2.114",
 ]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/nemo-fabric/"
+Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
 
 [tool.setuptools.packages.find]
 where = ["src"]
