@@ -28,23 +28,19 @@ environment:
   workspace: /testbed
   artifacts: /logs/agent/fabric-artifacts/swebench/hermes-relay
 telemetry:
-  enabled: true
-  provider: relay
+  providers:
+    relay: {}
+
+relay:
   output_dir: /logs/agent/fabric-artifacts/swebench/hermes-relay/relay
-  config:
-    version: 1
-    components:
-      - kind: observability
-        enabled: true
-        config:
-          version: 1
-          atif:
-            enabled: true
-            output_directory: /logs/agent/fabric-artifacts/swebench/hermes-relay/relay
-            filename_template: trajectory-{session_id}.atif.json
-            agent_name: harbor-swebench-hermes
-          atof:
-            enabled: true
-            output_directory: /logs/agent/fabric-artifacts/swebench/hermes-relay/relay
-            filename: events.atof.jsonl
-            mode: overwrite
+  observability:
+    atif:
+      enabled: true
+      output_directory: /logs/agent/fabric-artifacts/swebench/hermes-relay/relay
+      filename_template: trajectory-{session_id}.atif.json
+      agent_name: harbor-swebench-hermes
+    atof:
+      enabled: true
+      output_directory: /logs/agent/fabric-artifacts/swebench/hermes-relay/relay
+      filename: events.atof.jsonl
+      mode: overwrite
