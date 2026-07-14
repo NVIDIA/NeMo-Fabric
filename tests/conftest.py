@@ -15,6 +15,15 @@ REPO_ROOT = CUR_DIR.parent.resolve()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+
+@pytest.fixture(name="requires_harbor", scope="session")
+def requires_harbor_fixture():
+    try:
+        import harbor  # noqa: F401
+    except ModuleNotFoundError:
+        pytest.skip("Harbor is not installed")
+
+
 @pytest.fixture(name="restore_environ", autouse=True)
 def restore_environ_fixture():
     """

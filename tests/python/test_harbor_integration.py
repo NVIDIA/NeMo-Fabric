@@ -15,62 +15,9 @@ from typing import Any
 
 import pytest
 
-
-def install_harbor_stubs() -> None:
-    """Install minimal Harbor stubs for this smoke when Harbor is not present."""
-
-    class BaseAgent:
-        def __init__(self, logs_dir: Path, *args: Any, **kwargs: Any) -> None:
-            self.logs_dir = logs_dir
-            self.model_name = kwargs.get("model_name")
-            self.skills_dir = kwargs.get("skills_dir")
-            self.mcp_servers = kwargs.get("mcp_servers", [])
-            self.extra_env = kwargs.get("extra_env")
-
-    class BaseEnvironment:
-        pass
-
-    class AgentContext:
-        def __init__(self) -> None:
-            self.metadata: dict[str, Any] | None = None
-
-    class MCPServerConfig:
-        def __init__(
-            self,
-            *,
-            name: str,
-            transport: str,
-            url: str | None = None,
-            command: str | None = None,
-            args: list[str] | None = None,
-        ) -> None:
-            self.name = name
-            self.transport = transport
-            self.url = url
-            self.command = command
-            self.args = args or []
-
-        def model_dump(self, *, mode: str) -> dict[str, Any]:
-            assert mode == "python"
-            return vars(self)
-
-    modules = {
-        "harbor": types.ModuleType("harbor"),
-        "harbor.agents": types.ModuleType("harbor.agents"),
-        "harbor.agents.base": types.ModuleType("harbor.agents.base"),
-        "harbor.environments": types.ModuleType("harbor.environments"),
-        "harbor.environments.base": types.ModuleType("harbor.environments.base"),
-        "harbor.models": types.ModuleType("harbor.models"),
-        "harbor.models.agent": types.ModuleType("harbor.models.agent"),
-        "harbor.models.agent.context": types.ModuleType("harbor.models.agent.context"),
-        "harbor.models.task": types.ModuleType("harbor.models.task"),
-        "harbor.models.task.config": types.ModuleType("harbor.models.task.config"),
-    }
-    modules["harbor.agents.base"].BaseAgent = BaseAgent
-    modules["harbor.environments.base"].BaseEnvironment = BaseEnvironment
-    modules["harbor.models.agent.context"].AgentContext = AgentContext
-    modules["harbor.models.task.config"].MCPServerConfig = MCPServerConfig
-    sys.modules.update(modules)
+@pytest.fixture(name="requires_harbor", scope="session", autouse=True)
+def requires_harbor_fixture(requires_harbor):
+    yield requires_harbor
 
 
 try:
@@ -78,10 +25,7 @@ try:
     from harbor.models.agent.context import AgentContext
     from harbor.models.task.config import MCPServerConfig
 except ImportError:
-    install_harbor_stubs()
-    from nemo_fabric.integrations.harbor import FabricAgent
-    from harbor.models.agent.context import AgentContext
-    from harbor.models.task.config import MCPServerConfig
+    pass
 
 
 @dataclass
