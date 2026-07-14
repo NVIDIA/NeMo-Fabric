@@ -2173,7 +2173,7 @@ schema_version: fabric.agent/v1alpha1
 metadata:
   name: demo
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
 runtime:
 telemetry:
   providers:
