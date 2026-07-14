@@ -603,6 +603,65 @@ async def test_run_claude_preserves_result_when_relay_stop_fails(
     assert not relay.plugin_path.exists()
 
 
+async def test_run_claude_preserves_result_when_relay_plugin_cleanup_fails(
+    relay_payload, monkeypatch, tmp_path
+):
+    relay = adapter.ClaudeRelaySettings(
+        gateway=adapter.relay_gateway.RelayGatewayLaunch(
+            executable=tmp_path / "nemo-relay",
+            config_path=tmp_path / "relay-config" / "config.toml",
+            bind="127.0.0.1:43210",
+            url="http://127.0.0.1:43210",
+            log_path=tmp_path / "relay-config" / "gateway.log",
+        ),
+        plugin_config={"version": 1, "components": []},
+        plugin_path=tmp_path / "relay-plugin",
+    )
+    relay.plugin_path.mkdir()
+    process = MagicMock()
+    mock_stop = MagicMock()
+    mock_rmtree = MagicMock(side_effect=OSError("raw plugin cleanup failure"))
+    monkeypatch.setattr(adapter, "prepare_claude_relay", MagicMock(return_value=relay))
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "start_relay_gateway",
+        MagicMock(return_value=process),
+    )
+    monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
+    monkeypatch.setattr(adapter.shutil, "rmtree", mock_rmtree)
+
+    async def query_result(**_):
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=10,
+            duration_api_ms=8,
+            is_error=False,
+            num_turns=1,
+            session_id="claude-session",
+            total_cost_usd=0.01,
+            usage={"input_tokens": 1, "output_tokens": 1},
+            result="done",
+        )
+
+    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_result))
+
+    output = await adapter.run_claude(relay_payload)
+
+    assert output["response"] == "done"
+    assert output["completed"] is False
+    assert output["failed"] is True
+    assert output["error"] == {
+        "code": "claude_relay_cleanup_failed",
+        "message": "Claude Relay hook configuration could not be removed",
+        "retryable": False,
+    }
+    assert output["relay_runtime"]["cleanup_error"] == output["error"]
+    assert "raw plugin cleanup failure" not in json.dumps(output)
+    mock_stop.assert_called_once_with(process)
+    mock_rmtree.assert_called_once_with(relay.plugin_path)
+    assert relay.plugin_path.exists()
+
+
 @pytest.mark.parametrize(
     "failure", [ClaudeSDKError("sdk failed"), asyncio.CancelledError()]
 )
