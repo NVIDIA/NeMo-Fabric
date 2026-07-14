@@ -51,7 +51,7 @@ adapters-deepagents = [
 ]
 
 adapters-hermes = [
-  "nemo-fabric-adapters-hermes == 0.1.0",
+  "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
 ]
 
 codex = [
@@ -72,8 +72,8 @@ harbor = [
 ]
 
 hermes = [
-  "nemo-fabric-adapters-hermes == 0.1.0",
-  "hermes-agent>=0.17.0",
+  "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
+  "hermes-agent>=0.17.0; python_version < '3.14'",
 ]
 
 relay = [
@@ -91,7 +91,7 @@ adapters = [
   "nemo-fabric-adapters-claude",
   "nemo-fabric-adapters-codex-cli",
   "nemo-fabric-adapters-deepagents",
-  "nemo-fabric-adapters-hermes",
+  "nemo-fabric-adapters-hermes; python_version < '3.14'",
 ]
 
 dev = [

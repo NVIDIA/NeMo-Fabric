@@ -24,6 +24,14 @@ def requires_harbor_fixture():
         pytest.skip("Harbor is not installed")
 
 
+@pytest.fixture(name="requires_hermes_agent", scope="session")
+def requires_hermes_agent_fixture():
+    try:
+        import run_agent  # noqa: F401
+    except ModuleNotFoundError:
+        pytest.skip("Hermes Agent is not installed")
+
+
 @pytest.fixture(name="restore_environ", autouse=True)
 def restore_environ_fixture():
     """

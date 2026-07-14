@@ -41,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x86_64, arm64]
-        python-version: ['3.11', '3.12', '3.13']
+        python-version: ['3.11', '3.12', '3.13', '3.14']
         include:
           - arch: x86_64
             runner: ubuntu-24.04
@@ -84,7 +84,7 @@ jobs:
       - name: Build SDK with native extension
         run: |
           uv venv --python ${{ matrix.python-version }} .venv
-          uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} --extra hermes --extra relay --extra runtime
+          uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes' || '' }} --extra relay --extra runtime
 
       - name: Run pytest
         run: |
