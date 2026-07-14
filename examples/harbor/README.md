@@ -209,24 +209,10 @@ python -m nemo_fabric.integrations.harbor.verify_telemetry \
   --logs-dir "$TRIAL_DIR/agent"
 ```
 
-This is the required native-evidence lane. An independent ATOF-derived ATIF is
-an optional interoperability check when the NeMo Agent Toolkit ATIF package is
-installed:
-
-```bash
-ATOF_PATH=$(find "$TRIAL_DIR/agent/fabric-artifacts" -name events.atof.jsonl -print -quit)
-python -c \
-  'from pathlib import Path; from nat.atof.scripts.atof_to_atif_converter import convert_file; import sys; convert_file(Path(sys.argv[1]), Path(sys.argv[2]))' \
-  "$ATOF_PATH" trajectory-from-atof.json
-python -m nat_harbor.smoke.compare_atif_tools \
-  --native "$TRIAL_DIR/agent/trajectory.json" \
-  --candidate trajectory-from-atof.json
-```
-
-The converter must support the Relay producer's declared or emitted payload
-shape. A converter shape error is an interoperability failure to fix in the
-converter; it does not invalidate a native ATIF that passed Fabric's structural
-gate and Harbor's canonical trajectory model.
+Direct Relay output is the telemetry contract. Validate the emitted ATOF stream
+and ATIF independently; do not derive ATIF from ATOF through a separate
+converter. Fabric promotes Relay's ATIF to `agent/trajectory.json`, and Harbor
+validates that canonical file with its trajectory model.
 
 ## Progress from a spot check to a full run
 
