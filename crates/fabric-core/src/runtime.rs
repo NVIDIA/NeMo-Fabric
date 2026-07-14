@@ -25,6 +25,22 @@ use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
+const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
+
+#[cfg(not(windows))]
+const VENV_BIN_DIR: &str = "bin";
+#[cfg(windows)]
+const VENV_BIN_DIR: &str = "Scripts";
+
+#[cfg(not(windows))]
+const VENV_PYTHON: &str = "python";
+#[cfg(windows)]
+const VENV_PYTHON: &str = "python.exe";
+
+#[cfg(not(windows))]
+const DEFAULT_PYTHON: &str = "python3";
+#[cfg(windows)]
+const DEFAULT_PYTHON: &str = "python";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -589,7 +605,42 @@ struct PythonAdapterSettings {
 #[derive(Debug, Clone, PartialEq)]
 struct PythonCommand {
     path: PathBuf,
-    adapter_python_value: Option<String>,
+    source: PythonSource,
+}
+
+/// Where a resolved Python interpreter came from. Drives clear preflight error
+/// messages and how the interpreter is validated (concrete file vs. PATH lookup).
+#[derive(Debug, Clone, PartialEq)]
+enum PythonSource {
+    /// `harness.settings.python`.
+    Setting,
+    /// `harness.settings.python_env` (the named environment variable).
+    SettingEnv(String),
+    /// The `ADAPTER_PYTHON` environment variable.
+    AdapterPythonEnv,
+    /// The active virtualenv (`VIRTUAL_ENV`).
+    Virtualenv,
+    /// An interpreter found next to the running Fabric executable.
+    HostInterpreter,
+    /// The bare `python3` command resolved off `PATH` (last resort).
+    DefaultPython3,
+}
+
+impl PythonSource {
+    fn describe(&self) -> String {
+        match self {
+            PythonSource::Setting => "harness.settings.python".to_string(),
+            PythonSource::SettingEnv(name) => {
+                format!("harness.settings.python_env (`{name}`)")
+            }
+            PythonSource::AdapterPythonEnv => {
+                format!("`{ADAPTER_PYTHON_ENV}` environment variable")
+            }
+            PythonSource::Virtualenv => format!("active virtualenv (`{VIRTUAL_ENV_ENV}`)"),
+            PythonSource::HostInterpreter => "Fabric host interpreter".to_string(),
+            PythonSource::DefaultPython3 => format!("default `{DEFAULT_PYTHON}` on PATH"),
+        }
+    }
 }
 
 impl RuntimeAdapter for ProcessAdapter {
@@ -1337,57 +1388,121 @@ fn resolve_command_path(root: &Path, path: &Path) -> PathBuf {
 fn preflight_python_adapter(plan: &RunPlan) -> Result<()> {
     let settings = parse_python_settings(plan)?;
     let command = resolve_python_command(&plan.config_root, &settings);
-    validate_python_command(command)
+    validate_python_command(&command)
 }
 
-fn validate_python_command(command: PythonCommand) -> Result<()> {
-    if let Some(value) = command.adapter_python_value {
-        if !command.path.is_file() {
-            return Err(FabricError::InvalidAdapterPython {
-                value,
-                path: command.path,
+fn validate_python_command(command: &PythonCommand) -> Result<()> {
+    let path = &command.path;
+    // A single-component relative path (e.g. `python3`) is a bare command name
+    // resolved off PATH; anything else is a concrete file path we can stat.
+    let is_bare_command = !path.is_absolute() && path.components().count() == 1;
+    if is_bare_command {
+        if find_on_path(path).is_none() {
+            return Err(FabricError::PythonInterpreterUnavailable {
+                path: path.clone(),
+                origin: command.source.describe(),
+                reason: "not found on PATH".to_string(),
             });
         }
+    } else if !path.is_file() {
+        let reason = if path.exists() {
+            "not a regular file"
+        } else {
+            "no such file"
+        };
+        return Err(FabricError::PythonInterpreterUnavailable {
+            path: path.clone(),
+            origin: command.source.describe(),
+            reason: reason.to_string(),
+        });
     }
     Ok(())
 }
 
+/// Locate a bare command name on `PATH`, returning the first matching file.
+fn find_on_path(name: &Path) -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    std::env::split_paths(&paths)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
 fn resolve_python_command(root: &Path, settings: &PythonAdapterSettings) -> PythonCommand {
-    resolve_python_command_with_env(root, settings, |name| std::env::var_os(name))
+    resolve_python_command_with_env(
+        root,
+        settings,
+        |name| std::env::var_os(name),
+        |path| path.is_file(),
+        std::env::current_exe().ok(),
+    )
 }
 
 fn resolve_python_command_with_env(
     root: &Path,
     settings: &PythonAdapterSettings,
     env: impl Fn(&str) -> Option<OsString>,
+    exists: impl Fn(&Path) -> bool,
+    current_exe: Option<PathBuf>,
 ) -> PythonCommand {
     if let Some(path) = settings.python.as_ref() {
         return PythonCommand {
             path: resolve_command_path(root, path),
-            adapter_python_value: None,
+            source: PythonSource::Setting,
         };
     }
     if let Some(env_name) = settings.python_env.as_ref() {
         if let Some(path) = env(env_name) {
             return PythonCommand {
                 path: resolve_command_path(root, Path::new(&path)),
-                adapter_python_value: None,
+                source: PythonSource::SettingEnv(env_name.clone()),
             };
         }
-        return PythonCommand {
-            path: PathBuf::from("python3"),
-            adapter_python_value: None,
-        };
+        return fallback_interpreter(&env, &exists, current_exe.as_deref());
     }
     if let Some(value) = env(ADAPTER_PYTHON_ENV) {
         return PythonCommand {
             path: resolve_command_path(root, Path::new(&value)),
-            adapter_python_value: Some(value.to_string_lossy().into_owned()),
+            source: PythonSource::AdapterPythonEnv,
         };
     }
+    fallback_interpreter(&env, &exists, current_exe.as_deref())
+}
+
+/// With no interpreter explicitly configured, prefer (in order) the active
+/// virtualenv, an interpreter next to the running Fabric executable, and only
+/// then a bare `python3` off PATH. A preinstalled adapter is installed in the
+/// caller's environment, so launching it with an unrelated `python3` off PATH
+/// otherwise dies mid-run with an opaque ModuleNotFoundError (FABRIC-86).
+fn fallback_interpreter(
+    env: &impl Fn(&str) -> Option<OsString>,
+    exists: &impl Fn(&Path) -> bool,
+    current_exe: Option<&Path>,
+) -> PythonCommand {
+    if let Some(virtual_env) = env(VIRTUAL_ENV_ENV)
+        && !virtual_env.as_os_str().is_empty()
+    {
+        let candidate = Path::new(&virtual_env).join(VENV_BIN_DIR).join(VENV_PYTHON);
+        if exists(&candidate) {
+            return PythonCommand {
+                path: candidate,
+                source: PythonSource::Virtualenv,
+            };
+        }
+    }
+    if let Some(exe) = current_exe
+        && let Some(dir) = exe.parent()
+    {
+        let candidate = dir.join(VENV_PYTHON);
+        if exists(&candidate) {
+            return PythonCommand {
+                path: candidate,
+                source: PythonSource::HostInterpreter,
+            };
+        }
+    }
     PythonCommand {
-        path: PathBuf::from("python3"),
-        adapter_python_value: None,
+        path: PathBuf::from(DEFAULT_PYTHON),
+        source: PythonSource::DefaultPython3,
     }
 }
 
@@ -2617,19 +2732,20 @@ runtime:
     fn python_command_uses_adapter_python_as_default_python_env() {
         let root = Path::new("/config");
         let settings = python_settings();
-        let command = resolve_python_command_with_env(root, &settings, |name| {
-            (name == ADAPTER_PYTHON_ENV).then(|| OsString::from("venv/bin/python"))
-        });
-
-        assert_eq!(command.path, root.join("venv/bin/python"));
-        assert_eq!(
-            command.adapter_python_value.as_deref(),
-            Some("venv/bin/python")
+        let command = resolve_python_command_with_env(
+            root,
+            &settings,
+            |name| (name == ADAPTER_PYTHON_ENV).then(|| OsString::from("venv/bin/python")),
+            |_| false,
+            None,
         );
 
-        let command = resolve_python_command_with_env(root, &settings, |_| None);
-        assert_eq!(command.path, PathBuf::from("python3"));
-        assert_eq!(command.adapter_python_value, None);
+        assert_eq!(command.path, root.join("venv/bin/python"));
+        assert_eq!(command.source, PythonSource::AdapterPythonEnv);
+
+        let command = resolve_python_command_with_env(root, &settings, |_| None, |_| false, None);
+        assert_eq!(command.path, PathBuf::from(DEFAULT_PYTHON));
+        assert_eq!(command.source, PythonSource::DefaultPython3);
     }
 
     #[test]
@@ -2637,26 +2753,80 @@ runtime:
         let root = Path::new("/config");
         let mut settings = python_settings();
         settings.python_env = Some("CUSTOM_PYTHON".to_string());
-        let command = resolve_python_command_with_env(root, &settings, |name| match name {
-            "CUSTOM_PYTHON" => Some(OsString::from("/custom/python")),
-            ADAPTER_PYTHON_ENV => Some(OsString::from("/adapter/python")),
-            _ => None,
-        });
+        let command = resolve_python_command_with_env(
+            root,
+            &settings,
+            |name| match name {
+                "CUSTOM_PYTHON" => Some(OsString::from("/custom/python")),
+                ADAPTER_PYTHON_ENV => Some(OsString::from("/adapter/python")),
+                _ => None,
+            },
+            |_| false,
+            None,
+        );
         assert_eq!(command.path, PathBuf::from("/custom/python"));
-        assert_eq!(command.adapter_python_value, None);
+        assert_eq!(
+            command.source,
+            PythonSource::SettingEnv("CUSTOM_PYTHON".to_string())
+        );
 
-        let command = resolve_python_command_with_env(root, &settings, |name| {
-            (name == ADAPTER_PYTHON_ENV).then(|| OsString::from("/adapter/python"))
-        });
-        assert_eq!(command.path, PathBuf::from("python3"));
-        assert_eq!(command.adapter_python_value, None);
+        let command = resolve_python_command_with_env(
+            root,
+            &settings,
+            |name| (name == ADAPTER_PYTHON_ENV).then(|| OsString::from("/adapter/python")),
+            |_| false,
+            None,
+        );
+        assert_eq!(command.path, PathBuf::from(DEFAULT_PYTHON));
+        assert_eq!(command.source, PythonSource::DefaultPython3);
 
         settings.python = Some(PathBuf::from("/configured/python"));
-        let command = resolve_python_command_with_env(root, &settings, |_| {
-            Some(OsString::from("/environment/python"))
-        });
+        let command = resolve_python_command_with_env(
+            root,
+            &settings,
+            |_| Some(OsString::from("/environment/python")),
+            |_| false,
+            None,
+        );
         assert_eq!(command.path, PathBuf::from("/configured/python"));
-        assert_eq!(command.adapter_python_value, None);
+        assert_eq!(command.source, PythonSource::Setting);
+    }
+
+    #[test]
+    fn fallback_prefers_active_virtualenv_over_bare_python3() {
+        let root = Path::new("/config");
+        let settings = python_settings();
+        let venv_python = Path::new("/venv").join(VENV_BIN_DIR).join(VENV_PYTHON);
+        let expected = venv_python.clone();
+        let command = resolve_python_command_with_env(
+            root,
+            &settings,
+            |name| (name == VIRTUAL_ENV_ENV).then(|| OsString::from("/venv")),
+            move |path| path == expected.as_path(),
+            None,
+        );
+
+        assert_eq!(command.path, venv_python);
+        assert_eq!(command.source, PythonSource::Virtualenv);
+    }
+
+    #[test]
+    fn fallback_uses_host_interpreter_next_to_executable() {
+        let root = Path::new("/config");
+        let settings = python_settings();
+        let exe = PathBuf::from("/opt/fabric/bin/nemo-fabric");
+        let sibling = PathBuf::from("/opt/fabric/bin").join(VENV_PYTHON);
+        let expected = sibling.clone();
+        let command = resolve_python_command_with_env(
+            root,
+            &settings,
+            |_| None,
+            move |path| path == expected.as_path(),
+            Some(exe),
+        );
+
+        assert_eq!(command.path, sibling);
+        assert_eq!(command.source, PythonSource::HostInterpreter);
     }
 
     #[test]
@@ -2666,27 +2836,48 @@ runtime:
         let interpreter = root.join("python");
         fs::write(&interpreter, "").expect("create interpreter file");
 
-        validate_python_command(PythonCommand {
+        validate_python_command(&PythonCommand {
             path: interpreter,
-            adapter_python_value: Some("python".to_string()),
+            source: PythonSource::AdapterPythonEnv,
         })
         .expect("file path should pass preflight");
 
-        let error = validate_python_command(PythonCommand {
+        let error = validate_python_command(&PythonCommand {
             path: root.join("missing-python"),
-            adapter_python_value: Some("missing-python".to_string()),
+            source: PythonSource::AdapterPythonEnv,
         })
         .expect_err("missing path should fail preflight");
-        assert!(matches!(error, FabricError::InvalidAdapterPython { .. }));
+        assert!(matches!(
+            error,
+            FabricError::PythonInterpreterUnavailable { .. }
+        ));
 
-        let error = validate_python_command(PythonCommand {
+        let error = validate_python_command(&PythonCommand {
             path: root.clone(),
-            adapter_python_value: Some(root.to_string_lossy().into_owned()),
+            source: PythonSource::AdapterPythonEnv,
         })
         .expect_err("directory path should fail preflight");
-        assert!(matches!(error, FabricError::InvalidAdapterPython { .. }));
+        assert!(matches!(
+            error,
+            FabricError::PythonInterpreterUnavailable { .. }
+        ));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preflight_rejects_missing_virtualenv_interpreter() {
+        // A resolved absolute interpreter that does not exist must fail preflight
+        // with a clear error instead of surfacing as a mid-run subprocess crash.
+        let error = validate_python_command(&PythonCommand {
+            path: Path::new("/venv").join(VENV_BIN_DIR).join(VENV_PYTHON),
+            source: PythonSource::Virtualenv,
+        })
+        .expect_err("missing virtualenv interpreter should fail preflight");
+        assert!(matches!(
+            error,
+            FabricError::PythonInterpreterUnavailable { .. }
+        ));
     }
 
     #[test]
