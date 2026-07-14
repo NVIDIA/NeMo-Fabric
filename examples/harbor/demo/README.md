@@ -35,7 +35,7 @@ Run the credential-free smoke:
 ```bash
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
-  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --agent-import-path nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_config_path=/opt/fabric-demo/configs/smoke.yaml \
   --job-name fabric-smoke \
   --jobs-dir "$RUNS_DIR" \

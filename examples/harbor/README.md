@@ -59,7 +59,7 @@ Run Harbor's installation-only gate before spending model tokens:
 ```bash
 uv run harbor run \
   --task swe-bench/django__django-13741 \
-  --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --agent-import-path nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_config_bundle="$PWD/examples/harbor/swebench" \
   --ak fabric_config_path=configs/hermes.yaml \
   --ak "fabric_package=$FABRIC_PACKAGE" \
@@ -97,7 +97,7 @@ Run Hermes:
 ```bash
 uv run harbor run \
   --task swe-bench/django__django-13741 \
-  --agent "$FABRIC_AGENT" \
+  --agent-import-path "$FABRIC_AGENT" \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_config_path=configs/hermes.yaml \
   --ak "fabric_package=$FABRIC_PACKAGE" \
@@ -117,7 +117,7 @@ export FABRIC_CODEX_PACKAGE='nemo-fabric[codex,harbor,runtime]==<version>'
 
 uv run harbor run \
   --task swe-bench/django__django-13741 \
-  --agent "$FABRIC_AGENT" \
+  --agent-import-path "$FABRIC_AGENT" \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_config_path=configs/codex.yaml \
   --ak 'fabric_install_command=python3 -m pip install "nemo-fabric[codex,harbor,runtime]==<version>" && npm install --global @openai/codex@0.142.4' \
@@ -133,12 +133,26 @@ needs the Codex npm binary. A full evaluation should bake Fabric and the CLI
 into a pinned image instead.
 
 For a self-hosted Nemotron 3 Nano NIM, Hermes requires OpenAI-compatible
-automatic tool calling. Start current model-specific NIM releases with
-`NIM_ENABLE_AUTO_TOOL_CHOICE=1` and `NIM_TOOL_CALL_PARSER=openai`; a plain chat
-completion can succeed even when this required agent capability is disabled.
-Confirm one request containing `tools` and `tool_choice: auto` before starting
-Harbor. See the [NIM release guidance](https://docs.nvidia.com/nim/large-language-models/1.15.0/release-notes.html#new-language-models)
-for Nemotron 3 Nano.
+automatic tool calling. The current image accepts the vLLM options through
+`NIM_PASSTHROUGH_ARGS`; publish the container's port 8000 even when the host
+port is different:
+
+```bash
+docker run -d --rm \
+  --name nemotron-3-nano \
+  --gpus '"device=2"' \
+  --shm-size=16GB \
+  -e NGC_API_KEY \
+  -e 'NIM_PASSTHROUGH_ARGS=--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser nemotron_v3' \
+  -v "$LOCAL_NIM_CACHE:/opt/nim/.cache" \
+  -p 8010:8000 \
+  nvcr.io/nim/nvidia/nemotron-3-nano:latest
+```
+
+Confirm `/v1/models` and one request containing `tools` with
+`tool_choice: "auto"` before starting Harbor. A plain chat completion can
+succeed even when this required agent capability is disabled. See NVIDIA's
+[tool-calling guidance](https://docs.nvidia.com/nim/large-language-models/latest/advanced-use-cases/tool-calling-and-mcp.html).
 
 ## Hold the harness fixed and vary one capability
 
@@ -165,8 +179,8 @@ is the portable bundle target inside the task, not a workstation path.
 Harbor's verifier remains the correctness authority. Fabric telemetry is a
 separate quality gate and never changes the SWE-Bench reward.
 
-Relay runs validate ATOF JSONL, ATIF schema and session correlation, scan for
-obvious credential leakage, and write:
+Relay runs validate ATOF JSONL and the native ATIF structure, scan for obvious
+credential leakage, and write:
 
 - the original Fabric ATOF and ATIF files;
 - `agent/trajectory.json`, Harbor's canonical ATIF path;
@@ -184,13 +198,35 @@ cat "$RUNS_DIR/django-13741-hermes-relay/result.json"
 uv run harbor view "$RUNS_DIR"
 ```
 
-The standalone in-environment quality gate is also available:
+The standalone quality gate works in the task environment and against a
+collected Harbor trial. For a collected trial, pass its downloaded Fabric
+result and `agent` directory; container paths under `/logs/agent` are resolved
+to the collected directory automatically:
 
 ```bash
 python -m nemo_fabric.integrations.harbor.verify_telemetry \
-  --result /tmp/fabric-result.json \
-  --logs-dir /logs/agent
+  --result "$TRIAL_DIR/agent/fabric-result-<id>.json" \
+  --logs-dir "$TRIAL_DIR/agent"
 ```
+
+This is the required native-evidence lane. An independent ATOF-derived ATIF is
+an optional interoperability check when the NeMo Agent Toolkit ATIF package is
+installed:
+
+```bash
+ATOF_PATH=$(find "$TRIAL_DIR/agent/fabric-artifacts" -name events.atof.jsonl -print -quit)
+python -c \
+  'from pathlib import Path; from nat.atof.scripts.atof_to_atif_converter import convert_file; import sys; convert_file(Path(sys.argv[1]), Path(sys.argv[2]))' \
+  "$ATOF_PATH" trajectory-from-atof.json
+python -m nat_harbor.smoke.compare_atif_tools \
+  --native "$TRIAL_DIR/agent/trajectory.json" \
+  --candidate trajectory-from-atof.json
+```
+
+The converter must support the Relay producer's declared or emitted payload
+shape. A converter shape error is an interoperability failure to fix in the
+converter; it does not invalidate a native ATIF that passed Fabric's structural
+gate and Harbor's canonical trajectory model.
 
 ## Progress from a spot check to a full run
 

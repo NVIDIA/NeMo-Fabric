@@ -67,10 +67,15 @@ else:
             fabric_install_command: str | None = None,
             fabric_cwd: str | None = None,
             fabric_timeout_sec: int | None = None,
+            extra_env: dict[str, str] | None = None,
             *args: Any,
             **kwargs: Any,
         ) -> None:
-            super().__init__(logs_dir=logs_dir, *args, **kwargs)
+            super().__init__(logs_dir=logs_dir, extra_env=extra_env, *args, **kwargs)
+            # Harbor passes agent-scoped environment variables to custom agents,
+            # while newer BaseAgent versions intentionally ignore unknown kwargs.
+            # Retain the mapping here for both old and new Harbor releases.
+            self._extra_env = dict(extra_env or {})
             self.fabric_config_path = fabric_config_path
             self.fabric_config_bundle = fabric_config_bundle
             self.fabric_config_target = fabric_config_target
@@ -122,7 +127,7 @@ else:
                         venv_path=self.fabric_venv_path,
                     ),
                     cwd=self.fabric_cwd,
-                    env=self.extra_env,
+                    env=self._extra_env,
                     timeout_sec=self.fabric_timeout_sec,
                 )
                 ensure_success("Fabric package installation failed", result)
@@ -130,7 +135,7 @@ else:
                 result = await environment.exec(
                     self.fabric_install_command,
                     cwd=self.fabric_cwd,
-                    env=self.extra_env,
+                    env=self._extra_env,
                     timeout_sec=self.fabric_timeout_sec,
                 )
                 ensure_success("Fabric install command failed", result)
@@ -169,10 +174,12 @@ else:
 
         def _build_request(self, instruction: str) -> RunRequest:
             context = {"source": "harbor"}
-            if self.session_id is not None:
-                context["harbor_session_id"] = self.session_id
-            if self.context_id is not None:
-                context["harbor_context_id"] = str(self.context_id)
+            session_id = getattr(self, "session_id", None)
+            context_id = getattr(self, "context_id", None)
+            if session_id is not None:
+                context["harbor_session_id"] = session_id
+            if context_id is not None:
+                context["harbor_context_id"] = str(context_id)
             return RunRequest(input=instruction, context=context)
 
         def _build_spec(self, instruction: str) -> HarborRunSpec:
@@ -230,7 +237,7 @@ else:
 
         @property
         def _runner_env(self) -> dict[str, str]:
-            env = dict(self.extra_env or {})
+            env = dict(self._extra_env)
             env["ADAPTER_PYTHON"] = self._runner_python
             return env
 
@@ -307,18 +314,36 @@ def populate_context_from_result(context: AgentContext, path: Path) -> RunResult
 
 
 def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
-    """Backfill Harbor usage fields from a canonical ATIF trajectory when present."""
+    """Validate canonical ATIF with Harbor and backfill usage fields when present."""
 
     if not path.is_file():
         return
-    value = json.loads(path.read_text(encoding="utf-8"))
-    metrics = value.get("final_metrics")
-    if not isinstance(metrics, dict):
+    from harbor.models.trajectories.trajectory import Trajectory
+
+    try:
+        trajectory = Trajectory.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValueError as error:
+        _record_host_atif_validation(context, status="failed", error=str(error))
         return
-    context.n_input_tokens = metrics.get("total_prompt_tokens")
-    context.n_cache_tokens = metrics.get("total_cached_tokens")
-    context.n_output_tokens = metrics.get("total_completion_tokens")
-    context.cost_usd = metrics.get("total_cost_usd")
+    _record_host_atif_validation(context, status="succeeded")
+    metrics = trajectory.final_metrics
+    if metrics is None:
+        return
+    context.n_input_tokens = metrics.total_prompt_tokens
+    context.n_cache_tokens = metrics.total_cached_tokens
+    context.n_output_tokens = metrics.total_completion_tokens
+    context.cost_usd = metrics.total_cost_usd
+
+
+def _record_host_atif_validation(context: AgentContext, *, status: str, error: str | None = None) -> None:
+    if context.metadata is None:
+        context.metadata = {}
+    fabric = context.metadata.setdefault("fabric", {})
+    if isinstance(fabric, dict):
+        fabric["harbor_atif_validation"] = {
+            "status": status,
+            "error": error,
+        }
 
 
 def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -> None:

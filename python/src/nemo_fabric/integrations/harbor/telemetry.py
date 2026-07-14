@@ -65,8 +65,16 @@ def validate_telemetry(
     """Validate telemetry artifacts and promote exactly one valid ATIF trajectory."""
 
     artifacts = tuple(result.artifacts.artifacts)
-    atof_paths = [Path(artifact.path) for artifact in artifacts if artifact.kind == "atof"]
-    atif_paths = [Path(artifact.path) for artifact in artifacts if artifact.kind == "atif"]
+    atof_paths = [
+        _resolve_artifact_path(Path(artifact.path), logs_dir)
+        for artifact in artifacts
+        if artifact.kind == "atof"
+    ]
+    atif_paths = [
+        _resolve_artifact_path(Path(artifact.path), logs_dir)
+        for artifact in artifacts
+        if artifact.kind == "atif"
+    ]
     summary = _base_summary(result)
     summary["harbor_session_id"] = harbor_session_id
     summary["harbor_context_id"] = harbor_context_id
@@ -74,10 +82,21 @@ def validate_telemetry(
     summary["atif"] = _validate_atif(
         atif_paths,
         logs_dir,
-        expected_session_ids={value for value in (result.runtime_id, harbor_session_id) if value},
     )
     summary["status"] = "not_emitted" if not atof_paths and not atif_paths else "succeeded"
     return summary
+
+
+def _resolve_artifact_path(path: Path, logs_dir: Path) -> Path:
+    """Resolve collected task paths when validation runs on the Harbor host."""
+
+    task_logs = Path("/logs/agent")
+    if path.is_relative_to(task_logs) and logs_dir != task_logs:
+        relative = path.relative_to(task_logs)
+        if ".." in relative.parts:
+            raise TelemetryValidationError(f"telemetry artifact escapes /logs/agent: {path}")
+        return logs_dir / relative
+    return path
 
 
 def _validate_atof(paths: list[Path]) -> dict[str, Any]:
@@ -110,8 +129,6 @@ def _validate_atof(paths: list[Path]) -> dict[str, Any]:
 def _validate_atif(
     paths: list[Path],
     logs_dir: Path,
-    *,
-    expected_session_ids: set[str],
 ) -> dict[str, Any]:
     if len(paths) > 1:
         raise TelemetryValidationError(f"expected at most one ATIF artifact, found {len(paths)}")
@@ -122,31 +139,58 @@ def _validate_atif(
     if not path.is_file():
         raise TelemetryValidationError(f"ATIF artifact does not exist: {path}")
 
-    from harbor.models.trajectories.trajectory import Trajectory
-
     text = path.read_text(encoding="utf-8")
     _reject_obvious_secrets(text, path)
-    trajectory = Trajectory.model_validate_json(text)
-    if trajectory.session_id and trajectory.session_id not in expected_session_ids:
-        raise TelemetryValidationError(
-            f"ATIF session_id does not correlate with the Fabric runtime or Harbor session: {trajectory.session_id}"
-        )
+    trajectory = _validate_atif_structure(json.loads(text), path)
+    session_id = trajectory.get("session_id")
     canonical = logs_dir / "trajectory.json"
     if path.resolve() != canonical.resolve():
         shutil.copyfile(path, canonical)
     return {
         "files": [str(path)],
         "promoted": str(canonical),
-        "schema_version": trajectory.schema_version,
-        "session_id": trajectory.session_id,
-        "agent": trajectory.agent.name,
-        "steps": len(trajectory.steps),
-        "final_metrics": (
-            trajectory.final_metrics.model_dump(mode="json", exclude_none=True)
-            if trajectory.final_metrics is not None
-            else None
-        ),
+        "validator": "fabric_structural",
+        "schema_version": trajectory["schema_version"],
+        "session_id": session_id,
+        "agent": trajectory["agent"]["name"],
+        "steps": len(trajectory["steps"]),
+        "final_metrics": trajectory.get("final_metrics"),
     }
+
+
+def _validate_atif_structure(value: Any, path: Path) -> dict[str, Any]:
+    """Validate the portable ATIF boundary without importing Harbor in the task."""
+
+    if not isinstance(value, dict):
+        raise TelemetryValidationError(f"ATIF trajectory must be an object: {path}")
+    schema_version = value.get("schema_version")
+    supported_versions = {f"ATIF-v1.{minor}" for minor in range(8)}
+    if schema_version not in supported_versions:
+        raise TelemetryValidationError(f"unsupported ATIF schema_version {schema_version!r}: {path}")
+    session_id = value.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise TelemetryValidationError(f"ATIF session_id must be a non-empty string: {path}")
+    agent = value.get("agent")
+    if not isinstance(agent, dict) or not isinstance(agent.get("name"), str) or not agent["name"]:
+        raise TelemetryValidationError(f"ATIF agent.name must be a non-empty string: {path}")
+    if not isinstance(agent.get("version"), str) or not agent["version"]:
+        raise TelemetryValidationError(f"ATIF agent.version must be a non-empty string: {path}")
+    steps = value.get("steps")
+    if not isinstance(steps, list) or not steps:
+        raise TelemetryValidationError(f"ATIF steps must be a non-empty array: {path}")
+    for index, step in enumerate(steps, 1):
+        if not isinstance(step, dict):
+            raise TelemetryValidationError(f"ATIF step {index} must be an object: {path}")
+        if not isinstance(step.get("step_id"), int) or step["step_id"] < 1:
+            raise TelemetryValidationError(f"ATIF step {index} has an invalid step_id: {path}")
+        if step.get("source") not in {"system", "user", "agent"}:
+            raise TelemetryValidationError(f"ATIF step {index} has an invalid source: {path}")
+        if not isinstance(step.get("message"), str | list):
+            raise TelemetryValidationError(f"ATIF step {index} has an invalid message: {path}")
+    final_metrics = value.get("final_metrics")
+    if final_metrics is not None and not isinstance(final_metrics, dict):
+        raise TelemetryValidationError(f"ATIF final_metrics must be an object or null: {path}")
+    return value
 
 
 def _base_summary(result: RunResult) -> dict[str, Any]:

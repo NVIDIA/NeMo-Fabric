@@ -405,6 +405,10 @@ def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):
     trajectory.write_text(
         json.dumps(
             {
+                "schema_version": "ATIF-v1.7",
+                "session_id": "runtime-1",
+                "agent": {"name": "fabric", "version": "0.1.0"},
+                "steps": [{"step_id": 1, "source": "agent", "message": "done"}],
                 "final_metrics": {
                     "total_prompt_tokens": 12,
                     "total_cached_tokens": 3,
@@ -423,6 +427,10 @@ def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):
     assert context.n_cache_tokens == 3
     assert context.n_output_tokens == 4
     assert context.cost_usd == 0.25
+    assert context.metadata["fabric"]["harbor_atif_validation"] == {
+        "status": "succeeded",
+        "error": None,
+    }
 
 
 def test_harbor_attaches_telemetry_summary_to_metadata(tmp_path: Path):
