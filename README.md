@@ -66,21 +66,27 @@ Install `just` if not already installed.
 cargo install just --locked
 ```
 
+Ensure the local Cargo bin directory is in your `PATH`, if not set it with:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
 Refer to the [official installation guide](https://just.systems/man/en/installation.html) for more details.
 
 Install Fabric from the source checkout:
 
 ```bash
 just build-all
-export PATH="$HOME/.cargo/bin:$PATH"
+just wheels
 ```
 
-Install Hermes into its own environment:
+Install Hermes into its own environment (the nemo-fabric[hermes] extra will install Hermes Agent, and the Hermes Agent adapter but not Fabric itself):
 
 ```bash
 # Use any Python 3.11-3.13 interpreter for Hermes.
-python3.12 -m venv .tmp/hermes-venv
-.tmp/hermes-venv/bin/python -m pip install hermes-agent
+python3 -m venv .tmp/hermes-venv
+.tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[hermes]"
 ```
 
 If you are working from a local Hermes checkout, replace the final install line
@@ -88,6 +94,7 @@ with:
 
 ```bash
 .tmp/hermes-venv/bin/python -m pip install -e ../hermes-agent
+.tmp/hermes-venv/bin/python -m pip install --find-links <path-fabric-repo>/dist nemo-fabric-adapters-hermes
 ```
 
 Run the code-review example:
