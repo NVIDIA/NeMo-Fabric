@@ -153,7 +153,8 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert "ANTHROPIC_BASE_URL" not in options.env
 
 
-def relay_payload(claude_payload, monkeypatch, tmp_path):
+@pytest.fixture(name="relay_payload")
+def relay_payload_fixture(claude_payload, tmp_path) -> dict[str, Any]:
     relay_intent_path = tmp_path / "relay-config.json"
     relay_intent_path.write_text(
         json.dumps(
@@ -168,7 +169,7 @@ def relay_payload(claude_payload, monkeypatch, tmp_path):
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_intent_path))
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(relay_intent_path)
     claude_payload["telemetry_plan"] = {
         "providers": ["relay"],
         "relay_enabled": True,
@@ -177,9 +178,8 @@ def relay_payload(claude_payload, monkeypatch, tmp_path):
 
 
 def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
-    claude_payload, monkeypatch, tmp_path
+    relay_payload, monkeypatch, tmp_path
 ):
-    relay_payload(claude_payload, monkeypatch, tmp_path)
     executable = tmp_path / "bin" / "nemo-relay"
     executable.parent.mkdir()
     executable.touch()
@@ -199,7 +199,7 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
         MagicMock(return_value=2),
     )
 
-    relay = adapter.prepare_claude_relay(claude_payload)
+    relay = adapter.prepare_claude_relay(relay_payload)
 
     assert relay is not None
     assert relay.gateway.executable == executable
@@ -250,9 +250,8 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
 
 
 def test_build_options_adds_relay_plugin_and_gateway_environment(
-    claude_payload, monkeypatch, tmp_path
+    relay_payload, monkeypatch, tmp_path
 ):
-    relay_payload(claude_payload, monkeypatch, tmp_path)
     executable = tmp_path / "nemo-relay"
     executable.touch()
     monkeypatch.setattr(
@@ -270,9 +269,9 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
         "relay_cli_observability_version",
         MagicMock(return_value=2),
     )
-    relay = adapter.prepare_claude_relay(claude_payload)
+    relay = adapter.prepare_claude_relay(relay_payload)
 
-    options = adapter.build_options(claude_payload, resume=None, relay=relay)
+    options = adapter.build_options(relay_payload, resume=None, relay=relay)
 
     assert options.env["NEMO_RELAY_GATEWAY_URL"] == relay.gateway.url
     assert options.env["ANTHROPIC_BASE_URL"] == relay.gateway.url
@@ -281,6 +280,29 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
     assert (
         Path(options.plugins[0]["path"]) / "skills" / "review" / "SKILL.md"
     ).exists()
+
+
+def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
+    relay_payload, tmp_path
+):
+    relay_payload["capability_plan"]["native"]["skill_paths"] = []
+    relay = adapter.ClaudeRelaySettings(
+        gateway=adapter.relay_gateway.RelayGatewayLaunch(
+            executable=tmp_path / "nemo-relay",
+            config_path=tmp_path / "relay-config" / "config.toml",
+            bind="127.0.0.1:43210",
+            url="http://127.0.0.1:43210",
+            log_path=tmp_path / "relay-config" / "gateway.log",
+        ),
+        plugin_config={"version": 1, "components": []},
+        plugin_path=tmp_path / "relay-plugin",
+    )
+
+    options = adapter.build_options(relay_payload, resume=None, relay=relay)
+
+    assert options.tools == ["Read", "Glob", "Grep"]
+    assert options.skills is None
+    assert options.plugins == [{"type": "local", "path": str(relay.plugin_path)}]
 
 
 @pytest.mark.parametrize(
@@ -443,9 +465,8 @@ async def test_run_claude_resumes_and_persists_session(claude_payload, monkeypat
 
 
 async def test_run_claude_supervises_relay_and_reports_artifacts(
-    claude_payload, monkeypatch, tmp_path
+    relay_payload, monkeypatch, tmp_path
 ):
-    relay_payload(claude_payload, monkeypatch, tmp_path)
     executable = tmp_path / "nemo-relay"
     executable.touch()
     relay = adapter.ClaudeRelaySettings(
@@ -503,7 +524,7 @@ async def test_run_claude_supervises_relay_and_reports_artifacts(
 
     monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_result))
 
-    output = await adapter.run_claude(claude_payload)
+    output = await adapter.run_claude(relay_payload)
 
     assert output["relay_runtime"] == {
         "enabled": True,
@@ -516,9 +537,69 @@ async def test_run_claude_supervises_relay_and_reports_artifacts(
     assert output["relay_artifacts"] == [{"kind": "atif", "path": str(atif_path)}]
     mock_start.assert_called_once_with(
         launch=relay.gateway,
-        cwd=Path(claude_payload["runtime_context"]["environment"]["workspace"]),
+        cwd=Path(relay_payload["runtime_context"]["environment"]["workspace"]),
     )
     mock_stop.assert_called_once_with(process)
+    assert not relay.plugin_path.exists()
+
+
+async def test_run_claude_preserves_result_when_relay_stop_fails(
+    relay_payload, monkeypatch, tmp_path
+):
+    relay = adapter.ClaudeRelaySettings(
+        gateway=adapter.relay_gateway.RelayGatewayLaunch(
+            executable=tmp_path / "nemo-relay",
+            config_path=tmp_path / "relay-config" / "config.toml",
+            bind="127.0.0.1:43210",
+            url="http://127.0.0.1:43210",
+            log_path=tmp_path / "relay-config" / "gateway.log",
+        ),
+        plugin_config={"version": 1, "components": []},
+        plugin_path=tmp_path / "relay-plugin",
+    )
+    relay.plugin_path.mkdir()
+    monkeypatch.setattr(adapter, "prepare_claude_relay", MagicMock(return_value=relay))
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "start_relay_gateway",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "stop_relay_gateway",
+        MagicMock(
+            side_effect=adapter.relay_gateway.RelayGatewayError("raw stop failure")
+        ),
+    )
+
+    async def query_result(*, prompt, options):
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=10,
+            duration_api_ms=8,
+            is_error=False,
+            num_turns=1,
+            session_id="claude-session",
+            total_cost_usd=0.01,
+            usage={"input_tokens": 1, "output_tokens": 1},
+            result="done",
+        )
+
+    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_result))
+
+    output = await adapter.run_claude(relay_payload)
+
+    assert output["response"] == "done"
+    assert output["completed"] is False
+    assert output["failed"] is True
+    assert output["error"] == {
+        "code": "claude_relay_stop_failed",
+        "message": "NeMo Relay gateway failed to stop",
+        "retryable": False,
+        "metadata": {"gateway_log_path": str(relay.gateway.log_path)},
+    }
+    assert output["relay_runtime"]["cleanup_error"] == output["error"]
+    assert "raw stop failure" not in json.dumps(output)
     assert not relay.plugin_path.exists()
 
 
@@ -526,9 +607,8 @@ async def test_run_claude_supervises_relay_and_reports_artifacts(
     "failure", [ClaudeSDKError("sdk failed"), asyncio.CancelledError()]
 )
 async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
-    claude_payload, monkeypatch, tmp_path, failure
+    relay_payload, monkeypatch, tmp_path, failure
 ):
-    relay_payload(claude_payload, monkeypatch, tmp_path)
     relay = adapter.ClaudeRelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=tmp_path / "nemo-relay",
@@ -559,9 +639,9 @@ async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
 
     if isinstance(failure, asyncio.CancelledError):
         with pytest.raises(asyncio.CancelledError):
-            await adapter.run_claude(claude_payload)
+            await adapter.run_claude(relay_payload)
     else:
-        output = await adapter.run_claude(claude_payload)
+        output = await adapter.run_claude(relay_payload)
         assert output["error"]["code"] == "claude_failed"
         assert output["relay_runtime"]["enabled"] is True
 
@@ -570,9 +650,8 @@ async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
 
 
 def test_run_reports_relay_start_failure_without_raw_diagnostic(
-    claude_payload, monkeypatch, tmp_path
+    relay_payload, monkeypatch, tmp_path
 ):
-    relay_payload(claude_payload, monkeypatch, tmp_path)
     executable = tmp_path / "nemo-relay"
     executable.touch()
     relay = adapter.ClaudeRelaySettings(
@@ -598,7 +677,7 @@ def test_run_reports_relay_start_failure_without_raw_diagnostic(
         ),
     )
 
-    output = adapter.run(claude_payload)
+    output = adapter.run(relay_payload)
 
     assert output["error"] == {
         "code": "claude_relay_start_failed",

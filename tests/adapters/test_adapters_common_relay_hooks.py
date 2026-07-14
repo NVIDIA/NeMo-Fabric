@@ -29,7 +29,7 @@ EXPECTED_EVENTS = (
 
 @pytest.mark.parametrize("agent", ["claude", "codex"])
 def test_render_relay_hooks_matches_relay_agent_contract(agent):
-    executable = Path("/opt/nvidia/bin/nemo-relay")
+    executable = Path("/opt/nvidia relay/bin/nemo-relay")
 
     hooks = relay_hooks.render_relay_hooks(agent, executable)["hooks"]
 
@@ -39,7 +39,7 @@ def test_render_relay_hooks_matches_relay_agent_contract(agent):
             "hooks": [
                 {
                     "type": "command",
-                    "command": f"{executable} hook-forward {agent}",
+                    "command": f"'{executable}' hook-forward {agent}",
                     "timeout": 30,
                 }
             ]

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 from typing import Any
 from typing import Literal
@@ -49,7 +50,7 @@ def render_relay_hooks(
     if agent not in ("claude", "codex"):
         raise ValueError(f"unsupported NeMo Relay hook agent {agent!r}")
 
-    command = f"{executable} hook-forward {agent}"
+    command = f"{shlex.quote(str(executable))} hook-forward {agent}"
     hooks: dict[str, list[dict[str, Any]]] = {}
     for event in RELAY_HOOK_EVENTS:
         group: dict[str, Any] = {

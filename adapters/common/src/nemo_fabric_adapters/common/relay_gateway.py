@@ -40,7 +40,7 @@ class RelayGatewayLaunch:
 def resolve_relay_command(config_root: Path, value: str | Path) -> Path:
     """Resolve the configured Relay CLI to one absolute executable path."""
 
-    command = Path(value).expanduser()
+    command = Path(value)
     if len(command.parts) == 1:
         resolved = shutil.which(str(command))
     else:
@@ -163,8 +163,14 @@ def start_relay_gateway(
     except Exception as error:
         try:
             stop_relay_gateway(process)
-        except Exception:
-            pass
+        except Exception as stop_error:
+            raise RelayGatewayError(
+                "NeMo Relay gateway failed to become ready and could not be stopped; "
+                f"see {launch.log_path}"
+            ) from ExceptionGroup(
+                "NeMo Relay gateway startup and cleanup failed",
+                [error, stop_error],
+            )
         raise RelayGatewayError(
             f"NeMo Relay gateway failed to become ready; see {launch.log_path}"
         ) from error

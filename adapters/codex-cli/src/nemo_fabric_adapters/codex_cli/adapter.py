@@ -574,6 +574,7 @@ def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
             "enabled": True,
             "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
             "emitter": "nemo-relay",
+            "gateway_config_path": str(codex_settings.relay.gateway.config_path),
             "gateway_log_path": str(codex_settings.relay.gateway.log_path),
         }
         output["relay_artifacts"] = relay_artifacts

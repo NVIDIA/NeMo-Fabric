@@ -429,8 +429,14 @@ def test_run_codex_configures_relay(codex_payload, monkeypatch, tmp_path):
     result = adapter.run_codex(codex_payload)
 
     command = mock_run.call_args.args[0]
-    assert "relay_runtime" in result
-    assert "relay_artifacts" in result
+    assert result["relay_runtime"] == {
+        "enabled": True,
+        "config_path": os.environ["FABRIC_RELAY_CONFIG_PATH"],
+        "emitter": "nemo-relay",
+        "gateway_config_path": str(relay_config_path),
+        "gateway_log_path": str(gateway.log_path),
+    }
+    assert result["relay_artifacts"] == []
     assert command[0] == "codex"
     assert "nemo-relay" not in command
     assert command[command.index("--profile") + 1] == profile_name

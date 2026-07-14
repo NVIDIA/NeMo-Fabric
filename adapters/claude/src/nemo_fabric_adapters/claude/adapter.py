@@ -507,6 +507,7 @@ def build_options(
             "claude_invalid_configuration", "system_prompt is invalid"
         )
     plugins = _stage_skill_plugin(payload)
+    has_skill_plugin = bool(plugins)
     if relay is not None:
         plugins.append({"type": "local", "path": str(relay.plugin_path)})
 
@@ -515,7 +516,7 @@ def build_options(
         cwd=resolve_cwd(payload),
         model=selected_model(payload),
         system_prompt=system_prompt,
-        tools=_normalized_tools(payload, include_skills=bool(plugins)),
+        tools=_normalized_tools(payload, include_skills=has_skill_plugin),
         allowed_tools=_string_list(settings.get("allowed_tools"), name="allowed_tools"),
         disallowed_tools=_string_list(
             settings.get("disallowed_tools"), name="disallowed_tools"
@@ -527,7 +528,7 @@ def build_options(
         cli_path=_resolve_path(payload, cli_path) if cli_path is not None else None,
         mcp_servers=_mcp_servers(payload),
         strict_mcp_config=True,
-        skills="all" if plugins else None,
+        skills="all" if has_skill_plugin else None,
         plugins=plugins,
         env=child_environment(
             payload,
@@ -819,10 +820,23 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
                         "Claude Relay hook configuration could not be removed",
                     )
 
+    if relay is not None:
+        output = _relay_output(output, relay)
     if cleanup_error is not None:
-        raise cleanup_error
+        cleanup: dict[str, Any] = {
+            "code": cleanup_error.code,
+            "message": cleanup_error.message,
+            "retryable": False,
+        }
+        if cleanup_error.metadata:
+            cleanup["metadata"] = cleanup_error.metadata
+        output["relay_runtime"]["cleanup_error"] = cleanup
+        if not output["failed"]:
+            output["completed"] = False
+            output["failed"] = True
+            output["error"] = cleanup
 
-    return _relay_output(output, relay) if relay is not None else output
+    return output
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:

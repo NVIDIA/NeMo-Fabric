@@ -22,6 +22,19 @@ def test_resolve_relay_command_returns_absolute_executable(monkeypatch, tmp_path
     assert resolved == executable.resolve()
 
 
+def test_resolve_relay_command_treats_tilde_path_as_config_relative(
+    monkeypatch, tmp_path
+):
+    executable = (tmp_path / "~" / "bin" / "nemo-relay").resolve()
+    mock_which = MagicMock(return_value=str(executable))
+    monkeypatch.setattr(relay_gateway.shutil, "which", mock_which)
+
+    resolved = relay_gateway.resolve_relay_command(tmp_path, "~/bin/nemo-relay")
+
+    assert resolved == executable
+    mock_which.assert_called_once_with(str(executable))
+
+
 def test_resolve_relay_command_rejects_missing_executable(monkeypatch, tmp_path):
     monkeypatch.setattr(relay_gateway.shutil, "which", MagicMock(return_value=None))
 
@@ -142,6 +155,42 @@ def test_start_relay_gateway_stops_failed_process_and_preserves_log(
 
     mock_stop.assert_called_once_with(process)
     assert log_path.exists()
+
+
+def test_start_relay_gateway_reports_readiness_and_stop_failures(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("", encoding="utf-8")
+    readiness_error = relay_gateway.RelayGatewayError("not ready")
+    stop_error = relay_gateway.RelayGatewayError("could not stop")
+    process = MagicMock()
+    monkeypatch.setattr(
+        relay_gateway.subprocess, "Popen", MagicMock(return_value=process)
+    )
+    monkeypatch.setattr(
+        relay_gateway,
+        "wait_for_relay_gateway",
+        MagicMock(side_effect=readiness_error),
+    )
+    mock_stop = MagicMock(side_effect=stop_error)
+    monkeypatch.setattr(relay_gateway, "stop_relay_gateway", mock_stop)
+    launch = relay_gateway.RelayGatewayLaunch(
+        executable=tmp_path / "nemo-relay",
+        config_path=config_path,
+        bind="127.0.0.1:43210",
+        url="http://127.0.0.1:43210",
+        log_path=tmp_path / "gateway.log",
+    )
+
+    with pytest.raises(
+        relay_gateway.RelayGatewayError, match="could not be stopped"
+    ) as captured:
+        relay_gateway.start_relay_gateway(launch=launch, cwd=tmp_path)
+
+    mock_stop.assert_called_once_with(process)
+    assert isinstance(captured.value.__cause__, ExceptionGroup)
+    assert captured.value.__cause__.exceptions == (readiness_error, stop_error)
 
 
 def test_wait_for_relay_gateway_reports_early_exit():
