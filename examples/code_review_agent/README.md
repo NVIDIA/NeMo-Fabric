@@ -59,7 +59,7 @@ The entrypoint exposes complete harness configs defined in
 | Variant | Command option | Additional setup |
 | --- | --- | --- |
 | Hermes | `--variant hermes` | Installed [Hermes adapter requirements](../../adapters/hermes/README.md) and `NVIDIA_API_KEY`|
-| Codex CLI | `--variant codex-cli` | Installed and authenticated [Codex CLI](../../adapters/codex-cli/README.md) |
+| Codex SDK | `--variant codex` | Installed [Codex adapter](../../adapters/codex/README.md) and an existing ChatGPT or API key login |
 | Deep Agents | `--variant deepagents` | Installed [Deep Agents adapter requirements](../../adapters/deepagents/README.md) and `NVIDIA_API_KEY` |
 
 Add `--relay` to any variant to enable the Relay ATOF and ATIF configuration:

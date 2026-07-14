@@ -144,8 +144,8 @@ authentication, and execution details.
   harness, model, MCP, tools, skills, telemetry, or environment context without
   editing `agent.yaml`.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
-  The Hermes adapter lives under `adapters/hermes/`; the Codex CLI
-  adapter lives under `adapters/codex-cli/`; the
+  The Hermes adapter lives under `adapters/hermes/`; the Codex SDK
+  adapter lives under `adapters/codex/`; the
   [Claude adapter](adapters/claude/README.md)
   lives under `adapters/claude/`; the LangChain Deep Agents adapter lives under
   `adapters/deepagents/`. Harness-specific extensions belong under
@@ -179,7 +179,7 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
   [multi-harness demo](examples/harbor/demo/README.md): ownership,
   installation, and complete command matrices.
 - Adapter guides: [Hermes](adapters/hermes/README.md),
-  [Codex CLI](adapters/codex-cli/README.md), and
+  [Codex SDK](adapters/codex/README.md), and
   [Deep Agents](adapters/deepagents/README.md).
 
 ## Tests

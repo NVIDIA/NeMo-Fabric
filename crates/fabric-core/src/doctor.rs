@@ -529,10 +529,15 @@ mod tests {
 
     #[test]
     fn binary_requirement_can_use_harness_command_setting() {
-        let mut plan =
-            resolve_run_plan(file_config_agent_dir(), Some("codex_cli")).expect("run plan");
+        let mut plan = resolve_run_plan(file_config_agent_dir(), Some("codex")).expect("run plan");
+        plan.adapter_descriptor
+            .as_mut()
+            .expect("adapter descriptor")
+            .descriptor
+            .requirements
+            .binaries = vec!["fabric-doctor-test".to_string()];
         plan.config.harness.settings.insert(
-            "codex_command".to_string(),
+            "fabric_doctor_test_command".to_string(),
             Value::String(
                 std::env::current_exe()
                     .expect("current executable")
@@ -546,7 +551,7 @@ mod tests {
         assert!(report.checks.iter().any(|check| {
             check.name == "requirement.binary"
                 && check.status == DoctorStatus::Pass
-                && check.message.contains("codex_command")
+                && check.message.contains("fabric_doctor_test_command")
         }));
     }
 

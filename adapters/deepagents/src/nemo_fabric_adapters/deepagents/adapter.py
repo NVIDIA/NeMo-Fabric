@@ -307,7 +307,7 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
 # --- runtime / resume state ------------------------------------------------
 #
 # Resume is keyed by the Fabric ``runtime_id`` (stable across ``invoke`` calls in
-# a started runtime, fresh for each one-shot ``run``), mirroring the codex-cli
+# a started runtime, fresh for each one-shot ``run``), mirroring the Codex
 # adapter. LangGraph owns the transcript via a persistent SQLite checkpointer;
 # Fabric owns the runtime-to-LangGraph-thread correlation record.
 

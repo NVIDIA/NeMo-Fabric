@@ -14,7 +14,7 @@ from nemo_fabric import Fabric, FabricConfig
 
 from examples.code_review_agent.config import (
     BASE_DIR,
-    codex_cli_config,
+    codex_config,
     deepagents_config,
     hermes_config,
     with_relay,
@@ -22,7 +22,7 @@ from examples.code_review_agent.config import (
 
 CONFIG_BUILDERS: dict[str, Callable[[], FabricConfig]] = {
     "hermes": hermes_config,
-    "codex-cli": codex_cli_config,
+    "codex": codex_config,
     "deepagents": deepagents_config,
 }
 

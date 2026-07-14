@@ -7,15 +7,12 @@ from __future__ import annotations
 
 import shlex
 from pathlib import Path
-from typing import Any
-from typing import Literal
+from typing import Any, Literal
 
 
 RelayHookAgent = Literal["claude", "codex"]
 
-# NeMo Relay currently uses this union for both Claude Code and Codex. Keep the
-# snapshot centralized until Relay exposes its hook renderer as a public API.
-RELAY_HOOK_EVENTS = (
+CLAUDE_RELAY_HOOK_EVENTS = (
     "SessionStart",
     "UserPromptSubmit",
     "UserPromptExpansion",
@@ -30,6 +27,18 @@ RELAY_HOOK_EVENTS = (
     "PreCompact",
     "PostCompact",
     "SessionEnd",
+)
+CODEX_RELAY_HOOK_EVENTS = (
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PermissionRequest",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "PreCompact",
+    "PostCompact",
 )
 RELAY_TOOL_HOOK_EVENTS = frozenset(
     {
@@ -52,7 +61,12 @@ def render_relay_hooks(
 
     command = f"{shlex.quote(str(executable))} hook-forward {agent}"
     hooks: dict[str, list[dict[str, Any]]] = {}
-    for event in RELAY_HOOK_EVENTS:
+    events = (
+        CLAUDE_RELAY_HOOK_EVENTS
+        if agent == "claude"
+        else CODEX_RELAY_HOOK_EVENTS
+    )
+    for event in events:
         group: dict[str, Any] = {
             "hooks": [
                 {

@@ -9,7 +9,7 @@ import pytest
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 
 
-EXPECTED_EVENTS = (
+CLAUDE_EXPECTED_EVENTS = (
     "SessionStart",
     "UserPromptSubmit",
     "UserPromptExpansion",
@@ -25,15 +25,33 @@ EXPECTED_EVENTS = (
     "PostCompact",
     "SessionEnd",
 )
+CODEX_EXPECTED_EVENTS = (
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PermissionRequest",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "PreCompact",
+    "PostCompact",
+)
 
 
-@pytest.mark.parametrize("agent", ["claude", "codex"])
-def test_render_relay_hooks_matches_relay_agent_contract(agent):
+@pytest.mark.parametrize(
+    ("agent", "expected_events"),
+    [
+        ("claude", CLAUDE_EXPECTED_EVENTS),
+        ("codex", CODEX_EXPECTED_EVENTS),
+    ],
+)
+def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events):
     executable = Path("/opt/nvidia relay/bin/nemo-relay")
 
     hooks = relay_hooks.render_relay_hooks(agent, executable)["hooks"]
 
-    assert tuple(hooks) == EXPECTED_EVENTS
+    assert tuple(hooks) == expected_events
     assert hooks["SessionStart"] == [
         {
             "hooks": [
@@ -47,12 +65,16 @@ def test_render_relay_hooks_matches_relay_agent_contract(agent):
     ]
     assert {
         event for event, groups in hooks.items() if groups[0].get("matcher") == "*"
-    } == {
-        "PreToolUse",
-        "PostToolUse",
-        "PostToolUseFailure",
-        "PermissionRequest",
-    }
+    } == (
+        {
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionRequest",
+        }
+        if agent == "claude"
+        else {"PreToolUse", "PostToolUse", "PermissionRequest"}
+    )
 
 
 def test_render_relay_hooks_rejects_unsupported_agent():

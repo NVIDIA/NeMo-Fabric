@@ -6225,6 +6225,26 @@ Apache License
    limitations under the License.
 ```
 
+## openai-codex (0.1.0b3)
+
+### Licenses
+License: `Apache-2.0`
+
+  - `LICENSE`:
+```
+(No license file found in locked artifact for openai-codex; see package metadata or PyPI.)
+```
+
+## openai-codex-cli-bin (0.137.0a4)
+
+### Licenses
+License: `Apache-2.0`
+
+  - `LICENSE`:
+```
+(No license file found in locked artifact for openai-codex-cli-bin; see package metadata or PyPI.)
+```
+
 ## orjson (3.11.9)
 
 ### Licenses
