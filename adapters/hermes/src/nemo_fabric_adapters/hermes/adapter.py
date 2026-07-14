@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Hermes SDK adapter for Fabric.
+"""Hermes adapter for Fabric.
 
 This adapter maps Fabric's normalized config into Hermes' native Python SDK
 surface and invokes the installed Hermes runtime.
@@ -20,8 +20,105 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-import nemo_fabric_adapters.common.hermes as hermes_common
 import nemo_fabric_adapters.common.utils as common_utils
+
+
+def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
+    providers = common_utils.telemetry_providers(payload)
+    if any(provider != "relay" for provider in providers):
+        raise ValueError("only relay telemetry is supported for Hermes")
+
+
+def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False) -> dict[str, Any]:
+    settings = common_utils.settings_payload(payload)
+    model_config = common_utils.selected_model_config(payload)
+    native = common_utils.capability_plan(payload).get("native") or {}
+    environment = common_utils.environment_payload(payload)
+
+    model_name = settings.get("model_name") or model_config.get("model", "")
+    provider = settings.get("provider") or model_config.get("provider")
+    base_url = common_utils.get_base_url(settings, model_config)
+
+    config: dict[str, Any] = {
+        "model": common_utils.without_none(
+            {
+                "provider": provider,
+                "default": model_name,
+                "base_url": base_url,
+            }
+        ),
+        "agent": common_utils.without_none(
+            {
+                "max_turns": settings.get("max_iterations"),
+                "disabled_toolsets": settings.get("disabled_toolsets"),
+            }
+        ),
+        "terminal": common_utils.without_none(
+            {
+                "backend": settings.get("terminal_backend", "local"),
+                "cwd": str(environment.get("workspace") or settings.get("workspace") or "."),
+                "timeout": settings.get("terminal_timeout", 60),
+            }
+        ),
+    }
+
+    skill_dirs = [str(path) for path in native.get("skill_paths", [])]
+    if skill_dirs:
+        config["skills"] = {"external_dirs": skill_dirs}
+
+    mcp_servers = native.get("mcp_servers") or {}
+    if mcp_servers:
+        config["mcp_servers"] = {
+            name: hermes_mcp_server_config(server)
+            for name, server in sorted(mcp_servers.items())
+        }
+
+    if "enabled_toolsets" in settings:
+        config["platform_toolsets"] = {
+            settings.get("toolset_platform", "cli"): common_utils.normalize_list(settings.get("enabled_toolsets"))
+        }
+
+    plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
+    if relay_enabled and "observability/nemo_relay" not in plugins:
+        plugins.append("observability/nemo_relay")
+    if plugins:
+        config["plugins"] = {"enabled": plugins}
+
+    return config
+
+
+def write_hermes_config(
+    payload: dict[str, Any],
+    hermes_home: Path,
+    *,
+    relay_enabled: bool = False,
+) -> tuple[Path, dict[str, Any]]:
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    config = build_hermes_config(payload, relay_enabled=relay_enabled)
+    config_path = hermes_home / "config.yaml"
+    config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")
+    return config_path, config
+
+
+def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
+    transport = str(server.get("transport") or "").strip().lower()
+    raw_target = server.get("url")
+    target = os.path.expandvars(str(raw_target or "")).strip()
+    if not target:
+        raise ValueError("MCP server mapping requires a URL")
+
+    return {"enabled": True, "url": target, "transport": transport}
+
+
+def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "model": config.get("model", {}),
+        "terminal": config.get("terminal", {}),
+        "skill_dirs": (config.get("skills") or {}).get("external_dirs", []),
+        "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),
+        "plugins": (config.get("plugins") or {}).get("enabled", []),
+        "platform_toolsets": config.get("platform_toolsets", {}),
+    }
 
 
 def main() -> None:
@@ -35,7 +132,7 @@ def main() -> None:
 def run(payload: dict[str, Any]) -> dict[str, Any]:
     """Fabric adapter entrypoint used by script and native SDK runtime calls."""
 
-    return asyncio.run(run_hermes_sdk(payload))
+    return asyncio.run(run_hermes(payload))
 
 
 def resolve_hermes_toolsets(settings: dict[str, Any], config: dict[str, Any]) -> list[str] | None:
@@ -64,11 +161,11 @@ def load_runtime_history(session_db: Any, session_id: str | None) -> list[dict[s
     return messages or None
 
 
-async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
-    hermes_common.validate_hermes_telemetry_provider(payload)
+async def run_hermes(payload: dict[str, Any]) -> dict[str, Any]:
+    validate_hermes_telemetry_provider(payload)
     settings = common_utils.settings_payload(payload)
-    request = hermes_common.request_payload(payload)
-    model_config = hermes_common.selected_model_config(payload)
+    request = common_utils.request_payload(payload)
+    model_config = common_utils.selected_model_config(payload)
     hermes_home_base = Path(common_utils.config_root(payload)).joinpath(
         settings.get("hermes_home", "./artifacts/hermes-home")
     )
@@ -87,7 +184,7 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     if relay_enabled:
         relay_plugin_config = common_utils.load_relay_plugin_config(payload)
 
-    hermes_config_path, hermes_config = hermes_common.write_hermes_config(
+    hermes_config_path, hermes_config = write_hermes_config(
         payload,
         hermes_home,
         relay_enabled=relay_enabled,
@@ -96,9 +193,9 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     api_key_env = settings.get("api_key_env") or model_config.get("api_key_env") or "NVIDIA_API_KEY"
     api_key = os.environ.get(api_key_env)
     if not api_key:
-        raise RuntimeError(f"{api_key_env} is required for Hermes SDK mode")
+        raise RuntimeError(f"{api_key_env} is required for Hermes mode")
 
-    base_url = hermes_common.get_base_url(settings, model_config)
+    base_url = common_utils.get_base_url(settings, model_config)
     user_message = request.get("input") or ""
     if not isinstance(user_message, str):
         user_message = json.dumps(user_message, sort_keys=True)
@@ -130,7 +227,7 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
     output = {
         "harness": "hermes",
         "adapter": "python",
-        "mode": "hermes_sdk",
+        "mode": "hermes",
         "model": model_config.get("model"),
         "base_url": base_url,
         "response": response,
@@ -143,7 +240,7 @@ async def run_hermes_sdk(payload: dict[str, Any]) -> dict[str, Any]:
         "adapter_stdout": adapter_stdout,
         "hermes_home": str(hermes_home),
         "hermes_config_path": str(hermes_config_path),
-        "hermes_native_config": hermes_common.summarize_hermes_config(hermes_config),
+        "hermes_native_config": summarize_hermes_config(hermes_config),
         "enabled_toolsets": enabled_toolsets,
     }
     if relay_plugin_config is not None:
@@ -222,7 +319,7 @@ def _invoke_hermes(
                 invoke_hook(
                     "on_session_finalize",
                     session_id=getattr(agent, "session_id", ""),
-                    model=getattr(agent, "model", None) or hermes_common.relay_model_name(payload),
+                    model=getattr(agent, "model", None) or common_utils.relay_model_name(payload),
                     platform=getattr(agent, "platform", None) or "fabric",
                 )
 

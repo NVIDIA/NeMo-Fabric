@@ -51,6 +51,10 @@ def virtualenv_subprocess_env() -> dict[str, str]:
     return env
 
 
+def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("request") or {}
+
+
 def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("effective_config") or {}
 
@@ -108,6 +112,34 @@ def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return fabric_config(payload).get("models") or payload.get("models") or {}
 
 
+def default_base_url(provider: str | None) -> str | None:
+    if provider == "nvidia":
+        return "https://integrate.api.nvidia.com/v1"
+    return None
+
+
+def get_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
+    return (
+        settings.get("base_url")
+        or (model_config.get("settings") or {}).get("base_url")
+        or default_base_url(model_config.get("provider"))
+    )
+
+
+def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
+    settings = settings_payload(payload)
+    models = models_payload(payload)
+    model_config = models.get(settings.get("model", "default"), {})
+    if not isinstance(model_config, dict):
+        return {}
+    return model_config
+
+
+def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    telemetry = fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    return telemetry if isinstance(telemetry, dict) else {}
+
+
 def telemetry_plan(payload: dict[str, Any]) -> dict[str, Any]:
     plan = payload.get("telemetry_plan") or {}
     return plan if isinstance(plan, dict) else {}
@@ -141,6 +173,10 @@ def normalize_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         value = [value]
     return [str(item) for item in value if str(item)]
+
+
+def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in mapping.items() if value is not None}
 
 
 def dump_yaml(value: dict[str, Any]) -> str:
@@ -208,7 +244,7 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
             if section_name == "atif":
                 section.setdefault("filename_template", "trajectory-{session_id}.atif.json")
                 section.setdefault("agent_name", agent_name(payload))
-                section.setdefault("model_name", _relay_model_name(payload))
+                section.setdefault("model_name", relay_model_name(payload))
 
 
 def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
@@ -416,7 +452,8 @@ def write_relay_configs(
         raise RuntimeError("tomli_w is not installed") from e
 
 
-def _relay_model_name(payload: dict[str, Any]) -> str:
+
+def relay_model_name(payload: dict[str, Any]) -> str:
     settings = settings_payload(payload)
     models = models_payload(payload)
     model_config = models.get(settings.get("model", "default"), {})

@@ -2014,7 +2014,7 @@ mod tests {
     }
 
     fn example_adapter_descriptor_path() -> PathBuf {
-        repository_adapter_dir().join("hermes-sdk/fabric-adapter.json")
+        repository_adapter_dir().join("hermes/fabric-adapter.json")
     }
 
     #[test]
@@ -2025,7 +2025,7 @@ schema_version: fabric.agent/v1alpha1
 metadata:
   name: demo
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
   settings:
     workspace: ./workspace
 runtime:
@@ -2090,7 +2090,7 @@ schema_version: fabric.agent/v1alpha1
 metadata:
   name: demo
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
 runtime:
 "#,
         )
@@ -2108,7 +2108,7 @@ schema_version: fabric.agent/v1alpha1
 metadata:
   name: demo
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
 runtime:
 telemetry:
   providers:
@@ -2136,7 +2136,7 @@ schema_version: fabric.agent/v1alpha1
 metadata:
   name: demo
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
 runtime:
 telemetry:
   providers:
@@ -2173,7 +2173,7 @@ schema_version: fabric.agent/v1alpha1
 metadata:
   name: demo
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
 runtime:
 telemetry:
   providers:
@@ -2346,7 +2346,7 @@ telemetry:
             load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
 
         assert_eq!(descriptor.contract_version, ADAPTER_CONTRACT_VERSION);
-        assert_eq!(descriptor.adapter_id, "nvidia.fabric.hermes.sdk");
+        assert_eq!(descriptor.adapter_id, "nvidia.fabric.hermes");
         assert_eq!(descriptor.harness, "hermes");
         assert_eq!(descriptor.adapter_kind, AdapterKind::Python);
         let descriptor_json = serde_json::to_value(&descriptor).expect("descriptor json");
@@ -2357,7 +2357,7 @@ telemetry:
         assert!(descriptor_json.get("harness_type").is_none());
         assert_eq!(
             descriptor.runner.get("module").and_then(Value::as_str),
-            Some("nemo_fabric_adapters.hermes_sdk.adapter")
+            Some("nemo_fabric_adapters.hermes.adapter")
         );
         assert_eq!(
             descriptor.runner.get("callable").and_then(Value::as_str),
@@ -2389,12 +2389,12 @@ telemetry:
                 "cancellation": false
             })
         );
-        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");
+        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes");
         assert_eq!(
             plan.adapter_descriptor
                 .as_ref()
                 .map(|adapter| adapter.descriptor.adapter_id.as_str()),
-            Some("nvidia.fabric.hermes.sdk")
+            Some("nvidia.fabric.hermes")
         );
         assert_eq!(
             plan.adapter_descriptor
@@ -2437,17 +2437,17 @@ telemetry:
     }
 
     #[test]
-    fn resolves_hermes_sdk_adapter_descriptor() {
-        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes_sdk")).expect("run plan");
+    fn resolves_hermes_adapter_descriptor() {
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes")).expect("run plan");
         let adapter = plan
             .adapter_descriptor
             .as_ref()
             .expect("configured adapter");
 
         assert_eq!(adapter.source, AdapterDescriptorSource::Repository);
-        assert_eq!(adapter.descriptor.adapter_id, "nvidia.fabric.hermes.sdk");
+        assert_eq!(adapter.descriptor.adapter_id, "nvidia.fabric.hermes");
         assert_eq!(adapter.descriptor.adapter_kind, AdapterKind::Python);
-        assert!(adapter.root.ends_with("adapters/hermes-sdk"));
+        assert!(adapter.root.ends_with("adapters/hermes"));
     }
 
     #[test]
@@ -2718,16 +2718,16 @@ mcp:
     }
 
     #[test]
-    fn resolves_hermes_sdk_profile_from_agent_directory() {
-        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes_sdk")).expect("run plan");
+    fn resolves_hermes_profile_from_agent_directory() {
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes")).expect("run plan");
 
-        assert_eq!(plan.profiles, vec!["hermes_sdk"]);
-        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");
+        assert_eq!(plan.profiles, vec!["hermes"]);
+        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes");
         assert_eq!(
             plan.adapter_descriptor
                 .as_ref()
                 .map(|adapter| adapter.descriptor.adapter_id.as_str()),
-            Some("nvidia.fabric.hermes.sdk")
+            Some("nvidia.fabric.hermes")
         );
         assert_eq!(
             plan.adapter_descriptor
@@ -2761,16 +2761,16 @@ mcp:
 
     #[test]
     fn resolves_direct_profile_path_from_agent_directory() {
-        let plan = resolve_run_plan(file_config_agent_dir(), Some("./profiles/hermes-sdk.yaml"))
+        let plan = resolve_run_plan(file_config_agent_dir(), Some("./profiles/hermes.yaml"))
             .expect("run plan");
 
-        assert_eq!(plan.profiles, vec!["./profiles/hermes-sdk.yaml"]);
-        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes.sdk");
+        assert_eq!(plan.profiles, vec!["./profiles/hermes.yaml"]);
+        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes");
         assert_eq!(
             plan.adapter_descriptor
                 .as_ref()
                 .map(|adapter| adapter.descriptor.adapter_id.as_str()),
-            Some("nvidia.fabric.hermes.sdk")
+            Some("nvidia.fabric.hermes")
         );
     }
 

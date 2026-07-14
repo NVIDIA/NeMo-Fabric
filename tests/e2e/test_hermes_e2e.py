@@ -6,7 +6,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
 
@@ -14,25 +13,22 @@ import pytest
 import yaml
 
 from examples.code_review_agent import (
-    hermes_cli_config,
-    hermes_sdk_config,
+    hermes_config,
     with_relay,
 )
-from nemo_fabric import Fabric, FabricConfig
+from nemo_fabric import Fabric
 
 
-class BaseTestHermesE2E:
-    """
-    Shared E2E Hermes relay assertions for adapter-specific subclasses.
-    """
+class TestHermesE2E:
+    """End-to-end Hermes relay assertions."""
 
-    config_builder: Callable[[], FabricConfig]
-    adapter_kind: str
-    adapter_runner: str
-    output_adapter: str
-    mode: str
-    artifact_dir: str
-    atof_platform: str
+    config_builder = staticmethod(hermes_config)
+    adapter_kind = "python"
+    adapter_runner = "python"
+    output_adapter = "python"
+    mode = "hermes"
+    artifact_dir = "hermes"
+    atof_platform = "fabric"
 
     @pytest.fixture(autouse=True)
     async def run_hermes_with_relay(
@@ -124,14 +120,6 @@ class BaseTestHermesE2E:
         assert relay_config["relay"]["enabled"] is True
         assert relay_config["fabric"]["profiles"] == []
         
-        await self._additional_artifact_tests(artifact_by_name)
-
-
-    async def _additional_artifact_tests(self, artifact_by_name: dict[str, dict[str, str]]):
-        """
-        Subclasses can override this to add additional artifact tests.
-        """
-
     async def test_atof_artifacts(self):
         kinds = {artifact["kind"] for artifact in self.relay_artifacts}
         assert "atof" in kinds
@@ -207,31 +195,3 @@ class BaseTestHermesE2E:
         assert last_step["message"] == "hermes.session.end"
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"
-        
-
-class TestHermesCliE2E(BaseTestHermesE2E):
-    config_builder = staticmethod(hermes_cli_config)
-    adapter_kind = "python"
-    adapter_runner = "python"
-    output_adapter = "cli"
-    mode = "hermes_cli_runtime"
-    artifact_dir = "hermes-cli"
-    atof_platform = "cli"
-
-    async def _additional_artifact_tests(self, artifact_by_name: dict[str, dict[str, str]]):
-        assert self.output["returncode"] == 0
-
-        assert self.output["fabric_invocation"] is None
-
-        relay_config_path = Path(artifact_by_name["relay_config"]["path"]).resolve()
-        assert (relay_config_path.parent / "relay-config" / "plugins.toml").exists()
-
-
-class TestHermesSdkE2E(BaseTestHermesE2E):
-    config_builder = staticmethod(hermes_sdk_config)
-    adapter_kind = "python"
-    adapter_runner = "python"
-    output_adapter = "python"
-    mode = "hermes_sdk"
-    artifact_dir = "hermes-sdk"
-    atof_platform = "fabric"

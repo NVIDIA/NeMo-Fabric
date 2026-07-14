@@ -66,7 +66,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert plan["agent_name"] == "code-review-agent"
     assert (
         plan["adapter_descriptor"]["descriptor"]["adapter_id"]
-        == "nvidia.fabric.hermes.sdk"
+        == "nvidia.fabric.hermes"
     )
     assert plan["capability_plan"]["native"]["mcp_servers"]["github"]
     assert plan["capability_plan"]["native"]["skill_paths"]
@@ -78,7 +78,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     minimal = FabricConfig.from_mapping(
         {
             "metadata": {"name": "minimal-typed-agent"},
-            "harness": {"adapter_id": "nvidia.fabric.hermes.sdk"},
+            "harness": {"adapter_id": "nvidia.fabric.hermes"},
         }
     )
     minimal_resolved = client.resolve(minimal)

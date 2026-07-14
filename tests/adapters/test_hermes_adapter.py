@@ -1,94 +1,25 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+"""Unit tests for the Hermes adapter's Fabric runtime mapping."""
+
+from __future__ import annotations
+
+import inspect
 import json
 import os
+import sys
 from pathlib import Path
+from types import ModuleType
+from unittest.mock import MagicMock
 
-import nemo_fabric_adapters.common.hermes as hermes_common
-import nemo_fabric_adapters.common.utils as common_utils
 import pytest
+from hermes_state import SessionDB
+from run_agent import AIAgent
 
+import nemo_fabric_adapters.common.utils as common_utils
 
-def test_request_payload():
-    assert hermes_common.request_payload({"request": {"input": "hello"}}) == {"input": "hello"}
-    assert hermes_common.request_payload({}) == {}
-
-
-@pytest.mark.parametrize(
-    ("provider", "expected"),
-    [
-        ("nvidia", "https://integrate.api.nvidia.com/v1"),
-        ("openai", None),
-        (None, None),
-    ],
-)
-def test_default_base_url(
-    provider: str | None,
-    expected: str | None,
-):
-    assert hermes_common.default_base_url(provider) == expected
-
-
-@pytest.mark.parametrize(
-    ("settings", "model_config", "expected"),
-    [
-        (
-            {"base_url": "https://settings.example/v1"},
-            {"provider": "nvidia", "settings": {"base_url": "https://model.example/v1"}},
-            "https://settings.example/v1",
-        ),
-        (
-            {},
-            {"provider": "openai", "settings": {"base_url": "https://model.example/v1"}},
-            "https://model.example/v1",
-        ),
-        ({}, {"provider": "nvidia"}, "https://integrate.api.nvidia.com/v1"),
-        ({}, {"provider": "other"}, None),
-    ],
-)
-def test_get_base_url(
-    settings: dict[str, object],
-    model_config: dict[str, object],
-    expected: str | None,
-):
-    assert hermes_common.get_base_url(settings, model_config) == expected
-
-
-@pytest.mark.parametrize(
-    ("selected_model", "models", "expected"),
-    [
-        (
-            "fast",
-            {"fast": {"provider": "nvidia", "model": "fast-model"}},
-            {"provider": "nvidia", "model": "fast-model"},
-        ),
-        (
-            None,
-            {"default": {"provider": "nvidia", "model": "default-model"}},
-            {"provider": "nvidia", "model": "default-model"},
-        ),
-        ("bad", {"bad": "not-a-model-config"}, {}),
-    ],
-)
-def test_selected_model_config(
-    selected_model: str | None,
-    models: dict[str, object],
-    expected: dict[str, object],
-):
-    settings = {}
-    if selected_model is not None:
-        settings["model"] = selected_model
-    payload = {
-        "effective_config": {
-            "config": {
-                "harness": {"settings": settings},
-                "models": models,
-            }
-        }
-    }
-
-    assert hermes_common.selected_model_config(payload) == expected
+from nemo_fabric_adapters.hermes import adapter  # noqa: E402
 
 
 @pytest.mark.parametrize("providers", [None, {"relay": {}}])
@@ -99,21 +30,21 @@ def test_validate_hermes_telemetry_provider_accepts_relay(
     if providers is not None:
         payload["telemetry_plan"] = {"providers": list(providers)}
 
-    hermes_common.validate_hermes_telemetry_provider(payload)
+    adapter.validate_hermes_telemetry_provider(payload)
 
 
 def test_validate_hermes_telemetry_provider_rejects_native():
     payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
 
     with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
-        hermes_common.validate_hermes_telemetry_provider(payload)
+        adapter.validate_hermes_telemetry_provider(payload)
 
 
 def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
     payload = {"telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}}
 
     with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
-        hermes_common.validate_hermes_telemetry_provider(payload)
+        adapter.validate_hermes_telemetry_provider(payload)
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -154,7 +85,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         },
     }
 
-    config = hermes_common.build_hermes_config(payload, relay_enabled=True)
+    config = adapter.build_hermes_config(payload, relay_enabled=True)
 
     assert config == {
         "model": {
@@ -175,7 +106,8 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         "mcp_servers": {
             "github": {
                 "enabled": True,
-                "command": "github-mcp --stdio",
+                "url": "github-mcp --stdio",
+                "transport": "stdio",
             },
             "memory": {
                 "enabled": True,
@@ -254,7 +186,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         },
     }
 
-    config = hermes_common.build_hermes_config(payload, relay_enabled=True)
+    config = adapter.build_hermes_config(payload, relay_enabled=True)
     plugin_config = common_utils.load_relay_plugin_config(payload)
     observability = plugin_config["components"][0]["config"]
 
@@ -266,7 +198,11 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     assert config["terminal"]["cwd"] == str(tmp_path / "workspace")
     assert config["skills"]["external_dirs"] == [str(tmp_path / "skills" / "review")]
     assert config["mcp_servers"] == {
-        "github": {"enabled": True, "command": "github-mcp --stdio"},
+        "github": {
+            "enabled": True,
+            "url": "github-mcp --stdio",
+            "transport": "stdio",
+        },
         "memory": {
             "enabled": True,
             "url": "https://mcp.example/memory",
@@ -291,7 +227,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
         }
     }
 
-    config_path, config = hermes_common.write_hermes_config(payload, tmp_path / "hermes-home")
+    config_path, config = adapter.write_hermes_config(payload, tmp_path / "hermes-home")
 
     assert config_path == tmp_path / "hermes-home" / "config.yaml"
     assert config_path.exists()
@@ -304,27 +240,11 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     [
         (
             {"transport": "stdio", "url": "server --stdio"},
-            {"enabled": True, "command": "server --stdio"},
-        ),
-        (
-            {"transport": "stdio", "command": "server --stdio"},
-            {"enabled": True, "command": "server --stdio"},
-        ),
-        (
-            {"transport": "command", "url": "server --command"},
-            {"enabled": True, "command": "server --command"},
-        ),
-        (
-            {"transport": "process", "command": "server --process"},
-            {"enabled": True, "command": "server --process"},
+            {"enabled": True, "url": "server --stdio", "transport": "stdio"},
         ),
         (
             {"transport": "sse", "url": "http://localhost:9000/sse"},
             {"enabled": True, "url": "http://localhost:9000/sse", "transport": "sse"},
-        ),
-        (
-            {"url": "http://localhost:9000/default"},
-            {"enabled": True, "url": "http://localhost:9000/default"},
         ),
         (
             {"transport": "websocket", "url": "ws://localhost:9000"},
@@ -336,29 +256,26 @@ def test_hermes_mcp_server_config(
     server: dict[str, str],
     expected: dict[str, object],
 ):
-    assert hermes_common.hermes_mcp_server_config(server) == expected
+    assert adapter.hermes_mcp_server_config(server) == expected
 
 
 @pytest.mark.parametrize(
     "server",
     [
         {"transport": "stdio"},
+        {"transport": "stdio", "command": "server --stdio"},
         {"transport": "stdio", "url": "   "},
     ],
 )
 def test_hermes_mcp_server_config_rejects_unsupported_mappings(
     server: dict[str, str],
 ):
-    with pytest.raises(ValueError, match="requires url or command"):
-        hermes_common.hermes_mcp_server_config(server)
-
-
-def test_without_none():
-    assert hermes_common.without_none({"a": 1, "b": None, "c": False}) == {"a": 1, "c": False}
+    with pytest.raises(ValueError, match="requires a URL"):
+        adapter.hermes_mcp_server_config(server)
 
 
 def test_summarize_hermes_config():
-    assert hermes_common.summarize_hermes_config(
+    assert adapter.summarize_hermes_config(
         {
             "model": {"default": "demo"},
             "terminal": {"backend": "local"},
@@ -377,70 +294,124 @@ def test_summarize_hermes_config():
     }
 
 
-def test_configure_hermes_relay_sets_hermes_plugin_environment(
+async def test_hermes_rejects_native_telemetry():
+    payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
+
+    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+        await adapter.run_hermes(payload)
+
+
+async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
+    monkeypatch,
     tmp_path: Path,
 ):
-    config_path = tmp_path / "relay.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "relay": {
-                    "config": {
-                        "version": 1,
-                        "components": [
-                            {
-                                "kind": "observability",
-                                "enabled": True,
-                                "config": {
-                                    "atof": {
-                                        "enabled": True,
-                                        "output_directory": "atof",
-                                        "filename": "custom.atof.jsonl",
-                                        "mode": "append",
-                                    },
-                                    "atif": {
-                                        "enabled": True,
-                                        "output_directory": "atif",
-                                        "filename_template": "trace-{session_id}.atif.json",
-                                        "agent_version": "1.2.3",
-                                    },
-                                },
-                            }
-                        ],
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
+    db_history = [{"role": "user", "content": "from hermes db"}]
+
+    mock_session_db = MagicMock(spec=SessionDB)
+    mock_session_db.get_session.return_value = {"id": "runtime-resolved-456"}
+    mock_session_db.resolve_resume_session_id.return_value = "runtime-resolved-456"
+    mock_session_db.get_messages_as_conversation.return_value = db_history
+    mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
+
+    mock_ai_agent = MagicMock(spec=AIAgent)
+    mock_ai_agent.session_id = "runtime-fabric-123"
+    mock_ai_agent.model = "test-model"
+    mock_ai_agent.platform = "fabric"
+    mock_ai_agent.run_conversation.__signature__ = inspect.signature(AIAgent.run_conversation)
+    mock_ai_agent.run_conversation.return_value = {
+        "response": "ok",
+        "completed": True,
+        "failed": False,
+        "messages": [{"role": "assistant", "content": "ok"}],
+    }
+    mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
+    monkeypatch.setattr(
+        mock_ai_agent_type.__init__.__func__,
+        "__signature__",
+        inspect.signature(AIAgent.__init__),
+        raising=False,
     )
-    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(config_path)
+
+    hermes_cli = ModuleType("hermes_cli")
+    hermes_config = ModuleType("hermes_cli.config")
+    hermes_config.load_config = lambda: {}  # type: ignore[attr-defined]
+    hermes_plugins = ModuleType("hermes_cli.plugins")
+    hermes_plugins.discover_plugins = lambda force=False: None  # type: ignore[attr-defined]
+    hermes_plugins.invoke_hook = lambda *args, **kwargs: None  # type: ignore[attr-defined]
+    hermes_state = ModuleType("hermes_state")
+    hermes_state.SessionDB = mock_session_db_type  # type: ignore[attr-defined]
+    run_agent = ModuleType("run_agent")
+    run_agent.AIAgent = mock_ai_agent_type  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", hermes_config)
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
+    monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
+    monkeypatch.setitem(sys.modules, "run_agent", run_agent)
+    os.environ["TEST_API_KEY"] = "secret"
+
     payload = {
-        "telemetry_plan": {"providers": ["relay"], "relay_enabled": True},
-        "runtime_context": {"runtime_id": "runtime-relay"},
         "effective_config": {
-            "agent_name": "review-agent",
+            "agent_name": "demo",
             "config_root": str(tmp_path),
             "config": {
-                "harness": {"settings": {"model": "review"}},
-                "models": {"review": {"model": "nvidia/review-model"}},
+                "harness": {
+                    "settings": {
+                        "hermes_home": "./hermes-home",
+                        "enabled_toolsets": [],
+                        "system_prompt": "system",
+                    }
+                },
+                "models": {
+                    "default": {
+                        "provider": "test-provider",
+                        "model": "test-model",
+                        "api_key_env": "TEST_API_KEY",
+                    }
+                },
             },
         },
+        "runtime_context": {
+            "runtime_id": "runtime-fabric-123",
+            "environment": {"workspace": str(tmp_path)},
+        },
+        "request": {
+            "input": "hello",
+            "context": {"history": [{"role": "user", "content": "stale"}]},
+        },
+        "capability_plan": {"native": {}},
     }
 
-    plugin_config = hermes_common.configure_hermes_relay(payload)
+    output = await adapter.run_hermes(payload)
 
-    assert plugin_config is not None
-    assert os.environ["HERMES_NEMO_RELAY_ATOF_ENABLED"] == "1"
-    assert os.environ["HERMES_NEMO_RELAY_ATOF_OUTPUT_DIRECTORY"] == str(tmp_path / "atof" / "runtime-relay")
-    assert os.environ["HERMES_NEMO_RELAY_ATOF_FILENAME"] == "custom.atof.jsonl"
-    assert os.environ["HERMES_NEMO_RELAY_ATOF_MODE"] == "append"
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_ENABLED"] == "1"
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] == str(tmp_path / "atif" / "runtime-relay")
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE"] == "trace-{session_id}.atif.json"
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_NAME"] == "review-agent"
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"] == "1.2.3"
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_MODEL_NAME"] == "nvidia/review-model"
-
-
-def test_configure_hermes_relay_returns_none_when_disabled():
-    assert hermes_common.configure_hermes_relay({}) is None
+    mock_session_db_type.assert_called_once_with()
+    mock_session_db.resolve_resume_session_id.assert_called_once_with("runtime-fabric-123")
+    mock_session_db.get_session.assert_called_once_with("runtime-resolved-456")
+    mock_session_db.get_messages_as_conversation.assert_called_once_with("runtime-resolved-456")
+    mock_ai_agent_type.assert_called_once_with(
+        base_url=None,
+        api_key="secret",
+        provider="test-provider",
+        model="test-model",
+        max_iterations=1,
+        enabled_toolsets=[],
+        disabled_toolsets=None,
+        quiet_mode=True,
+        skip_context_files=True,
+        skip_memory=True,
+        save_trajectories=False,
+        max_tokens=512,
+        reasoning_config={"effort": "none"},
+        platform="fabric",
+        session_id="runtime-fabric-123",
+        session_db=mock_session_db,
+    )
+    mock_ai_agent.run_conversation.assert_called_once_with(
+        "hello",
+        system_message="system",
+        conversation_history=db_history,
+    )
+    assert "session_id" not in output
+    assert Path(output["hermes_home"]) == (
+        tmp_path / "hermes-home" / "runtimes" / "runtime-fabric-123"
+    )

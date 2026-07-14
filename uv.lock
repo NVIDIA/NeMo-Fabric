@@ -2019,11 +2019,8 @@ adapters-common = [
 adapters-deepagents = [
     { name = "nemo-fabric-adapters-deepagents" },
 ]
-adapters-hermes-cli = [
-    { name = "nemo-fabric-adapters-hermes-cli" },
-]
-adapters-hermes-sdk = [
-    { name = "nemo-fabric-adapters-hermes-sdk" },
+adapters-hermes = [
+    { name = "nemo-fabric-adapters-hermes" },
 ]
 claude = [
     { name = "nemo-fabric-adapters-claude" },
@@ -2040,8 +2037,7 @@ harbor = [
 ]
 hermes = [
     { name = "hermes-agent" },
-    { name = "nemo-fabric-adapters-hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-sdk" },
+    { name = "nemo-fabric-adapters-hermes" },
 ]
 relay = [
     { name = "nemo-relay" },
@@ -2057,8 +2053,7 @@ adapters = [
     { name = "nemo-fabric-adapters-codex-cli" },
     { name = "nemo-fabric-adapters-common" },
     { name = "nemo-fabric-adapters-deepagents" },
-    { name = "nemo-fabric-adapters-hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-sdk" },
+    { name = "nemo-fabric-adapters-hermes" },
 ]
 dev = [
     { name = "ipython" },
@@ -2092,16 +2087,14 @@ requires-dist = [
     { name = "nemo-fabric-adapters-common", marker = "extra == 'adapters-common'", editable = "adapters/common" },
     { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'adapters-deepagents'", editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'adapters-hermes-cli'", editable = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-cli", marker = "extra == 'hermes'", editable = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'adapters-hermes-sdk'", editable = "adapters/hermes-sdk" },
-    { name = "nemo-fabric-adapters-hermes-sdk", marker = "extra == 'hermes'", editable = "adapters/hermes-sdk" },
+    { name = "nemo-fabric-adapters-hermes", marker = "extra == 'adapters-hermes'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-hermes", marker = "extra == 'hermes'", editable = "adapters/hermes" },
     { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = "~=0.5.0" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
     { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
 ]
-provides-extras = ["adapters-common", "adapters-codex-cli", "adapters-claude", "adapters-deepagents", "adapters-hermes-cli", "adapters-hermes-sdk", "codex", "claude", "deepagents", "harbor", "hermes", "relay", "runtime"]
+provides-extras = ["adapters-common", "adapters-codex-cli", "adapters-claude", "adapters-deepagents", "adapters-hermes", "codex", "claude", "deepagents", "harbor", "hermes", "relay", "runtime"]
 
 [package.metadata.requires-dev]
 adapters = [
@@ -2109,8 +2102,7 @@ adapters = [
     { name = "nemo-fabric-adapters-codex-cli", editable = "adapters/codex-cli" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "nemo-fabric-adapters-deepagents", editable = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-hermes-cli", editable = "adapters/hermes-cli" },
-    { name = "nemo-fabric-adapters-hermes-sdk", editable = "adapters/hermes-sdk" },
+    { name = "nemo-fabric-adapters-hermes", editable = "adapters/hermes" },
 ]
 dev = [
     { name = "ipython", specifier = "~=8.20" },
@@ -2196,26 +2188,9 @@ requires-dist = [
 ]
 
 [[package]]
-name = "nemo-fabric-adapters-hermes-cli"
+name = "nemo-fabric-adapters-hermes"
 version = "0.1.0"
-source = { editable = "adapters/hermes-cli" }
-dependencies = [
-    { name = "nemo-fabric-adapters-common" },
-    { name = "pyyaml" },
-    { name = "tomli-w" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "tomli-w", specifier = "~=1.2" },
-]
-
-[[package]]
-name = "nemo-fabric-adapters-hermes-sdk"
-version = "0.1.0"
-source = { editable = "adapters/hermes-sdk" }
+source = { editable = "adapters/hermes" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
     { name = "pyyaml" },

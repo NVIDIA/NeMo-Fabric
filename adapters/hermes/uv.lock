@@ -8,7 +8,7 @@ version = "0.1.0"
 source = { editable = "../common" }
 
 [[package]]
-name = "nemo-fabric-adapters-hermes-sdk"
+name = "nemo-fabric-adapters-hermes"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
