@@ -78,7 +78,6 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                     "settings": {
                         "system_prompt": "Review carefully.",
                         "allowed_tools": ["Read"],
-                        "disallowed_tools": ["WebFetch"],
                         "permission_mode": "dontAsk",
                         "max_turns": 4,
                         "max_budget_usd": 1.5,
@@ -136,7 +135,7 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert options.system_prompt == "Review carefully."
     assert options.tools is None
     assert options.allowed_tools == ["Read"]
-    assert options.disallowed_tools == ["Bash", "WebFetch"]
+    assert options.disallowed_tools == ["Bash"]
     assert options.permission_mode == "dontAsk"
     assert options.max_turns == 4
     assert options.max_budget_usd == 1.5
@@ -327,6 +326,7 @@ def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
         ("model_name", "FabricConfig.models"),
         ("cwd", "FabricConfig.environment.workspace"),
         ("tools", "FabricConfig.tools"),
+        ("disallowed_tools", "FabricConfig.tools.blocked"),
         ("mcp_servers", "FabricConfig.mcp"),
         ("skills", "FabricConfig.skills"),
     ],

@@ -11,27 +11,26 @@ import math
 import os
 import shlex
 import shutil
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import (
-    CLIConnectionError,
-    CLIJSONDecodeError,
-    CLINotFoundError,
-    ClaudeAgentOptions,
-    ClaudeSDKError,
-    Message,
-    ProcessError,
-    ResultMessage,
-    query,
-)
+from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk import ClaudeSDKError
+from claude_agent_sdk import CLIConnectionError
+from claude_agent_sdk import CLIJSONDecodeError
+from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import Message
+from claude_agent_sdk import ProcessError
+from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import query
 from claude_agent_sdk._errors import MessageParseError
-
-import nemo_fabric_adapters.common.relay_gateway as relay_gateway
-import nemo_fabric_adapters.common.relay_hooks as relay_hooks
-import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.common import relay_gateway
+from nemo_fabric_adapters.common import relay_hooks
+from nemo_fabric_adapters.common import utils as common_utils
 
 PERMISSION_MODES = {
     "default",
@@ -46,6 +45,7 @@ NORMALIZED_SETTING_FIELDS = {
     "model_name": "FabricConfig.models",
     "cwd": "FabricConfig.environment.workspace",
     "tools": "FabricConfig.tools",
+    "disallowed_tools": "FabricConfig.tools.blocked",
     "mcp_servers": "FabricConfig.mcp",
     "skills": "FabricConfig.skills",
 }
@@ -264,13 +264,6 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 f"unsupported MCP transport: {transport}",
             )
     return result
-
-
-def _disallowed_tools(payload: dict[str, Any], settings: dict[str, Any]) -> list[str]:
-    return common_utils.merge_unique(
-        common_utils.blocked_tools(payload),
-        _string_list(settings.get("disallowed_tools"), name="disallowed_tools"),
-    )
 
 
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
@@ -493,7 +486,7 @@ def build_options(
         system_prompt=system_prompt,
         tools=None,
         allowed_tools=_string_list(settings.get("allowed_tools"), name="allowed_tools"),
-        disallowed_tools=_disallowed_tools(payload, settings),
+        disallowed_tools=common_utils.blocked_tools(payload),
         permission_mode=permission_mode,
         max_turns=max_turns,
         max_budget_usd=max_budget,
