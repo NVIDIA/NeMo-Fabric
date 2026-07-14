@@ -22,6 +22,12 @@ from typing import Any
 
 import nemo_fabric_adapters.common.utils as common_utils
 
+# Default agent loop budget when harness.settings.max_iterations is unset.
+# Mirrors Hermes' own AIAgent default (agent/agent_init.py); a lower value such
+# as 1 silently starves multi-step tasks (they run out of budget before
+# answering while the trial still reports success). See FABRIC-85.
+DEFAULT_MAX_ITERATIONS = 90
+
 
 def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
     providers = common_utils.telemetry_providers(payload)
@@ -286,7 +292,7 @@ def _invoke_hermes(
                 api_key=api_key,
                 provider=settings.get("provider") or model_config.get("provider"),
                 model=settings.get("model_name") or model_config.get("model", ""),
-                max_iterations=int(settings.get("max_iterations", 1)),
+                max_iterations=int(settings.get("max_iterations", DEFAULT_MAX_ITERATIONS)),
                 enabled_toolsets=enabled_toolsets,
                 disabled_toolsets=settings.get("disabled_toolsets"),
                 quiet_mode=True,
