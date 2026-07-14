@@ -522,4 +522,3 @@ def test_root_readme_routes_to_sdk_and_harbor_guides():
     assert "docs/sdk/python.mdx" in readme
     assert "examples/harbor/README.md" in readme
     assert "examples/harbor/demo/README.md" in readme
-

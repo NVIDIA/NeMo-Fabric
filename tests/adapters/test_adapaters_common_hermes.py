@@ -448,4 +448,3 @@ def test_configure_hermes_relay_sets_hermes_plugin_environment(
 
 def test_configure_hermes_relay_returns_none_when_disabled():
     assert hermes_common.configure_hermes_relay({}) is None
-

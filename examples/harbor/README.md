@@ -20,7 +20,6 @@ Harbor task -> FabricAgent -> Fabric.run -> selected adapter -> harness
             -> Harbor verifier and reward
             -> Fabric result + ATOF/ATIF evidence
 ```
-
 Run the same task again with another complete config to compare harnesses. A
 skill, MCP, tool, or telemetry variant is a separate run so results remain
 attributable.
@@ -277,4 +276,3 @@ uv run --extra runtime --extra harbor pytest \
   tests/integrations/test_harbor_runner.py \
   tests/integrations/test_harbor_telemetry.py
 ```
-
