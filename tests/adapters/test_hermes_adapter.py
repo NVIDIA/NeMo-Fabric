@@ -5,14 +5,17 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from unittest.mock import MagicMock
 
+from hermes_state import SessionDB
 import pytest
+from run_agent import AIAgent
 
 import nemo_fabric_adapters.common.utils as common_utils
 
@@ -302,79 +305,32 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     monkeypatch,
     tmp_path: Path,
 ):
-    captured: dict[str, Any] = {}
     db_history = [{"role": "user", "content": "from hermes db"}]
 
-    class FakeSessionDB:
-        def get_session(self, session_id: str) -> dict[str, str] | None:
-            captured.setdefault("db_get_session", []).append(session_id)
-            if session_id == "runtime-resolved-456":
-                return {"id": session_id}
-            return None
+    mock_session_db = MagicMock(spec=SessionDB)
+    mock_session_db.get_session.return_value = {"id": "runtime-resolved-456"}
+    mock_session_db.resolve_resume_session_id.return_value = "runtime-resolved-456"
+    mock_session_db.get_messages_as_conversation.return_value = db_history
+    mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
 
-        def resolve_resume_session_id(self, session_id: str) -> str:
-            captured["db_resolve_session"] = session_id
-            return "runtime-resolved-456"
-
-        def get_messages_as_conversation(self, session_id: str) -> list[dict[str, str]]:
-            captured["db_get_messages"] = session_id
-            return list(db_history)
-
-    class FakeAIAgent:
-        def __init__(
-            self,
-            *,
-            base_url: str | None = None,
-            api_key: str | None = None,
-            provider: str | None = None,
-            model: str = "",
-            max_iterations: int = 1,
-            enabled_toolsets: list[str] | None = None,
-            quiet_mode: bool = True,
-            skip_context_files: bool = True,
-            skip_memory: bool = True,
-            save_trajectories: bool = False,
-            max_tokens: int = 512,
-            temperature: float = 0.0,
-            reasoning_config: dict[str, Any] | None = None,
-            insert_reasoning: bool = False,
-            platform: str | None = None,
-            session_id: str | None = None,
-            session_db: Any | None = None,
-        ):
-            captured["init"] = {
-                "session_id": session_id,
-                "session_db": session_db,
-                "platform": platform,
-                "model": model,
-                "provider": provider,
-            }
-            self.session_id = session_id or "generated-session"
-            self.model = model
-            self.platform = platform
-
-        def run_conversation(
-            self,
-            user_message: str,
-            *,
-            system_message: str | None = None,
-            conversation_history: list[dict[str, str]] | None = None,
-            sync_honcho: bool = False,
-            dont_review: bool = True,
-        ) -> dict[str, Any]:
-            captured["conversation"] = {
-                "user_message": user_message,
-                "system_message": system_message,
-                "conversation_history": conversation_history,
-                "sync_honcho": sync_honcho,
-                "dont_review": dont_review,
-            }
-            return {
-                "response": "ok",
-                "completed": True,
-                "failed": False,
-                "messages": [{"role": "assistant", "content": "ok"}],
-            }
+    mock_ai_agent = MagicMock(spec=AIAgent)
+    mock_ai_agent.session_id = "runtime-fabric-123"
+    mock_ai_agent.model = "test-model"
+    mock_ai_agent.platform = "fabric"
+    mock_ai_agent.run_conversation.__signature__ = inspect.signature(AIAgent.run_conversation)
+    mock_ai_agent.run_conversation.return_value = {
+        "response": "ok",
+        "completed": True,
+        "failed": False,
+        "messages": [{"role": "assistant", "content": "ok"}],
+    }
+    mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
+    monkeypatch.setattr(
+        mock_ai_agent_type.__init__.__func__,
+        "__signature__",
+        inspect.signature(AIAgent.__init__),
+        raising=False,
+    )
 
     hermes_cli = ModuleType("hermes_cli")
     hermes_config = ModuleType("hermes_cli.config")
@@ -383,9 +339,9 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     hermes_plugins.discover_plugins = lambda force=False: None  # type: ignore[attr-defined]
     hermes_plugins.invoke_hook = lambda *args, **kwargs: None  # type: ignore[attr-defined]
     hermes_state = ModuleType("hermes_state")
-    hermes_state.SessionDB = FakeSessionDB  # type: ignore[attr-defined]
+    hermes_state.SessionDB = mock_session_db_type  # type: ignore[attr-defined]
     run_agent = ModuleType("run_agent")
-    run_agent.AIAgent = FakeAIAgent  # type: ignore[attr-defined]
+    run_agent.AIAgent = mock_ai_agent_type  # type: ignore[attr-defined]
 
     monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
     monkeypatch.setitem(sys.modules, "hermes_cli.config", hermes_config)
@@ -428,13 +384,33 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
 
     output = await adapter.run_hermes(payload)
 
-    assert captured["db_resolve_session"] == "runtime-fabric-123"
-    assert captured["db_get_session"] == ["runtime-resolved-456"]
-    assert captured["db_get_messages"] == "runtime-resolved-456"
-    assert captured["init"]["session_id"] == "runtime-fabric-123"
-    assert isinstance(captured["init"]["session_db"], FakeSessionDB)
-    assert captured["init"]["platform"] == "fabric"
-    assert captured["conversation"]["conversation_history"] == db_history
+    mock_session_db_type.assert_called_once_with()
+    mock_session_db.resolve_resume_session_id.assert_called_once_with("runtime-fabric-123")
+    mock_session_db.get_session.assert_called_once_with("runtime-resolved-456")
+    mock_session_db.get_messages_as_conversation.assert_called_once_with("runtime-resolved-456")
+    mock_ai_agent_type.assert_called_once_with(
+        base_url=None,
+        api_key="secret",
+        provider="test-provider",
+        model="test-model",
+        max_iterations=1,
+        enabled_toolsets=[],
+        disabled_toolsets=None,
+        quiet_mode=True,
+        skip_context_files=True,
+        skip_memory=True,
+        save_trajectories=False,
+        max_tokens=512,
+        reasoning_config={"effort": "none"},
+        platform="fabric",
+        session_id="runtime-fabric-123",
+        session_db=mock_session_db,
+    )
+    mock_ai_agent.run_conversation.assert_called_once_with(
+        "hello",
+        system_message="system",
+        conversation_history=db_history,
+    )
     assert "session_id" not in output
     assert Path(output["hermes_home"]) == (
         tmp_path / "hermes-home" / "runtimes" / "runtime-fabric-123"
