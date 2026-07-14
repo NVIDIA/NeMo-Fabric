@@ -42,7 +42,9 @@ uv run python -c 'from nemo_fabric.integrations.harbor import FabricAgent; print
 - **portable**: `fabric_config_bundle` is a host directory and
   `fabric_config_path` is a relative entrypoint within it. Harbor uploads the
   bundle with `BaseEnvironment.upload_dir()` to
-  `/tmp/nemo-fabric-config` before the run.
+  `/tmp/nemo-fabric-config` before installation and the run. Portable bundles
+  include config-local adapter descriptors under `configs/adapters/`; the
+  selected adapter package still supplies the executable Python code.
 
 Set `fabric_package` to a PEP 508 requirement when the task image needs Fabric
 installed. For example, a released package can use
@@ -94,9 +96,7 @@ Run Hermes:
 
 ```bash
 uv run harbor run \
-  --dataset swe-bench/swe-bench-verified \
-  --include-task-name django__django-13741 \
-  --n-tasks 1 \
+  --task swe-bench/django__django-13741 \
   --agent "$FABRIC_AGENT" \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_config_path=configs/hermes.yaml \
@@ -116,9 +116,7 @@ export OPENAI_API_KEY=...
 export FABRIC_CODEX_PACKAGE='nemo-fabric[codex,harbor,runtime]==<version>'
 
 uv run harbor run \
-  --dataset swe-bench/swe-bench-verified \
-  --include-task-name django__django-13741 \
-  --n-tasks 1 \
+  --task swe-bench/django__django-13741 \
   --agent "$FABRIC_AGENT" \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_config_path=configs/codex.yaml \
@@ -133,6 +131,14 @@ uv run harbor run \
 The arbitrary install command is shown only because the registry task also
 needs the Codex npm binary. A full evaluation should bake Fabric and the CLI
 into a pinned image instead.
+
+For a self-hosted Nemotron 3 Nano NIM, Hermes requires OpenAI-compatible
+automatic tool calling. Start current model-specific NIM releases with
+`NIM_ENABLE_AUTO_TOOL_CHOICE=1` and `NIM_TOOL_CALL_PARSER=openai`; a plain chat
+completion can succeed even when this required agent capability is disabled.
+Confirm one request containing `tools` and `tool_choice: auto` before starting
+Harbor. See the [NIM release guidance](https://docs.nvidia.com/nim/large-language-models/1.15.0/release-notes.html#new-language-models)
+for Nemotron 3 Nano.
 
 ## Hold the harness fixed and vary one capability
 
@@ -195,8 +201,8 @@ Do not begin with all 500 tasks:
 3. Run `django__django-13741` once with one harness.
 4. Repeat it with the second harness.
 5. Exercise the skill, MCP, tool, and Relay variants individually.
-6. Run a five-task shard by keeping the same command, removing
-   `--include-task-name`, and setting `--n-tasks 5`.
+6. Run a five-task shard by replacing `--task swe-bench/django__django-13741`
+   with `--dataset swe-bench/swe-bench-verified --n-tasks 5`.
 7. Inspect every exception and reward plus at least one Fabric result and
    telemetry summary before scaling.
 8. Start the full dataset by removing `--n-tasks` and choosing concurrency that
@@ -224,6 +230,7 @@ uv run harbor job resume --job-path "$RUNS_DIR/<job-name>"
 | --- | --- |
 | `examples/harbor/swebench/` | `/tmp/nemo-fabric-config/` in portable mode |
 | `configs/hermes.yaml` | `/tmp/nemo-fabric-config/configs/hermes.yaml` |
+| SWE-Bench checkout | `/testbed/` |
 | `mcp/repo_inspector.py` | `/tmp/nemo-fabric-config/mcp/repo_inspector.py` |
 | `examples/harbor/demo/task/environment/fabric/` | `/opt/fabric-demo/` via the demo Dockerfile `COPY` |
 | Harbor agent logs | `/logs/agent/` in the task and `<trial>/agent/` on the host |

@@ -391,9 +391,9 @@ def test_harbor_demo_documents_explicit_cli_commands():
     ):
         assert flag in demo
     for value in (
-        "swe-bench/swe-bench-verified",
-        "django__django-13741",
-        "--include-task-name",
+            "swe-bench/swe-bench-verified",
+            "django__django-13741",
+            "--task swe-bench/django__django-13741",
         "--skill",
         "--mcp-config",
         "harbor job resume",
@@ -470,7 +470,14 @@ def test_swebench_matrix_uses_complete_configs_and_one_fixed_task():
         config = FabricConfig.model_validate(yaml.safe_load(path.read_text()))
         assert config.profiles is None
         assert config.environment is not None
-        assert str(config.environment.workspace) == "/app"
+        assert str(config.environment.workspace) == "/testbed"
+
+    assert (SWEBENCH_CONFIGS / "adapters/hermes-cli/fabric-adapter.json").read_text() == (
+        ROOT / "adapters/hermes-cli/fabric-adapter.json"
+    ).read_text()
+    assert (SWEBENCH_CONFIGS / "adapters/codex-cli/fabric-adapter.json").read_text() == (
+        ROOT / "adapters/codex-cli/fabric-adapter.json"
+    ).read_text()
 
     readme = INTEGRATION_README.read_text(encoding="utf-8")
     assert readme.count("django__django-13741") >= 4

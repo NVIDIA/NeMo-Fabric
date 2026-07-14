@@ -1,0 +1,20 @@
+{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "nvidia.fabric.hermes.cli",
+  "harness": "hermes",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "nemo_fabric_adapters.hermes_cli.adapter",
+    "callable": "run_hermes_cli"
+  },
+  "requirements": {
+    "env": ["NVIDIA_API_KEY"],
+    "binaries": ["hermes"]
+  },
+  "config": {
+    "accepts": ["tools", "mcp", "skills", "telemetry"]
+  },
+  "telemetry": {
+    "supports": ["relay", "atif", "otel", "openinference"]
+  }
+}

@@ -9,7 +9,7 @@ harness:
   adapter_id: nvidia.fabric.hermes.cli
   resolution: preinstalled
   settings:
-    cwd: /app
+    cwd: /testbed
     hermes_home: /tmp/fabric-hermes
     base_url: https://integrate.api.nvidia.com/v1
     max_iterations: 50
@@ -25,7 +25,7 @@ runtime:
   artifacts: /logs/agent/fabric-artifacts/swebench/hermes
 environment:
   provider: local
-  workspace: /app
+  workspace: /testbed
   artifacts: /logs/agent/fabric-artifacts/swebench/hermes
 telemetry:
   enabled: false

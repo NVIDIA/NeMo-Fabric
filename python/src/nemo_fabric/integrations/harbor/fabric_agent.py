@@ -109,6 +109,11 @@ else:
                 timeout_sec=30,
             )
             ensure_success("Fabric setup failed", result)
+            if self.fabric_config_bundle is not None:
+                await environment.upload_dir(
+                    self.fabric_config_bundle,
+                    self.fabric_config_target,
+                )
             if self.fabric_package:
                 result = await environment.exec(
                     fabric_install_command(
@@ -129,11 +134,6 @@ else:
                     timeout_sec=self.fabric_timeout_sec,
                 )
                 ensure_success("Fabric install command failed", result)
-            if self.fabric_config_bundle is not None:
-                await environment.upload_dir(
-                    self.fabric_config_bundle,
-                    self.fabric_config_target,
-                )
 
         async def run(
             self,
@@ -159,7 +159,7 @@ else:
                     path_prefix=self._runner_path_prefix,
                 ),
                 cwd=self.fabric_cwd,
-                env=self.extra_env,
+                env=self._runner_env,
                 timeout_sec=self.fabric_timeout_sec,
             )
             ensure_success("Fabric run failed", result)
@@ -223,9 +223,16 @@ else:
 
         @property
         def _runner_path_prefix(self) -> str | None:
-            if self.fabric_package is None:
+            runner = PurePosixPath(self._runner_python)
+            if not runner.is_absolute():
                 return None
-            return str(PurePosixPath(self.fabric_venv_path) / "bin")
+            return str(runner.parent)
+
+        @property
+        def _runner_env(self) -> dict[str, str]:
+            env = dict(self.extra_env or {})
+            env["ADAPTER_PYTHON"] = self._runner_python
+            return env
 
 
 def fabric_runner_command(

@@ -102,6 +102,7 @@ class FakeHarborEnvironment:
         self.environments: list[dict[str, str] | None] = []
         self.uploads: list[tuple[Path, str]] = []
         self.directory_uploads: list[tuple[Path, str]] = []
+        self.operations: list[tuple[str, str]] = []
 
     async def exec(
         self,
@@ -112,6 +113,7 @@ class FakeHarborEnvironment:
         **_: Any,
     ) -> ExecResult:
         self.commands.append(command)
+        self.operations.append(("exec", command))
         self.environments.append(env)
         if "nemo_fabric.integrations.harbor.runner" in command:
             arguments = shlex.split(command)
@@ -163,6 +165,7 @@ class FakeHarborEnvironment:
 
     async def upload_dir(self, source_dir: Path, target_dir: str) -> None:
         self.directory_uploads.append((Path(source_dir), target_dir))
+        self.operations.append(("upload_dir", target_dir))
 
 
 async def test_harbor_integration(tmp_path: Path):
@@ -217,7 +220,10 @@ async def test_harbor_integration(tmp_path: Path):
     assert len(fabric_commands) == 1
     assert not any(command.startswith("cat > ") for command in environment.commands)
     assert "python3 -m nemo_fabric.integrations.harbor.runner" in fabric_commands[0]
-    assert environment.environments[environment.commands.index(fabric_commands[0])] == {"NVIDIA_API_KEY": "test-key"}
+    assert environment.environments[environment.commands.index(fabric_commands[0])] == {
+        "NVIDIA_API_KEY": "test-key",
+        "ADAPTER_PYTHON": "python3",
+    }
     assert context.metadata
     assert context.metadata["fabric"]["status"] == "succeeded"
     assert "profiles" not in context.metadata["fabric"]
@@ -272,6 +278,29 @@ async def test_harbor_uploads_a_portable_config_bundle(tmp_path: Path):
 
     assert environment.directory_uploads == [(bundle, "/tmp/nemo-fabric-config")]
     assert agent._build_spec("fix it").config_path == Path("/tmp/nemo-fabric-config/agent.yaml")
+
+
+async def test_harbor_uploads_bundle_before_package_install(tmp_path: Path):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "agent.yaml").write_text("harness: {}", encoding="utf-8")
+    agent = FabricAgent(
+        logs_dir=tmp_path / "logs",
+        fabric_config_path="agent.yaml",
+        fabric_config_bundle=bundle,
+        fabric_package="/tmp/nemo-fabric-config/wheelhouse/nemo_fabric.whl",
+    )
+    environment = FakeHarborEnvironment()
+
+    await agent.setup(environment)  # type: ignore[arg-type]
+
+    upload_index = environment.operations.index(("upload_dir", "/tmp/nemo-fabric-config"))
+    install_index = next(
+        index
+        for index, operation in enumerate(environment.operations)
+        if operation[0] == "exec" and "pip install" in operation[1]
+    )
+    assert upload_index < install_index
 
 
 def test_harbor_config_bundle_rejects_unsafe_entrypoints(tmp_path: Path):
@@ -338,6 +367,35 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
     await agent.run("fix it", environment, AgentContext())  # type: ignore[arg-type]
     runner = next(command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command)
     assert runner.startswith("PATH=/tmp/nemo-fabric-venv/bin:$PATH /tmp/nemo-fabric-venv/bin/python -m ")
+    runner_index = environment.commands.index(runner)
+    assert environment.environments[runner_index] == {
+        "ADAPTER_PYTHON": "/tmp/nemo-fabric-venv/bin/python"
+    }
+
+
+async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: Path):
+    with pytest.warns(DeprecationWarning, match="fabric_install_command"):
+        agent = FabricAgent(
+            logs_dir=tmp_path,
+            fabric_config_path="/opt/fabric/agent.yaml",
+            fabric_python="/tmp/custom-fabric/bin/python",
+            fabric_install_command="install-fabric-for-test",
+            extra_env={"NVIDIA_API_KEY": "test-key", "ADAPTER_PYTHON": "/wrong/python"},
+        )
+    environment = FakeHarborEnvironment()
+
+    await agent.setup(environment)  # type: ignore[arg-type]
+    await agent.run("fix it", environment, AgentContext())  # type: ignore[arg-type]
+
+    runner = next(command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command)
+    assert runner.startswith(
+        "PATH=/tmp/custom-fabric/bin:$PATH /tmp/custom-fabric/bin/python -m "
+    )
+    runner_index = environment.commands.index(runner)
+    assert environment.environments[runner_index] == {
+        "NVIDIA_API_KEY": "test-key",
+        "ADAPTER_PYTHON": "/tmp/custom-fabric/bin/python",
+    }
 
 
 def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):

@@ -33,7 +33,7 @@ def reply(request: dict[str, Any]) -> dict[str, Any] | None:
             ]
         }
     elif method == "tools/call":
-        root = Path("/app")
+        root = Path("/testbed")
         names = sorted(path.name for path in root.iterdir())[:50]
         result = {
             "content": [

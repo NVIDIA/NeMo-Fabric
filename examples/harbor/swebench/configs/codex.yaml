@@ -9,7 +9,7 @@ harness:
   adapter_id: nvidia.fabric.codex.cli
   resolution: preinstalled
   settings:
-    cwd: /app
+    cwd: /testbed
     sandbox: danger-full-access
     skip_git_repo_check: true
     config_overrides:
@@ -24,7 +24,7 @@ runtime:
   artifacts: /logs/agent/fabric-artifacts/swebench/codex
 environment:
   provider: local
-  workspace: /app
+  workspace: /testbed
   artifacts: /logs/agent/fabric-artifacts/swebench/codex
 telemetry:
   enabled: false
