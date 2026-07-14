@@ -379,9 +379,7 @@ async def build_agent_kwargs(payload: dict[str, Any], model: Any, settings: dict
         middleware = list(kwargs.get("middleware") or [])
         middleware.append(blocked_tools_middleware(blocked))
         kwargs["middleware"] = middleware
-        subagents = kwargs.get("subagents")
-        if isinstance(subagents, list):
-            kwargs["subagents"] = [_block_subagent(sub, blocked) for sub in subagents]
+        kwargs["subagents"] = _gated_subagents(kwargs.get("subagents"), blocked)
     return {key: value for key, value in kwargs.items() if value is not None}
 
 
@@ -413,11 +411,37 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
     return dict(extra)
 
 
-def _block_subagent(subagent: Any, blocked: set[str]) -> Any:
-    if not isinstance(subagent, dict):
-        return subagent
+def _block_subagent(subagent: dict[str, Any], blocked: set[str]) -> dict[str, Any]:
     gated = dict(subagent)
     gated["middleware"] = [*(gated.get("middleware") or []), blocked_tools_middleware(blocked)]
+    return gated
+
+
+def _gated_subagents(subagents: Any, blocked: set[str]) -> list[dict[str, Any]]:
+    if subagents is None:
+        configured: list[Any] = []
+    elif isinstance(subagents, list):
+        configured = subagents
+    else:
+        raise AdapterConfigError(
+            "harness.settings.deepagents.subagents must be a list when tools.blocked is configured."
+        )
+
+    gated: list[dict[str, Any]] = []
+    for subagent in configured:
+        if not isinstance(subagent, dict):
+            raise AdapterConfigError("Deep Agents subagents must be mappings when tools.blocked is configured.")
+        name = str(subagent.get("name") or "<unnamed>")
+        if "graph_id" in subagent:
+            raise AdapterConfigError(f"tools.blocked cannot be enforced for remote Deep Agents subagent '{name}'.")
+        if "runnable" in subagent:
+            raise AdapterConfigError(f"tools.blocked cannot be enforced for precompiled Deep Agents subagent '{name}'.")
+        gated.append(_block_subagent(subagent, blocked))
+
+    if not any(subagent.get("name") == "general-purpose" for subagent in gated):
+        from deepagents.middleware.subagents import GENERAL_PURPOSE_SUBAGENT
+
+        gated.insert(0, _block_subagent(dict(GENERAL_PURPOSE_SUBAGENT), blocked))
     return gated
 
 

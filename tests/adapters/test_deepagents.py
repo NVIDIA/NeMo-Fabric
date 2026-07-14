@@ -20,7 +20,6 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
-
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
 
@@ -68,9 +67,20 @@ def fake_sdks_fixture(monkeypatch):
     deepagents_mod.create_deep_agent = MagicMock(side_effect=build_agent)
     backends_mod = types.ModuleType("deepagents.backends")
     backends_mod.FilesystemBackend = mock_fs_backend
+    middleware_mod = types.ModuleType("deepagents.middleware")
+    subagents_mod = types.ModuleType("deepagents.middleware.subagents")
+    subagents_mod.GENERAL_PURPOSE_SUBAGENT = {
+        "name": "general-purpose",
+        "description": "General-purpose delegated agent.",
+        "system_prompt": "Handle the delegated task.",
+    }
     deepagents_mod.backends = backends_mod
+    deepagents_mod.middleware = middleware_mod
+    middleware_mod.subagents = subagents_mod
     monkeypatch.setitem(sys.modules, "deepagents", deepagents_mod)
     monkeypatch.setitem(sys.modules, "deepagents.backends", backends_mod)
+    monkeypatch.setitem(sys.modules, "deepagents.middleware", middleware_mod)
+    monkeypatch.setitem(sys.modules, "deepagents.middleware.subagents", subagents_mod)
 
     langchain_openai_mod = types.ModuleType("langchain_openai")
     langchain_openai_mod.ChatOpenAI = mock_chat_openai
@@ -407,10 +417,10 @@ async def test_blocked_tools_middleware_blocks_configured_tools():
 
     middleware = adapter.blocked_tools_middleware({"write_file"})
 
-    async def handler(_request: Any) -> str:
+    async def handler(_request: types.SimpleNamespace) -> str:
         return "executed"
 
-    def request(name: str) -> Any:
+    def request(name: str) -> types.SimpleNamespace:
         return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
 
     blocked = await middleware.awrap_tool_call(request("write_file"), handler)
@@ -568,7 +578,7 @@ async def test_stream_requests_subgraphs(tmp_path, make_payload, fake_sdks):
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
-async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload, fake_sdks):
+async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
     pytest.importorskip("langchain.agents.middleware")
     from langchain_core.messages import ToolMessage
 
@@ -582,20 +592,47 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload, fake
     create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
     assert create_kwargs["middleware"], "main agent blocked-tools middleware not attached"
     subagents = create_kwargs["subagents"]
-    assert len(subagents) == 1
-    assert subagents[0]["middleware"], "subagent blocked-tools middleware not attached"
+    assert [subagent["name"] for subagent in subagents] == ["general-purpose", "researcher"]
+    assert all(subagent["middleware"] for subagent in subagents)
 
-    async def handler(_request: Any) -> str:
+    async def handler(_request: types.SimpleNamespace) -> str:
         return "executed"
 
-    def request(name: str) -> Any:
+    def request(name: str) -> types.SimpleNamespace:
         return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
 
-    for middleware in (create_kwargs["middleware"][-1], subagents[0]["middleware"][-1]):
+    gates = [create_kwargs["middleware"][-1]]
+    gates.extend(subagent["middleware"][-1] for subagent in subagents)
+    for middleware in gates:
         blocked = await middleware.awrap_tool_call(request("write_file"), handler)
         assert isinstance(blocked, ToolMessage)
         assert blocked.status == "error"
         assert await middleware.awrap_tool_call(request("read_file"), handler) == "executed"
+
+
+@pytest.mark.usefixtures("use_real_langgraph")
+async def test_default_subagent_is_gated_by_blocked_tools(tmp_path, make_payload):
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
+
+    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
+
+    assert [subagent["name"] for subagent in create_kwargs["subagents"]] == ["general-purpose"]
+    assert create_kwargs["subagents"][0]["middleware"]
+
+
+@pytest.mark.parametrize("unsupported", [{"graph_id": "remote"}, {"runnable": "compiled"}])
+async def test_blocked_tools_reject_unenforceable_subagents(tmp_path, make_payload, unsupported):
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+        "subagents": [{"name": "worker", **unsupported}]
+    }
+
+    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    with pytest.raises(adapter.AdapterConfigError, match="cannot be enforced"):
+        await adapter.build_agent_kwargs(payload, MagicMock(), settings)
 
 
 async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):

@@ -2057,6 +2057,17 @@ environment:
         let mut config = fs::read_to_string(&config_path).expect("read config");
         config.push_str("tools:\n  blocked:\n    - shell\n");
         fs::write(&config_path, config).expect("write blocked tools config");
+        fs::write(
+            root.join("adapters/process/fabric-adapter.json"),
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.process",
+  "harness": "process",
+  "adapter_kind": "process",
+  "config": {"accepts": ["tools"]}
+}"#,
+        )
+        .expect("write generic tools descriptor");
         let plan = resolve_run_plan(&root, None).expect("run plan");
 
         let error = start_runtime(&plan).expect_err("unsupported tools policy must fail closed");

@@ -40,7 +40,16 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "module": "nemo_fabric_adapters.claude.adapter",
             "callable": "run",
         },
-        "config": {"accepts": ["models", "tools", "mcp", "skills", "telemetry"]},
+        "config": {
+            "accepts": [
+                "models",
+                "tools",
+                "tools.blocked",
+                "mcp",
+                "skills",
+                "telemetry",
+            ]
+        },
         "telemetry": {
             "providers": {
                 "relay": {
@@ -298,7 +307,7 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
 
     options = adapter.build_options(relay_payload, resume=None, relay=relay)
 
-    assert options.tools == ["Read", "Glob", "Grep"]
+    assert options.tools is None
     assert options.skills is None
     assert options.plugins == [{"type": "local", "path": str(relay.plugin_path)}]
 

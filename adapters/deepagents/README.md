@@ -69,20 +69,20 @@ Fabric maps the following into the harness:
 
 Deep Agents can delegate to subagents through its built-in `task` tool. Subagents
 **inherit** the parent run's model, tools, skills, workspace, telemetry, and
-permissions — in particular, the parent `tools.blocked` policy applies to
-delegated execution, so a subagent cannot broaden capabilities beyond the parent.
-Independently configured subagent tools, skills, models, MCP servers, middleware,
-or permissions are **not** exposed through the Fabric SDK yet; a `subagents`
-definition here only carries JSON-shaped fields. Deterministic verification of
-delegated tool-gating is currently mock-based (see the adapter tests); a fuller
-real-subagent contract is future work.
+permissions. When `tools.blocked` is configured, Fabric supplies an explicitly
+gated `general-purpose` subagent and gates every declarative local subagent, so
+delegation cannot broaden capabilities beyond the parent. Remote and precompiled
+subagents are rejected in that case because their execution cannot be governed by
+the local middleware. Independently configured subagent tools, skills, models,
+MCP servers, middleware, or permissions are **not** exposed through the Fabric SDK
+yet; a `subagents` definition here only carries JSON-shaped fields.
 
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
 reports it), and errors. Usage aggregates the current turn across the main agent
 and any delegated subagents (streamed with `subgraphs=True`). Configuration and
 preflight failures (a missing credential, an absent `deepagents` package, an
-invalid MCP server, or passthrough option) are returned as a
+invalid MCP server, or a passthrough option) are returned as a
 normalized failure result rather than a raw traceback.
 
 ## Runtime Modes

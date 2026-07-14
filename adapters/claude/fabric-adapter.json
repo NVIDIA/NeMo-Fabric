@@ -8,7 +8,7 @@
     "callable": "run"
   },
   "config": {
-    "accepts": ["models", "tools", "mcp", "skills", "telemetry"]
+    "accepts": ["models", "tools", "tools.blocked", "mcp", "skills", "telemetry"]
   },
   "telemetry": {
     "providers": {

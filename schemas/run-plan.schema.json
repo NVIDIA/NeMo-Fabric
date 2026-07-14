@@ -5,7 +5,7 @@
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "Fabric config areas accepted by this adapter.",
+          "description": "Fabric config areas or policy paths accepted by this adapter.",
           "items": {
             "type": "string"
           },

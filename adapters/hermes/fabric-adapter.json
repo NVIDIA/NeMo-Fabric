@@ -15,6 +15,7 @@
   "config": {
     "accepts": [
       "tools",
+      "tools.blocked",
       "mcp",
       "skills",
       "telemetry"
