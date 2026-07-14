@@ -32,7 +32,7 @@
   <text x="432" y="390" font-size="12.5" fill="#5B6670">resolves an adapter</text>
 
   <g font-size="14.5" font-weight="700" fill="#1B2026" text-anchor="middle">
-    <rect x="40" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="129" y="459">Hermes SDK</text>
+    <rect x="40" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="129" y="459">Hermes</text>
     <rect x="234" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="323" y="459">Deep Agents</text>
     <rect x="428" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="517" y="459">Codex</text>
     <rect x="622" y="424" width="178" height="58" rx="9" fill="#F1F4F7" stroke="#CBD2D9"/><text x="711" y="459">Claude</text>
