@@ -13,8 +13,8 @@ from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock
 
-from hermes_state import SessionDB
 import pytest
+from hermes_state import SessionDB
 from run_agent import AIAgent
 
 import nemo_fabric_adapters.common.utils as common_utils
