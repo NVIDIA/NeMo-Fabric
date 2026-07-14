@@ -39,8 +39,10 @@ const VENV_PYTHON: &str = "python.exe";
 
 #[cfg(not(windows))]
 const DEFAULT_PYTHON: &str = "python3";
+// `find_on_path` joins each PATH entry with this bare name and stats the result,
+// so on Windows the fallback must name `python.exe` to be found on disk.
 #[cfg(windows)]
-const DEFAULT_PYTHON: &str = "python";
+const DEFAULT_PYTHON: &str = "python.exe";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
@@ -1451,7 +1453,11 @@ fn resolve_python_command_with_env(
         };
     }
     if let Some(env_name) = settings.python_env.as_ref() {
-        if let Some(path) = env(env_name) {
+        // A set-but-empty variable is treated as unset so it falls through to
+        // the shared fallback chain rather than yielding an empty path.
+        if let Some(path) = env(env_name)
+            && !path.as_os_str().is_empty()
+        {
             return PythonCommand {
                 path: resolve_command_path(root, Path::new(&path)),
                 source: PythonSource::SettingEnv(env_name.clone()),
@@ -1459,7 +1465,9 @@ fn resolve_python_command_with_env(
         }
         return fallback_interpreter(&env, &exists, current_exe.as_deref());
     }
-    if let Some(value) = env(ADAPTER_PYTHON_ENV) {
+    if let Some(value) = env(ADAPTER_PYTHON_ENV)
+        && !value.as_os_str().is_empty()
+    {
         return PythonCommand {
             path: resolve_command_path(root, Path::new(&value)),
             source: PythonSource::AdapterPythonEnv,
@@ -1481,13 +1489,13 @@ fn fallback_interpreter(
     if let Some(virtual_env) = env(VIRTUAL_ENV_ENV)
         && !virtual_env.as_os_str().is_empty()
     {
-        let candidate = Path::new(&virtual_env).join(VENV_BIN_DIR).join(VENV_PYTHON);
-        if exists(&candidate) {
-            return PythonCommand {
-                path: candidate,
-                source: PythonSource::Virtualenv,
-            };
-        }
+        // Inside an active virtualenv, always target its interpreter. If it is
+        // missing, preflight surfaces a clear PythonInterpreterUnavailable
+        // rather than silently falling back to an unrelated `python3`.
+        return PythonCommand {
+            path: Path::new(&virtual_env).join(VENV_BIN_DIR).join(VENV_PYTHON),
+            source: PythonSource::Virtualenv,
+        };
     }
     if let Some(exe) = current_exe
         && let Some(dir) = exe.parent()
@@ -2793,21 +2801,76 @@ runtime:
     }
 
     #[test]
-    fn fallback_prefers_active_virtualenv_over_bare_python3() {
+    fn fallback_targets_active_virtualenv_even_when_missing() {
+        // VIRTUAL_ENV wins over bare python3 and is returned even when its
+        // interpreter is absent, so preflight reports a clear error instead of
+        // silently falling back to an unrelated python3.
         let root = Path::new("/config");
         let settings = python_settings();
         let venv_python = Path::new("/venv").join(VENV_BIN_DIR).join(VENV_PYTHON);
-        let expected = venv_python.clone();
         let command = resolve_python_command_with_env(
             root,
             &settings,
             |name| (name == VIRTUAL_ENV_ENV).then(|| OsString::from("/venv")),
-            move |path| path == expected.as_path(),
+            |_| false,
             None,
         );
 
         assert_eq!(command.path, venv_python);
         assert_eq!(command.source, PythonSource::Virtualenv);
+
+        let error = validate_python_command(&command)
+            .expect_err("missing virtualenv interpreter must fail preflight");
+        assert!(matches!(
+            error,
+            FabricError::PythonInterpreterUnavailable { .. }
+        ));
+    }
+
+    #[test]
+    fn empty_environment_values_are_ignored() {
+        let root = Path::new("/config");
+
+        // ADAPTER_PYTHON set but empty -> ignored, falls through to python3.
+        let command = resolve_python_command_with_env(
+            root,
+            &python_settings(),
+            |name| (name == ADAPTER_PYTHON_ENV).then(OsString::new),
+            |_| false,
+            None,
+        );
+        assert_eq!(command.path, PathBuf::from(DEFAULT_PYTHON));
+        assert_eq!(command.source, PythonSource::DefaultPython3);
+
+        // python_env names a variable that is set but empty -> ignored.
+        let mut settings = python_settings();
+        settings.python_env = Some("CUSTOM_PYTHON".to_string());
+        let command = resolve_python_command_with_env(
+            root,
+            &settings,
+            |name| (name == "CUSTOM_PYTHON").then(OsString::new),
+            |_| false,
+            None,
+        );
+        assert_eq!(command.path, PathBuf::from(DEFAULT_PYTHON));
+        assert_eq!(command.source, PythonSource::DefaultPython3);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_default_python_is_python_exe() {
+        // find_on_path joins each PATH entry with the bare name and stats it, so
+        // on Windows the fallback must name python.exe to resolve on disk.
+        assert_eq!(DEFAULT_PYTHON, "python.exe");
+        let command = resolve_python_command_with_env(
+            Path::new("C:/config"),
+            &python_settings(),
+            |_| None,
+            |_| false,
+            None,
+        );
+        assert_eq!(command.path, PathBuf::from("python.exe"));
+        assert_eq!(command.source, PythonSource::DefaultPython3);
     }
 
     #[test]
