@@ -25,9 +25,7 @@ INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = ROOT / "python" / "src" / "nemo_fabric" / "integrations" / "harbor" / "README.md"
 HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
 
-@pytest.fixture(name="requires_harbor", scope="session", autouse=True)
-def requires_harbor_fixture(requires_harbor):
-    yield requires_harbor
+pytestmark = pytest.mark.usefixtures("requires_harbor")
 
 def load_codex_adapter():
     path = ROOT / "adapters/codex-cli/src/nemo_fabric_adapters/codex_cli/adapter.py"
