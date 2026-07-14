@@ -10,12 +10,11 @@ learn how to configure, run, inspect, and vary an agent.
 
 | Notebook | What it covers |
 | --- | --- |
-| [`01_quickstart.ipynb`](01_quickstart.ipynb) | The full lifecycle on one harness: describe an agent as a typed `FabricConfig`, inspect it with `plan()`, diagnose the environment with `doctor()`, `run()` one request, read the normalized `RunResult`, and continue across turns with a stateful runtime. |
-| [`02_variations.ipynb`](02_variations.ipynb) | Why Fabric exists: take that same agent and run it on every harness whose prerequisites are present (Hermes, Deep Agents, Codex, Claude), add and remove skills and MCP servers, and turn on NeMo Relay to emit trace files. |
+| [`01_quickstart.ipynb`](01_quickstart.ipynb) | **Fully self-contained.** The full lifecycle on one harness, every agent built inline: describe an agent as a typed `FabricConfig`, inspect it with `plan()`, diagnose the environment with `doctor()`, `run()` one request, read the normalized `RunResult`, and continue across turns with a stateful runtime. |
+| [`02_variations.ipynb`](02_variations.ipynb) | **Advanced composition on the maintained [code-review example](../code_review_agent/README.md).** Build on its `base_config()` to run the same agent across harnesses (Hermes, Deep Agents, Codex, Claude) and to vary configuration — skills, MCP servers, models, and NeMo Relay telemetry. |
 
-Read them in order. The quickstart teaches the mental model; the variations
-notebook shows how one agent runs across harnesses and how evaluation and
-ablation runs sweep its configuration.
+Read them in order. The quickstart teaches the mental model standalone; the
+variations notebook shows advanced composition against a real, maintained agent.
 
 ## Prerequisites
 
