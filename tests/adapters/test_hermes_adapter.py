@@ -103,7 +103,8 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         "mcp_servers": {
             "github": {
                 "enabled": True,
-                "command": "github-mcp --stdio",
+                "url": "github-mcp --stdio",
+                "transport": "stdio",
             },
             "memory": {
                 "enabled": True,
@@ -194,7 +195,11 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     assert config["terminal"]["cwd"] == str(tmp_path / "workspace")
     assert config["skills"]["external_dirs"] == [str(tmp_path / "skills" / "review")]
     assert config["mcp_servers"] == {
-        "github": {"enabled": True, "command": "github-mcp --stdio"},
+        "github": {
+            "enabled": True,
+            "url": "github-mcp --stdio",
+            "transport": "stdio",
+        },
         "memory": {
             "enabled": True,
             "url": "https://mcp.example/memory",
@@ -232,27 +237,11 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     [
         (
             {"transport": "stdio", "url": "server --stdio"},
-            {"enabled": True, "command": "server --stdio"},
-        ),
-        (
-            {"transport": "stdio", "command": "server --stdio"},
-            {"enabled": True, "command": "server --stdio"},
-        ),
-        (
-            {"transport": "command", "url": "server --command"},
-            {"enabled": True, "command": "server --command"},
-        ),
-        (
-            {"transport": "process", "command": "server --process"},
-            {"enabled": True, "command": "server --process"},
+            {"enabled": True, "url": "server --stdio", "transport": "stdio"},
         ),
         (
             {"transport": "sse", "url": "http://localhost:9000/sse"},
             {"enabled": True, "url": "http://localhost:9000/sse", "transport": "sse"},
-        ),
-        (
-            {"url": "http://localhost:9000/default"},
-            {"enabled": True, "url": "http://localhost:9000/default"},
         ),
         (
             {"transport": "websocket", "url": "ws://localhost:9000"},
@@ -271,13 +260,14 @@ def test_hermes_mcp_server_config(
     "server",
     [
         {"transport": "stdio"},
+        {"transport": "stdio", "command": "server --stdio"},
         {"transport": "stdio", "url": "   "},
     ],
 )
 def test_hermes_mcp_server_config_rejects_unsupported_mappings(
     server: dict[str, str],
 ):
-    with pytest.raises(ValueError, match="requires url or command"):
+    with pytest.raises(ValueError, match="requires a URL"):
         adapter.hermes_mcp_server_config(server)
 
 

@@ -103,20 +103,11 @@ def write_hermes_config(
 def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
     transport = str(server.get("transport") or "").strip().lower()
     raw_target = server.get("url")
-    if not raw_target and transport in {"stdio", "command", "process"}:
-        raw_target = server.get("command")
     target = os.path.expandvars(str(raw_target or "")).strip()
     if not target:
-        raise ValueError("MCP server mapping requires url or command")
+        raise ValueError("MCP server mapping requires a URL")
 
-    config: dict[str, Any] = {"enabled": True}
-    if transport in {"stdio", "command", "process"}:
-        config["command"] = target
-    else:
-        config["url"] = target
-        if transport:
-            config["transport"] = transport
-    return config
+    return {"enabled": True, "url": target, "transport": transport}
 
 
 def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
