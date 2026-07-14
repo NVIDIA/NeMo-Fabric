@@ -58,10 +58,6 @@ async def test_hermes_runtime():
 
 
 async def _run() -> None:
-    await _run_sdk_runtime()
-
-
-async def _run_sdk_runtime() -> None:
     from examples.code_review_agent import BASE_DIR, hermes_config
     from nemo_fabric import Fabric, RuntimeStatus
 
