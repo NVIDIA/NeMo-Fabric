@@ -472,6 +472,11 @@ def test_swebench_matrix_uses_complete_configs_and_one_fixed_task():
         assert config.environment is not None
         assert str(config.environment.workspace) == "/testbed"
 
+    tools_config = FabricConfig.model_validate(
+        yaml.safe_load((SWEBENCH_CONFIGS / "hermes-tools.yaml").read_text())
+    )
+    assert tools_config.harness.settings["enabled_toolsets"] == ["terminal", "file"]
+
     assert (SWEBENCH_CONFIGS / "adapters/hermes-cli/fabric-adapter.json").read_text() == (
         ROOT / "adapters/hermes-cli/fabric-adapter.json"
     ).read_text()

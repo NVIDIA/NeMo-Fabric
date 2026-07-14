@@ -15,8 +15,8 @@ harness:
     max_iterations: 50
     terminal_timeout: 300
     enabled_toolsets:
-      - git
-      - shell
+      - terminal
+      - file
     toolset_platform: cli
 models:
   default:
