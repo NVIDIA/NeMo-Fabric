@@ -147,6 +147,23 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
     assert "max_turns" not in config["agent"]
 
 
+def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
+    # An explicit null max_iterations is treated like unset: agent.max_turns is
+    # omitted so Hermes applies its own default instead of a starving override.
+    payload = {
+        "effective_config": {
+            "config": {
+                "harness": {"settings": {"max_iterations": None}},
+                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            }
+        }
+    }
+
+    config = adapter.build_hermes_config(payload)
+
+    assert "max_turns" not in config["agent"]
+
+
 def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     tmp_path: Path,
 ):
@@ -387,6 +404,8 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
                         "hermes_home": "./hermes-home",
                         "enabled_toolsets": [],
                         "system_prompt": "system",
+                        # Explicit null must resolve to DEFAULT_MAX_ITERATIONS (not int(None)).
+                        "max_iterations": None,
                     }
                 },
                 "models": {
