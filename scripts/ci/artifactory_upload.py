@@ -61,7 +61,7 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
                 "pic": kitmaker_owner,
                 "job_type": "wheel-release-job",
                 "url": wheel_url,
-                "upload": False,  # For now just use a dry run
+                "upload": True,
             }],
         }
 
