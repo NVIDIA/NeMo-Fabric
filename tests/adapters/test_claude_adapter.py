@@ -748,6 +748,46 @@ def test_run_reports_relay_start_failure_without_raw_diagnostic(
     assert not relay.plugin_path.exists()
 
 
+@pytest.mark.parametrize(
+    "auth_environment",
+    [
+        {
+            "ANTHROPIC_CONFIG_DIR": "/run/anthropic",
+            "ANTHROPIC_PROFILE": "production",
+        },
+        {
+            "ANTHROPIC_FEDERATION_RULE_ID": "fdrl_test",
+            "ANTHROPIC_ORGANIZATION_ID": "organization-test",
+            "ANTHROPIC_SERVICE_ACCOUNT_ID": "svac_test",
+            "ANTHROPIC_WORKSPACE_ID": "wrkspc_test",
+            "ANTHROPIC_IDENTITY_TOKEN_FILE": "/run/secrets/anthropic/token",
+        },
+        {
+            "ANTHROPIC_FEDERATION_RULE_ID": "fdrl_test",
+            "ANTHROPIC_ORGANIZATION_ID": "organization-test",
+            "ANTHROPIC_SERVICE_ACCOUNT_ID": "svac_test",
+            "ANTHROPIC_IDENTITY_TOKEN": "identity-token",
+        },
+        {"ANTHROPIC_AUTH_TOKEN": "bearer-token"},
+    ],
+)
+def test_build_options_forwards_anthropic_auth_environment(
+    claude_payload, monkeypatch, auth_environment
+):
+    model = claude_payload["effective_config"]["config"]["models"]["default"]
+    model.pop("api_key_env")
+    settings = claude_payload["effective_config"]["config"]["harness"]["settings"]
+    settings.pop("env")
+    monkeypatch.setenv("FABRIC_UNRELATED_SECRET", "do-not-forward")
+    for name, value in auth_environment.items():
+        monkeypatch.setenv(name, value)
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert {name: options.env[name] for name in auth_environment} == auth_environment
+    assert options.env["FABRIC_UNRELATED_SECRET"] == ""
+
+
 def test_build_options_forwards_default_anthropic_api_key(claude_payload, monkeypatch):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model.pop("api_key_env")

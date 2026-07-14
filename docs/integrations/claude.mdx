@@ -1,0 +1,84 @@
+---
+title: "Authenticate the Claude Adapter"
+description: "Configure cached login, API key, or Workload Identity Federation authentication for the NeMo Fabric Claude adapter."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+# Authenticate the Claude Adapter
+
+The `nvidia.fabric.claude` adapter uses the Claude Agent SDK and its bundled
+Claude Code runtime. Fabric preserves Claude's native credential precedence and
+forwards only supported operating-system, configuration, and authentication
+variables plus values explicitly configured in `harness.settings.env`.
+
+## Choose an Authentication Mode
+
+Use the mode that matches the execution environment:
+
+| Mode | Credential Source | Recommended Use |
+| --- | --- | --- |
+| Claude Code login | Cached Claude.ai or Anthropic Console login | Interactive local development |
+| API key | `ANTHROPIC_API_KEY` | Local development, prototypes, and controlled servers |
+| Workload Identity Federation (WIF) | Anthropic profile or direct federation environment variables | CI, cloud workloads, and Kubernetes without static API keys |
+
+Claude Code can use a Claude.ai Pro or Max login, an Anthropic Console login, or
+supported enterprise providers. Refer to the
+[Claude Code authentication documentation](https://docs.anthropic.com/en/docs/claude-code/getting-started)
+for the current subscription and enterprise options.
+
+## Use a Cached Claude Code Login
+
+Authenticate Claude Code outside Fabric. The adapter inherits `HOME` and
+`CLAUDE_CONFIG_DIR`, so the bundled runtime can reuse the same cached login.
+Fabric does not copy the credential store into its configuration or artifacts.
+
+## Use an API Key
+
+Set the API key in the process that invokes Fabric:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-api03-example
+```
+
+The adapter also forwards the selected model's `api_key_env` when the model
+configuration names a different environment variable.
+
+## Use Workload Identity Federation
+
+For a named WIF profile, set the profile and optional nondefault configuration
+directory:
+
+```bash
+export ANTHROPIC_CONFIG_DIR=/etc/anthropic
+export ANTHROPIC_PROFILE=production
+```
+
+For direct environment configuration, provide the federation rule,
+organization, service account, and one identity-token source:
+
+```bash
+export ANTHROPIC_FEDERATION_RULE_ID=fdrl_example
+export ANTHROPIC_ORGANIZATION_ID=00000000-0000-0000-0000-000000000000
+export ANTHROPIC_SERVICE_ACCOUNT_ID=svac_example
+export ANTHROPIC_WORKSPACE_ID=wrkspc_example
+export ANTHROPIC_IDENTITY_TOKEN_FILE=/var/run/secrets/anthropic.com/token
+```
+
+Use `ANTHROPIC_IDENTITY_TOKEN` instead of
+`ANTHROPIC_IDENTITY_TOKEN_FILE` when the platform injects the identity token as
+an environment variable. Refer to the
+[Anthropic WIF reference](https://platform.claude.com/docs/en/manage-claude/wif-reference)
+for credential precedence, profile structure, required claims, and provider
+setup.
+
+Unset `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` before using WIF. These
+variables take precedence over federation even when their value is empty.
+
+## Use Authentication with Relay
+
+NeMo Relay does not authenticate Claude. A Relay-enabled Fabric invocation
+starts the gateway as a supervised sidecar and sets `ANTHROPIC_BASE_URL` for the
+Claude runtime. Claude still resolves its credential through the selected mode,
+and Fabric does not write authentication values to Relay configuration or
+artifacts.
