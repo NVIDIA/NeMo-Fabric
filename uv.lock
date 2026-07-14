@@ -2132,12 +2132,14 @@ source = { editable = "adapters/claude" }
 dependencies = [
     { name = "claude-agent-sdk" },
     { name = "nemo-fabric-adapters-common" },
+    { name = "tomli-w" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", specifier = "==0.2.114" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
+    { name = "tomli-w", specifier = "~=1.2" },
 ]
 
 [[package]]

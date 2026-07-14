@@ -409,3 +409,73 @@ def test_write_relay_configs(
             assert path.parent.name == "relay-config"
             with path.open("rb") as stream:
                 assert tomllib.load(stream) == config
+
+
+def test_write_relay_configs_migrates_atof_to_current_cli_contract(tmp_path: Path):
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 1,
+                    "atof": {
+                        "enabled": True,
+                        "output_directory": "/tmp/atof",
+                        "filename": "events.jsonl",
+                        "mode": "overwrite",
+                        "endpoints": [
+                            {
+                                "url": "https://example.test/events",
+                                "transport": "http_post",
+                                "headers": {"x-test": "value"},
+                                "header_env": {"authorization": "TOKEN"},
+                                "timeout_millis": 1000,
+                                "field_name_policy": "replace_dots",
+                            }
+                        ],
+                    },
+                    "atif": {"enabled": True, "output_directory": "/tmp/atif"},
+                },
+            }
+        ],
+    }
+
+    _, plugin_path = common_utils.write_relay_configs(
+        plugin_config=plugin_config,
+        observability_version=2,
+    )
+
+    assert plugin_path is not None
+    with plugin_path.open("rb") as stream:
+        rendered = tomllib.load(stream)
+    observability = rendered["components"][0]["config"]
+    assert observability["version"] == 2
+    assert observability["atof"] == {
+        "enabled": True,
+        "sinks": [
+            {
+                "type": "file",
+                "output_directory": "/tmp/atof",
+                "filename": "events.jsonl",
+                "mode": "overwrite",
+            },
+            {
+                "type": "stream",
+                "url": "https://example.test/events",
+                "transport": "http_post",
+                "headers": {"x-test": "value"},
+                "header_env": {"authorization": "TOKEN"},
+                "timeout_millis": 1000,
+                "field_name_policy": "replace_dots",
+            },
+        ],
+    }
+    assert observability["atif"] == {
+        "enabled": True,
+        "output_directory": "/tmp/atif",
+    }
+    assert plugin_config["components"][0]["config"]["version"] == 1
+    assert "sinks" not in plugin_config["components"][0]["config"]["atof"]

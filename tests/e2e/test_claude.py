@@ -18,6 +18,9 @@ from nemo_fabric import (
     HarnessConfig,
     MetadataConfig,
     ModelConfig,
+    RelayAtifConfig,
+    RelayAtofConfig,
+    RelayObservabilityConfig,
     RuntimeConfig,
 )
 
@@ -27,7 +30,44 @@ MOCK_CLAUDE_CLI = ROOT / "tests" / "fixtures" / "claude" / "mock-claude-cli.py"
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
 
 
-def fabric_config(tmp_path, *, cli_path=None):
+def write_mock_relay_gateway(path: Path, log_path: Path) -> None:
+    path.write_text(
+        f"""#!{sys.executable}
+import json
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+args = sys.argv[1:]
+if args == ["--version"]:
+    print("nemo-relay 0.6.0")
+    raise SystemExit(0)
+Path({str(log_path)!r}).write_text(json.dumps(args), encoding="utf-8")
+bind = args[args.index("--bind") + 1]
+host, port = bind.rsplit(":", 1)
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200 if self.path == "/healthz" else 404)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+HTTPServer((host, int(port)), Handler).serve_forever()
+""",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+
+
+def fabric_config(
+    tmp_path,
+    *,
+    cli_path=None,
+    relay=False,
+    nemo_relay_command=None,
+):
     tmp_path.mkdir(parents=True, exist_ok=True)
     settings = {
         "python": sys.executable,
@@ -41,9 +81,12 @@ def fabric_config(tmp_path, *, cli_path=None):
                 "env": {
                     "CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK": "1",
                     "MOCK_CLAUDE_CLI_LOG": str(tmp_path / "claude-args.jsonl"),
+                    "MOCK_CLAUDE_CLI_ENV_LOG": str(tmp_path / "claude-env.jsonl"),
                 },
             }
         )
+    if nemo_relay_command is not None:
+        settings["nemo_relay_command"] = str(nemo_relay_command)
     config = FabricConfig(
         metadata=MetadataConfig(name="claude-runtime-test"),
         harness=HarnessConfig(
@@ -72,6 +115,13 @@ def fabric_config(tmp_path, *, cli_path=None):
             transport="streamable-http",
             url="https://mcp.example.test",
         )
+    if relay:
+        config.enable_relay(
+            observability=RelayObservabilityConfig(
+                atof=RelayAtofConfig(enabled=True),
+                atif=RelayAtifConfig(enabled=True),
+            )
+        )
     return config
 
 
@@ -85,7 +135,9 @@ async def test_fabric_session_launches_fresh_processes_and_resumes(tmp_path):
     assert first.status == second.status == "succeeded"
     assert first.runtime_id == second.runtime_id
     assert first.output["session_id"] == second.output["session_id"] == SESSION_ID
-    assert first.output["response"] == second.output["response"] == "mock Claude response"
+    assert (
+        first.output["response"] == second.output["response"] == "mock Claude response"
+    )
     assert first.output["usage"] == {"input_tokens": 1, "output_tokens": 2}
     assert first.output["cost_usd"] == 0.001
     assert [event["type"] for event in first.output["events"]] == ["AssistantMessage"]
@@ -97,8 +149,7 @@ async def test_fabric_session_launches_fresh_processes_and_resumes(tmp_path):
     assert "--resume" not in arguments[0]
     assert arguments[1][arguments[1].index("--resume") + 1] == SESSION_ID
     assert all(
-        args[args.index("--tools") + 1] == "Read,Glob,Grep,Skill"
-        for args in arguments
+        args[args.index("--tools") + 1] == "Read,Glob,Grep,Skill" for args in arguments
     )
     assert all("--mcp-config" in args for args in arguments)
     assert all("--plugin-dir" in args for args in arguments)
@@ -106,6 +157,71 @@ async def test_fabric_session_launches_fresh_processes_and_resumes(tmp_path):
     assert plugin_paths[0] == plugin_paths[1]
     assert all("Skill" in args[args.index("--allowedTools") + 1] for args in arguments)
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
+
+
+async def test_fabric_claude_relay_supervises_gateway_and_injects_plugin(tmp_path):
+    mock_relay = tmp_path / "nemo-relay"
+    relay_args_path = tmp_path / "relay-args.json"
+    write_mock_relay_gateway(mock_relay, relay_args_path)
+    config = fabric_config(
+        tmp_path,
+        cli_path=MOCK_CLAUDE_CLI,
+        relay=True,
+        nemo_relay_command=mock_relay,
+    )
+
+    result = await Fabric().run(config, base_dir=tmp_path, input="inspect")
+
+    assert result.status == "succeeded"
+    assert result.telemetry[0].provider == "relay"
+    relay_runtime = result.output["relay_runtime"]
+    assert relay_runtime["enabled"] is True
+    assert relay_runtime["emitter"] == "claude-agent-sdk/nemo-relay"
+    assert Path(relay_runtime["gateway_log_path"]).is_file()
+    assert Path(relay_runtime["gateway_config_path"]).is_file()
+    assert result.output["relay_artifacts"] == []
+
+    relay_args = json.loads(relay_args_path.read_text(encoding="utf-8"))
+    assert relay_args[0] == "--config"
+    assert relay_args[2] == "--bind"
+    assert relay_args[3] in relay_runtime["gateway_url"]
+    claude_args = json.loads((tmp_path / "claude-args.jsonl").read_text())
+    assert claude_args.count("--plugin-dir") == 2
+    plugin_paths = [
+        Path(claude_args[index + 1])
+        for index, value in enumerate(claude_args)
+        if value == "--plugin-dir"
+    ]
+    relay_plugin_path = next(
+        path for path in plugin_paths if path.name == "claude-plugin"
+    )
+    assert relay_plugin_path.name == "claude-plugin"
+    assert not relay_plugin_path.exists()
+    claude_env = json.loads((tmp_path / "claude-env.jsonl").read_text())
+    assert claude_env == {
+        "ANTHROPIC_BASE_URL": relay_runtime["gateway_url"],
+        "NEMO_RELAY_GATEWAY_URL": relay_runtime["gateway_url"],
+    }
+
+
+@pytest.mark.skipif(
+    not os.environ.get("FABRIC_NEMO_RELAY_COMMAND"),
+    reason="set FABRIC_NEMO_RELAY_COMMAND to test an installed NeMo Relay CLI",
+)
+async def test_fabric_claude_accepts_real_relay_gateway_with_mock_claude(tmp_path):
+    config = fabric_config(
+        tmp_path,
+        cli_path=MOCK_CLAUDE_CLI,
+        relay=True,
+        nemo_relay_command=os.environ["FABRIC_NEMO_RELAY_COMMAND"],
+    )
+
+    result = await Fabric().run(config, base_dir=tmp_path, input="inspect")
+
+    assert result.status == "succeeded"
+    assert result.output["relay_runtime"]["enabled"] is True
+    gateway_log_path = Path(result.output["relay_runtime"]["gateway_log_path"])
+    assert gateway_log_path.is_file()
 
 
 @pytest.mark.skipif(
@@ -126,7 +242,28 @@ async def test_live_claude_one_shot_and_session(tmp_path):
         fabric_config(session_root), base_dir=session_root
     ) as session:
         first = await session.invoke(input="Remember token FABRIC-CONTINUITY-7")
-        second = await session.invoke(input="Reply only with the token I asked you to remember")
+        second = await session.invoke(
+            input="Reply only with the token I asked you to remember"
+        )
     assert first.status == second.status == "succeeded"
     assert first.output["session_id"] == second.output["session_id"]
     assert "FABRIC-CONTINUITY-7" in second.output["response"]
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_FABRIC_CLAUDE_RELAY_INTEGRATION") != "1",
+    reason="set RUN_FABRIC_CLAUDE_RELAY_INTEGRATION=1 to run Claude with NeMo Relay",
+)
+async def test_live_claude_relay_one_shot(tmp_path):
+    result = await Fabric().run(
+        fabric_config(tmp_path, relay=True),
+        base_dir=tmp_path,
+        input="Use one simple tool, then reply only with: FABRIC_CLAUDE_RELAY_OK",
+    )
+
+    assert result.status == "succeeded"
+    assert result.output["relay_runtime"]["enabled"] is True
+    assert {artifact["kind"] for artifact in result.output["relay_artifacts"]} == {
+        "atof",
+        "atif",
+    }
