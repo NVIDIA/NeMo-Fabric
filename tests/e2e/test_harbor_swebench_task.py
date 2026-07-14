@@ -28,7 +28,7 @@ IMAGE = "swebench/sweb.eval.x86_64.django_1776_django-13741:latest"
 RUN_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_DOCKER"
 VERIFY_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_VERIFY"
 
-
+@pytest.mark.usefixtures("requires_harbor")
 def test_harbor_swebench_task(hermes_shim_agent_dir: Path):
     if os.environ.get(RUN_ENV) != "1":
         pytest.skip(f"set {RUN_ENV}=1 to run the Docker-backed SWE-Bench test")

@@ -471,7 +471,7 @@ name = "concurrent-log-handler"
 version = "0.9.29"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "portalocker", marker = "python_full_version < '3.12' or sys_platform == 'win32'" },
+    { name = "portalocker", marker = "(python_full_version < '3.12' and sys_platform != 'win32') or (python_full_version < '3.14' and sys_platform == 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9c/2c/ba185acc438cff6b58cd8f8dec27e7f4fcabf6968a1facbb6d0cacbde7fe/concurrent_log_handler-0.9.29.tar.gz", hash = "sha256:bc37a76d3f384cbf4a98f693ebd770543edc0f4cd5c6ab6bc70e9e1d7d582265", size = 42114, upload-time = "2026-02-22T18:18:25.758Z" }
 wheels = [
@@ -572,8 +572,8 @@ name = "croniter"
 version = "6.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "python-dateutil" },
-    { name = "pytz" },
+    { name = "python-dateutil", marker = "python_full_version < '3.14'" },
+    { name = "pytz", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ad/2f/44d1ae153a0e27be56be43465e5cb39b9650c781e001e7864389deb25090/croniter-6.0.0.tar.gz", hash = "sha256:37c504b313956114a983ece2c2b07790b1f1094fe9d81cc94739214748255577", size = 64481, upload-time = "2024-12-17T17:17:47.32Z" }
 wheels = [
@@ -847,7 +847,7 @@ name = "fire"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "termcolor" },
+    { name = "termcolor", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c0/00/f8d10588d2019d6d6452653def1ee807353b21983db48550318424b5ff18/fire-0.7.1.tar.gz", hash = "sha256:3b208f05c736de98fb343310d090dcc4d8c78b2a89ea4f32b837c586270a9cbf", size = 88720, upload-time = "2025-08-16T20:20:24.175Z" }
 wheels = [
@@ -1071,35 +1071,35 @@ name = "hermes-agent"
 version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "certifi" },
-    { name = "concurrent-log-handler", marker = "sys_platform == 'win32'" },
-    { name = "croniter" },
-    { name = "fastapi" },
-    { name = "fire" },
-    { name = "httpx", extra = ["socks"] },
-    { name = "jinja2" },
-    { name = "markdown" },
-    { name = "openai" },
-    { name = "packaging" },
-    { name = "pathspec" },
-    { name = "pillow" },
-    { name = "prompt-toolkit" },
-    { name = "psutil" },
-    { name = "ptyprocess", marker = "sys_platform != 'win32'" },
-    { name = "pydantic" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "python-dotenv" },
-    { name = "python-multipart" },
-    { name = "pywinpty", marker = "sys_platform == 'win32'" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "rich" },
-    { name = "ruamel-yaml" },
-    { name = "tenacity" },
-    { name = "tzdata", marker = "sys_platform == 'win32'" },
-    { name = "urllib3" },
-    { name = "uvicorn", extra = ["standard"] },
-    { name = "websockets" },
+    { name = "certifi", marker = "python_full_version < '3.14'" },
+    { name = "concurrent-log-handler", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "croniter", marker = "python_full_version < '3.14'" },
+    { name = "fastapi", marker = "python_full_version < '3.14'" },
+    { name = "fire", marker = "python_full_version < '3.14'" },
+    { name = "httpx", extra = ["socks"], marker = "python_full_version < '3.14'" },
+    { name = "jinja2", marker = "python_full_version < '3.14'" },
+    { name = "markdown", marker = "python_full_version < '3.14'" },
+    { name = "openai", marker = "python_full_version < '3.14'" },
+    { name = "packaging", marker = "python_full_version < '3.14'" },
+    { name = "pathspec", marker = "python_full_version < '3.14'" },
+    { name = "pillow", marker = "python_full_version < '3.14'" },
+    { name = "prompt-toolkit", marker = "python_full_version < '3.14'" },
+    { name = "psutil", marker = "python_full_version < '3.14'" },
+    { name = "ptyprocess", marker = "python_full_version < '3.14' and sys_platform != 'win32'" },
+    { name = "pydantic", marker = "python_full_version < '3.14'" },
+    { name = "pyjwt", extra = ["crypto"], marker = "python_full_version < '3.14'" },
+    { name = "python-dotenv", marker = "python_full_version < '3.14'" },
+    { name = "python-multipart", marker = "python_full_version < '3.14'" },
+    { name = "pywinpty", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "pyyaml", marker = "python_full_version < '3.14'" },
+    { name = "requests", marker = "python_full_version < '3.14'" },
+    { name = "rich", marker = "python_full_version < '3.14'" },
+    { name = "ruamel-yaml", marker = "python_full_version < '3.14'" },
+    { name = "tenacity", marker = "python_full_version < '3.14'" },
+    { name = "tzdata", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "urllib3", marker = "python_full_version < '3.14'" },
+    { name = "uvicorn", extra = ["standard"], marker = "python_full_version < '3.14'" },
+    { name = "websockets", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/99/c2/6b65b1c1d093eff415304472709479a392ac1422e36d007e32f3bb848f58/hermes_agent-0.17.0.tar.gz", hash = "sha256:5ceda2a131627fecf5fd52b05d0162b48032023a5d814bb5d1894db4aa146120", size = 12156176, upload-time = "2026-06-19T19:40:16.589Z" }
 wheels = [
@@ -1223,7 +1223,7 @@ http2 = [
     { name = "h2", marker = "python_full_version >= '3.12'" },
 ]
 socks = [
-    { name = "socksio" },
+    { name = "socksio", marker = "python_full_version < '3.14'" },
 ]
 
 [[package]]
@@ -2020,7 +2020,7 @@ adapters-deepagents = [
     { name = "nemo-fabric-adapters-deepagents" },
 ]
 adapters-hermes = [
-    { name = "nemo-fabric-adapters-hermes" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
 ]
 claude = [
     { name = "nemo-fabric-adapters-claude" },
@@ -2036,8 +2036,8 @@ harbor = [
     { name = "pyyaml" },
 ]
 hermes = [
-    { name = "hermes-agent" },
-    { name = "nemo-fabric-adapters-hermes" },
+    { name = "hermes-agent", marker = "python_full_version < '3.14'" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
 ]
 relay = [
     { name = "nemo-relay" },
@@ -2053,7 +2053,7 @@ adapters = [
     { name = "nemo-fabric-adapters-codex-cli" },
     { name = "nemo-fabric-adapters-common" },
     { name = "nemo-fabric-adapters-deepagents" },
-    { name = "nemo-fabric-adapters-hermes" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
 ]
 dev = [
     { name = "ipython" },
@@ -2079,7 +2079,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "harbor", marker = "python_full_version >= '3.12' and extra == 'harbor'", specifier = ">=0.16.1" },
-    { name = "hermes-agent", marker = "extra == 'hermes'", specifier = ">=0.17.0" },
+    { name = "hermes-agent", marker = "python_full_version < '3.14' and extra == 'hermes'", specifier = ">=0.17.0" },
     { name = "nemo-fabric-adapters-claude", marker = "extra == 'adapters-claude'", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-claude", marker = "extra == 'claude'", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex-cli", marker = "extra == 'adapters-codex-cli'", editable = "adapters/codex-cli" },
@@ -2087,8 +2087,8 @@ requires-dist = [
     { name = "nemo-fabric-adapters-common", marker = "extra == 'adapters-common'", editable = "adapters/common" },
     { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'adapters-deepagents'", editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-hermes", marker = "extra == 'adapters-hermes'", editable = "adapters/hermes" },
-    { name = "nemo-fabric-adapters-hermes", marker = "extra == 'hermes'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'adapters-hermes'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes'", editable = "adapters/hermes" },
     { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = "~=0.5.0" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
@@ -2102,7 +2102,7 @@ adapters = [
     { name = "nemo-fabric-adapters-codex-cli", editable = "adapters/codex-cli" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "nemo-fabric-adapters-deepagents", editable = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-hermes", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
 ]
 dev = [
     { name = "ipython", specifier = "~=8.20" },
@@ -2192,8 +2192,8 @@ name = "nemo-fabric-adapters-hermes"
 version = "0.1.0"
 source = { editable = "adapters/hermes" }
 dependencies = [
-    { name = "nemo-fabric-adapters-common" },
-    { name = "pyyaml" },
+    { name = "nemo-fabric-adapters-common", marker = "python_full_version < '3.14'" },
+    { name = "pyyaml", marker = "python_full_version < '3.14'" },
 ]
 
 [package.metadata]
@@ -2653,7 +2653,7 @@ name = "portalocker"
 version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "pywin32", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5e/77/65b857a69ed876e1951e88aaba60f5ce6120c33703f7cb61a3c894b8c1b6/portalocker-3.2.0.tar.gz", hash = "sha256:1f3002956a54a8c3730586c5c77bf18fae4149e07eaf1c29fc3faf4d5a3f89ac", size = 95644, upload-time = "2025-06-14T13:20:40.03Z" }
 wheels = [
@@ -3604,7 +3604,7 @@ name = "ruamel-yaml"
 version = "0.18.17"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ruamel-yaml-clib", marker = "python_full_version < '3.15' and platform_python_implementation == 'CPython'" },
+    { name = "ruamel-yaml-clib", marker = "python_full_version < '3.14' and platform_python_implementation == 'CPython'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3a/2b/7a1f1ebcd6b3f14febdc003e658778d81e76b40df2267904ee6b13f0c5c6/ruamel_yaml-0.18.17.tar.gz", hash = "sha256:9091cd6e2d93a3a4b157ddb8fabf348c3de7f1fb1381346d985b6b247dcd8d3c", size = 149602, upload-time = "2025-12-17T20:02:55.757Z" }
 wheels = [
@@ -4197,13 +4197,13 @@ wheels = [
 
 [package.optional-dependencies]
 standard = [
-    { name = "colorama", marker = "sys_platform == 'win32'" },
-    { name = "httptools" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "uvloop", marker = "platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'" },
-    { name = "watchfiles" },
-    { name = "websockets" },
+    { name = "colorama", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "httptools", marker = "python_full_version < '3.14'" },
+    { name = "python-dotenv", marker = "python_full_version < '3.14'" },
+    { name = "pyyaml", marker = "python_full_version < '3.14'" },
+    { name = "uvloop", marker = "python_full_version < '3.14' and platform_python_implementation != 'PyPy' and sys_platform != 'cygwin' and sys_platform != 'win32'" },
+    { name = "watchfiles", marker = "python_full_version < '3.14'" },
+    { name = "websockets", marker = "python_full_version < '3.14'" },
 ]
 
 [[package]]
@@ -4264,7 +4264,7 @@ name = "watchfiles"
 version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "anyio" },
+    { name = "anyio", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cd/41/5e1a4bb12aac5f1493fa1bdc11154eca3b258ca4eba65d39c473fe19d8e9/watchfiles-1.2.0.tar.gz", hash = "sha256:c995fba777f1ea992f090f9236e9284cf7a5d1a0130dd5a3d82c598cacd76838", size = 108252, upload-time = "2026-05-18T04:32:04.251Z" }
 wheels = [

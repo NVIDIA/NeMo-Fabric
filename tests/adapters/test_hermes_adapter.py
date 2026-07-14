@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import inspect
 import json
 import os
@@ -14,12 +15,16 @@ from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
-from hermes_state import SessionDB
-from run_agent import AIAgent
 
-import nemo_fabric_adapters.common.utils as common_utils
+pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
-from nemo_fabric_adapters.hermes import adapter  # noqa: E402
+if importlib.util.find_spec("run_agent") is not None:
+    from hermes_state import SessionDB
+    from run_agent import AIAgent
+
+    import nemo_fabric_adapters.common.utils as common_utils
+
+    from nemo_fabric_adapters.hermes import adapter
 
 
 @pytest.mark.parametrize("providers", [None, {"relay": {}}])

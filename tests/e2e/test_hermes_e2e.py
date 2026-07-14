@@ -18,6 +18,8 @@ from examples.code_review_agent import (
 )
 from nemo_fabric import Fabric
 
+pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
+
 
 class TestHermesE2E:
     """End-to-end Hermes relay assertions."""
@@ -38,8 +40,6 @@ class TestHermesE2E:
         code_review_agent_dir: Path,
         api_server: str,
     ):
-        pytest.importorskip("run_agent", reason="hermes extra is required")
-
         os.environ["ADAPTER_PYTHON"] = sys.executable
 
         self.code_review_agent_dir = code_review_agent_dir
