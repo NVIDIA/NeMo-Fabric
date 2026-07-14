@@ -21,12 +21,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-for _src in ("adapters/common/src", "adapters/deepagents/src"):
-    _path = str(ROOT / _src)
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
-
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
 

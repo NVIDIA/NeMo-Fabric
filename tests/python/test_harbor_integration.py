@@ -7,84 +7,20 @@ from __future__ import annotations
 
 import json
 import shlex
-import sys
-import types
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "python" / "src"))
-
-
-def install_harbor_stubs() -> None:
-    """Install minimal Harbor stubs for this smoke when Harbor is not present."""
-
-    class BaseAgent:
-        def __init__(self, logs_dir: Path, *args: Any, **kwargs: Any) -> None:
-            self.logs_dir = logs_dir
-            self.model_name = kwargs.get("model_name")
-            self.skills_dir = kwargs.get("skills_dir")
-            self.mcp_servers = kwargs.get("mcp_servers", [])
-            self.extra_env = kwargs.get("extra_env")
-
-    class BaseEnvironment:
-        pass
-
-    class AgentContext:
-        def __init__(self) -> None:
-            self.metadata: dict[str, Any] | None = None
-
-    class MCPServerConfig:
-        def __init__(
-            self,
-            *,
-            name: str,
-            transport: str,
-            url: str | None = None,
-            command: str | None = None,
-            args: list[str] | None = None,
-        ) -> None:
-            self.name = name
-            self.transport = transport
-            self.url = url
-            self.command = command
-            self.args = args or []
-
-        def model_dump(self, *, mode: str) -> dict[str, Any]:
-            assert mode == "python"
-            return vars(self)
-
-    modules = {
-        "harbor": types.ModuleType("harbor"),
-        "harbor.agents": types.ModuleType("harbor.agents"),
-        "harbor.agents.base": types.ModuleType("harbor.agents.base"),
-        "harbor.environments": types.ModuleType("harbor.environments"),
-        "harbor.environments.base": types.ModuleType("harbor.environments.base"),
-        "harbor.models": types.ModuleType("harbor.models"),
-        "harbor.models.agent": types.ModuleType("harbor.models.agent"),
-        "harbor.models.agent.context": types.ModuleType("harbor.models.agent.context"),
-        "harbor.models.task": types.ModuleType("harbor.models.task"),
-        "harbor.models.task.config": types.ModuleType("harbor.models.task.config"),
-    }
-    modules["harbor.agents.base"].BaseAgent = BaseAgent
-    modules["harbor.environments.base"].BaseEnvironment = BaseEnvironment
-    modules["harbor.models.agent.context"].AgentContext = AgentContext
-    modules["harbor.models.task.config"].MCPServerConfig = MCPServerConfig
-    sys.modules.update(modules)
-
+pytestmark = pytest.mark.usefixtures("requires_harbor")
 
 try:
     from nemo_fabric.integrations.harbor import FabricAgent
     from harbor.models.agent.context import AgentContext
     from harbor.models.task.config import MCPServerConfig
 except ImportError:
-    install_harbor_stubs()
-    from nemo_fabric.integrations.harbor import FabricAgent
-    from harbor.models.agent.context import AgentContext
-    from harbor.models.task.config import MCPServerConfig
+    pass
 
 
 @dataclass
@@ -120,7 +56,7 @@ class FakeHarborEnvironment:
                     "profiles": [],
                     "harness": "hermes",
                     "adapter_kind": "python",
-                    "adapter_id": "nvidia.fabric.hermes.sdk",
+                    "adapter_id": "nvidia.fabric.hermes",
                     "status": "succeeded",
                     "runtime_id": "runtime-1",
                     "invocation_id": "invocation-1",
@@ -222,7 +158,7 @@ async def test_harbor_integration(tmp_path: Path):
     assert context.metadata
     assert context.metadata["fabric"]["status"] == "succeeded"
     assert "profiles" not in context.metadata["fabric"]
-    assert context.metadata["fabric"]["adapter_id"] == "nvidia.fabric.hermes.sdk"
+    assert context.metadata["fabric"]["adapter_id"] == "nvidia.fabric.hermes"
     artifacts = context.metadata["fabric"]["artifacts"]["artifacts"]
     assert {artifact["name"] for artifact in artifacts} == {"stdout", "workspace_patch"}
 

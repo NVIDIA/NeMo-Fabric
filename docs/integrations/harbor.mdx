@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Use `nemo_fabric.integrations.harbor:FabricAgent` when Harbor owns the
 evaluation workflow and Fabric owns harness execution. The Harbor agent class
-stays fixed while each complete Fabric config selects Hermes CLI, Codex CLI, or
+stays fixed while each complete Fabric config selects Hermes, Codex CLI, or
 another adapter.
 
 ```text
@@ -68,8 +68,8 @@ config per execution path:
 | Config | Execution path | What it demonstrates |
 | --- | --- | --- |
 | `smoke.yaml` | Deterministic scripted adapter | Credential-free Harbor, Fabric, workspace, and verifier pipeline |
-| `hermes.yaml` | Hermes CLI | A model-backed harness selected through Fabric |
-| `hermes-relay.yaml` | Hermes CLI with NeMo Relay | Phoenix traces plus ATOF and ATIF records |
+| `hermes.yaml` | Hermes | A model-backed harness selected through Fabric |
+| `hermes-relay.yaml` | Hermes with NeMo Relay | Phoenix traces plus ATOF and ATIF records |
 | `codex.yaml` | Codex CLI | An existing Codex login mounted by Harbor |
 
 Harbor's `--model`, MCP servers, and skill directory are applied to an

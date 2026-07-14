@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -47,6 +48,10 @@ def virtualenv_subprocess_env() -> dict[str, str]:
     env["PATH"] = os.pathsep.join(part for part in (str(scripts), path) if part)
     env.pop("PYTHONHOME", None)
     return env
+
+
+def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return payload.get("request") or {}
 
 
 def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -106,6 +111,34 @@ def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return fabric_config(payload).get("models") or payload.get("models") or {}
 
 
+def default_base_url(provider: str | None) -> str | None:
+    if provider == "nvidia":
+        return "https://integrate.api.nvidia.com/v1"
+    return None
+
+
+def get_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
+    return (
+        settings.get("base_url")
+        or (model_config.get("settings") or {}).get("base_url")
+        or default_base_url(model_config.get("provider"))
+    )
+
+
+def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
+    settings = settings_payload(payload)
+    models = models_payload(payload)
+    model_config = models.get(settings.get("model", "default"), {})
+    if not isinstance(model_config, dict):
+        return {}
+    return model_config
+
+
+def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    telemetry = fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    return telemetry if isinstance(telemetry, dict) else {}
+
+
 def telemetry_plan(payload: dict[str, Any]) -> dict[str, Any]:
     plan = payload.get("telemetry_plan") or {}
     return plan if isinstance(plan, dict) else {}
@@ -158,6 +191,10 @@ def merge_unique(*values: Any) -> list[str]:
             if item not in merged:
                 merged.append(item)
     return merged
+
+
+def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in mapping.items() if value is not None}
 
 
 def dump_yaml(value: dict[str, Any]) -> str:
@@ -225,7 +262,7 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
             if section_name == "atif":
                 section.setdefault("filename_template", "trajectory-{session_id}.atif.json")
                 section.setdefault("agent_name", agent_name(payload))
-                section.setdefault("model_name", _relay_model_name(payload))
+                section.setdefault("model_name", relay_model_name(payload))
 
 
 def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
@@ -402,10 +439,69 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
     return artifacts
 
 
+def relay_cli_plugin_config(
+    plugin_config: dict[str, Any], *, observability_version: int
+) -> dict[str, Any]:
+    """Render normalized Relay intent for the current external CLI contract."""
+
+    rendered = copy.deepcopy(plugin_config)
+    if observability_version == 1:
+        return rendered
+    if observability_version != 2:
+        raise ValueError(
+            f"unsupported NeMo Relay observability config version {observability_version}"
+        )
+    for component in rendered.get("components", []):
+        if not isinstance(component, dict) or component.get("kind") != "observability":
+            continue
+        config = component.get("config")
+        if not isinstance(config, dict) or int(config.get("version", 1)) != 1:
+            continue
+
+        atof = config.get("atof")
+        if isinstance(atof, dict):
+            sinks = list(atof.get("sinks") or [])
+            if atof.get("enabled"):
+                file_sink = without_none(
+                    {
+                        "type": "file",
+                        "output_directory": atof.get("output_directory"),
+                        "filename": atof.get("filename"),
+                        "mode": atof.get("mode", "append"),
+                    }
+                )
+                sinks.append(file_sink)
+                for endpoint in atof.get("endpoints") or []:
+                    if not isinstance(endpoint, dict):
+                        continue
+                    sinks.append(
+                        without_none(
+                            {
+                                "type": "stream",
+                                "url": endpoint.get("url"),
+                                "transport": endpoint.get("transport", "http_post"),
+                                "headers": endpoint.get("headers", {}),
+                                "header_env": endpoint.get("header_env", {}),
+                                "timeout_millis": endpoint.get("timeout_millis", 3000),
+                                "field_name_policy": endpoint.get(
+                                    "field_name_policy", "preserve"
+                                ),
+                            }
+                        )
+                    )
+            config["atof"] = {
+                "enabled": bool(atof.get("enabled", False)),
+                "sinks": sinks,
+            }
+        config["version"] = 2
+    return rendered
+
+
 def write_relay_configs(
     *,
     relay_config: dict[str, Any] | None = None,
     plugin_config: dict[str, Any] | None = None,
+    observability_version: int = 1,
 ) -> tuple[Path | None, Path | None]:
     try:
         import tomli_w
@@ -426,14 +522,23 @@ def write_relay_configs(
 
         if plugin_config is not None:
             plugin_config_path = config_dir / "plugins.toml"
-            plugin_config_path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
+            plugin_config_path.write_text(
+                tomli_w.dumps(
+                    relay_cli_plugin_config(
+                        plugin_config,
+                        observability_version=observability_version,
+                    )
+                ),
+                encoding="utf-8",
+            )
 
         return relay_config_path, plugin_config_path
     except ImportError as e:
         raise RuntimeError("tomli_w is not installed") from e
 
 
-def _relay_model_name(payload: dict[str, Any]) -> str:
+
+def relay_model_name(payload: dict[str, Any]) -> str:
     settings = settings_payload(payload)
     models = models_payload(payload)
     model_config = models.get(settings.get("model", "default"), {})

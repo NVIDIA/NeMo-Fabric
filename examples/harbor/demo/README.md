@@ -74,7 +74,7 @@ uv run --extra runtime --extra harbor harbor run \
 
 Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 
-## 2. Hermes CLI
+## 2. Hermes
 
 ```bash
 export NVIDIA_API_KEY=...

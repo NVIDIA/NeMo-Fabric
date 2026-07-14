@@ -60,7 +60,7 @@ task image; the [multi-harness demo](demo/README.md) shows one complete setup.
 ## Prepare a Fabric config
 
 Create one complete config for the execution path. Harbor runs one Fabric
-harness at a time; to switch from Hermes CLI to Hermes SDK, Codex CLI, or a
+harness at a time; to switch from Hermes, Codex CLI, or a
 Relay-enabled variant, pass a different complete config through
 `fabric_config_path`. For example:
 
@@ -71,7 +71,7 @@ metadata:
   name: harbor-review-agent
 
 harness:
-  adapter_id: nvidia.fabric.hermes.cli
+  adapter_id: nvidia.fabric.hermes
   resolution: preinstalled
   settings:
     cwd: /app
@@ -191,7 +191,7 @@ harbor view <jobs-directory>
 ## Demo and tests
 
 The [multi-harness demo](demo/README.md) provides complete configs and commands
-for a credential-free smoke run, Hermes CLI, Hermes with Relay, and Codex CLI.
+for a credential-free smoke run, Hermes, Hermes with Relay, and Codex CLI.
 
 Run the lightweight integration tests with:
 

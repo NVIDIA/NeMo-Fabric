@@ -14,6 +14,18 @@ SESSION_ID = "11111111-1111-4111-8111-111111111111"
 with open(os.environ["MOCK_CLAUDE_CLI_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps(sys.argv[1:]) + "\n")
 
+if env_log := os.environ.get("MOCK_CLAUDE_CLI_ENV_LOG"):
+    with open(env_log, "a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps(
+                {
+                    "ANTHROPIC_BASE_URL": os.environ.get("ANTHROPIC_BASE_URL"),
+                    "NEMO_RELAY_GATEWAY_URL": os.environ.get("NEMO_RELAY_GATEWAY_URL"),
+                }
+            )
+            + "\n"
+        )
+
 for line in sys.stdin:
     message = json.loads(line)
     if message.get("type") == "control_request":

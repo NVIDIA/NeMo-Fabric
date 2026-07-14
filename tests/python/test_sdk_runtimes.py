@@ -22,10 +22,10 @@ def _plan() -> dict[str, Any]:
     }
     return {
         "agent_name": "demo",
-        "profiles": ["hermes_sdk"],
+        "profiles": ["hermes"],
         "effective_config": {
             "agent_name": "demo",
-            "profiles": ["hermes_sdk"],
+            "profiles": ["hermes"],
             "agent_root": ".",
             "config_path": "agent.yaml",
             "config_root": ".",
@@ -80,7 +80,7 @@ class MockNative:
         return json.dumps(
             {
                 "agent_name": "demo",
-                "profiles": ["hermes_sdk"],
+                "profiles": ["hermes"],
                 "harness": "hermes",
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",

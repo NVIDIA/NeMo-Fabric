@@ -21,6 +21,17 @@ Claude Code authentication can come from an existing cached login or from
 module-entrypoint tests. Authentication is validated when Claude starts the
 invocation.
 
+Relay-enabled runs also require the external `nemo-relay` CLI. Install the CLI
+separately:
+
+```bash
+cargo install nemo-relay-cli
+```
+
+The Python `nemo-relay` package does not install this executable. Refer to the
+[NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)
+for other supported installation methods.
+
 ## Execution Model
 
 Each `invoke` starts a fresh adapter process. The adapter persists the terminal
@@ -51,6 +62,7 @@ Only Claude-specific controls belong in `harness.settings`:
 - `max_turns`, `max_budget_usd`, and `timeout_seconds`
 - `setting_sources` (defaults to `[]` for deterministic isolation)
 - `cli_path` for testing or an explicitly installed Claude Code executable
+- `nemo_relay_command` for an explicitly installed NeMo Relay CLI executable
 - `env` for variables explicitly forwarded to Claude Code
 
 Putting `model_name`, `cwd`, `tools`, `mcp_servers`, or `skills` in
@@ -61,6 +73,31 @@ The adapter filters the inherited environment before launching Claude Code.
 It retains portable OS/config variables, the selected model's `api_key_env`,
 and explicitly configured `settings.env` values. Raw Claude stderr is consumed
 by the SDK and is not persisted as a Fabric artifact.
+
+## Relay Observability
+
+Enable Relay through the normalized Fabric configuration:
+
+```python
+config.enable_relay(
+    project="fabric-review",
+    output_dir="./artifacts/relay",
+)
+```
+
+For each Relay-enabled invocation, Fabric starts one `nemo-relay` gateway,
+waits for its health endpoint, and stops it after Claude succeeds, fails, times
+out, or is canceled. Fabric passes the gateway URL to Claude Code through
+`ANTHROPIC_BASE_URL` and `NEMO_RELAY_GATEWAY_URL`. It also stages an
+invocation-scoped Claude plugin that forwards lifecycle hooks with
+`nemo-relay hook-forward claude`.
+
+The Fabric result includes `relay_runtime.gateway_config_path`,
+`relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
+startup failures return a stable adapter error and retain the gateway log for
+diagnosis. The default Claude Agent SDK dependency bundles a compatible Claude
+Code executable. An executable supplied with `cli_path` must support the Relay
+plugin's complete hook set, including `UserPromptExpansion`.
 
 ## Typed Configuration
 
@@ -151,9 +188,14 @@ underlying transcript store is removed.
 
 ## Tests
 
-The default suite uses a deterministic mock Claude Code CLI and requires no
-credentials. Run the real integration only on an authenticated developer host:
+The default suite uses deterministic mock Claude Code and Relay CLIs and
+requires no credentials. Test a current `nemo-relay` CLI with the mock Claude
+client, or run the live integrations on an authenticated developer host:
 
 ```bash
+FABRIC_NEMO_RELAY_COMMAND="$(command -v nemo-relay)" uv run --no-sync pytest tests/e2e/test_claude.py -q -k real_relay_gateway
 RUN_FABRIC_CLAUDE_INTEGRATION=1 uv run --no-sync pytest tests/e2e/test_claude.py -q -k live
+RUN_FABRIC_CLAUDE_RELAY_INTEGRATION=1 uv run --no-sync pytest tests/e2e/test_claude.py -q -k live_claude_relay
 ```
+
+The first command uses the mock Claude client and does not require credentials.
