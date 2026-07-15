@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-03-26",)
+UNSUPPORTED_PROTOCOL_VERSION = -32004
 
 
 def error_response(
@@ -37,7 +38,7 @@ def reply(request: dict[str, Any]) -> dict[str, Any] | None:
         if requested_version not in SUPPORTED_PROTOCOL_VERSIONS:
             return error_response(
                 request_id,
-                -32602,
+                UNSUPPORTED_PROTOCOL_VERSION,
                 "UNSUPPORTED_PROTOCOL_VERSION",
                 data={
                     "requested": requested_version,

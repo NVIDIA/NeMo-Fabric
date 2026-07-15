@@ -48,7 +48,7 @@ def test_mcp_initialize_rejects_unsupported_protocol_version():
         "jsonrpc": "2.0",
         "id": "initialize-1",
         "error": {
-            "code": -32602,
+            "code": -32004,
             "message": "UNSUPPORTED_PROTOCOL_VERSION",
             "data": {"requested": "2099-01-01", "supported": ["2025-03-26"]},
         },
