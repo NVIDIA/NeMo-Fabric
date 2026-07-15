@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FABRIC_COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
+FABRIC_COMMAND = ("cargo", "run", "-q", "-p", "nemo-fabric-cli", "--")
 
 
 def run_fabric_cli(

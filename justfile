@@ -91,7 +91,7 @@ section = ""
 output = []
 changed = []
 found_workspace_version = False
-found_fabric_core = False
+found_nemo_fabric_core = False
 
 for line in text.splitlines(keepends=True):
     section_match = re.match(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$", line)
@@ -111,22 +111,22 @@ for line in text.splitlines(keepends=True):
                 changed.append("workspace.package.version")
     elif section == "workspace.dependencies":
         updated, count = re.subn(
-            r'^(fabric-core\s*=\s*\{[^}]*\bversion\s*=\s*")([^"]+)(".*)$',
+            r'^(nemo-fabric-core\s*=\s*\{[^}]*\bversion\s*=\s*")([^"]+)(".*)$',
             rf"\g<1>{version}\g<3>",
             line,
         )
         if count == 1:
-            found_fabric_core = True
+            found_nemo_fabric_core = True
             if updated != line:
-                changed.append("workspace.dependencies.fabric-core.version")
+                changed.append("workspace.dependencies.nemo-fabric-core.version")
 
     output.append(updated)
 
 missing = []
 if not found_workspace_version:
     missing.append("workspace.package.version")
-if not found_fabric_core:
-    missing.append("workspace.dependencies.fabric-core.version")
+if not found_nemo_fabric_core:
+    missing.append("workspace.dependencies.nemo-fabric-core.version")
 if missing:
     raise SystemExit(f"Failed to find expected Cargo version fields: {', '.join(missing)}")
 

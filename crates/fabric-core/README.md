@@ -5,13 +5,13 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Core
 
-`fabric-core` provides the core configuration and runtime contracts for NVIDIA
-NeMo Fabric, a runtime execution layer for agents.
+`nemo-fabric-core` provides the core configuration and runtime contracts for
+NVIDIA NeMo Fabric, a runtime execution layer for agents.
 
 Add the crate to a Rust project:
 
 ```bash
-cargo add fabric-core
+cargo add nemo-fabric-core
 ```
 
 This crate provides typed agent configuration, profile resolution, validation,

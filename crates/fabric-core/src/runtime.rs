@@ -1999,7 +1999,7 @@ fn event_with_metadata(
 
 fn new_id(prefix: &str) -> String {
     // The atomic counter only differentiates ids within a single process; a
-    // process-backed runner spawns a fresh `fabric-cli` per call, resetting it
+    // process-backed runner spawns a fresh `fabric` process per call, resetting it
     // to 1. Include the process id (distinct across concurrently running
     // processes) so ids stay unique when two runs land in the same millisecond.
     let counter = NEXT_ID.fetch_add(1, Ordering::Relaxed);
