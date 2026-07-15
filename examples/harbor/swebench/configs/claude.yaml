@@ -10,8 +10,15 @@ harness:
   resolution: preinstalled
   settings:
     permission_mode: bypassPermissions
-    max_turns: 50
+    max_turns: 75
     timeout_seconds: 1800
+    system_prompt: >-
+      Solve the requested repository task with the smallest relevant patch.
+      Do not create summary, demonstration, or scratch files. Run focused tests,
+      stop once the implementation is verified, and return a concise result.
+    env:
+      # Harbor runs the agent as root inside an ephemeral task container.
+      IS_SANDBOX: "1"
 models:
   default:
     provider: anthropic

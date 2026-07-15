@@ -708,6 +708,27 @@ async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
     assert not relay.plugin_path.exists()
 
 
+async def test_run_claude_normalizes_plain_sdk_error_result(
+    claude_payload, monkeypatch
+):
+    async def query_failure(**_):
+        raise Exception(
+            "Claude Code returned an error result: secret provider diagnostic"
+        )
+        yield
+
+    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_failure))
+
+    output = await adapter.run_claude(claude_payload)
+
+    assert output["error"] == {
+        "code": "claude_result_failed",
+        "message": "Claude returned an error result",
+        "retryable": False,
+    }
+    assert "secret" not in json.dumps(output)
+
+
 def test_run_reports_relay_start_failure_without_raw_diagnostic(
     relay_payload, monkeypatch, tmp_path
 ):

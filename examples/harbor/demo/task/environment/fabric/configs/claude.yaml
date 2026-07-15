@@ -14,6 +14,9 @@ harness:
     permission_mode: bypassPermissions
     max_turns: 20
     timeout_seconds: 600
+    env:
+      # Harbor runs the agent as root inside an ephemeral task container.
+      IS_SANDBOX: "1"
 
 models:
   default:

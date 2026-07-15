@@ -162,8 +162,10 @@ uv run --extra runtime --extra harbor harbor run \
   --force-build
 ```
 
-The config uses `bypassPermissions` because Harbor's task container is the
-outer sandbox and the benchmark expects the harness to edit `/app`.
+The config uses `bypassPermissions` and `IS_SANDBOX=1` because Harbor runs the
+harness as root inside an ephemeral task container and the benchmark expects it
+to edit `/app`. Do not reuse this combination outside a deliberately isolated
+evaluation container.
 
 ## Inspect results
 

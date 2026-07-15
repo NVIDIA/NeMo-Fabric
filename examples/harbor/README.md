@@ -53,6 +53,12 @@ use a pinned Git requirement. Fabric creates an isolated environment at
 deprecated `fabric_install_command` remains only for experimental images that
 also need non-Python setup.
 
+The Fabric runtime includes a native extension. A wheel built directly on a
+new workstation may require a newer glibc than an older SWE-Bench image. Use a
+published manylinux wheel, build the branch runtime for the image's compatible
+manylinux baseline, or preinstall Fabric in a purpose-built evaluation image.
+Do not treat a locally tagged `linux_x86_64` wheel as a portable bundle.
+
 Run Harbor's installation-only gate before spending model tokens:
 
 ```bash
@@ -129,6 +135,19 @@ uv run harbor run \
 The checked-in Harbor example treats Hermes and Claude as the two qualified
 harnesses. Other adapters remain available in Fabric but are intentionally not
 presented as Harbor-qualified here.
+
+The baseline configs were live-verified on July 14, 2026 against the same
+Harbor task and task checksum:
+
+| Harness | Verification model | Fabric status | Harbor reward | Review bundle |
+| --- | --- | --- | --- | --- |
+| Hermes | self-hosted `nvidia/nemotron-3-nano` | `succeeded` | `1.0` | [`sample-artifacts/hermes/`](swebench/sample-artifacts/hermes/) |
+| Claude | `anthropic/claude-sonnet-4-5` | `succeeded` | `1.0` | [`sample-artifacts/claude/`](swebench/sample-artifacts/claude/) |
+
+Claude's config uses `bypassPermissions` and marks the process with
+`IS_SANDBOX=1` because Harbor executes it as root inside an ephemeral task
+container. Keep that marker scoped to a deliberately isolated evaluation
+container; do not copy this permission mode into a normal host environment.
 
 For a self-hosted Nemotron 3 Nano NIM, Hermes requires OpenAI-compatible
 automatic tool calling. The current image accepts the vLLM options through

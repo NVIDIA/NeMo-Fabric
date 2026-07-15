@@ -776,6 +776,16 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
                         messages.append(message)
         except (TimeoutError, ClaudeSDKError) as error:
             output = sdk_failure(error)
+        except Exception as error:
+            # Some Claude Agent SDK versions surface terminal CLI error results
+            # as a plain Exception instead of a ClaudeSDKError/ResultMessage.
+            # Normalize that known boundary without exposing provider text, but
+            # preserve genuinely unexpected exceptions for the adapter boundary.
+            if not str(error).startswith("Claude Code returned an error result:"):
+                raise
+            output = _failure(
+                "claude_result_failed", "Claude returned an error result"
+            )
         else:
             if result is None:
                 output = _failure(
