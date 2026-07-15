@@ -23,19 +23,24 @@ documentation URLs, never on repository-internal paths.
 - Cross-links point to the published documentation and public example URLs on
   GitHub, not to files inside this checkout. Skill-specific material is bundled
   under each skill's own `references/`.
-- Skills do not reference maintainer skills, contribution commands, or
-  repository internals.
+- Skills do not depend on repository internals — their links are absolute or
+  bundled, so they resolve when copied out. A skill may still mention Fabric
+  build commands (`just …`, needed while Fabric is unpublished) or the maintainer
+  tier as guidance for contributors.
 
 ## Using A Consumer Skill In Your Project
 
 Copy the skill directory — for example `nemo-fabric-integrate/`, including its
-`references/` — into the place your coding agent discovers skills. This is
-separate from the maintainer-only `.claude/skills` wiring in this repository; do
-not point your project at this repository's `.agents/skills/`.
+`references/` — into the place your coding agent discovers skills **in your own
+project**. Do not rely on this repository's maintainer wiring (its `.claude/skills`
+symlink or `.agents/skills/` set); those serve Fabric's own contributors.
 
 - **Claude Code:** place it at `.claude/skills/nemo-fabric-integrate/` in your
   project, or `~/.claude/skills/nemo-fabric-integrate/` to use it across
   projects. Claude Code discovers `SKILL.md` files under those directories.
+- **OpenAI Codex:** place it at
+  `<your-project>/.agents/skills/nemo-fabric-integrate/` in your project, or
+  `$CODEX_HOME/skills/nemo-fabric-integrate/` to use it across projects.
 - **Other agents:** each skill is a portable `SKILL.md` bundle — put it wherever
   your agent loads skills, or reference its `SKILL.md` directly from your agent
   instructions. Confirm discovery with a prompt that should trigger the skill.
