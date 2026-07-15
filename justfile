@@ -347,7 +347,21 @@ wheels:
     #!/usr/bin/env bash
     set -euo pipefail
     projects=({{ python_projects }})
-    uv build --wheel --clear --out-dir dist "${projects[0]}"
-    for project in "${projects[@]:1}"; do
+    uv build --wheel --clear --out-dir dist .
+    for project in "${projects[@]}"; do
+        if [[ "$project" == "." || "$project" == "python" ]]; then
+            # Exclude the top-level package as we already built that
+            # Exclude the python package as that needs special handling for maturin
+            continue
+        fi
         uv build --wheel --out-dir dist "$project"
     done
+    # uv build forces Maturin compatibility off, producing non-portable linux_* tags.
+    (
+        cd python
+        uvx --from 'maturin>=1.9.3,<2.0' maturin build \
+            --release \
+            --locked \
+            --compatibility pypi \
+            --out ../dist
+    )
