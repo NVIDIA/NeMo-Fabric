@@ -289,6 +289,10 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
         logs_dir=tmp_path,
         fabric_config_path="/opt/fabric/agent.yaml",
         fabric_package="nemo-fabric[codex,harbor,runtime]==0.1.0",
+        extra_env={
+            "NVIDIA_API_KEY": "test-key",
+            "PIP_INDEX_URL": "https://packages.example/simple",
+        },
     )
     environment = FakeHarborEnvironment()
 
@@ -299,13 +303,18 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
         "/tmp/nemo-fabric-venv/bin/python -m pip install "
         "--disable-pip-version-check 'nemo-fabric[codex,harbor,runtime]==0.1.0'"
     )
+    assert environment.environments[1] == {
+        "PIP_INDEX_URL": "https://packages.example/simple"
+    }
 
     await agent.run("fix it", environment, AgentContext())  # type: ignore[arg-type]
     runner = next(command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command)
     assert runner.startswith("PATH=/tmp/nemo-fabric-venv/bin:$PATH /tmp/nemo-fabric-venv/bin/python -m ")
     runner_index = environment.commands.index(runner)
     assert environment.environments[runner_index] == {
-        "ADAPTER_PYTHON": "/tmp/nemo-fabric-venv/bin/python"
+        "NVIDIA_API_KEY": "test-key",
+        "PIP_INDEX_URL": "https://packages.example/simple",
+        "ADAPTER_PYTHON": "/tmp/nemo-fabric-venv/bin/python",
     }
 
 
@@ -321,6 +330,8 @@ async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: 
     environment = FakeHarborEnvironment()
 
     await agent.setup(environment)  # type: ignore[arg-type]
+    install_index = environment.commands.index("install-fabric-for-test")
+    assert environment.environments[install_index] == {}
     await agent.run("fix it", environment, AgentContext())  # type: ignore[arg-type]
 
     runner = next(command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command)
@@ -366,6 +377,26 @@ def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):
     assert context.metadata["fabric"]["harbor_atif_validation"] == {
         "status": "succeeded",
         "error": None,
+    }
+
+
+def test_harbor_records_trajectory_read_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from nemo_fabric.integrations.harbor.fabric_agent import populate_context_from_trajectory
+
+    trajectory = tmp_path / "trajectory.json"
+    trajectory.touch()
+    context = AgentContext()
+
+    def fail_read(*args, **kwargs):
+        raise OSError("trajectory unavailable")
+
+    monkeypatch.setattr(Path, "read_text", fail_read)
+
+    populate_context_from_trajectory(context, trajectory)
+
+    assert context.metadata["fabric"]["harbor_atif_validation"] == {
+        "status": "failed",
+        "error": "trajectory unavailable",
     }
 
 

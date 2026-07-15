@@ -19,6 +19,23 @@ from nemo_fabric import RunResult
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
 from nemo_fabric.integrations.harbor.models import HarborRunSpec
 
+INSTALL_ENV_NAMES = {
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "PIP_CERT",
+    "PIP_CLIENT_CERT",
+    "PIP_EXTRA_INDEX_URL",
+    "PIP_INDEX_URL",
+    "PIP_TRUSTED_HOST",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+}
+
 try:
     from harbor.agents.base import BaseAgent
     from harbor.environments.base import BaseEnvironment
@@ -127,7 +144,7 @@ else:
                         venv_path=self.fabric_venv_path,
                     ),
                     cwd=self.fabric_cwd,
-                    env=self._extra_env,
+                    env=self._install_env,
                     timeout_sec=self.fabric_timeout_sec,
                 )
                 ensure_success("Fabric package installation failed", result)
@@ -135,7 +152,7 @@ else:
                 result = await environment.exec(
                     self.fabric_install_command,
                     cwd=self.fabric_cwd,
-                    env=self._extra_env,
+                    env=self._install_env,
                     timeout_sec=self.fabric_timeout_sec,
                 )
                 ensure_success("Fabric install command failed", result)
@@ -236,6 +253,14 @@ else:
             return str(runner.parent)
 
         @property
+        def _install_env(self) -> dict[str, str]:
+            return {
+                name: value
+                for name, value in self._extra_env.items()
+                if name in INSTALL_ENV_NAMES
+            }
+
+        @property
         def _runner_env(self) -> dict[str, str]:
             env = dict(self._extra_env)
             env["ADAPTER_PYTHON"] = self._runner_python
@@ -322,7 +347,7 @@ def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
 
     try:
         trajectory = Trajectory.model_validate_json(path.read_text(encoding="utf-8"))
-    except ValueError as error:
+    except (OSError, ValueError) as error:
         _record_host_atif_validation(context, status="failed", error=str(error))
         return
     _record_host_atif_validation(context, status="succeeded")

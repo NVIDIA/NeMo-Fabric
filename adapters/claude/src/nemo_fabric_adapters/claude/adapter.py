@@ -860,7 +860,7 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
             # as a plain Exception instead of a ClaudeSDKError/ResultMessage.
             # Normalize that known boundary without exposing provider text, but
             # preserve genuinely unexpected exceptions for the adapter boundary.
-            if not str(error).startswith("Claude Code returned an error result:"):
+            if "returned an error result" not in str(error):
                 raise
             output = _failure(
                 "claude_result_failed", "Claude returned an error result"

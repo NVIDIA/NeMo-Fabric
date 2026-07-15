@@ -9,8 +9,10 @@ import json
 import re
 import shutil
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from nemo_fabric import RunResult
 
@@ -34,7 +36,6 @@ def publish_telemetry_evidence(
     Callers performing an explicit telemetry gate can pass ``strict=True``.
     """
 
-    logs_dir.mkdir(parents=True, exist_ok=True)
     summary_path = logs_dir / "telemetry-validation.json"
     try:
         summary = validate_telemetry(
@@ -46,13 +47,22 @@ def publish_telemetry_evidence(
     except (OSError, json.JSONDecodeError, TelemetryValidationError, ValueError) as error:
         summary = _base_summary(result)
         summary.update(status="failed", error=str(error))
-        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        _write_summary(summary_path, summary, strict=strict)
         if strict:
             raise TelemetryValidationError(str(error)) from error
         return summary
 
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    _write_summary(summary_path, summary, strict=strict)
     return summary
+
+
+def _write_summary(path: Path, summary: dict[str, Any], *, strict: bool) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    except OSError:
+        if strict:
+            raise
 
 
 def validate_telemetry(
@@ -117,13 +127,33 @@ def _validate_atof(paths: list[Path]) -> dict[str, Any]:
             missing = required.difference(value)
             if missing:
                 raise TelemetryValidationError(f"ATOF record missing {sorted(missing)}: {path}:{line_number}")
+            _validate_atof_record(value, path, line_number)
             records += 1
-            counts[str(value["kind"])] += 1
+            counts[value["kind"]] += 1
     return {
         "files": [str(path) for path in paths],
         "records": records,
         "kinds": dict(sorted(counts.items())),
     }
+
+
+def _validate_atof_record(value: dict[str, Any], path: Path, line_number: int) -> None:
+    location = f"{path}:{line_number}"
+    for field in ("atof_version", "kind", "name", "timestamp", "uuid"):
+        if not isinstance(value[field], str) or not value[field]:
+            raise TelemetryValidationError(f"ATOF record field {field} must be a non-empty string: {location}")
+    if re.fullmatch(r"\d+\.\d+(?:\.\d+)?", value["atof_version"]) is None:
+        raise TelemetryValidationError(f"ATOF record atof_version is invalid: {location}")
+    try:
+        timestamp = datetime.fromisoformat(value["timestamp"].replace("Z", "+00:00"))
+    except ValueError as error:
+        raise TelemetryValidationError(f"ATOF record timestamp is invalid: {location}") from error
+    if timestamp.tzinfo is None:
+        raise TelemetryValidationError(f"ATOF record timestamp must include a timezone: {location}")
+    try:
+        UUID(value["uuid"])
+    except ValueError as error:
+        raise TelemetryValidationError(f"ATOF record uuid is invalid: {location}") from error
 
 
 def _validate_atif(

@@ -58,7 +58,7 @@ def test_publish_telemetry_validates_and_promotes_atif(tmp_path: Path):
                 "kind": "event",
                 "name": "agent.end",
                 "timestamp": "2026-07-13T00:00:00Z",
-                "uuid": "event-1",
+                "uuid": "019f616c-5eb1-7c92-928f-b4130bd4a519",
             }
         )
         + "\n",
@@ -183,6 +183,35 @@ def test_publish_telemetry_rejects_absolute_path_outside_task_logs(tmp_path: Pat
         publish_telemetry_evidence(result, tmp_path / "agent", strict=True)
 
 
+@pytest.mark.parametrize("operation", ["mkdir", "write_text"])
+def test_publish_telemetry_ignores_evidence_write_failure_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+):
+    def fail_write(*args, **kwargs):
+        raise OSError("evidence storage unavailable")
+
+    monkeypatch.setattr(Path, operation, fail_write)
+
+    summary = publish_telemetry_evidence(make_result(), tmp_path / "agent")
+
+    assert summary["status"] == "not_emitted"
+
+
+def test_publish_telemetry_propagates_evidence_write_failure_in_strict_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    def fail_write(*args, **kwargs):
+        raise OSError("evidence storage unavailable")
+
+    monkeypatch.setattr(Path, "write_text", fail_write)
+
+    with pytest.raises(OSError, match="evidence storage unavailable"):
+        publish_telemetry_evidence(make_result(), tmp_path / "agent", strict=True)
+
+
 def test_publish_telemetry_records_quality_failure_without_changing_run(tmp_path: Path):
     logs = tmp_path / "agent"
     logs.mkdir()
@@ -250,7 +279,7 @@ def test_publish_telemetry_rejects_obvious_credentials(tmp_path: Path):
                 "kind": "event",
                 "name": "agent.end",
                 "timestamp": "2026-07-13T00:00:00Z",
-                "uuid": "event-1",
+                "uuid": "019f616c-5eb1-7c92-928f-b4130bd4a519",
                 "data": {"api_key": "sk-thismustneverbeleak123456"},
             }
         ),
@@ -258,6 +287,44 @@ def test_publish_telemetry_rejects_obvious_credentials(tmp_path: Path):
     )
 
     with pytest.raises(TelemetryValidationError, match="resembles a credential"):
+        publish_telemetry_evidence(
+            make_result(task_artifact("atof", "atof", atof, logs)),
+            logs,
+            strict=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    [
+        ("atof_version", None),
+        ("atof_version", "version-one"),
+        ("kind", []),
+        ("name", ""),
+        ("timestamp", "not-a-timestamp"),
+        ("timestamp", "2026-07-13T00:00:00"),
+        ("uuid", "not-a-uuid"),
+    ],
+)
+def test_publish_telemetry_rejects_invalid_atof_fields(
+    tmp_path: Path,
+    field: str,
+    invalid: object,
+):
+    logs = tmp_path / "agent"
+    logs.mkdir()
+    record = {
+        "atof_version": "1.0",
+        "kind": "event",
+        "name": "agent.end",
+        "timestamp": "2026-07-13T00:00:00Z",
+        "uuid": "019f616c-5eb1-7c92-928f-b4130bd4a519",
+    }
+    record[field] = invalid
+    atof = logs / "events.atof.jsonl"
+    atof.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    with pytest.raises(TelemetryValidationError, match=rf"ATOF record .*{field}.*{atof}:1"):
         publish_telemetry_evidence(
             make_result(task_artifact("atof", "atof", atof, logs)),
             logs,

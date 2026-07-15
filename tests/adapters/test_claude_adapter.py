@@ -713,7 +713,7 @@ async def test_run_claude_normalizes_plain_sdk_error_result(
 ):
     async def query_failure(**_):
         raise Exception(
-            "Claude Code returned an error result: secret provider diagnostic"
+            "SDK returned an error result with secret provider diagnostic"
         )
         yield
 

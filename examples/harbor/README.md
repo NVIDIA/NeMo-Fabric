@@ -175,7 +175,7 @@ from silently changing the server between runs.
 
 Confirm `/v1/models` and one request containing `tools` with
 `tool_choice: "auto"` before starting Harbor. A plain chat completion can
-succeed even when this required agent capability is disabled. See NVIDIA's
+succeed even when this required agent capability is disabled. Refer to NVIDIA's
 [tool-calling guidance](https://docs.nvidia.com/nim/large-language-models/latest/advanced-use-cases/tool-calling-and-mcp.html).
 
 ## Hold the Harness Fixed and Vary One Capability
@@ -251,16 +251,21 @@ large logs, and full token-heavy trajectories are deliberately excluded.
 
 Do not begin with all 500 tasks:
 
+### Spot-Check
+
 1. Run `--install-only` on the chosen task image.
 2. Run the credential-free calculator smoke.
 3. Run `django__django-13741` once with one harness.
 4. Repeat it with the second harness.
 5. Exercise the skill, MCP, tool, and Relay variants individually.
-6. Run a five-task shard by replacing `--task swe-bench/django__django-13741`
+
+### Scale Up
+
+1. Run a five-task shard by replacing `--task swe-bench/django__django-13741`
    with `--dataset swe-bench/swe-bench-verified --n-tasks 5`.
-7. Inspect every exception and reward plus at least one Fabric result and
+2. Inspect every exception and reward plus at least one Fabric result and
    telemetry summary before scaling.
-8. Start the full dataset by removing `--n-tasks` and choosing concurrency that
+3. Start the full dataset by removing `--n-tasks` and choosing concurrency that
    respects model and environment limits.
 
 For a long run, use a stable job name and directory. Spot-check without changing
@@ -288,7 +293,7 @@ uv run harbor job resume --job-path "$RUNS_DIR/<job-name>"
 | `configs/claude.yaml` | `/tmp/nemo-fabric-config/configs/claude.yaml` |
 | SWE-Bench checkout | `/testbed/` |
 | `mcp/repo_inspector.py` | `/tmp/nemo-fabric-config/mcp/repo_inspector.py` |
-| `examples/harbor/demo/task/environment/fabric/` | `/opt/fabric-demo/` via the demo Dockerfile `COPY` |
+| `examples/harbor/demo/task/environment/fabric/` | `/opt/fabric-demo/` using the demo Dockerfile `COPY` |
 | Harbor agent logs | `/logs/agent/` in the task and `<trial>/agent/` on the host |
 
 ## Integration Contract
