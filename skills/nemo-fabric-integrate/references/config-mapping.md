@@ -27,7 +27,7 @@ Import these from the top-level `nemo_fabric` package:
 | `RelayConfig` and `Relay*Config` | Relay observability under the top-level `relay` block. |
 
 Generated references remain the source of truth for exact fields and defaults:
-the [models reference](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/models).
+the [models reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.models.md).
 
 ## Build And Shape
 

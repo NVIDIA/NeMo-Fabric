@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
 
 Every invocation that reaches the adapter boundary returns a normalized
 `RunResult`. Inspect `status` before reading output. Generated reference: the
-[types reference](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/types).
+[types reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.types.md).
 
 | Field | Meaning |
 | --- | --- |
@@ -42,7 +42,7 @@ reuse the encoding.
 
 All public SDK errors inherit from `FabricError`. Fabric raises these when it
 cannot return a normalized result; it does not return a partial `RunResult`. See
-the [errors reference](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/errors).
+the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.errors.md).
 
 | Error | Meaning |
 | --- | --- |

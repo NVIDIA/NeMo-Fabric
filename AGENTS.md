@@ -15,10 +15,9 @@ NeMo Fabric ships two tiers of agent skills. Use the tier that matches your task
   SDK contracts and the published documentation, never on repository internals.
   Start with [`skills/README.md`](skills/README.md).
 - **Maintainer skills — `.agents/skills/`.** For contributing to NeMo Fabric
-  itself: API, documentation, testing, CI, packaging, release, adapter
-  onboarding, and PR preparation. They may reference repository internals and
-  contribution commands. Start with
-  [`.agents/skills/README.md`](.agents/skills/README.md).
+  itself: API, documentation, testing, CI, packaging, release, and PR
+  preparation. They may reference repository internals and contribution
+  commands. Start with [`.agents/skills/README.md`](.agents/skills/README.md).
 
 Keep the tiers separate: do not add consumer integration guidance to the
 maintainer set, or repository-internal contribution steps to the consumer set.
@@ -26,6 +25,21 @@ Coding agents that auto-discover skills read the maintainer set from
 `.agents/skills/` (also exposed at `.claude/skills` for Claude Code); the
 consumer set under `skills/` is meant to be exported into a consumer's own
 project.
+
+This two-tier layout follows NeMo Relay's structure, with intentional
+differences for NeMo Fabric:
+
+- **Discovery wiring:** `.claude/skills` symlinks to `.agents/skills/` (the
+  maintainer set) for Claude Code; consumer skills under `skills/` are copied
+  into a consumer's own project rather than auto-discovered from this repository
+  (see [`skills/README.md`](skills/README.md)).
+- **Portability strategy:** consumer skills link to public GitHub documentation
+  and example URLs rather than a docs-site domain, so they keep working when
+  exported; the `docs.nvidia.com/nemo/fabric` site is not yet published.
+- **Supported consumer surface:** the consumer tier currently ships one skill,
+  `nemo-fabric-integrate`, for typed Python SDK integration.
+- **Pending coverage:** a dedicated adapter-authoring maintainer skill has not
+  landed yet and is tracked separately.
 
 ## Documentation And Contribution Workflow
 

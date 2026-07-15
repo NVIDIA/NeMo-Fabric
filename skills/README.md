@@ -16,17 +16,29 @@ documentation, CI, or packaging — use the
 
 ## Portability
 
-Consumer skills are self-contained and exportable: copy a skill directory into
-your own project and it keeps working.
+Consumer skills are self-contained and exportable. Each skill depends only on
+supported public interfaces (the `nemo_fabric` Python package) and public
+documentation URLs, never on repository-internal paths.
 
-- They depend only on supported public interfaces (the `nemo_fabric` Python
-  package) and the published documentation at
-  <https://docs.nvidia.com/nemo/fabric>, never on repository-internal paths.
-- Cross-links point to published docs and public example URLs, not to files
-  inside this checkout. Skill-specific material is bundled under each skill's own
-  `references/`.
-- They do not reference maintainer skills, contribution commands, or repository
-  internals.
+- Cross-links point to the published documentation and public example URLs on
+  GitHub, not to files inside this checkout. Skill-specific material is bundled
+  under each skill's own `references/`.
+- Skills do not reference maintainer skills, contribution commands, or
+  repository internals.
+
+## Using A Consumer Skill In Your Project
+
+Copy the skill directory — for example `nemo-fabric-integrate/`, including its
+`references/` — into the place your coding agent discovers skills. This is
+separate from the maintainer-only `.claude/skills` wiring in this repository; do
+not point your project at this repository's `.agents/skills/`.
+
+- **Claude Code:** place it at `.claude/skills/nemo-fabric-integrate/` in your
+  project, or `~/.claude/skills/nemo-fabric-integrate/` to use it across
+  projects. Claude Code discovers `SKILL.md` files under those directories.
+- **Other agents:** each skill is a portable `SKILL.md` bundle — put it wherever
+  your agent loads skills, or reference its `SKILL.md` directly from your agent
+  instructions. Confirm discovery with a prompt that should trigger the skill.
 
 ## Start Here
 
@@ -41,6 +53,6 @@ your own project and it keeps working.
 - **Frontmatter:** each `SKILL.md` begins with YAML frontmatter containing at
   least `name` and `description`. `SKILL.md` files do not carry an SPDX header;
   every other file, including this README and bundled `references/`, does.
-- **Self-containment:** keep a skill usable outside this repository. Link to the
-  published docs and public example URLs, and bundle any skill-specific reference
+- **Self-containment:** keep a skill usable outside this repository. Link to
+  public documentation and example URLs, and bundle any skill-specific reference
   material under the skill's own `references/`.

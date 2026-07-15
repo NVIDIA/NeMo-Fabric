@@ -53,7 +53,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
   environment, build wheels with `just wheels`, then
   `uv pip install --find-links <dist_dir> "nemo-fabric[runtime]"` (add the
   `harbor` extra for the Harbor integration). See the
-  [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install).
+  [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx).
 - Select a harness adapter — the `adapter_id` set in `HarnessConfig`, for example
   `nvidia.fabric.hermes` — and install its extra the same way, for example
   `uv pip install --find-links <dist_dir> "nemo-fabric[adapters-hermes]"`
@@ -125,8 +125,10 @@ Pick the smallest lifecycle the consumer needs:
   caller-owned request ID or context (the two are mutually exclusive).
 - **Stateful runtime** — ordered turns over one live harness. Start it with
   `start_runtime(...)` and use the returned `Runtime` as an async context
-  manager so shutdown is guaranteed. A runtime accepts one active invocation at
-  a time; overlapping calls raise `FabricStateError`.
+  manager so cleanup runs on exit — shutdown is attempted, not guaranteed
+  (`stop()` can raise `FabricRuntimeError`; see Consume Results And Handle
+  Errors). A runtime accepts one active invocation at a time; overlapping calls
+  raise `FabricStateError`.
 
 ```python
 from nemo_fabric import Fabric
@@ -237,15 +239,15 @@ result-field and error inventory, and
 
 Link to these canonical sources instead of duplicating them:
 
-- [Python SDK guide](https://docs.nvidia.com/nemo/fabric/sdk/python)
-- [Getting started](https://docs.nvidia.com/nemo/fabric/getting-started/overview) and
-  [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install)
+- [Python SDK guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx)
+- [Getting started](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/overview.mdx) and
+  [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx)
 - Generated API reference — exact signatures and fields:
-  [client](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/client),
-  [runtime](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/runtime),
-  [models](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/models),
-  [types](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/types),
-  [errors](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/errors)
+  [client](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.client.md),
+  [runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.runtime.md),
+  [models](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.models.md),
+  [types](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.types.md),
+  [errors](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.errors.md)
 - Canonical in-memory config example:
   [examples/code_review_agent](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
 - Platform and evaluation-harness integration:

@@ -8,8 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 `Fabric()` is the primary entrypoint. It is a plain, reusable object — not a
 lifecycle context manager — and can plan, diagnose, or start multiple
 independent runtimes. Exact signatures live in the generated references — the
-[client reference](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/client)
-and [runtime reference](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/runtime).
+[client reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.client.md)
+and [runtime reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.runtime.md).
 
 ## Fabric Methods
 
@@ -35,7 +35,9 @@ caller-owned `request_id`, `context`, or overrides.
 | `runtime_id` | No | Opaque identifier for this runtime lifecycle. |
 | `messages` / `invocations` | No | Copied harness history and per-turn IDs. |
 
-Always use a runtime as an async context manager so shutdown is guaranteed:
+Always use a runtime as an async context manager so cleanup runs on exit.
+Shutdown is attempted, not guaranteed — `stop()`, including the automatic call at
+`async with` exit, can raise `FabricRuntimeError`:
 
 ```python
 async with await fabric.start_runtime(config, base_dir=base) as runtime:
