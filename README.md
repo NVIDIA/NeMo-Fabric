@@ -186,8 +186,7 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 
 - [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
-- [Getting Started overview](docs/getting-started/overview.mdx): interface
-  selection and the end-to-end Fabric workflow.
+- [Overview](docs/overview.mdx): interface selection and the end-to-end Fabric workflow.
 - [Harbor example](examples/harbor/README.md) and
   [multi-harness demo](examples/harbor/demo/README.md): ownership,
   installation, and complete command matrices.
