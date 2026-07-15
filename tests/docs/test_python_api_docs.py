@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_DIR = ROOT / "docs" / "reference" / "api" / "python-library-reference"
-LANDING_PAGE = ROOT / "docs" / "overview.mdx"
+LANDING_PAGE = ROOT / "docs" / "about-nemo-fabric" / "overview.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
