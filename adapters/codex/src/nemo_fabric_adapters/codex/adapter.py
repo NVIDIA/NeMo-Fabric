@@ -259,10 +259,29 @@ def _optional_string(settings: dict[str, Any], name: str) -> str | None:
 def child_environment(
     payload: dict[str, Any], *, relay_gateway_url: str | None = None
 ) -> dict[str, str]:
-    values = {name: "" for name in os.environ}
+    values = dict.fromkeys(os.environ, "")
     values.update(
-        {name: value for name in INHERITED_ENV_NAMES if (value := os.environ.get(name))}
+        {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
+    telemetry = common_utils.runtime_context(payload).get("telemetry")
+    if telemetry is None:
+        telemetry = {}
+    if not isinstance(telemetry, dict):
+        raise AdapterInputError(
+            "codex_invalid_request", "runtime_context.telemetry must be a mapping"
+        )
+    telemetry_env = telemetry.get("env")
+    if telemetry_env is None:
+        telemetry_env = {}
+    if not isinstance(telemetry_env, dict) or any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in telemetry_env.items()
+    ):
+        raise AdapterInputError(
+            "codex_invalid_request",
+            "runtime_context.telemetry.env must contain strings",
+        )
+    values.update(telemetry_env)
     model_config = _selected_model_config(payload)
     api_key_env = model_config.get("api_key_env")
     if isinstance(api_key_env, str) and api_key_env in os.environ:

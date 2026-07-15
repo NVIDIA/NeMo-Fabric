@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from nemo_fabric import Fabric
 from nemo_fabric_adapters.codex import adapter
+from openai_codex import AsyncCodex, AsyncThread, AsyncTurnHandle
 from openai_codex.types import TurnStatus
 
 
@@ -73,73 +75,80 @@ def successful_result(response="done"):
     )
 
 
-class FakeTurnHandle:
-    def __init__(self, result=None):
-        self.result = result or successful_result()
-        self.interrupted = False
+def mock_turn_handle(result=None):
+    mock_handle = MagicMock(spec=AsyncTurnHandle)
+    outcome = successful_result() if result is None else result
+    if isinstance(outcome, BaseException):
+        mock_handle.run.side_effect = outcome
+    else:
+        mock_handle.run.return_value = outcome
+    mock_handle.interrupted = False
 
-    async def run(self):
-        if isinstance(self.result, BaseException):
-            raise self.result
-        return self.result
+    async def mark_interrupted():
+        mock_handle.interrupted = True
 
-    async def interrupt(self):
-        self.interrupted = True
-
-
-class FakeThread:
-    def __init__(self, thread_id, result=None):
-        self.id = thread_id
-        self.handle = FakeTurnHandle(result)
-        self.turn_calls = []
-
-    async def turn(self, prompt, **kwargs):
-        self.turn_calls.append((prompt, kwargs))
-        return self.handle
+    mock_handle.interrupt.side_effect = mark_interrupted
+    return mock_handle
 
 
-class FakeAsyncCodex:
-    instances = []
-    next_thread_id = "thread-123"
-    next_result = None
-
-    def __init__(self, config):
-        self.config = config
-        self.start_calls = []
-        self.resume_calls = []
-        self.closed = False
-        self.thread = None
-        type(self).instances.append(self)
-
-    async def thread_start(self, **kwargs):
-        self.start_calls.append(kwargs)
-        self.thread = FakeThread(type(self).next_thread_id, type(self).next_result)
-        return self.thread
-
-    async def thread_resume(self, thread_id, **kwargs):
-        self.resume_calls.append((thread_id, kwargs))
-        self.thread = FakeThread(thread_id, type(self).next_result)
-        return self.thread
-
-    async def close(self):
-        self.closed = True
+def mock_thread(thread_id, result=None):
+    mock_sdk_thread = MagicMock(spec=AsyncThread)
+    mock_sdk_thread.id = thread_id
+    mock_sdk_thread.handle = mock_turn_handle(result)
+    mock_sdk_thread.turn.return_value = mock_sdk_thread.handle
+    return mock_sdk_thread
 
 
-@pytest.fixture(name="fake_codex")
-def fake_codex_fixture(monkeypatch):
-    FakeAsyncCodex.instances = []
-    FakeAsyncCodex.next_thread_id = "thread-123"
-    FakeAsyncCodex.next_result = None
-    monkeypatch.setattr(adapter, "AsyncCodex", FakeAsyncCodex)
-    return FakeAsyncCodex
+@pytest.fixture(name="mock_codex")
+def mock_codex_fixture(monkeypatch):
+    mock_codex = MagicMock(spec=AsyncCodex)
+    mock_codex.instances = []
+    mock_codex.next_thread_id = "thread-123"
+    mock_codex.next_result = None
+    mock_codex.next_thread = None
+    mock_codex.resume_thread_id = None
+
+    def build_client(*, config):
+        mock_client = MagicMock(spec=AsyncCodex)
+        mock_client.config = config
+        mock_client.closed = False
+        mock_client.thread = None
+
+        async def close():
+            mock_client.closed = True
+
+        async def thread_start(**_kwargs):
+            mock_client.thread = (
+                mock_codex.next_thread
+                if mock_codex.next_thread is not None
+                else mock_thread(mock_codex.next_thread_id, mock_codex.next_result)
+            )
+            return mock_client.thread
+
+        async def thread_resume(thread_id, **_kwargs):
+            resumed_thread_id = mock_codex.resume_thread_id or thread_id
+            mock_client.thread = mock_thread(
+                resumed_thread_id, mock_codex.next_result
+            )
+            return mock_client.thread
+
+        mock_client.close.side_effect = close
+        mock_client.thread_start.side_effect = thread_start
+        mock_client.thread_resume.side_effect = thread_resume
+        mock_codex.instances.append(mock_client)
+        return mock_client
+
+    mock_codex.side_effect = build_client
+    monkeypatch.setattr(adapter, "AsyncCodex", mock_codex)
+    return mock_codex
 
 
 def test_sdk_oneshot_uses_native_thread_and_turn_contract(
-    codex_payload, fake_codex, monkeypatch, tmp_path
+    codex_payload, mock_codex, tmp_path
 ):
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
-    monkeypatch.setenv("CODEX_INTERNAL_ORIGINATOR_OVERRIDE", "parent-codex")
-    monkeypatch.setenv("FABRIC_UNRELATED_SECRET", "do-not-forward")
+    os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
+    os.environ["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] = "parent-codex"
+    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
     codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
         "CODEX_EXPLICIT": "forward-me"
     }
@@ -156,7 +165,7 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
     assert "command" not in output
     assert "returncode" not in output
 
-    client = fake_codex.instances[0]
+    client = mock_codex.instances[0]
     assert client.closed is True
     assert client.config.codex_bin is None
     assert client.config.launch_args_override is None
@@ -170,7 +179,7 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
         == "codex_python_sdk"
     )
     assert client.config.env["FABRIC_UNRELATED_SECRET"] == ""
-    start = client.start_calls[0]
+    start = client.thread_start.await_args.kwargs
     assert start["model"] == "gpt-5.4"
     assert start["model_provider"] == "openai"
     assert start["sandbox"] == adapter.Sandbox.workspace_write
@@ -178,13 +187,13 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
         "features": {"web_search": False},
         "model_reasoning_effort": "high",
     }
-    assert client.thread.turn_calls == [
-        ("Inspect the change.", {"effort": None, "output_schema": None})
-    ]
+    client.thread.turn.assert_awaited_once_with(
+        "Inspect the change.", effort=None, output_schema=None
+    )
 
 
 def test_runtime_resumes_sdk_thread_across_invocations(
-    codex_payload, fake_codex
+    codex_payload, mock_codex
 ):
     first = adapter.run(codex_payload)
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
@@ -192,9 +201,9 @@ def test_runtime_resumes_sdk_thread_across_invocations(
     second = adapter.run(codex_payload)
 
     assert first["thread_id"] == second["thread_id"] == "thread-123"
-    assert fake_codex.instances[0].start_calls
-    assert fake_codex.instances[1].resume_calls[0][0] == "thread-123"
-    assert fake_codex.instances[1].thread.turn_calls[0][0] == "Continue."
+    mock_codex.instances[0].thread_start.assert_awaited_once()
+    assert mock_codex.instances[1].thread_resume.await_args.args[0] == "thread-123"
+    assert mock_codex.instances[1].thread.turn.await_args.args[0] == "Continue."
     state = json.loads(
         adapter.runtime_state_path(codex_payload, "runtime-1").read_text(
             encoding="utf-8"
@@ -217,9 +226,9 @@ def test_runtime_rejects_corrupt_thread_state(codex_payload):
 
 
 def test_failed_sdk_turn_is_normalized_and_transport_is_closed(
-    codex_payload, fake_codex
+    codex_payload, mock_codex
 ):
-    fake_codex.next_result = RuntimeError("model request failed")
+    mock_codex.next_result = RuntimeError("model request failed")
 
     output = adapter.run(codex_payload)
 
@@ -228,15 +237,15 @@ def test_failed_sdk_turn_is_normalized_and_transport_is_closed(
         "message": "model request failed",
         "retryable": False,
     }
-    assert fake_codex.instances[0].closed is True
+    assert mock_codex.instances[0].closed is True
     assert not adapter.runtime_state_path(codex_payload, "runtime-1").exists()
 
 
 def test_incomplete_sdk_turn_is_failed_without_persisting_thread(
-    codex_payload, fake_codex
+    codex_payload, mock_codex
 ):
     result = successful_result(response=None)
-    fake_codex.next_result = result
+    mock_codex.next_result = result
 
     output = adapter.run(codex_payload)
 
@@ -245,7 +254,7 @@ def test_incomplete_sdk_turn_is_failed_without_persisting_thread(
     assert not adapter.runtime_state_path(codex_payload, "runtime-1").exists()
 
 
-def test_selected_model_rejects_unsupported_provider(codex_payload, fake_codex):
+def test_selected_model_rejects_unsupported_provider(codex_payload, mock_codex):
     model = codex_payload["effective_config"]["config"]["models"]["default"]
     model["provider"] = "nvidia"
 
@@ -253,29 +262,23 @@ def test_selected_model_rejects_unsupported_provider(codex_payload, fake_codex):
 
     assert output["error"]["code"] == "codex_invalid_configuration"
     assert "provider must be openai" in output["error"]["message"]
-    assert fake_codex.instances == []
+    mock_codex.assert_not_called()
 
 
 def test_resume_rejects_changed_sdk_thread_identity(
-    codex_payload, fake_codex, monkeypatch
+    codex_payload, mock_codex
 ):
     adapter.save_thread_id(codex_payload, "runtime-1", "thread-persisted")
-
-    async def thread_resume(self, thread_id, **kwargs):
-        self.resume_calls.append((thread_id, kwargs))
-        self.thread = FakeThread("thread-replaced")
-        return self.thread
-
-    monkeypatch.setattr(fake_codex, "thread_resume", thread_resume)
+    mock_codex.resume_thread_id = "thread-replaced"
 
     output = adapter.run(codex_payload)
 
     assert output["error"]["code"] == "codex_thread_mismatch"
-    assert fake_codex.instances[0].closed is True
+    assert mock_codex.instances[0].closed is True
 
 
 def test_relay_uses_gateway_and_request_scoped_sdk_config(
-    codex_payload, fake_codex, monkeypatch, tmp_path
+    codex_payload, mock_codex, monkeypatch, tmp_path
 ):
     codex_payload["telemetry_plan"] = {
         "providers": ["relay"],
@@ -302,13 +305,14 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
         adapter.relay_gateway, "start_relay_gateway", start_gateway
     )
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", stop_gateway)
-    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(tmp_path / "relay.json"))
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
 
     output = adapter.run(codex_payload)
 
-    client = fake_codex.instances[0]
-    config = client.start_calls[0]["config"]
-    assert client.start_calls[0]["model_provider"] == "openai"
+    client = mock_codex.instances[0]
+    start = client.thread_start.await_args.kwargs
+    config = start["config"]
+    assert start["model_provider"] == "openai"
     assert client.config.env["NEMO_RELAY_GATEWAY_URL"] == gateway.url
     assert config["bypass_hook_trust"] is True
     assert config["features"]["hooks"] is True
@@ -375,8 +379,9 @@ def test_prepare_relay_reuses_one_resolved_executable(
     )
 
 
+@pytest.mark.usefixtures("mock_codex")
 def test_relay_cleanup_failure_changes_success_to_failure(
-    codex_payload, fake_codex, monkeypatch, tmp_path
+    codex_payload, monkeypatch, tmp_path
 ):
     gateway = adapter.relay_gateway.RelayGatewayLaunch(
         executable=tmp_path / "nemo-relay",
@@ -408,7 +413,7 @@ def test_relay_cleanup_failure_changes_success_to_failure(
 
 
 def test_native_sdk_controls_and_telemetry_are_request_scoped(
-    codex_payload, fake_codex
+    codex_payload, mock_codex
 ):
     settings = codex_payload["effective_config"]["config"]["harness"]["settings"]
     settings.update(
@@ -449,8 +454,8 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
     output = adapter.run(codex_payload)
 
     assert output["failed"] is False
-    client = fake_codex.instances[0]
-    start = client.start_calls[0]
+    client = mock_codex.instances[0]
+    start = client.thread_start.await_args.kwargs
     assert start["personality"] == adapter.Personality.pragmatic
     assert start["service_name"] == "fabric-codex-test"
     assert start["config"]["otel"] == {
@@ -462,36 +467,28 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
             }
         },
     }
-    _, turn = client.thread.turn_calls[0]
+    turn = client.thread.turn.await_args.kwargs
     assert turn["effort"] == adapter.ReasoningEffort.xhigh
     assert turn["output_schema"]["required"] == ["summary"]
 
 
 def test_timeout_interrupts_native_turn_and_closes_sdk(
-    codex_payload, fake_codex, monkeypatch
+    codex_payload, mock_codex
 ):
-    class BlockingHandle(FakeTurnHandle):
-        async def run(self):
-            await __import__("asyncio").sleep(60)
+    mock_blocking_thread = mock_thread("thread-timeout")
 
-    class BlockingThread(FakeThread):
-        def __init__(self, thread_id, result=None):
-            super().__init__(thread_id, result)
-            self.handle = BlockingHandle()
+    async def block():
+        await asyncio.sleep(60)
 
-    async def thread_start(self, **kwargs):
-        self.start_calls.append(kwargs)
-        self.thread = BlockingThread("thread-timeout")
-        return self.thread
-
-    monkeypatch.setattr(fake_codex, "thread_start", thread_start)
+    mock_blocking_thread.handle.run.side_effect = block
+    mock_codex.next_thread = mock_blocking_thread
     codex_payload["effective_config"]["config"]["harness"]["settings"][
         "timeout_seconds"
     ] = 0.01
 
     output = adapter.run(codex_payload)
 
-    client = fake_codex.instances[0]
+    client = mock_codex.instances[0]
     assert output["error"]["code"] == "codex_timed_out"
     assert client.thread.handle.interrupted is True
     assert client.closed is True
@@ -550,10 +547,50 @@ def test_codex_config_resolves_sdk_adapter():
     assert not unsupported.get("mcp_servers")
 
 
-def test_environment_does_not_mutate_parent(codex_payload, monkeypatch):
-    monkeypatch.setenv("FABRIC_UNRELATED_SECRET", "parent-value")
+def test_environment_does_not_mutate_parent(codex_payload):
+    os.environ["FABRIC_UNRELATED_SECRET"] = "parent-value"
 
     child = adapter.child_environment(codex_payload)
 
     assert child["FABRIC_UNRELATED_SECRET"] == ""
     assert os.environ["FABRIC_UNRELATED_SECRET"] == "parent-value"
+
+
+def test_environment_preserves_runtime_telemetry_env(codex_payload):
+    codex_payload["runtime_context"]["telemetry"] = {
+        "env": {
+            "FABRIC_RELAY_ENABLED": "true",
+            "FABRIC_RELAY_CONFIG_PATH": "/tmp/relay.json",
+            "CODEX_EXPLICIT": "telemetry",
+        }
+    }
+    codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
+        "CODEX_EXPLICIT": "configured"
+    }
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = "/tmp/parent-relay.json"
+
+    child = adapter.child_environment(codex_payload)
+
+    assert child["FABRIC_RELAY_ENABLED"] == "true"
+    assert child["FABRIC_RELAY_CONFIG_PATH"] == "/tmp/relay.json"
+    assert child["CODEX_EXPLICIT"] == "configured"
+
+
+@pytest.mark.parametrize(
+    "telemetry_env",
+    [
+        [],
+        {1: "value"},
+        {"OTEL_EXPORTER_OTLP_ENDPOINT": 4318},
+    ],
+)
+def test_environment_rejects_non_string_runtime_telemetry_env(
+    codex_payload, telemetry_env
+):
+    codex_payload["runtime_context"]["telemetry"] = {"env": telemetry_env}
+
+    with pytest.raises(
+        adapter.AdapterInputError,
+        match="runtime_context.telemetry.env must contain strings",
+    ):
+        adapter.child_environment(codex_payload)

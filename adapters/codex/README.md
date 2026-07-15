@@ -12,6 +12,8 @@ app-server runtime and typed JSON-RPC protocol.
 
 ## Install
 
+Build the local wheels and install the Codex adapter:
+
 ```bash
 just wheels
 python -m pip install --find-links dist "nemo-fabric[codex]"

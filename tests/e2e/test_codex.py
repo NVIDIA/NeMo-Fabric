@@ -3,7 +3,7 @@
 
 """Opt-in real Codex SDK integration gates for Fabric runtime behavior.
 
-RUN_FABRIC_CODEX_INTEGRATION=1 pytest tests/e2e/test_codex.py
+RUN_FABRIC_CODEX_INTEGRATION=1 uv run pytest tests/e2e/test_codex.py
 """
 
 from __future__ import annotations
