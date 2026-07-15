@@ -591,6 +591,19 @@ def test_environment_rejects_non_string_runtime_telemetry_env(
 
     with pytest.raises(
         adapter.AdapterInputError,
-        match="runtime_context.telemetry.env must contain strings",
+        match=r"runtime_context\.telemetry\.env must contain strings",
+    ):
+        adapter.child_environment(codex_payload)
+
+
+@pytest.mark.parametrize("telemetry", [[], "invalid"])
+def test_environment_rejects_non_mapping_runtime_telemetry(
+    codex_payload, telemetry
+):
+    codex_payload["runtime_context"]["telemetry"] = telemetry
+
+    with pytest.raises(
+        adapter.AdapterInputError,
+        match=r"runtime_context\.telemetry must be a mapping",
     ):
         adapter.child_environment(codex_payload)
