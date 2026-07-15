@@ -3,7 +3,7 @@ name: swebench-debugging
 description: Apply a focused reproduce-fix-test workflow to SWE-Bench repository tasks.
 ---
 
-# SWE-Bench debugging
+# SWE-Bench Debugging
 
 1. Read the task and locate the smallest relevant implementation and test surface.
 2. Reproduce the reported behavior before editing when the environment permits it.

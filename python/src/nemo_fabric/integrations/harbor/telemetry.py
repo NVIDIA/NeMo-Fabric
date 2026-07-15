@@ -91,10 +91,10 @@ def _resolve_artifact_path(path: Path, logs_dir: Path) -> Path:
     """Resolve collected task paths when validation runs on the Harbor host."""
 
     task_logs = Path("/logs/agent")
+    if ".." in path.parts:
+        raise TelemetryValidationError(f"telemetry artifact escapes /logs/agent: {path}")
     if path.is_relative_to(task_logs) and logs_dir != task_logs:
         relative = path.relative_to(task_logs)
-        if ".." in relative.parts:
-            raise TelemetryValidationError(f"telemetry artifact escapes /logs/agent: {path}")
         return logs_dir / relative
     return path
 

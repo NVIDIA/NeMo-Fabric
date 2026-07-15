@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Harbor integration internals
+# Harbor Integration Internals
 
 The public entrypoint is `nemo_fabric.integrations.harbor:FabricAgent`.
 `fabric_agent.py` owns the Harbor `BaseAgent` boundary, `models.py` owns the

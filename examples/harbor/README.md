@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Run Fabric agents with Harbor
+# Run Fabric Agents with Harbor
 
 This is the canonical guide for the Fabric–Harbor integration. Start with the
 local [calculator smoke](demo/README.md), then use the
@@ -20,11 +20,12 @@ Harbor task -> FabricAgent -> Fabric.run -> selected adapter -> harness
             -> Harbor verifier and reward
             -> Fabric result + ATOF/ATIF evidence
 ```
+
 Run the same task again with another complete config to compare harnesses. A
 skill, MCP, tool, or telemetry variant is a separate run so results remain
 attributable.
 
-## Install and preflight
+## Install and Preflight
 
 Harbor 0.18 and Python 3.12 or later are supported:
 
@@ -76,14 +77,14 @@ This gate verifies Fabric and the selected adapter can be installed in the real
 task image. Harness binaries and credentials must also be available; use a
 purpose-built evaluation image for large runs.
 
-## Fast local smoke
+## Fast Local Smoke
 
 The [calculator demo](demo/README.md) includes a credential-free scripted
 harness plus Hermes, Hermes with Relay, and Claude configs. It verifies spec
 upload, config loading, workspace mutation, result download, and Harbor reward
 without first downloading SWE-Bench.
 
-## One SWE-Bench entry
+## One SWE-Bench Entry
 
 The task `django__django-13741` is available from Harbor's
 `swe-bench/swe-bench-verified` dataset. These inputs stay fixed across the
@@ -139,7 +140,7 @@ presented as Harbor-qualified here.
 The baseline configs were live-verified on July 14, 2026 against the same
 Harbor task and task checksum:
 
-| Harness | Verification model | Fabric status | Harbor reward | Review bundle |
+| Harness | Verification Model | Fabric Status | Harbor Reward | Review Bundle |
 | --- | --- | --- | --- | --- |
 | Hermes | self-hosted `nvidia/nemotron-3-nano` | `succeeded` | `1.0` | [`sample-artifacts/hermes/`](swebench/sample-artifacts/hermes/) |
 | Claude | `anthropic/claude-sonnet-4-5` | `succeeded` | `1.0` | [`sample-artifacts/claude/`](swebench/sample-artifacts/claude/) |
@@ -155,6 +156,8 @@ automatic tool calling. The current image accepts the vLLM options through
 port is different:
 
 ```bash
+export NIM_IMAGE='nvcr.io/nim/nvidia/nemotron-3-nano@sha256:<approved-digest>'
+
 docker run -d --rm \
   --name nemotron-3-nano \
   --gpus '"device=2"' \
@@ -163,15 +166,19 @@ docker run -d --rm \
   -e 'NIM_PASSTHROUGH_ARGS=--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser nemotron_v3' \
   -v "$LOCAL_NIM_CACHE:/opt/nim/.cache" \
   -p 8010:8000 \
-  nvcr.io/nim/nvidia/nemotron-3-nano:latest
+  "$NIM_IMAGE"
 ```
+
+Replace `<approved-digest>` with the immutable digest used for qualification
+and retain that value with the run metadata. This prevents a mutable image tag
+from silently changing the server between runs.
 
 Confirm `/v1/models` and one request containing `tools` with
 `tool_choice: "auto"` before starting Harbor. A plain chat completion can
 succeed even when this required agent capability is disabled. See NVIDIA's
 [tool-calling guidance](https://docs.nvidia.com/nim/large-language-models/latest/advanced-use-cases/tool-calling-and-mcp.html).
 
-## Hold the harness fixed and vary one capability
+## Hold the Harness Fixed and Vary One Capability
 
 Use the Hermes command above and change exactly one dimension:
 
@@ -191,7 +198,7 @@ The MCP variant uploads a dependency-free, read-only
 [`repo_inspector.py`](swebench/mcp/repo_inspector.py). Its absolute command path
 is the portable bundle target inside the task, not a workstation path.
 
-## Verify reward and ATOF/ATIF
+## Verify Reward and ATOF/ATIF
 
 Harbor's verifier remains the correctness authority. Fabric telemetry is a
 separate quality gate and never changes the SWE-Bench reward.
@@ -231,7 +238,7 @@ and ATIF independently; do not derive ATIF from ATOF through a separate
 converter. Fabric promotes Relay's ATIF to `agent/trajectory.json`, and Harbor
 validates that canonical file with its trajectory model.
 
-## Review sample artifacts
+## Review Sample Artifacts
 
 Curated, sanitized outputs from the qualified one-task runs live under
 [`swebench/sample-artifacts/`](swebench/sample-artifacts/). Each harness bundle
@@ -240,7 +247,7 @@ patch, and telemetry summary when emitted. These files are quick references,
 not substitutes for the complete Harbor trial directory: raw prompts, secrets,
 large logs, and full token-heavy trajectories are deliberately excluded.
 
-## Progress from a spot check to a full run
+## Progress from a Spot Check to a Full Run
 
 Do not begin with all 500 tasks:
 
@@ -272,9 +279,9 @@ instead of launching a differently configured replacement:
 uv run harbor job resume --job-path "$RUNS_DIR/<job-name>"
 ```
 
-## Source and task paths
+## Source and Task Paths
 
-| Repository/host asset | Task-environment path |
+| Repository/Host Asset | Task-Environment Path |
 | --- | --- |
 | `examples/harbor/swebench/` | `/tmp/nemo-fabric-config/` in portable mode |
 | `configs/hermes.yaml` | `/tmp/nemo-fabric-config/configs/hermes.yaml` |
@@ -284,7 +291,7 @@ uv run harbor job resume --job-path "$RUNS_DIR/<job-name>"
 | `examples/harbor/demo/task/environment/fabric/` | `/opt/fabric-demo/` via the demo Dockerfile `COPY` |
 | Harbor agent logs | `/logs/agent/` in the task and `<trial>/agent/` on the host |
 
-## Integration contract
+## Integration Contract
 
 `FabricAgent` writes a strict `HarborRunSpec`, uploads it, and invokes
 `nemo_fabric.integrations.harbor.runner` inside the task. The runner loads one

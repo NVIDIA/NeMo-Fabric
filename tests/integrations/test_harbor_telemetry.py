@@ -159,6 +159,16 @@ def test_publish_telemetry_rejects_collected_path_escape(tmp_path: Path):
         publish_telemetry_evidence(result, tmp_path / "agent", strict=True)
 
 
+def test_artifact_path_escape_is_rejected_without_host_path_remapping():
+    from nemo_fabric.integrations.harbor.telemetry import _resolve_artifact_path
+
+    with pytest.raises(TelemetryValidationError, match="escapes /logs/agent"):
+        _resolve_artifact_path(
+            Path("/logs/agent/../outside/trajectory.json"),
+            Path("/logs/agent"),
+        )
+
+
 def test_publish_telemetry_records_quality_failure_without_changing_run(tmp_path: Path):
     malformed = tmp_path / "events.atof.jsonl"
     malformed.write_text("{}\n", encoding="utf-8")

@@ -20,27 +20,35 @@ one independent harness runtime for each Harbor agent run.
 
 The first image build can take several minutes.
 
-## Prepare the build context
+## Prepare the Build Context
 
 Harbor builds `task/environment/Dockerfile` with the environment directory as
 its Docker context. Export committed `HEAD` so the image installs the exact
 Fabric revision under test:
 
 ```bash
+set -euo pipefail
+
 DEMO_DIR="$PWD/examples/harbor/demo"
 TASK_DIR="$DEMO_DIR/task"
 RUNS_DIR="$DEMO_DIR/runs"
-VENDOR_DIR="$TASK_DIR/environment/vendor/nemo-fabric"
+STAGING_DIR="$(mktemp -d "$TASK_DIR/environment/.vendor.XXXXXX")"
+trap 'rm -rf "$STAGING_DIR"' EXIT
 
+mkdir -p "$STAGING_DIR/nemo-fabric"
+git archive HEAD | tar -x -C "$STAGING_DIR/nemo-fabric"
 rm -rf "$TASK_DIR/environment/vendor"
-mkdir -p "$VENDOR_DIR"
-git archive HEAD | tar -x -C "$VENDOR_DIR"
+mv "$STAGING_DIR" "$TASK_DIR/environment/vendor"
+trap - EXIT
 ```
+
+The existing vendor tree is replaced only after the new archive has been
+created successfully.
 
 Keep this shell open for the commands below. Use a new `--job-name`, or remove
 the matching generated directory under `$RUNS_DIR`, before repeating a run.
 
-## Harbor arguments
+## Harbor Arguments
 
 | Argument | Meaning |
 | --- | --- |
@@ -55,7 +63,7 @@ the matching generated directory under `$RUNS_DIR`, before repeating a run.
 | `--job-name` | Harbor output directory name for this run |
 | `--force-build` | Rebuild the task image from the prepared context |
 
-## 1. Credential-free smoke
+## 1. Credential-Free Smoke
 
 This run checks Harbor setup, spec upload, sandbox-local SDK execution,
 workspace mutation, result download, and verification:
@@ -95,7 +103,7 @@ uv run --extra runtime --extra harbor harbor run \
 Harbor's model value replaces `models.default` in the config copy used for this
 run.
 
-## 3. Hermes with Relay telemetry
+## 3. Hermes with Relay Telemetry
 
 Start Phoenix on the host:
 
@@ -167,7 +175,7 @@ harness as root inside an ephemeral task container and the benchmark expects it
 to edit `/app`. Do not reuse this combination outside a deliberately isolated
 evaluation container.
 
-## Inspect results
+## Inspect Results
 
 Fabric result files use unique names in each trial's agent logs:
 
@@ -187,7 +195,7 @@ After the demo, remove the generated build-context copy:
 rm -rf "$TASK_DIR/environment/vendor"
 ```
 
-## Recording flow
+## Recording Flow
 
 1. Show the common `--agent` argument and the four complete config files.
 2. Run the credential-free smoke and inspect its Fabric result.

@@ -351,7 +351,13 @@ def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -
 
     if not path.is_file():
         return
-    summary = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        summary = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        summary = {
+            "status": "failed",
+            "error": "telemetry summary could not be loaded",
+        }
     if context.metadata is None:
         context.metadata = {}
     fabric = context.metadata.setdefault("fabric", {})

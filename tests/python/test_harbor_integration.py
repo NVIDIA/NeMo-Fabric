@@ -377,11 +377,27 @@ def test_harbor_attaches_telemetry_summary_to_metadata(tmp_path: Path):
         json.dumps({"status": "succeeded", "atof": {"records": 7}}),
         encoding="utf-8",
     )
-    context = AgentContext(metadata={"fabric": {"status": "succeeded"}})
+    context = AgentContext()
+    context.metadata = {"fabric": {"status": "succeeded"}}
 
     populate_context_from_telemetry_summary(context, summary)
 
     assert context.metadata["fabric"]["telemetry_validation"] == {
         "status": "succeeded",
         "atof": {"records": 7},
+    }
+
+
+def test_harbor_records_malformed_telemetry_summary(tmp_path: Path):
+    from nemo_fabric.integrations.harbor.fabric_agent import populate_context_from_telemetry_summary
+
+    summary = tmp_path / "telemetry-validation.json"
+    summary.write_text("not json", encoding="utf-8")
+    context = AgentContext()
+
+    populate_context_from_telemetry_summary(context, summary)
+
+    assert context.metadata["fabric"]["telemetry_validation"] == {
+        "status": "failed",
+        "error": "telemetry summary could not be loaded",
     }
