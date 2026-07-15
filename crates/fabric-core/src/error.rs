@@ -109,6 +109,14 @@ pub enum FabricError {
         /// Adapter kind.
         adapter_kind: AdapterKind,
     },
+    /// The selected harness cannot enforce the configured blocked-tools policy.
+    #[error("harness `{harness}` cannot enforce configured blocked tools: {reason}")]
+    UnsupportedToolsPolicy {
+        /// Harness type.
+        harness: String,
+        /// Capability-routing explanation.
+        reason: String,
+    },
     /// A runtime handle was used with a different run plan than the one that created it.
     #[error(
         "runtime handle does not match run plan for `{field}`: expected `{expected}` but found `{actual}` (runtime `{runtime_id}`)"

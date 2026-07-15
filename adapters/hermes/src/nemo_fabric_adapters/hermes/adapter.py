@@ -22,11 +22,25 @@ from typing import Any
 
 import nemo_fabric_adapters.common.utils as common_utils
 
+# Default agent loop budget when harness.settings.max_iterations is unset.
+# Mirrors Hermes' own AIAgent default (agent/agent_init.py); a lower value such
+# as 1 silently starves multi-step tasks (they run out of budget before
+# answering while the trial still reports success). See FABRIC-85.
+DEFAULT_MAX_ITERATIONS: int = 90
+
 
 def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
     providers = common_utils.telemetry_providers(payload)
     if any(provider != "relay" for provider in providers):
         raise ValueError("only relay telemetry is supported for Hermes")
+
+
+def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
+    settings = common_utils.settings_payload(payload)
+    return common_utils.merge_unique(
+        common_utils.blocked_tools(payload),
+        settings.get("disabled_toolsets"),
+    )
 
 
 def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False) -> dict[str, Any]:
@@ -38,6 +52,7 @@ def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False)
     model_name = settings.get("model_name") or model_config.get("model", "")
     provider = settings.get("provider") or model_config.get("provider")
     base_url = common_utils.get_base_url(settings, model_config)
+    blocked_toolsets = disabled_toolsets(payload)
 
     config: dict[str, Any] = {
         "model": common_utils.without_none(
@@ -50,7 +65,7 @@ def build_hermes_config(payload: dict[str, Any], *, relay_enabled: bool = False)
         "agent": common_utils.without_none(
             {
                 "max_turns": settings.get("max_iterations"),
-                "disabled_toolsets": settings.get("disabled_toolsets"),
+                "disabled_toolsets": blocked_toolsets or None,
             }
         ),
         "terminal": common_utils.without_none(
@@ -118,6 +133,7 @@ def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
         "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),
         "plugins": (config.get("plugins") or {}).get("enabled", []),
         "platform_toolsets": config.get("platform_toolsets", {}),
+        "disabled_toolsets": (config.get("agent") or {}).get("disabled_toolsets", []),
     }
 
 
@@ -275,9 +291,14 @@ def _invoke_hermes(
         discover_plugins(force=True)
         loaded_hermes_config = load_config()
         enabled_toolsets = resolve_hermes_toolsets(settings, loaded_hermes_config)
+        blocked_toolsets = disabled_toolsets(payload)
         session_id = common_utils.runtime_id(payload)
         session_db = SessionDB()
         conversation_history = load_runtime_history(session_db, session_id)
+        # Treat an explicit null max_iterations like an unset one (avoid int(None)).
+        max_iterations = settings.get("max_iterations")
+        if max_iterations is None:
+            max_iterations = DEFAULT_MAX_ITERATIONS
         agent = None
         agent = AIAgent(
             **filter_supported_kwargs(
@@ -286,9 +307,9 @@ def _invoke_hermes(
                 api_key=api_key,
                 provider=settings.get("provider") or model_config.get("provider"),
                 model=settings.get("model_name") or model_config.get("model", ""),
-                max_iterations=int(settings.get("max_iterations", 1)),
+                max_iterations=int(max_iterations),
                 enabled_toolsets=enabled_toolsets,
-                disabled_toolsets=settings.get("disabled_toolsets"),
+                disabled_toolsets=blocked_toolsets or None,
                 quiet_mode=True,
                 skip_context_files=True,
                 skip_memory=True,

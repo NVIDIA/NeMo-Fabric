@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import inspect
 import json
 import os
@@ -14,12 +15,16 @@ from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
-from hermes_state import SessionDB
-from run_agent import AIAgent
 
-import nemo_fabric_adapters.common.utils as common_utils
+pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
-from nemo_fabric_adapters.hermes import adapter  # noqa: E402
+if importlib.util.find_spec("run_agent") is not None:
+    from hermes_state import SessionDB
+    from run_agent import AIAgent
+
+    import nemo_fabric_adapters.common.utils as common_utils
+
+    from nemo_fabric_adapters.hermes import adapter
 
 
 @pytest.mark.parametrize("providers", [None, {"relay": {}}])
@@ -74,6 +79,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                         "plugins_enabled": ["custom/plugin"],
                     }
                 },
+                "tools": {"blocked": ["shell", "browser"]},
                 "models": {
                     "review": {
                         "provider": "nvidia",
@@ -95,7 +101,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         },
         "agent": {
             "max_turns": 4,
-            "disabled_toolsets": ["browser"],
+            "disabled_toolsets": ["shell", "browser"],
         },
         "terminal": {
             "backend": "local",
@@ -118,6 +124,50 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         "platform_toolsets": {"cli": ["git"]},
         "plugins": {"enabled": ["custom/plugin", "observability/nemo_relay"]},
     }
+
+
+def test_default_max_iterations_matches_hermes_library_default():
+    # Regression guard for FABRIC-85: the adapter must not override Hermes' own
+    # sane loop budget with a starving value like 1, which silently truncates
+    # multi-step tasks while the trial still reports success.
+    assert adapter.DEFAULT_MAX_ITERATIONS > 1
+
+    hermes_default = inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
+    assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
+
+
+def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
+    # When max_iterations is unset the config layer must leave agent.max_turns
+    # absent so Hermes applies its own default rather than a starving override.
+    payload = {
+        "effective_config": {
+            "config": {
+                "harness": {"settings": {}},
+                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            }
+        }
+    }
+
+    config = adapter.build_hermes_config(payload)
+
+    assert "max_turns" not in config["agent"]
+
+
+def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
+    # An explicit null max_iterations is treated like unset: agent.max_turns is
+    # omitted so Hermes applies its own default instead of a starving override.
+    payload = {
+        "effective_config": {
+            "config": {
+                "harness": {"settings": {"max_iterations": None}},
+                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            }
+        }
+    }
+
+    config = adapter.build_hermes_config(payload)
+
+    assert "max_turns" not in config["agent"]
 
 
 def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
@@ -291,6 +341,7 @@ def test_summarize_hermes_config():
         "mcp_servers": ["a", "z"],
         "plugins": ["observability/nemo_relay"],
         "platform_toolsets": {"cli": ["git"]},
+        "disabled_toolsets": [],
     }
 
 
@@ -360,6 +411,8 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
                         "hermes_home": "./hermes-home",
                         "enabled_toolsets": [],
                         "system_prompt": "system",
+                        # Explicit null must resolve to DEFAULT_MAX_ITERATIONS (not int(None)).
+                        "max_iterations": None,
                     }
                 },
                 "models": {
@@ -393,7 +446,7 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
         api_key="secret",
         provider="test-provider",
         model="test-model",
-        max_iterations=1,
+        max_iterations=90,
         enabled_toolsets=[],
         disabled_toolsets=None,
         quiet_mode=True,

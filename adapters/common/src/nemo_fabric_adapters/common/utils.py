@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -44,9 +45,7 @@ def virtualenv_subprocess_env() -> dict[str, str]:
     scripts = virtualenv / ("Scripts" if os.name == "nt" else "bin")
     path = env.get("PATH")
     env["VIRTUAL_ENV"] = str(virtualenv)
-    env["PATH"] = os.pathsep.join(
-        part for part in (str(scripts), path) if part
-    )
+    env["PATH"] = os.pathsep.join(part for part in (str(scripts), path) if part)
     env.pop("PYTHONHOME", None)
     return env
 
@@ -165,6 +164,16 @@ def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("capability_plan") or payload.get("capabilities") or {}
 
 
+def tools_config(payload: dict[str, Any]) -> dict[str, Any]:
+    tools = fabric_config(payload).get("tools") or {}
+    return tools if isinstance(tools, dict) else {}
+
+
+def blocked_tools(payload: dict[str, Any]) -> list[str]:
+    blocked = tools_config(payload).get("blocked")
+    return normalize_list(blocked)
+
+
 def normalize_list(value: Any) -> list[str]:
     if value is None:
         return []
@@ -173,6 +182,15 @@ def normalize_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         value = [value]
     return [str(item) for item in value if str(item)]
+
+
+def merge_unique(*values: Any) -> list[str]:
+    merged: list[str] = []
+    for value in values:
+        for item in normalize_list(value):
+            if item not in merged:
+                merged.append(item)
+    return merged
 
 
 def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
@@ -421,10 +439,69 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
     return artifacts
 
 
+def relay_cli_plugin_config(
+    plugin_config: dict[str, Any], *, observability_version: int
+) -> dict[str, Any]:
+    """Render normalized Relay intent for the current external CLI contract."""
+
+    rendered = copy.deepcopy(plugin_config)
+    if observability_version == 1:
+        return rendered
+    if observability_version != 2:
+        raise ValueError(
+            f"unsupported NeMo Relay observability config version {observability_version}"
+        )
+    for component in rendered.get("components", []):
+        if not isinstance(component, dict) or component.get("kind") != "observability":
+            continue
+        config = component.get("config")
+        if not isinstance(config, dict) or int(config.get("version", 1)) != 1:
+            continue
+
+        atof = config.get("atof")
+        if isinstance(atof, dict):
+            sinks = list(atof.get("sinks") or [])
+            if atof.get("enabled"):
+                file_sink = without_none(
+                    {
+                        "type": "file",
+                        "output_directory": atof.get("output_directory"),
+                        "filename": atof.get("filename"),
+                        "mode": atof.get("mode", "append"),
+                    }
+                )
+                sinks.append(file_sink)
+                for endpoint in atof.get("endpoints") or []:
+                    if not isinstance(endpoint, dict):
+                        continue
+                    sinks.append(
+                        without_none(
+                            {
+                                "type": "stream",
+                                "url": endpoint.get("url"),
+                                "transport": endpoint.get("transport", "http_post"),
+                                "headers": endpoint.get("headers", {}),
+                                "header_env": endpoint.get("header_env", {}),
+                                "timeout_millis": endpoint.get("timeout_millis", 3000),
+                                "field_name_policy": endpoint.get(
+                                    "field_name_policy", "preserve"
+                                ),
+                            }
+                        )
+                    )
+            config["atof"] = {
+                "enabled": bool(atof.get("enabled", False)),
+                "sinks": sinks,
+            }
+        config["version"] = 2
+    return rendered
+
+
 def write_relay_configs(
     *,
     relay_config: dict[str, Any] | None = None,
     plugin_config: dict[str, Any] | None = None,
+    observability_version: int = 1,
 ) -> tuple[Path | None, Path | None]:
     try:
         import tomli_w
@@ -445,7 +522,15 @@ def write_relay_configs(
 
         if plugin_config is not None:
             plugin_config_path = config_dir / "plugins.toml"
-            plugin_config_path.write_text(tomli_w.dumps(plugin_config), encoding="utf-8")
+            plugin_config_path.write_text(
+                tomli_w.dumps(
+                    relay_cli_plugin_config(
+                        plugin_config,
+                        observability_version=observability_version,
+                    )
+                ),
+                encoding="utf-8",
+            )
 
         return relay_config_path, plugin_config_path
     except ImportError as e:

@@ -20,7 +20,6 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
-
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
 
@@ -68,9 +67,20 @@ def fake_sdks_fixture(monkeypatch):
     deepagents_mod.create_deep_agent = MagicMock(side_effect=build_agent)
     backends_mod = types.ModuleType("deepagents.backends")
     backends_mod.FilesystemBackend = mock_fs_backend
+    middleware_mod = types.ModuleType("deepagents.middleware")
+    subagents_mod = types.ModuleType("deepagents.middleware.subagents")
+    subagents_mod.GENERAL_PURPOSE_SUBAGENT = {
+        "name": "general-purpose",
+        "description": "General-purpose delegated agent.",
+        "system_prompt": "Handle the delegated task.",
+    }
     deepagents_mod.backends = backends_mod
+    deepagents_mod.middleware = middleware_mod
+    middleware_mod.subagents = subagents_mod
     monkeypatch.setitem(sys.modules, "deepagents", deepagents_mod)
     monkeypatch.setitem(sys.modules, "deepagents.backends", backends_mod)
+    monkeypatch.setitem(sys.modules, "deepagents.middleware", middleware_mod)
+    monkeypatch.setitem(sys.modules, "deepagents.middleware.subagents", subagents_mod)
 
     langchain_openai_mod = types.ModuleType("langchain_openai")
     langchain_openai_mod.ChatOpenAI = mock_chat_openai
@@ -267,9 +277,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
     artifacts = [{"kind": "atof", "path": str(tmp_path / "events.atof.jsonl")}]
-    monkeypatch.setattr(
-        adapter.common_utils, "load_relay_plugin_config", lambda _p: {"version": 1, "components": []}
-    )
+    monkeypatch.setattr(adapter.common_utils, "load_relay_plugin_config", lambda _p: {"version": 1, "components": []})
     monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
     monkeypatch.setattr(adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts)
     payload = make_payload(tmp_path)
@@ -297,9 +305,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     assert "relay-mw" in fake_sdks["create_kwargs"]["middleware"]
 
 
-async def test_native_telemetry_exports_without_artifacts(
-    tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
-):
+async def test_native_telemetry_exports_without_artifacts(tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay):
     monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
 
     payload = make_payload(tmp_path)
@@ -351,9 +357,7 @@ async def test_workspace_roots_filesystem_backend(tmp_path, make_payload, fake_s
     assert backend_kwargs["virtual_mode"] is True
 
 
-async def test_checkpointer_closed_on_success_and_failure(
-    tmp_path, make_payload, monkeypatch, fake_sdks
-):
+async def test_checkpointer_closed_on_success_and_failure(tmp_path, make_payload, monkeypatch, fake_sdks):
     # The async checkpointer must be closed on both the success and error paths.
     await adapter.run_deepagents(make_payload(tmp_path))
     assert fake_sdks["saver_exits"] == 1
@@ -369,9 +373,7 @@ async def test_checkpointer_closed_on_success_and_failure(
     assert fake_sdks["saver_exits"] == 2
 
 
-async def test_mcp_servers_become_tools_filtered_by_allowed(
-    tmp_path, make_payload, monkeypatch, fake_sdks
-):
+async def test_mcp_servers_become_adapter_tools(tmp_path, make_payload, monkeypatch, fake_sdks):
     tool_read = MagicMock()
     tool_read.name = "read_file"
     tool_write = MagicMock()
@@ -409,30 +411,16 @@ async def test_mcp_servers_become_tools_filtered_by_allowed(
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
-async def test_allowed_tools_recorded_as_middleware(tmp_path, make_payload, fake_sdks):
-    # An allow-list is enforced by a gating middleware over the full tool surface,
-    # not by filtering the passed tools list.
-    pytest.importorskip("langchain.agents.middleware")
-    pytest.importorskip("langgraph.checkpoint.sqlite.aio")
-    payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = ["read_file"]
-
-    await adapter.run_deepagents(payload)
-
-    assert fake_sdks["create_kwargs"]["middleware"], "gating middleware not attached"
-
-
-@pytest.mark.usefixtures("use_real_langgraph")
-async def test_allowed_tools_middleware_blocks_disallowed_tools():
+async def test_blocked_tools_middleware_blocks_configured_tools():
     pytest.importorskip("langchain.agents.middleware")
     from langchain_core.messages import ToolMessage
 
-    middleware = adapter.allowed_tools_middleware({"read_file"})
+    middleware = adapter.blocked_tools_middleware({"write_file"})
 
-    async def handler(_request):
+    async def handler(_request: types.SimpleNamespace) -> str:
         return "executed"
 
-    def request(name):
+    def request(name: str) -> types.SimpleNamespace:
         return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
 
     blocked = await middleware.awrap_tool_call(request("write_file"), handler)
@@ -441,18 +429,6 @@ async def test_allowed_tools_middleware_blocks_disallowed_tools():
 
     allowed = await middleware.awrap_tool_call(request("read_file"), handler)
     assert allowed == "executed"
-
-    # An explicitly empty allow-list denies every tool.
-    deny_all = adapter.allowed_tools_middleware(set())
-    denied = await deny_all.awrap_tool_call(request("read_file"), handler)
-    assert isinstance(denied, ToolMessage)
-    assert denied.status == "error"
-
-
-def test_empty_tools_is_deny_all_not_none():
-    # An explicitly empty tools list is a deny-all allow-list, not "no allow-list".
-    assert adapter._allowed_tool_names({"effective_config": {"config": {"tools": []}}}) == set()
-    assert adapter._allowed_tool_names({"effective_config": {"config": {}}}) is None
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
@@ -601,30 +577,68 @@ async def test_stream_requests_subgraphs(tmp_path, make_payload, fake_sdks):
     assert fake_sdks["subgraphs"] is True
 
 
-async def test_subagents_are_gated_by_allow_list(tmp_path, make_payload, fake_sdks):
-    # The allow-list must gate delegated subagents too, not only the main agent,
-    # so tools routed through the ``task`` tool cannot run ungated.
+@pytest.mark.usefixtures("use_real_langgraph")
+async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
+    pytest.importorskip("langchain.agents.middleware")
+    from langchain_core.messages import ToolMessage
+
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = ["read_file"]
+    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
     payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
         "subagents": [{"name": "researcher", "prompt": "research"}]
     }
 
-    await adapter.run_deepagents(payload)
-
-    create_kwargs = fake_sdks["create_kwargs"]
-    assert create_kwargs["middleware"], "main agent gating middleware not attached"
+    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
+    assert create_kwargs["middleware"], "main agent blocked-tools middleware not attached"
     subagents = create_kwargs["subagents"]
-    assert len(subagents) == 1
-    assert subagents[0]["middleware"], "subagent gating middleware not attached"
+    assert [subagent["name"] for subagent in subagents] == ["general-purpose", "researcher"]
+    assert all(subagent["middleware"] for subagent in subagents)
+
+    async def handler(_request: types.SimpleNamespace) -> str:
+        return "executed"
+
+    def request(name: str) -> types.SimpleNamespace:
+        return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
+
+    gates = [create_kwargs["middleware"][-1]]
+    gates.extend(subagent["middleware"][-1] for subagent in subagents)
+    for middleware in gates:
+        blocked = await middleware.awrap_tool_call(request("write_file"), handler)
+        assert isinstance(blocked, ToolMessage)
+        assert blocked.status == "error"
+        assert await middleware.awrap_tool_call(request("read_file"), handler) == "executed"
+
+
+@pytest.mark.usefixtures("use_real_langgraph")
+async def test_default_subagent_is_gated_by_blocked_tools(tmp_path, make_payload):
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
+
+    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
+
+    assert [subagent["name"] for subagent in create_kwargs["subagents"]] == ["general-purpose"]
+    assert create_kwargs["subagents"][0]["middleware"]
+
+
+@pytest.mark.parametrize("unsupported", [{"graph_id": "remote"}, {"runnable": "compiled"}])
+async def test_blocked_tools_reject_unenforceable_subagents(tmp_path, make_payload, unsupported):
+    payload = make_payload(tmp_path)
+    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+        "subagents": [{"name": "worker", **unsupported}]
+    }
+
+    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    with pytest.raises(adapter.AdapterConfigError, match="cannot be enforced"):
+        await adapter.build_agent_kwargs(payload, MagicMock(), settings)
 
 
 async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):
     # Documented JSON-serializable options reach create_deep_agent unchanged.
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
-        "interrupt_on": {"write_file": True}
-    }
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {"interrupt_on": {"write_file": True}}
 
     await adapter.run_deepagents(payload)
 
@@ -635,9 +649,7 @@ async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(tmp_path
     # Overriding a Fabric-owned key (here backend) would defeat workspace confinement;
     # it must fail loudly rather than silently replacing the derived value.
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
-        "backend": {"root_dir": "/etc"}
-    }
+    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {"backend": {"root_dir": "/etc"}}
 
     output = await adapter.run_deepagents(payload)
 
@@ -701,17 +713,6 @@ async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monke
     assert any(evt.get("subgraph") == "task:researcher" for evt in output["events"])
 
 
-async def test_dict_tools_is_normalized_failure(tmp_path, make_payload):
-    # A dict-shaped tools value must fail loudly, not silently disable gating.
-    payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = {"read_file": True}
-
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "tools" in output["error"]
-
-
 async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):
     # A misconfigured MCP server must fail loudly, not be silently dropped.
     payload = make_payload(tmp_path)
@@ -727,9 +728,7 @@ async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):
 
 async def test_empty_mcp_url_is_normalized_failure(tmp_path, make_payload):
     payload = make_payload(tmp_path)
-    payload["capability_plan"] = {
-        "native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}
-    }
+    payload["capability_plan"] = {"native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}}
 
     output = await adapter.run_deepagents(payload)
 
@@ -753,9 +752,7 @@ async def test_unknown_provider_requires_api_key_env(tmp_path, make_payload, mon
     assert "api_key_env" in output["error"]
 
 
-async def test_openai_provider_defaults_to_openai_key(
-    tmp_path, make_payload, monkeypatch, fake_sdks
-):
+async def test_openai_provider_defaults_to_openai_key(tmp_path, make_payload, monkeypatch, fake_sdks):
     # provider openai with no explicit api_key_env defaults to OPENAI_API_KEY, never
     # NVIDIA_API_KEY, and keeps ChatOpenAI's own endpoint.
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)

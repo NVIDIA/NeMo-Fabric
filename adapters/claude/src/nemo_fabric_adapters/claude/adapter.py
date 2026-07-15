@@ -11,33 +11,41 @@ import math
 import os
 import shlex
 import shutil
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import (
-    CLIConnectionError,
-    CLIJSONDecodeError,
-    CLINotFoundError,
-    ClaudeAgentOptions,
-    ClaudeSDKError,
-    Message,
-    ProcessError,
-    ResultMessage,
-    query,
-)
+from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk import ClaudeSDKError
+from claude_agent_sdk import CLIConnectionError
+from claude_agent_sdk import CLIJSONDecodeError
+from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import Message
+from claude_agent_sdk import ProcessError
+from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import query
 from claude_agent_sdk._errors import MessageParseError
+from nemo_fabric_adapters.common import relay_gateway
+from nemo_fabric_adapters.common import relay_hooks
+from nemo_fabric_adapters.common import utils as common_utils
 
-import nemo_fabric_adapters.common.utils as common_utils
-
-
-PERMISSION_MODES = {"default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"}
+PERMISSION_MODES = {
+    "default",
+    "acceptEdits",
+    "bypassPermissions",
+    "plan",
+    "dontAsk",
+    "auto",
+}
 SETTING_SOURCES = {"user", "project", "local"}
 NORMALIZED_SETTING_FIELDS = {
     "model_name": "FabricConfig.models",
     "cwd": "FabricConfig.environment.workspace",
     "tools": "FabricConfig.tools",
+    "disallowed_tools": "FabricConfig.tools.blocked",
     "mcp_servers": "FabricConfig.mcp",
     "skills": "FabricConfig.skills",
 }
@@ -73,13 +81,29 @@ INHERITED_ENV_NAMES = {
 }
 
 
+@dataclass(frozen=True)
+class ClaudeRelaySettings:
+    """Invocation-scoped Relay gateway and Claude plugin settings."""
+
+    gateway: relay_gateway.RelayGatewayLaunch
+    plugin_config: dict[str, Any]
+    plugin_path: Path
+
+
 class ClaudeAdapterError(Exception):
     """Expected adapter error with a stable public code."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+        self.metadata = metadata or {}
 
 
 class AdapterInputError(ClaudeAdapterError):
@@ -94,37 +118,52 @@ class AdapterStateError(ClaudeAdapterError):
     """Invalid persisted runtime state."""
 
 
+class AdapterRelayError(ClaudeAdapterError):
+    """NeMo Relay setup or lifecycle failure."""
+
+
 def _mapping(value: Any, *, name: str) -> dict[str, Any]:
     if value is None:
         return {}
     if not isinstance(value, dict):
-        raise AdapterConfigError("claude_invalid_configuration", f"{name} must be a mapping")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", f"{name} must be a mapping"
+        )
     return value
 
 
 def _string_list(value: Any, *, name: str) -> list[str]:
     if value is None:
         return []
-    if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item for item in value
+    ):
         raise AdapterConfigError(
-            "claude_invalid_configuration", f"{name} must be a list of non-empty strings"
+            "claude_invalid_configuration",
+            f"{name} must be a list of non-empty strings",
         )
     return list(value)
 
 
 def _positive_number(value: Any, *, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise AdapterConfigError("claude_invalid_configuration", f"{name} must be positive")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", f"{name} must be positive"
+        )
     number = float(value)
     if number <= 0 or not math.isfinite(number):
-        raise AdapterConfigError("claude_invalid_configuration", f"{name} must be positive")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", f"{name} must be positive"
+        )
     return number
 
 
 def runtime_id(payload: dict[str, Any]) -> str:
     value = common_utils.runtime_context(payload).get("runtime_id")
     if not isinstance(value, str) or not value:
-        raise AdapterInputError("claude_invalid_request", "Fabric runtime ID is required")
+        raise AdapterInputError(
+            "claude_invalid_request", "Fabric runtime ID is required"
+        )
     return value
 
 
@@ -185,14 +224,19 @@ def selected_model(payload: dict[str, Any]) -> str | None:
             "models.default.provider must be anthropic for the Claude adapter",
         )
     if not isinstance(value, str) or not value:
-        raise AdapterConfigError("claude_invalid_configuration", "model must be a non-empty string")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "model must be a non-empty string"
+        )
     return value.removeprefix("anthropic/")
 
 
 def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
-    native = _mapping(
-        common_utils.capability_plan(payload), name="capability_plan"
-    ).get("native") or {}
+    native = (
+        _mapping(common_utils.capability_plan(payload), name="capability_plan").get(
+            "native"
+        )
+        or {}
+    )
     servers = _mapping(native, name="capability_plan.native").get("mcp_servers") or {}
     result: dict[str, Any] = {}
     for name, raw in sorted(_mapping(servers, name="native MCP servers").items()):
@@ -200,11 +244,15 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
         transport = server.get("transport")
         url = server.get("url")
         if not isinstance(url, str) or not url:
-            raise AdapterConfigError("claude_invalid_configuration", "MCP server URL is required")
+            raise AdapterConfigError(
+                "claude_invalid_configuration", "MCP server URL is required"
+            )
         if transport == "stdio":
             command = shlex.split(url)
             if not command:
-                raise AdapterConfigError("claude_invalid_configuration", "MCP command is required")
+                raise AdapterConfigError(
+                    "claude_invalid_configuration", "MCP command is required"
+                )
             result[name] = {"type": "stdio", "command": command[0], "args": command[1:]}
         elif transport in {"http", "streamable-http"}:
             result[name] = {"type": "http", "url": url}
@@ -212,46 +260,22 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
             result[name] = {"type": "sse", "url": url}
         else:
             raise AdapterConfigError(
-                "claude_invalid_configuration", f"unsupported MCP transport: {transport}"
+                "claude_invalid_configuration",
+                f"unsupported MCP transport: {transport}",
             )
     return result
 
 
-def _normalized_tools(
-    payload: dict[str, Any], *, include_skills: bool
-) -> list[str] | dict[str, Any] | None:
-    native = _mapping(
-        common_utils.capability_plan(payload), name="capability_plan"
-    ).get("native") or {}
-    if not _mapping(native, name="capability_plan.native").get("tools_configured"):
-        return None
-    tools = common_utils.fabric_config(payload).get("tools")
-    if tools is not None and not isinstance(tools, (list, dict)):
-        raise AdapterConfigError("claude_invalid_configuration", "tools is invalid")
-    if isinstance(tools, list):
-        normalized = _string_list(tools, name="tools")
-        if include_skills and "Skill" not in normalized:
-            normalized.append("Skill")
-        return normalized
-    if isinstance(tools, dict) and tools != {"type": "preset", "preset": "claude_code"}:
-        raise AdapterConfigError(
-            "claude_invalid_configuration",
-            "tools preset must be {'type': 'preset', 'preset': 'claude_code'}",
-        )
-    return tools
-
-
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
-    native = _mapping(
-        common_utils.capability_plan(payload), name="capability_plan"
-    ).get("native") or {}
-    values = _mapping(native, name="capability_plan.native").get("skill_paths") or []
-    if not isinstance(values, list) or any(
-        not isinstance(value, (str, Path)) for value in values
-    ):
-        raise AdapterConfigError(
-            "claude_invalid_configuration", "native skill_paths must be a list of paths"
+    native = (
+        _mapping(common_utils.capability_plan(payload), name="capability_plan").get(
+            "native"
         )
+        or {}
+    )
+    values = _mapping(native, name="capability_plan.native").get("skill_paths") or []
+    if not isinstance(values, list) or any(not isinstance(value, (str, Path)) for value in values):
+        raise AdapterConfigError("claude_invalid_configuration", "native skill_paths must be a list of paths")
     return [_resolve_path(payload, value) for value in values]
 
 
@@ -271,13 +295,16 @@ def _stage_skill_plugin(payload: dict[str, Any]) -> list[dict[str, str]]:
         name = skill_path.name
         if name in names:
             raise AdapterConfigError(
-                "claude_invalid_configuration", f"Fabric skill names must be unique: {name}"
+                "claude_invalid_configuration",
+                f"Fabric skill names must be unique: {name}",
             )
         names.add(name)
         skills.append((name, skill_path))
 
     plugin_key = sha256(runtime_id(payload).encode()).hexdigest()
-    plugin_root = _artifact_root(payload) / ".fabric" / "claude" / "plugins" / plugin_key
+    plugin_root = (
+        _artifact_root(payload) / ".fabric" / "claude" / "plugins" / plugin_key
+    )
     if plugin_root.exists():
         shutil.rmtree(plugin_root)
     (plugin_root / ".claude-plugin").mkdir(parents=True)
@@ -300,45 +327,166 @@ def _stage_skill_plugin(payload: dict[str, Any]) -> list[dict[str, str]]:
     return [{"type": "local", "path": str(plugin_root)}]
 
 
+def _stage_relay_plugin(plugin_path: Path, executable: Path) -> None:
+    if plugin_path.exists():
+        shutil.rmtree(plugin_path)
+    (plugin_path / ".claude-plugin").mkdir(parents=True)
+    (plugin_path / "hooks").mkdir()
+    (plugin_path / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps(
+            {
+                "name": "nemo-fabric-relay",
+                "description": "NeMo Relay hooks managed by NeMo Fabric",
+                "version": "1.0.0",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (plugin_path / "hooks" / "hooks.json").write_text(
+        json.dumps(
+            relay_hooks.render_relay_hooks("claude", executable),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
+    """Generate invocation-scoped Relay and Claude hook configuration."""
+
+    if not common_utils.relay_enabled(payload):
+        return None
+    settings = _settings(payload)
+    command = settings.get("nemo_relay_command") or "nemo-relay"
+    if not isinstance(command, (str, Path)):
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "nemo_relay_command must be a path",
+        )
+    try:
+        executable = relay_gateway.resolve_relay_command(
+            Path(common_utils.config_root(payload)).resolve(),
+            command,
+        )
+    except FileNotFoundError as error:
+        raise AdapterRelayError(
+            "claude_relay_unavailable",
+            "NeMo Relay CLI executable was not found",
+        ) from error
+
+    try:
+        observability_version = relay_gateway.relay_cli_observability_version(
+            executable
+        )
+        plugin_config = common_utils.load_relay_plugin_config(payload)
+        config_path, plugin_config_path = common_utils.write_relay_configs(
+            relay_config={"agents": {"claude": {"command": "claude"}}},
+            plugin_config=plugin_config,
+            observability_version=observability_version,
+        )
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        json.JSONDecodeError,
+    ) as error:
+        raise AdapterRelayError(
+            "claude_relay_configuration_failed",
+            "NeMo Relay runtime configuration is unavailable",
+        ) from error
+    if config_path is None or plugin_config_path is None:
+        raise AdapterRelayError(
+            "claude_relay_configuration_failed",
+            "NeMo Relay runtime configuration is unavailable",
+        )
+
+    port = relay_gateway.find_available_tcp_port()
+    gateway_bind = f"127.0.0.1:{port}"
+    gateway = relay_gateway.RelayGatewayLaunch(
+        executable=executable,
+        config_path=config_path,
+        bind=gateway_bind,
+        url=f"http://{gateway_bind}",
+        log_path=config_path.parent / "gateway.log",
+    )
+    plugin_path = config_path.parent / "claude-plugin"
+    try:
+        _stage_relay_plugin(plugin_path, executable)
+    except OSError as error:
+        shutil.rmtree(plugin_path, ignore_errors=True)
+        raise AdapterRelayError(
+            "claude_relay_configuration_failed",
+            "Claude Relay hook configuration could not be generated",
+        ) from error
+    return ClaudeRelaySettings(
+        gateway=gateway,
+        plugin_config=plugin_config,
+        plugin_path=plugin_path,
+    )
+
+
 def discard_stderr(_: str) -> None:
     """Consume Claude Code stderr without exposing it through Fabric artifacts."""
 
 
-def build_options(payload: dict[str, Any], *, resume: str | None) -> ClaudeAgentOptions:
+def build_options(
+    payload: dict[str, Any],
+    *,
+    resume: str | None,
+    relay: ClaudeRelaySettings | None = None,
+) -> ClaudeAgentOptions:
     settings = _settings(payload)
     _validate_settings_boundary(settings)
     permission_mode = settings.get("permission_mode")
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:
-        raise AdapterConfigError("claude_invalid_configuration", "permission_mode is invalid")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "permission_mode is invalid"
+        )
     max_turns = settings.get("max_turns")
     if max_turns is not None and (
         isinstance(max_turns, bool) or not isinstance(max_turns, int) or max_turns <= 0
     ):
-        raise AdapterConfigError("claude_invalid_configuration", "max_turns must be positive")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "max_turns must be positive"
+        )
     max_budget = settings.get("max_budget_usd")
     if max_budget is not None:
         max_budget = _positive_number(max_budget, name="max_budget_usd")
     sources = settings.get("setting_sources", [])
     sources = _string_list(sources, name="setting_sources")
     if any(source not in SETTING_SOURCES for source in sources):
-        raise AdapterConfigError("claude_invalid_configuration", "setting_sources is invalid")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "setting_sources is invalid"
+        )
     cli_path = settings.get("cli_path")
     if cli_path is not None and not isinstance(cli_path, (str, Path)):
-        raise AdapterConfigError("claude_invalid_configuration", "cli_path must be a path")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "cli_path must be a path"
+        )
 
     system_prompt = settings.get("system_prompt")
     if system_prompt is not None and not isinstance(system_prompt, (str, dict)):
-        raise AdapterConfigError("claude_invalid_configuration", "system_prompt is invalid")
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "system_prompt is invalid"
+        )
     plugins = _stage_skill_plugin(payload)
+    has_skill_plugin = bool(plugins)
+    if relay is not None:
+        plugins.append({"type": "local", "path": str(relay.plugin_path)})
 
     return ClaudeAgentOptions(
         resume=resume,
         cwd=resolve_cwd(payload),
         model=selected_model(payload),
         system_prompt=system_prompt,
-        tools=_normalized_tools(payload, include_skills=bool(plugins)),
+        tools=None,
         allowed_tools=_string_list(settings.get("allowed_tools"), name="allowed_tools"),
-        disallowed_tools=_string_list(settings.get("disallowed_tools"), name="disallowed_tools"),
+        disallowed_tools=common_utils.blocked_tools(payload),
         permission_mode=permission_mode,
         max_turns=max_turns,
         max_budget_usd=max_budget,
@@ -346,9 +494,12 @@ def build_options(payload: dict[str, Any], *, resume: str | None) -> ClaudeAgent
         cli_path=_resolve_path(payload, cli_path) if cli_path is not None else None,
         mcp_servers=_mcp_servers(payload),
         strict_mcp_config=True,
-        skills="all" if plugins else None,
+        skills="all" if has_skill_plugin else None,
         plugins=plugins,
-        env=child_environment(payload),
+        env=child_environment(
+            payload,
+            relay_gateway_url=relay.gateway.url if relay is not None else None,
+        ),
         stderr=discard_stderr,
     )
 
@@ -368,10 +519,14 @@ def _artifact_root(payload: dict[str, Any]) -> Path:
 
 def runtime_state_path(payload: dict[str, Any], fabric_runtime_id: str) -> Path:
     digest = sha256(fabric_runtime_id.encode("utf-8")).hexdigest()
-    return _artifact_root(payload) / ".fabric" / "claude" / "runtimes" / f"{digest}.json"
+    return (
+        _artifact_root(payload) / ".fabric" / "claude" / "runtimes" / f"{digest}.json"
+    )
 
 
-def load_claude_session_id(payload: dict[str, Any], fabric_runtime_id: str) -> str | None:
+def load_claude_session_id(
+    payload: dict[str, Any], fabric_runtime_id: str
+) -> str | None:
     path = runtime_state_path(payload, fabric_runtime_id)
     if not path.exists():
         return None
@@ -386,19 +541,19 @@ def load_claude_session_id(payload: dict[str, Any], fabric_runtime_id: str) -> s
             raise ValueError("missing Claude session")
         return session_id
     except (OSError, ValueError, json.JSONDecodeError) as error:
-        raise AdapterStateError(
-            "claude_invalid_runtime_state", "Claude runtime state is invalid"
-        ) from error
+        raise AdapterStateError("claude_invalid_runtime_state", "Claude runtime state is invalid") from error
 
 
-def save_claude_session_id(
-    payload: dict[str, Any], fabric_runtime_id: str, claude_session_id: str
-) -> None:
+def save_claude_session_id(payload: dict[str, Any], fabric_runtime_id: str, claude_session_id: str) -> None:
     if not claude_session_id:
-        raise AdapterStateError("claude_invalid_runtime_state", "Claude session ID is missing")
+        raise AdapterStateError(
+            "claude_invalid_runtime_state", "Claude session ID is missing"
+        )
     path = runtime_state_path(payload, fabric_runtime_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    invocation_id = common_utils.runtime_context(payload).get("invocation_id") or "invocation"
+    invocation_id = (
+        common_utils.runtime_context(payload).get("invocation_id") or "invocation"
+    )
     temporary = path.with_suffix(f".{invocation_id}.tmp")
     temporary.write_text(
         json.dumps(
@@ -421,20 +576,18 @@ def _json_safe(value: Any) -> Any:
         return str(value)
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
-    raise AdapterConfigError("claude_invalid_configuration", "Claude message is not JSON-safe")
+    raise AdapterConfigError(
+        "claude_invalid_configuration", "Claude message is not JSON-safe"
+    )
 
 
 def normalize_message(message: Message) -> dict[str, Any]:
     return {"type": type(message).__name__, "message": _json_safe(message)}
 
 
-def normalize_result(
-    payload: dict[str, Any], messages: list[Message], result: ResultMessage
-) -> dict[str, Any]:
+def normalize_result(payload: dict[str, Any], messages: list[Message], result: ResultMessage) -> dict[str, Any]:
     del payload
-    failed = bool(result.is_error) or (
-        isinstance(result.subtype, str) and result.subtype.startswith("error_")
-    )
+    failed = bool(result.is_error) or (isinstance(result.subtype, str) and result.subtype.startswith("error_"))
     error = None
     if failed:
         error = {
@@ -479,7 +632,7 @@ def _failure(code: str, message: str, **metadata: Any) -> dict[str, Any]:
 
 
 def adapter_failure(error: ClaudeAdapterError) -> dict[str, Any]:
-    return _failure(error.code, error.message)
+    return _failure(error.code, error.message, **error.metadata)
 
 
 def sdk_failure(error: BaseException) -> dict[str, Any]:
@@ -502,52 +655,145 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
     return _failure("claude_failed", "Claude invocation failed")
 
 
-def child_environment(payload: dict[str, Any]) -> dict[str, str]:
+def child_environment(
+    payload: dict[str, Any],
+    *,
+    relay_gateway_url: str | None = None,
+) -> dict[str, str]:
     values = {name: "" for name in os.environ}
     values.update(
-        {
-            name: value
-            for name in INHERITED_ENV_NAMES
-            if (value := os.environ.get(name))
-        }
+        {name: value for name in INHERITED_ENV_NAMES if (value := os.environ.get(name))}
     )
     model = _selected_model_config(payload)
     api_key_env = model.get("api_key_env")
     if isinstance(api_key_env, str) and api_key_env in os.environ:
         values[api_key_env] = os.environ[api_key_env]
     configured = _mapping(_settings(payload).get("env"), name="harness.settings.env")
-    if any(not isinstance(key, str) or not isinstance(value, str) for key, value in configured.items()):
+    if any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in configured.items()
+    ):
         raise AdapterConfigError(
             "claude_invalid_configuration", "harness.settings.env must contain strings"
         )
     values.update(configured)
+    if relay_gateway_url is not None:
+        values["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
+        values["ANTHROPIC_BASE_URL"] = relay_gateway_url
     return values
+
+
+def _relay_output(
+    output: dict[str, Any],
+    relay: ClaudeRelaySettings,
+) -> dict[str, Any]:
+    output["relay_runtime"] = {
+        "enabled": True,
+        "emitter": "claude-agent-sdk/nemo-relay",
+        "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
+        "gateway_config_path": str(relay.gateway.config_path),
+        "gateway_url": relay.gateway.url,
+        "gateway_log_path": str(relay.gateway.log_path),
+    }
+    output["relay_artifacts"] = common_utils.collect_relay_artifacts(
+        relay.plugin_config
+    )
+    return output
 
 
 async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
     fabric_runtime_id = runtime_id(payload)
     prior_session_id = load_claude_session_id(payload, fabric_runtime_id)
-    options = build_options(payload, resume=prior_session_id)
+    relay = prepare_claude_relay(payload)
+    gateway_process = None
+    cleanup_error: AdapterRelayError | None = None
     messages: list[Message] = []
     result: ResultMessage | None = None
     try:
-        async with asyncio.timeout(timeout_seconds(payload)):
-            async for message in query(prompt=request_prompt(payload), options=options):
-                if isinstance(message, ResultMessage):
-                    result = message
-                else:
-                    messages.append(message)
-    except (TimeoutError, ClaudeSDKError) as error:
-        return sdk_failure(error)
+        if relay is not None:
+            try:
+                gateway_process = relay_gateway.start_relay_gateway(
+                    launch=relay.gateway,
+                    cwd=resolve_cwd(payload),
+                )
+            except relay_gateway.RelayGatewayError as error:
+                raise AdapterRelayError(
+                    "claude_relay_start_failed",
+                    "NeMo Relay gateway failed to start",
+                    metadata={"gateway_log_path": str(relay.gateway.log_path)},
+                ) from error
+        options = build_options(payload, resume=prior_session_id, relay=relay)
+        try:
+            async with asyncio.timeout(timeout_seconds(payload)):
+                async for message in query(
+                    prompt=request_prompt(payload), options=options
+                ):
+                    if isinstance(message, ResultMessage):
+                        result = message
+                    else:
+                        messages.append(message)
+        except (TimeoutError, ClaudeSDKError) as error:
+            output = sdk_failure(error)
+        else:
+            if result is None:
+                output = _failure(
+                    "claude_missing_result", "Claude returned no terminal result"
+                )
+            else:
+                output = normalize_result(payload, messages, result)
+                if not output["failed"]:
+                    if (
+                        prior_session_id is not None
+                        and result.session_id != prior_session_id
+                    ):
+                        output = _failure(
+                            "claude_session_mismatch",
+                            "Claude session identity changed during resume",
+                        )
+                    else:
+                        save_claude_session_id(
+                            payload, fabric_runtime_id, result.session_id
+                        )
+    finally:
+        if gateway_process is not None:
+            try:
+                relay_gateway.stop_relay_gateway(gateway_process)
+            except relay_gateway.RelayGatewayError:
+                cleanup_error = AdapterRelayError(
+                    "claude_relay_stop_failed",
+                    "NeMo Relay gateway failed to stop",
+                    metadata={
+                        "gateway_log_path": str(relay.gateway.log_path)
+                        if relay is not None
+                        else ""
+                    },
+                )
+        if relay is not None and relay.plugin_path.exists():
+            try:
+                shutil.rmtree(relay.plugin_path)
+            except OSError:
+                if cleanup_error is None:
+                    cleanup_error = AdapterRelayError(
+                        "claude_relay_cleanup_failed",
+                        "Claude Relay hook configuration could not be removed",
+                    )
 
-    if result is None:
-        return _failure("claude_missing_result", "Claude returned no terminal result")
-    output = normalize_result(payload, messages, result)
-    if output["failed"]:
-        return output
-    if prior_session_id is not None and result.session_id != prior_session_id:
-        return _failure("claude_session_mismatch", "Claude session identity changed during resume")
-    save_claude_session_id(payload, fabric_runtime_id, result.session_id)
+    if relay is not None:
+        output = _relay_output(output, relay)
+    if cleanup_error is not None:
+        cleanup: dict[str, Any] = {
+            "code": cleanup_error.code,
+            "message": cleanup_error.message,
+            "retryable": False,
+        }
+        if cleanup_error.metadata:
+            cleanup["metadata"] = cleanup_error.metadata
+        output["relay_runtime"]["cleanup_error"] = cleanup
+        if not output["failed"]:
+            output["completed"] = False
+            output["failed"] = True
+            output["error"] = cleanup
+
     return output
 
 
@@ -559,18 +805,14 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     except ClaudeAdapterError as error:
         return adapter_failure(error)
     except Exception:  # Adapter boundary must always return normalized JSON.
-        return _failure(
-            "claude_adapter_internal_error", "Claude adapter failed unexpectedly"
-        )
+        return _failure("claude_adapter_internal_error", "Claude adapter failed unexpectedly")
 
 
 def main() -> None:
     try:
         payload = common_utils.load_payload()
     except Exception:  # Malformed invocation input must still satisfy the process contract.
-        output = _failure(
-            "claude_adapter_internal_error", "Claude adapter failed unexpectedly"
-        )
+        output = _failure("claude_adapter_internal_error", "Claude adapter failed unexpectedly")
     else:
         output = run(payload)
     print(json.dumps(output, sort_keys=True))

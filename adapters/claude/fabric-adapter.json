@@ -8,6 +8,14 @@
     "callable": "run"
   },
   "config": {
-    "accepts": ["models", "tools", "mcp", "skills"]
+    "accepts": ["models", "tools", "tools.blocked", "mcp", "skills", "telemetry"]
+  },
+  "telemetry": {
+    "providers": {
+      "relay": {
+        "outputs": ["atif", "otel", "openinference"],
+        "integration_modes": ["hooks", "gateway"]
+      }
+    }
   }
 }
