@@ -193,7 +193,7 @@ project_paths = (
     Path("pyproject.toml"),
     *sorted(Path("adapters").glob("**/pyproject.toml")),
 )
-pin_pattern = re.compile(r'(nemo-fabric-[a-z0-9-]+\s*==\s*)([^"\s,]+)')
+pin_pattern = re.compile(r'(nemo-fabric-[a-z0-9-]+\s*==\s*)([^"\s,;]+)')
 
 for path in project_paths:
     text = path.read_text()
