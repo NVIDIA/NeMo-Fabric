@@ -55,9 +55,10 @@ the [errors reference](../../../docs/reference/api/python-library-reference/nemo
 ## Cleanup And Resilience
 
 - Prefer `run(...)` and `async with` runtimes: both attempt cleanup
-  automatically. A runtime used with `async with` also attempts shutdown after
-  an invocation error; if cleanup then fails, that failure is attached to the
-  original exception rather than replacing it.
+  automatically. Shutdown is attempted, not guaranteed — `stop()`, including the
+  automatic call at `async with` exit, can raise `FabricRuntimeError`. On a
+  normal block exit that error propagates; when an invocation already failed, the
+  cleanup failure is attached to the original exception rather than replacing it.
 - The consumer owns job-level retries and rollout failure policy. Fabric marks a
   runtime or invocation failed and returns structured error metadata when
   possible, but does not retry by default.

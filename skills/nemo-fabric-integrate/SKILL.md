@@ -27,7 +27,9 @@ supported and upgrade-safe:
   `_config_sources`, or any adapter-internal module.
 - Build configuration as a typed `FabricConfig` in memory. Do not write, read,
   or materialize `agent.yaml`, portable agent packages, or any intermediate
-  config file from consumer code.
+  config file from consumer integration code. (A platform integration such as
+  Harbor may bake a config file into a task image at its deployment boundary —
+  that is a deployment mechanic, not the in-memory consumer pattern here.)
 - Do not serialize configs, apply file-backed profiles, or resolve profiles by
   name. Build every consumer variant with ordinary Python functions and
   `model_copy(deep=True)`; profile mechanics stay behind the integration
@@ -158,9 +160,12 @@ print(plan.adapter.adapter_id, report.status)
 
 - Use `plan(...)` to confirm adapter selection and capability routing before
   running.
-- Use `doctor(...)` to catch missing dependencies, unsupported settings, and
-  environment problems, including unsupported `harness.settings`. Its aggregate
-  `status` is `pass`, `warn`, or `fail`.
+- Use `doctor(...)` to check adapter availability, resolution, environment
+  context, and declared requirements such as required environment variables. Its
+  aggregate `status` is `pass`, `warn`, or `fail`. It does **not** validate the
+  contents of `harness.settings`: an unknown or misspelled adapter setting still
+  passes and is silently ignored unless the adapter reads it, so validate
+  settings against the adapter's own docs and your integration tests.
 - Use `resolve(...)` when only the normalized effective config is needed, with
   no adapter resolution.
 
@@ -191,7 +196,11 @@ else:
   `FabricRuntimeError`, `FabricStateError`, and `FabricNativeUnavailableError`.
 - The consumer owns retries and failure policy; Fabric does not retry by
   default. `run(...)` and `async with` runtimes attempt cleanup automatically,
-  so prefer them over manual `stop()`.
+  so prefer them over manual `stop()` — but shutdown is not guaranteed: `stop()`,
+  including the automatic call when an `async with` block exits, can raise
+  `FabricRuntimeError`. On a normal exit that error propagates; after an
+  invocation error the cleanup failure is attached to the original exception. Be
+  ready to handle a shutdown failure.
 
 See [results-and-errors.md](references/results-and-errors.md) for the full
 result-field and error inventory, and
@@ -220,7 +229,7 @@ result-field and error inventory, and
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.
 - [ ] Installation, adapter dependencies, and credentials are owned by the environment, not consumer code.
 - [ ] `RunResult` status, error, and events are inspected before output; artifacts and telemetry are captured.
-- [ ] `FabricError` subclasses are handled and runtime cleanup is guaranteed through `run(...)` or `async with`.
+- [ ] `FabricError` subclasses are handled, including a `FabricRuntimeError` raised by shutdown; cleanup is delegated to `run(...)` or `async with` (attempted, not guaranteed).
 - [ ] Correlation IDs are stored and logged as opaque strings.
 - [ ] Focused integration tests pass and Fabric validation (`plan`/`doctor`, tests) succeeds.
 
@@ -241,4 +250,10 @@ Link to these canonical sources instead of duplicating them:
   [examples/code_review_agent](../../examples/code_review_agent/README.md)
 - Platform and evaluation-harness integration:
   [examples/harbor](../../examples/harbor/README.md) and
-  [nemo_fabric.integrations.harbor](../../python/src/nemo_fabric/integrations/harbor/README.md)
+  [nemo_fabric.integrations.harbor](../../python/src/nemo_fabric/integrations/harbor/README.md).
+  Note the difference: Harbor bakes a config into the task image and passes it as
+  a file-backed `fabric_config_path` (YAML) at the container boundary. That is a
+  Harbor deployment mechanic, not the in-memory `FabricConfig` pattern this skill
+  teaches — follow the code-review example for consumer integration code, and
+  treat Harbor as platform context where a config crosses into a task container
+  as a file.

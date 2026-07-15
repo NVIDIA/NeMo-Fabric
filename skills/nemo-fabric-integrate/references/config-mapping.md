@@ -77,7 +77,10 @@ package or job layout, so nothing depends on the process working directory.
   skills, MCP, telemetry, and request context.
 - Use `harness.settings` for adapter-owned configuration the selected adapter
   understands (for example Hermes launch options or Codex CLI flags). Adapter
-  settings are not portable; run `doctor(...)` to catch unsupported ones.
+  settings are not portable, and `doctor(...)` does not validate their contents —
+  an unknown or misspelled key still passes and is silently ignored unless the
+  adapter reads it. Validate settings against the adapter's docs and your
+  integration tests.
 - Use `metadata` for caller-owned annotations Fabric should preserve and echo
   back but not interpret.
 
