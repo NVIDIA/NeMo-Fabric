@@ -27,6 +27,18 @@ from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.claude import adapter
 
 ROOT = Path(__file__).resolve().parents[2]
+ANTHROPIC_AUTH_ENV_NAMES = {
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CONFIG_DIR",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_IDENTITY_TOKEN",
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_PROFILE",
+    "ANTHROPIC_SERVICE_ACCOUNT_ID",
+    "ANTHROPIC_WORKSPACE_ID",
+}
 
 
 def test_claude_descriptor_is_narrow_and_versioned():
@@ -768,36 +780,40 @@ def test_run_reports_relay_start_failure_without_raw_diagnostic(
             "ANTHROPIC_SERVICE_ACCOUNT_ID": "svac_test",
             "ANTHROPIC_IDENTITY_TOKEN": "identity-token",
         },
+        {"ANTHROPIC_API_KEY": "default-secret"},
         {"ANTHROPIC_AUTH_TOKEN": "bearer-token"},
+        {
+            "ANTHROPIC_API_KEY": "",
+            "ANTHROPIC_PROFILE": "fallback-profile",
+        },
+        {
+            "ANTHROPIC_AUTH_TOKEN": "",
+            "ANTHROPIC_API_KEY": "fallback-api-key",
+            "ANTHROPIC_PROFILE": "fallback-profile",
+        },
     ],
 )
 def test_build_options_forwards_anthropic_auth_environment(
-    claude_payload, monkeypatch, auth_environment
+    claude_payload, auth_environment
 ):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model.pop("api_key_env")
     settings = claude_payload["effective_config"]["config"]["harness"]["settings"]
     settings.pop("env")
-    monkeypatch.setenv("FABRIC_UNRELATED_SECRET", "do-not-forward")
-    for name, value in auth_environment.items():
-        monkeypatch.setenv(name, value)
+    for name in ANTHROPIC_AUTH_ENV_NAMES:
+        os.environ.pop(name, None)
+    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
+    os.environ.update(auth_environment)
 
     options = adapter.build_options(claude_payload, resume=None)
 
-    assert {name: options.env[name] for name in auth_environment} == auth_environment
+    forwarded_auth_environment = {
+        name: options.env[name]
+        for name in ANTHROPIC_AUTH_ENV_NAMES
+        if name in options.env
+    }
+    assert forwarded_auth_environment == auth_environment
     assert options.env["FABRIC_UNRELATED_SECRET"] == ""
-
-
-def test_build_options_forwards_default_anthropic_api_key(claude_payload, monkeypatch):
-    model = claude_payload["effective_config"]["config"]["models"]["default"]
-    model.pop("api_key_env")
-    settings = claude_payload["effective_config"]["config"]["harness"]["settings"]
-    settings.pop("env")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "default-secret")
-
-    options = adapter.build_options(claude_payload, resume=None)
-
-    assert options.env["ANTHROPIC_API_KEY"] == "default-secret"
 
 
 @pytest.mark.parametrize(

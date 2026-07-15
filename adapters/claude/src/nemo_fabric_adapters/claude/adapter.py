@@ -713,7 +713,7 @@ def child_environment(
 ) -> dict[str, str]:
     values = {name: "" for name in os.environ}
     values.update(
-        {name: value for name in INHERITED_ENV_NAMES if (value := os.environ.get(name))}
+        {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
     model = _selected_model_config(payload)
     api_key_env = model.get("api_key_env")

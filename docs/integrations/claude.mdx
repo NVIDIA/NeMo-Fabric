@@ -1,6 +1,6 @@
 ---
 title: "Authenticate the Claude Adapter"
-description: "Configure cached login, API key, or Workload Identity Federation authentication for the NeMo Fabric Claude adapter."
+description: "Configure cached login, bearer token, API key, or Workload Identity Federation authentication for the NeMo Fabric Claude adapter."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -19,8 +19,14 @@ Use the mode that matches the execution environment:
 | Mode | Credential Source | Recommended Use |
 | --- | --- | --- |
 | Claude Code login | Cached Claude.ai or Anthropic Console login | Interactive local development |
+| Bearer token | `ANTHROPIC_AUTH_TOKEN` | LLM gateways or proxies that authenticate with an `Authorization: Bearer` header |
 | API key | `ANTHROPIC_API_KEY` | Local development, prototypes, and controlled servers |
 | Workload Identity Federation (WIF) | Anthropic profile or direct federation environment variables | CI, cloud workloads, and Kubernetes without static API keys |
+
+Claude Code selects `ANTHROPIC_AUTH_TOKEN` before `ANTHROPIC_API_KEY`. Both
+environment credentials take precedence over WIF and cached login credentials.
+An empty value still occupies its precedence slot, so unset an unused variable
+instead of setting it to an empty string.
 
 Claude Code can use a Claude.ai Pro or Max login, an Anthropic Console login, or
 supported enterprise providers. Refer to the

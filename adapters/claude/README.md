@@ -19,16 +19,18 @@ python -m pip install --find-links dist "nemo-fabric[claude]"
 ## Authentication
 
 Fabric preserves Claude's native credential resolution. Use an existing Claude
-Code login for local development, `ANTHROPIC_API_KEY` for a static API
-credential, or Anthropic Workload Identity Federation (WIF) for production and
-CI workloads that should not store a long-lived API key.
+Code login for local development, `ANTHROPIC_AUTH_TOKEN` for a gateway or proxy
+bearer credential, `ANTHROPIC_API_KEY` for a static API credential, or Anthropic
+Workload Identity Federation (WIF) for production and CI workloads that should
+not store a long-lived API key.
 
 The adapter forwards the Anthropic profile and federation environment variables
 that Claude Code and the Claude Agent SDK consume. This includes
 `ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_PROFILE`, the direct federation identifiers,
-and `ANTHROPIC_IDENTITY_TOKEN` or `ANTHROPIC_IDENTITY_TOKEN_FILE`. Fabric does
-not read, copy, or persist these credentials. Authentication is validated when
-Claude starts the invocation.
+and `ANTHROPIC_IDENTITY_TOKEN` or `ANTHROPIC_IDENTITY_TOKEN_FILE`. Fabric reads
+selected environment values and forwards them to the Claude runtime, but it
+does not persist or log them in configuration or artifacts. Authentication is
+validated when Claude starts the invocation.
 
 Unset unused `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` variables before
 using WIF. Anthropic credential resolution treats an empty variable as selected,
