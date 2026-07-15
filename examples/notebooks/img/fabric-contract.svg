@@ -29,10 +29,10 @@
 
   <line x1="90" y1="298" x2="750" y2="298" stroke="#E7EAEE" stroke-width="1"/>
 
-  <text x="420" y="322" text-anchor="middle" font-size="12.5" font-weight="700" fill="#8A939C">Inspect it &#183; optional</text>
+  <text x="420" y="322" text-anchor="middle" font-size="12.5" font-weight="700" fill="#4A5560">Inspect it &#183; optional</text>
   <g text-anchor="middle" font-size="13.5">
-    <text x="420" y="350"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#6B7680">plan()</tspan><tspan fill="#5B6670"> — preview the adapter &amp; capabilities</tspan></text>
-    <text x="420" y="380"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#6B7680">doctor()</tspan><tspan fill="#5B6670"> — preflight the environment</tspan></text>
+    <text x="420" y="350"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#5E9400">plan()</tspan><tspan fill="#3A4149"> — preview the adapter &amp; capabilities</tspan></text>
+    <text x="420" y="380"><tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" font-weight="700" fill="#5E9400">doctor()</tspan><tspan fill="#3A4149"> — preflight the environment</tspan></text>
   </g>
 
   <line x1="420" y1="412" x2="420" y2="455" stroke="#98A2AD" stroke-width="2.5" marker-end="url(#agry)"/>
