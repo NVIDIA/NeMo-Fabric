@@ -26,8 +26,10 @@ Import these from the top-level `nemo_fabric` package:
 | `TelemetryConfig` | Telemetry providers. |
 | `RelayConfig` and `Relay*Config` | Relay observability under the top-level `relay` block. |
 
-Generated references remain the source of truth for exact fields and defaults:
-the [models reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.models.md).
+The [models reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.models.md)
+indexes the public config models. The generated pages omit constructor fields and
+defaults, so read the installed `nemo_fabric` models (they ship `py.typed`) for
+exact field names and defaults.
 
 ## Build And Shape
 
@@ -81,8 +83,11 @@ package or job layout, so nothing depends on the process working directory.
   an unknown or misspelled key still passes and is silently ignored unless the
   adapter reads it. Validate settings against the adapter's docs and your
   integration tests.
-- Use `metadata` for caller-owned annotations Fabric should preserve and echo
-  back but not interpret.
+- Use `metadata` and extension fields for caller-owned annotations Fabric carries
+  but does not interpret. Config `metadata` is not echoed into
+  `RunResult.metadata`: the name surfaces as `RunResult.agent_name`, and for
+  caller-owned correlation on a specific invocation set `RunRequest.request_id`,
+  which is returned as `RunResult.request_id`.
 
 ## Stays Hidden Behind The Boundary
 

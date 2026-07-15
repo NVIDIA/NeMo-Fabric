@@ -215,8 +215,11 @@ result-field and error inventory, and
   assert `plan(...)` selects the expected adapter and capabilities, and — where
   a harness and credentials are available — run one invocation and assert the
   `RunResult` status and evidence.
-- Prefer credential-free checks in CI: `plan(...)` and `doctor(...)` validate
-  configuration and environment assumptions without calling a model.
+- `plan(...)` is credential-free — use it as the CI gate that validates adapter
+  selection and capability routing without a model or secrets. `doctor(...)` also
+  runs without calling a model, but it checks declared environment requirements
+  (such as required API-key variables) and returns `fail` when they are unset, so
+  run it where the environment is provisioned and read its per-check results.
 - Run the consumer project's own build and test commands. For a source checkout
   of Fabric, `just build-all` rebuilds the native extension and
   `just test-python` runs the Python suite.
@@ -242,7 +245,8 @@ Link to these canonical sources instead of duplicating them:
 - [Python SDK guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx)
 - [Getting started](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/overview.mdx) and
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx)
-- Generated API reference — exact signatures and fields:
+- Generated API reference (public API index; the installed `nemo_fabric` type
+  stubs are authoritative for exact signatures, fields, and defaults):
   [client](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.client.md),
   [runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.runtime.md),
   [models](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.models.md),
