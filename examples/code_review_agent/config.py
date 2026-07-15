@@ -155,6 +155,45 @@ def deepagents_config() -> FabricConfig:
     return config
 
 
+def claude_config() -> FabricConfig:
+    """Return the complete Claude adapter variant.
+
+    The Claude adapter reads the working directory from ``environment.workspace``
+    and rejects ``cwd`` in ``harness.settings``; only Claude-specific controls
+    such as ``system_prompt`` and ``permission_mode`` belong there.
+    """
+
+    config = base_config().model_copy(deep=True)
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.claude",
+        resolution="preinstalled",
+        settings={
+            "system_prompt": "You are a concise code reviewer. Point out correctness bugs and risks.",
+            "permission_mode": "dontAsk",
+        },
+    )
+    config.models = {
+        "default": ModelConfig(
+            provider="anthropic",
+            model="anthropic/claude-sonnet-4-5",
+            api_key_env="ANTHROPIC_API_KEY",
+        )
+    }
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts="./artifacts/claude",
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/claude",
+    )
+    config.remove_mcp_server("github")
+    config.remove_skill_path(SKILL_PATH)
+    return config
+
+
 def with_opensandbox(base: FabricConfig) -> FabricConfig:
     """Return a copy configured for an externally controlled OpenSandbox."""
 
