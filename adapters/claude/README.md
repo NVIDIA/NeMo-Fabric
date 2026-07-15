@@ -48,7 +48,8 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
   `provider="anthropic"`; normalized hosted/custom provider resolution is
   tracked in [FABRIC-64](https://linear.app/nvidia/issue/FABRIC-64/add-normalized-model-provider-resolution-and-harness-compatibility).
 - `environment.workspace` sets the Claude working directory.
-- `tools` sets the base Claude tool list.
+- `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool
+  names.
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
   Fabric parses `url` as a command plus arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
@@ -56,16 +57,16 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 
 Only Claude-specific controls belong in `harness.settings`:
 
-- `system_prompt`, `allowed_tools`, `disallowed_tools`, and `permission_mode`
+- `system_prompt`, `allowed_tools`, and `permission_mode`
 - `max_turns`, `max_budget_usd`, and `timeout_seconds`
 - `setting_sources` (defaults to `[]` for deterministic isolation)
 - `cli_path` for testing or an explicitly installed Claude Code executable
 - `nemo_relay_command` for an explicitly installed NeMo Relay CLI executable
 - `env` for variables explicitly forwarded to Claude Code
 
-Putting `model_name`, `cwd`, `tools`, `mcp_servers`, or `skills` in
-`harness.settings` is an error. Use the corresponding normalized field so the
-same consumer configuration can compose with other adapters.
+Putting `model_name`, `cwd`, `tools`, `disallowed_tools`, `mcp_servers`, or
+`skills` in `harness.settings` is an error. Use the corresponding normalized
+field so the same consumer configuration can compose with other adapters.
 
 The adapter filters the inherited environment before launching Claude Code.
 It retains portable OS/config variables, the selected model's `api_key_env`,
@@ -116,6 +117,7 @@ from nemo_fabric import (
     ModelConfig,
     RuntimeConfig,
     SkillConfig,
+    ToolsConfig,
 )
 
 base_dir = Path("/workspace/review-agent")
@@ -139,7 +141,7 @@ config = FabricConfig(
     },
     runtime=RuntimeConfig(artifacts="./artifacts"),
     environment=EnvironmentConfig(provider="local", workspace="."),
-    tools=["Read", "Glob", "Grep"],
+    tools=ToolsConfig(blocked=["WebFetch"]),
     mcp=McpConfig(
         servers={
             "repo": McpServerConfig(

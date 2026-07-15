@@ -143,6 +143,19 @@ authentication, and execution details.
 - **Profiles:** named variations of the base config. Use profiles to vary the
   harness, model, MCP, tools, skills, telemetry, or environment context without
   editing `agent.yaml`.
+- **Tools policy:** use top-level `tools.blocked` for harness-neutral blocked
+  tool policy. Names are interpreted by the selected adapter:
+
+  ```yaml
+  tools:
+    blocked:
+      - browser
+      - shell
+  ```
+
+  Hermes maps these names to disabled toolsets, Claude maps them to
+  `disallowed_tools`, Deep Agents enforces them with middleware, and adapters
+  without a native deny mechanism route the policy as unsupported.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
   The Hermes adapter lives under `adapters/hermes/`; the Codex CLI
   adapter lives under `adapters/codex-cli/`; the

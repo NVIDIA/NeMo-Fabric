@@ -16,6 +16,7 @@
     "accepts": [
       "models",
       "tools",
+      "tools.blocked",
       "mcp",
       "skills",
       "telemetry"
