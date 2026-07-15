@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Qualified harness samples
+# Qualified Harness Samples
 
 These compact bundles were curated from successful Harbor runs of
 `swe-bench/django__django-13741` on July 14, 2026. Both runs completed without
@@ -15,7 +15,7 @@ IDs, host paths, prompts, verbose logs, full Claude events, and credentials are
 excluded. `workspace.patch` is the relevant source-code portion of the collected
 patch; a harness may have produced other incidental files during its run.
 
-| Harness | Model used for this run | Bundle |
+| Harness | Model Used for This Run | Bundle |
 | --- | --- | --- |
 | Hermes | self-hosted `nvidia/nemotron-3-nano` | [`hermes/`](hermes/) |
 | Claude | `anthropic/claude-sonnet-4-5` | [`claude/`](claude/) |

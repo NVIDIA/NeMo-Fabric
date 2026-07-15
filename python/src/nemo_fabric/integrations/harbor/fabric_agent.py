@@ -353,7 +353,7 @@ def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -
         return
     try:
         summary = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         summary = {
             "status": "failed",
             "error": "telemetry summary could not be loaded",

@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 
-def load_reply() -> Callable[[dict[str, Any]], dict[str, Any] | None]:
+def load_reply() -> Callable[[object], dict[str, Any] | None]:
     source = Path(__file__).parents[2] / "examples/harbor/swebench/mcp/repo_inspector.py"
     return runpy.run_path(str(source))["reply"]
 
@@ -84,6 +84,44 @@ def test_mcp_tools_call_rejects_nonempty_arguments():
     assert response is not None
     assert response["id"] == 3
     assert response["error"]["code"] == -32602
+
+
+@pytest.mark.parametrize(
+    "request_value",
+    [
+        [],
+        {"id": 4, "method": "tools/list"},
+        {"jsonrpc": "2.0", "id": 4},
+        {"jsonrpc": "2.0", "id": {}, "method": "tools/list"},
+    ],
+)
+def test_mcp_rejects_invalid_request_envelopes(request_value: object):
+    response = load_reply()(request_value)
+
+    assert response is not None
+    assert response["error"]["code"] == -32600
+
+
+def test_mcp_valid_notification_has_no_response():
+    response = load_reply()({"jsonrpc": "2.0", "method": "tools/list"})
+
+    assert response is None
+
+
+def test_mcp_tools_call_accepts_omitted_arguments(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(Path, "iterdir", lambda _: iter(()))
+
+    response = load_reply()(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {"name": "repo_summary"},
+        }
+    )
+
+    assert response is not None
+    assert "result" in response
 
 
 def test_mcp_dispatch_error_preserves_request_id(

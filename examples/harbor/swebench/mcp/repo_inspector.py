@@ -12,10 +12,22 @@ from typing import Any
 
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-03-26",)
 UNSUPPORTED_PROTOCOL_VERSION = -32004
+JsonRpcId = str | int | float | None
+
+
+def request_id_from(request: object) -> JsonRpcId:
+    if not isinstance(request, dict) or "id" not in request:
+        return None
+    request_id = request["id"]
+    if request_id is None or isinstance(request_id, str):
+        return request_id
+    if isinstance(request_id, (int, float)) and not isinstance(request_id, bool):
+        return request_id
+    return None
 
 
 def error_response(
-    request_id: Any,
+    request_id: JsonRpcId,
     code: int,
     message: str,
     *,
@@ -27,10 +39,18 @@ def error_response(
     return {"jsonrpc": "2.0", "id": request_id, "error": error}
 
 
-def reply(request: dict[str, Any]) -> dict[str, Any] | None:
-    request_id = request.get("id")
+def reply(request: object) -> dict[str, Any] | None:
+    request_id = request_id_from(request)
+    if not isinstance(request, dict):
+        return error_response(None, -32600, "invalid request")
     method = request.get("method")
-    if request_id is None:
+    if (
+        request.get("jsonrpc") != "2.0"
+        or not isinstance(method, str)
+        or ("id" in request and request_id is None and request["id"] is not None)
+    ):
+        return error_response(request_id, -32600, "invalid request")
+    if "id" not in request:
         return None
     if method == "initialize":
         params = request.get("params")
@@ -56,7 +76,11 @@ def reply(request: dict[str, Any]) -> dict[str, Any] | None:
                 {
                     "name": "repo_summary",
                     "description": "Summarize the current repository without modifying it.",
-                    "inputSchema": {"type": "object", "properties": {}},
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
                 }
             ]
         }
@@ -65,7 +89,7 @@ def reply(request: dict[str, Any]) -> dict[str, Any] | None:
         if not isinstance(params, dict):
             return error_response(request_id, -32602, "tools/call params must be an object")
         name = params.get("name")
-        arguments = params.get("arguments")
+        arguments = params.get("arguments", {})
         if name != "repo_summary":
             return error_response(
                 request_id,
@@ -99,9 +123,7 @@ def main() -> None:
         request_id = None
         try:
             request = json.loads(line)
-            if not isinstance(request, dict):
-                raise TypeError("JSON-RPC request must be an object")
-            request_id = request.get("id")
+            request_id = request_id_from(request)
             response = reply(request)
             if response is not None:
                 print(json.dumps(response), flush=True)

@@ -16,7 +16,10 @@ one independent harness runtime for each Harbor agent run.
 - `uv`
 - Docker
 - this repository checkout, with the changes under test committed
+- `NVIDIA_API_KEY` for the Hermes and Hermes Relay runs
 - `ANTHROPIC_API_KEY` for the Claude run
+
+The credential-free smoke does not require either API key.
 
 The first image build can take several minutes.
 
@@ -112,7 +115,7 @@ docker rm -f fabric-phoenix 2>/dev/null || true
 docker run --rm --detach \
   --name fabric-phoenix \
   --publish 6006:6006 \
-  arizephoenix/phoenix:latest
+  arizephoenix/phoenix:18.0.0
 
 until curl --fail --silent http://localhost:6006 >/dev/null; do sleep 1; done
 ```

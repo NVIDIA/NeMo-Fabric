@@ -43,8 +43,14 @@ def artifact(name: str, kind: str, path: Path) -> dict[str, str]:
     }
 
 
+def task_artifact(name: str, kind: str, path: Path, logs_dir: Path) -> dict[str, str]:
+    return artifact(name, kind, Path("/logs/agent") / path.relative_to(logs_dir))
+
+
 def test_publish_telemetry_validates_and_promotes_atif(tmp_path: Path):
-    atof = tmp_path / "events.atof.jsonl"
+    logs = tmp_path / "agent"
+    logs.mkdir()
+    atof = logs / "events.atof.jsonl"
     atof.write_text(
         json.dumps(
             {
@@ -58,7 +64,7 @@ def test_publish_telemetry_validates_and_promotes_atif(tmp_path: Path):
         + "\n",
         encoding="utf-8",
     )
-    atif = tmp_path / "relay" / "trajectory-run.atif.json"
+    atif = logs / "relay" / "trajectory-run.atif.json"
     atif.parent.mkdir()
     atif.write_text(
         json.dumps(
@@ -76,10 +82,9 @@ def test_publish_telemetry_validates_and_promotes_atif(tmp_path: Path):
         ),
         encoding="utf-8",
     )
-    logs = tmp_path / "agent"
     result = make_result(
-        artifact("atof", "atof", atof),
-        artifact("atif", "atif", atif),
+        task_artifact("atof", "atof", atof, logs),
+        task_artifact("atif", "atif", atif, logs),
     )
 
     summary = publish_telemetry_evidence(result, logs, strict=True)
@@ -93,7 +98,9 @@ def test_publish_telemetry_validates_and_promotes_atif(tmp_path: Path):
 
 
 def test_publish_telemetry_accepts_relay_owned_atif_session_id(tmp_path: Path):
-    atif = tmp_path / "trajectory.json"
+    logs = tmp_path / "agent"
+    logs.mkdir()
+    atif = logs / "relay-trajectory.json"
     atif.write_text(
         json.dumps(
             {
@@ -107,8 +114,8 @@ def test_publish_telemetry_accepts_relay_owned_atif_session_id(tmp_path: Path):
     )
 
     summary = publish_telemetry_evidence(
-        make_result(artifact("atif", "atif", atif)),
-        tmp_path / "agent",
+        make_result(task_artifact("atif", "atif", atif, logs)),
+        logs,
         strict=True,
         harbor_session_id="harbor-session-1",
     )
@@ -169,36 +176,49 @@ def test_artifact_path_escape_is_rejected_without_host_path_remapping():
         )
 
 
-def test_publish_telemetry_records_quality_failure_without_changing_run(tmp_path: Path):
-    malformed = tmp_path / "events.atof.jsonl"
-    malformed.write_text("{}\n", encoding="utf-8")
-    result = make_result(artifact("atof", "atof", malformed))
+def test_publish_telemetry_rejects_absolute_path_outside_task_logs(tmp_path: Path):
+    result = make_result(artifact("atif", "atif", Path("/etc/passwd")))
 
-    summary = publish_telemetry_evidence(result, tmp_path / "agent")
+    with pytest.raises(TelemetryValidationError, match="escapes /logs/agent"):
+        publish_telemetry_evidence(result, tmp_path / "agent", strict=True)
+
+
+def test_publish_telemetry_records_quality_failure_without_changing_run(tmp_path: Path):
+    logs = tmp_path / "agent"
+    logs.mkdir()
+    malformed = logs / "events.atof.jsonl"
+    malformed.write_text("{}\n", encoding="utf-8")
+    result = make_result(task_artifact("atof", "atof", malformed, logs))
+
+    summary = publish_telemetry_evidence(result, logs)
 
     assert summary["status"] == "failed"
     assert "ATOF record missing" in summary["error"]
 
     with pytest.raises(TelemetryValidationError, match="ATOF record missing"):
-        publish_telemetry_evidence(result, tmp_path / "strict", strict=True)
+        publish_telemetry_evidence(result, logs, strict=True)
 
 
 def test_publish_telemetry_rejects_ambiguous_atif(tmp_path: Path):
-    first = tmp_path / "first.json"
-    second = tmp_path / "second.json"
+    logs = tmp_path / "agent"
+    logs.mkdir()
+    first = logs / "first.json"
+    second = logs / "second.json"
     first.write_text("{}", encoding="utf-8")
     second.write_text("{}", encoding="utf-8")
     result = make_result(
-        artifact("atif-1", "atif", first),
-        artifact("atif-2", "atif", second),
+        task_artifact("atif-1", "atif", first, logs),
+        task_artifact("atif-2", "atif", second, logs),
     )
 
     with pytest.raises(TelemetryValidationError, match="at most one ATIF"):
-        publish_telemetry_evidence(result, tmp_path / "agent", strict=True)
+        publish_telemetry_evidence(result, logs, strict=True)
 
 
 def test_publish_telemetry_rejects_structurally_invalid_atif(tmp_path: Path):
-    atif = tmp_path / "trajectory.json"
+    logs = tmp_path / "agent"
+    logs.mkdir()
+    atif = logs / "invalid-trajectory.json"
     atif.write_text(
         json.dumps(
             {
@@ -213,14 +233,16 @@ def test_publish_telemetry_rejects_structurally_invalid_atif(tmp_path: Path):
 
     with pytest.raises(TelemetryValidationError, match="steps must be a non-empty array"):
         publish_telemetry_evidence(
-            make_result(artifact("atif", "atif", atif)),
-            tmp_path / "agent",
+            make_result(task_artifact("atif", "atif", atif, logs)),
+            logs,
             strict=True,
         )
 
 
 def test_publish_telemetry_rejects_obvious_credentials(tmp_path: Path):
-    atof = tmp_path / "events.atof.jsonl"
+    logs = tmp_path / "agent"
+    logs.mkdir()
+    atof = logs / "events.atof.jsonl"
     atof.write_text(
         json.dumps(
             {
@@ -237,7 +259,7 @@ def test_publish_telemetry_rejects_obvious_credentials(tmp_path: Path):
 
     with pytest.raises(TelemetryValidationError, match="resembles a credential"):
         publish_telemetry_evidence(
-            make_result(artifact("atof", "atof", atof)),
-            tmp_path / "agent",
+            make_result(task_artifact("atof", "atof", atof, logs)),
+            logs,
             strict=True,
         )
