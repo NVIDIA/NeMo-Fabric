@@ -16,6 +16,8 @@ information (`py.typed`) for exact signatures.
 
 ## Fabric Methods
 
+The following table lists the `Fabric` methods and when to use each.
+
 | Method | Async | Use When | Returns |
 | --- | --- | --- | --- |
 | `resolve(config, *, base_dir=...)` | No | You need the normalized effective config, without resolving an adapter. | `EffectiveConfig` |
@@ -29,6 +31,8 @@ the common case; use `request=RunRequest(...)` when the invocation needs a
 caller-owned `request_id`, `context`, or overrides.
 
 ## Runtime Methods
+
+The following table lists the `Runtime` members for driving a stateful runtime.
 
 | Member | Async | Notes |
 | --- | --- | --- |
@@ -52,7 +56,7 @@ async with await fabric.start_runtime(config, base_dir=base) as runtime:
 Fabric separates configuration, planning, runtime lifecycle, and individual
 invocations:
 
-```
+```text
 FabricConfig -> plan() -> RunPlan -> start_runtime() -> Runtime -> invoke() -> RunResult
 ```
 

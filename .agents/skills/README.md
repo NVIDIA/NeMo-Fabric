@@ -28,6 +28,8 @@ this set.
 
 ## Skills
 
+This table lists the maintainer skills in this set and what each covers.
+
 | Skill | Purpose |
 |---|---|
 | [`contribute-api`](contribute-api/SKILL.md) | Add a public API surface with Rust, CLI, Python, schema, adapter, and documentation parity. |

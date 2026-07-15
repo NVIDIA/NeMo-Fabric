@@ -130,6 +130,10 @@ Pick the smallest lifecycle the consumer needs:
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
 
+The async snippets in this skill assume an async context (for example a function
+run via `asyncio.run(main())`), so `await` is valid. The example below shows both
+lifecycles:
+
 ```python
 from nemo_fabric import Fabric
 

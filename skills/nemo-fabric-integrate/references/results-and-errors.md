@@ -22,6 +22,8 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `metadata` | Result-specific structured metadata. |
 | `runtime_id`, `invocation_id`, `request_id` | Correlation IDs across runtimes, logs, telemetry, and artifacts. |
 
+Handle a result with this status-first pattern:
+
 ```python
 if result.status == "succeeded":
     use_output(result.output, result.artifacts, result.telemetry)
