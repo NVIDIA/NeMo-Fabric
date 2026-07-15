@@ -82,6 +82,8 @@ def build_hermes_config(
                 "provider": provider,
                 "default": model_name,
                 "base_url": base_url,
+                "max_tokens": settings.get("max_tokens")
+                or model_config.get("max_tokens"),
             }
         ),
         "agent": common_utils.without_none(

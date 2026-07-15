@@ -63,6 +63,16 @@ def test_relay_launch_mode_defaults_and_rejects_unknown_values():
         adapter._relay_launch_mode({"relay_launch_mode": "sidecar"})
 
 
+def test_explicit_max_tokens_is_shared_by_native_and_cli_modes(tmp_path: Path):
+    payload = _payload(tmp_path)
+    settings = common_utils.settings_payload(payload)
+    settings["max_tokens"] = 4096
+
+    config = adapter.build_hermes_config(payload, relay_enabled=True)
+
+    assert config["model"]["max_tokens"] == 4096
+
+
 async def test_cli_wrapper_requires_relay_telemetry(tmp_path: Path):
     payload = _payload(tmp_path, launch_mode="cli_wrapper")
     payload["telemetry_plan"] = {"providers": [], "relay_enabled": False}
