@@ -375,6 +375,67 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     ]
 
 
+def test_loads_external_plugins_toml_as_components_and_dynamic_specs(tmp_path: Path):
+    plugin_root = tmp_path / "relay"
+    plugin_root.mkdir()
+    manifest = plugin_root / "relay-plugin.toml"
+    manifest.write_text(
+        'manifest_version = 1\n[plugin]\nid = "example.native"\nkind = "rust_dynamic"\n',
+        encoding="utf-8",
+    )
+    plugins_toml = plugin_root / "plugins.toml"
+    plugins_toml.write_text(
+        """version = 1
+
+[[components]]
+kind = "observability"
+enabled = true
+
+[components.config]
+version = 2
+
+[components.config.atof]
+enabled = true
+
+[[components.config.atof.sinks]]
+type = "file"
+output_directory = "artifacts"
+
+[[plugins.dynamic]]
+manifest = "relay-plugin.toml"
+config = { mode = "test" }
+""",
+        encoding="utf-8",
+    )
+    runtime_config = tmp_path / "relay.json"
+    runtime_config.write_text(
+        json.dumps({"relay": {"plugin_config_path": "relay/plugins.toml"}}),
+        encoding="utf-8",
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(runtime_config)
+    payload = {
+        "effective_config": {"config_root": str(tmp_path)},
+        "runtime_context": {"runtime_id": "runtime-external"},
+    }
+
+    plugin_config = common_utils.load_relay_plugin_config(payload)
+    specs = common_utils.load_relay_dynamic_plugins(payload)
+
+    assert "plugins" not in plugin_config
+    assert plugin_config["components"][0]["kind"] == "observability"
+    assert plugin_config["components"][0]["config"]["atof"]["sinks"][0][
+        "output_directory"
+    ] == str(tmp_path / "artifacts" / "runtime-external")
+    assert specs == [
+        {
+            "plugin_id": "example.native",
+            "kind": "rust_dynamic",
+            "manifest_ref": str(manifest),
+            "config": {"mode": "test"},
+        }
+    ]
+
+
 def test_collect_relay_artifacts(tmp_path: Path):
     atof_dir = tmp_path / "atof"
     atif_dir = tmp_path / "atif"

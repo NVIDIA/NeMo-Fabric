@@ -21,6 +21,17 @@ strategies selected by `harness.settings.relay_launch_mode`:
 executable with `harness.settings.relay_cli_command`; it defaults to
 `nemo-relay`.
 
+For a Relay configuration that should move unchanged from an evaluation into a
+deployment, set `relay.plugin_config_path` to one canonical Relay
+`plugins.toml`. Fabric loads its built-in components and standard
+`[[plugins.dynamic]]` declarations for either launch strategy. Do not combine
+that path with Fabric's inline Relay observability, component, dynamic-plugin,
+or policy fields. Relay's separate `config.toml` remains invocation-owned
+agent/gateway launch metadata in CLI-wrapper mode. CLI-wrapper mode can
+provision lifecycle-managed Python worker environments from these declarations;
+native mode can directly activate native dynamic plugins, while worker plugins
+still require an existing Relay-managed `environment_ref`.
+
 Fabric invokes the adapter module with `python -m` through the core runtime
 lifecycle. The module entry point and the descriptor's callable route use the
 same `run(payload: dict) -> dict` implementation.

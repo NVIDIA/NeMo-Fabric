@@ -222,16 +222,49 @@ def dump_yaml(value: dict[str, Any]) -> str:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
 
 
-def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
+def _relay_runtime_document() -> dict[str, Any]:
     config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
     if not config_path:
         raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
 
     with Path(config_path).open(encoding="utf-8") as stream:
-        wrapper = json.load(stream)
+        document = json.load(stream)
+    if not isinstance(document, dict):
+        raise ValueError("Fabric Relay runtime config must be an object")
+    return document
 
+
+def _external_relay_plugin_document(
+    payload: dict[str, Any], relay: dict[str, Any]
+) -> tuple[Path, dict[str, Any]] | None:
+    configured = relay.get("plugin_config_path")
+    if configured is None:
+        return None
+    path = Path(str(configured))
+    if not path.is_absolute():
+        path = Path(config_root(payload)).resolve() / path
+    path = path.resolve()
+    if not path.is_file():
+        raise RuntimeError(f"Relay plugin config file was not found: {path}")
+    with path.open("rb") as stream:
+        document = tomllib.load(stream)
+    return path, document
+
+
+def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
+    wrapper = _relay_runtime_document()
     relay = wrapper.get("relay", {})
-    plugin_config = relay.get("config") or {}
+    external = _external_relay_plugin_document(payload, relay)
+    if external is not None:
+        _, document = external
+        plugin_config = {
+            key: copy.deepcopy(value)
+            for key, value in document.items()
+            if key != "plugins"
+        }
+    else:
+        plugin_config = copy.deepcopy(relay.get("config") or {})
+
     if "components" not in plugin_config:
         plugin_config = {
             "version": 1,
@@ -252,14 +285,50 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 def load_relay_dynamic_plugins(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Load ordered dynamic plugin specs and resolve invocation-relative paths."""
 
-    config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
-    if not config_path:
-        raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
+    wrapper = _relay_runtime_document()
+    relay = wrapper.get("relay") or {}
+    external = _external_relay_plugin_document(payload, relay)
+    if external is not None:
+        plugin_config_path, document = external
+        entries = ((document.get("plugins") or {}).get("dynamic") or [])
+        if not isinstance(entries, list):
+            raise ValueError("plugins.dynamic must be an array of tables")
+        specs: list[dict[str, Any]] = []
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise ValueError(f"plugins.dynamic[{index}] must be a table")
+            manifest_value = entry.get("manifest")
+            if not isinstance(manifest_value, str) or not manifest_value:
+                raise ValueError(f"plugins.dynamic[{index}].manifest must be a string")
+            manifest_path = Path(manifest_value)
+            if not manifest_path.is_absolute():
+                manifest_path = plugin_config_path.parent / manifest_path
+            manifest_path = manifest_path.resolve()
+            if not manifest_path.is_file():
+                raise RuntimeError(f"Relay plugin manifest was not found: {manifest_path}")
+            with manifest_path.open("rb") as stream:
+                manifest = tomllib.load(stream)
+            identity = manifest.get("plugin") or {}
+            plugin_id = identity.get("id")
+            kind = identity.get("kind")
+            if not isinstance(plugin_id, str) or kind not in {"rust_dynamic", "worker"}:
+                raise ValueError(
+                    f"plugins.dynamic[{index}] manifest has an invalid plugin identity"
+                )
+            config = entry.get("config") or {}
+            if not isinstance(config, dict):
+                raise ValueError(f"plugins.dynamic[{index}].config must be a table")
+            specs.append(
+                {
+                    "plugin_id": plugin_id,
+                    "kind": kind,
+                    "manifest_ref": str(manifest_path),
+                    "config": copy.deepcopy(config),
+                }
+            )
+        return specs
 
-    with Path(config_path).open(encoding="utf-8") as stream:
-        wrapper = json.load(stream)
-
-    specs = (wrapper.get("relay") or {}).get("dynamic_plugins") or []
+    specs = relay.get("dynamic_plugins") or []
     if not isinstance(specs, list):
         raise ValueError("relay.dynamic_plugins must be a list")
     root = Path(config_root(payload)).resolve()

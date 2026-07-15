@@ -387,6 +387,7 @@ class RelayDynamicPluginConfig(FabricBaseModel):
 class RelayConfig(FabricBaseModel):
     """First-class NeMo Relay integration configuration."""
 
+    plugin_config_path: str | Path | None = None
     project: str | None = None
     output_dir: str | Path | None = None
     observability: RelayObservabilityConfig | dict[str, Any] | None = None
@@ -543,6 +544,7 @@ class FabricConfig(FabricBaseModel):
     def enable_relay(
         self,
         *,
+        plugin_config_path: str | Path | None = None,
         project: str | None = None,
         output_dir: str | Path | None = None,
         observability: RelayObservabilityConfig | Mapping[str, Any] | None = None,
@@ -562,6 +564,8 @@ class FabricConfig(FabricBaseModel):
             relay = self.relay.model_copy(deep=True)
         else:
             relay = RelayConfig.from_mapping(self.relay)
+        if plugin_config_path is not None:
+            relay.plugin_config_path = plugin_config_path
         if project is not None:
             relay.project = project
         if output_dir is not None:

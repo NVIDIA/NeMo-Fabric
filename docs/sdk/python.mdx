@@ -190,6 +190,21 @@ relay_config.enable_relay(
 )
 ```
 
+Alternatively, point Fabric at one canonical Relay `plugins.toml` when the same
+configuration must be promoted from evaluation to deployment:
+
+```python
+relay_config = config.model_copy(deep=True)
+relay_config.enable_relay(plugin_config_path="./relay/plugins.toml")
+```
+
+The external file may contain built-in components and standard
+`[[plugins.dynamic]]` declarations. It is mutually exclusive with Fabric's
+inline Relay observability, component, dynamic-plugin, and policy fields. The
+CLI-wrapper strategy can provision lifecycle-managed Python workers from those
+declarations. Native execution requires an existing Relay-managed
+`environment_ref` for worker plugins.
+
 The repository's
 [code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
 uses this pattern for complete Hermes, Codex CLI, Deep Agents,

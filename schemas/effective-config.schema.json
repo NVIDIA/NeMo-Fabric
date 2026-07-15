@@ -743,6 +743,13 @@
             "null"
           ]
         },
+        "plugin_config_path": {
+          "description": "Optional path to a canonical Relay `plugins.toml` document.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "policy": {
           "anyOf": [
             {

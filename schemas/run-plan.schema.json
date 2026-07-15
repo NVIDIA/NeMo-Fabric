@@ -1210,6 +1210,13 @@
             "null"
           ]
         },
+        "plugin_config_path": {
+          "description": "Optional path to a canonical Relay `plugins.toml` document.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "policy": {
           "anyOf": [
             {
@@ -1724,6 +1731,13 @@
         },
         "relay_output_dir": {
           "description": "Relay output directory, when configured.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "relay_plugin_config_path": {
+          "description": "Canonical Relay `plugins.toml` path, when supplied by the agent config.",
           "type": [
             "string",
             "null"

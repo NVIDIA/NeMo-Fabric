@@ -656,6 +656,9 @@ pub struct TelemetryProviderConfig {
 /// NeMo Relay integration configuration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RelayConfig {
+    /// Optional path to a canonical Relay `plugins.toml` document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_config_path: Option<PathBuf>,
     /// Optional project name for Relay backends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
@@ -1838,6 +1841,9 @@ fn resolve_telemetry_plan(
         relay_output_dir: relay_enabled
             .then(|| relay.and_then(|relay| relay.output_dir.clone()))
             .flatten(),
+        relay_plugin_config_path: relay_enabled
+            .then(|| relay.and_then(|relay| relay.plugin_config_path.clone()))
+            .flatten(),
         relay_config: relay_enabled
             .then(|| resolve_relay_plugin_config(relay))
             .flatten(),
@@ -1854,6 +1860,16 @@ fn resolve_telemetry_plan(
 }
 
 fn validate_relay_config(relay: &RelayConfig) -> Result<()> {
+    if relay.plugin_config_path.is_some()
+        && (relay.observability.is_some()
+            || !relay.components.is_empty()
+            || !relay.dynamic_plugins.is_empty()
+            || relay.policy.is_some())
+    {
+        return Err(FabricError::InvalidRelayConfig {
+            message: "plugin_config_path cannot be combined with inline Relay observability, components, dynamic_plugins, or policy".to_string(),
+        });
+    }
     let Some(observability) = relay.observability.as_ref() else {
         return Ok(());
     };
@@ -2140,6 +2156,9 @@ pub struct TelemetryPlan {
     /// Relay output directory, when configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay_output_dir: Option<PathBuf>,
+    /// Canonical Relay `plugins.toml` path, when supplied by the agent config.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relay_plugin_config_path: Option<PathBuf>,
     /// Relay pass-through config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay_config: Option<Value>,
@@ -2407,6 +2426,66 @@ relay:
         assert_eq!(
             relay_config["policy"]["unknown_component"],
             serde_json::json!("error")
+        );
+    }
+
+    #[test]
+    fn relay_telemetry_can_reference_one_canonical_plugins_toml() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.hermes
+runtime:
+telemetry:
+  providers:
+    relay: {}
+relay:
+  plugin_config_path: ./relay/plugins.toml
+"#,
+        )
+        .expect("config with external Relay plugin config");
+
+        let plan = resolve_telemetry_plan(&config, None)
+            .expect("resolve telemetry plan")
+            .expect("telemetry plan");
+
+        assert_eq!(
+            plan.relay_plugin_config_path,
+            Some(PathBuf::from("./relay/plugins.toml"))
+        );
+        assert_eq!(plan.relay_config, None);
+        assert!(plan.relay_dynamic_plugins.is_empty());
+    }
+
+    #[test]
+    fn relay_telemetry_rejects_external_and_inline_plugin_config() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.hermes
+runtime:
+telemetry:
+  providers:
+    relay: {}
+relay:
+  plugin_config_path: ./plugins.toml
+  components:
+    - kind: observability
+"#,
+        )
+        .expect("conflicting Relay config parses for a clear error");
+
+        let error = resolve_telemetry_plan(&config, None).expect_err("conflict must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("plugin_config_path cannot be combined")
         );
     }
 
