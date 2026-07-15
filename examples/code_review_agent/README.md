@@ -53,7 +53,7 @@ The command prints a normalized `RunResult` and writes runtime artifacts under
 
 ## Choose a variant
 
-The entrypoint exposes the five complete harness configs defined in
+The entrypoint exposes complete harness configs defined in
 [`config.py`](./config.py):
 
 | Variant | Command option | Additional setup |
