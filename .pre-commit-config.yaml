@@ -12,6 +12,12 @@ repos:
         files: '\.(rs|py|pyi|toml|yaml|yml|md|mdx|sh)$|\.gitignore$'
         exclude: '(/SKILL\.md|node_modules/|target/|\.venv/|^\.github/pull_request_template\.md)$'
 
+  # Python lint — enforce the flake8-bugbear cached-instance-method rule (B019)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.21
+    hooks:
+      - id: ruff-check
+
   # GitHub Actions — workflow semantics
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
