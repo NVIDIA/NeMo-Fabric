@@ -29,29 +29,35 @@ supported and upgrade-safe:
   or materialize `agent.yaml`, portable agent packages, or any intermediate
   config file from consumer code.
 - Do not serialize configs, apply file-backed profiles, or resolve profiles by
-  name. In-memory callers that genuinely need ordered overlays pass typed
-  `FabricProfileConfig` values through `profiles=[...]`.
+  name. Build every consumer variant with ordinary Python functions and
+  `model_copy(deep=True)`; profile mechanics stay behind the integration
+  boundary.
 - Let Fabric own harness control. Do not reimplement start, invoke, or stop
   logic, and do not manage adapter threads, sessions, or processes directly.
 - Treat `runtime_id`, `invocation_id`, and `request_id` as opaque correlation
   strings, not parsable or reusable state.
 
-See `references/config-mapping.md` for how to translate a consumer config object
-into `FabricConfig`, and for the full list of mechanics that stay hidden behind
-this boundary.
+See [config-mapping.md](references/config-mapping.md) for how to translate a
+consumer config object into `FabricConfig`, and for the full list of mechanics
+that stay hidden behind this boundary.
 
 ## Install And Set Up The Environment
 
 The consumer or its execution environment owns installation; Fabric validates
 runtime assumptions but never installs harnesses or credentials at run time.
 
-- Install the SDK with the extras the integration needs, for example
-  `pip install "nemo-fabric[runtime]"`; add integration extras such as `harbor`
-  when used. From a source checkout, `just build-all` builds the native
-  extension and installs the SDK.
-- Select a harness adapter (for example `nvidia.fabric.hermes`,
-  `nvidia.fabric.codex.cli`, or `nvidia.fabric.langchain.deepagents`) and install
-  that adapter's own dependencies and harness binaries.
+- Fabric is not published on PyPI yet. From a source checkout, `just build-all`
+  builds the native extension and installs the SDK. To install into another
+  environment, build wheels with `just wheels`, then
+  `uv pip install --find-links <dist_dir> "nemo-fabric[runtime]"` (add the
+  `harbor` extra for the Harbor integration). See the
+  [installation guide](../../docs/getting-started/install.mdx).
+- Select a harness adapter — the `adapter_id` set in `HarnessConfig`, for example
+  `nvidia.fabric.hermes` — and install its extra the same way, for example
+  `uv pip install --find-links <dist_dir> "nemo-fabric[adapters-hermes]"`
+  (available extras: `adapters-hermes`, `adapters-codex-cli`,
+  `adapters-deepagents`, `adapters-claude`), plus the adapter's own harness
+  binaries and dependencies.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
@@ -102,9 +108,10 @@ def to_fabric_config(job) -> FabricConfig:
 - Pass `base_dir=...` to any `Fabric` call when the config uses relative paths,
   so skills, workspaces, and artifacts anchor to the consumer's own layout.
 
-The repository `examples/code_review_agent/` shows this pattern end to end with
-complete Hermes, Codex CLI, Deep Agents, environment, MCP, and telemetry
-variants. Reuse it rather than duplicating config construction.
+The repository [`code_review_agent` example](../../examples/code_review_agent/README.md)
+shows this pattern end to end with complete Hermes, Codex CLI, Deep Agents,
+environment, MCP, and telemetry variants. Reuse it rather than duplicating config
+construction.
 
 ## Choose A Lifecycle
 
@@ -166,14 +173,16 @@ fields before reading output:
 ```python
 result = await fabric.run(config, base_dir=base, input="Review the changes.")
 
-if result.error is not None:
-    handle_failure(result.status, result.error, result.events)
-else:
+if result.status == "succeeded":
     use_output(result.output, result.artifacts, result.telemetry)
+else:
+    handle_failure(result.status, result.error, result.events)  # failed, cancelled, ...
 ```
 
-- `error` is `None` on success; read `status`, `error`, and `events` before
-  processing `output`.
+- Treat `status == "succeeded"` as the only success. Other terminal values
+  (`failed`, `cancelled`) are unsuccessful, and `error` may be `None` even then,
+  so branch on `status`, not on `error`. Read `status`, `error`, and `events`
+  before processing `output`.
 - Capture `artifacts` and `telemetry` references as the returned evidence for
   platforms and evaluations. Store and log `runtime_id`, `invocation_id`, and
   `request_id` separately as opaque strings.
@@ -184,9 +193,10 @@ else:
   default. `run(...)` and `async with` runtimes attempt cleanup automatically,
   so prefer them over manual `stop()`.
 
-See `references/results-and-errors.md` for the full result-field and error
-inventory, and `references/sdk-api-inventory.md` for when to use each `Fabric`
-and `Runtime` method.
+See [results-and-errors.md](references/results-and-errors.md) for the full
+result-field and error inventory, and
+[sdk-api-inventory.md](references/sdk-api-inventory.md) for when to use each
+`Fabric` and `Runtime` method.
 
 ## Test And Validate The Integration
 
@@ -218,9 +228,17 @@ and `Runtime` method.
 
 Link to these canonical sources instead of duplicating them:
 
-- Python SDK guide: `docs/sdk/python.mdx`
-- Getting started and installation: `docs/getting-started/overview.mdx`
-- Generated API reference (exact signatures): `docs/reference/api/python-library-reference/`
-- Canonical in-memory config example: `examples/code_review_agent/`
-- Platform and evaluation-harness integration: `examples/harbor/` and
-  `python/src/nemo_fabric/integrations/harbor/`
+- [Python SDK guide](../../docs/sdk/python.mdx)
+- [Getting started](../../docs/getting-started/overview.mdx) and
+  [installation guide](../../docs/getting-started/install.mdx)
+- Generated API reference — exact signatures and fields:
+  [client](../../docs/reference/api/python-library-reference/nemo_fabric.client.md),
+  [runtime](../../docs/reference/api/python-library-reference/nemo_fabric.runtime.md),
+  [models](../../docs/reference/api/python-library-reference/nemo_fabric.models.md),
+  [types](../../docs/reference/api/python-library-reference/nemo_fabric.types.md),
+  [errors](../../docs/reference/api/python-library-reference/nemo_fabric.errors.md)
+- Canonical in-memory config example:
+  [examples/code_review_agent](../../examples/code_review_agent/README.md)
+- Platform and evaluation-harness integration:
+  [examples/harbor](../../examples/harbor/README.md) and
+  [nemo_fabric.integrations.harbor](../../python/src/nemo_fabric/integrations/harbor/README.md)

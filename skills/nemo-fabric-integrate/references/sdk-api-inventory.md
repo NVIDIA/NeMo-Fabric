@@ -7,17 +7,17 @@ SPDX-License-Identifier: Apache-2.0
 
 `Fabric()` is the primary entrypoint. It is a plain, reusable object — not a
 lifecycle context manager — and can plan, diagnose, or start multiple
-independent runtimes. Exact signatures live in the generated reference:
-`docs/reference/api/python-library-reference/client.md` and
-`docs/reference/api/python-library-reference/runtime.md`.
+independent runtimes. Exact signatures live in the generated references — the
+[client reference](../../../docs/reference/api/python-library-reference/nemo_fabric.client.md)
+and [runtime reference](../../../docs/reference/api/python-library-reference/nemo_fabric.runtime.md).
 
 ## Fabric Methods
 
 | Method | Async | Use When | Returns |
 | --- | --- | --- | --- |
-| `resolve(config, *, base_dir=..., profiles=...)` | No | You need the normalized effective config, without resolving an adapter. | `EffectiveConfig` |
-| `plan(config, *, base_dir=..., profiles=...)` | No | You need the selected adapter, capability routing, and runtime capabilities before running. | `RunPlan` |
-| `doctor(config, *, base_dir=..., profiles=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | `DoctorReport` |
+| `resolve(config, *, base_dir=...)` | No | You need the normalized effective config, without resolving an adapter. | `EffectiveConfig` |
+| `plan(config, *, base_dir=...)` | No | You need the selected adapter, capability routing, and runtime capabilities before running. | `RunPlan` |
+| `doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | `DoctorReport` |
 | `run(config, *, base_dir=..., input=... \| request=...)` | Yes | You need one complete start, invoke, result, and stop cycle. | `RunResult` |
 | `start_runtime(config, *, base_dir=..., overrides=...)` | Yes | You need state across multiple ordered invocations. | `Runtime` |
 

@@ -25,10 +25,9 @@ Import these from the top-level `nemo_fabric` package:
 | `SkillConfig` | Skill directories. |
 | `TelemetryConfig` | Telemetry providers. |
 | `RelayConfig` and `Relay*Config` | Relay observability under the top-level `relay` block. |
-| `FabricProfileConfig` | In-memory ordered overlay values for `profiles=[...]`. |
 
 Generated references remain the source of truth for exact fields and defaults:
-`docs/reference/api/python-library-reference/models.md`.
+the [models reference](../../../docs/reference/api/python-library-reference/nemo_fabric.models.md).
 
 ## Build And Shape
 
@@ -61,17 +60,9 @@ def with_relay(base: FabricConfig) -> FabricConfig:
     return config
 ```
 
-Use in-memory profiles only when the consumer genuinely needs the same ordered
-overlay semantics as file-backed profiles:
-
-```python
-from nemo_fabric import FabricProfileConfig
-
-plan = fabric.plan(config, profiles=[FabricProfileConfig(...)])
-```
-
-Fabric does not accept raw profile mappings — only typed `FabricProfileConfig`
-values.
+Use this function-and-copy pattern for every variant. Profiles — file-backed or
+in-memory — are not part of the consumer-facing API; keep all variation in
+ordinary Python.
 
 ## Relative Paths
 
@@ -97,7 +88,8 @@ Do not surface these mechanics in the consumer-facing integration:
 - Writing, reading, or materializing `agent.yaml` or portable agent packages.
 - Serializing `FabricConfig` to disk as the integration path (`to_mapping()` is
   for inspection and logging, not a required file step).
-- File-backed profiles or profile-by-name resolution.
+- Profiles of any kind: file-backed profiles, profile-by-name resolution, or
+  in-memory `FabricProfileConfig` overlays.
 - Importing `nemo_fabric._native`, `nemo_fabric._config_sources`, or
   adapter-internal modules.
 - Reimplementing harness start, invoke, or stop logic, or managing adapter

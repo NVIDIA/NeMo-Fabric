@@ -8,13 +8,13 @@ SPDX-License-Identifier: Apache-2.0
 ## RunResult Fields
 
 Every invocation that reaches the adapter boundary returns a normalized
-`RunResult`. Inspect the failure fields before reading output. Generated
-reference: `docs/reference/api/python-library-reference/types.md`.
+`RunResult`. Inspect `status` before reading output. Generated reference: the
+[types reference](../../../docs/reference/api/python-library-reference/nemo_fabric.types.md).
 
 | Field | Meaning |
 | --- | --- |
-| `status` | Terminal invocation status (for example success, failure, cancellation). |
-| `error` | Structured `ErrorInfo`, or `None` on success. Check this first. |
+| `status` | Terminal invocation status: `succeeded`, `failed`, or `cancelled`. Branch on this. |
+| `error` | Structured `ErrorInfo`, or `None` — may be `None` even when `status` is not `succeeded`, so do not use it as the success signal. |
 | `output` | Harness output normalized to the configured output schema. |
 | `artifacts` | Output files, logs, patches, and other materialized references. |
 | `telemetry` | References to Relay or other telemetry streams from the run. |
@@ -23,10 +23,10 @@ reference: `docs/reference/api/python-library-reference/types.md`.
 | `runtime_id`, `invocation_id`, `request_id` | Correlation IDs across runtimes, logs, telemetry, and artifacts. |
 
 ```python
-if result.error is not None:
-    handle_failure(result.status, result.error, result.events)
-else:
+if result.status == "succeeded":
     use_output(result.output, result.artifacts, result.telemetry)
+else:
+    handle_failure(result.status, result.error, result.events)  # failed, cancelled, ...
 ```
 
 ## Correlation IDs
@@ -41,7 +41,8 @@ reuse the encoding.
 ## Error Hierarchy
 
 All public SDK errors inherit from `FabricError`. Fabric raises these when it
-cannot return a normalized result; it does not return a partial `RunResult`.
+cannot return a normalized result; it does not return a partial `RunResult`. See
+the [errors reference](../../../docs/reference/api/python-library-reference/nemo_fabric.errors.md).
 
 | Error | Meaning |
 | --- | --- |
