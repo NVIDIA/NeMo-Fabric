@@ -20,9 +20,11 @@ relay:
       agent_version: fabric-poc
     atof:
       enabled: true
-      output_directory: ./artifacts/relay-openinference
-      filename: events.atof.jsonl
-      mode: overwrite
+      sinks:
+        - type: file
+          output_directory: ./artifacts/relay-openinference
+          filename: events.atof.jsonl
+          mode: overwrite
     openinference:
       enabled: true
       transport: http_binary

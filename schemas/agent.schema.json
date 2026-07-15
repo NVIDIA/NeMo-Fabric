@@ -424,71 +424,14 @@
           "description": "Whether ATOF export is enabled.",
           "type": "boolean"
         },
-        "endpoints": {
-          "description": "Optional remote ATOF endpoints.",
+        "sinks": {
+          "description": "Ordered ATOF destinations.",
           "items": {
-            "$ref": "#/$defs/RelayAtofEndpointConfig"
+            "$ref": "#/$defs/RelayAtofSinkConfig"
           },
           "type": "array"
-        },
-        "filename": {
-          "description": "ATOF file name.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "mode": {
-          "$ref": "#/$defs/RelayAtofMode",
-          "default": "append",
-          "description": "File write mode."
-        },
-        "output_directory": {
-          "description": "Directory used for ATOF files.",
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
-      "type": "object"
-    },
-    "RelayAtofEndpointConfig": {
-      "additionalProperties": true,
-      "description": "Relay ATOF endpoint configuration.",
-      "properties": {
-        "field_name_policy": {
-          "$ref": "#/$defs/RelayAtofEndpointFieldNamePolicy",
-          "default": "preserve",
-          "description": "Field-name handling policy."
-        },
-        "headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Endpoint headers.",
-          "type": "object"
-        },
-        "timeout_millis": {
-          "default": 3000,
-          "description": "Request timeout in milliseconds.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "transport": {
-          "$ref": "#/$defs/RelayAtofEndpointTransport",
-          "default": "http_post",
-          "description": "Endpoint transport."
-        },
-        "url": {
-          "description": "Endpoint URL.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "url"
-      ],
       "type": "object"
     },
     "RelayAtofEndpointFieldNamePolicy": {
@@ -541,6 +484,99 @@
         }
       ]
     },
+    "RelayAtofSinkConfig": {
+      "description": "Relay ATOF destination.",
+      "oneOf": [
+        {
+          "description": "Filesystem ATOF JSONL destination.",
+          "properties": {
+            "filename": {
+              "description": "ATOF file name.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mode": {
+              "$ref": "#/$defs/RelayAtofMode",
+              "default": "append",
+              "description": "File write mode."
+            },
+            "output_directory": {
+              "description": "Directory used for ATOF files.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Remote streaming ATOF destination.",
+          "properties": {
+            "field_name_policy": {
+              "$ref": "#/$defs/RelayAtofEndpointFieldNamePolicy",
+              "default": "preserve",
+              "description": "Field-name handling policy."
+            },
+            "header_env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Environment-variable-backed endpoint headers.",
+              "type": "object"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Static endpoint headers.",
+              "type": "object"
+            },
+            "name": {
+              "description": "Optional stable sink name.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timeout_millis": {
+              "default": 3000,
+              "description": "Request timeout in milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "transport": {
+              "$ref": "#/$defs/RelayAtofEndpointTransport",
+              "default": "http_post",
+              "description": "Endpoint transport."
+            },
+            "type": {
+              "const": "stream",
+              "type": "string"
+            },
+            "url": {
+              "description": "Endpoint URL.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "RelayComponentConfig": {
       "additionalProperties": true,
       "description": "Generic NeMo Relay plugin component configuration.",
@@ -573,6 +609,13 @@
           "description": "Additional Relay plugin components.",
           "items": {
             "$ref": "#/$defs/RelayComponentConfig"
+          },
+          "type": "array"
+        },
+        "dynamic_plugins": {
+          "description": "Ordered manifest-backed plugins activated for this run.",
+          "items": {
+            "$ref": "#/$defs/RelayDynamicPluginConfig"
           },
           "type": "array"
         },
@@ -636,6 +679,76 @@
       },
       "type": "object"
     },
+    "RelayDynamicPluginConfig": {
+      "description": "One invocation-scoped NeMo Relay dynamic plugin activation.",
+      "properties": {
+        "config": {
+          "additionalProperties": true,
+          "description": "Component-local plugin configuration.",
+          "type": "object"
+        },
+        "environment_ref": {
+          "description": "Optional lifecycle-managed environment path.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/RelayDynamicPluginKind",
+          "description": "Dynamic plugin execution lane."
+        },
+        "manifest_ref": {
+          "description": "Path to the authored `relay-plugin.toml`.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Canonical plugin identifier declared by the manifest.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin_id",
+        "kind",
+        "manifest_ref"
+      ],
+      "type": "object"
+    },
+    "RelayDynamicPluginKind": {
+      "description": "Relay dynamic plugin execution lane.",
+      "oneOf": [
+        {
+          "const": "rust_dynamic",
+          "description": "In-process native Rust dynamic library.",
+          "type": "string"
+        },
+        {
+          "const": "worker",
+          "description": "Out-of-process worker plugin.",
+          "type": "string"
+        }
+      ]
+    },
+    "RelayMarkProjection": {
+      "description": "Relay mark projection shape for OTLP exporters.",
+      "oneOf": [
+        {
+          "const": "inherit",
+          "description": "Preserve each mark's requested projection.",
+          "type": "string"
+        },
+        {
+          "const": "event",
+          "description": "Export marks as span events.",
+          "type": "string"
+        },
+        {
+          "const": "tool",
+          "description": "Export marks as tool spans.",
+          "type": "string"
+        }
+      ]
+    },
     "RelayObservabilityConfig": {
       "additionalProperties": true,
       "description": "NeMo Relay observability component configuration.",
@@ -696,7 +809,7 @@
           "description": "Relay config validation policy."
         },
         "version": {
-          "default": 1,
+          "default": 2,
           "description": "Relay observability config version.",
           "format": "uint32",
           "minimum": 0,
@@ -705,10 +818,35 @@
       },
       "type": "object"
     },
+    "RelayOtlpAttributeMapping": {
+      "description": "One Relay event-field to OTLP attribute mapping.",
+      "properties": {
+        "alias": {
+          "description": "Exported OTLP attribute alias.",
+          "type": "string"
+        },
+        "key": {
+          "description": "Canonical Relay event-field key.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "alias"
+      ],
+      "type": "object"
+    },
     "RelayOtlpConfig": {
       "additionalProperties": true,
       "description": "Relay OpenTelemetry/OpenInference export configuration.",
       "properties": {
+        "attribute_mappings": {
+          "description": "Typed Relay-event attribute mappings.",
+          "items": {
+            "$ref": "#/$defs/RelayOtlpAttributeMapping"
+          },
+          "type": "array"
+        },
         "enabled": {
           "default": false,
           "description": "Whether OTLP export is enabled.",
@@ -734,6 +872,21 @@
             "string",
             "null"
           ]
+        },
+        "mark_exclude_names": {
+          "default": [
+            "llm.chunk"
+          ],
+          "description": "Mark names excluded from projection.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mark_projection": {
+          "$ref": "#/$defs/RelayMarkProjection",
+          "default": "inherit",
+          "description": "Projection shape for Relay marks."
         },
         "resource_attributes": {
           "additionalProperties": {

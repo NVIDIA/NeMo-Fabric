@@ -33,10 +33,12 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.ProfileRegistryConfig`](./nemo_fabric.models.md#class-profileregistryconfig): Profile discovery config for portable file-backed agent packages.
 - [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
 - [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
-- [`models.RelayAtofEndpointConfig`](./nemo_fabric.models.md#class-relayatofendpointconfig): NeMo Relay ATOF remote endpoint configuration.
+- [`models.RelayAtofFileSinkConfig`](./nemo_fabric.models.md#class-relayatoffilesinkconfig): NeMo Relay ATOF filesystem sink configuration.
+- [`models.RelayAtofStreamSinkConfig`](./nemo_fabric.models.md#class-relayatofstreamsinkconfig): NeMo Relay ATOF stream sink configuration.
 - [`models.RelayComponentConfig`](./nemo_fabric.models.md#class-relaycomponentconfig): Generic NeMo Relay plugin component configuration.
 - [`models.RelayConfig`](./nemo_fabric.models.md#class-relayconfig): First-class NeMo Relay integration configuration.
 - [`models.RelayConfigPolicy`](./nemo_fabric.models.md#class-relayconfigpolicy): NeMo Relay config validation policy.
+- [`models.RelayDynamicPluginConfig`](./nemo_fabric.models.md#class-relaydynamicpluginconfig): One invocation-scoped NeMo Relay dynamic plugin activation.
 - [`models.RelayHttpStorageConfig`](./nemo_fabric.models.md#class-relayhttpstorageconfig): NeMo Relay ATIF HTTP storage configuration.
 - [`models.RelayObservabilityConfig`](./nemo_fabric.models.md#class-relayobservabilityconfig): NeMo Relay observability component configuration.
 - [`models.RelayOtlpConfig`](./nemo_fabric.models.md#class-relayotlpconfig): NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference.

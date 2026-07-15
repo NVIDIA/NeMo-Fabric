@@ -5,7 +5,21 @@ SPDX-License-Identifier: Apache-2.0
 
 # Hermes Agent Adapter
 
-This adapter runs Hermes Agent through its Python SDK.
+This adapter runs Hermes Agent through one of two Relay-compatible execution
+strategies selected by `harness.settings.relay_launch_mode`:
+
+- `native_plugin` (default) invokes the Hermes Python SDK and activates Relay
+  through its Python API. When `relay.dynamic_plugins` is non-empty, the
+  adapter retains Relay's owned dynamic-plugin host for the complete Hermes
+  call.
+- `cli_wrapper` invokes `nemo-relay run --agent hermes`. Relay owns the
+  transient gateway, hook injection, child process, and cleanup. Dynamic
+  plugins are provisioned through Relay's lifecycle in invocation-isolated
+  directories before Hermes starts.
+
+`cli_wrapper` requires Relay telemetry and Relay 0.6 or newer. Override the
+executable with `harness.settings.relay_cli_command`; it defaults to
+`nemo-relay`.
 
 Fabric invokes the adapter module with `python -m` through the core runtime
 lifecycle. The module entry point and the descriptor's callable route use the
@@ -22,7 +36,8 @@ configuration for:
 - Fabric MCP servers as Hermes MCP server config;
 - `tools.blocked` as Hermes disabled toolsets, unioned with
   `harness.settings.disabled_toolsets`;
-- optional NeMo Relay telemetry plugin configuration.
+- optional NeMo Relay 0.6 observability, built-in component, and dynamic-plugin
+  configuration.
 
 `hermes_home` configures a base directory. The adapter creates a child under
 `runtimes/<runtime_id>` so invocations in one Fabric runtime share Hermes state

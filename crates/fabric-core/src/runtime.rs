@@ -1888,6 +1888,7 @@ fn prepare_relay_runtime_config(
                 .relay_config
                 .clone()
                 .unwrap_or_else(|| Value::Object(Default::default())),
+            "dynamic_plugins": telemetry.relay_dynamic_plugins.clone(),
         },
         "fabric": {
             "agent_name": plan.agent_name.clone(),

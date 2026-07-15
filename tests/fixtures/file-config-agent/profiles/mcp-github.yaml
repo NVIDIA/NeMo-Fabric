@@ -25,6 +25,8 @@ relay:
       filename_template: "trajectory-{session_id}.atif.json"
     atof:
       enabled: true
-      output_directory: ./artifacts/mcp-github
-      filename: events.atof.jsonl
-      mode: overwrite
+      sinks:
+        - type: file
+          output_directory: ./artifacts/mcp-github
+          filename: events.atof.jsonl
+          mode: overwrite

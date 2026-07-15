@@ -14,6 +14,7 @@ from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
+from nemo_fabric import RelayAtofFileSinkConfig
 from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RelayOtlpConfig
 from nemo_fabric import RuntimeConfig
@@ -240,9 +241,13 @@ def with_relay(base: FabricConfig) -> FabricConfig:
             ),
             atof=RelayAtofConfig(
                 enabled=True,
-                output_directory="./artifacts/relay",
-                filename="events.atof.jsonl",
-                mode="overwrite",
+                sinks=[
+                    RelayAtofFileSinkConfig(
+                        output_directory="./artifacts/relay",
+                        filename="events.atof.jsonl",
+                        mode="overwrite",
+                    )
+                ],
             ),
         ),
     )
@@ -293,7 +298,13 @@ def with_relay_openinference(base: FabricConfig) -> FabricConfig:
     if isinstance(observability.atif, RelayAtifConfig):
         observability.atif.output_directory = "./artifacts/relay-openinference"
     if isinstance(observability.atof, RelayAtofConfig):
-        observability.atof.output_directory = "./artifacts/relay-openinference"
+        observability.atof.sinks = [
+            RelayAtofFileSinkConfig(
+                output_directory="./artifacts/relay-openinference",
+                filename="events.atof.jsonl",
+                mode="overwrite",
+            )
+        ]
     return config
 
 
@@ -316,7 +327,9 @@ def with_native_otel(base: FabricConfig) -> FabricConfig:
                                     "enabled": True,
                                     "transport": "http_binary",
                                     "endpoint": "http://localhost:4318/v1/traces",
-                                    "resource_attributes": {"deployment.environment": "dev"},
+                                    "resource_attributes": {
+                                        "deployment.environment": "dev"
+                                    },
                                 },
                             },
                         },

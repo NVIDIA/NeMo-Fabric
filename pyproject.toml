@@ -77,7 +77,7 @@ hermes = [
 ]
 
 relay = [
-  "nemo-relay~=0.5.0",
+  "nemo-relay~=0.6.0",
   "tomli-w~=1.2", # Needed by adapters to write relay config files
 ]
 

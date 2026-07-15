@@ -32,8 +32,10 @@ from nemo_fabric import McpConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
+from nemo_fabric import RelayAtofFileSinkConfig
 from nemo_fabric import RelayComponentConfig
 from nemo_fabric import RelayConfigPolicy
+from nemo_fabric import RelayDynamicPluginConfig
 from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunOutput
 from nemo_fabric import RunPlan
@@ -168,6 +170,7 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         "project": "fabric-tests",
         "output_dir": "./artifacts/relay",
         "components": [],
+        "dynamic_plugins": [],
     }
 
     config.remove_mcp_server("github").remove_mcp_server("missing")
@@ -221,9 +224,13 @@ def test_fabric_config_authors_first_class_relay_observability():
         observability=RelayObservabilityConfig(
             atof=RelayAtofConfig(
                 enabled=True,
-                output_directory="./artifacts/relay",
-                filename="events.atof.jsonl",
-                mode="overwrite",
+                sinks=[
+                    RelayAtofFileSinkConfig(
+                        output_directory="./artifacts/relay",
+                        filename="events.atof.jsonl",
+                        mode="overwrite",
+                    )
+                ],
             ),
             atif=RelayAtifConfig(
                 enabled=True,
@@ -235,6 +242,14 @@ def test_fabric_config_authors_first_class_relay_observability():
         components=[
             RelayComponentConfig(kind="switchyard", config={"route": "canary"}),
         ],
+        dynamic_plugins=[
+            RelayDynamicPluginConfig(
+                plugin_id="example.fixture",
+                kind="rust_dynamic",
+                manifest_ref="./plugins/example/relay-plugin.toml",
+                config={"mode": "test"},
+            )
+        ],
         policy=RelayConfigPolicy(unknown_component="error"),
     )
 
@@ -244,12 +259,17 @@ def test_fabric_config_authors_first_class_relay_observability():
     assert config.to_mapping()["relay"] == {
         "output_dir": "./artifacts/relay",
         "observability": {
-            "version": 1,
+            "version": 2,
             "atof": {
                 "enabled": True,
-                "output_directory": "./artifacts/relay",
-                "filename": "events.atof.jsonl",
-                "mode": "overwrite",
+                "sinks": [
+                    {
+                        "type": "file",
+                        "output_directory": "./artifacts/relay",
+                        "filename": "events.atof.jsonl",
+                        "mode": "overwrite",
+                    }
+                ],
             },
             "atif": {
                 "enabled": True,
@@ -265,6 +285,14 @@ def test_fabric_config_authors_first_class_relay_observability():
                 "enabled": True,
                 "config": {"route": "canary"},
             },
+        ],
+        "dynamic_plugins": [
+            {
+                "plugin_id": "example.fixture",
+                "kind": "rust_dynamic",
+                "manifest_ref": "./plugins/example/relay-plugin.toml",
+                "config": {"mode": "test"},
+            }
         ],
         "policy": {
             "unknown_component": "error",
@@ -344,6 +372,7 @@ def test_config_emits_schema_shape_and_validates():
         "project": "fabric-tests",
         "output_dir": "./artifacts/relay",
         "components": [],
+        "dynamic_plugins": [],
     }
     assert config.extra_fields == {"future_top_level": {"enabled": True}}
 
@@ -367,7 +396,12 @@ def test_agent_model_tracks_rust_schema_top_level_fields():
 
     assert set(pydantic_schema["properties"]).issuperset(schema["properties"])
     assert set(pydantic_schema["required"]) == {"metadata", "harness"}
-    assert set(schema["required"]) == {"schema_version", "metadata", "harness", "runtime"}
+    assert set(schema["required"]) == {
+        "schema_version",
+        "metadata",
+        "harness",
+        "runtime",
+    }
 
 
 def test_environment_model_defines_extension_field_ownership():
@@ -660,7 +694,9 @@ class NativeRecorder:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
-        self.config_profile_calls.append(None if profiles_json is None else json.loads(profiles_json))
+        self.config_profile_calls.append(
+            None if profiles_json is None else json.loads(profiles_json)
+        )
         return json.dumps(_plan()["effective_config"])
 
     def plan_config(
@@ -670,14 +706,18 @@ class NativeRecorder:
         base_dir: str | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
-        self.config_profile_calls.append(None if profiles_json is None else json.loads(profiles_json))
+        self.config_profile_calls.append(
+            None if profiles_json is None else json.loads(profiles_json)
+        )
         return json.dumps(_plan())
 
     def start_runtime(self, plan_json: str) -> str:
         assert json.loads(plan_json)["agent_name"] == "demo"
         return json.dumps(_runtime())
 
-    def invoke_runtime(self, plan_json: str, runtime_json: str, request_json: str) -> str:
+    def invoke_runtime(
+        self, plan_json: str, runtime_json: str, request_json: str
+    ) -> str:
         if self.fail_invoke:
             raise RuntimeError("native invoke failed")
         request = json.loads(request_json)
@@ -744,7 +784,9 @@ def test_run_request_is_validated_and_json_safe():
     overrides["limits"]["turns"] = 2
 
     assert request.request_id == "request-1"
-    assert request.to_mapping()["input"] == {"messages": [{"role": "user", "content": "hello"}]}
+    assert request.to_mapping()["input"] == {
+        "messages": [{"role": "user", "content": "hello"}]
+    }
     assert request.to_mapping()["context"] == {"run_id": "run-1", "labels": ["sdk"]}
     assert request.to_mapping()["overrides"] == {
         "temperature": 0,
@@ -806,7 +848,9 @@ def test_run_request_preserves_extension_fields():
         future_request={"enabled": True},
     )
 
-    assert request.to_mapping()["input"] == {"messages": [{"role": "user", "content": "hello"}]}
+    assert request.to_mapping()["input"] == {
+        "messages": [{"role": "user", "content": "hello"}]
+    }
     assert request.context == {"job_id": "job-1"}
     assert request.extra_fields["future_request"] == {"enabled": True}
 
@@ -888,7 +932,9 @@ def test_run_output_exposes_response_and_preserves_extensions():
 
 
 def test_run_result_wraps_object_output_as_run_output():
-    result = RunResult.from_mapping(_run_result(output={"response": "hello", "usage": {"tokens": 1}}))
+    result = RunResult.from_mapping(
+        _run_result(output={"response": "hello", "usage": {"tokens": 1}})
+    )
 
     assert isinstance(result.output, RunOutput)
     assert result.output.response == "hello"
@@ -924,7 +970,9 @@ def test_run_output_preserves_non_string_response_without_raising():
 
 
 def test_run_result_preserves_structured_response_from_core_valid_output():
-    result = RunResult.from_mapping(_run_result(output={"response": {"text": "hello"}, "usage": {"tokens": 1}}))
+    result = RunResult.from_mapping(
+        _run_result(output={"response": {"text": "hello"}, "usage": {"tokens": 1}})
+    )
 
     assert isinstance(result.output, RunOutput)
     assert result.output.response == {"text": "hello"}
@@ -1173,7 +1221,9 @@ def test_config_methods_accept_real_pydantic_models_and_reject_lookalikes():
     )
     client.plan(config, profiles=[FabricProfileConfig(name="typed")])
 
-    assert native.config_profile_calls == [[{"schema_version": "fabric.profile/v1alpha1", "name": "typed"}]]
+    assert native.config_profile_calls == [
+        [{"schema_version": "fabric.profile/v1alpha1", "name": "typed"}]
+    ]
 
 
 def test_typed_config_profiles_require_profile_models():

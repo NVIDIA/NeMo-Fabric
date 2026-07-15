@@ -34,7 +34,7 @@ dependencies = [
   # Requires 3.x: the 2.x line is incompatible with the langgraph core deepagents
   # pulls (AsyncSqliteSaver fails with 'Connection has no attribute is_alive').
   "langgraph-checkpoint-sqlite>=3.0,<4.0",
-  "nemo-relay~=0.5.0",
+  "nemo-relay~=0.6.0",
 ]
 
 [project.urls]

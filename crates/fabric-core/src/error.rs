@@ -169,6 +169,12 @@ pub enum FabricError {
         /// Why the interpreter cannot be used.
         reason: String,
     },
+    /// NeMo Relay configuration is incompatible with Fabric's supported contract.
+    #[error("invalid NeMo Relay configuration: {message}")]
+    InvalidRelayConfig {
+        /// Validation message.
+        message: String,
+    },
     /// A process runner failed to start or complete.
     #[error("process runner failed for `{command}`: {source}")]
     ProcessRunner {

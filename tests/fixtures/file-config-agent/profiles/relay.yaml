@@ -20,6 +20,8 @@ relay:
       agent_version: fabric-poc
     atof:
       enabled: true
-      output_directory: ./artifacts/relay
-      filename: events.atof.jsonl
-      mode: overwrite
+      sinks:
+        - type: file
+          output_directory: ./artifacts/relay
+          filename: events.atof.jsonl
+          mode: overwrite
