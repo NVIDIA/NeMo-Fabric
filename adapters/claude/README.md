@@ -16,10 +16,29 @@ just wheels
 python -m pip install --find-links dist "nemo-fabric[claude]"
 ```
 
-Claude Code authentication can come from an existing cached login or from
-`ANTHROPIC_API_KEY`. Package installation is verified by the adapter wheel and
-module-entrypoint tests. Authentication is validated when Claude starts the
-invocation.
+## Authentication
+
+Fabric preserves Claude's native credential resolution. Use an existing Claude
+Code login for local development, `ANTHROPIC_AUTH_TOKEN` for a gateway or proxy
+bearer credential, `ANTHROPIC_API_KEY` for a static API credential, or Anthropic
+Workload Identity Federation (WIF) for production and CI workloads that should
+not store a long-lived API key.
+
+The adapter forwards the Anthropic profile and federation environment variables
+that Claude Code and the Claude Agent SDK consume. This includes
+`ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_PROFILE`, the direct federation identifiers,
+and `ANTHROPIC_IDENTITY_TOKEN` or `ANTHROPIC_IDENTITY_TOKEN_FILE`. Fabric reads
+selected environment values and forwards them to the Claude runtime, but it
+does not persist or log them in configuration or artifacts. Authentication is
+validated when Claude starts the invocation.
+
+Unset unused `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` variables before
+using WIF. Anthropic credential resolution treats an empty variable as selected,
+so an empty API credential prevents fallback to a federation profile.
+
+Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/integrations/claude)
+for mode selection, required WIF variables, and the Relay boundary. Package
+installation is verified by the adapter wheel and module-entrypoint tests.
 
 Relay-enabled runs also require the external `nemo-relay` CLI. Install the CLI
 separately:

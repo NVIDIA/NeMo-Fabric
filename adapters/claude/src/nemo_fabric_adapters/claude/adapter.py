@@ -51,6 +51,15 @@ NORMALIZED_SETTING_FIELDS = {
 }
 INHERITED_ENV_NAMES = {
     "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CONFIG_DIR",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_IDENTITY_TOKEN",
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_PROFILE",
+    "ANTHROPIC_SERVICE_ACCOUNT_ID",
+    "ANTHROPIC_WORKSPACE_ID",
     "APPDATA",
     "CLAUDE_CONFIG_DIR",
     "COMSPEC",
@@ -662,7 +671,7 @@ def child_environment(
 ) -> dict[str, str]:
     values = {name: "" for name in os.environ}
     values.update(
-        {name: value for name in INHERITED_ENV_NAMES if (value := os.environ.get(name))}
+        {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
     model = _selected_model_config(payload)
     api_key_env = model.get("api_key_env")
