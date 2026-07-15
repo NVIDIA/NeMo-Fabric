@@ -15,6 +15,23 @@ REPO_ROOT = CUR_DIR.parent.resolve()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+
+@pytest.fixture(name="requires_harbor", scope="session")
+def requires_harbor_fixture():
+    try:
+        import harbor  # noqa: F401
+    except ModuleNotFoundError:
+        pytest.skip("Harbor is not installed")
+
+
+@pytest.fixture(name="requires_hermes_agent", scope="session")
+def requires_hermes_agent_fixture():
+    try:
+        import run_agent  # noqa: F401
+    except ModuleNotFoundError:
+        pytest.skip("Hermes Agent is not installed")
+
+
 @pytest.fixture(name="restore_environ", autouse=True)
 def restore_environ_fixture():
     """
@@ -37,23 +54,6 @@ def restore_environ_fixture():
 @pytest.fixture(name="repo_root", scope="session")
 def repo_root_fixture() -> Path:
     return CUR_DIR.parent.resolve()
-
-@pytest.fixture(name="hermes_cli_agent_dir_src", scope="session")
-def hermes_cli_agent_dir_fixture() -> Path:
-    agent_dir = CUR_DIR / "fixtures" / "hermes-cli-agent"
-    assert agent_dir.exists(), f"Missing fake Hermes CLI agent directory: {agent_dir}"
-    return agent_dir
-
-@pytest.fixture(name="hermes_agent_dir")
-def hermes_agent_dir_fixture(hermes_cli_agent_dir_src: Path, tmp_path: Path) -> Path:
-    """
-    Creates a temporary copy of the fake Hermes CLI agent directory for testing.
-    This mirrors the behavior of the smoke tests.
-    """
-    agent_dir = tmp_path / "hermes-cli-agent"
-    shutil.copytree(hermes_cli_agent_dir_src, agent_dir, ignore=shutil.ignore_patterns("artifacts"))
-    assert agent_dir.exists(), f"Missing fake Hermes CLI agent directory: {agent_dir}"
-    return agent_dir.resolve()
 
 @pytest.fixture(name="hermes_shim_agent_dir_src", scope="session")
 def hermes_shim_agent_dir_src_fixture() -> Path:
@@ -108,28 +108,6 @@ def file_config_agent_dir_fixture(
 
     return _copy_agent_dir(file_config_agent_dir_src, tmp_path, "file-config-agent")
 
-@pytest.fixture(name="hermes_cli_profile", scope="session")
-def hermes_cli_profile_fixture() -> str:
-    return "env_local"
-
-@pytest.fixture(name="hermes_cli_runtime_profile")
-def hermes_cli_runtime_profile_fixture(hermes_agent_dir: Path) -> str:
-    import yaml
-
-    config_path = hermes_agent_dir / "agent.yaml"
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    config["harness"]["settings"]["prepare_runtime_state"] = True
-    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
-    return "env_local"
-
-
-@pytest.fixture(name="hermes_command")
-def hermes_command_fixture(hermes_agent_dir: Path) -> Path:
-    hermes_command = hermes_agent_dir / "bin" / "fake-hermes.py"
-    assert hermes_command.exists(
-    ), f"Missing fake Hermes CLI: {hermes_command}"
-    return hermes_command.resolve()
-
 @pytest.fixture(name="api_server")
 def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
     from _utils.mock_api_server import mock_api_server
@@ -139,13 +117,6 @@ def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
 @pytest.fixture(name="nemo_relay")
 def nemo_relay_fixture() -> types.ModuleType:
     return pytest.importorskip("nemo_relay", reason="nemo-relay extra is required")
-
-@pytest.fixture(name="hermes_state", scope="session")
-def require_hermes_state_fixture() -> types.ModuleType:
-    """
-    Fixture to ensure that the hermes_state module is available for tests that require it.
-    """
-    return pytest.importorskip("hermes_state", reason="hermes extra is required")
 
 @pytest.fixture(name="mock_nvidia_api_key")
 def mock_nvidia_api_key_fixture() -> str:

@@ -1,26 +1,20 @@
 {
   "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "nvidia.fabric.codex.cli",
-  "harness": "codex",
+  "adapter_id": "nvidia.fabric.claude",
+  "harness": "claude",
   "adapter_kind": "python",
   "runner": {
-    "module": "nemo_fabric_adapters.codex_cli.adapter",
-    "callable": "run_codex"
-  },
-  "requirements": {
-    "binaries": ["codex"]
+    "module": "nemo_fabric_adapters.claude.adapter",
+    "callable": "run"
   },
   "config": {
-    "accepts": ["models", "telemetry"]
+    "accepts": ["models", "tools", "mcp", "skills", "telemetry"]
   },
   "telemetry": {
     "providers": {
       "relay": {
         "outputs": ["atif", "otel", "openinference"],
         "integration_modes": ["hooks", "gateway"]
-      },
-      "native": {
-        "outputs": ["otel"]
       }
     }
   }

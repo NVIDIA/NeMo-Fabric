@@ -19,7 +19,7 @@ def make_result(*artifacts: dict[str, str]) -> RunResult:
             "profiles": [],
             "harness": "hermes",
             "adapter_kind": "python",
-            "adapter_id": "nvidia.fabric.hermes.cli",
+            "adapter_id": "nvidia.fabric.hermes",
             "status": "succeeded",
             "runtime_id": "runtime-1",
             "invocation_id": "invocation-1",

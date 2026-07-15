@@ -47,7 +47,7 @@ uv run python -c 'from nemo_fabric.integrations.harbor import FabricAgent; print
 
 Set `fabric_package` to a PEP 508 requirement when the task image needs Fabric
 installed. For example, a released package can use
-`nemo-fabric[harbor,hermes,relay,runtime]==<version>`, while branch testing can
+`nemo-fabric[claude,harbor,hermes,relay,runtime]==<version>`, while branch testing can
 use a pinned Git requirement. Fabric creates an isolated environment at
 `/tmp/nemo-fabric-venv` and puts its console scripts on the runner `PATH`. The
 deprecated `fabric_install_command` remains only for experimental images that
@@ -73,7 +73,7 @@ purpose-built evaluation image for large runs.
 ## Fast local smoke
 
 The [calculator demo](demo/README.md) includes a credential-free scripted
-harness plus Hermes, Hermes with Relay, and Codex configs. It verifies spec
+harness plus Hermes, Hermes with Relay, and Claude configs. It verifies spec
 upload, config loading, workspace mutation, result download, and Harbor reward
 without first downloading SWE-Bench.
 
@@ -86,7 +86,7 @@ comparison:
 ```bash
 export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
 export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
-export FABRIC_PACKAGE='nemo-fabric[harbor,hermes,relay,runtime]==<version>'
+export FABRIC_PACKAGE='nemo-fabric[claude,harbor,hermes,relay,runtime]==<version>'
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 export NVIDIA_API_KEY=...
 ```
@@ -107,29 +107,28 @@ uv run harbor run \
   --n-concurrent 1 --n-attempts 1 --max-retries 1
 ```
 
-For Codex, keep the dataset, task, attempts, and concurrency fixed, and change
-only the config, model, and required credential/bootstrap inputs:
+For Claude, keep the task, attempts, and concurrency fixed, and change only the
+config, model, and credential:
 
 ```bash
-export OPENAI_API_KEY=...
-export FABRIC_CODEX_PACKAGE='nemo-fabric[codex,harbor,runtime]==<version>'
+export ANTHROPIC_API_KEY=...
 
 uv run harbor run \
   --task swe-bench/django__django-13741 \
   --agent-import-path "$FABRIC_AGENT" \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
-  --ak fabric_config_path=configs/codex.yaml \
-  --ak 'fabric_install_command=python3 -m pip install "nemo-fabric[codex,harbor,runtime]==<version>" && npm install --global @openai/codex@0.142.4' \
-  --model openai/gpt-5.4 \
-  --ae "OPENAI_API_KEY=$OPENAI_API_KEY" \
-  --job-name django-13741-codex \
+  --ak fabric_config_path=configs/claude.yaml \
+  --ak "fabric_package=$FABRIC_PACKAGE" \
+  --model anthropic/claude-sonnet-4-5 \
+  --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
+  --job-name django-13741-claude \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 --n-attempts 1 --max-retries 1
 ```
 
-The arbitrary install command is shown only because the registry task also
-needs the Codex npm binary. A full evaluation should bake Fabric and the CLI
-into a pinned image instead.
+The checked-in Harbor example treats Hermes and Claude as the two qualified
+harnesses. Other adapters remain available in Fabric but are intentionally not
+presented as Harbor-qualified here.
 
 For a self-hosted Nemotron 3 Nano NIM, Hermes requires OpenAI-compatible
 automatic tool calling. The current image accepts the vLLM options through
@@ -213,6 +212,15 @@ and ATIF independently; do not derive ATIF from ATOF through a separate
 converter. Fabric promotes Relay's ATIF to `agent/trajectory.json`, and Harbor
 validates that canonical file with its trajectory model.
 
+## Review sample artifacts
+
+Curated, sanitized outputs from the qualified one-task runs live under
+[`swebench/sample-artifacts/`](swebench/sample-artifacts/). Each harness bundle
+contains a compact result summary, verifier summary, representative workspace
+patch, and telemetry summary when emitted. These files are quick references,
+not substitutes for the complete Harbor trial directory: raw prompts, secrets,
+large logs, and full token-heavy trajectories are deliberately excluded.
+
 ## Progress from a spot check to a full run
 
 Do not begin with all 500 tasks:
@@ -251,6 +259,7 @@ uv run harbor job resume --job-path "$RUNS_DIR/<job-name>"
 | --- | --- |
 | `examples/harbor/swebench/` | `/tmp/nemo-fabric-config/` in portable mode |
 | `configs/hermes.yaml` | `/tmp/nemo-fabric-config/configs/hermes.yaml` |
+| `configs/claude.yaml` | `/tmp/nemo-fabric-config/configs/claude.yaml` |
 | SWE-Bench checkout | `/testbed/` |
 | `mcp/repo_inspector.py` | `/tmp/nemo-fabric-config/mcp/repo_inspector.py` |
 | `examples/harbor/demo/task/environment/fabric/` | `/opt/fabric-demo/` via the demo Dockerfile `COPY` |

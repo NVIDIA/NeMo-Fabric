@@ -6,7 +6,7 @@ metadata:
   name: harbor-swebench-hermes-tools
   description: Hermes with an explicit, config-owned toolset selection.
 harness:
-  adapter_id: nvidia.fabric.hermes.cli
+  adapter_id: nvidia.fabric.hermes
   resolution: preinstalled
   settings:
     cwd: /testbed

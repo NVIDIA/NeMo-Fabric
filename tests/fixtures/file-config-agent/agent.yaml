@@ -8,7 +8,7 @@ metadata:
   description: Test fixture for file-backed configuration and profiles.
 
 harness:
-  adapter_id: nvidia.fabric.hermes.sdk
+  adapter_id: nvidia.fabric.hermes
   resolution: preinstalled
   settings:
     workspace: ./repos/my-service

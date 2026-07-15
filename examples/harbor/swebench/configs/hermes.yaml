@@ -4,9 +4,9 @@
 schema_version: fabric.agent/v1alpha1
 metadata:
   name: harbor-swebench-hermes
-  description: Hermes CLI baseline for one Harbor SWE-Bench task.
+  description: Hermes baseline for one Harbor SWE-Bench task.
 harness:
-  adapter_id: nvidia.fabric.hermes.cli
+  adapter_id: nvidia.fabric.hermes
   resolution: preinstalled
   settings:
     cwd: /testbed

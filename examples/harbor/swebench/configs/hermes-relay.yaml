@@ -6,7 +6,7 @@ metadata:
   name: harbor-swebench-hermes-relay
   description: Hermes with Relay ATOF and ATIF run evidence.
 harness:
-  adapter_id: nvidia.fabric.hermes.cli
+  adapter_id: nvidia.fabric.hermes
   resolution: preinstalled
   settings:
     cwd: /testbed

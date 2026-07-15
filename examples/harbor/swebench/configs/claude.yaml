@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: harbor-swebench-claude
+  description: Claude baseline for one Harbor SWE-Bench task.
+harness:
+  adapter_id: nvidia.fabric.claude
+  resolution: preinstalled
+  settings:
+    permission_mode: bypassPermissions
+    max_turns: 50
+    timeout_seconds: 1800
+models:
+  default:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    api_key_env: ANTHROPIC_API_KEY
+runtime:
+  input_schema: text
+  output_schema: message
+  artifacts: /logs/agent/fabric-artifacts/swebench/claude
+environment:
+  provider: local
+  workspace: /testbed
+  artifacts: /logs/agent/fabric-artifacts/swebench/claude
+telemetry:
+  enabled: false

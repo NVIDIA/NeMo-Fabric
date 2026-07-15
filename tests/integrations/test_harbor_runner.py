@@ -21,12 +21,13 @@ DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
 DEMO_CONFIGS = DEMO_ROOT / "task" / "environment" / "fabric" / "configs"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_CONFIGS = SWEBENCH_ROOT / "configs"
-CODEX_CONFIG = DEMO_ROOT / "task" / "environment" / "fabric" / "configs" / "codex.yaml"
+CLAUDE_CONFIG = DEMO_ROOT / "task" / "environment" / "fabric" / "configs" / "claude.yaml"
 RELAY_CONFIG = DEMO_ROOT / "task" / "environment" / "fabric" / "configs" / "hermes-relay.yaml"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = ROOT / "python" / "src" / "nemo_fabric" / "integrations" / "harbor" / "README.md"
 HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
 
+pytestmark = pytest.mark.usefixtures("requires_harbor")
 
 def load_codex_adapter():
     path = ROOT / "adapters/codex-cli/src/nemo_fabric_adapters/codex_cli/adapter.py"
@@ -328,18 +329,18 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
     assert adapter.resolve_cwd(payload) == tmp_path
 
 
-def test_codex_demo_uses_current_adapter_contract():
-    config = yaml.safe_load(CODEX_CONFIG.read_text(encoding="utf-8"))
+def test_claude_demo_uses_current_adapter_contract():
+    config = yaml.safe_load(CLAUDE_CONFIG.read_text(encoding="utf-8"))
     settings = config["harness"]["settings"]
 
     assert config["schema_version"] == "fabric.agent/v1alpha1"
-    assert config["harness"]["adapter_id"] == "nvidia.fabric.codex.cli"
-    assert settings["sandbox"] == "danger-full-access"
-    assert settings["skip_git_repo_check"] is True
-    assert settings["config_overrides"]["model_reasoning_effort"] == "high"
+    assert config["harness"]["adapter_id"] == "nvidia.fabric.claude"
+    assert settings["permission_mode"] == "bypassPermissions"
+    assert settings["max_turns"] == 20
+    assert config["models"]["default"]["provider"] == "anthropic"
     dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
-    assert "nemo-fabric[codex,harbor,hermes,relay,runtime]" in dockerfile
-    assert "@openai/codex@0.142.4" in dockerfile
+    assert "nemo-fabric[claude,harbor,hermes,relay,runtime]" in dockerfile
+    assert "@openai/codex" not in dockerfile
 
 
 def test_harbor_demo_uses_complete_configs_without_profiles():
@@ -348,7 +349,7 @@ def test_harbor_demo_uses_complete_configs_without_profiles():
     configs = sorted(DEMO_CONFIGS.glob("*.yaml"))
 
     assert [path.name for path in configs] == [
-        "codex.yaml",
+        "claude.yaml",
         "hermes-relay.yaml",
         "hermes.yaml",
         "smoke.yaml",
@@ -382,7 +383,7 @@ def test_harbor_demo_documents_explicit_cli_commands():
 
     assert "run.sh" not in demo
     assert "demo/run.sh" not in integration
-    assert demo.count("uv run --extra runtime --extra harbor harbor run") == 1
+    assert demo.count("uv run --extra runtime --extra harbor harbor run") == 4
     for flag in (
         "--path",
         "--agent",
@@ -391,9 +392,9 @@ def test_harbor_demo_documents_explicit_cli_commands():
     ):
         assert flag in demo
     for value in (
-            "swe-bench/swe-bench-verified",
-            "django__django-13741",
-            "--task swe-bench/django__django-13741",
+        "swe-bench/swe-bench-verified",
+        "django__django-13741",
+        "--task swe-bench/django__django-13741",
         "--skill",
         "--mcp-config",
         "harbor job resume",
@@ -461,7 +462,7 @@ def test_swebench_matrix_uses_complete_configs_and_one_fixed_task():
 
     configs = sorted(SWEBENCH_CONFIGS.glob("*.yaml"))
     assert [path.name for path in configs] == [
-        "codex.yaml",
+        "claude.yaml",
         "hermes-relay.yaml",
         "hermes-tools.yaml",
         "hermes.yaml",
@@ -477,11 +478,11 @@ def test_swebench_matrix_uses_complete_configs_and_one_fixed_task():
     )
     assert tools_config.harness.settings["enabled_toolsets"] == ["terminal", "file"]
 
-    assert (SWEBENCH_CONFIGS / "adapters/hermes-cli/fabric-adapter.json").read_text() == (
-        ROOT / "adapters/hermes-cli/fabric-adapter.json"
+    assert (SWEBENCH_CONFIGS / "adapters/hermes/fabric-adapter.json").read_text() == (
+        ROOT / "adapters/hermes/fabric-adapter.json"
     ).read_text()
-    assert (SWEBENCH_CONFIGS / "adapters/codex-cli/fabric-adapter.json").read_text() == (
-        ROOT / "adapters/codex-cli/fabric-adapter.json"
+    assert (SWEBENCH_CONFIGS / "adapters/claude/fabric-adapter.json").read_text() == (
+        ROOT / "adapters/claude/fabric-adapter.json"
     ).read_text()
 
     readme = INTEGRATION_README.read_text(encoding="utf-8")

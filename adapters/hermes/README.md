@@ -3,11 +3,9 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Hermes SDK Adapter
+# Hermes Agent Adapter
 
-This adapter runs Hermes through its Python SDK. It is the preferred Hermes path
-for Python consumers such as NeMo Platform, Gym-style agent servers, and direct
-Fabric SDK use.
+This adapter runs Hermes Agent through its Python SDK. 
 
 Fabric invokes the adapter module with `python -m` through the core runtime
 lifecycle. The module entry point and the descriptor's callable route use the
