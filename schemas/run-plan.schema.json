@@ -5,7 +5,7 @@
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "Fabric config areas accepted by this adapter.",
+          "description": "Fabric config areas or policy paths accepted by this adapter.",
           "items": {
             "type": "string"
           },
@@ -257,6 +257,11 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "tools": {
+          "$ref": "#/$defs/ToolsPlan",
+          "default": {},
+          "description": "Normalized tool policy."
         },
         "tools_configured": {
           "default": false,
@@ -609,6 +614,14 @@
           "description": "Telemetry configuration."
         },
         "tools": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Tool capability configuration."
         }
       },
@@ -1594,6 +1607,33 @@
         }
       },
       "type": "object"
+    },
+    "ToolsConfig": {
+      "additionalProperties": true,
+      "description": "Harness-neutral tool capability configuration.",
+      "properties": {
+        "blocked": {
+          "description": "Adapter-native tool names or toolset names to block.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ToolsPlan": {
+      "description": "Normalized tool policy for a run.",
+      "properties": {
+        "blocked": {
+          "description": "Adapter-native tool names or toolset names to block.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1631,6 +1671,7 @@
         "native": {
           "tools_configured": false
         },
+        "tools": {},
         "tools_configured": false,
         "unsupported": {
           "tools_configured": false

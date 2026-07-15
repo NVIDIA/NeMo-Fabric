@@ -170,6 +170,14 @@
           "description": "Telemetry configuration."
         },
         "tools": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Tool capability configuration."
         }
       },
@@ -1007,6 +1015,20 @@
       "properties": {
         "config": {
           "description": "Provider-specific pass-through config."
+        }
+      },
+      "type": "object"
+    },
+    "ToolsConfig": {
+      "additionalProperties": true,
+      "description": "Harness-neutral tool capability configuration.",
+      "properties": {
+        "blocked": {
+          "description": "Adapter-native tool names or toolset names to block.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"

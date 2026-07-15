@@ -79,6 +79,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                         "plugins_enabled": ["custom/plugin"],
                     }
                 },
+                "tools": {"blocked": ["shell", "browser"]},
                 "models": {
                     "review": {
                         "provider": "nvidia",
@@ -100,7 +101,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         },
         "agent": {
             "max_turns": 4,
-            "disabled_toolsets": ["browser"],
+            "disabled_toolsets": ["shell", "browser"],
         },
         "terminal": {
             "backend": "local",
@@ -340,6 +341,7 @@ def test_summarize_hermes_config():
         "mcp_servers": ["a", "z"],
         "plugins": ["observability/nemo_relay"],
         "platform_toolsets": {"cli": ["git"]},
+        "disabled_toolsets": [],
     }
 
 

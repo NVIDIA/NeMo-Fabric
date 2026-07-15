@@ -18,8 +18,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::config::{
-    AdapterKind, CapabilityPlan, ControlLocation, EffectiveConfig, EnvironmentOwnership, RunPlan,
-    TelemetryPlan,
+    AdapterKind, CapabilityKind, CapabilityPlan, CapabilityTarget, ControlLocation,
+    EffectiveConfig, EnvironmentOwnership, RunPlan, TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
@@ -408,6 +408,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
 
 /// Start or connect to a harness runtime.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
+    validate_blocked_tools_support(plan)?;
     let environment = prepare_environment(plan)?;
     match adapter_kind(plan) {
         AdapterKind::Process => ProcessAdapter.start(plan, environment),
@@ -425,6 +426,7 @@ pub fn invoke_runtime(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
+    validate_blocked_tools_support(plan)?;
     validate_runtime_handle(plan, runtime)?;
     match adapter_kind(plan) {
         AdapterKind::Process => ProcessAdapter.invoke(plan, runtime, request),
@@ -434,6 +436,18 @@ pub fn invoke_runtime(
             adapter_kind,
         }),
     }
+}
+
+fn validate_blocked_tools_support(plan: &RunPlan) -> Result<()> {
+    if let Some(route) = plan.capability_plan.routes.iter().find(|route| {
+        route.kind == CapabilityKind::Tools && route.target == CapabilityTarget::Unsupported
+    }) {
+        return Err(FabricError::UnsupportedToolsPolicy {
+            harness: harness(plan),
+            reason: route.reason.clone(),
+        });
+    }
+    Ok(())
 }
 
 /// Stop or detach from a harness runtime.
@@ -2033,6 +2047,37 @@ environment:
         );
         assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_rejects_blocked_tools_when_adapter_cannot_enforce_them() {
+        let root = temp_process_agent_dir();
+        let config_path = root.join("agent.yaml");
+        let mut config = fs::read_to_string(&config_path).expect("read config");
+        config.push_str("tools:\n  blocked:\n    - shell\n");
+        fs::write(&config_path, config).expect("write blocked tools config");
+        fs::write(
+            root.join("adapters/process/fabric-adapter.json"),
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.process",
+  "harness": "process",
+  "adapter_kind": "process",
+  "config": {"accepts": ["tools"]}
+}"#,
+        )
+        .expect("write generic tools descriptor");
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+
+        let error = start_runtime(&plan).expect_err("unsupported tools policy must fail closed");
+
+        assert!(matches!(error, FabricError::UnsupportedToolsPolicy { .. }));
+        assert!(
+            error
+                .to_string()
+                .contains("cannot enforce configured blocked tools")
+        );
         let _ = fs::remove_dir_all(root);
     }
 
