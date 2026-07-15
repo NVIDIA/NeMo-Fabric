@@ -478,6 +478,8 @@ def test_swebench_matrix_uses_complete_configs_and_one_fixed_task():
     )
     assert tools_config.harness.settings["enabled_toolsets"] == ["terminal", "file"]
 
+    # TODO: Remove the bundled copies and these equality checks after Fabric
+    # discovers adapter descriptors directly from source checkouts and wheels.
     assert (SWEBENCH_CONFIGS / "adapters/hermes/fabric-adapter.json").read_text() == (
         ROOT / "adapters/hermes/fabric-adapter.json"
     ).read_text()
@@ -488,9 +490,6 @@ def test_swebench_matrix_uses_complete_configs_and_one_fixed_task():
         (SWEBENCH_CONFIGS / "adapters/hermes/fabric-adapter.json").read_text()
     )
     assert "models" in hermes_descriptor["config"]["accepts"]
-    assert (SWEBENCH_CONFIGS / "adapters/hermes/fabric-adapter.json").read_text() == (
-        ROOT / "adapters/hermes/fabric-adapter.json"
-    ).read_text()
 
     readme = INTEGRATION_README.read_text(encoding="utf-8")
     assert readme.count("django__django-13741") >= 4

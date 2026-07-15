@@ -46,6 +46,11 @@ uv run python -c 'from nemo_fabric.integrations.harbor import FabricAgent; print
   include config-local adapter descriptors under `configs/adapters/`; the
   selected adapter package still supplies the executable Python code.
 
+The config-local descriptors are a temporary compatibility measure. Remove
+these copies after Fabric discovers canonical adapter descriptors directly from
+source checkouts and installed wheels. Until then, tests require each copy to
+match its repository descriptor exactly.
+
 Set `fabric_package` to a PEP 508 requirement when the task image needs Fabric
 installed. For example, a released package can use
 `nemo-fabric[claude,harbor,hermes,relay,runtime]==<version>`, while branch testing can
