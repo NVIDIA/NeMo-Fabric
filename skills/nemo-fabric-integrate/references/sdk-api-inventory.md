@@ -8,8 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 `Fabric()` is the primary entrypoint. It is a plain, reusable object — not a
 lifecycle context manager — and can plan, diagnose, or start multiple
 independent runtimes. Exact signatures live in the generated references — the
-[client reference](../../../docs/reference/api/python-library-reference/nemo_fabric.client.md)
-and [runtime reference](../../../docs/reference/api/python-library-reference/nemo_fabric.runtime.md).
+[client reference](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/client)
+and [runtime reference](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/runtime).
 
 ## Fabric Methods
 

@@ -53,7 +53,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
   environment, build wheels with `just wheels`, then
   `uv pip install --find-links <dist_dir> "nemo-fabric[runtime]"` (add the
   `harbor` extra for the Harbor integration). See the
-  [installation guide](../../docs/getting-started/install.mdx).
+  [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install).
 - Select a harness adapter — the `adapter_id` set in `HarnessConfig`, for example
   `nvidia.fabric.hermes` — and install its extra the same way, for example
   `uv pip install --find-links <dist_dir> "nemo-fabric[adapters-hermes]"`
@@ -110,7 +110,7 @@ def to_fabric_config(job) -> FabricConfig:
 - Pass `base_dir=...` to any `Fabric` call when the config uses relative paths,
   so skills, workspaces, and artifacts anchor to the consumer's own layout.
 
-The repository [`code_review_agent` example](../../examples/code_review_agent/README.md)
+The repository [`code_review_agent` example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
 shows this pattern end to end with complete Hermes, Codex CLI, Deep Agents,
 environment, MCP, and telemetry variants. Reuse it rather than duplicating config
 construction.
@@ -237,20 +237,20 @@ result-field and error inventory, and
 
 Link to these canonical sources instead of duplicating them:
 
-- [Python SDK guide](../../docs/sdk/python.mdx)
-- [Getting started](../../docs/getting-started/overview.mdx) and
-  [installation guide](../../docs/getting-started/install.mdx)
+- [Python SDK guide](https://docs.nvidia.com/nemo/fabric/sdk/python)
+- [Getting started](https://docs.nvidia.com/nemo/fabric/getting-started/overview) and
+  [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install)
 - Generated API reference — exact signatures and fields:
-  [client](../../docs/reference/api/python-library-reference/nemo_fabric.client.md),
-  [runtime](../../docs/reference/api/python-library-reference/nemo_fabric.runtime.md),
-  [models](../../docs/reference/api/python-library-reference/nemo_fabric.models.md),
-  [types](../../docs/reference/api/python-library-reference/nemo_fabric.types.md),
-  [errors](../../docs/reference/api/python-library-reference/nemo_fabric.errors.md)
+  [client](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/client),
+  [runtime](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/runtime),
+  [models](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/models),
+  [types](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/types),
+  [errors](https://docs.nvidia.com/nemo/fabric/reference/api/python-library-reference/errors)
 - Canonical in-memory config example:
-  [examples/code_review_agent](../../examples/code_review_agent/README.md)
+  [examples/code_review_agent](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
 - Platform and evaluation-harness integration:
-  [examples/harbor](../../examples/harbor/README.md) and
-  [nemo_fabric.integrations.harbor](../../python/src/nemo_fabric/integrations/harbor/README.md).
+  [examples/harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor) and
+  [nemo_fabric.integrations.harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/python/src/nemo_fabric/integrations/harbor).
   Note the difference: Harbor bakes a config into the task image and passes it as
   a file-backed `fabric_config_path` (YAML) at the container boundary. That is a
   Harbor deployment mechanic, not the in-memory `FabricConfig` pattern this skill

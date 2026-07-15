@@ -5,6 +5,28 @@ SPDX-License-Identifier: Apache-2.0
 
 # AGENTS.md
 
+## Agent Skills
+
+NeMo Fabric ships two tiers of agent skills. Use the tier that matches your task:
+
+- **Consumer skills — `skills/`.** For integrating NeMo Fabric into an external
+  application, service, evaluation harness, or platform through the public Python
+  SDK. They are self-contained and exportable, depending only on supported public
+  SDK contracts and the published documentation, never on repository internals.
+  Start with [`skills/README.md`](skills/README.md).
+- **Maintainer skills — `.agents/skills/`.** For contributing to NeMo Fabric
+  itself: API, documentation, testing, CI, packaging, release, adapter
+  onboarding, and PR preparation. They may reference repository internals and
+  contribution commands. Start with
+  [`.agents/skills/README.md`](.agents/skills/README.md).
+
+Keep the tiers separate: do not add consumer integration guidance to the
+maintainer set, or repository-internal contribution steps to the consumer set.
+Coding agents that auto-discover skills read the maintainer set from
+`.agents/skills/` (also exposed at `.claude/skills` for Claude Code); the
+consumer set under `skills/` is meant to be exported into a consumer's own
+project.
+
 ## Documentation And Contribution Workflow
 
 These workflow notes keep public documentation, examples, and PR preparation aligned
