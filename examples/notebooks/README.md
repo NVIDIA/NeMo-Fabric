@@ -23,7 +23,7 @@ variations notebook shows advanced composition against a real, maintained agent.
 - To actually *run* a harness (rather than just inspect its config), that
   harness's adapter and credentials must be present:
   - **Hermes** (both notebooks): install Hermes in its own environment (the repo
-    README's [Hermes quick start](../../README.md#quick-start-hermes-sdk))
+    README's [Hermes quick start](../../README.md#quick-start-hermes-agent))
     and set `NVIDIA_API_KEY`. The setup cell auto-detects `.tmp/hermes-venv`.
   - **Deep Agents, Codex, Claude** (variations notebook): the matching adapter
     installed in the Fabric environment, plus that harness's credentials

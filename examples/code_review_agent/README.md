@@ -20,8 +20,8 @@ into the project virtual environment:
 just build-all
 ```
 
-The default variant uses Hermes SDK with an NVIDIA-hosted model. Follow the
-[Hermes SDK quick start](../../README.md#quick-start-hermes-sdk) to install
+The default variant uses Hermes with an NVIDIA-hosted model. Follow the
+[Hermes quick start](../../README.md#quick-start-hermes) to install
 Hermes, then set `NVIDIA_API_KEY` and `ADAPTER_PYTHON` as described there.
 
 The config also demonstrates a harness-native GitHub MCP server. Set
@@ -41,7 +41,7 @@ environment, and telemetry plan.
 
 ## Run the agent
 
-Run one request through the default Hermes SDK variant:
+Run one request through the default Hermes variant:
 
 ```bash
 .venv/bin/python -m examples.code_review_agent \
@@ -49,7 +49,7 @@ Run one request through the default Hermes SDK variant:
 ```
 
 The command prints a normalized `RunResult` and writes runtime artifacts under
-`examples/code_review_agent/artifacts/hermes-sdk/`.
+`examples/code_review_agent/artifacts/hermes/`.
 
 ## Choose a variant
 
@@ -58,8 +58,7 @@ The entrypoint exposes complete harness configs defined in
 
 | Variant | Command option | Additional setup |
 | --- | --- | --- |
-| Hermes SDK | `--variant hermes-sdk` | Installed [Hermes SDK adapter requirements](../../adapters/hermes-sdk/README.md) and `NVIDIA_API_KEY`|
-| Hermes CLI | `--variant hermes-cli` | Installed [Hermes CLI adapter requirements](../../adapters/hermes-cli/README.md) and `NVIDIA_API_KEY`|
+| Hermes | `--variant hermes` | Installed [Hermes adapter requirements](../../adapters/hermes/README.md) and `NVIDIA_API_KEY`|
 | Codex CLI | `--variant codex-cli` | Installed and authenticated [Codex CLI](../../adapters/codex-cli/README.md) |
 | Claude | `--variant claude` | Installed [Claude adapter requirements](../../adapters/claude/README.md) and `ANTHROPIC_API_KEY` |
 | Deep Agents | `--variant deepagents` | Installed [Deep Agents adapter requirements](../../adapters/deepagents/README.md) and `NVIDIA_API_KEY` |
@@ -71,7 +70,7 @@ environment.
 
 ```bash
 .venv/bin/python -m examples.code_review_agent \
-  --variant hermes-sdk \
+  --variant hermes \
   --relay \
   --input "Review calculator.py"
 ```
@@ -88,12 +87,12 @@ application-owned composition:
 ```python
 from examples.code_review_agent import (
     BASE_DIR,
-    hermes_sdk_config,
+    hermes_config,
     with_opensandbox,
     with_relay,
 )
 
-config = hermes_sdk_config()
+config = hermes_config()
 relay_config = with_relay(config)
 sandbox_config = with_opensandbox(config)
 ```

@@ -14,8 +14,7 @@ from examples.code_review_agent import __main__ as main_module
 from examples.code_review_agent import base_config
 from examples.code_review_agent import claude_config
 from examples.code_review_agent import codex_cli_config
-from examples.code_review_agent import hermes_cli_config
-from examples.code_review_agent import hermes_sdk_config
+from examples.code_review_agent import hermes_config
 from examples.code_review_agent import with_fabric_managed_github_mcp
 from examples.code_review_agent import with_native_otel
 from examples.code_review_agent import with_opensandbox
@@ -29,20 +28,18 @@ from nemo_fabric import RunOutput
 
 def test_variant_builders_return_independent_complete_configs():
     base = base_config()
-    sdk = hermes_sdk_config()
-    cli = hermes_cli_config()
+    hermes = hermes_config()
     codex = codex_cli_config()
     claude = claude_config()
 
-    for config in (base, sdk, cli, codex, claude):
+    for config in (base, hermes, codex, claude):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
         assert "default" in config.models
 
-    assert sdk is not base
-    assert sdk.harness is not base.harness
-    assert cli.harness.adapter_id == "nvidia.fabric.hermes.cli"
+    assert hermes is not base
+    assert hermes.harness is not base.harness
     assert codex.harness.adapter_id == "nvidia.fabric.codex.cli"
     assert codex.mcp is None
     assert codex.skills is None
@@ -59,7 +56,7 @@ def test_variant_builders_return_independent_complete_configs():
 
 
 def test_capability_and_telemetry_variants_do_not_mutate_their_input():
-    base = hermes_sdk_config()
+    base = hermes_config()
     variants = (
         with_fabric_managed_github_mcp(base),
         with_native_otel(base),
@@ -89,12 +86,7 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
 def test_variants_plan_without_file_profiles():
     client = Fabric()
 
-    for config in (
-        hermes_sdk_config(),
-        hermes_cli_config(),
-        codex_cli_config(),
-        claude_config(),
-    ):
+    for config in (hermes_config(), codex_cli_config(), claude_config()):
         plan = client.plan(config, base_dir=BASE_DIR)
         assert plan.profiles == ()
         assert plan.agent_name == "code-review-agent"
@@ -103,11 +95,10 @@ def test_variants_plan_without_file_profiles():
 
 def test_example_entrypoint_plans_without_starting_a_runtime():
     cases = (
-        ([], "nvidia.fabric.hermes.sdk", False),
-        (["--variant", "hermes-cli"], "nvidia.fabric.hermes.cli", False),
+        ([], "nvidia.fabric.hermes", False),
         (["--variant", "codex-cli"], "nvidia.fabric.codex.cli", False),
         (["--variant", "claude"], "nvidia.fabric.claude", False),
-        (["--relay"], "nvidia.fabric.hermes.sdk", True),
+        (["--relay"], "nvidia.fabric.hermes", True),
     )
 
     for options, adapter_id, relay_enabled in cases:

@@ -5,15 +5,21 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
-import nemo_fabric_adapters.common.hermes as hermes_common
+import pytest
 import yaml
+
+pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
+
+if importlib.util.find_spec("run_agent") is not None:
+    from nemo_fabric_adapters.hermes import adapter as hermes_adapter
 
 
 def test_hermes_config_mapping(tmp_path: Path):
     hermes_home = tmp_path / "home"
-    config_path, config = hermes_common.write_hermes_config(
+    config_path, config = hermes_adapter.write_hermes_config(
         payload(str(tmp_path)),
         hermes_home,
         relay_enabled=True,

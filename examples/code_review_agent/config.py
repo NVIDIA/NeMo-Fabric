@@ -33,7 +33,7 @@ def base_config() -> FabricConfig:
             description="Reviews code changes and summarizes correctness risks.",
         ),
         harness=HarnessConfig(
-            adapter_id="nvidia.fabric.hermes.sdk",
+            adapter_id="nvidia.fabric.hermes",
             resolution="preinstalled",
             settings={"workspace": WORKSPACE},
         ),
@@ -67,12 +67,12 @@ def base_config() -> FabricConfig:
     return config
 
 
-def hermes_sdk_config() -> FabricConfig:
-    """Return the complete Hermes SDK variant."""
+def hermes_config() -> FabricConfig:
+    """Return the complete Hermes variant."""
 
     config = base_config().model_copy(deep=True)
     config.harness = HarnessConfig(
-        adapter_id="nvidia.fabric.hermes.sdk",
+        adapter_id="nvidia.fabric.hermes",
         resolution="preinstalled",
         settings={
             "workspace": WORKSPACE,
@@ -89,41 +89,12 @@ def hermes_sdk_config() -> FabricConfig:
     config.runtime = RuntimeConfig(
         input_schema="chat",
         output_schema="message",
-        artifacts="./artifacts/hermes-sdk",
+        artifacts="./artifacts/hermes",
     )
     config.environment = EnvironmentConfig(
         provider="local",
         workspace=WORKSPACE,
-        artifacts="./artifacts/hermes-sdk",
-    )
-    return config
-
-
-def hermes_cli_config() -> FabricConfig:
-    """Return the complete Hermes CLI variant."""
-
-    config = base_config().model_copy(deep=True)
-    config.harness = HarnessConfig(
-        adapter_id="nvidia.fabric.hermes.cli",
-        resolution="preinstalled",
-        settings={
-            "workspace": WORKSPACE,
-            "hermes_home": "./artifacts/hermes-cli/home",
-            "base_url": "https://integrate.api.nvidia.com/v1",
-            "max_iterations": 1,
-            "terminal_timeout": 60,
-            "enabled_toolsets": [],
-        },
-    )
-    config.runtime = RuntimeConfig(
-        input_schema="chat",
-        output_schema="message",
-        artifacts="./artifacts/hermes-cli",
-    )
-    config.environment = EnvironmentConfig(
-        provider="local",
-        workspace=WORKSPACE,
-        artifacts="./artifacts/hermes-cli",
+        artifacts="./artifacts/hermes",
     )
     return config
 
