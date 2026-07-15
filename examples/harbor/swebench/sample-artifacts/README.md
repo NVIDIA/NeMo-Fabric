@@ -3,23 +3,21 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Qualified Harness Samples
+# Qualified Relay Sample
 
-These compact bundles were curated from successful Harbor runs of
-`swe-bench/django__django-13741` on July 14, 2026. Both runs completed without
-an orchestration exception, Fabric reported `succeeded`, and Harbor's verifier
-returned reward `1.0`.
+This bundle comes from a successful Harbor run of
+`swe-bench/django__django-13741` on July 14, 2026. Fabric reported `succeeded`,
+Harbor's verifier returned reward `1.0`, and Relay emitted both ATOF and ATIF.
 
-The files are review aids, not complete trial directories. Runtime IDs, request
-IDs, host paths, prompts, verbose logs, full Claude events, and credentials are
-excluded. `workspace.patch` is the relevant source-code portion of the collected
-patch; a harness may have produced other incidental files during its run.
+The [`hermes-relay/`](hermes-relay/) directory contains:
 
-| Harness | Model Used for This Run | Bundle |
-| --- | --- | --- |
-| Hermes | self-hosted `nvidia/nemotron-3-nano` | [`hermes/`](hermes/) |
-| Claude | `anthropic/claude-sonnet-4-5` | [`claude/`](claude/) |
+- Relay's complete `events.atof.jsonl` and native ATIF trajectory;
+- `trajectory.json`, the byte-identical ATIF copy promoted to Harbor's canonical
+  path;
+- concise Fabric, Harbor verifier, and telemetry summaries; and
+- the resulting workspace patch.
 
-Telemetry was intentionally disabled in these baseline runs, so both telemetry
-summaries demonstrate the expected `not_emitted` state. Use the Hermes Relay
-variant in the parent guide to produce and validate ATOF and ATIF.
+The complete telemetry files use Git LFS. The telemetry quality gate scanned
+the recorded artifacts for obvious credential patterns before they were added.
+Runtime and request identifiers in the summaries are omitted because they are
+not part of the portable artifact contract.

@@ -476,7 +476,9 @@ def test_swebench_matrix_uses_complete_configs_and_one_fixed_task():
     tools_config = FabricConfig.model_validate(
         yaml.safe_load((SWEBENCH_CONFIGS / "hermes-tools.yaml").read_text())
     )
-    assert tools_config.harness.settings["enabled_toolsets"] == ["terminal", "file"]
+    assert tools_config.tools is not None
+    assert tools_config.tools.blocked == ["browser"]
+    assert "enabled_toolsets" not in tools_config.harness.settings
 
     # TODO: Remove the bundled copies and these equality checks after Fabric
     # discovers adapter descriptors directly from source checkouts and wheels.

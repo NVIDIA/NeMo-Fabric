@@ -4,7 +4,7 @@
 schema_version: fabric.agent/v1alpha1
 metadata:
   name: harbor-swebench-hermes-tools
-  description: Hermes with an explicit, config-owned toolset selection.
+  description: Hermes with Fabric's normalized blocked-tools policy.
 harness:
   adapter_id: nvidia.fabric.hermes
   resolution: preinstalled
@@ -14,15 +14,15 @@ harness:
     base_url: https://integrate.api.nvidia.com/v1
     max_iterations: 50
     terminal_timeout: 300
-    enabled_toolsets:
-      - terminal
-      - file
-    toolset_platform: cli
 models:
   default:
     provider: nvidia
     model: nvidia/nemotron-3-nano-30b-a3b
     temperature: 0.0
+tools:
+  # Fabric routes this normalized policy to Hermes disabled_toolsets.
+  blocked:
+    - browser
 runtime:
   input_schema: text
   output_schema: message

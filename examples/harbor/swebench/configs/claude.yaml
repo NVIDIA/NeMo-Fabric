@@ -1,5 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+# FabricAgent validates this complete document as a FabricConfig before applying
+# explicit Harbor-owned model, MCP, and skill overrides to an independent copy.
 
 schema_version: fabric.agent/v1alpha1
 metadata:

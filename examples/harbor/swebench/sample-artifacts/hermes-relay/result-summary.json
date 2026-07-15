@@ -1,18 +1,17 @@
 {
   "schema_version": "fabric.harbor.sample/v1alpha1",
-  "recorded_at": "2026-07-15T01:03:51Z",
+  "recorded_at": "2026-07-14T16:23:49Z",
   "task": "swe-bench/django__django-13741",
   "task_checksum": "ec0f790de15f8d571fa300af2301df4f96b53a67250e09d2a8ce735222982cd8",
-  "harness": "claude",
-  "adapter_id": "nvidia.fabric.claude",
-  "model": "anthropic/claude-sonnet-4-5",
+  "harness": "hermes",
+  "adapter_id": "nvidia.fabric.hermes",
+  "model": "nvidia/nemotron-3-nano",
   "fabric_status": "succeeded",
   "harbor_exception": null,
   "harbor_reward": 1.0,
-  "agent_execution_seconds": 242.0,
-  "artifacts": [
-    "stdout",
-    "workspace_patch",
-    "workspace_status"
-  ]
+  "telemetry": {
+    "provider": "relay",
+    "atof_records": 163,
+    "atif_steps": 87
+  }
 }

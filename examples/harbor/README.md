@@ -145,40 +145,19 @@ presented as Harbor-qualified here.
 The baseline configs were live-verified on July 14, 2026 against the same
 Harbor task and task checksum:
 
-| Harness | Verification Model | Fabric Status | Harbor Reward | Review Bundle |
-| --- | --- | --- | --- | --- |
-| Hermes | self-hosted `nvidia/nemotron-3-nano` | `succeeded` | `1.0` | [`sample-artifacts/hermes/`](swebench/sample-artifacts/hermes/) |
-| Claude | `anthropic/claude-sonnet-4-5` | `succeeded` | `1.0` | [`sample-artifacts/claude/`](swebench/sample-artifacts/claude/) |
+| Harness | Verification Model | Fabric Status | Harbor Reward |
+| --- | --- | --- | --- |
+| Hermes | self-hosted `nvidia/nemotron-3-nano` | `succeeded` | `1.0` |
+| Claude | `anthropic/claude-sonnet-4-5` | `succeeded` | `1.0` |
 
 Claude's config uses `bypassPermissions` and marks the process with
 `IS_SANDBOX=1` because Harbor executes it as root inside an ephemeral task
 container. Keep that marker scoped to a deliberately isolated evaluation
 container; do not copy this permission mode into a normal host environment.
 
-For a self-hosted Nemotron 3 Nano NIM, Hermes requires OpenAI-compatible
-automatic tool calling. The current image accepts the vLLM options through
-`NIM_PASSTHROUGH_ARGS`; publish the container's port 8000 even when the host
-port is different:
-
-```bash
-export NIM_IMAGE='nvcr.io/nim/nvidia/nemotron-3-nano@sha256:<approved-digest>'
-
-docker run -d --rm \
-  --name nemotron-3-nano \
-  --gpus '"device=2"' \
-  --shm-size=16GB \
-  -e NGC_API_KEY \
-  -e 'NIM_PASSTHROUGH_ARGS=--enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser nemotron_v3' \
-  -v "$LOCAL_NIM_CACHE:/opt/nim/.cache" \
-  -p 8010:8000 \
-  "$NIM_IMAGE"
-```
-
-Replace `<approved-digest>` with the immutable digest used for qualification
-and retain that value with the run metadata. This prevents a mutable image tag
-from silently changing the server between runs.
-
-Confirm `/v1/models` and one request containing `tools` with
+For a self-hosted model, Hermes requires an OpenAI-compatible endpoint with
+automatic tool calling enabled. Record the immutable server image version or
+digest with the run metadata, and verify one request containing `tools` with
 `tool_choice: "auto"` before starting Harbor. A plain chat completion can
 succeed even when this required agent capability is disabled. Refer to NVIDIA's
 [tool-calling guidance](https://docs.nvidia.com/nim/large-language-models/latest/advanced-use-cases/tool-calling-and-mcp.html).
@@ -195,8 +174,9 @@ Use the Hermes command above and change exactly one dimension:
 | Relay | change the entrypoint to [`configs/hermes-relay.yaml`](swebench/configs/hermes-relay.yaml) |
 
 Harbor-supplied skills and MCP servers replace those sections in the complete
-Fabric config. Tool selection remains config-owned because Harbor does not have
-a generic tool flag. A Harbor `--model` replaces provider and model identity
+Fabric config. The normalized `tools.blocked` policy remains config-owned
+because Harbor does not have a generic tool flag; Hermes maps it to native
+`disabled_toolsets`. A Harbor `--model` replaces provider and model identity
 while preserving other model settings such as temperature.
 
 The MCP variant uploads a dependency-free, read-only
@@ -227,17 +207,6 @@ cat "$RUNS_DIR/django-13741-hermes-relay/result.json"
 uv run harbor view "$RUNS_DIR"
 ```
 
-The standalone quality gate works in the task environment and against a
-collected Harbor trial. For a collected trial, pass its downloaded Fabric
-result and `agent` directory; container paths under `/logs/agent` are resolved
-to the collected directory automatically:
-
-```bash
-python -m nemo_fabric.integrations.harbor.verify_telemetry \
-  --result "$TRIAL_DIR/agent/fabric-result-<id>.json" \
-  --logs-dir "$TRIAL_DIR/agent"
-```
-
 Direct Relay output is the telemetry contract. Validate the emitted ATOF stream
 and ATIF independently; do not derive ATIF from ATOF through a separate
 converter. Fabric promotes Relay's ATIF to `agent/trajectory.json`, and Harbor
@@ -245,12 +214,11 @@ validates that canonical file with its trajectory model.
 
 ## Review Sample Artifacts
 
-Curated, sanitized outputs from the qualified one-task runs live under
-[`swebench/sample-artifacts/`](swebench/sample-artifacts/). Each harness bundle
-contains a compact result summary, verifier summary, representative workspace
-patch, and telemetry summary when emitted. These files are quick references,
-not substitutes for the complete Harbor trial directory: raw prompts, secrets,
-large logs, and full token-heavy trajectories are deliberately excluded.
+Artifacts from the qualified Hermes Relay run live under
+[`swebench/sample-artifacts/`](swebench/sample-artifacts/). The bundle includes
+the complete Relay ATOF and ATIF outputs, Harbor's canonical ATIF copy, a
+telemetry summary, a verifier summary, and the resulting workspace patch. Large
+telemetry files use Git LFS.
 
 ## Progress from a Spot Check to a Full Run
 
@@ -306,8 +274,7 @@ uv run harbor job resume --job-path "$RUNS_DIR/<job-name>"
 `FabricAgent` writes a strict `HarborRunSpec`, uploads it, and invokes
 `nemo_fabric.integrations.harbor.runner` inside the task. The runner loads one
 complete YAML config, deep-copies it, applies explicit Harbor model/MCP/skill
-overrides, and calls `Fabric.run()`. It never composes Fabric filesystem
-profiles.
+overrides, and calls `Fabric.run()`.
 
 Harbor `session_id` and `context_id` are propagated through
 `RunRequest.context`. Valid ATIF final metrics populate Harbor input, cached,
