@@ -38,22 +38,28 @@ commitment.
   implementation when it keeps the behavior clear and maintainable.
 - When multiple dependencies satisfy the technical requirement, prefer the
   maintained OSS option with clear SPDX metadata, a smaller transitive graph,
-  and permissive terms such as Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, or
-  ISC. This preference is not a substitute for OSRB approval.
+  and permissive terms such as Apache-2.0, MIT, BSD, or ISC.
 - Inspect the resolved transitive graph, not only the direct package license.
 - Treat `UNKNOWN`, non-SPDX/custom, proprietary or source-available terms, and
   copyleft or network-copyleft terms as explicit review points. Do not silently
-  accept or reject them; route them to the dependency approvers or OSRB with
-  the distribution and linkage context.
+  accept or reject them; route them to the dependency approvers with the
+  distribution and linkage context.
 - Record the functional need, viable alternatives considered, why the selected
   dependency is the narrowest fit, and any unresolved licensing question.
 - Run
   `uv run --no-project python scripts/licensing/license_diff.py --base-ref origin/main`
-  after updating manifests and lockfiles. Review added packages and license
-  changes, then regenerate affected `ATTRIBUTIONS-*.md` files.
+  after updating manifests and lockfiles, then review added packages and license
+  changes.
+- Regenerate the attribution files with the named pre-commit hooks instead of
+  editing generated output:
 
-The license diff is evidence for reviewers. It does not decide whether a
-license is approved for a particular NVIDIA product or distribution model.
+  ```bash
+  uv run pre-commit run --all-files attributions-rust
+  uv run pre-commit run --all-files attributions-python
+  ```
+
+The license diff is evidence for reviewers. Dependency approvers make
+compatibility decisions using the distribution and linkage context.
 
 ## Checklist
 
@@ -68,8 +74,7 @@ license is approved for a particular NVIDIA product or distribution model.
       alternatives
 - [ ] Direct and transitive license changes were reviewed from the resolved
       lockfiles
-- [ ] Licensing uncertainties are called out for dependency approver or OSRB
-      review
+- [ ] Licensing uncertainties are called out for dependency approver review
 - [ ] Changed attribution files are regenerated and included
 
 ## References
@@ -83,6 +88,6 @@ license is approved for a particular NVIDIA product or distribution model.
 - `docs/package-lock.json`
 - `.github/workflows/ci_python.yml`
 - `.github/workflows/ci_rust.yml`
-- `.github/workflows/ci_license_diff.yml`
+- `.pre-commit-config.yaml`
 - `scripts/licensing/license_diff.py`
 - `justfile`

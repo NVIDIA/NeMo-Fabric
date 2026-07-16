@@ -39,7 +39,7 @@ review handoff details.
       considered, and why the selected dependency is the narrowest fit
 - [ ] The lockfile license diff was reviewed for direct and transitive changes;
       unresolved, custom, or copyleft terms are called out for dependency
-      approver or OSRB review
+      approver review
 - [ ] Changed `ATTRIBUTIONS-*.md` files are regenerated and included
 - [ ] Pull request title follows Conventional Commit style and uses the correct
       type
@@ -104,9 +104,8 @@ The PR body must include:
   related issue
 
 For dependency changes, include the dependency rationale and material license
-diff findings in the template's `#### Overview`. Link to the automated License
-Diff comment when available. The automation is review evidence, not an OSRB
-approval decision.
+diff findings in the template's `#### Overview`. The license diff is review
+evidence, not a compatibility decision.
 
 Only check the contribution confirmation boxes when they are true. If either
 confirmation cannot be made, stop before opening the PR and surface the blocker.

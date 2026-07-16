@@ -63,8 +63,6 @@ reliability, or reproducibility.
 - [ ] Secrets are only passed to the jobs that consume them
 - [ ] Python, Rust, and documentation jobs remain aligned with their lockfiles
       and `justfile` recipes
-- [ ] Jobs that check out or execute PR-controlled code do not receive write
-      permissions; comment-writing is isolated in a no-checkout job
 - [ ] Concurrency, branch filters, and documentation publish guards still
       reflect repository intent
 
@@ -90,7 +88,6 @@ source instead of assuming local success proves remote success.
 
 - `.github/workflows/ci_python.yml`
 - `.github/workflows/ci_rust.yml`
-- `.github/workflows/ci_license_diff.yml`
 - `.github/workflows/fern-docs.yml`
 - `Cargo.lock`
 - `uv.lock`
