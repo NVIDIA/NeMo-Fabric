@@ -437,7 +437,7 @@ def test_harbor_demo_documents_explicit_cli_commands():
     assert "run.sh" not in demo
     assert "demo/run.sh" not in integration
     assert demo.count("uv run --extra runtime --extra harbor harbor run") == 4
-    assert integration.count("uv run --extra runtime --extra harbor harbor run") == 4
+    assert integration.count("uv run --extra runtime --extra harbor harbor run") == 5
     assert "--agent-import-path" not in integration
     assert "fabric_config_path" not in demo
     assert "fabric_config_path" not in integration
@@ -445,7 +445,10 @@ def test_harbor_demo_documents_explicit_cli_commands():
     assert "fabric_config_factory" not in integration
     assert "fabric_adapter_id" in integration
     assert 'export TMPDIR="$HOME/harbor-tmp"' in integration
-    assert "${FABRIC_PACKAGE:?" in integration
+    assert "./examples/harbor/prepare_swebench.sh" in integration
+    assert 'FABRIC_PACKAGE="$(< "$FABRIC_BUNDLE/.fabric-package")"' in integration
+    assert '--ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS"' in integration
+    assert "--dataset swe-bench/swe-bench-verified" in integration
     for flag in (
         "--path",
         "--agent",
