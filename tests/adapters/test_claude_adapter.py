@@ -724,16 +724,23 @@ async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
     assert not relay.plugin_path.exists()
 
 
-async def test_run_claude_preserves_error_result_when_sdk_stream_raises(
+@pytest.mark.parametrize(
+    ("subtype", "is_error"),
+    [("success", True), ("error_max_budget_usd", False)],
+)
+async def test_run_claude_preserves_failed_result_when_sdk_stream_raises(
     claude_payload,
     monkeypatch,
+    caplog,
+    subtype,
+    is_error,
 ):
     async def query_error_result(**_):
         yield ResultMessage(
-            subtype="success",
+            subtype=subtype,
             duration_ms=10,
             duration_api_ms=8,
-            is_error=True,
+            is_error=is_error,
             num_turns=1,
             session_id="claude-session",
             result="Not logged in",
@@ -749,9 +756,10 @@ async def test_run_claude_preserves_error_result_when_sdk_stream_raises(
         "code": "claude_result_failed",
         "message": "Claude returned an error result",
         "retryable": False,
-        "metadata": {"subtype": "success"},
+        "metadata": {"subtype": subtype},
     }
     assert "raw SDK stream error" not in json.dumps(output)
+    assert "raw SDK stream error" in caplog.text
 
 
 def test_run_reports_relay_start_failure_without_raw_diagnostic(

@@ -557,10 +557,10 @@ def sdk_config(
 ) -> CodexConfig:
     codex_bin = _optional_string(_settings(payload), "codex_bin")
     if codex_bin is not None:
-        path = Path(codex_bin).expanduser()
+        path = Path(codex_bin)
         if not path.is_absolute():
-            path = Path(common_utils.config_root(payload)) / path
-        codex_bin = str(path.resolve())
+            path = (Path(common_utils.config_root(payload)) / path).resolve()
+        codex_bin = str(path)
     return CodexConfig(
         codex_bin=codex_bin,
         cwd=str(resolve_cwd(payload)),

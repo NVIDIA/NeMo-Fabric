@@ -18,10 +18,13 @@ import json
 import os
 import shlex
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from typing import NamedTuple
 
+from langchain.agents.middleware import AgentMiddleware
+from langchain_core.messages import ToolMessage
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
@@ -53,6 +56,36 @@ DEEPAGENTS_PASSTHROUGH_KEYS = frozenset({"subagents", "interrupt_on"})
 
 class AdapterConfigError(RuntimeError):
     """Raised for invalid Deep Agents adapter configuration (normalized to a failure)."""
+
+
+class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
+    """Block tool calls selected by an adapter-owned policy."""
+
+    def __init__(
+        self,
+        is_blocked: Callable[[Any], bool],
+        message: Callable[[Any], str],
+    ):
+        self._is_blocked = is_blocked
+        self._message = message
+
+    def _blocked(self, request: Any) -> ToolMessage:
+        name = request.tool_call.get("name")
+        return ToolMessage(
+            content=self._message(name),
+            tool_call_id=request.tool_call.get("id", ""),
+            status="error",
+        )
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        if self._is_blocked(request.tool_call.get("name")):
+            return self._blocked(request)
+        return await handler(request)
+
+    def wrap_tool_call(self, request: Any, handler: Any) -> Any:
+        if self._is_blocked(request.tool_call.get("name")):
+            return self._blocked(request)
+        return handler(request)
 
 
 def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) -> str:
@@ -211,30 +244,10 @@ def _blocked_tool_names(payload: dict[str, Any]) -> set[str]:
     return set(common_utils.blocked_tools(payload))
 
 
-def _tool_gate_middleware(is_blocked: Any, message: Any) -> Any:
-    from langchain.agents.middleware import AgentMiddleware
-    from langchain_core.messages import ToolMessage
-
-    def _blocked(request: Any) -> Any:
-        name = request.tool_call.get("name")
-        return ToolMessage(
-            content=message(name),
-            tool_call_id=request.tool_call.get("id", ""),
-            status="error",
-        )
-
-    class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
-        async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
-            if is_blocked(request.tool_call.get("name")):
-                return _blocked(request)
-            return await handler(request)
-
-        def wrap_tool_call(self, request: Any, handler: Any) -> Any:
-            if is_blocked(request.tool_call.get("name")):
-                return _blocked(request)
-            return handler(request)
-
-    return ToolGateMiddleware()
+def _tool_gate_middleware(
+    is_blocked: Callable[[Any], bool], message: Callable[[Any], str]
+) -> ToolGateMiddleware:
+    return ToolGateMiddleware(is_blocked, message)
 
 
 def blocked_tools_middleware(blocked: set[str]) -> Any:

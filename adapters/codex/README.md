@@ -123,10 +123,14 @@ back to CLI execution. Relay routes and observes requests; it does not provide
 OpenAI credentials or change the selected Codex authentication mode.
 
 Relay-enabled runs require the external `nemo-relay` CLI in addition to the
-Python package dependencies. Fabric accepts CLI versions `>=0.6.0,<0.7.0`:
+Python package dependencies. Fabric accepts CLI versions `>=0.6.0,<0.7.0`.
+Until the request-decoding fix is released, install the tested PR revision:
 
 ```bash
-cargo install nemo-relay-cli
+git clone https://github.com/NVIDIA/NeMo-Relay.git nemo-relay
+git -C nemo-relay fetch origin pull/452/head
+git -C nemo-relay checkout --detach 0b02e01ac10d7d678da28830feba0ebf6743a7c0
+cargo install --locked --path nemo-relay/crates/cli
 ```
 
 The `nemo-relay` Python package does not install this executable. Refer to the
@@ -134,10 +138,11 @@ The `nemo-relay` Python package does not install this executable. Refer to the
 for other supported installation methods.
 
 Relay owns HTTP content decoding at the gateway boundary; Fabric does not
-configure Codex request compression. The initial Relay `0.6.0` source tag
-cannot recover semantic fields from zstd-compressed SDK requests. Until a later
-`0.6.x` release contains the fix, use a build that includes
-[NeMo Relay PR #452](https://github.com/NVIDIA/NeMo-Relay/pull/452).
+configure Codex request compression. The Relay `0.6.0-alpha.20260716` tag cannot
+recover semantic fields from zstd-compressed SDK requests. Until a later `0.6.x`
+release contains the fix, use the pinned
+[NeMo Relay PR #452](https://github.com/NVIDIA/NeMo-Relay/pull/452) revision
+above.
 
 For Phoenix, native Codex OpenTelemetry targets the OTLP collector at
 `http://localhost:4318/v1/traces` and provides low-level app-server spans.

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import shlex
@@ -31,6 +32,8 @@ from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
+
+LOGGER = logging.getLogger(__name__)
 
 PERMISSION_MODES = {
     "default",
@@ -593,9 +596,15 @@ def normalize_message(message: Message) -> dict[str, Any]:
     return {"type": type(message).__name__, "message": _json_safe(message)}
 
 
+def _result_failed(result: ResultMessage) -> bool:
+    return bool(result.is_error) or (
+        isinstance(result.subtype, str) and result.subtype.startswith("error_")
+    )
+
+
 def normalize_result(payload: dict[str, Any], messages: list[Message], result: ResultMessage) -> dict[str, Any]:
     del payload
-    failed = bool(result.is_error) or (isinstance(result.subtype, str) and result.subtype.startswith("error_"))
+    failed = _result_failed(result)
     error = None
     if failed:
         error = {
@@ -746,8 +755,9 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
             # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
             # raise a plain Exception while closing the query stream. Preserve
             # the typed terminal result, but do not hide unrelated exceptions.
-            if result is None or not result.is_error:
+            if result is None or not _result_failed(result):
                 raise
+            LOGGER.exception("Claude SDK stream raised after a failed terminal result")
             output = normalize_result(payload, messages, result)
         else:
             if result is None:

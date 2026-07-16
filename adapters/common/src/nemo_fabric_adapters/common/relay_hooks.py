@@ -42,7 +42,7 @@ RELAY_HOOK_EVENTS: dict[RelayHookAgent, tuple[str, ...]] = {
         "PostCompact",
     ),
 }
-RELAY_TOOL_HOOK_EVENTS = {
+RELAY_TOOL_HOOK_EVENTS: dict[RelayHookAgent, frozenset[str]] = {
     "claude": frozenset(
         {
             "PreToolUse",

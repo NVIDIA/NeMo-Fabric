@@ -3,7 +3,9 @@
 
 import json
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -19,7 +21,9 @@ def _relay_event_total_tokens(event: dict) -> int:
     return usage.get("total_tokens", 0)
 
 
-def assert_semantic_relay_artifacts(output, expected_response: str) -> None:
+def assert_semantic_relay_artifacts(
+    output: Mapping[str, Any], expected_response: str
+) -> None:
     """Assert Relay artifacts contain model, usage, and agent-response semantics."""
 
     artifacts = {
@@ -57,7 +61,9 @@ def assert_semantic_relay_artifacts(output, expected_response: str) -> None:
         if step.get("source") == "agent"
         if isinstance(message := step.get("message"), str)
     ]
-    assert any(expected_response.lower() in message.lower() for message in agent_messages)
+    assert any(
+        expected_response.lower() in message.lower() for message in agent_messages
+    ), agent_messages
 
 
 def run_fabric_cli(

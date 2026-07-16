@@ -206,6 +206,31 @@ def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_pa
     assert mock_codex.instances[0].config.codex_bin == str(codex_bin)
 
 
+@pytest.mark.parametrize("codex_bin", ["bin/codex", "~/bin/codex"])
+def test_sdk_resolves_relative_codex_runtime_from_config_root(
+    codex_payload, codex_bin
+):
+    codex_payload["effective_config"]["config"]["harness"]["settings"][
+        "codex_bin"
+    ] = codex_bin
+
+    config = adapter.sdk_config(codex_payload, relay=None)
+
+    config_root = Path(codex_payload["effective_config"]["config_root"])
+    assert config.codex_bin == str((config_root / codex_bin).resolve())
+
+
+def test_sdk_keeps_absolute_codex_runtime_path(codex_payload, tmp_path):
+    codex_bin = tmp_path / "bin" / ".." / "codex"
+    codex_payload["effective_config"]["config"]["harness"]["settings"][
+        "codex_bin"
+    ] = str(codex_bin)
+
+    config = adapter.sdk_config(codex_payload, relay=None)
+
+    assert config.codex_bin == str(codex_bin)
+
+
 def test_runtime_resumes_sdk_thread_across_invocations(
     codex_payload, mock_codex
 ):
@@ -389,6 +414,10 @@ def test_prepare_relay_reuses_one_resolved_executable(
     assert relay is not None
     assert relay.gateway.executable == executable
     assert relay.gateway.url == "http://127.0.0.1:43210"
+    resolve.assert_called_once_with(
+        Path(codex_payload["effective_config"]["config_root"]).resolve(),
+        "nemo-relay",
+    )
     contract.assert_called_once_with(executable)
     write.assert_called_once_with(
         relay_config={},
