@@ -25,8 +25,7 @@ Install the core runtime and Python SDK:
 pip install "nemo-fabric[runtime]"
 ```
 
-To use a supported agent harness, install its adapter extra instead. Each
-adapter extra includes the core runtime:
+To use a supported agent harness, install its adapter extra:
 
 ```bash
 pip install "nemo-fabric[claude]"
@@ -35,7 +34,9 @@ pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[hermes]"
 ```
 
-* Note: The Hermes extra currently doesn't support Python 3.14 and above.
+Fabric supports running an agent harness in a different virtual environment than the one used to run Fabric itself. This is useful for running agents that have conflicting dependencies with Fabric or other agents.
+
+The adapter must be installed into the virtual environment that the harness is installed in. For this reason adapters intentionally have minimal dependencies.
 
 ### Integrations
 
