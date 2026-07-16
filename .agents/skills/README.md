@@ -17,10 +17,6 @@ Use these skills for repository work such as:
 These skills may reference repository internals, build and test commands, and
 contribution workflows.
 
-A dedicated adapter-authoring skill is not part of this set yet. Adapter
-contributions currently rely on `contribute-api` and the adapter contract
-documentation; a focused adapter-authoring skill is tracked separately.
-
 Consumer-facing integration skills live in the top-level
 [`skills/`](../../skills/README.md) directory so they can be exported separately
 for application developers and integrators. Keep external usage guidance out of

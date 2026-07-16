@@ -35,11 +35,9 @@ differences for NeMo Fabric:
   (see [`skills/README.md`](skills/README.md)).
 - **Portability strategy:** consumer skills link to public GitHub documentation
   and example URLs rather than a docs-site domain, so they keep working when
-  exported; the `docs.nvidia.com/nemo/fabric` site is not yet published.
+  exported.
 - **Supported consumer surface:** the consumer tier currently ships one skill,
   `nemo-fabric-integrate`, for typed Python SDK integration.
-- **Pending coverage:** a dedicated adapter-authoring maintainer skill has not
-  landed yet and is tracked separately.
 
 ## Documentation And Contribution Workflow
 
