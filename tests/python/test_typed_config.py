@@ -30,7 +30,7 @@ from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 
 ROOT = Path(__file__).resolve().parents[2]
-COMMAND = ("cargo", "run", "-q", "-p", "fabric-cli", "--")
+COMMAND = ("cargo", "run", "-q", "-p", "nemo-fabric-cli", "--")
 # The test adapter (needs only python3, no secrets), shipped as a fixture.
 SHIM_AGENT = ROOT / "tests" / "fixtures" / "hermes-shim-agent"
 SHIM_ADAPTERS = ROOT / "tests" / "fixtures" / "hermes-shim-agent" / "adapters"

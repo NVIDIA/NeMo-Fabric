@@ -22,7 +22,7 @@ classifiers = [
 ]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-readme = "README.md"
+readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = []
 
@@ -38,8 +38,8 @@ adapters-common = [
   "nemo-fabric-adapters-common == 0.1.0",
 ]
 
-adapters-codex-cli = [
-  "nemo-fabric-adapters-codex-cli == 0.1.0",
+adapters-codex = [
+  "nemo-fabric-adapters-codex == 0.1.0",
 ]
 
 adapters-claude = [
@@ -55,7 +55,7 @@ adapters-hermes = [
 ]
 
 codex = [
-  "nemo-fabric-adapters-codex-cli == 0.1.0",
+  "nemo-fabric-adapters-codex == 0.1.0",
 ]
 
 claude = [
@@ -67,7 +67,7 @@ deepagents = [
 ]
 
 harbor = [
-  "harbor>=0.16.1; python_version >= '3.12'",
+  "harbor>=0.18,<0.19; python_version >= '3.12'",
   "pyyaml>=6.0",
 ]
 
@@ -89,7 +89,7 @@ runtime = [
 adapters = [
   "nemo-fabric-adapters-common",
   "nemo-fabric-adapters-claude",
-  "nemo-fabric-adapters-codex-cli",
+  "nemo-fabric-adapters-codex",
   "nemo-fabric-adapters-deepagents",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
 ]
@@ -119,15 +119,25 @@ test = [
 
 [tool.uv]
 default-groups = ["adapters", "dev", "test"]
+# openai-codex beta 3 pins this prerelease app-server runtime. Keep the
+# exception narrow instead of enabling prereleases for the full environment.
+constraint-dependencies = ["openai-codex-cli-bin==0.137.0a4"]
 
 [tool.uv.sources]
 nemo-fabric-runtime = { path = "python", editable = true }
 nemo-fabric-adapters-common = { path = "adapters/common", editable = true }
 nemo-fabric-adapters-claude = { path = "adapters/claude", editable = true }
-nemo-fabric-adapters-codex-cli = { path = "adapters/codex-cli", editable = true }
+nemo-fabric-adapters-codex = { path = "adapters/codex", editable = true }
 nemo-fabric-adapters-deepagents = { path = "adapters/deepagents", editable = true }
 nemo-fabric-adapters-hermes = { path = "adapters/hermes", editable = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
+
+[tool.ruff.lint]
+# flake8-bugbear: enforce only the cached-instance-method rule (B019).
+# Using functools.lru_cache/cache on methods keeps a reference to `self` in
+# the cache, leaking every instance for the process lifetime. The full "B"
+# category is intentionally not enabled to avoid noisy, low-value warnings.
+select = ["B019"]

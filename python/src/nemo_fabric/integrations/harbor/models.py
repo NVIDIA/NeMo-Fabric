@@ -7,10 +7,14 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
+from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from typing_extensions import Self
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+from pydantic import model_validator
 
+from nemo_fabric import FabricConfig
 from nemo_fabric import RunRequest
 
 
@@ -35,13 +39,12 @@ class HarborMcpServer(BaseModel):
         return self
 
 
-class HarborRunSpec(BaseModel):
-    """Host-to-environment specification for one Harbor agent run."""
+class FabricRunPayload(BaseModel):
+    """Typed Fabric inputs transported into one Harbor task environment."""
 
     model_config = ConfigDict(extra="forbid")
 
-    config_path: Path
+    config: FabricConfig
+    config_base_dir: Path
+    logs_dir: Path = Path("/logs/agent")
     request: RunRequest
-    model_name: str | None = None
-    skills_dir: Path | None = None
-    mcp_servers: tuple[HarborMcpServer, ...] = ()

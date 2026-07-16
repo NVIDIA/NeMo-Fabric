@@ -39,11 +39,18 @@ just build-all
 
 ## Harbor
 
-[`harbor`](harbor/README.md) demonstrates the installed `FabricAgent`
-integration through a complete Harbor task, config matrix, verifier, and
-multi-harness demo.
+[`harbor`](harbor/README.md) demonstrates how to evaluate Fabric agents with
+Harbor while preserving Fabric's typed configuration workflow. Harbor manages
+the task environment, retries, concurrency, verification, rewards, and result
+layout. `FabricAgent` translates Harbor inputs—including the harness, model,
+skills, MCP servers, tool policy, and telemetry—into the final `FabricConfig`.
 
-Portable manifest and profile behavior is covered by
-`tests/fixtures/file-config-agent`. The dependency-free Hermes shim used by
-runtime tests lives under `tests/fixtures/hermes-shim-agent`; neither fixture is
-a public SDK example.
+The walkthroughs include:
+
+- a calculator walkthrough with a deterministic, credential-free integration
+  smoke test and optional LLM-backed Hermes and Claude runs; and
+- a SWE-Bench workflow for running Hermes and Claude, comparing capability
+  variations, inspecting Relay telemetry, and verifying real coding tasks.
+
+Start with the shared setup and execution model in the
+[Harbor guide](harbor/README.md).

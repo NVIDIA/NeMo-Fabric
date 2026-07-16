@@ -99,29 +99,28 @@ def hermes_config() -> FabricConfig:
     return config
 
 
-def codex_cli_config() -> FabricConfig:
-    """Return the complete Codex CLI variant without inherited capabilities."""
+def codex_config() -> FabricConfig:
+    """Return the complete Codex SDK variant without inherited capabilities."""
 
     config = base_config().model_copy(deep=True)
     config.harness = HarnessConfig(
-        adapter_id="nvidia.fabric.codex.cli",
+        adapter_id="nvidia.fabric.codex",
         resolution="preinstalled",
         settings={
             "sandbox": "workspace-write",
-            "skip_git_repo_check": True,
-            "config_overrides": {"model_reasoning_effort": "high"},
+            "reasoning_effort": "high",
         },
     )
     config.models = {"default": ModelConfig(provider="openai", model="openai/gpt-5.4")}
     config.runtime = RuntimeConfig(
         input_schema="text",
         output_schema="message",
-        artifacts="./artifacts/codex-cli",
+        artifacts="./artifacts/codex",
     )
     config.environment = EnvironmentConfig(
         provider="local",
         workspace=WORKSPACE,
-        artifacts="./artifacts/codex-cli",
+        artifacts="./artifacts/codex",
     )
     config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)

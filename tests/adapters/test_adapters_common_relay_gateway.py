@@ -45,15 +45,14 @@ def test_resolve_relay_command_rejects_missing_executable(monkeypatch, tmp_path)
 
 
 @pytest.mark.parametrize(
-    ("output", "expected"),
+    ("output", "expected_version"),
     [
-        ("nemo-relay 0.5.0\n", 1),
-        ("nemo-relay 0.6.0-alpha.20260714\n", 2),
-        ("nemo-relay 1.0.0\n", 2),
+        ("nemo-relay 0.6.0-alpha.20260714\n", (0, 6, 0)),
+        ("nemo-relay 0.6.99\n", (0, 6, 99)),
     ],
 )
-def test_relay_cli_observability_version_selects_compatible_contract(
-    monkeypatch, tmp_path, output, expected
+def test_relay_cli_contract_selects_compatible_contract(
+    monkeypatch, tmp_path, output, expected_version
 ):
     monkeypatch.setattr(
         relay_gateway.subprocess,
@@ -61,13 +60,31 @@ def test_relay_cli_observability_version_selects_compatible_contract(
         MagicMock(return_value=subprocess.CompletedProcess([], 0, stdout=output)),
     )
 
-    assert (
-        relay_gateway.relay_cli_observability_version(tmp_path / "nemo-relay")
-        == expected
+    assert relay_gateway.relay_cli_contract(
+        tmp_path / "nemo-relay"
+    ) == relay_gateway.RelayCliContract(
+        version=expected_version,
+        observability_version=2,
     )
 
 
-def test_relay_cli_observability_version_rejects_unparseable_output(
+@pytest.mark.parametrize("output", ["nemo-relay 0.5.9", "nemo-relay 0.7.0"])
+def test_relay_cli_contract_rejects_unsupported_version(
+    monkeypatch, tmp_path, output
+):
+    monkeypatch.setattr(
+        relay_gateway.subprocess,
+        "run",
+        MagicMock(return_value=subprocess.CompletedProcess([], 0, stdout=output)),
+    )
+
+    with pytest.raises(
+        relay_gateway.RelayGatewayError, match="Fabric requires >=0.6.0,<0.7.0"
+    ):
+        relay_gateway.relay_cli_contract(tmp_path / "nemo-relay")
+
+
+def test_relay_cli_contract_rejects_unparseable_output(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(
@@ -79,7 +96,7 @@ def test_relay_cli_observability_version_rejects_unparseable_output(
     with pytest.raises(
         relay_gateway.RelayGatewayError, match="version could not be determined"
     ):
-        relay_gateway.relay_cli_observability_version(tmp_path / "nemo-relay")
+        relay_gateway.relay_cli_contract(tmp_path / "nemo-relay")
 
 
 def test_start_relay_gateway_captures_logs_and_waits_for_health(monkeypatch, tmp_path):

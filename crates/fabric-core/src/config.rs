@@ -2333,7 +2333,7 @@ schema_version: fabric.agent/v1alpha1
 metadata:
   name: demo
 harness:
-  adapter_id: nvidia.fabric.codex.cli
+  adapter_id: nvidia.fabric.codex
 runtime:
 telemetry:
   providers:
@@ -2344,7 +2344,7 @@ telemetry:
         .expect("config with relay and native telemetry providers");
         let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
             "contract_version": ADAPTER_CONTRACT_VERSION,
-            "adapter_id": "nvidia.fabric.codex.cli",
+            "adapter_id": "nvidia.fabric.codex",
             "harness": "codex",
             "adapter_kind": "python",
             "telemetry": {

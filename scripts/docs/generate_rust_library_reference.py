@@ -21,10 +21,14 @@ from bs4.element import NavigableString, PageElement, Tag
 from reference_common import escape_mdx_text, frontmatter, reset_output_dir
 
 CRATES = (
-    ("fabric-core", "fabric_core", "Core Rust contract, config, and runtime APIs for NeMo Fabric."),
+    (
+        "nemo-fabric-core",
+        "nemo_fabric_core",
+        "Core Rust contract, config, and runtime APIs for NeMo Fabric.",
+    ),
 )
 BASE_URL = "/reference/api/rust-library-reference"
-GENERATED_BY = "Generated from `cargo doc --no-deps -p fabric-core`."
+GENERATED_BY = "Generated from `cargo doc --no-deps -p nemo-fabric-core`."
 TRANSLATION_TABLE = str.maketrans(
     {
         "\xa0": " ",

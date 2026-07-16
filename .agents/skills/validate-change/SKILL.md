@@ -30,6 +30,10 @@ surfaces touched by a change.
 - If public configuration types changed, confirm the schema snapshot tests in
   `just test-rust` pass and review generated schema diffs.
 - If an adapter or integration changed, run its focused tests.
+- If a manifest or lockfile changed, run
+  `uv run --no-project python scripts/licensing/license_diff.py --base-ref origin/main`,
+  review the transitive license changes, then run the `attributions-rust` and
+  `attributions-python` pre-commit hooks.
 - If documentation or examples changed, run `just docs` when practical and
   verify documented commands against the current repository.
 - If code changes alter APIs, commands, paths, packaging behavior, telemetry
@@ -81,6 +85,11 @@ uv run --no-sync pytest -k "<pattern>"
 
 # Documentation
 just docs
+
+# Dependency licenses
+uv run --no-project python scripts/licensing/license_diff.py --base-ref origin/main
+uv run pre-commit run --all-files attributions-rust
+uv run pre-commit run --all-files attributions-python
 
 # Justfile and patch hygiene
 just --fmt --check
