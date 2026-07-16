@@ -64,15 +64,6 @@ def _required_text(value: Any, name: str) -> str:
     return value
 
 
-def _required_profiles(data: Mapping[str, Any], owner: str) -> tuple[str, ...]:
-    if "profiles" not in data:
-        raise FabricConfigError(f"{owner} profiles is required")
-    profiles = data["profiles"]
-    if isinstance(profiles, (str, bytes)) or not isinstance(profiles, Sequence):
-        raise FabricConfigError(f"{owner} profiles must be an ordered sequence of strings")
-    return tuple(_required_text(profile, f"{owner} profile") for profile in profiles)
-
-
 def _boolean(value: Any, name: str) -> bool:
     if not isinstance(value, bool):
         raise FabricConfigError(f"{name} must be a boolean")
@@ -325,8 +316,8 @@ class _EnvironmentConfig(_ConfigMapping):
 class _SkillConfig(_ConfigMapping):
     """Skill capability configuration.
 
-    The shape matches the ``skills`` section in ``agent.yaml`` while providing
-    small authoring helpers for Python callers.
+    The shape matches the ``skills`` section of ``FabricConfig`` while
+    providing small authoring helpers for Python callers.
     """
 
     _fields = frozenset({"paths"})
@@ -553,9 +544,9 @@ class _TelemetryConfig(_ConfigMapping):
 class _ResolvedFabricConfig(_ConfigMapping):
     """Mutable typed representation of a Fabric agent configuration.
 
-    The object follows the same schema as ``agent.yaml``. It is mutable while
-    callers compose a job, then copied into immutable resolution and plan
-    snapshots. Unknown fields survive round trips through ``extra_fields``.
+    It is mutable while callers compose a job, then copied into immutable
+    resolution and plan snapshots. Unknown fields survive round trips through
+    ``extra_fields``.
 
     Attributes:
         schema_version: Agent schema identifier.
@@ -568,7 +559,6 @@ class _ResolvedFabricConfig(_ConfigMapping):
         skills: Optional skill configuration.
         telemetry: Optional telemetry configuration.
         relay: Optional Relay integration configuration.
-        profiles: Optional profile-discovery configuration.
         tools: Optional harness-neutral tool configuration.
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
@@ -585,7 +575,6 @@ class _ResolvedFabricConfig(_ConfigMapping):
             "skills",
             "telemetry",
             "relay",
-            "profiles",
             "tools",
         }
     )
@@ -604,7 +593,6 @@ class _ResolvedFabricConfig(_ConfigMapping):
         skills: Mapping[str, Any] | None = None,
         telemetry: Mapping[str, Any] | None = None,
         relay: Mapping[str, Any] | None = None,
-        profiles: Mapping[str, Any] | None = None,
         tools: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
@@ -634,7 +622,6 @@ class _ResolvedFabricConfig(_ConfigMapping):
             ("skills", skills_value),
             ("telemetry", telemetry_value),
             ("relay", relay_value),
-            ("profiles", profiles),
             ("tools", tools_value),
         ):
             if item is not None:
@@ -643,7 +630,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "_ResolvedFabricConfig":
-        """Build a typed agent config from the ``agent.yaml`` mapping shape."""
+        """Build a typed agent config from a mapping."""
 
         data = _mapping(value, "FabricConfig")
         if "metadata" not in data:
@@ -661,7 +648,6 @@ class _ResolvedFabricConfig(_ConfigMapping):
             skills=data.get("skills"),
             telemetry=data.get("telemetry"),
             relay=data.get("relay"),
-            profiles=data.get("profiles"),
             tools=data.get("tools"),
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
         )
@@ -944,31 +930,22 @@ class RuntimeCapabilities(FabricMapping):
 
 
 class EffectiveConfig(FabricMapping):
-    """Immutable result of config loading and ordered profile application.
+    """Immutable result of resolving a complete typed config.
 
     Attributes:
         agent_name: Resolved agent name.
-        profiles: Applied profile names in caller order.
-        agent_root: Root directory of the path-backed agent source.
-        config_path: Source config path, or ``None`` for typed configs.
-        config_root: Base directory used to resolve relative paths.
+        base_dir: Base directory used to resolve relative paths.
         config: Fully resolved typed ``FabricConfig``.
     """
 
     agent_name: str
-    profiles: Sequence[str]
-    agent_root: Path
-    config_path: Path | None
-    config_root: Path
+    base_dir: Path
     config: _ResolvedFabricConfig
-    _fields = frozenset({"agent_name", "profiles", "agent_root", "config_path", "config_root", "config"})
+    _fields = frozenset({"agent_name", "base_dir", "config"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data["profiles"] = _required_profiles(data, "EffectiveConfig")
-        data["agent_root"] = Path(data.get("agent_root", "."))
-        data["config_root"] = Path(data.get("config_root", "."))
-        data["config_path"] = None if data.get("config_path") is None else Path(data["config_path"])
+        data["base_dir"] = Path(data.get("base_dir", "."))
         data["config"] = _ResolvedFabricConfig.from_mapping(data.get("config", {}))
         return data
 
@@ -979,17 +956,15 @@ class RunPlan(FabricMapping):
     Attributes:
         effective_config: Resolved configuration snapshot.
         agent_name: Resolved agent name.
-        profiles: Applied profile names in caller order.
         adapter: Resolved adapter identity.
         capabilities: Operations declared by the resolved runtime.
     """
 
     effective_config: EffectiveConfig
     agent_name: str
-    profiles: Sequence[str]
     adapter: AdapterInfo
     capabilities: RuntimeCapabilities
-    _fields = frozenset({"effective_config", "agent_name", "profiles", "adapter", "capabilities"})
+    _fields = frozenset({"effective_config", "agent_name", "adapter", "capabilities"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -997,7 +972,6 @@ class RunPlan(FabricMapping):
         if descriptor is None:
             descriptor = (data.get("adapter_descriptor") or {}).get("descriptor", {})
         data["effective_config"] = EffectiveConfig.from_mapping(data["effective_config"])
-        data["profiles"] = _required_profiles(data, "RunPlan")
         data["adapter"] = AdapterInfo.from_mapping(descriptor)
         data["capabilities"] = RuntimeCapabilities.from_mapping(data.get("capabilities", {}))
         return data
@@ -1031,20 +1005,17 @@ class DoctorReport(FabricMapping):
 
     Attributes:
         agent_name: Resolved agent name.
-        profiles: Applied profile names in caller order.
         status: Aggregate outcome: ``pass``, ``warn``, or ``fail``.
         checks: Ordered ``DoctorCheck`` results.
     """
 
     agent_name: str
-    profiles: Sequence[str]
     status: str
     checks: Sequence[DoctorCheck]
-    _fields = frozenset({"agent_name", "profiles", "status", "checks"})
+    _fields = frozenset({"agent_name", "status", "checks"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data["profiles"] = _required_profiles(data, "DoctorReport")
         data["checks"] = tuple(DoctorCheck.from_mapping(check) for check in data.get("checks", []))
         return data
 
@@ -1265,7 +1236,6 @@ class RunResult(FabricMapping):
 
     Attributes:
         agent_name: Resolved agent name.
-        profiles: Applied profile names.
         harness: Stable harness identifier.
         adapter_kind: Adapter execution mechanism.
         adapter_id: Fabric adapter identifier.
@@ -1283,7 +1253,6 @@ class RunResult(FabricMapping):
     """
 
     agent_name: str
-    profiles: Sequence[str]
     harness: str
     adapter_kind: str
     adapter_id: str
@@ -1300,7 +1269,6 @@ class RunResult(FabricMapping):
     _fields = frozenset(
         {
             "agent_name",
-            "profiles",
             "harness",
             "adapter_kind",
             "adapter_id",
@@ -1320,7 +1288,6 @@ class RunResult(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data["profiles"] = _required_profiles(data, "RunResult")
         for field in (
             "agent_name",
             "harness",

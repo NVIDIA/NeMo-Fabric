@@ -9,18 +9,19 @@ import asyncio
 from pathlib import Path
 from shutil import copytree
 
+from _utils.configs import hermes_shim_config
 from nemo_fabric import Fabric
 
 
 async def run_runtime(client: Fabric, agent: Path, name: str) -> dict:
-    async with await client.start_runtime(agent, profiles=["env_local"]) as runtime:
+    async with await client.start_runtime(hermes_shim_config(), base_dir=agent) as runtime:
         return await runtime.invoke(input=f"hello from {name}")
 
 
 async def run_copy(client: Fabric, fixture_agent: Path, root: Path, name: str) -> dict:
     agent = root / name
     copytree(fixture_agent, agent)
-    return await client.run(agent, profiles=["env_local"], input=f"hello from {name}")
+    return await client.run(hermes_shim_config(), base_dir=agent, input=f"hello from {name}")
 
 
 async def test_sdk_concurrency(hermes_shim_agent_dir_src: Path, tmp_path: Path):

@@ -22,7 +22,7 @@ def codex_payload_fixture(tmp_path):
     return {
         "effective_config": {
             "agent_name": "codex-test",
-            "config_root": str(tmp_path),
+            "base_dir": str(tmp_path),
             "config": {
                 "harness": {
                     "adapter_id": "nvidia.fabric.codex",
@@ -207,7 +207,7 @@ def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_pa
 
 
 @pytest.mark.parametrize("codex_bin", ["bin/codex", "~/bin/codex"])
-def test_sdk_resolves_relative_codex_runtime_from_config_root(
+def test_sdk_resolves_relative_codex_runtime_from_base_dir(
     codex_payload, codex_bin
 ):
     codex_payload["effective_config"]["config"]["harness"]["settings"][
@@ -216,8 +216,8 @@ def test_sdk_resolves_relative_codex_runtime_from_config_root(
 
     config = adapter.sdk_config(codex_payload, relay=None)
 
-    config_root = Path(codex_payload["effective_config"]["config_root"])
-    assert config.codex_bin == str((config_root / codex_bin).resolve())
+    base_dir = Path(codex_payload["effective_config"]["base_dir"])
+    assert config.codex_bin == str((base_dir / codex_bin).resolve())
 
 
 def test_sdk_keeps_absolute_codex_runtime_path(codex_payload, tmp_path):
@@ -415,7 +415,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     assert relay.gateway.executable == executable
     assert relay.gateway.url == "http://127.0.0.1:43210"
     resolve.assert_called_once_with(
-        Path(codex_payload["effective_config"]["config_root"]).resolve(),
+        Path(codex_payload["effective_config"]["base_dir"]).resolve(),
         "nemo-relay",
     )
     contract.assert_called_once_with(executable)

@@ -166,13 +166,12 @@ authentication, and execution details.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
 
-Fabric applies profiles in caller order and validates the final effective config
-before planning or running.
+For legacy path sources, Fabric applies profiles in caller order and validates
+the final effective config before planning or running.
 
-Path sources select profiles by name. Typed `FabricConfig` sources usually
-compose the final config in Python; `FabricProfileConfig` values are available
-for callers that need ordered file-style overlays. The SDK rejects raw profile
-mappings and mixed profile stacks. See the
+Path sources temporarily select legacy profiles by name. Typed `FabricConfig`
+sources must contain the complete configuration and do not accept profile
+overlays; compose variants in Python before calling the SDK. See the
 [Python SDK guide](docs/sdk/python.mdx) for the complete public API,
 type definitions, lifecycle semantics, and error behavior.
 

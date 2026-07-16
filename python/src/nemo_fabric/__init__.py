@@ -13,13 +13,11 @@ from nemo_fabric.errors import FabricStateError
 from nemo_fabric.models import EnvironmentConfig
 from nemo_fabric.models import FabricBaseModel
 from nemo_fabric.models import FabricConfig
-from nemo_fabric.models import FabricProfileConfig
 from nemo_fabric.models import HarnessConfig
 from nemo_fabric.models import McpConfig
 from nemo_fabric.models import McpServerConfig
 from nemo_fabric.models import MetadataConfig
 from nemo_fabric.models import ModelConfig
-from nemo_fabric.models import ProfileRegistryConfig
 from nemo_fabric.models import RelayAtifConfig
 from nemo_fabric.models import RelayAtofConfig
 from nemo_fabric.models import RelayAtofEndpointConfig
@@ -65,7 +63,6 @@ __all__ = [
     "Fabric",
     "FabricBaseModel",
     "FabricConfig",
-    "FabricProfileConfig",
     "FabricCapabilityError",
     "FabricConfigError",
     "FabricError",
@@ -75,7 +72,6 @@ __all__ = [
     "McpServerConfig",
     "MetadataConfig",
     "ModelConfig",
-    "ProfileRegistryConfig",
     "RelayAtifConfig",
     "RelayAtofConfig",
     "RelayAtofEndpointConfig",

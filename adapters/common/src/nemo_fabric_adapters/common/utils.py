@@ -62,8 +62,8 @@ def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
     return effective_config(payload).get("config") or {}
 
 
-def config_root(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("config_root") or payload.get("config_root") or "."
+def base_dir(payload: dict[str, Any]) -> str:
+    return effective_config(payload).get("base_dir") or payload.get("base_dir") or "."
 
 
 def agent_name(payload: dict[str, Any]) -> str:
@@ -234,7 +234,7 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
-    base = Path(config_root(payload)).resolve()
+    base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":

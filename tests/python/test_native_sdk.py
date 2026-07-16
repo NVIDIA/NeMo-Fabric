@@ -11,11 +11,11 @@ from pathlib import Path
 
 import nemo_fabric._native as native
 import pytest
+from _utils.configs import hermes_shim_config
 from examples.code_review_agent import BASE_DIR
 from examples.code_review_agent import base_config
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
-from nemo_fabric import FabricProfileConfig
 from nemo_fabric import FabricRuntimeError
 
 
@@ -31,8 +31,8 @@ async def test_adapter_python_selects_python_adapter_interpreter(
     os.environ["ADAPTER_PYTHON"] = sys.executable
 
     result = await Fabric().run(
-        hermes_shim_agent_dir,
-        profiles=["env_local"],
+        hermes_shim_config(),
+        base_dir=hermes_shim_agent_dir,
         input="hello adapter python",
     )
 
@@ -47,8 +47,8 @@ async def test_adapter_python_rejects_invalid_path_before_start(
 
     with pytest.raises(FabricRuntimeError, match="ADAPTER_PYTHON") as caught:
         await Fabric().start_runtime(
-            hermes_shim_agent_dir,
-            profiles=["env_local"],
+            hermes_shim_config(),
+            base_dir=hermes_shim_agent_dir,
         )
 
     assert caught.value.stage == "start"
@@ -59,7 +59,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
 
     inspected = client.resolve(example_config, base_dir=BASE_DIR)
     assert inspected["agent_name"] == "code-review-agent"
-    assert inspected.profiles == ()
+    assert inspected.base_dir == BASE_DIR
     assert inspected["config"]["metadata"]["name"] == "code-review-agent"
 
     plan = client.plan(example_config, base_dir=BASE_DIR)
@@ -70,10 +70,6 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     )
     assert plan["capability_plan"]["native"]["mcp_servers"]["github"]
     assert plan["capability_plan"]["native"]["skill_paths"]
-
-    multi_plan = client.plan(fixture_agent, profiles=["env_local", "mcp_github"])
-    assert multi_plan.profiles == ("env_local", "mcp_github")
-    assert multi_plan["telemetry_plan"]["relay_enabled"] is True
 
     minimal = FabricConfig.from_mapping(
         {
@@ -92,7 +88,10 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
             "harness": {
                 "adapter_id": "test.fabric.hermes_shim",
                 "resolution": "preinstalled",
-                "settings": {"workspace": "./repos/my-service"},
+                "settings": {
+                    "workspace": "./repos/my-service",
+                    "timeout_seconds": 30,
+                },
             },
             "models": {
                 "default": {
@@ -120,36 +119,25 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
                     }
                 }
             },
-            "telemetry": None,
+            "telemetry": {"providers": {"relay": {}}},
+            "relay": {"output_dir": "./artifacts/relay"},
             "consumer_extension": {
                 "base": True,
-                "nested": {"first": 1},
+                "custom": True,
+                "nested": {"first": 1, "second": 2},
             },
         }
     )
-    typed_profile = FabricProfileConfig(
-        name="typed_relay",
-        harness={"settings": {"timeout_seconds": 30}},
-        telemetry={"providers": {"relay": {}}},
-        relay={"output_dir": "./artifacts/relay"},
-        consumer_extension={
-            "profile": True,
-            "nested": {"second": 2},
-        },
-    )
     typed_config_resolved = client.resolve(
         typed_config,
-        profiles=[typed_profile],
         base_dir=fixture_agent,
     )
     typed_plan = client.plan(
         typed_config,
-        profiles=[typed_profile],
         base_dir=fixture_agent,
     )
     assert typed_config_resolved.agent_name == "typed-hermes-shim-agent"
     assert typed_plan["agent_name"] == "typed-hermes-shim-agent"
-    assert typed_plan.profiles == ("typed_relay",)
     assert typed_plan["adapter_descriptor"]["source"] == "local"
     assert typed_plan["telemetry_plan"]["relay_enabled"] is True
     resolved_config = typed_config_resolved.config.to_mapping()
@@ -158,24 +146,23 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert resolved_config["harness"]["settings"]["timeout_seconds"] == 30
     assert resolved_config["consumer_extension"] == {
         "base": True,
-        "profile": True,
+        "custom": True,
         "nested": {"first": 1, "second": 2},
     }
 
     result = await client.run(
-        fixture_agent,
-        profiles=["env_local"],
+        hermes_shim_config(),
+        base_dir=fixture_agent,
         input="hello native",
     )
     async with await client.start_runtime(
-        fixture_agent,
-        profiles=["env_local"],
+        hermes_shim_config(),
+        base_dir=fixture_agent,
     ) as runtime:
         first = await runtime.invoke(input="hello runtime one")
         second = await runtime.invoke(input="hello runtime two")
 
     assert result["status"] == "succeeded"
-    assert result.profiles == ("env_local",)
     assert result.harness == "hermes"
     assert result["adapter_kind"] == "python"
     assert result["metadata"]["adapter_runner"] == "python"
@@ -184,7 +171,6 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert any(artifact.name == "stdout" for artifact in result.artifacts.artifacts)
     assert first["status"] == "succeeded"
     assert second["status"] == "succeeded"
-    assert first.profiles == ("env_local",)
     assert first.harness == "hermes"
     assert first["runtime_id"] == second["runtime_id"]
     assert runtime.handle["runtime_id"] == first["runtime_id"]

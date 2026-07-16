@@ -17,9 +17,9 @@ Native Python client for resolving and running NeMo Fabric agents.
 ## <kbd>class</kbd> `Fabric`
 Primary Python entrypoint for NeMo Fabric.
 
-The client accepts either a path-backed agent package or a typed ``FabricConfig``. Path-backed sources select profiles by name; typed sources accept ordered ``FabricProfileConfig`` values and may use ``base_dir`` to resolve relative paths. All inspection and execution APIs return typed, read-only mapping models.
+Every lifecycle method accepts a complete, typed ``FabricConfig`` plus an optional ``base_dir`` used to resolve relative paths. Compose variants in Python before calling the SDK. All inspection and execution APIs return typed, read-only mapping models.
 
-``Fabric`` is native-only. The ``fabric`` CLI is a separate public surface over the same Rust core; SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
+``Fabric`` is native-only. The ``nemo-fabric`` CLI is backed by this public SDK; SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 
 See the Getting Started overview for runnable one-shot, typed-config, and multi-turn examples.
 
@@ -33,9 +33,8 @@ See the Getting Started overview for runnable one-shot, typed-config, and multi-
 
 ```python
 doctor(
-    agent: 'AgentSource',
-    profiles: 'PathProfiles | TypedProfiles | None' = None,
-    base_dir: 'PathSource | None' = None
+    config: 'FabricConfig',
+    base_dir: 'str | PathLike[str] | None' = None
 ) → DoctorReport
 ```
 
@@ -47,9 +46,8 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
- - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
+ - <b>`config`</b>:  Complete typed ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
 
 
 
@@ -70,23 +68,21 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 
 ```python
 plan(
-    agent: 'AgentSource',
-    profiles: 'PathProfiles | TypedProfiles | None' = None,
-    base_dir: 'PathSource | None' = None
+    config: 'FabricConfig',
+    base_dir: 'str | PathLike[str] | None' = None
 ) → RunPlan
 ```
 
 Resolve an agent source into an immutable execution plan.
 
-Planning applies profiles, resolves the selected adapter, and reports optional runtime capabilities such as streaming, updates, and cancellation. It does not start the runtime.
+Planning resolves the selected adapter and reports optional runtime capabilities such as streaming, updates, and cancellation. Planning does not start the runtime.
 
 
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``. Raw  mappings are not accepted.
- - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
+ - <b>`config`</b>:  Complete typed ``FabricConfig``. Raw mappings are not  accepted.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
 
 
 
@@ -97,7 +93,7 @@ Planning applies profiles, resolves the selected adapter, and reports optional r
 
 **Raises:**
 
- - <b>`FabricConfigError`</b>:  If the source, profile stack, config, or adapter  resolution is invalid.
+ - <b>`FabricConfigError`</b>:  If the config or adapter resolution is invalid.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
 
 ---
@@ -107,13 +103,12 @@ Planning applies profiles, resolves the selected adapter, and reports optional r
 
 ```python
 resolve(
-    agent: 'AgentSource',
-    profiles: 'PathProfiles | TypedProfiles | None' = None,
-    base_dir: 'PathSource | None' = None
+    config: 'FabricConfig',
+    base_dir: 'str | PathLike[str] | None' = None
 ) → EffectiveConfig
 ```
 
-Resolve an agent source and its ordered profile overlays.
+Resolve an agent source.
 
 Resolution validates and normalizes configuration but does not resolve an adapter or compute runtime capabilities. Use ``plan()`` when those execution details are required.
 
@@ -121,9 +116,8 @@ Resolution validates and normalizes configuration but does not resolve an adapte
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``. Raw  mappings are not accepted; convert them with  ``FabricConfig.from_mapping()``.
- - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
+ - <b>`config`</b>:  Complete typed ``FabricConfig``. Raw mappings are not  accepted; convert them with  ``FabricConfig.from_mapping()``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
 
 
 
@@ -134,7 +128,7 @@ Resolution validates and normalizes configuration but does not resolve an adapte
 
 **Raises:**
 
- - <b>`FabricConfigError`</b>:  If the source, profile stack, or resolved config  is invalid.
+ - <b>`FabricConfigError`</b>:  If the config is invalid.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
 
 ---
@@ -144,9 +138,8 @@ Resolution validates and normalizes configuration but does not resolve an adapte
 
 ```python
 run(
-    agent: 'AgentSource',
-    profiles: 'PathProfiles | TypedProfiles | None' = None,
-    base_dir: 'PathSource | None' = None,
+    config: 'FabricConfig',
+    base_dir: 'str | PathLike[str] | None' = None,
     input: 'Any' = None,
     request: 'RunRequest | None' = None
 ) → RunResult
@@ -160,9 +153,8 @@ Execute one complete start, invoke, and stop lifecycle.
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
- - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
+ - <b>`config`</b>:  Complete typed ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
  - <b>`input`</b>:  JSON-compatible invocation input.
  - <b>`request`</b>:  Complete validated ``RunRequest``.
 
@@ -186,9 +178,8 @@ Execute one complete start, invoke, and stop lifecycle.
 
 ```python
 start_runtime(
-    agent: 'AgentSource',
-    profiles: 'PathProfiles | TypedProfiles | None' = None,
-    base_dir: 'PathSource | None' = None,
+    config: 'FabricConfig',
+    base_dir: 'str | PathLike[str] | None' = None,
     overrides: 'Mapping[str, Any] | None' = None
 ) → Runtime
 ```
@@ -201,9 +192,8 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 
 **Args:**
 
- - <b>`agent`</b>:  Agent-package directory or config-file path, or a typed  ``FabricConfig``.
- - <b>`profiles`</b>:  One profile name or an ordered sequence of names for a  path-backed source. For a typed source, an ordered sequence of  ``FabricProfileConfig`` values.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths in a typed  config. Valid only when ``agent`` is a typed config source.
+ - <b>`config`</b>:  Complete typed ``FabricConfig``.
+ - <b>`base_dir`</b>:  Base directory for resolving relative paths.
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
 
 

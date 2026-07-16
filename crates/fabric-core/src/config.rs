@@ -3,35 +3,18 @@
 
 //! Fabric config models and loading helpers.
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use schemars::{JsonSchema, Schema, SchemaGenerator};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::{FabricError, Result};
 
-const AGENT_YAML: &str = "agent.yaml";
 /// Adapter descriptor contract version supported by this core.
 pub const ADAPTER_CONTRACT_VERSION: &str = "fabric.adapter/v1alpha1";
-
-/// A loaded Fabric document with resolved source path and agent root.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum FabricDocument {
-    /// Unified Fabric agent config.
-    FabricConfig {
-        /// Path to the config file.
-        path: PathBuf,
-        /// Root used for resolving relative paths.
-        root: PathBuf,
-        /// Parsed config.
-        config: FabricConfig,
-    },
-}
 
 /// Versioned Fabric agent config.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -65,29 +48,9 @@ pub struct FabricConfig {
     /// First-class NeMo Relay integration configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub relay: Option<RelayConfig>,
-    /// Optional profile discovery config.
-    #[serde(default, skip_serializing_if = "ProfileRegistryConfig::is_empty")]
-    pub profiles: ProfileRegistryConfig,
     /// Additive fields not yet recognized by this core version.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
-}
-
-/// Profile discovery config for curated package profiles.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct ProfileRegistryConfig {
-    /// Directories searched when a caller selects a profile by name.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub directories: Vec<PathBuf>,
-    /// Additive profile-discovery fields.
-    #[serde(default, flatten)]
-    pub extensions: BTreeMap<String, Value>,
-}
-
-impl ProfileRegistryConfig {
-    fn is_empty(&self) -> bool {
-        self.directories.is_empty() && self.extensions.is_empty()
-    }
 }
 
 /// Harness-neutral tool capability configuration.
@@ -201,10 +164,10 @@ struct AdapterRegistry {
 }
 
 impl AdapterRegistry {
-    fn from_config(_config: &FabricConfig, config_root: &Path) -> Result<Self> {
+    fn from_config(_config: &FabricConfig, base_dir: &Path) -> Result<Self> {
         let mut registry = Self::default();
         registry.register_repository_directory(&repository_adapter_dir())?;
-        registry.register_local_directory(&config_root.join("adapters"))?;
+        registry.register_local_directory(&base_dir.join("adapters"))?;
         Ok(registry)
     }
 
@@ -394,94 +357,18 @@ pub struct AdapterTelemetryProviderSupport {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Profile config applied on top of a Fabric config.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct ProfileConfig {
-    /// Optional profile schema version.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub schema_version: Option<String>,
-    /// Optional profile name used for directory discovery.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    /// Optional profile description.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Raw config fields recursively merged over the base config.
-    #[serde(default, flatten)]
-    pub overlay: BTreeMap<String, Value>,
-}
-
-#[derive(JsonSchema)]
-#[allow(dead_code)]
-struct ProfileConfigSchema {
-    /// Optional profile schema version.
-    schema_version: Option<String>,
-    /// Optional profile name used for directory discovery.
-    name: Option<String>,
-    /// Optional profile description.
-    description: Option<String>,
-    /// Partial harness overlay.
-    harness: Option<BTreeMap<String, Value>>,
-    /// Partial model overlays by alias.
-    models: Option<BTreeMap<String, Value>>,
-    /// Partial runtime overlay.
-    runtime: Option<BTreeMap<String, Value>>,
-    /// Partial environment overlay.
-    environment: Option<BTreeMap<String, Value>>,
-    /// Tool capability overlay.
-    tools: Option<ToolsConfig>,
-    /// Partial skill overlay.
-    skills: Option<BTreeMap<String, Value>>,
-    /// Partial MCP overlay.
-    mcp: Option<BTreeMap<String, Value>>,
-    /// Partial telemetry overlay.
-    telemetry: Option<BTreeMap<String, Value>>,
-    /// Partial Relay integration overlay.
-    relay: Option<BTreeMap<String, Value>>,
-    /// Additive config overlays.
-    #[serde(flatten)]
-    extensions: BTreeMap<String, Value>,
-}
-
-impl JsonSchema for ProfileConfig {
-    fn schema_name() -> Cow<'static, str> {
-        "ProfileConfig".into()
-    }
-
-    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
-        ProfileConfigSchema::json_schema(generator)
-    }
-}
-
 /// Source context used when resolving an in-memory Fabric config.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolveContext {
-    /// Root used to resolve agent package paths.
-    pub agent_root: PathBuf,
-    /// Path recorded as config provenance in the run plan.
-    pub config_path: PathBuf,
-    /// Root used to resolve config-local paths.
-    pub config_root: PathBuf,
+    /// Base directory used to resolve relative config paths.
+    pub base_dir: PathBuf,
 }
 
 impl ResolveContext {
-    /// Build a context for an agent package root.
-    pub fn from_agent_root(root: impl Into<PathBuf>) -> Self {
-        let root = root.into();
+    /// Build a context with an explicit base directory.
+    pub fn new(base_dir: impl Into<PathBuf>) -> Self {
         Self {
-            agent_root: root.clone(),
-            config_path: root.join(AGENT_YAML),
-            config_root: root,
-        }
-    }
-
-    /// Build a context for a config file and its config root.
-    pub fn from_config_path(path: impl Into<PathBuf>, root: impl Into<PathBuf>) -> Self {
-        let root = root.into();
-        Self {
-            agent_root: root.clone(),
-            config_path: path.into(),
-            config_root: root,
+            base_dir: base_dir.into(),
         }
     }
 }
@@ -1077,29 +964,6 @@ fn default_relay_unsupported_value_behavior() -> RelayUnsupportedBehavior {
     RelayUnsupportedBehavior::Error
 }
 
-/// Load a Fabric document from an agent directory or single agent config.
-pub fn load_fabric_document(path: impl AsRef<Path>) -> Result<FabricDocument> {
-    let path = path.as_ref();
-    if !path.exists() {
-        return Err(FabricError::PathNotFound(path.to_path_buf()));
-    }
-    if path.is_dir() {
-        return load_directory(path);
-    }
-    load_file(path)
-}
-
-/// Validate an agent directory or config, including discoverable profile YAMLs.
-pub fn validate_agent_directory(path: impl AsRef<Path>) -> Result<()> {
-    match load_fabric_document(path)? {
-        FabricDocument::FabricConfig { root, config, .. } => {
-            discover_profiles(&config, &root)?;
-        }
-    }
-
-    Ok(())
-}
-
 /// Load an adapter descriptor from JSON package metadata.
 pub fn load_adapter_descriptor(path: impl AsRef<Path>) -> Result<AdapterDescriptor> {
     let path = path.as_ref();
@@ -1108,127 +972,38 @@ pub fn load_adapter_descriptor(path: impl AsRef<Path>) -> Result<AdapterDescript
     Ok(descriptor)
 }
 
-/// Resolve an agent directory or single agent config into merged effective config.
-pub fn resolve_effective_config(
-    path: impl AsRef<Path>,
-    profile: Option<&str>,
-) -> Result<EffectiveConfig> {
-    let profiles: Vec<String> = profile.into_iter().map(str::to_string).collect();
-    resolve_effective_config_with_profiles(path, &profiles)
-}
-
-/// Resolve an agent directory or single agent config with ordered profiles into
-/// merged effective config.
-pub fn resolve_effective_config_with_profiles(
-    path: impl AsRef<Path>,
-    profiles: &[String],
-) -> Result<EffectiveConfig> {
-    match load_fabric_document(path)? {
-        FabricDocument::FabricConfig { path, root, config } => {
-            let agent_name = config.metadata.name.clone();
-            let (profile_configs, selected_profiles) =
-                load_profile_configs(&agent_name, &config, &root, profiles)?;
-            resolve_effective_config_from_config_with_profile_names(
-                config,
-                &profile_configs,
-                selected_profiles,
-                ResolveContext::from_config_path(path, root),
-            )
-        }
-    }
-}
-
-/// Resolve typed config/profile overlays into merged effective config.
+/// Resolve a typed Fabric config into an effective config.
 pub fn resolve_effective_config_from_config(
     config: FabricConfig,
-    profiles: &[ProfileConfig],
     context: ResolveContext,
 ) -> Result<EffectiveConfig> {
-    let selected_profiles = profiles
-        .iter()
-        .enumerate()
-        .map(|(index, profile)| {
-            profile
-                .name
-                .clone()
-                .unwrap_or_else(|| format!("profile_{}", index + 1))
-        })
-        .collect();
-    resolve_effective_config_from_config_with_profile_names(
+    validate_config(&config)?;
+    Ok(EffectiveConfig {
+        agent_name: config.metadata.name.clone(),
+        base_dir: context.base_dir,
         config,
-        profiles,
-        selected_profiles,
-        context,
-    )
+    })
 }
 
-fn load_directory(path: &Path) -> Result<FabricDocument> {
-    let agent = path.join(AGENT_YAML);
-    if agent.exists() {
-        return load_fabric_config(&agent);
+fn validate_config(config: &FabricConfig) -> Result<()> {
+    if config.harness.adapter_id.trim().is_empty() {
+        return Err(FabricError::UnknownAdapter {
+            adapter_id: config.harness.adapter_id.clone(),
+            available: Vec::new(),
+        });
     }
-    Err(FabricError::MissingEntrypoint(path.to_path_buf()))
+    Ok(())
 }
 
-fn load_file(path: &Path) -> Result<FabricDocument> {
-    match path.file_name().and_then(|name| name.to_str()) {
-        Some(AGENT_YAML) => load_fabric_config(path),
-        Some(name) if name.ends_with(".yaml") || name.ends_with(".yml") => load_fabric_config(path),
-        _ => Err(FabricError::UnsupportedExtension(path.to_path_buf())),
-    }
-}
-
-/// Resolve an agent directory or single agent config into a runnable plan.
-pub fn resolve_run_plan(path: impl AsRef<Path>, profile: Option<&str>) -> Result<RunPlan> {
-    let profiles: Vec<String> = profile.into_iter().map(str::to_string).collect();
-    resolve_run_plan_with_profiles(path, &profiles)
-}
-
-/// Resolve an agent directory or single agent config with ordered profile application.
-pub fn resolve_run_plan_with_profiles(
-    path: impl AsRef<Path>,
-    profiles: &[String],
-) -> Result<RunPlan> {
-    resolve_run_plan_from_effective_config(resolve_effective_config_with_profiles(path, profiles)?)
-}
-
-/// Resolve a typed Fabric config and typed profile overlays into a runnable plan.
+/// Resolve a typed Fabric config into a runnable plan.
 ///
-/// This is the SDK-facing entrypoint. File and YAML loading stays outside this
-/// function; callers provide already-typed configs and the path context used for
-/// resolving relative paths.
+/// Callers provide an already-composed typed config and the explicit base
+/// directory used for resolving relative paths.
 pub fn resolve_run_plan_from_config(
     config: FabricConfig,
-    profiles: &[ProfileConfig],
     context: ResolveContext,
 ) -> Result<RunPlan> {
-    resolve_run_plan_from_effective_config(resolve_effective_config_from_config(
-        config, profiles, context,
-    )?)
-}
-
-fn load_fabric_config(path: &Path) -> Result<FabricDocument> {
-    let config = read_yaml::<FabricConfig>(path)?;
-    let root = parent_or_current(path);
-    Ok(FabricDocument::FabricConfig {
-        path: path.to_path_buf(),
-        root,
-        config,
-    })
-}
-
-fn read_yaml<T>(path: &Path) -> Result<T>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    let raw = std::fs::read_to_string(path).map_err(|source| FabricError::Read {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    serde_yaml::from_str(&raw).map_err(|source| FabricError::ParseYaml {
-        path: path.to_path_buf(),
-        source,
-    })
+    resolve_run_plan_from_effective_config(resolve_effective_config_from_config(config, context)?)
 }
 
 fn read_json<T>(path: &Path) -> Result<T>
@@ -1245,201 +1020,42 @@ where
     })
 }
 
-fn parent_or_current(path: &Path) -> PathBuf {
-    path.parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
-fn load_profile_configs(
-    agent_name: &str,
-    config: &FabricConfig,
-    config_root: &Path,
-    profiles: &[String],
-) -> Result<(Vec<ProfileConfig>, Vec<String>)> {
-    if profiles.is_empty() {
-        return Ok((Vec::new(), Vec::new()));
-    }
-    let discovered = discover_profiles(&config, config_root)?;
-    let mut profile_configs = Vec::new();
-    let mut selected_profiles = Vec::new();
-    for profile_name in profiles {
-        let profile_path =
-            if let Some(path) = resolve_profile_file_reference(config_root, &profile_name) {
-                path
-            } else if let Some(path) = discovered.get(profile_name.as_str()) {
-                path.clone()
-            } else {
-                return Err(FabricError::UnknownProfile {
-                    profile: profile_name.clone(),
-                    agent: agent_name.to_string(),
-                    available: discovered.keys().cloned().collect(),
-                });
-            };
-        let profile_config = read_yaml::<ProfileConfig>(&profile_path)?;
-        profile_configs.push(profile_config);
-        selected_profiles.push(profile_name.clone());
-    }
-    Ok((profile_configs, selected_profiles))
-}
-
-fn resolve_effective_config_from_config_with_profile_names(
-    config: FabricConfig,
-    profiles: &[ProfileConfig],
-    selected_profiles: Vec<String>,
-    context: ResolveContext,
-) -> Result<EffectiveConfig> {
-    let mut effective = config;
-    for profile in profiles {
-        apply_profile_config(&mut effective, profile)?;
-    }
-    let config = into_effective_config(effective);
-    Ok(EffectiveConfig {
-        agent_name: config.metadata.name.clone(),
-        profiles: selected_profiles,
-        agent_root: context.agent_root,
-        config_path: context.config_path,
-        config_root: context.config_root,
-        config,
-    })
-}
-
 /// Resolve execution planning metadata from merged effective config.
 pub fn resolve_run_plan_from_effective_config(
     effective_config: EffectiveConfig,
 ) -> Result<RunPlan> {
     let config = effective_config.config.clone();
-    let config_root = effective_config.config_root.clone();
-    let adapter_descriptor = resolve_adapter_descriptor(&config, &config_root)?;
+    let base_dir = effective_config.base_dir.clone();
+    let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir)?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
     let resolution = resolve_resolution(&config, descriptor)?;
-    let environment_plan = resolve_environment_plan(&config, &config_root);
+    let environment_plan = resolve_environment_plan(&config, &base_dir);
     validate_control_location(descriptor, environment_plan.as_ref())?;
-    let capability_plan =
-        resolve_capability_plan(&config, &config_root, adapter_descriptor.as_ref());
+    let capability_plan = resolve_capability_plan(&config, &base_dir, adapter_descriptor.as_ref());
     let capabilities = resolve_runtime_capabilities(&config, descriptor);
     let telemetry_plan = resolve_telemetry_plan(&config, descriptor)?;
     Ok(RunPlan {
         agent_name: effective_config.agent_name.clone(),
-        profiles: effective_config.profiles.clone(),
         adapter_descriptor,
         resolution,
         environment_plan,
         capability_plan,
         capabilities,
         telemetry_plan,
-        agent_root: effective_config.agent_root.clone(),
-        config_path: effective_config.config_path.clone(),
-        config_root,
+        base_dir,
         config,
         effective_config,
     })
 }
 
-fn into_effective_config(mut config: FabricConfig) -> FabricConfig {
-    config.profiles = ProfileRegistryConfig::default();
-    config
-}
-
-fn resolve_profile_file_reference(config_root: &Path, profile: &str) -> Option<PathBuf> {
-    let path = Path::new(profile);
-    let cwd_relative = normalize_path(path.to_path_buf());
-    if cwd_relative.is_file() {
-        return Some(cwd_relative);
-    }
-    let config_relative = resolve_path(config_root, path);
-    if config_relative.is_file() {
-        return Some(config_relative);
-    }
-    None
-}
-
-fn discover_profiles(
-    config: &FabricConfig,
-    config_root: &Path,
-) -> Result<BTreeMap<String, PathBuf>> {
-    let mut profiles: BTreeMap<String, PathBuf> = BTreeMap::new();
-    for directory in &config.profiles.directories {
-        let directory = resolve_path(config_root, directory);
-        if !directory.exists() {
-            println!(
-                "warning: profile directory does not exist: {}",
-                directory.display()
-            );
-            continue;
-        }
-        let entries = std::fs::read_dir(&directory).map_err(|source| FabricError::Read {
-            path: directory.clone(),
-            source,
-        })?;
-        for entry in entries {
-            let path = entry
-                .map_err(|source| FabricError::Read {
-                    path: directory.clone(),
-                    source,
-                })?
-                .path();
-            if !is_yaml_file(&path) {
-                continue;
-            }
-            let profile_config = read_yaml::<ProfileConfig>(&path)?;
-            let Some(name) = profile_config.name.clone().or_else(|| {
-                path.file_stem()
-                    .and_then(|stem| stem.to_str())
-                    .map(str::to_string)
-            }) else {
-                continue;
-            };
-            let profile_path = normalize_path(path);
-            if profiles.contains_key(&name) {
-                return Err(FabricError::ProfileError {
-                    path: profile_path,
-                    message: format!("duplicate profile `{name}`"),
-                });
-            }
-            profiles.insert(name, profile_path);
-        }
-    }
-    Ok(profiles)
-}
-
-fn is_yaml_file(path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| matches!(extension, "yaml" | "yml"))
-}
-
-fn apply_profile_config(config: &mut FabricConfig, profile: &ProfileConfig) -> Result<()> {
-    let mut merged = serde_json::to_value(&*config).map_err(FabricError::SerializeJson)?;
-    let overlay = Value::Object(profile.overlay.clone().into_iter().collect());
-    merge_json(&mut merged, overlay);
-    *config = serde_json::from_value(merged).map_err(FabricError::SerializeJson)?;
-    Ok(())
-}
-
-fn merge_json(base: &mut Value, overlay: Value) {
-    match (base, overlay) {
-        (Value::Object(base), Value::Object(overlay)) => {
-            for (key, value) in overlay {
-                if let Some(current) = base.get_mut(&key) {
-                    merge_json(current, value);
-                } else {
-                    base.insert(key, value);
-                }
-            }
-        }
-        (base, overlay) => *base = overlay,
-    }
-}
-
 fn resolve_adapter_descriptor(
     config: &FabricConfig,
-    config_root: &Path,
+    base_dir: &Path,
 ) -> Result<Option<ResolvedAdapterDescriptor>> {
     let adapter_id = &config.harness.adapter_id;
-    let registry = AdapterRegistry::from_config(config, config_root)?;
+    let registry = AdapterRegistry::from_config(config, base_dir)?;
     let Some(entry) = registry.get(adapter_id) else {
         return Err(FabricError::UnknownAdapter {
             adapter_id: adapter_id.clone(),
@@ -1535,7 +1151,7 @@ fn resolve_resolution(
     Ok(config.harness.resolution)
 }
 
-fn resolve_environment_plan(config: &FabricConfig, config_root: &Path) -> Option<EnvironmentPlan> {
+fn resolve_environment_plan(config: &FabricConfig, base_dir: &Path) -> Option<EnvironmentPlan> {
     let environment = config.environment.as_ref()?;
     Some(EnvironmentPlan {
         provider: environment.provider.clone(),
@@ -1544,12 +1160,12 @@ fn resolve_environment_plan(config: &FabricConfig, config_root: &Path) -> Option
         workspace: environment
             .workspace
             .as_ref()
-            .map(|workspace| resolve_path(config_root, workspace)),
+            .map(|workspace| resolve_path(base_dir, workspace)),
         artifacts: environment
             .artifacts
             .as_ref()
             .or(config.runtime.artifacts.as_ref())
-            .map(|artifacts| resolve_path(config_root, artifacts)),
+            .map(|artifacts| resolve_path(base_dir, artifacts)),
         connection: environment.connection.clone(),
         metadata: environment.metadata.clone(),
         settings: environment.settings.clone(),
@@ -1558,7 +1174,7 @@ fn resolve_environment_plan(config: &FabricConfig, config_root: &Path) -> Option
 
 fn resolve_capability_plan(
     config: &FabricConfig,
-    config_root: &Path,
+    base_dir: &Path,
     adapter_descriptor: Option<&ResolvedAdapterDescriptor>,
 ) -> CapabilityPlan {
     let accepts = |area: &str| {
@@ -1580,7 +1196,7 @@ fn resolve_capability_plan(
             skills
                 .paths
                 .iter()
-                .map(|path| resolve_path(config_root, path))
+                .map(|path| resolve_path(base_dir, path))
                 .collect()
         })
         .unwrap_or_default();
@@ -1815,32 +1431,24 @@ fn normalize_path(path: PathBuf) -> PathBuf {
         .collect()
 }
 
-/// Merged Fabric config after applying selected profiles.
+/// Resolved Fabric config with explicit path context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct EffectiveConfig {
     /// Stable agent name.
     pub agent_name: String,
-    /// Ordered selected profiles.
-    pub profiles: Vec<String>,
-    /// Root used to resolve agent package paths.
-    pub agent_root: PathBuf,
-    /// Resolved Fabric config path.
-    pub config_path: PathBuf,
-    /// Root used to resolve config-local paths.
-    pub config_root: PathBuf,
-    /// Merged Fabric config with authoring-time profile discovery removed.
+    /// Base directory used to resolve relative config paths.
+    pub base_dir: PathBuf,
+    /// Complete typed Fabric config.
     pub config: FabricConfig,
 }
 
 /// Resolved Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunPlan {
-    /// Merged config and provenance used as the base for this plan.
+    /// Resolved config used as the base for this plan.
     pub effective_config: EffectiveConfig,
     /// Stable agent name.
     pub agent_name: String,
-    /// Ordered selected profiles.
-    pub profiles: Vec<String>,
     /// Adapter descriptor resolved for this plan, when configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adapter_descriptor: Option<ResolvedAdapterDescriptor>,
@@ -1858,13 +1466,9 @@ pub struct RunPlan {
     /// Resolved telemetry pass-through plan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry_plan: Option<TelemetryPlan>,
-    /// Root used to resolve agent package paths.
-    pub agent_root: PathBuf,
-    /// Resolved Fabric config path.
-    pub config_path: PathBuf,
-    /// Root used to resolve config-local paths.
-    pub config_root: PathBuf,
-    /// Resolved Fabric profile config.
+    /// Base directory used to resolve relative config paths.
+    pub base_dir: PathBuf,
+    /// Complete typed Fabric config.
     pub config: FabricConfig,
 }
 
@@ -2041,976 +1645,73 @@ pub struct TelemetryPlan {
 mod tests {
     use super::*;
 
-    fn file_config_agent_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/file-config-agent")
+    fn typed_config(adapter_id: &str) -> FabricConfig {
+        serde_json::from_value(serde_json::json!({
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "typed-agent"},
+            "harness": {
+                "adapter_id": adapter_id,
+                "resolution": "preinstalled"
+            },
+            "runtime": {},
+            "environment": {
+                "provider": "local",
+                "workspace": "workspace"
+            },
+            "skills": {"paths": ["skills/review"]}
+        }))
+        .expect("typed config")
     }
 
-    fn example_adapter_descriptor_path() -> PathBuf {
-        repository_adapter_dir().join("hermes/fabric-adapter.json")
+    fn repository_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
     #[test]
-    fn typed_profiles_merge_partial_objects_and_preserve_extensions() {
-        let config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.hermes
-  settings:
-    workspace: ./workspace
-runtime:
-  input_schema: chat
-  output_schema: message
-tools:
-  blocked: [base]
-  future:
-    value: true
-future_top_level:
-  base: true
-  nested:
-    first: 1
-"#,
+    fn resolves_complete_typed_config_with_explicit_base_dir() {
+        let base_dir = repository_root();
+        let plan = resolve_run_plan_from_config(
+            typed_config("nvidia.fabric.hermes"),
+            ResolveContext::new(&base_dir),
         )
-        .expect("base config");
-        let profile: ProfileConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.profile/v1alpha1
-name: overlay
-harness:
-  settings:
-    timeout_seconds: 30
-runtime:
-  input_schema: prompt
-tools:
-  blocked: [profile]
-  future: null
-future_top_level:
-  profile: true
-  nested:
-    second: 2
-"#,
-        )
-        .expect("partial profile");
+        .expect("typed plan");
 
+        assert_eq!(plan.agent_name, "typed-agent");
+        assert_eq!(plan.base_dir, base_dir);
+        assert_eq!(plan.effective_config.base_dir, plan.base_dir);
+        assert_eq!(
+            plan.capability_plan.skill_paths,
+            vec![plan.base_dir.join("skills/review")]
+        );
+        assert_eq!(
+            plan.adapter_descriptor
+                .as_ref()
+                .map(|adapter| adapter.descriptor.adapter_id.as_str()),
+            Some("nvidia.fabric.hermes")
+        );
+    }
+
+    #[test]
+    fn typed_config_round_trip_has_no_file_provenance() {
         let effective = resolve_effective_config_from_config(
-            config,
-            &[profile],
-            ResolveContext::from_agent_root("."),
+            typed_config("nvidia.fabric.hermes"),
+            ResolveContext::new("/tmp/fabric-base"),
         )
         .expect("effective config");
-        let value = serde_json::to_value(&effective.config).expect("config json");
+        let value = serde_json::to_value(effective).expect("effective config JSON");
 
-        assert_eq!(effective.profiles, ["overlay"]);
-        assert_eq!(value["runtime"]["input_schema"], "prompt");
-        assert_eq!(value["harness"]["settings"]["workspace"], "./workspace");
-        assert_eq!(value["harness"]["settings"]["timeout_seconds"], 30);
-        assert_eq!(value["tools"]["blocked"], serde_json::json!(["profile"]));
-        assert!(value["tools"]["future"].is_null());
-        assert_eq!(value["future_top_level"]["base"], true);
-        assert_eq!(value["future_top_level"]["profile"], true);
-        assert_eq!(value["future_top_level"]["nested"]["first"], 1);
-        assert_eq!(value["future_top_level"]["nested"]["second"], 2);
+        assert_eq!(value["base_dir"], "/tmp/fabric-base");
+        assert_eq!(value["config"]["metadata"]["name"], "typed-agent");
+        assert_eq!(value.as_object().map(serde_json::Map::len), Some(3));
     }
 
     #[test]
-    fn runtime_uses_stable_defaults_for_omitted_optional_fields() {
-        let config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.hermes
-runtime:
-"#,
-        )
-        .expect("minimal config");
-
-        assert_eq!(config.runtime.input_schema, "text");
-        assert_eq!(config.runtime.output_schema, "text");
-    }
-
-    #[test]
-    fn relay_telemetry_provider_is_enabled_by_presence() {
-        let config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.hermes
-runtime:
-telemetry:
-  providers:
-    relay: {}
-"#,
-        )
-        .expect("config with relay telemetry provider");
-
-        let telemetry = config.telemetry.as_ref().expect("telemetry config");
-        let plan = resolve_telemetry_plan(&config, None)
-            .expect("resolve telemetry plan")
-            .expect("telemetry plan");
-
-        assert!(telemetry.providers.contains_key(&TelemetryProvider::Relay));
-        assert_eq!(plan.providers, vec![TelemetryProvider::Relay]);
-        assert!(plan.relay_enabled);
-        assert_eq!(plan.relay_config, None);
-    }
-
-    #[test]
-    fn native_telemetry_provider_skips_relay_config() {
-        let config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.hermes
-runtime:
-telemetry:
-  providers:
-    native:
-      config:
-        exporter: test
-relay:
-  project: relay-project
-  output_dir: ./relay-output
-"#,
-        )
-        .expect("config with native telemetry provider");
-
-        let plan = resolve_telemetry_plan(&config, None)
-            .expect("resolve telemetry plan")
-            .expect("telemetry plan");
-
-        assert_eq!(plan.providers, vec![TelemetryProvider::Native]);
-        assert!(!plan.relay_enabled);
-        assert_eq!(plan.relay_project, None);
-        assert_eq!(plan.relay_output_dir, None);
-        assert_eq!(plan.relay_config, None);
-        assert_eq!(
-            plan.native_config,
-            Some(serde_json::json!({"exporter": "test"}))
-        );
-    }
-
-    #[test]
-    fn relay_telemetry_config_generates_relay_plugin_config() {
-        let config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.hermes
-runtime:
-telemetry:
-  providers:
-    relay: {}
-relay:
-  project: typed-project
-  output_dir: ./typed-relay
-  observability:
-    atof:
-      enabled: true
-      output_directory: ./typed-relay
-      filename: events.atof.jsonl
-      mode: overwrite
-    atif:
-      enabled: true
-      output_directory: ./typed-relay
-      filename_template: trajectory-{session_id}.atif.json
-      agent_name: code-review-agent
-    opentelemetry:
-      enabled: true
-      endpoint: http://localhost:4318/v1/traces
-  components:
-    - kind: switchyard
-      enabled: true
-      config:
-        route: canary
-  policy:
-    unknown_component: error
-"#,
-        )
-        .expect("config with typed relay telemetry");
-
-        let plan = resolve_telemetry_plan(&config, None)
-            .expect("resolve telemetry plan")
-            .expect("telemetry plan");
-        let relay_config = plan.relay_config.expect("relay plugin config");
-
-        assert_eq!(plan.relay_project.as_deref(), Some("typed-project"));
-        assert_eq!(plan.relay_output_dir, Some(PathBuf::from("./typed-relay")));
-        assert_eq!(relay_config["version"], serde_json::json!(1));
-        assert_eq!(
-            relay_config["components"][0]["kind"],
-            serde_json::json!("observability")
-        );
-        assert_eq!(
-            relay_config["components"][0]["config"]["atof"]["mode"],
-            serde_json::json!("overwrite")
-        );
-        assert_eq!(
-            relay_config["components"][0]["config"]["atif"]["agent_name"],
-            serde_json::json!("code-review-agent")
-        );
-        assert_eq!(
-            relay_config["components"][0]["config"]["opentelemetry"]["endpoint"],
-            serde_json::json!("http://localhost:4318/v1/traces")
-        );
-        assert_eq!(
-            relay_config["components"][1],
-            serde_json::json!({
-                "kind": "switchyard",
-                "enabled": true,
-                "config": {"route": "canary"}
-            })
-        );
-        assert_eq!(
-            relay_config["policy"]["unknown_component"],
-            serde_json::json!("error")
-        );
-    }
-
-    #[test]
-    fn telemetry_provider_rejects_unknown_provider_keys() {
-        let result = serde_yaml::from_str::<TelemetryConfig>(
-            r#"
-providers:
-  unsupported: {}
-"#,
-        );
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn telemetry_plan_rejects_provider_not_declared_by_adapter() {
-        let config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.claude
-runtime:
-telemetry:
-  providers:
-    relay: {}
-"#,
-        )
-        .expect("config with relay telemetry provider");
-        let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
-            "contract_version": ADAPTER_CONTRACT_VERSION,
-            "adapter_id": "nvidia.fabric.claude",
-            "harness": "claude",
-            "adapter_kind": "python"
-        }))
-        .expect("adapter descriptor");
-
-        let error = resolve_telemetry_plan(&config, Some(&descriptor))
-            .expect_err("unsupported relay provider");
-
-        assert!(matches!(
-            error,
-            FabricError::AdapterDescriptorUnsupported {
-                adapter_id,
-                field: "telemetry.providers",
-                value,
-            } if adapter_id == "nvidia.fabric.claude" && value == "relay"
-        ));
-    }
-
-    #[test]
-    fn telemetry_plan_uses_outputs_for_selected_adapter_providers() {
-        let config: FabricConfig = serde_yaml::from_str(
-            r#"
-schema_version: fabric.agent/v1alpha1
-metadata:
-  name: demo
-harness:
-  adapter_id: nvidia.fabric.codex
-runtime:
-telemetry:
-  providers:
-    relay: {}
-    native: {}
-"#,
-        )
-        .expect("config with relay and native telemetry providers");
-        let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
-            "contract_version": ADAPTER_CONTRACT_VERSION,
-            "adapter_id": "nvidia.fabric.codex",
-            "harness": "codex",
-            "adapter_kind": "python",
-            "telemetry": {
-                "providers": {
-                    "relay": {
-                        "outputs": ["atif", "otel"],
-                        "integration_modes": ["hooks", "gateway"]
-                    },
-                    "native": {
-                        "outputs": ["otel"]
-                    }
-                }
-            }
-        }))
-        .expect("adapter descriptor");
-
-        let plan = resolve_telemetry_plan(&config, Some(&descriptor))
-            .expect("resolve telemetry plan")
-            .expect("telemetry plan");
-
-        assert_eq!(
-            plan.providers,
-            vec![TelemetryProvider::Relay, TelemetryProvider::Native]
-        );
-        assert_eq!(plan.adapter_outputs, vec!["atif", "otel"]);
-    }
-
-    #[test]
-    fn loads_adapter_descriptor() {
+    fn loads_and_validates_json_adapter_descriptor() {
         let descriptor =
-            load_adapter_descriptor(example_adapter_descriptor_path()).expect("adapter descriptor");
+            load_adapter_descriptor(repository_root().join("adapters/hermes/fabric-adapter.json"))
+                .expect("adapter descriptor");
 
         assert_eq!(descriptor.contract_version, ADAPTER_CONTRACT_VERSION);
-        assert_eq!(descriptor.adapter_id, "nvidia.fabric.hermes");
-        assert_eq!(descriptor.harness, "hermes");
         assert_eq!(descriptor.adapter_kind, AdapterKind::Python);
-        let descriptor_json = serde_json::to_value(&descriptor).expect("descriptor json");
-        assert_eq!(
-            descriptor_json.get("harness").and_then(Value::as_str),
-            Some("hermes")
-        );
-        assert!(descriptor_json.get("harness_type").is_none());
-        assert_eq!(
-            descriptor.runner.get("module").and_then(Value::as_str),
-            Some("nemo_fabric_adapters.hermes.adapter")
-        );
-        assert_eq!(
-            descriptor.runner.get("callable").and_then(Value::as_str),
-            Some("run")
-        );
-        assert!(descriptor.config.accepts.contains(&"telemetry".to_string()));
-        let relay = descriptor
-            .telemetry
-            .providers
-            .get(&TelemetryProvider::Relay)
-            .expect("relay telemetry support");
-        assert!(relay.outputs.contains(&"atif".to_string()));
-    }
-
-    #[test]
-    fn resolves_base_config_from_agent_directory() {
-        let plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
-
-        assert_eq!(plan.agent_name, "code-review-agent");
-        assert!(plan.profiles.is_empty());
-        let plan_json = serde_json::to_value(&plan).expect("plan json");
-        assert_eq!(plan_json["profiles"], serde_json::json!([]));
-        assert_eq!(
-            plan_json["capabilities"],
-            serde_json::json!({
-                "service": false,
-                "streaming": false,
-                "updates": false,
-                "cancellation": false
-            })
-        );
-        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes");
-        assert_eq!(
-            plan.adapter_descriptor
-                .as_ref()
-                .map(|adapter| adapter.descriptor.adapter_id.as_str()),
-            Some("nvidia.fabric.hermes")
-        );
-        assert_eq!(
-            plan.adapter_descriptor
-                .as_ref()
-                .map(|adapter| adapter.descriptor.adapter_kind),
-            Some(AdapterKind::Python)
-        );
-        assert_eq!(
-            plan.adapter_descriptor
-                .as_ref()
-                .map(|adapter| adapter.source),
-            Some(AdapterDescriptorSource::Repository)
-        );
-        assert_eq!(plan.resolution, Some(ResolutionStrategy::Preinstalled));
-        assert_eq!(
-            plan.environment_plan
-                .as_ref()
-                .map(|environment| environment.provider.as_str()),
-            Some("local")
-        );
-        assert_eq!(plan.capability_plan.skill_paths.len(), 1);
-        assert!(plan.capability_plan.mcp_servers.contains_key("github"));
-        assert_eq!(plan.capability_plan.native.skill_paths.len(), 1);
-        assert!(
-            plan.capability_plan
-                .native
-                .mcp_servers
-                .contains_key("github")
-        );
-        assert!(plan.capability_plan.managed.skill_paths.is_empty());
-        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
-        assert!(plan.config.profiles.directories.is_empty());
-        assert_eq!(
-            plan.config
-                .telemetry
-                .as_ref()
-                .map(|telemetry| telemetry.providers.is_empty()),
-            None
-        );
-    }
-
-    #[test]
-    fn resolves_hermes_adapter_descriptor() {
-        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes")).expect("run plan");
-        let adapter = plan
-            .adapter_descriptor
-            .as_ref()
-            .expect("configured adapter");
-
-        assert_eq!(adapter.source, AdapterDescriptorSource::Repository);
-        assert_eq!(adapter.descriptor.adapter_id, "nvidia.fabric.hermes");
-        assert_eq!(adapter.descriptor.adapter_kind, AdapterKind::Python);
-        assert!(adapter.root.ends_with("adapters/hermes"));
-    }
-
-    #[test]
-    fn resolves_package_local_custom_adapter_descriptor() {
-        let root =
-            std::env::temp_dir().join(format!("fabric-local-adapter-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("adapters/reviewer-process")).expect("create adapters");
-        std::fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: reviewer-agent
-harness:
-  adapter_id: acme.fabric.reviewer.process
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  input_schema: text
-  output_schema: message
-environment:
-  provider: local
-"#,
-        )
-        .expect("write agent config");
-        std::fs::write(
-            root.join("adapters/reviewer-process/fabric-adapter.json"),
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "acme.fabric.reviewer.process",
-  "harness": "reviewer",
-  "adapter_kind": "process"
-}"#,
-        )
-        .expect("write adapter descriptor");
-
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let adapter = plan
-            .adapter_descriptor
-            .as_ref()
-            .expect("configured adapter");
-
-        assert_eq!(adapter.source, AdapterDescriptorSource::Local);
-        assert_eq!(
-            adapter.descriptor.adapter_id,
-            "acme.fabric.reviewer.process"
-        );
-        assert_eq!(adapter.descriptor.adapter_kind, AdapterKind::Process);
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn resolves_env_profile_from_agent_directory() {
-        let plan =
-            resolve_run_plan(file_config_agent_dir(), Some("env_opensandbox")).expect("run plan");
-
-        assert_eq!(plan.profiles, vec!["env_opensandbox"]);
-        assert!(plan.config_path.ends_with("agent.yaml"));
-        assert_eq!(
-            plan.config
-                .environment
-                .as_ref()
-                .map(|environment| environment.provider.as_str()),
-            Some("opensandbox")
-        );
-    }
-
-    #[test]
-    fn resolves_mcp_profile_from_agent_directory() {
-        let plan = resolve_run_plan(file_config_agent_dir(), Some("mcp_github")).expect("run plan");
-
-        assert_eq!(plan.profiles, vec!["mcp_github"]);
-        let plan_json = serde_json::to_value(&plan).expect("plan json");
-        assert!(plan_json.get("profile").is_none());
-        assert_eq!(
-            plan.config.mcp.as_ref().map(|mcp| mcp.servers.len()),
-            Some(1)
-        );
-        assert!(plan.capability_plan.native.mcp_servers.is_empty());
-        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
-        assert!(
-            plan.capability_plan.routes.iter().any(
-                |route| route.name == "github" && route.target == CapabilityTarget::Unsupported
-            )
-        );
-        assert!(
-            plan.capability_plan
-                .unsupported
-                .mcp_servers
-                .contains_key("github")
-        );
-    }
-
-    #[test]
-    fn resolves_ordered_profiles_from_agent_directory() {
-        let profiles = vec!["env_local".to_string(), "mcp_github".to_string()];
-        let plan =
-            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
-
-        assert_eq!(plan.profiles, profiles);
-        assert_eq!(
-            plan.environment_plan
-                .as_ref()
-                .map(|environment| environment.provider.as_str()),
-            Some("local")
-        );
-        assert_eq!(
-            plan.telemetry_plan
-                .as_ref()
-                .map(|telemetry| telemetry.relay_enabled),
-            Some(true)
-        );
-        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
-        assert!(
-            plan.capability_plan
-                .unsupported
-                .mcp_servers
-                .contains_key("github")
-        );
-    }
-
-    #[test]
-    fn resolves_in_memory_config_with_typed_profiles() {
-        let FabricDocument::FabricConfig { config, root, .. } =
-            load_fabric_document(file_config_agent_dir()).expect("agent config");
-        let profile = read_yaml::<ProfileConfig>(&root.join("profiles/mcp-github.yaml"))
-            .expect("profile config");
-
-        let plan = resolve_run_plan_from_config(
-            config,
-            &[profile],
-            ResolveContext::from_agent_root(root.clone()),
-        )
-        .expect("run plan");
-
-        assert_eq!(plan.profiles, vec!["mcp_github"]);
-        assert!(plan.config_path.ends_with("agent.yaml"));
-        assert!(plan.config.profiles.directories.is_empty());
-        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
-        assert!(
-            plan.capability_plan
-                .unsupported
-                .mcp_servers
-                .contains_key("github")
-        );
-        assert_eq!(plan.config_root, root);
-    }
-
-    #[test]
-    fn unsupported_capabilities_do_not_claim_fabric_managed_execution() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-unsupported-capability-test-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("adapters/minimal")).expect("create adapters");
-        std::fs::create_dir_all(root.join("skills/review")).expect("create skills");
-        std::fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: unsupported-capability-agent
-harness:
-  adapter_id: acme.fabric.minimal
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  input_schema: text
-  output_schema: text
-tools:
-  blocked:
-    - shell
-skills:
-  paths:
-    - ./skills/review
-mcp:
-  servers:
-    github:
-      transport: streamable-http
-      url: http://example.invalid/mcp
-      exposure: fabric_managed
-"#,
-        )
-        .expect("write agent config");
-        std::fs::write(
-            root.join("adapters/minimal/fabric-adapter.json"),
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "acme.fabric.minimal",
-  "harness": "minimal",
-  "adapter_kind": "process"
-}"#,
-        )
-        .expect("write adapter descriptor");
-
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-
-        assert!(!plan.capability_plan.managed.tools_configured);
-        assert!(plan.capability_plan.managed.skill_paths.is_empty());
-        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
-        assert_eq!(plan.capability_plan.tools.blocked, vec!["shell"]);
-        assert!(plan.capability_plan.unsupported.tools_configured);
-        assert_eq!(plan.capability_plan.unsupported.skill_paths.len(), 1);
-        assert!(
-            plan.capability_plan
-                .unsupported
-                .mcp_servers
-                .contains_key("github")
-        );
-        assert!(
-            plan.capability_plan
-                .routes
-                .iter()
-                .all(|route| route.target == CapabilityTarget::Unsupported),
-            "{:?}",
-            plan.capability_plan.routes
-        );
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn blocked_tools_require_policy_specific_adapter_support() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-blocked-tools-capability-test-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("adapters/tools")).expect("create adapters");
-        std::fs::write(
-            root.join("adapters/tools/fabric-adapter.json"),
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "acme.fabric.tools",
-  "harness": "tools",
-  "adapter_kind": "process",
-  "config": {"accepts": ["tools"]}
-}"#,
-        )
-        .expect("write adapter descriptor");
-        std::fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: blocked-tools-agent
-harness:
-  adapter_id: acme.fabric.tools
-runtime:
-tools:
-  blocked:
-    - browser
-"#,
-        )
-        .expect("write agent config");
-
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-
-        assert_eq!(plan.capability_plan.tools.blocked, vec!["browser"]);
-        assert!(plan.capability_plan.tools_configured);
-        assert!(!plan.capability_plan.native.tools_configured);
-        assert!(plan.capability_plan.unsupported.tools_configured);
-        assert!(plan.capability_plan.routes.iter().any(|route| {
-            route.name == "tools.blocked" && route.target == CapabilityTarget::Unsupported
-        }));
-
-        std::fs::write(
-            root.join("adapters/tools/fabric-adapter.json"),
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "acme.fabric.tools",
-  "harness": "tools",
-  "adapter_kind": "process",
-  "config": {"accepts": ["tools", "tools.blocked"]}
-}"#,
-        )
-        .expect("write policy-aware adapter descriptor");
-
-        let plan = resolve_run_plan(&root, None).expect("policy-aware run plan");
-
-        assert!(plan.capability_plan.native.tools_configured);
-        assert!(!plan.capability_plan.unsupported.tools_configured);
-        assert!(plan.capability_plan.routes.iter().any(|route| {
-            route.name == "tools.blocked" && route.target == CapabilityTarget::HarnessNative
-        }));
-
-        std::fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: blocked-tools-agent
-harness:
-  adapter_id: acme.fabric.tools
-runtime:
-tools:
-  blocked: []
-"#,
-        )
-        .expect("write empty tools config");
-
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-
-        assert!(plan.capability_plan.tools.blocked.is_empty());
-        assert!(!plan.capability_plan.tools_configured);
-        assert!(!plan.capability_plan.native.tools_configured);
-        assert!(plan.capability_plan.routes.is_empty());
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn later_profiles_override_earlier_profiles() {
-        let profiles = vec!["env_opensandbox".to_string(), "env_local".to_string()];
-        let plan =
-            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
-
-        assert_eq!(plan.profiles, profiles);
-        assert_eq!(
-            plan.environment_plan
-                .as_ref()
-                .map(|environment| environment.provider.as_str()),
-            Some("local")
-        );
-        assert_eq!(
-            plan.environment_plan
-                .as_ref()
-                .and_then(|environment| environment.workspace.as_ref())
-                .map(|path| path.ends_with("repos/my-service")),
-            Some(true)
-        );
-        assert_eq!(
-            plan.telemetry_plan
-                .as_ref()
-                .map(|telemetry| telemetry.relay_enabled),
-            None
-        );
-
-        let profiles = vec!["env_local".to_string(), "env_opensandbox".to_string()];
-        let plan =
-            resolve_run_plan_with_profiles(file_config_agent_dir(), &profiles).expect("run plan");
-
-        assert_eq!(
-            plan.environment_plan
-                .as_ref()
-                .map(|environment| environment.provider.as_str()),
-            Some("opensandbox")
-        );
-        assert_eq!(
-            plan.telemetry_plan
-                .as_ref()
-                .map(|telemetry| telemetry.relay_enabled),
-            Some(true)
-        );
-    }
-
-    #[test]
-    fn resolves_hermes_profile_from_agent_directory() {
-        let plan = resolve_run_plan(file_config_agent_dir(), Some("hermes")).expect("run plan");
-
-        assert_eq!(plan.profiles, vec!["hermes"]);
-        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes");
-        assert_eq!(
-            plan.adapter_descriptor
-                .as_ref()
-                .map(|adapter| adapter.descriptor.adapter_id.as_str()),
-            Some("nvidia.fabric.hermes")
-        );
-        assert_eq!(
-            plan.adapter_descriptor
-                .as_ref()
-                .map(|adapter| adapter.descriptor.adapter_kind),
-            Some(AdapterKind::Python)
-        );
-        assert_eq!(
-            plan.adapter_descriptor
-                .as_ref()
-                .map(|adapter| adapter.source),
-            Some(AdapterDescriptorSource::Repository)
-        );
-        assert_eq!(plan.resolution, Some(ResolutionStrategy::Preinstalled));
-        assert_eq!(
-            plan.telemetry_plan
-                .as_ref()
-                .map(|telemetry| telemetry.relay_enabled),
-            None
-        );
-        assert!(
-            plan.capability_plan
-                .native
-                .mcp_servers
-                .contains_key("github")
-        );
-        assert!(plan.capability_plan.managed.mcp_servers.is_empty());
-        assert_eq!(plan.capability_plan.native.skill_paths.len(), 1);
-        assert!(plan.capability_plan.managed.skill_paths.is_empty());
-    }
-
-    #[test]
-    fn resolves_direct_profile_path_from_agent_directory() {
-        let plan = resolve_run_plan(file_config_agent_dir(), Some("./profiles/hermes.yaml"))
-            .expect("run plan");
-
-        assert_eq!(plan.profiles, vec!["./profiles/hermes.yaml"]);
-        assert_eq!(plan.config.harness.adapter_id, "nvidia.fabric.hermes");
-        assert_eq!(
-            plan.adapter_descriptor
-                .as_ref()
-                .map(|adapter| adapter.descriptor.adapter_id.as_str()),
-            Some("nvidia.fabric.hermes")
-        );
-    }
-
-    #[test]
-    fn errors_for_unknown_manifest_profile() {
-        let error = resolve_run_plan(file_config_agent_dir(), Some("missing")).expect_err("error");
-
-        assert!(matches!(error, FabricError::UnknownProfile { .. }));
-    }
-
-    #[test]
-    fn rejects_malformed_adapter_descriptor() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-invalid-adapter-test-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("adapters/invalid-process")).expect("create adapters");
-        std::fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: invalid-adapter-agent
-harness:
-  adapter_id: acme.fabric.invalid.process
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  input_schema: text
-  output_schema: message
-environment:
-  provider: local
-"#,
-        )
-        .expect("write agent config");
-        std::fs::write(
-            root.join("adapters/invalid-process/fabric-adapter.json"),
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "   ",
-  "harness": "invalid",
-  "adapter_kind": "process"
-}"#,
-        )
-        .expect("write adapter descriptor");
-
-        let error = resolve_run_plan(&root, None).expect_err("invalid descriptor");
-        assert!(matches!(
-            error,
-            FabricError::InvalidAdapterDescriptor { message, .. }
-                if message.contains("adapter_id")
-        ));
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn rejects_empty_adapter_id_when_loading_descriptor_directly() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-invalid-adapter-shape-test-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("create temp root");
-        let descriptor_path = root.join("fabric-adapter.json");
-        std::fs::write(
-            &descriptor_path,
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "",
-  "harness": "invalid",
-  "adapter_kind": "process"
-}"#,
-        )
-        .expect("write adapter descriptor");
-
-        let error = load_adapter_descriptor(&descriptor_path).expect_err("invalid descriptor");
-        assert!(matches!(
-            error,
-            FabricError::InvalidAdapterDescriptor { message, .. }
-                if message.contains("adapter_id")
-        ));
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn rejects_unsupported_adapter_contract_version() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-invalid-adapter-contract-test-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("create temp root");
-        let descriptor_path = root.join("fabric-adapter.json");
-        std::fs::write(
-            &descriptor_path,
-            r#"{
-  "contract_version": "fabric.adapter/v9",
-  "adapter_id": "acme.fabric.future",
-  "harness": "future",
-  "adapter_kind": "process"
-}"#,
-        )
-        .expect("write adapter descriptor");
-
-        let error = load_adapter_descriptor(&descriptor_path).expect_err("invalid descriptor");
-        assert!(matches!(
-            error,
-            FabricError::AdapterDescriptorUnsupported {
-                field,
-                value,
-                ..
-            } if field == "contract_version" && value == "fabric.adapter/v9"
-        ));
-
-        let _ = std::fs::remove_dir_all(root);
     }
 }

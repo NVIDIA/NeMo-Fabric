@@ -4,12 +4,10 @@
 [workspace]
 members = [
     "crates/fabric-core",
-    "crates/fabric-cli",
     "crates/fabric-python",
 ]
 default-members = [
     "crates/fabric-core",
-    "crates/fabric-cli",
 ]
 resolver = "2"
 
@@ -22,12 +20,9 @@ repository = "https://github.com/NVIDIA/nemo-fabric"
 [workspace.dependencies]
 nemo-fabric-core = { path = "crates/fabric-core", version = "0.1.0" }
 
-clap = { version = "4", features = ["derive"] }
-ctrlc = "3"
 schemars = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
 thiserror = "2"
 pyo3 = "0.28.2"
 

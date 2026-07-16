@@ -8,22 +8,9 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
-from collections.abc import Mapping, Sequence
-from typing import Any, overload
-
-from nemo_fabric._config_sources import (
-    AgentSource,
-    PathProfiles,
-    PathSource,
-    TypedProfiles,
-    config_json,
-    config_profiles,
-    is_config_source,
-    path_arg,
-    path_profiles,
-    profiles_json,
-    validate_base_dir,
-)
+import os
+from collections.abc import Mapping
+from typing import Any
 from nemo_fabric.errors import (
     FabricConfigError,
     FabricError,
@@ -54,14 +41,13 @@ except ImportError:
 class Fabric:
     """Primary Python entrypoint for NeMo Fabric.
 
-    The client accepts either a path-backed agent package or a typed
-    ``FabricConfig``. Path-backed sources select profiles by name; typed sources
-    accept ordered ``FabricProfileConfig`` values and may use
-    ``base_dir`` to resolve relative paths. All inspection and execution APIs
-    return typed, read-only mapping models.
+    Every lifecycle method accepts a complete, typed ``FabricConfig`` plus an
+    optional ``base_dir`` used to resolve relative paths. Compose variants in
+    Python before calling the SDK. All inspection and execution APIs return
+    typed, read-only mapping models.
 
-    ``Fabric`` is native-only. The ``fabric`` CLI is a separate public
-    surface over the same Rust core; SDK calls raise
+    ``Fabric`` is native-only. The ``nemo-fabric`` CLI is backed by this public
+    SDK; SDK calls raise
     ``FabricNativeUnavailableError`` when the native extension is not
     installed.
 
@@ -69,174 +55,89 @@ class Fabric:
     multi-turn examples.
     """
 
-    @overload
     def resolve(
         self,
-        agent: PathSource,
+        config: FabricConfig,
         *,
-        profiles: PathProfiles | None = None,
-        base_dir: None = None,
-    ) -> EffectiveConfig: ...
-
-    @overload
-    def resolve(
-        self,
-        agent: FabricConfig,
-        *,
-        profiles: TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
-    ) -> EffectiveConfig: ...
-
-    def resolve(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: PathProfiles | TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
     ) -> EffectiveConfig:
-        """Resolve an agent source and its ordered profile overlays.
+        """Resolve an agent source.
 
         Resolution validates and normalizes configuration but does not resolve
         an adapter or compute runtime capabilities. Use ``plan()`` when those
         execution details are required.
 
         Args:
-            agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``. Raw
-                mappings are not accepted; convert them with
+            config: Complete typed ``FabricConfig``. Raw mappings are not
+                accepted; convert them with
                 ``FabricConfig.from_mapping()``.
-            profiles: One profile name or an ordered sequence of names for a
-                path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
-            base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a typed config source.
+            base_dir: Base directory for resolving relative paths.
 
         Returns:
             The normalized ``EffectiveConfig`` snapshot.
 
         Raises:
-            FabricConfigError: If the source, profile stack, or resolved config
-                is invalid.
+            FabricConfigError: If the config is invalid.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
         """
 
         native = self._require_native_module("resolve")
         try:
-            if is_config_source(agent):
-                typed_profiles = config_profiles(profiles)  # type: ignore[arg-type]
-                raw = native.resolve_config(
-                    config_json(agent),
-                    profiles_json(typed_profiles),
-                    validate_base_dir(agent, base_dir),
-                )
-            else:
-                validate_base_dir(agent, base_dir)
-                raw = native.inspect(
-                    path_arg(agent), path_profiles(profiles)  # type: ignore[arg-type]
-                )
+            raw = native.resolve_config(
+                _config_json(config),
+                _base_dir_arg(base_dir),
+            )
             return EffectiveConfig.from_mapping(json.loads(raw))
         except FabricError:
             raise
         except Exception as error:
             raise FabricConfigError(str(error)) from error
 
-    @overload
     def plan(
         self,
-        agent: PathSource,
+        config: FabricConfig,
         *,
-        profiles: PathProfiles | None = None,
-        base_dir: None = None,
-    ) -> RunPlan: ...
-
-    @overload
-    def plan(
-        self,
-        agent: FabricConfig,
-        *,
-        profiles: TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
-    ) -> RunPlan: ...
-
-    def plan(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: PathProfiles | TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
     ) -> RunPlan:
         """Resolve an agent source into an immutable execution plan.
 
-        Planning applies profiles, resolves the selected adapter, and reports
-        optional runtime capabilities such as streaming, updates, and
-        cancellation. It does not start the runtime.
+        Planning resolves the selected adapter and reports optional runtime
+        capabilities such as streaming, updates, and cancellation. Planning
+        does not start the runtime.
 
         Args:
-            agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``. Raw
-                mappings are not accepted.
-            profiles: One profile name or an ordered sequence of names for a
-                path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
-            base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a typed config source.
+            config: Complete typed ``FabricConfig``. Raw mappings are not
+                accepted.
+            base_dir: Base directory for resolving relative paths.
 
         Returns:
             A ``RunPlan`` containing the effective config, adapter, and
             declared runtime capabilities.
 
         Raises:
-            FabricConfigError: If the source, profile stack, config, or adapter
-                resolution is invalid.
+            FabricConfigError: If the config or adapter resolution is invalid.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
         """
 
         native = self._require_native_module("plan")
         try:
-            if is_config_source(agent):
-                typed_profiles = config_profiles(profiles)  # type: ignore[arg-type]
-                raw = native.plan_config(
-                    config_json(agent),
-                    profiles_json(typed_profiles),
-                    validate_base_dir(agent, base_dir),
-                )
-            else:
-                validate_base_dir(agent, base_dir)
-                raw = native.plan(
-                    path_arg(agent), path_profiles(profiles)  # type: ignore[arg-type]
-                )
+            raw = native.plan_config(
+                _config_json(config),
+                _base_dir_arg(base_dir),
+            )
             return RunPlan.from_mapping(json.loads(raw))
         except FabricError:
             raise
         except Exception as error:
             raise FabricConfigError(str(error)) from error
 
-    @overload
     async def doctor(
         self,
-        agent: PathSource,
+        config: FabricConfig,
         *,
-        profiles: PathProfiles | None = None,
-        base_dir: None = None,
-    ) -> DoctorReport: ...
-
-    @overload
-    async def doctor(
-        self,
-        agent: FabricConfig,
-        *,
-        profiles: TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
-    ) -> DoctorReport: ...
-
-    async def doctor(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: PathProfiles | TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
     ) -> DoctorReport:
         """Diagnose a planned agent without starting its runtime.
 
@@ -244,13 +145,8 @@ class Fabric:
         environment requirements using the native Fabric core.
 
         Args:
-            agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``.
-            profiles: One profile name or an ordered sequence of names for a
-                path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
-            base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a typed config source.
+            config: Complete typed ``FabricConfig``.
+            base_dir: Base directory for resolving relative paths.
 
         Returns:
             A ``DoctorReport`` with aggregate status and ordered checks.
@@ -265,18 +161,10 @@ class Fabric:
         native = self._require_native_module("doctor")
 
         def diagnose() -> DoctorReport:
-            if is_config_source(agent):
-                typed_profiles = config_profiles(profiles)  # type: ignore[arg-type]
-                raw = native.doctor_config(
-                    config_json(agent),
-                    profiles_json(typed_profiles),
-                    validate_base_dir(agent, base_dir),
-                )
-            else:
-                validate_base_dir(agent, base_dir)
-                raw = native.doctor(
-                    path_arg(agent), path_profiles(profiles)  # type: ignore[arg-type]
-                )
+            raw = native.doctor_config(
+                _config_json(config),
+                _base_dir_arg(base_dir),
+            )
             return DoctorReport.from_mapping(json.loads(raw))
 
         try:
@@ -286,34 +174,11 @@ class Fabric:
         except Exception as error:
             raise FabricConfigError(str(error)) from error
 
-    @overload
     async def run(
         self,
-        agent: PathSource,
+        config: FabricConfig,
         *,
-        profiles: PathProfiles | None = None,
-        base_dir: None = None,
-        input: Any = None,
-        request: RunRequest | None = None,
-    ) -> RunResult: ...
-
-    @overload
-    async def run(
-        self,
-        agent: FabricConfig,
-        *,
-        profiles: TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
-        input: Any = None,
-        request: RunRequest | None = None,
-    ) -> RunResult: ...
-
-    async def run(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: PathProfiles | TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
         input: Any = None,
         request: RunRequest | None = None,
     ) -> RunResult:
@@ -325,13 +190,8 @@ class Fabric:
         Fabric attempts to stop a started runtime even when invocation fails.
 
         Args:
-            agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``.
-            profiles: One profile name or an ordered sequence of names for a
-                path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
-            base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a typed config source.
+            config: Complete typed ``FabricConfig``.
+            base_dir: Base directory for resolving relative paths.
             input: JSON-compatible invocation input.
             request: Complete validated ``RunRequest``.
 
@@ -348,11 +208,7 @@ class Fabric:
                 normalized result can be returned.
         """
 
-        plan = await _call_blocking(
-            lambda: self.plan(  # type: ignore[arg-type]
-                agent, profiles=profiles, base_dir=base_dir
-            )
-        )
+        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
         request_payload = _run_request_payload(
             input=input,
             request=request,
@@ -362,32 +218,11 @@ class Fabric:
             await _run_native_lifecycle(native, plan.to_mapping(), request_payload)
         )
 
-    @overload
     async def start_runtime(
         self,
-        agent: PathSource,
+        config: FabricConfig,
         *,
-        profiles: PathProfiles | None = None,
-        base_dir: None = None,
-        overrides: Mapping[str, Any] | None = None,
-    ) -> Runtime: ...
-
-    @overload
-    async def start_runtime(
-        self,
-        agent: FabricConfig,
-        *,
-        profiles: TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
-        overrides: Mapping[str, Any] | None = None,
-    ) -> Runtime: ...
-
-    async def start_runtime(
-        self,
-        agent: AgentSource,
-        *,
-        profiles: PathProfiles | TypedProfiles | None = None,
-        base_dir: PathSource | None = None,
+        base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
     ) -> Runtime:
         """Start a stateful runtime for one or more ordered invocations.
@@ -396,13 +231,8 @@ class Fabric:
         recursively merged below invocation-scoped overrides.
 
         Args:
-            agent: Agent-package directory or config-file path, or a typed
-                ``FabricConfig``.
-            profiles: One profile name or an ordered sequence of names for a
-                path-backed source. For a typed source, an ordered sequence of
-                ``FabricProfileConfig`` values.
-            base_dir: Base directory for resolving relative paths in a typed
-                config. Valid only when ``agent`` is a typed config source.
+            config: Complete typed ``FabricConfig``.
+            base_dir: Base directory for resolving relative paths.
             overrides: JSON-compatible overrides applied to every invocation
                 in the runtime unless superseded by invocation overrides.
 
@@ -418,11 +248,7 @@ class Fabric:
         """
 
         runtime_overrides = _json_mapping(overrides, "runtime overrides")
-        plan = await _call_blocking(
-            lambda: self.plan(  # type: ignore[arg-type]
-                agent, profiles=profiles, base_dir=base_dir
-            )
-        )
+        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
         native = self._require_native_module("start_runtime")
         started_runtime: dict[str, Any] | None = None
 
@@ -470,3 +296,18 @@ class Fabric:
                 code="native_unavailable",
             )
         return native
+
+
+def _config_json(config: FabricConfig) -> str:
+    if not isinstance(config, FabricConfig):
+        if isinstance(config, Mapping):
+            raise FabricConfigError(
+                "config mappings are not accepted directly; "
+                "use FabricConfig.from_mapping(...) first"
+            )
+        raise FabricConfigError("config must be a FabricConfig")
+    return json.dumps(config.to_mapping())
+
+
+def _base_dir_arg(base_dir: str | os.PathLike[str] | None) -> str | None:
+    return None if base_dir is None else os.fspath(base_dir)

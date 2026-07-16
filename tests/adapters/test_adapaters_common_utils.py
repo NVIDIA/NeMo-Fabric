@@ -154,7 +154,7 @@ def test_selected_model_config(
 def test_payload_accessors_prefer_effective_config():
     payload = {
         "agent_name": "outer-agent",
-        "config_root": "/outer",
+        "base_dir": "/outer",
         "request": {"input": "hello"},
         "environment": {"workspace": "/outer-workspace"},
         "settings": {"outer": True},
@@ -165,7 +165,7 @@ def test_payload_accessors_prefer_effective_config():
         },
         "effective_config": {
             "agent_name": "effective-agent",
-            "config_root": "/effective",
+            "base_dir": "/effective",
             "config": {
                 "harness": {"settings": {"inner": True}},
                 "models": {"inner": {"model": "inner-model"}},
@@ -177,7 +177,7 @@ def test_payload_accessors_prefer_effective_config():
     assert common_utils.effective_config(payload) == payload["effective_config"]
     assert common_utils.fabric_config(payload) == payload["effective_config"]["config"]
     assert common_utils.agent_name(payload) == "effective-agent"
-    assert common_utils.config_root(payload) == "/effective"
+    assert common_utils.base_dir(payload) == "/effective"
     assert common_utils.runtime_context(payload) == payload["runtime_context"]
     assert common_utils.environment_payload(payload) == {"workspace": "/runtime-workspace"}
     assert common_utils.settings_payload(payload) == {"inner": True}
@@ -307,7 +307,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     payload = {
         "effective_config": {
             "agent_name": "review-agent",
-            "config_root": str(tmp_path),
+            "base_dir": str(tmp_path),
             "config": {
                 "harness": {"settings": {"model": "review"}},
                 "models": {"review": {"model": "nvidia/review-model"}},

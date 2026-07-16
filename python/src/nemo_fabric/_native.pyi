@@ -2,36 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 def version() -> str: ...
-def validate(path: str) -> str: ...
-def inspect(path: str, profile: str | list[str] | None = None) -> str: ...
 def resolve_config(
     config_json: str,
-    profiles_json: str | None = None,
     base_dir: str | None = None,
 ) -> str: ...
-def plan(path: str, profile: str | list[str] | None = None) -> str: ...
 def plan_config(
     config_json: str,
-    profiles_json: str | None = None,
     base_dir: str | None = None,
 ) -> str: ...
-def doctor(path: str, profile: str | list[str] | None = None) -> str: ...
 def doctor_config(
     config_json: str,
-    profiles_json: str | None = None,
     base_dir: str | None = None,
-) -> str: ...
-def run(
-    path: str,
-    profile: str | list[str] | None = None,
-    input_text: str | None = None,
-    input_file: str | None = None,
-    request_json: str | None = None,
-    request_file: str | None = None,
 ) -> str: ...
 def run_config(
     config_json: str,
-    profiles_json: str | None = None,
     base_dir: str | None = None,
     input_text: str | None = None,
     input_file: str | None = None,

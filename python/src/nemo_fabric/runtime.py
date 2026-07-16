@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from enum import Enum
+from threading import Thread
 from typing import Any
 
 from pydantic import ValidationError
@@ -381,13 +383,25 @@ async def _run_native_lifecycle(
 
 
 async def _call_blocking(func: Any) -> Any:
-    worker = asyncio.create_task(asyncio.to_thread(func))
+    worker: concurrent.futures.Future[Any] = concurrent.futures.Future()
+
+    def run() -> None:
+        try:
+            result = func()
+        except BaseException as error:
+            worker.set_exception(error)
+        else:
+            worker.set_result(result)
+
+    Thread(target=run, name="nemo-fabric-worker", daemon=True).start()
     try:
-        return await asyncio.shield(worker)
+        while not worker.done():
+            await asyncio.sleep(0.001)
+        return worker.result()
     except asyncio.CancelledError as cancelled:
         while not worker.done():
             try:
-                await asyncio.shield(worker)
+                await asyncio.sleep(0.001)
             except asyncio.CancelledError:
                 continue
         try:

@@ -127,7 +127,7 @@ def make_payload_fixture():
     def make(tmp_path: Path, *, runtime_id: str = "run-1") -> dict[str, Any]:
         return {
             "effective_config": {
-                "config_root": str(tmp_path),
+                "base_dir": str(tmp_path),
                 "config": {
                     "harness": {"settings": {"system_prompt": "be concise"}},
                     "models": {

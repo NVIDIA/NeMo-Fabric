@@ -5,7 +5,7 @@
 
 This smoke is opt-in because it needs Docker and a local SWE-Bench image. It
 keeps Harbor responsible for task materialization and verification while Fabric
-is responsible for invoking the selected harness profile and collecting a patch.
+is responsible for invoking the selected typed harness config and collecting a patch.
 """
 
 from __future__ import annotations
@@ -51,11 +51,12 @@ def test_harbor_swebench_task(hermes_shim_agent_dir: Path):
 
     result = call_json(
         "run",
+        "--factory",
+        "_utils.configs:harbor_swebench_config",
+        "--base-dir",
         hermes_shim_agent_dir,
-        "--profile",
-        "harbor_swebench_django_13741",
-        "--request-file",
-        request_file,
+        "--request-json",
+        f"@{request_file}",
     )
 
     assert result["status"] == "succeeded", result

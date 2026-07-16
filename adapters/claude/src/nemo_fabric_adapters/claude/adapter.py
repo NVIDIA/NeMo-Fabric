@@ -217,14 +217,14 @@ def _selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
 def _resolve_path(payload: dict[str, Any], value: str | Path) -> Path:
     path = Path(value)
     if not path.is_absolute():
-        path = Path(common_utils.config_root(payload)) / path
+        path = Path(common_utils.base_dir(payload)) / path
     return path
 
 
 def resolve_cwd(payload: dict[str, Any]) -> Path:
     environment = common_utils.environment_payload(payload)
     workspace = environment.get("workspace")
-    return _resolve_path(payload, workspace or common_utils.config_root(payload))
+    return _resolve_path(payload, workspace or common_utils.base_dir(payload))
 
 
 def selected_model(payload: dict[str, Any]) -> str | None:
@@ -388,7 +388,7 @@ def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
         )
     try:
         executable = relay_gateway.resolve_relay_command(
-            Path(common_utils.config_root(payload)).resolve(),
+            Path(common_utils.base_dir(payload)).resolve(),
             command,
         )
     except FileNotFoundError as error:
@@ -530,7 +530,7 @@ def _artifact_root(payload: dict[str, Any]) -> Path:
     root = artifacts.get("root") if isinstance(artifacts, dict) else None
     if root:
         return Path(root)
-    return Path(common_utils.config_root(payload)) / "artifacts" / "claude"
+    return Path(common_utils.base_dir(payload)) / "artifacts" / "claude"
 
 
 def runtime_state_path(payload: dict[str, Any], fabric_runtime_id: str) -> Path:

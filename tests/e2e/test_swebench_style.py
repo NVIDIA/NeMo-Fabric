@@ -19,9 +19,10 @@ def test_swebench_style(hermes_shim_agent_dir: Path):
 
     result = call_json(
         "run",
+        "--factory",
+        "_utils.configs:swebench_shim_config",
+        "--base-dir",
         hermes_shim_agent_dir,
-        "--profile",
-        "swebench_shim",
         "--input",
         "Fix the bug so answer() returns 42.",
     )

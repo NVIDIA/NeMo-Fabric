@@ -83,7 +83,7 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
     return {
         "effective_config": {
             "agent_name": "claude-test",
-            "config_root": str(tmp_path),
+            "base_dir": str(tmp_path),
             "config": {
                 "harness": {
                     "adapter_id": "nvidia.fabric.claude",

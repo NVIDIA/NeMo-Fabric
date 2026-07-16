@@ -1,7 +1,7 @@
 ---
 title: "Struct Effective Config"
 sidebar-title: "EffectiveConfig"
-description: "Merged Fabric config after applying selected profiles."
+description: "Resolved Fabric config with explicit path context."
 position: 11
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -9,9 +9,9 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct EffectiveConfig &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub profiles: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub agent_root: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_root: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct EffectiveConfig &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub base_dir: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n&#125;"}} /></pre>
 
-Merged Fabric config after applying selected profiles.
+Resolved Fabric config with explicit path context.
 
 ## Fields
 
@@ -19,25 +19,13 @@ Merged Fabric config after applying selected profiles.
 
 Stable agent name.
 
-### `profiles: Vec<String>`
+### `base_dir: PathBuf`
 
-Ordered selected profiles.
-
-### `agent_root: PathBuf`
-
-Root used to resolve agent package paths.
-
-### `config_path: PathBuf`
-
-Resolved Fabric config path.
-
-### `config_root: PathBuf`
-
-Root used to resolve config-local paths.
+Base directory used to resolve relative config paths.
 
 ### `config: FabricConfig`
 
-Merged Fabric config with authoring-time profile discovery removed.
+Complete typed Fabric config.
 
 ## Trait Implementations
 

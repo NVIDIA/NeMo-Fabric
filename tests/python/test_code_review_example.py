@@ -83,12 +83,12 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     assert "relay" in variants[3].telemetry.providers
 
 
-def test_variants_plan_without_file_profiles():
+def test_variants_plan_from_complete_configs():
     client = Fabric()
 
     for config in (hermes_config(), codex_config(), claude_config()):
         plan = client.plan(config, base_dir=BASE_DIR)
-        assert plan.profiles == ()
+        assert plan.effective_config.base_dir == BASE_DIR
         assert plan.agent_name == "code-review-agent"
         assert plan.adapter.adapter_id == config.harness.adapter_id
 
@@ -119,7 +119,6 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
         assert completed.returncode == 0, completed.stderr
         plan = json.loads(completed.stdout)
         assert plan["agent_name"] == "code-review-agent"
-        assert plan["profiles"] == []
         assert plan["adapter_descriptor"]["descriptor"]["adapter_id"] == adapter_id
         telemetry_plan = plan.get("telemetry_plan")
         if relay_enabled:

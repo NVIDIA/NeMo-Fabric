@@ -27,6 +27,9 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.scripts]
+nemo-fabric = "nemo_fabric.cli:main"
+
 [project.urls]
 Repository = "https://github.com/NVIDIA/nemo-fabric/"
 Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"

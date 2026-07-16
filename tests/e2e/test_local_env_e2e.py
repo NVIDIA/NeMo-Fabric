@@ -12,16 +12,20 @@ from _utils.utils import run_fabric_cli
 
 
 def test_local_env_e2e(hermes_shim_agent_dir: Path):
-    plan = call_json("plan", hermes_shim_agent_dir, "--profile", "env_local")
+    selector = (
+        "--factory",
+        "_utils.configs:hermes_shim_config",
+        "--base-dir",
+        hermes_shim_agent_dir,
+    )
+    plan = call_json("plan", *selector)
     assert plan["environment_plan"]["provider"] == "local"
     assert plan["environment_plan"]["workspace"].endswith("repos/my-service")
     assert plan["adapter_descriptor"]["source"] == "local"
 
     result = call_json(
         "run",
-        hermes_shim_agent_dir,
-        "--profile",
-        "env_local",
+        *selector,
         "--request-json",
         json.dumps(
             {

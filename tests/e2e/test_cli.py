@@ -1,200 +1,130 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Smoke test for CLI examples used in the Fabric README/design snippets."""
+"""End-to-end coverage for the SDK-backed ``nemo-fabric`` CLI."""
 
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
+from typing import Any
 
-from _utils.utils import assert_relay_disabled_native_observability
-from _utils.utils import run_fabric_cli
+ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_cli(
-    tmp_path: Path,
-    file_config_agent_dir: Path,
-    hermes_shim_agent_dir: Path,
-):
-    temp_example = file_config_agent_dir
-    temp_fixture = hermes_shim_agent_dir
+def test_discovery_commands() -> None:
+    presets = run("preset", "list")
+    examples = run("example", "list")
 
-    assert call_text("validate", temp_example).startswith("validated")
-    inspected = call_json("inspect", temp_example)
-    assert inspected["agent_name"] == "code-review-agent"
-    assert inspected.get("profiles", []) == []
-    assert inspected["config"]["metadata"]["name"] == "code-review-agent"
+    assert presets.returncode == 0, presets.stderr
+    assert {"hermes", "claude", "codex", "deepagents"}.issubset(presets.stdout.splitlines())
+    assert examples.returncode == 0, examples.stderr
+    assert "examples.code_review_agent" in examples.stdout.splitlines()
 
-    plan = call_json("plan", temp_example, "--profile", "env_local")
-    assert plan["agent_name"] == "code-review-agent"
-    assert plan["effective_config"]["agent_name"] == "code-review-agent"
-    assert plan["effective_config"]["profiles"] == ["env_local"]
-    assert plan["adapter_descriptor"]["source"] == "repository"
-    assert (
-        plan["adapter_descriptor"]["descriptor"]["adapter_id"]
-        == "nvidia.fabric.hermes"
-    )
+    shown = call_json("example", "show", "examples.code_review_agent")
+    assert shown["default_variant"] == "hermes"
+    assert set(shown["variants"]) == {"hermes", "claude", "codex", "deepagents"}
 
-    agent_schema = call_json("schema", "--name", "agent")
-    assert agent_schema["title"] == "FabricConfig"
 
-    schema_dir = tmp_path / "schemas"
-    call_text("schema", "--output-dir", schema_dir)
-    assert (schema_dir / "agent.schema.json").is_file()
-    assert (schema_dir / "adapter-descriptor.schema.json").is_file()
-    assert (schema_dir / "effective-config.schema.json").is_file()
-    assert (schema_dir / "adapter-invocation.schema.json").is_file()
-    assert (schema_dir / "runtime-context.schema.json").is_file()
-    assert (schema_dir / "environment-handle.schema.json").is_file()
-    assert (schema_dir / "runtime-handle.schema.json").is_file()
-    assert (schema_dir / "invocation-handle.schema.json").is_file()
-    assert (schema_dir / "error-info.schema.json").is_file()
-    assert (schema_dir / "fabric-event.schema.json").is_file()
-
-    direct_profile = temp_example / "profiles" / "hermes.yaml"
-    direct_plan = call_json("plan", temp_example, "--profile", direct_profile)
-    assert direct_plan["profiles"] == [str(direct_profile)]
-    assert (
-        direct_plan["adapter_descriptor"]["descriptor"]["adapter_id"]
-        == "nvidia.fabric.hermes"
-    )
-
-    profile_plans = [
-        (("hermes",), "nvidia.fabric.hermes", "python", False),
-        (("hermes", "relay"), "nvidia.fabric.hermes", "python", True),
-    ]
-    for profiles, adapter_id, adapter_kind, relay_enabled in profile_plans:
-        profile_args = [arg for profile in profiles for arg in ("--profile", profile)]
-        profile_plan = call_json("plan", temp_example, *profile_args)
-        assert profile_plan["profiles"] == list(profiles)
-        descriptor = profile_plan["adapter_descriptor"]["descriptor"]
-        assert descriptor["adapter_id"] == adapter_id
-        assert descriptor["adapter_kind"] == adapter_kind
-        assert "mode" not in profile_plan["config"]["runtime"]
-        assert profile_plan["capability_plan"]["native"]["skill_paths"]
-        assert "github" in profile_plan["capability_plan"]["native"]["mcp_servers"]
-        if relay_enabled:
-            telemetry_plan = profile_plan["telemetry_plan"]
-            assert telemetry_plan["relay_enabled"] is True
-            assert telemetry_plan["relay_output_dir"]
-        else:
-            assert profile_plan.get("telemetry_plan") is None
-
-    multi_plan = call_json(
+def test_preset_and_example_reach_the_same_sdk_plan_path() -> None:
+    preset = call_json("plan", "--preset", "hermes")
+    example = call_json(
         "plan",
-        temp_fixture,
-        "--profile",
-        "env_local",
-        "--profile",
-        "mcp_github",
+        "--example",
+        "examples.code_review_agent",
+        "--variant",
+        "hermes",
     )
-    assert multi_plan["profiles"] == ["env_local", "mcp_github"]
-    assert "profile" not in multi_plan
-    assert multi_plan["telemetry_plan"]["relay_enabled"] is True
 
-    doctor = call_json("doctor", temp_fixture, "--profile", "env_local")
+    assert preset["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes"
+    assert example["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes"
+    assert preset["effective_config"]["base_dir"].endswith("nemo_fabric/_bundled")
+    assert example["capability_plan"]["native"]["skill_paths"]
+
+
+def test_factory_plan_doctor_and_run(hermes_shim_agent_dir: Path) -> None:
+    selector = (
+        "--factory",
+        "_utils.configs:hermes_shim_config",
+        "--base-dir",
+        hermes_shim_agent_dir,
+    )
+    plan = call_json("plan", *selector)
+    doctor = call_json("doctor", *selector)
+    result = call_json("run", *selector, "--input", "hello factory")
+
+    assert plan["agent_name"] == "hermes-shim-agent"
+    assert plan["adapter_descriptor"]["descriptor"]["adapter_id"] == "test.fabric.hermes_shim"
     assert doctor["agent_name"] == "hermes-shim-agent"
     assert doctor["checks"]
+    assert result["status"] == "succeeded"
+    assert result["output"]["received"] == "hello factory"
 
-    hermes = call_json(
-        "run", temp_fixture, "--profile", "env_local", "--input", "hello hermes"
-    )
-    assert hermes["status"] == "succeeded"
-    assert hermes["adapter_kind"] == "python"
-    assert hermes["output"]["mode"] == "shim"
-    assert hermes["output"]["native_skill_paths"]
-    assert hermes["output"]["native_mcp_servers"] == ["github"]
-    assert hermes["output"]["managed_skill_paths"] == []
-    assert hermes["output"]["managed_mcp_servers"] == []
-    assert_relay_disabled_native_observability(hermes)
 
-    second_run = call_json(
-        "run",
-        temp_fixture,
-        "--profile",
-        "env_local",
-        "--input",
-        "hello runtime hermes",
-    )
-    assert second_run["status"] == "succeeded"
-    assert second_run["output"]["runtime_id"] == second_run["runtime_id"]
-
+def test_factory_request_json_and_output_file(hermes_shim_agent_dir: Path, tmp_path: Path) -> None:
+    output = tmp_path / "result.json"
     request = json.dumps(
         {
-            "request_id": "cli-structured-request",
-            "input": "hello structured hermes",
-            "context": {"task": {"source": "smoke"}},
+            "input": "hello request",
+            "request_id": "cli-request-1",
+            "context": {"source": "test"},
         }
     )
-    structured = call_json(
-        "run", temp_fixture, "--profile", "env_local", "--request-json", request
+    completed = run(
+        "run",
+        "--factory",
+        "_utils.configs:hermes_shim_config",
+        "--base-dir",
+        hermes_shim_agent_dir,
+        "--request-json",
+        request,
+        "--output",
+        output,
     )
-    assert structured["request_id"] == "cli-structured-request"
-    assert structured["output"]["received"] == "hello structured hermes"
 
-    chat = run_with_stdin(
-        "/help\n/verbose on\nhello chat\n/verbose off\n/clear\n/info\n/exit\n",
-        "chat",
-        temp_fixture,
-        "--profile",
-        "env_local",
-        "--verbose",
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout == ""
+    result = json.loads(output.read_text(encoding="utf-8"))
+    assert result["request_id"] == "cli-request-1"
+    assert result["output"]["received"] == "hello request"
+
+
+def test_selector_errors_are_actionable() -> None:
+    unknown = run("plan", "--preset", "missing")
+    malformed = run("plan", "--factory", "missing-factory")
+    conflict = run("plan", "--preset", "hermes", "--factory", "mod:factory")
+
+    assert unknown.returncode == 2
+    assert "available:" in unknown.stderr
+    assert malformed.returncode == 2
+    assert "module:callable" in malformed.stderr
+    assert conflict.returncode == 2
+    assert "not allowed with argument" in conflict.stderr
+
+
+def call_json(*args: Any) -> dict[str, Any]:
+    completed = run(*args)
+    assert completed.returncode == 0, completed.stderr
+    value = json.loads(completed.stdout)
+    assert isinstance(value, dict)
+    return value
+
+
+def run(*args: Any) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    python_path = [str(ROOT / "python" / "src"), str(ROOT / "tests")]
+    if env.get("PYTHONPATH"):
+        python_path.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(python_path)
+    return subprocess.run(
+        [sys.executable, "-m", "nemo_fabric.cli", *(str(arg) for arg in args)],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
     )
-    assert chat.stdout == ""
-    assert '"received": "hello chat"' in chat.stderr
-    assert '"runtime_id": "runtime-' in chat.stderr
-    assert "NEMO FABRIC" in chat.stderr
-    assert "interactive runtime" in chat.stderr
-    assert "agent: hermes-shim-agent" in chat.stderr
-    assert "profile: env_local" in chat.stderr
-    assert "harness: hermes" in chat.stderr
-    assert "adapter: python" in chat.stderr
-    assert chat.stderr.count("runtime_id: runtime-") >= 2
-    assert "you[env_local:runtime-" in chat.stderr
-    assert "> \nagent> {" in chat.stderr
-    assert "agent> {" in chat.stderr
-    assert "runtime_id: runtime-" in chat.stderr
-    assert "/verbose on|off" in chat.stderr
-    assert "/clear" in chat.stderr
-    assert "verbose: on" in chat.stderr
-    assert "verbose: off" in chat.stderr
-    assert "\x1b[2J\x1b[H" in chat.stderr
-    assert "\n\n+-- turn 1 metadata" in chat.stderr
-    assert "+-- turn 1 metadata" in chat.stderr
-    assert "| status: succeeded" in chat.stderr
-    assert "| request_id: request-" in chat.stderr
-    assert "| invocation_id: invocation-" in chat.stderr
-    assert "| artifact_count:" in chat.stderr
-
-def call_text(*args: object) -> str:
-    completed = run(*args)
-    return completed.stdout.strip()
-
-
-def call_json(*args: object) -> dict:
-    completed = run(*args)
-    return json.loads(completed.stdout)
-
-
-def run(*args: object) -> subprocess.CompletedProcess[str]:
-    completed = run_fabric_cli(*args)
-    if completed.returncode != 0:
-        raise AssertionError(
-            f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
-        )
-    return completed
-
-
-def run_with_stdin(stdin: str, *args: object) -> subprocess.CompletedProcess[str]:
-    completed = run_raw(stdin, *args)
-    if completed.returncode != 0:
-        raise AssertionError(
-            f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
-        )
-    return completed
-
-
-def run_raw(stdin: str, *args: object) -> subprocess.CompletedProcess[str]:
-    return run_fabric_cli(*args, stdin=stdin)

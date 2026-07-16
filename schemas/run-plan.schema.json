@@ -367,42 +367,24 @@
       ]
     },
     "EffectiveConfig": {
-      "description": "Merged Fabric config after applying selected profiles.",
+      "description": "Resolved Fabric config with explicit path context.",
       "properties": {
         "agent_name": {
           "description": "Stable agent name.",
           "type": "string"
         },
-        "agent_root": {
-          "description": "Root used to resolve agent package paths.",
+        "base_dir": {
+          "description": "Base directory used to resolve relative config paths.",
           "type": "string"
         },
         "config": {
           "$ref": "#/$defs/FabricConfig",
-          "description": "Merged Fabric config with authoring-time profile discovery removed."
-        },
-        "config_path": {
-          "description": "Resolved Fabric config path.",
-          "type": "string"
-        },
-        "config_root": {
-          "description": "Root used to resolve config-local paths.",
-          "type": "string"
-        },
-        "profiles": {
-          "description": "Ordered selected profiles.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+          "description": "Complete typed Fabric config."
         }
       },
       "required": [
         "agent_name",
-        "profiles",
-        "agent_root",
-        "config_path",
-        "config_root",
+        "base_dir",
         "config"
       ],
       "type": "object"
@@ -567,10 +549,6 @@
           },
           "description": "Model aliases.",
           "type": "object"
-        },
-        "profiles": {
-          "$ref": "#/$defs/ProfileRegistryConfig",
-          "description": "Optional profile discovery config."
         },
         "relay": {
           "anyOf": [
@@ -797,20 +775,6 @@
         "provider",
         "model"
       ],
-      "type": "object"
-    },
-    "ProfileRegistryConfig": {
-      "additionalProperties": true,
-      "description": "Profile discovery config for curated package profiles.",
-      "properties": {
-        "directories": {
-          "description": "Directories searched when a caller selects a profile by name.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
       "type": "object"
     },
     "RelayAtifConfig": {
@@ -1654,8 +1618,8 @@
       "description": "Stable agent name.",
       "type": "string"
     },
-    "agent_root": {
-      "description": "Root used to resolve agent package paths.",
+    "base_dir": {
+      "description": "Base directory used to resolve relative config paths.",
       "type": "string"
     },
     "capabilities": {
@@ -1681,19 +1645,11 @@
     },
     "config": {
       "$ref": "#/$defs/FabricConfig",
-      "description": "Resolved Fabric profile config."
-    },
-    "config_path": {
-      "description": "Resolved Fabric config path.",
-      "type": "string"
-    },
-    "config_root": {
-      "description": "Root used to resolve config-local paths.",
-      "type": "string"
+      "description": "Complete typed Fabric config."
     },
     "effective_config": {
       "$ref": "#/$defs/EffectiveConfig",
-      "description": "Merged config and provenance used as the base for this plan."
+      "description": "Resolved config used as the base for this plan."
     },
     "environment_plan": {
       "anyOf": [
@@ -1705,13 +1661,6 @@
         }
       ],
       "description": "Resolved environment plan."
-    },
-    "profiles": {
-      "description": "Ordered selected profiles.",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
     },
     "resolution": {
       "anyOf": [
@@ -1739,11 +1688,8 @@
   "required": [
     "effective_config",
     "agent_name",
-    "profiles",
     "capabilities",
-    "agent_root",
-    "config_path",
-    "config_root",
+    "base_dir",
     "config"
   ],
   "title": "RunPlan",

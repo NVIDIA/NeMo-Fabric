@@ -413,7 +413,6 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
         },
     )
 
-    assert base.profiles is None
     assert base.environment is not None
     assert str(base.environment.workspace) == "/testbed"
     assert base.models == {}
@@ -470,7 +469,6 @@ def test_harbor_lifecycle_populates_context_after_run(tmp_path: Path):
 
     result = {
         "agent_name": "harbor-hermes",
-        "profiles": [],
         "harness": "hermes",
         "adapter_kind": "python",
         "adapter_id": "nvidia.fabric.hermes",

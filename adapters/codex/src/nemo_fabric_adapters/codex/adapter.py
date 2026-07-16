@@ -177,10 +177,10 @@ def resolve_cwd(payload: dict[str, Any]) -> Path:
     environment = _mapping(
         common_utils.environment_payload(payload), name="runtime environment"
     )
-    value = environment.get("workspace") or common_utils.config_root(payload)
+    value = environment.get("workspace") or common_utils.base_dir(payload)
     path = Path(str(value))
     if not path.is_absolute():
-        path = Path(common_utils.config_root(payload)) / path
+        path = Path(common_utils.base_dir(payload)) / path
     return path.resolve()
 
 
@@ -311,7 +311,7 @@ def _artifact_root(payload: dict[str, Any]) -> Path:
     root = artifacts.get("root") if isinstance(artifacts, dict) else None
     if root:
         return Path(str(root))
-    return Path(common_utils.config_root(payload)) / "artifacts" / "codex"
+    return Path(common_utils.base_dir(payload)) / "artifacts" / "codex"
 
 
 def state_dir(payload: dict[str, Any]) -> Path:
@@ -471,7 +471,7 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
         )
     try:
         executable = relay_gateway.resolve_relay_command(
-            Path(common_utils.config_root(payload)).resolve(), command
+            Path(common_utils.base_dir(payload)).resolve(), command
         )
     except FileNotFoundError as error:
         raise AdapterRelayError(
@@ -559,7 +559,7 @@ def sdk_config(
     if codex_bin is not None:
         path = Path(codex_bin)
         if not path.is_absolute():
-            path = (Path(common_utils.config_root(payload)) / path).resolve()
+            path = (Path(common_utils.base_dir(payload)) / path).resolve()
         codex_bin = str(path)
     return CodexConfig(
         codex_bin=codex_bin,

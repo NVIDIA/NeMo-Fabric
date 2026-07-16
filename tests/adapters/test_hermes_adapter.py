@@ -221,7 +221,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         },
         "effective_config": {
             "agent_name": "matrix-agent",
-            "config_root": str(tmp_path),
+            "base_dir": str(tmp_path),
             "config": {
                 "harness": {
                     "settings": {
@@ -409,7 +409,7 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     payload = {
         "effective_config": {
             "agent_name": "demo",
-            "config_root": str(tmp_path),
+            "base_dir": str(tmp_path),
             "config": {
                 "harness": {
                     "settings": {
