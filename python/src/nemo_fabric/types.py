@@ -369,6 +369,48 @@ class _SkillConfig(_ConfigMapping):
         return self
 
 
+class _ToolsConfig(_ConfigMapping):
+    """Harness-neutral tool capability configuration."""
+
+    _fields = frozenset({"blocked"})
+    _omit_if_empty = frozenset({"blocked"})
+
+    def __init__(
+        self,
+        *,
+        blocked: Sequence[str] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        if blocked is not None and (isinstance(blocked, (str, bytes)) or not isinstance(blocked, Sequence)):
+            raise FabricConfigError("tools blocked must be an ordered sequence of strings")
+        values: dict[str, Any] = {"blocked": [_required_text(tool, "blocked tool") for tool in (blocked or [])]}
+        super().__init__(values, extra_fields=extra_fields)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> _ToolsConfig:
+        """Validate a tools mapping and preserve extension fields."""
+
+        data = _mapping(value, "tools")
+        blocked = data.get("blocked", [])
+        if isinstance(blocked, (str, bytes)) or not isinstance(blocked, Sequence):
+            raise FabricConfigError("tools blocked must be an ordered sequence of strings")
+        return cls(
+            blocked=blocked,
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+    def block(self, *tools: str) -> _ToolsConfig:
+        """Block adapter-native tool names or toolsets."""
+
+        blocked = list(self.get("blocked", []))
+        for tool in tools:
+            value = _required_text(tool, "blocked tool")
+            if value not in blocked:
+                blocked.append(value)
+        self["blocked"] = blocked
+        return self
+
+
 class _McpConfig(_ConfigMapping):
     """MCP capability configuration with authoring helpers."""
 
@@ -563,7 +605,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
         telemetry: Mapping[str, Any] | None = None,
         relay: Mapping[str, Any] | None = None,
         profiles: Mapping[str, Any] | None = None,
-        tools: Any = None,
+        tools: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         metadata_value = _coerce(_MetadataConfig, metadata, "metadata")
@@ -578,6 +620,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
         skills_value = None if skills is None else _coerce(_SkillConfig, skills, "skills")
         telemetry_value = None if telemetry is None else _coerce(_TelemetryConfig, telemetry, "telemetry")
         relay_value = None if relay is None else _mapping(relay, "relay")
+        tools_value = None if tools is None else _coerce(_ToolsConfig, tools, "tools")
         values: dict[str, Any] = {
             "schema_version": _required_text(schema_version, "schema_version"),
             "metadata": metadata_value,
@@ -592,7 +635,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
             ("telemetry", telemetry_value),
             ("relay", relay_value),
             ("profiles", profiles),
-            ("tools", tools),
+            ("tools", tools_value),
         ):
             if item is not None:
                 values[key] = item
@@ -644,6 +687,16 @@ class _ResolvedFabricConfig(_ConfigMapping):
         self["skills"] = _coerce(_SkillConfig, value, "skills")
 
     @property
+    def tools(self) -> _ToolsConfig:
+        """Mutable tool capability config, created on first access."""
+
+        return self._ensure_section("tools", _ToolsConfig)
+
+    @tools.setter
+    def tools(self, value: _ToolsConfig | Mapping[str, Any]) -> None:
+        self["tools"] = _coerce(_ToolsConfig, value, "tools")
+
+    @property
     def telemetry(self) -> _TelemetryConfig:
         """Mutable telemetry config, created on first access."""
 
@@ -687,6 +740,12 @@ class _ResolvedFabricConfig(_ConfigMapping):
         """Add a skill path and return this config."""
 
         self.skills.add_path(path)
+        return self
+
+    def block_tools(self, *tools: str) -> _ResolvedFabricConfig:
+        """Block adapter-native tool names or toolsets and return this config."""
+
+        self.tools.block(*tools)
         return self
 
     def enable_relay(

@@ -91,7 +91,7 @@ section = ""
 output = []
 changed = []
 found_workspace_version = False
-found_fabric_core = False
+found_nemo_fabric_core = False
 
 for line in text.splitlines(keepends=True):
     section_match = re.match(r"^\s*\[([^\]]+)\]\s*(?:#.*)?$", line)
@@ -111,22 +111,22 @@ for line in text.splitlines(keepends=True):
                 changed.append("workspace.package.version")
     elif section == "workspace.dependencies":
         updated, count = re.subn(
-            r'^(fabric-core\s*=\s*\{[^}]*\bversion\s*=\s*")([^"]+)(".*)$',
+            r'^(nemo-fabric-core\s*=\s*\{[^}]*\bversion\s*=\s*")([^"]+)(".*)$',
             rf"\g<1>{version}\g<3>",
             line,
         )
         if count == 1:
-            found_fabric_core = True
+            found_nemo_fabric_core = True
             if updated != line:
-                changed.append("workspace.dependencies.fabric-core.version")
+                changed.append("workspace.dependencies.nemo-fabric-core.version")
 
     output.append(updated)
 
 missing = []
 if not found_workspace_version:
     missing.append("workspace.package.version")
-if not found_fabric_core:
-    missing.append("workspace.dependencies.fabric-core.version")
+if not found_nemo_fabric_core:
+    missing.append("workspace.dependencies.nemo-fabric-core.version")
 if missing:
     raise SystemExit(f"Failed to find expected Cargo version fields: {', '.join(missing)}")
 
@@ -193,7 +193,7 @@ project_paths = (
     Path("pyproject.toml"),
     *sorted(Path("adapters").glob("**/pyproject.toml")),
 )
-pin_pattern = re.compile(r'(nemo-fabric-[a-z0-9-]+\s*==\s*)([^"\s,]+)')
+pin_pattern = re.compile(r'(nemo-fabric-[a-z0-9-]+\s*==\s*)([^"\s,;]+)')
 
 for path in project_paths:
     text = path.read_text()
@@ -325,6 +325,11 @@ docs:
     uv run --no-sync python scripts/docs/generate_rust_library_reference.py
     npx --prefix docs --no-install fern check
 
+# Launch Jupyter Lab for the onboarding notebooks under examples/notebooks/.
+# Jupyter is fetched on demand so it stays out of the project lockfile.
+notebooks:
+    uv run --no-sync --with jupyterlab --with ipykernel jupyter lab examples/notebooks
+
 # Run the Python test suite with the same optional integrations used by CI.
 # --set [no_uv=true|false]
 test-python:
@@ -347,7 +352,21 @@ wheels:
     #!/usr/bin/env bash
     set -euo pipefail
     projects=({{ python_projects }})
-    uv build --wheel --clear --out-dir dist "${projects[0]}"
-    for project in "${projects[@]:1}"; do
+    uv build --wheel --clear --out-dir dist .
+    for project in "${projects[@]}"; do
+        if [[ "$project" == "." || "$project" == "python" ]]; then
+            # Exclude the top-level package as we already built that
+            # Exclude the python package as that needs special handling for maturin
+            continue
+        fi
         uv build --wheel --out-dir dist "$project"
     done
+    # uv build forces Maturin compatibility off, producing non-portable linux_* tags.
+    (
+        cd python
+        uvx --from 'maturin>=1.9.3,<2.0' maturin build \
+            --release \
+            --locked \
+            --compatibility pypi \
+            --out ../dist
+    )

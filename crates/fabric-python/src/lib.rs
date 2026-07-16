@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use fabric_core::{
+use nemo_fabric_core::{
     FabricConfig, ProfileConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
     load_fabric_document, resolve_effective_config_from_config,
     resolve_effective_config_with_profiles, resolve_run_plan_from_config,
@@ -17,7 +17,7 @@ use pyo3::prelude::*;
 /// Return the Fabric core version.
 #[pyfunction]
 fn version() -> PyResult<String> {
-    Ok(fabric_core::version().to_string())
+    Ok(nemo_fabric_core::version().to_string())
 }
 
 /// Validate an agent directory, manifest, or profile config.
@@ -180,7 +180,7 @@ fn run_config(
 fn start_runtime(py: Python<'_>, plan_json: String) -> PyResult<String> {
     let plan = parse_run_plan(plan_json)?;
     let runtime = py
-        .detach(|| fabric_core::start_runtime(&plan))
+        .detach(|| nemo_fabric_core::start_runtime(&plan))
         .map_err(to_py_error)?;
     to_json(&runtime)
 }
@@ -197,7 +197,7 @@ fn invoke_runtime(
     let runtime = parse_runtime_handle(runtime_json)?;
     let request = parse_run_request(request_json)?;
     let result = py
-        .detach(|| fabric_core::invoke_runtime(&plan, &runtime, request))
+        .detach(|| nemo_fabric_core::invoke_runtime(&plan, &runtime, request))
         .map_err(to_py_error)?;
     to_json(&result)
 }
@@ -208,7 +208,7 @@ fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyRe
     let plan = parse_run_plan(plan_json)?;
     let runtime = parse_runtime_handle(runtime_json)?;
     let events = py
-        .detach(|| fabric_core::stop_runtime(&plan, &runtime))
+        .detach(|| nemo_fabric_core::stop_runtime(&plan, &runtime))
         .map_err(to_py_error)?;
     to_json(&events)
 }
@@ -238,7 +238,7 @@ where
     serde_json::to_string_pretty(value).map_err(|error| PyRuntimeError::new_err(error.to_string()))
 }
 
-fn to_py_error(error: fabric_core::FabricError) -> PyErr {
+fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
     PyRuntimeError::new_err(error.to_string())
 }
 

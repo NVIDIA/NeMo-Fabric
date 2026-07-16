@@ -16,10 +16,29 @@ just wheels
 python -m pip install --find-links dist "nemo-fabric[claude]"
 ```
 
-Claude Code authentication can come from an existing cached login or from
-`ANTHROPIC_API_KEY`. Package installation is verified by the adapter wheel and
-module-entrypoint tests. Authentication is validated when Claude starts the
-invocation.
+## Authentication
+
+Fabric preserves Claude's native credential resolution. Use an existing Claude
+Code login for local development, `ANTHROPIC_AUTH_TOKEN` for a gateway or proxy
+bearer credential, `ANTHROPIC_API_KEY` for a static API credential, or Anthropic
+Workload Identity Federation (WIF) for production and CI workloads that should
+not store a long-lived API key.
+
+The adapter forwards the Anthropic profile and federation environment variables
+that Claude Code and the Claude Agent SDK consume. This includes
+`ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_PROFILE`, the direct federation identifiers,
+and `ANTHROPIC_IDENTITY_TOKEN` or `ANTHROPIC_IDENTITY_TOKEN_FILE`. Fabric reads
+selected environment values and forwards them to the Claude runtime, but it
+does not persist or log them in configuration or artifacts. Authentication is
+validated when Claude starts the invocation.
+
+Unset unused `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` variables before
+using WIF. Anthropic credential resolution treats an empty variable as selected,
+so an empty API credential prevents fallback to a federation profile.
+
+Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/integrations/claude)
+for mode selection, required WIF variables, and the Relay boundary. Package
+installation is verified by the adapter wheel and module-entrypoint tests.
 
 Relay-enabled runs also require the external `nemo-relay` CLI. Install the CLI
 separately:
@@ -48,7 +67,8 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
   `provider="anthropic"`; normalized hosted/custom provider resolution is
   tracked in [FABRIC-64](https://linear.app/nvidia/issue/FABRIC-64/add-normalized-model-provider-resolution-and-harness-compatibility).
 - `environment.workspace` sets the Claude working directory.
-- `tools` sets the base Claude tool list.
+- `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool
+  names.
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
   Fabric parses `url` as a command plus arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
@@ -56,16 +76,16 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 
 Only Claude-specific controls belong in `harness.settings`:
 
-- `system_prompt`, `allowed_tools`, `disallowed_tools`, and `permission_mode`
+- `system_prompt`, `allowed_tools`, and `permission_mode`
 - `max_turns`, `max_budget_usd`, and `timeout_seconds`
 - `setting_sources` (defaults to `[]` for deterministic isolation)
 - `cli_path` for testing or an explicitly installed Claude Code executable
 - `nemo_relay_command` for an explicitly installed NeMo Relay CLI executable
 - `env` for variables explicitly forwarded to Claude Code
 
-Putting `model_name`, `cwd`, `tools`, `mcp_servers`, or `skills` in
-`harness.settings` is an error. Use the corresponding normalized field so the
-same consumer configuration can compose with other adapters.
+Putting `model_name`, `cwd`, `tools`, `disallowed_tools`, `mcp_servers`, or
+`skills` in `harness.settings` is an error. Use the corresponding normalized
+field so the same consumer configuration can compose with other adapters.
 
 The adapter filters the inherited environment before launching Claude Code.
 It retains portable OS/config variables, the selected model's `api_key_env`,
@@ -116,6 +136,7 @@ from nemo_fabric import (
     ModelConfig,
     RuntimeConfig,
     SkillConfig,
+    ToolsConfig,
 )
 
 base_dir = Path("/workspace/review-agent")
@@ -139,7 +160,7 @@ config = FabricConfig(
     },
     runtime=RuntimeConfig(artifacts="./artifacts"),
     environment=EnvironmentConfig(provider="local", workspace="."),
-    tools=["Read", "Glob", "Grep"],
+    tools=ToolsConfig(blocked=["WebFetch"]),
     mcp=McpConfig(
         servers={
             "repo": McpServerConfig(

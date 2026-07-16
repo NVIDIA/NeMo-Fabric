@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "fabric-cli"
+name = "nemo-fabric-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -20,5 +20,5 @@ workspace = true
 [dependencies]
 clap.workspace = true
 ctrlc.workspace = true
-fabric-core.workspace = true
+nemo-fabric-core.workspace = true
 serde_json.workspace = true

@@ -7,6 +7,17 @@ SPDX-License-Identifier: Apache-2.0
 
 This directory holds runnable Fabric examples.
 
+New to Fabric? Start with the [onboarding notebooks](notebooks/README.md) for a
+guided, human-facing tour of the Python SDK, then come back to the runnable
+examples below.
+
+## Onboarding notebooks
+
+[`notebooks`](notebooks/README.md) is a two-notebook tour of the Python SDK:
+a quickstart (configure, plan, diagnose, run, inspect, and multi-turn) and a
+variations notebook that runs the same agent across available harnesses and
+varies its capabilities and telemetry.
+
 ## Code review agent
 
 [`code_review_agent`](code_review_agent/README.md) demonstrates the
@@ -16,7 +27,7 @@ application-facing Python SDK contract:
 - creating harness, environment, capability, and telemetry variants from deep
   copies;
 - resolving relative workspace and skill paths with `base_dir`;
-- running maintained Hermes, Codex, and Deep Agents adapters through the Python SDK.
+- running maintained Hermes, Codex, Claude, and Deep Agents adapters through the Python SDK.
 
 Start with:
 

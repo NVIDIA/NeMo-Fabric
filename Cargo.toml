@@ -20,7 +20,7 @@ license = "Apache-2.0"
 repository = "https://github.com/NVIDIA/nemo-fabric"
 
 [workspace.dependencies]
-fabric-core = { path = "crates/fabric-core", version = "0.1.0" }
+nemo-fabric-core = { path = "crates/fabric-core", version = "0.1.0" }
 
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"

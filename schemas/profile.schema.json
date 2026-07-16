@@ -1,4 +1,20 @@
 {
+  "$defs": {
+    "ToolsConfig": {
+      "additionalProperties": true,
+      "description": "Harness-neutral tool capability configuration.",
+      "properties": {
+        "blocked": {
+          "description": "Adapter-native tool names or toolset names to block.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
   "properties": {
@@ -88,6 +104,14 @@
       ]
     },
     "tools": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
       "description": "Tool capability overlay."
     }
   },

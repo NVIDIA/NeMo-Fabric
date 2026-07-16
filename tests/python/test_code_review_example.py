@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 from examples.code_review_agent import BASE_DIR
 from examples.code_review_agent import __main__ as main_module
 from examples.code_review_agent import base_config
+from examples.code_review_agent import claude_config
 from examples.code_review_agent import codex_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import with_fabric_managed_github_mcp
@@ -29,8 +30,9 @@ def test_variant_builders_return_independent_complete_configs():
     base = base_config()
     hermes = hermes_config()
     codex = codex_config()
+    claude = claude_config()
 
-    for config in (base, hermes, codex):
+    for config in (base, hermes, codex, claude):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -41,6 +43,14 @@ def test_variant_builders_return_independent_complete_configs():
     assert codex.harness.adapter_id == "nvidia.fabric.codex"
     assert codex.mcp is None
     assert codex.skills is None
+    assert claude is not base
+    assert claude.harness is not base.harness
+    assert claude.harness.adapter_id == "nvidia.fabric.claude"
+    assert claude.models["default"].provider == "anthropic"
+    assert claude.models["default"].model == "anthropic/claude-sonnet-4-5"
+    assert claude.models["default"].api_key_env == "ANTHROPIC_API_KEY"
+    assert claude.mcp is None
+    assert claude.skills is None
     assert base.mcp is not None
     assert base.skills is not None
 
@@ -76,7 +86,7 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
 def test_variants_plan_without_file_profiles():
     client = Fabric()
 
-    for config in (hermes_config(), codex_config()):
+    for config in (hermes_config(), codex_config(), claude_config()):
         plan = client.plan(config, base_dir=BASE_DIR)
         assert plan.profiles == ()
         assert plan.agent_name == "code-review-agent"
@@ -87,6 +97,7 @@ def test_example_entrypoint_plans_without_starting_a_runtime():
     cases = (
         ([], "nvidia.fabric.hermes", False),
         (["--variant", "codex"], "nvidia.fabric.codex", False),
+        (["--variant", "claude"], "nvidia.fabric.claude", False),
         (["--relay"], "nvidia.fabric.hermes", True),
     )
 

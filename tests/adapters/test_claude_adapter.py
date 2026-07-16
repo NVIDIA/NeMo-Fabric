@@ -12,21 +12,31 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from claude_agent_sdk import (
-    AssistantMessage,
-    CLIConnectionError,
-    CLIJSONDecodeError,
-    CLINotFoundError,
-    ClaudeSDKError,
-    ProcessError,
-    ResultMessage,
-    SystemMessage,
-    TextBlock,
-)
+from claude_agent_sdk import AssistantMessage
+from claude_agent_sdk import ClaudeSDKError
+from claude_agent_sdk import CLIConnectionError
+from claude_agent_sdk import CLIJSONDecodeError
+from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import ProcessError
+from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import SystemMessage
+from claude_agent_sdk import TextBlock
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.claude import adapter
 
 ROOT = Path(__file__).resolve().parents[2]
+ANTHROPIC_AUTH_ENV_NAMES = {
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CONFIG_DIR",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_IDENTITY_TOKEN",
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_PROFILE",
+    "ANTHROPIC_SERVICE_ACCOUNT_ID",
+    "ANTHROPIC_WORKSPACE_ID",
+}
 
 
 def test_claude_descriptor_is_narrow_and_versioned():
@@ -42,7 +52,16 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "module": "nemo_fabric_adapters.claude.adapter",
             "callable": "run",
         },
-        "config": {"accepts": ["models", "tools", "mcp", "skills", "telemetry"]},
+        "config": {
+            "accepts": [
+                "models",
+                "tools",
+                "tools.blocked",
+                "mcp",
+                "skills",
+                "telemetry",
+            ]
+        },
         "telemetry": {
             "providers": {
                 "relay": {
@@ -71,7 +90,6 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                     "settings": {
                         "system_prompt": "Review carefully.",
                         "allowed_tools": ["Read"],
-                        "disallowed_tools": ["WebFetch"],
                         "permission_mode": "dontAsk",
                         "max_turns": 4,
                         "max_budget_usd": 1.5,
@@ -87,7 +105,7 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                         "api_key_env": "ANTHROPIC_API_KEY",
                     }
                 },
-                "tools": ["Read", "Glob", "Grep"],
+                "tools": {"blocked": ["Bash"]},
             },
         },
         "runtime_context": {
@@ -127,9 +145,9 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     )
     assert options.model == "claude-test-model"
     assert options.system_prompt == "Review carefully."
-    assert options.tools == ["Read", "Glob", "Grep", "Skill"]
+    assert options.tools is None
     assert options.allowed_tools == ["Read"]
-    assert options.disallowed_tools == ["WebFetch"]
+    assert options.disallowed_tools == ["Bash"]
     assert options.permission_mode == "dontAsk"
     assert options.max_turns == 4
     assert options.max_budget_usd == 1.5
@@ -308,9 +326,18 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
 
     options = adapter.build_options(relay_payload, resume=None, relay=relay)
 
-    assert options.tools == ["Read", "Glob", "Grep"]
+    assert options.tools is None
     assert options.skills is None
     assert options.plugins == [{"type": "local", "path": str(relay.plugin_path)}]
+
+
+def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
+    claude_payload["effective_config"]["config"]["tools"] = {"blocked": ["Bash", "WebFetch"]}
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.tools is None
+    assert options.disallowed_tools == ["Bash", "WebFetch"]
 
 
 @pytest.mark.parametrize(
@@ -319,13 +346,12 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
         ("model_name", "FabricConfig.models"),
         ("cwd", "FabricConfig.environment.workspace"),
         ("tools", "FabricConfig.tools"),
+        ("disallowed_tools", "FabricConfig.tools.blocked"),
         ("mcp_servers", "FabricConfig.mcp"),
         ("skills", "FabricConfig.skills"),
     ],
 )
-def test_build_options_rejects_normalized_capabilities_in_harness_settings(
-    claude_payload, name, normalized_field
-):
+def test_build_options_rejects_normalized_capabilities_in_harness_settings(claude_payload, name, normalized_field):
     claude_payload["effective_config"]["config"]["harness"]["settings"][name] = []
 
     with pytest.raises(
@@ -342,30 +368,12 @@ def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload)
         adapter.build_options(claude_payload, resume=None)
 
 
-def test_build_options_rejects_unknown_normalized_tool_preset(claude_payload):
-    claude_payload["effective_config"]["config"]["tools"] = {
-        "type": "preset",
-        "preset": "unknown",
-    }
-
-    with pytest.raises(adapter.AdapterConfigError, match="tools preset"):
-        adapter.build_options(claude_payload, resume=None)
-
-
 def test_selected_model_rejects_unsupported_provider(claude_payload):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model["provider"] = "nvidia"
 
     with pytest.raises(adapter.AdapterConfigError, match="provider must be anthropic"):
         adapter.selected_model(claude_payload)
-
-
-def test_build_options_ignores_tools_not_routed_to_adapter(claude_payload):
-    claude_payload["capability_plan"]["native"]["tools_configured"] = False
-
-    options = adapter.build_options(claude_payload, resume=None)
-
-    assert options.tools is None
 
 
 def test_state_round_trip_is_keyed_by_fabric_runtime(claude_payload):
@@ -756,16 +764,60 @@ def test_run_reports_relay_start_failure_without_raw_diagnostic(
     assert not relay.plugin_path.exists()
 
 
-def test_build_options_forwards_default_anthropic_api_key(claude_payload, monkeypatch):
+@pytest.mark.parametrize(
+    "auth_environment",
+    [
+        {
+            "ANTHROPIC_CONFIG_DIR": "/run/anthropic",
+            "ANTHROPIC_PROFILE": "production",
+        },
+        {
+            "ANTHROPIC_FEDERATION_RULE_ID": "fdrl_test",
+            "ANTHROPIC_ORGANIZATION_ID": "organization-test",
+            "ANTHROPIC_SERVICE_ACCOUNT_ID": "svac_test",
+            "ANTHROPIC_WORKSPACE_ID": "wrkspc_test",
+            "ANTHROPIC_IDENTITY_TOKEN_FILE": "/run/secrets/anthropic/token",
+        },
+        {
+            "ANTHROPIC_FEDERATION_RULE_ID": "fdrl_test",
+            "ANTHROPIC_ORGANIZATION_ID": "organization-test",
+            "ANTHROPIC_SERVICE_ACCOUNT_ID": "svac_test",
+            "ANTHROPIC_IDENTITY_TOKEN": "identity-token",
+        },
+        {"ANTHROPIC_API_KEY": "default-secret"},
+        {"ANTHROPIC_AUTH_TOKEN": "bearer-token"},
+        {
+            "ANTHROPIC_API_KEY": "",
+            "ANTHROPIC_PROFILE": "fallback-profile",
+        },
+        {
+            "ANTHROPIC_AUTH_TOKEN": "",
+            "ANTHROPIC_API_KEY": "fallback-api-key",
+            "ANTHROPIC_PROFILE": "fallback-profile",
+        },
+    ],
+)
+def test_build_options_forwards_anthropic_auth_environment(
+    claude_payload, auth_environment
+):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model.pop("api_key_env")
     settings = claude_payload["effective_config"]["config"]["harness"]["settings"]
     settings.pop("env")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "default-secret")
+    for name in ANTHROPIC_AUTH_ENV_NAMES:
+        os.environ.pop(name, None)
+    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
+    os.environ.update(auth_environment)
 
     options = adapter.build_options(claude_payload, resume=None)
 
-    assert options.env["ANTHROPIC_API_KEY"] == "default-secret"
+    forwarded_auth_environment = {
+        name: options.env[name]
+        for name in ANTHROPIC_AUTH_ENV_NAMES
+        if name in options.env
+    }
+    assert forwarded_auth_environment == auth_environment
+    assert options.env["FABRIC_UNRELATED_SECRET"] == ""
 
 
 @pytest.mark.parametrize(

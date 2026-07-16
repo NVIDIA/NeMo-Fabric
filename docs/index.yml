@@ -16,6 +16,8 @@ navigation:
     contents:
       - page: Codex
         path: ./integrations/codex.mdx
+      - page: Claude
+        path: ./integrations/claude.mdx
       - page: Harbor
         path: ./integrations/harbor.mdx
   - section: Reference
@@ -37,6 +39,6 @@ navigation:
               - page: Errors
                 path: ./reference/api/python-library-reference/nemo_fabric.errors.md
           # Auto-discovered from the generated rustdoc->MDX pages
-          # (cargo doc -p fabric-core, via scripts/docs/generate_rust_library_reference.py).
+          # (cargo doc -p nemo-fabric-core, via scripts/docs/generate_rust_library_reference.py).
           - folder: ./reference/api/rust-library-reference
             title: Rust Library Reference

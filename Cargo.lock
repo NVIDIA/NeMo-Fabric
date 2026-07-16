@@ -161,31 +161,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "fabric-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "ctrlc",
- "fabric-core",
- "serde_json",
-]
-
-[[package]]
-name = "fabric-core"
-version = "0.1.0"
-dependencies = [
- "schemars",
- "serde",
- "serde_json",
- "serde_yaml",
- "thiserror",
-]
-
-[[package]]
 name = "fabric-python"
 version = "0.1.0"
 dependencies = [
- "fabric-core",
+ "nemo-fabric-core",
  "pyo3",
  "serde",
  "serde_json",
@@ -236,6 +215,27 @@ name = "memchr"
 version = "2.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
+
+[[package]]
+name = "nemo-fabric-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "nemo-fabric-core",
+ "serde_json",
+]
+
+[[package]]
+name = "nemo-fabric-core"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+]
 
 [[package]]
 name = "nix"

@@ -109,6 +109,14 @@ pub enum FabricError {
         /// Adapter kind.
         adapter_kind: AdapterKind,
     },
+    /// The selected harness cannot enforce the configured blocked-tools policy.
+    #[error("harness `{harness}` cannot enforce configured blocked tools: {reason}")]
+    UnsupportedToolsPolicy {
+        /// Harness type.
+        harness: String,
+        /// Capability-routing explanation.
+        reason: String,
+    },
     /// A runtime handle was used with a different run plan than the one that created it.
     #[error(
         "runtime handle does not match run plan for `{field}`: expected `{expected}` but found `{actual}` (runtime `{runtime_id}`)"
@@ -147,13 +155,19 @@ pub enum FabricError {
         /// Underlying JSON parse error.
         source: serde_json::Error,
     },
-    /// The default Python adapter interpreter path was invalid.
-    #[error("environment variable `ADAPTER_PYTHON` (`{value}`) must point to a valid file")]
-    InvalidAdapterPython {
-        /// Value read from `ADAPTER_PYTHON`.
-        value: String,
-        /// Path resolved from the configured value.
+    /// The resolved Python adapter interpreter could not be used.
+    #[error(
+        "python adapter interpreter {path} (from {origin}) is unusable: {reason}; \
+         set `harness.settings.python` or the `ADAPTER_PYTHON` environment variable \
+         to a valid interpreter"
+    )]
+    PythonInterpreterUnavailable {
+        /// Resolved interpreter path.
         path: PathBuf,
+        /// Human-readable description of where the interpreter was resolved from.
+        origin: String,
+        /// Why the interpreter cannot be used.
+        reason: String,
     },
     /// A process runner failed to start or complete.
     #[error("process runner failed for `{command}`: {source}")]
