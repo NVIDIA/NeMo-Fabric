@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Codex Adapter
+# NVIDIA NeMo Fabric Codex Adapter
 
 The `nvidia.fabric.codex` adapter uses the official Codex Python SDK behind
 Fabric's normalized invocation contract. It does not resolve or execute a
@@ -12,11 +12,16 @@ app-server runtime and typed JSON-RPC protocol.
 
 ## Install
 
-Build the local wheels and install the Codex adapter:
+To install just the Codex adapter by itself:
 
 ```bash
-just wheels
-python -m pip install --find-links dist "nemo-fabric[codex]"
+pip install "nemo-fabric[codex]"
+```
+
+To install just the Codex adapter along with the NeMo Fabric Runtime:
+
+```bash
+pip install "nemo-fabric[codex, runtime]"
 ```
 
 ## Authentication
@@ -134,7 +139,7 @@ cargo install --locked --path nemo-relay/crates/cli
 ```
 
 Removal of this temporary source installation is tracked in
-[TODO.md](../../TODO.md#nemo-relay-06x-request-decoding-release).
+[TODO.md](https://github.com/NVIDIA/NeMo-Fabric/blob/main/TODO.md#nemo-relay-06x-request-decoding-release).
 
 The `nemo-relay` Python package does not install this executable. Refer to the
 [NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)
@@ -153,24 +158,3 @@ Relay OpenInference provides the semantic chain, LLM, and tool hierarchy with
 decoded prompt, response, and token attributes. Prefer Relay OpenInference for
 agent-turn inspection.
 
-## Local Validation
-
-Run the unit and opt-in real SDK tests separately:
-
-```bash
-uv run pytest tests/adapters/test_codex_adapter.py -q
-RUN_FABRIC_CODEX_INTEGRATION=1 uv run pytest tests/e2e/test_codex.py -q
-RUN_FABRIC_CODEX_RELAY_INTEGRATION=1 \
-  FABRIC_TEST_NEMO_RELAY_COMMAND=/path/to/nemo-relay \
-  uv run pytest tests/e2e/test_codex.py -q
-```
-
-Set `FABRIC_TEST_CODEX_BIN=/path/to/codex` on either opt-in command to validate
-an explicit app-server override instead of the SDK-pinned runtime.
-
-The SDK test uses the current Codex authentication state and exercises both a
-one-shot invocation and multi-turn thread resume. The Relay test additionally
-requires an external gateway binary and verifies one-shot and resumed model
-responses, stable thread identity, ATOF, and ATIF; gateway startup alone is not
-a passing result. The semantic regression also requires decoded LLM request
-content, a model, token usage, and the expected agent response in ATIF.
