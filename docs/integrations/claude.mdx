@@ -56,34 +56,28 @@ keeps that variable name as a credential reference. The adapter reads the value
 only when the invocation starts and supplies it to Claude as
 `ANTHROPIC_API_KEY`.
 
-## Use an Anthropic-Compatible Custom Endpoint
+## Use an NVIDIA-Hosted Claude Endpoint
 
-Set the provider, wire protocol, endpoint, and credential reference in the
-normalized model config. Provider names are open strings; compatibility comes
-from the adapter-declared `anthropic-messages` protocol, not from a hardcoded
-provider list.
+Set the provider, wire protocol, deployment URL, and credential reference in
+the normalized model config. Compatibility comes from the adapter-declared
+`anthropic-messages` protocol; Fabric does not hardcode the deployment URL.
 
 ```python
 from nemo_fabric import ModelConfig
 
 config.models["default"] = ModelConfig(
-    provider="private-cloud",
-    model="private-cloud/claude-sonnet-4-5",
+    provider="nvidia",
+    model="nvidia/claude-sonnet-4-5",
     protocol="anthropic-messages",
-    base_url="https://models.example.test/anthropic",
-    api_key_env="PRIVATE_CLOUD_API_KEY",
+    base_url="https://inference.example.test/anthropic",
+    api_key_env="NVIDIA_API_KEY",
 )
 ```
 
-Export `PRIVATE_CLOUD_API_KEY` in the process that invokes Fabric. The plan and
+Export `NVIDIA_API_KEY` in the process that invokes Fabric. The plan and
 adapter payload contain the URL and variable name, but never the key value.
 Fabric rejects a provider without either a native adapter endpoint or an
 explicit compatible `base_url` before Claude starts.
-
-For an NVIDIA-hosted Claude endpoint, set `provider="nvidia"`, provide the
-deployment URL in `base_url`, and use `api_key_env="NVIDIA_API_KEY"`. The
-adapter maps `NVIDIA_API_KEY` to Claude's native authentication variable at the
-invocation boundary. Fabric does not embed a deployment-specific endpoint URL.
 
 ## Use Workload Identity Federation
 

@@ -107,10 +107,6 @@ else:
             fabric_cwd: str | None = None,
             fabric_timeout_sec: int | None = None,
             extra_env: dict[str, str] | None = None,
-            fabric_model_provider: str | None = None,
-            fabric_model_protocol: str | None = None,
-            fabric_model_base_url: str | None = None,
-            fabric_model_api_key_env: str | None = None,
             *args: Any,
             **kwargs: Any,
         ) -> None:
@@ -141,10 +137,6 @@ else:
             self.fabric_harness_settings = dict(fabric_harness_settings or {})
             self.fabric_blocked_tools = blocked_tools
             self.fabric_telemetry = fabric_telemetry
-            self.fabric_model_provider = fabric_model_provider
-            self.fabric_model_protocol = fabric_model_protocol
-            self.fabric_model_base_url = fabric_model_base_url
-            self.fabric_model_api_key_env = fabric_model_api_key_env
             self.fabric_python = fabric_python
             self.fabric_package = fabric_package
             self.fabric_venv_path = fabric_venv_path
@@ -269,10 +261,6 @@ else:
                 blocked_tools=self.fabric_blocked_tools,
                 telemetry=self.fabric_telemetry,
                 model_name=self.model_name,
-                model_provider=self.fabric_model_provider,
-                model_protocol=self.fabric_model_protocol,
-                model_base_url=self.fabric_model_base_url,
-                model_api_key_env=self.fabric_model_api_key_env,
                 skills_dir=self.skills_dir,
                 mcp_servers=tuple(
                     HarborMcpServer.model_validate(server.model_dump(mode="python"))
@@ -356,10 +344,6 @@ def build_harbor_config(
     model_name: str | None = None,
     skills_dir: str | Path | None = None,
     mcp_servers: tuple[HarborMcpServer, ...] = (),
-    model_provider: str | None = None,
-    model_protocol: str | None = None,
-    model_base_url: str | None = None,
-    model_api_key_env: str | None = None,
 ) -> FabricConfig:
     """Construct the typed config controlled by Harbor agent inputs."""
 
@@ -390,28 +374,10 @@ def build_harbor_config(
         tools=(ToolsConfig(blocked=list(blocked_tools)) if blocked_tools else None),
     )
     if model_name:
-        resolved_provider = model_provider or infer_model_provider(model_name)
         config.models["default"] = ModelConfig(
-            provider=resolved_provider,
+            provider=model_provider(model_name),
             model=model_name,
-            protocol=model_protocol,
-            base_url=model_base_url,
-            api_key_env=(
-                model_api_key_env
-                if model_api_key_env is not None
-                else default_model_api_key_env(resolved_provider)
-            ),
         )
-    elif any(
-        value is not None
-        for value in (
-            model_provider,
-            model_protocol,
-            model_base_url,
-            model_api_key_env,
-        )
-    ):
-        raise ValueError("model_name is required when model connection fields are set")
     for server in mcp_servers:
         if server.transport == "stdio":
             config.add_mcp_server(
@@ -452,16 +418,10 @@ def build_harbor_config(
     return config
 
 
-def infer_model_provider(model_name: str) -> str:
+def model_provider(model_name: str) -> str:
     """Derive the Fabric provider from Harbor's model identifier."""
 
     return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
-
-
-def default_model_api_key_env(provider: str) -> str | None:
-    """Return Harbor's user-facing credential convention for a provider."""
-
-    return "NVIDIA_API_KEY" if provider.strip().lower() == "nvidia" else None
 
 
 def harbor_harness_defaults(adapter_id: str) -> dict[str, Any]:

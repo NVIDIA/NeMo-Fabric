@@ -198,28 +198,22 @@ config = FabricConfig(
 fabric = Fabric()
 ```
 
-For an Anthropic-compatible endpoint operated by another provider, configure
-the provider, protocol, URL, and credential reference together:
+For an NVIDIA-hosted Anthropic Messages-compatible endpoint, configure the
+provider, protocol, deployment URL, and credential reference together:
 
 ```python
 config.models["default"] = ModelConfig(
-    provider="private-cloud",
-    model="private-cloud/claude-sonnet-4-5",
+    provider="nvidia",
+    model="nvidia/claude-sonnet-4-5",
     protocol="anthropic-messages",
-    base_url="https://models.example.test/anthropic",
-    api_key_env="PRIVATE_CLOUD_API_KEY",
+    base_url="https://inference.example.test/anthropic",
+    api_key_env="NVIDIA_API_KEY",
 )
 ```
 
 Fabric rejects an unknown provider without an explicit compatible endpoint
 during planning. The plan contains the endpoint URL and credential variable
 name, never the credential value.
-
-For an NVIDIA-hosted Claude endpoint, use `provider="nvidia"`, supply the
-deployment URL through `base_url`, and set `api_key_env="NVIDIA_API_KEY"`. The
-adapter reads `NVIDIA_API_KEY` only when the invocation starts and maps it to
-Claude's native authentication boundary. Fabric does not hardcode a
-deployment-specific endpoint URL.
 
 ## One-Shot Run
 

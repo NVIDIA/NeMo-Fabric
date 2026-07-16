@@ -13,11 +13,9 @@ multi-task run.
 
 ## Before You Start
 
-Complete the shared host setup in the
-[Harbor landing page](../README.md#shared-host-setup), then continue in the same
-shell. Export `NVIDIA_API_KEY` for the NVIDIA-hosted Hermes and Claude runs.
-The Claude run also requires the non-secret endpoint configuration in
-`CLAUDE_BASE_URL`.
+Complete the shared host setup in the [Harbor landing page](../README.md#shared-host-setup),
+then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes runs or
+`ANTHROPIC_API_KEY` for Claude runs before using that harness.
 
 ## Prepare the Task Bundle
 
@@ -106,23 +104,19 @@ job name differ. Relay is enabled so the resulting ATIF confirms that the
 harness switch reached Claude.
 
 ```bash
-: "${CLAUDE_BASE_URL:?Set the NVIDIA-hosted Claude endpoint URL}"
-: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Claude}"
+: "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
 
 uv run --extra runtime --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
   --agent "$FABRIC_AGENT" \
-  --model nvidia/claude-sonnet-4-5 \
+  --model anthropic/claude-sonnet-4-5 \
   --ak fabric_adapter_id=nvidia.fabric.claude \
-  --ak fabric_model_provider=nvidia \
-  --ak fabric_model_protocol=anthropic-messages \
-  --ak "fabric_model_base_url=$CLAUDE_BASE_URL" \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_telemetry=relay \
   --ak 'fabric_harness_settings={"nemo_relay_command":"/tmp/nemo-fabric-config/.relay/bin/nemo-relay"}' \
   --ak "fabric_package=$FABRIC_PACKAGE" \
   --ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS" \
-  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
   --job-name django-13741-claude \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
@@ -132,26 +126,6 @@ uv run --extra runtime --extra harbor harbor run \
 
 Claude uses unattended permissions only inside Harbor's ephemeral task
 container. Do not apply that permission mode to a normal host environment.
-
-`FabricAgent` defaults the credential reference to `NVIDIA_API_KEY` for the
-`nvidia` provider. Fabric passes the custom endpoint to Relay as
-`upstream.anthropic_base_url` and never writes the credential value to the
-model binding or Relay config.
-
-For direct Anthropic usage, omit `fabric_model_protocol` and
-`fabric_model_base_url`, then replace the NVIDIA model and credential arguments
-with the following explicit override:
-
-```bash
-: "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
---model anthropic/claude-sonnet-4-5 \
---ak fabric_model_provider=anthropic \
---ak fabric_model_api_key_env=ANTHROPIC_API_KEY \
---ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
-```
-
-For another provider, set its provider name, compatible URL, and credential
-reference through the same `fabric_model_*` arguments.
 
 ## Vary One Fabric Capability
 
