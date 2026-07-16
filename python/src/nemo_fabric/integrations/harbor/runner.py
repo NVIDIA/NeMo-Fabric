@@ -15,7 +15,6 @@ from typing import cast
 
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
-from nemo_fabric import ModelConfig
 from nemo_fabric import RunResult
 from nemo_fabric.integrations.harbor.models import HarborRunSpec
 from nemo_fabric.integrations.harbor.models import parse_config_factory_reference
@@ -55,60 +54,12 @@ def load_config_factory(reference: str, base_dir: Path) -> FabricConfig:
     return config
 
 
-def compose_config(base: FabricConfig, spec: HarborRunSpec) -> FabricConfig:
-    """Apply Harbor-owned values to an independent config copy."""
-
-    config = base.model_copy(deep=True)
-    if spec.model_name:
-        current = config.models.get("default")
-        values = current.to_mapping() if current is not None else {}
-        provider = model_provider(spec.model_name)
-        if current is not None and current.provider != provider:
-            values.pop("api_key_env", None)
-        values.update(
-            provider=provider,
-            model=spec.model_name,
-        )
-        config.models["default"] = ModelConfig.model_validate(values)
-
-    if spec.mcp_servers:
-        config.mcp = None
-        for server in spec.mcp_servers:
-            if server.transport == "stdio":
-                config.add_mcp_server(
-                    server.name,
-                    transport="stdio",
-                    url=cast(str, server.command),
-                    exposure="harness_native",
-                    extra_fields={"args": list(server.args)},
-                )
-            else:
-                config.add_mcp_server(
-                    server.name,
-                    transport=server.transport,
-                    url=cast(str, server.url),
-                    exposure="harness_native",
-                )
-
-    if spec.skills_dir is not None:
-        config.skills = None
-        config.add_skill_path(spec.skills_dir)
-    return config
-
-
-def model_provider(model_name: str) -> str:
-    """Derive the provider prefix used by the Fabric model config."""
-
-    return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
-
-
 async def run(spec: HarborRunSpec) -> RunResult:
-    base = (
+    config = (
         spec.config.model_copy(deep=True)
         if spec.config is not None
         else load_config_factory(cast(str, spec.config_factory), spec.config_base_dir)
     )
-    config = compose_config(base, spec)
     result = await Fabric().run(
         config,
         base_dir=spec.config_base_dir,

@@ -42,41 +42,13 @@ def load_codex_adapter():
     return load_module("fabric_codex_adapter", path)
 
 
-def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
-    from nemo_fabric import FabricConfig
-    from nemo_fabric import RunRequest
+def test_harbor_builder_constructs_complete_config_from_harbor_inputs(tmp_path):
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
     from nemo_fabric.integrations.harbor.models import HarborMcpServer
-    from nemo_fabric.integrations.harbor.models import HarborRunSpec
-    from nemo_fabric.integrations.harbor.runner import compose_config
 
-    base = FabricConfig.model_validate(
-        {
-            "metadata": {"name": "harbor-demo"},
-            "harness": {"adapter_id": "demo.fabric.smoke"},
-            "runtime": {},
-            "models": {
-                "default": {
-                    "provider": "demo",
-                    "model": "demo",
-                    "api_key_env": "DEMO_API_KEY",
-                    "temperature": 0.25,
-                }
-            },
-            "mcp": {
-                "servers": {
-                    "base": {
-                        "transport": "streamable-http",
-                        "url": "https://base.example.test",
-                    }
-                }
-            },
-            "skills": {"paths": ["./base-skill"]},
-        }
-    )
-    spec = HarborRunSpec(
-        config_factory="test_config:build_config",
-        config_base_dir=tmp_path,
-        request=RunRequest(input="fix it"),
+    config = build_harbor_config(
+        adapter_id="demo.fabric.smoke",
+        workspace="/testbed",
         model_name="openai/gpt-5.4",
         skills_dir=tmp_path / "skills",
         mcp_servers=(
@@ -94,20 +66,9 @@ def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
         ),
     )
 
-    config = compose_config(base, spec)
-
-    assert base.models["default"].to_mapping() == {
-        "provider": "demo",
-        "model": "demo",
-        "api_key_env": "DEMO_API_KEY",
-        "temperature": 0.25,
-    }
-    assert base.mcp is not None and "base" in base.mcp.servers
-    assert base.skills is not None and base.skills.paths == ["./base-skill"]
     assert config.models["default"].to_mapping() == {
         "provider": "openai",
         "model": "openai/gpt-5.4",
-        "temperature": 0.25,
     }
     assert config.mcp is not None
     assert set(config.mcp.servers) == {"remote", "local"}
@@ -115,40 +76,20 @@ def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
     assert config.mcp.servers["local"].extra_fields["args"] == ["--stdio"]
     assert config.skills is not None
     assert config.skills.paths == [str(tmp_path / "skills")]
-    assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == ("harbor-demo")
+    assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == "harbor-smoke"
 
 
-def test_runner_preserves_config_capabilities_without_harbor_replacements(tmp_path):
-    from nemo_fabric import FabricConfig
-    from nemo_fabric import RunRequest
-    from nemo_fabric.integrations.harbor.models import HarborRunSpec
-    from nemo_fabric.integrations.harbor.runner import compose_config
+def test_harbor_builder_leaves_optional_capabilities_unset():
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
 
-    base = FabricConfig.model_validate(
-        {
-            "metadata": {"name": "harbor-demo"},
-            "harness": {"adapter_id": "demo.fabric.smoke"},
-            "mcp": {
-                "servers": {
-                    "base": {
-                        "transport": "streamable-http",
-                        "url": "https://base.example.test",
-                    }
-                }
-            },
-            "skills": {"paths": ["./base-skill"]},
-        }
-    )
-    spec = HarborRunSpec(
-        config_factory="test_config:build_config",
-        config_base_dir=tmp_path,
-        request=RunRequest(input="fix it"),
+    config = build_harbor_config(
+        adapter_id="demo.fabric.smoke",
+        workspace="/testbed",
     )
 
-    config = compose_config(base, spec)
-
-    assert config.mcp is not None and set(config.mcp.servers) == {"base"}
-    assert config.skills is not None and config.skills.paths == ["./base-skill"]
+    assert config.models == {}
+    assert config.mcp is None
+    assert config.skills is None
 
 
 def test_runner_loads_a_typed_config_factory(tmp_path):
@@ -206,23 +147,21 @@ def test_harbor_transport_models_validate_mcp_targets():
     from nemo_fabric.integrations.harbor.models import HarborRunSpec
     from pydantic import ValidationError
 
+    server = HarborMcpServer(
+        name="github",
+        transport="streamable-http",
+        url="https://mcp.example.test",
+    )
     spec = HarborRunSpec.model_validate_json(
         HarborRunSpec(
             config_factory="test_config:build_config",
             config_base_dir="/workspace",
             request=RunRequest(input="fix it"),
-            mcp_servers=(
-                HarborMcpServer(
-                    name="github",
-                    transport="streamable-http",
-                    url="https://mcp.example.test",
-                ),
-            ),
         ).model_dump_json()
     )
 
     assert spec.request.input == "fix it"
-    assert spec.mcp_servers[0].name == "github"
+    assert server.name == "github"
     spec_properties = HarborRunSpec.model_json_schema()["properties"]
     assert "config" in spec_properties
     assert "config_path" not in spec_properties
@@ -412,17 +351,9 @@ def test_harbor_demo_uses_typed_factories_without_yaml_configs():
 
 def test_harbor_smoke_config_resolves_its_local_adapter():
     from nemo_fabric import Fabric
-    from nemo_fabric import RunRequest
-    from nemo_fabric.integrations.harbor.models import HarborRunSpec
-    from nemo_fabric.integrations.harbor.runner import compose_config
 
     config_module = load_module("harbor_demo_smoke_config", DEMO_CONFIG_MODULE)
-    spec = HarborRunSpec(
-        config_factory="harbor_demo_config:build_smoke",
-        config_base_dir=DEMO_FABRIC_ROOT,
-        request=RunRequest(input="fix it"),
-    )
-    config = compose_config(config_module.build_smoke(), spec)
+    config = config_module.build_smoke()
     plan = Fabric().plan(config, base_dir=DEMO_FABRIC_ROOT)
 
     assert plan.adapter.adapter_id == "demo.fabric.scripted"
@@ -526,11 +457,8 @@ def test_harbor_sdk_package_documents_execution_boundary():
 
 def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path):
     from harbor.cli.utils import load_mcp_servers
-    from nemo_fabric import RunRequest
     from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
     from nemo_fabric.integrations.harbor.models import HarborMcpServer
-    from nemo_fabric.integrations.harbor.models import HarborRunSpec
-    from nemo_fabric.integrations.harbor.runner import compose_config
 
     base = build_harbor_config(
         adapter_id="nvidia.fabric.hermes",
@@ -540,6 +468,12 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
         adapter_id="nvidia.fabric.hermes",
         workspace="/testbed",
         telemetry="relay",
+        model_name="nvidia/nemotron-3-nano-30b-a3b",
+        skills_dir="/harbor/skills",
+        mcp_servers=tuple(
+            HarborMcpServer.model_validate(server.model_dump(mode="python"))
+            for server in load_mcp_servers(SWEBENCH_MCP_CONFIG)
+        ),
     )
     tools = build_harbor_config(
         adapter_id="nvidia.fabric.hermes",
@@ -553,20 +487,6 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
         harness_settings={"nemo_relay_command": "/tmp/nemo-fabric-config/.relay/bin/nemo-relay"},
     )
 
-    mcp_servers = tuple(
-        HarborMcpServer.model_validate(server.model_dump(mode="python"))
-        for server in load_mcp_servers(SWEBENCH_MCP_CONFIG)
-    )
-    spec = HarborRunSpec(
-        config=relay,
-        config_base_dir="/tmp/nemo-fabric-config",
-        request=RunRequest(input="fix it"),
-        model_name="nvidia/nemotron-3-nano-30b-a3b",
-        skills_dir="/harbor/skills",
-        mcp_servers=mcp_servers,
-    )
-    composed = compose_config(relay, spec)
-
     assert base.profiles is None
     assert base.environment is not None
     assert str(base.environment.workspace) == "/testbed"
@@ -575,12 +495,12 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     assert base.mcp is None
     assert base.tools is None
     assert base.telemetry is None
-    assert composed.models["default"].model == "nvidia/nemotron-3-nano-30b-a3b"
-    assert composed.skills is not None
-    assert composed.skills.paths == ["/harbor/skills"]
-    assert composed.mcp is not None
-    assert set(composed.mcp.servers) == {"fabric-repo-inspector"}
-    assert composed.mcp.servers["fabric-repo-inspector"].extra_fields["args"] == [
+    assert relay.models["default"].model == "nvidia/nemotron-3-nano-30b-a3b"
+    assert relay.skills is not None
+    assert relay.skills.paths == ["/harbor/skills"]
+    assert relay.mcp is not None
+    assert set(relay.mcp.servers) == {"fabric-repo-inspector"}
+    assert relay.mcp.servers["fabric-repo-inspector"].extra_fields["args"] == [
         "/tmp/nemo-fabric-config/mcp/repo_inspector.py"
     ]
     assert tools.tools is not None

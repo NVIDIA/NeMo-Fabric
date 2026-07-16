@@ -141,20 +141,17 @@ async def test_harbor_integration(tmp_path: Path):
     assert spec["config_base_dir"] == "/testbed"
     assert spec["config"]["harness"]["adapter_id"] == "nvidia.fabric.hermes"
     assert spec["config"]["environment"]["workspace"] == "/testbed"
-    assert spec["config"]["models"] == {}
-    assert spec["config"]["skills"] is None
-    assert spec["config"]["mcp"] is None
-    assert spec["model_name"] == "nvidia/test-model"
-    assert spec["skills_dir"] == "/opt/fabric-demo/skills"
-    assert spec["mcp_servers"] == [
-        {
-            "name": "github",
-            "transport": "streamable-http",
-            "url": "https://mcp.example.test",
-            "command": None,
-            "args": [],
-        }
-    ]
+    assert spec["config"]["models"]["default"]["provider"] == "nvidia"
+    assert spec["config"]["models"]["default"]["model"] == "nvidia/test-model"
+    assert spec["config"]["skills"]["paths"] == ["/opt/fabric-demo/skills"]
+    assert spec["config"]["mcp"]["servers"]["github"] == {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test",
+        "exposure": "harness_native",
+    }
+    assert "model_name" not in spec
+    assert "skills_dir" not in spec
+    assert "mcp_servers" not in spec
 
     fabric_commands = [
         command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command

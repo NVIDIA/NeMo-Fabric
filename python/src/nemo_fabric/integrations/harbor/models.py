@@ -65,9 +65,6 @@ class HarborRunSpec(BaseModel):
     config_base_dir: Path
     logs_dir: Path = Path("/logs/agent")
     request: RunRequest
-    model_name: str | None = None
-    skills_dir: Path | None = None
-    mcp_servers: tuple[HarborMcpServer, ...] = ()
 
     @field_validator("config_factory")
     @classmethod

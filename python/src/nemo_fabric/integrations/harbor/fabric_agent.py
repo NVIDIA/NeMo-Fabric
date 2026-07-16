@@ -14,11 +14,13 @@ from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
 from typing import Literal
+from typing import cast
 
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import FabricConfig
 from nemo_fabric import HarnessConfig
 from nemo_fabric import MetadataConfig
+from nemo_fabric import ModelConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
 from nemo_fabric import RelayObservabilityConfig
@@ -245,11 +247,6 @@ else:
                 config_factory=self.fabric_config_factory,
                 config_base_dir=self._environment_config_base_dir,
                 request=self._build_request(instruction),
-                model_name=self.model_name,
-                skills_dir=self.skills_dir,
-                mcp_servers=tuple(
-                    HarborMcpServer.model_validate(server.model_dump(mode="python")) for server in self.mcp_servers
-                ),
             )
 
         def _build_config(self) -> FabricConfig:
@@ -260,6 +257,11 @@ else:
                 harness_settings=self.fabric_harness_settings,
                 blocked_tools=self.fabric_blocked_tools,
                 telemetry=self.fabric_telemetry,
+                model_name=self.model_name,
+                skills_dir=self.skills_dir,
+                mcp_servers=tuple(
+                    HarborMcpServer.model_validate(server.model_dump(mode="python")) for server in self.mcp_servers
+                ),
             )
 
         def _resolve_environment_config_base_dir(self) -> str:
@@ -323,6 +325,9 @@ def build_harbor_config(
     harness_settings: dict[str, Any] | None = None,
     blocked_tools: list[str] | None = None,
     telemetry: Literal["none", "relay"] = "none",
+    model_name: str | None = None,
+    skills_dir: str | Path | None = None,
+    mcp_servers: tuple[HarborMcpServer, ...] = (),
 ) -> FabricConfig:
     """Construct the typed config controlled by Harbor agent inputs."""
 
@@ -352,6 +357,29 @@ def build_harbor_config(
         ),
         tools=(ToolsConfig(blocked=list(blocked_tools)) if blocked_tools else None),
     )
+    if model_name:
+        config.models["default"] = ModelConfig(
+            provider=model_provider(model_name),
+            model=model_name,
+        )
+    for server in mcp_servers:
+        if server.transport == "stdio":
+            config.add_mcp_server(
+                server.name,
+                transport="stdio",
+                url=cast(str, server.command),
+                exposure="harness_native",
+                extra_fields={"args": list(server.args)},
+            )
+        else:
+            config.add_mcp_server(
+                server.name,
+                transport=server.transport,
+                url=cast(str, server.url),
+                exposure="harness_native",
+            )
+    if skills_dir is not None:
+        config.add_skill_path(skills_dir)
     if telemetry == "relay":
         relay_output = f"{artifact_root}/relay"
         config.enable_relay(
@@ -372,6 +400,12 @@ def build_harbor_config(
             ),
         )
     return config
+
+
+def model_provider(model_name: str) -> str:
+    """Derive the Fabric provider from Harbor's model identifier."""
+
+    return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
 
 
 def harbor_harness_defaults(adapter_id: str) -> dict[str, Any]:
