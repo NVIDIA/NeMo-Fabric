@@ -52,6 +52,9 @@ Relay integration:
 pip install "nemo-fabric[relay]"
 ```
 
+### Python Versions
+
+NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations and adapters may have additional requirements. Specifically the Hermes adapter doesn't support Python 3.14 yet, and the Harbor integration requires Python 3.12 or later.
 
 ## Core Concepts
 
