@@ -140,15 +140,6 @@ def preflight_check(payload: dict[str, Any]) -> None:
             "it with the 'deepagents' extra (pip install nemo-fabric-adapters-deepagents)."
         )
 
-    # Relay is an optional integration: nemo-relay is only imported (and required)
-    # when telemetry.providers.relay is enabled, keeping import-time dependency
-    # neutrality when Relay is disabled.
-    if common_utils.relay_enabled(payload) and importlib.util.find_spec("nemo_relay") is None:
-        raise RuntimeError(
-            "NeMo Relay telemetry is enabled but the 'nemo-relay' package is not installed; "
-            "install the Relay extra (pip install 'nemo-fabric-adapters-deepagents[relay]')."
-        )
-
     settings = common_utils.settings_payload(payload)
     model_config = selected_model_config(payload)
     api_key_env = resolve_api_key_env(settings, model_config)
@@ -508,6 +499,18 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
             agent_kwargs["checkpointer"] = checkpointer
 
         if observability is not None:
+            # Both the relay and native telemetry providers run through nemo_relay's
+            # plugin, so nemo-relay is required for either. It is imported lazily only
+            # here (import-time dependency neutrality); fail with an actionable message
+            # when the optional Relay extra is not installed rather than a raw
+            # ModuleNotFoundError from the imports below.
+            import importlib.util
+
+            if importlib.util.find_spec("nemo_relay") is None:
+                raise RuntimeError(
+                    "telemetry is enabled but the 'nemo-relay' package is not installed; "
+                    "install the Relay extra (pip install 'nemo-fabric-adapters-deepagents[relay]')."
+                )
             api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
             from nemo_relay import ScopeType, plugin, scope
             from nemo_relay.integrations.deepagents import (
@@ -566,6 +569,19 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _apply_callbacks(config: dict[str, Any], callbacks: list[Any] | None) -> dict[str, Any]:
+    """Append ``callbacks`` to a LangGraph run config, preserving any already set.
+
+    The Relay callback handler is added after any consumer-provided callbacks so
+    it never replaces them; the existing callbacks keep their order and position
+    ahead of the appended ones.
+    """
+
+    if callbacks:
+        config["callbacks"] = [*(config.get("callbacks") or []), *callbacks]
+    return config
+
+
 async def invoke_agent(
     agent_kwargs: dict[str, Any],
     user_message: str,
@@ -590,8 +606,7 @@ async def invoke_agent(
     config: dict[str, Any] = {}
     if thread_id:
         config["configurable"] = {"thread_id": thread_id}
-    if callbacks:
-        config["callbacks"] = [*(config.get("callbacks") or []), *callbacks]
+    _apply_callbacks(config, callbacks)
     config = config or None
 
     events: list[dict[str, Any]] = []

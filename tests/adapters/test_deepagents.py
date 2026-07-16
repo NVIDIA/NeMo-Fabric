@@ -391,9 +391,58 @@ async def test_relay_disabled_adds_no_scope_or_callbacks(tmp_path, make_payload,
     assert "relay-mw" not in (fake_sdks["create_kwargs"].get("middleware") or [])
 
 
-async def test_invoke_agent_appends_callbacks_without_dropping_existing(fake_sdks):
-    # invoke_agent must merge Relay callbacks with any already present on the run
-    # config rather than replacing them.
+async def test_missing_nemo_relay_with_native_telemetry_is_normalized(tmp_path, make_payload, monkeypatch):
+    # Native telemetry also runs through the nemo_relay plugin, so a core-only
+    # install configured with native telemetry must fail with the actionable
+    # extra-install message rather than a raw ModuleNotFoundError -- even though
+    # relay itself is not enabled. Force find_spec("nemo_relay") -> None (no
+    # fake_relay module) so the guard fires regardless of the environment.
+    import importlib.util as importlib_util
+
+    real_find_spec = importlib_util.find_spec
+
+    def fake_find_spec(name, *args, **kwargs):
+        if name == "nemo_relay":
+            return None
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib_util, "find_spec", fake_find_spec)
+
+    payload = make_payload(tmp_path)
+    payload["telemetry_plan"] = {
+        "providers": ["native"],
+        "relay_enabled": False,
+        "native_config": {
+            "version": 1,
+            "components": [{"kind": "observability", "enabled": True, "config": {"version": 1}}],
+        },
+        "adapter_outputs": [],
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "nemo-relay" in output["error"]
+    assert "[relay]" in output["error"]
+
+
+def test_apply_callbacks_preserves_existing_ahead_of_new():
+    # A consumer-provided callback already on the run config must be kept, with the
+    # Relay callback appended after it rather than replacing it.
+    config = {"configurable": {"thread_id": "t"}, "callbacks": ["consumer-cb"]}
+    result = adapter._apply_callbacks(config, ["relay-cb"])
+
+    assert result["callbacks"] == ["consumer-cb", "relay-cb"]
+    assert result["configurable"] == {"thread_id": "t"}
+
+
+def test_apply_callbacks_without_callbacks_leaves_config_untouched():
+    config = {"configurable": {"thread_id": "t"}}
+    assert adapter._apply_callbacks(config, None) == {"configurable": {"thread_id": "t"}}
+
+
+async def test_invoke_agent_wires_callbacks_into_run_config(fake_sdks):
+    # invoke_agent threads the supplied callbacks into the LangGraph run config.
     agent_kwargs = {"model": object()}
     await adapter.invoke_agent(agent_kwargs, "hello", "thread-1", callbacks=["cb-a", "cb-b"])
 
