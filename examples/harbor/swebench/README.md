@@ -13,7 +13,7 @@ multi-task run.
 
 ## Before You Start
 
-Complete the shared host setup in the [Harbor landing page](../README.md#before-either-path),
+Complete the shared host setup in the [Harbor landing page](../README.md#shared-host-setup),
 then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes runs or
 `ANTHROPIC_API_KEY` for Claude runs before using that harness.
 

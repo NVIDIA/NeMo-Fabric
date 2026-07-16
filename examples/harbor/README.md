@@ -7,19 +7,19 @@ SPDX-License-Identifier: Apache-2.0
 
 These examples keep Harbor in control of tasks, containers, verification,
 rewards, retries, concurrency, and job layout while `FabricAgent` translates
-Harbor options into one final typed `FabricConfig`. Choose the fast calculator
-smoke test or the realistic SWE-Bench walkthrough after completing the shared
-host setup below.
+Harbor options into one final typed `FabricConfig`. Complete the shared host
+setup below, then use any walkthrough that matches the integration behavior
+you want to exercise.
 
-## Choose a Path
+## Walkthroughs
 
-| Path | Use it to |
+| Walkthrough | What it demonstrates |
 | --- | --- |
 | [Calculator smoke test](calculator/README.md) | Check the complete integration and Harbor reward quickly, without credentials or a SWE-Bench download. |
 | [SWE-Bench walkthrough](swebench/README.md) | Run Hermes and Claude experiments with skills, MCP servers, tool policy, Relay telemetry, and SWE-Bench verification. |
 
-Start with the calculator when validating a new checkout or environment. Move
-to SWE-Bench when you are ready to exercise a real coding task and compare
+The calculator is useful for validating a new checkout or environment.
+SWE-Bench exercises a real coding task and supports comparisons across
 configuration variations.
 
 ## Execution Model
@@ -84,7 +84,7 @@ passes it to `Fabric.run()` without adding configuration policy. The task,
 verifier, and `FabricAgent` stay fixed, so each experiment changes only the
 named Harbor input and its resulting evidence remains attributable.
 
-## Before Either Path
+## Shared Host Setup
 
 Run every command from the repository root on an x86_64 Linux host with Python
 3.12, `uv`, Docker, and the Docker Compose plugin. Create the host environment

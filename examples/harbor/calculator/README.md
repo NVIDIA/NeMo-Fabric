@@ -15,7 +15,7 @@ concurrency, and run layout.
 ## Before You Start
 
 Complete the shared host setup in the
-[Harbor landing page](../README.md#before-either-path), then continue in the
+[Harbor landing page](../README.md#shared-host-setup), then continue in the
 same shell. Commit the Fabric revision you want to run because the build context
 is created from `HEAD`.
 
