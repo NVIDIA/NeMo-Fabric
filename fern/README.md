@@ -8,6 +8,21 @@ SPDX-License-Identifier: Apache-2.0
 This directory contains the Fern configuration and versioned documentation
 source for NeMo Fabric.
 
+## Site Configuration
+
+The site publishes to the `/nemo/fabric` subpath of the shared
+`docs.nvidia.com` domain. Keep the following settings in `docs.yml`:
+
+- Set `instances[].multi-source: true` so a publish updates only the Fabric
+  subpath. Keep the `/nemo/fabric` basepath identical in `url` and
+  `custom-domain`.
+- Set `global-theme: nvidia` to inherit the shared NVIDIA documentation theme.
+- Set `logo.right-text: NeMo Fabric` to replace the theme's generic
+  documentation label with the product name.
+
+Do not copy product-specific redirect, generated-library, or custom-component
+configuration from another NeMo site unless Fabric needs that feature.
+
 ## Temporary Cover Version
 
 The public root currently displays a temporary cover page while the full
