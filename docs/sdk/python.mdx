@@ -167,16 +167,16 @@ compatible. Use these normalized fields to describe a model connection:
 | `api_key_env` | Name of the environment variable containing a credential, never the credential value |
 | `capabilities` | Capabilities required from the adapter's selected model path |
 
-For example, configure any Anthropic Messages-compatible service without adding
-that provider name to Fabric source code:
+For example, configure an NVIDIA-hosted Anthropic Messages-compatible service
+without adding its deployment URL to Fabric source code:
 
 ```python
 custom_claude = ModelConfig(
-    provider="private-cloud",
-    model="private-cloud/claude-sonnet-4-5",
+    provider="nvidia",
+    model="nvidia/claude-sonnet-4-5",
     protocol="anthropic-messages",
-    base_url="https://models.example.test/anthropic",
-    api_key_env="PRIVATE_CLOUD_API_KEY",
+    base_url="https://inference.example.test/anthropic",
+    api_key_env="NVIDIA_API_KEY",
 )
 ```
 
