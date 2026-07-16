@@ -45,6 +45,14 @@ The Harbor command must report 0.18.x, and the Python command must print
 Build the Fabric wheels and Relay executable that will be uploaded into the
 isolated task container:
 
+> **TEMP — remove when Fabric is released:** This source-checkout bootstrap is
+> needed only while Fabric wheels are unavailable from PyPI. At release, the
+> docs writer should replace `FABRIC_PACKAGE` with a pinned PyPI requirement and
+> remove `prepare_swebench.sh`, `.fabric-package`, `.wheelhouse`,
+> `FABRIC_FIND_LINKS`, and every `PIP_FIND_LINKS` argument. If the Claude Relay
+> executable is not yet distributed or discovered automatically, retain only
+> the Relay CLI preparation until that is resolved.
+
 ```bash
 ./examples/harbor/prepare_swebench.sh
 

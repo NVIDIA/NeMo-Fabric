@@ -2,6 +2,17 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# TEMPORARY SOURCE-CHECKOUT BOOTSTRAP — remove when Fabric is released.
+#
+# The wheel-building path exists only because the Fabric distributions are not
+# yet available from PyPI. Once they are published, the Harbor README should use
+# a pinned PyPI requirement directly and this script's wheelhouse,
+# .fabric-package file, and PIP_FIND_LINKS plumbing should be deleted.
+#
+# Claude Relay also needs the standalone nemo-relay executable. If that binary
+# is not distributed or discovered automatically when the wheels ship, retain
+# only the Relay CLI preparation below until its packaging is resolved.
+
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
@@ -17,6 +28,7 @@ fi
 mkdir -p "$wheelhouse" "$relay_root"
 find "$wheelhouse" -maxdepth 1 -type f -name 'nemo_fabric*.whl' -delete
 
+# TEMP: Build the unpublished Python packages from this source checkout.
 for project in adapters/common adapters/claude adapters/hermes .; do
     uv build --wheel --out-dir "$wheelhouse" "$repo_root/$project"
 done
@@ -32,6 +44,7 @@ docker run --rm \
     ghcr.io/pyo3/maturin:v1.9.6 \
     -lc 'maturin build --release --locked --out /out --compatibility manylinux2014 && chown "$HOST_UID:$HOST_GID" /out/*.whl'
 
+# TEMP: Keep only this block if PyPI wheels land before Relay CLI distribution.
 relay_version="$({ "$relay_root/bin/nemo-relay" --version 2>/dev/null || true; })"
 if [[ "$relay_version" != "nemo-relay 0.5.0" ]]; then
     docker run --rm \
@@ -43,6 +56,7 @@ if [[ "$relay_version" != "nemo-relay 0.5.0" ]]; then
         cargo install nemo-relay-cli --version 0.5.0 --locked --force --root /out
 fi
 
+# TEMP: Record the source-built meta-wheel path for installation in the task.
 fabric_wheel="$(find "$wheelhouse" -maxdepth 1 -type f -name 'nemo_fabric-*-py3-none-any.whl' -printf '%f\n' | sort | tail -n 1)"
 if [[ -z "$fabric_wheel" ]]; then
     echo "The nemo-fabric wheel was not created." >&2
