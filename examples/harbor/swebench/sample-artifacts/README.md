@@ -18,7 +18,6 @@ Each harness directory contains:
 - concise Fabric, Harbor verifier, and telemetry summaries; and
 - the resulting workspace patch.
 
-The complete telemetry files use Git LFS. The telemetry quality gate scanned
-the recorded artifacts for obvious credential patterns before they were added.
-Runtime and request identifiers in the summaries are omitted because they are
-not part of the portable artifact contract.
+The complete telemetry files and workspace patches use Git LFS. Use these
+samples to compare Harbor's canonical trajectory with Relay's direct ATOF and
+ATIF output before running the example yourself.

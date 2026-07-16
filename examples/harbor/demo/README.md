@@ -16,7 +16,7 @@ independent harness runtime for each Harbor agent run.
 - Python 3.12+
 - `uv`
 - Docker
-- this repository checkout, with the changes under test committed
+- this repository checkout at the revision you want to run
 - `NVIDIA_API_KEY` for the Hermes and Hermes Relay runs
 - `ANTHROPIC_API_KEY` for the Claude run
 
@@ -28,7 +28,7 @@ The first image build can take several minutes.
 
 Harbor builds `task/environment/Dockerfile` with the environment directory as
 its Docker context. Export committed `HEAD` so the image installs the exact
-Fabric revision under test:
+Fabric revision from your checkout:
 
 ```bash
 set -euo pipefail
@@ -196,11 +196,3 @@ After the demo, remove the generated build-context copy:
 ```bash
 rm -rf "$TASK_DIR/environment/vendor"
 ```
-
-## Recording Flow
-
-1. Show the common `--agent` argument and how Harbor options become `FabricConfig`.
-2. Run the credential-free smoke and inspect its Fabric result.
-3. Run Hermes and Claude, changing the adapter, model, and credential inputs.
-4. Enable Relay for Hermes and inspect its ATOF and ATIF records.
-5. Open all four jobs with `harbor view`.

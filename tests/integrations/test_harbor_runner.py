@@ -369,7 +369,7 @@ def test_harbor_telemetry_demo_exports_direct_atof_and_atif():
     assert "canonical ATIF" in integration
 
 
-def test_harbor_sdk_package_documents_execution_boundary():
+def test_harbor_sdk_package_points_to_the_public_example():
     from nemo_fabric.integrations.harbor import FabricAgent
 
     readme = SDK_INTEGRATION_README.read_text(encoding="utf-8")
@@ -378,10 +378,9 @@ def test_harbor_sdk_package_documents_execution_boundary():
     assert FabricAgent.name() == "fabric"
     assert FabricAgent.__module__ == "nemo_fabric.integrations.harbor.fabric_agent"
     assert "nemo_fabric.integrations.harbor:FabricAgent" in readme
-    assert "runner.py" in readme
-    assert "calls `Fabric.run()` directly" in readme
-    assert "fabric_profile_paths" not in readme
-    assert "`fabric_agent.py`" in readme
+    assert "examples/harbor/README.md" in readme
+    assert "FabricConfig" in readme
+    assert "Internals" not in readme
     assert "class FabricAgent" not in package_init
     assert "fabric_agent import FabricAgent" in package_init
 
