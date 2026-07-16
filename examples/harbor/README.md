@@ -9,17 +9,46 @@ This example runs an unchanged Harbor SWE-Bench task while Harbor options vary
 the resulting in-memory `FabricConfig`. Harbor owns the task, container,
 verifier, reward, retries, concurrency, and job layout. `FabricAgent` translates
 the selected adapter, model, skills, MCP servers, tool policy, and telemetry
-mode into one typed config and asks Fabric to run it.
+mode into one final typed config and asks Fabric to run it inside the task
+container.
 
-```text
-Harbor task + agent options
-  -> FabricAgent
-  -> one FabricConfig
-  -> Fabric.run
-  -> selected adapter and harness
-  -> Harbor verifier and reward
-  -> Fabric result + optional Relay ATOF/ATIF
+```mermaid
+flowchart LR
+    subgraph Host["Harbor host process"]
+        Inputs["Harbor task and agent options"]
+        Harbor["Harbor orchestrator"]
+        Agent["FabricAgent"]
+        Config["Final FabricConfig"]
+        Payload["FabricConfig + RunRequest + base_dir"]
+
+        Inputs --> Harbor --> Agent --> Config --> Payload
+    end
+
+    subgraph Container["Harbor task container"]
+        Setup["Upload bundle and install<br/>pinned Fabric package"]
+        Runner["Task-local Fabric runner"]
+        Fabric["Fabric.run()"]
+        Resolve["Resolve adapter and assets<br/>against task base_dir"]
+        Harness["Selected harness"]
+        Workspace["Task workspace"]
+        Verifier["Harbor verifier"]
+        Result["Fabric result and artifacts"]
+
+        Setup --> Runner --> Fabric --> Resolve --> Harness --> Workspace --> Verifier
+        Fabric --> Result
+    end
+
+    Agent -. "setup through Harbor environment" .-> Setup
+    Payload -- "upload serialized payload" --> Runner
+    Result -- "download" --> Agent
+    Verifier -- "reward" --> Harbor
 ```
+
+`FabricAgent` and `FabricConfig` construction run in the Harbor host process.
+The pinned Fabric package, adapter discovery, harness execution, workspace, and
+verifier run inside the isolated task container. Constructing the config does
+not read task paths; adapter and asset resolution is deferred to
+`Fabric.run()` with the task-local `base_dir`.
 
 Run every command from the repository root on an x86_64 Linux host with Docker
 and the Compose plugin available. The commands use Python 3.12, Harbor 0.18,
@@ -106,7 +135,8 @@ The job must complete with one trial and no exception.
 ## How Harbor Inputs Become FabricConfig
 
 `FabricAgent` starts with the selected adapter and Harbor task workspace, then
-applies the run inputs through typed Fabric models:
+applies every run input through typed Fabric models before crossing the task
+container boundary:
 
 | Harbor input | `FabricConfig` field |
 | --- | --- |
@@ -118,11 +148,14 @@ applies the run inputs through typed Fabric models:
 | `--ak fabric_telemetry=relay` | `telemetry` and Relay ATOF/ATIF configuration |
 | `--ak fabric_harness_settings='{...}'` | `harness.settings` for adapter-specific runtime controls |
 
-The task, verifier, and `FabricAgent` stay fixed. Each experiment changes only
-the named Harbor input, so the effective config and evidence remain
-attributable. The uploaded bundle contains adapter descriptors, the example MCP
-server, generated wheels, and Relay; it does not contain a persisted
-`FabricConfig`.
+The result is the complete `FabricConfig` uploaded with the `RunRequest` and
+task-local `base_dir`. The container-side runner deserializes that payload and
+passes it to `Fabric.run()` without adding configuration policy. The task,
+verifier, and `FabricAgent` stay fixed, so each experiment changes only the
+named Harbor input and its resulting evidence remains attributable.
+
+The uploaded bundle contains adapter descriptors, the example MCP server,
+generated wheels, and Relay. It does not contain a persisted `FabricConfig`.
 
 ## Run One Task with Hermes
 
