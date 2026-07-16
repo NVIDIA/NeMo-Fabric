@@ -5,11 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 
 # Harbor Multi-Harness Demo
 
-This demo keeps one Harbor task and one `FabricAgent` class while complete
-Python factories return typed `FabricConfig` variants that select the execution
-harness and telemetry behavior. Harbor owns the task, container, verifier,
-reward, concurrency, and run layout. Fabric runs one independent harness
-runtime for each Harbor agent run.
+This demo keeps one Harbor task and one `FabricAgent` class while Harbor options
+select the harness, model, and telemetry behavior. `FabricAgent` translates
+those options into a complete typed `FabricConfig`. Harbor owns the task,
+container, verifier, reward, concurrency, and run layout. Fabric runs one
+independent harness runtime for each Harbor agent run.
 
 ## Requirements
 
@@ -59,11 +59,13 @@ the matching generated directory under `$RUNS_DIR`, before repeating a run.
 | `--path` | Harbor task directory containing the environment and verifier |
 | `--agent` | Harbor agent class imported from Fabric |
 | `--ak` | Constructor argument passed to `FabricAgent` |
-| `fabric_config_factory` | Python `module:callable` returning a complete `FabricConfig` |
-| `fabric_config_base_dir` | Explicit task path for factory imports and relative assets |
+| `fabric_adapter_id` | Fabric adapter selected for the run |
+| `fabric_config_base_dir` | Task path used to resolve adapter assets |
+| `fabric_workspace` | Task workspace that the harness can modify |
+| `fabric_harness_settings` | Adapter-specific runtime settings |
+| `fabric_telemetry` | Optional Relay ATOF and ATIF capture |
+| `--model` | Model translated into `FabricConfig.models.default` |
 | `--ae` | Environment variable passed to the Harbor agent |
-| `--mounts` | Host-to-container mounts managed by Harbor |
-| `--extra-docker-compose` | Compose overlay for the task environment |
 | `--job-name` | Harbor output directory name for this run |
 | `--force-build` | Rebuild the task image from the prepared context |
 
@@ -76,8 +78,9 @@ workspace mutation, result download, and verification:
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --ak fabric_config_factory=harbor_demo_config:build_smoke \
+  --ak fabric_adapter_id=demo.fabric.scripted \
   --ak fabric_config_base_dir=/opt/fabric-demo \
+  --ak fabric_workspace=/app \
   --job-name fabric-smoke \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
@@ -95,8 +98,11 @@ export NVIDIA_API_KEY=...
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --ak fabric_config_factory=harbor_demo_config:build_hermes \
+  --model nvidia/nemotron-3-nano-30b-a3b \
+  --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_base_dir=/opt/fabric-demo \
+  --ak fabric_workspace=/app \
+  --ak 'fabric_harness_settings={"cwd":"/app","base_url":"https://integrate.api.nvidia.com/v1","max_iterations":20}' \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-hermes \
   --jobs-dir "$RUNS_DIR" \
@@ -105,34 +111,22 @@ uv run --extra runtime --extra harbor harbor run \
   --force-build
 ```
 
-The factory owns the model and harness selection; Harbor supplies only the
-credential required by that config.
+The Harbor model and agent arguments become the model and harness fields in the
+typed config. The API key is passed separately as a task credential.
 
 ## 3. Hermes with Relay Telemetry
-
-Start Phoenix on the host:
-
-```bash
-docker rm -f fabric-phoenix 2>/dev/null || true
-docker run --rm --detach \
-  --name fabric-phoenix \
-  --publish 6006:6006 \
-  arizephoenix/phoenix:18.0.0
-
-until curl --fail --silent http://localhost:6006 >/dev/null; do sleep 1; done
-```
-
-Visit `http://localhost:6006`. The Compose overlay maps
-`host.docker.internal` to the host gateway on Linux.
 
 ```bash
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --ak fabric_config_factory=harbor_demo_config:build_hermes_relay \
+  --model nvidia/nemotron-3-nano-30b-a3b \
+  --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_base_dir=/opt/fabric-demo \
+  --ak fabric_workspace=/app \
+  --ak fabric_telemetry=relay \
+  --ak 'fabric_harness_settings={"cwd":"/app","base_url":"https://integrate.api.nvidia.com/v1","max_iterations":4,"terminal_timeout":120}' \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
-  --extra-docker-compose "$DEMO_DIR/host-gateway.compose.yaml" \
   --job-name fabric-hermes-relay \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
@@ -140,8 +134,8 @@ uv run --extra runtime --extra harbor harbor run \
   --force-build
 ```
 
-The completed run appears in Phoenix and writes ATOF and ATIF records into the
-Harbor agent logs:
+The completed run writes direct Relay ATOF and ATIF records into the Harbor
+agent logs:
 
 ```bash
 find "$RUNS_DIR/fabric-hermes-relay" \
@@ -165,8 +159,11 @@ export ANTHROPIC_API_KEY=...
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --ak fabric_config_factory=harbor_demo_config:build_claude \
+  --model anthropic/claude-sonnet-4-5 \
+  --ak fabric_adapter_id=nvidia.fabric.claude \
   --ak fabric_config_base_dir=/opt/fabric-demo \
+  --ak fabric_workspace=/app \
+  --ak 'fabric_harness_settings={"max_turns":20,"timeout_seconds":600}' \
   --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
   --job-name fabric-claude \
   --jobs-dir "$RUNS_DIR" \
@@ -202,9 +199,8 @@ rm -rf "$TASK_DIR/environment/vendor"
 
 ## Recording Flow
 
-1. Show the common `--agent` argument and the four typed config factories.
+1. Show the common `--agent` argument and how Harbor options become `FabricConfig`.
 2. Run the credential-free smoke and inspect its Fabric result.
-3. Run Hermes and Claude, changing the factory and credential inputs.
-4. Start Phoenix, run the Hermes Relay factory, and open its trace.
-5. Show the same run's ATOF and ATIF records.
-6. Open all four jobs with `harbor view`.
+3. Run Hermes and Claude, changing the adapter, model, and credential inputs.
+4. Enable Relay for Hermes and inspect its ATOF and ATIF records.
+5. Open all four jobs with `harbor view`.

@@ -137,7 +137,6 @@ async def test_harbor_integration(tmp_path: Path):
     assert request["input"] == "fix the bug"
     assert request["context"] == {"source": "harbor"}
     assert request["request_id"].startswith("request-")
-    assert spec["config_factory"] is None
     assert spec["config_base_dir"] == "/testbed"
     assert spec["config"]["harness"]["adapter_id"] == "nvidia.fabric.hermes"
     assert spec["config"]["environment"]["workspace"] == "/testbed"
@@ -202,16 +201,12 @@ def test_harbor_rejects_invalid_downloaded_result(tmp_path: Path):
         populate_context_from_result(AgentContext(), result_path)
 
 
-async def test_harbor_uploads_a_portable_config_bundle(tmp_path: Path):
+async def test_harbor_uploads_a_portable_asset_bundle(tmp_path: Path):
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    (bundle / "harbor_config.py").write_text(
-        "def build_config(): ...\n",
-        encoding="utf-8",
-    )
     agent = FabricAgent(
         logs_dir=tmp_path / "logs",
-        fabric_config_factory="harbor_config:build_config",
+        fabric_adapter_id="nvidia.fabric.hermes",
         fabric_config_bundle=bundle,
     )
     environment = FakeHarborEnvironment()
@@ -219,9 +214,9 @@ async def test_harbor_uploads_a_portable_config_bundle(tmp_path: Path):
     await agent.setup(environment)  # type: ignore[arg-type]
 
     assert environment.directory_uploads == [(bundle, "/tmp/nemo-fabric-config")]
-    spec = agent._build_spec("fix it")
-    assert spec.config_factory == "harbor_config:build_config"
-    assert spec.config_base_dir == Path("/tmp/nemo-fabric-config")
+    payload = agent._build_spec("fix it")
+    assert payload.config.harness.adapter_id == "nvidia.fabric.hermes"
+    assert payload.config_base_dir == Path("/tmp/nemo-fabric-config")
 
 
 async def test_harbor_generated_config_uses_an_uploaded_bundle_as_base_dir(
@@ -238,10 +233,8 @@ async def test_harbor_generated_config_uses_an_uploaded_bundle_as_base_dir(
 
     await agent.setup(environment)  # type: ignore[arg-type]
 
-    spec = agent._build_spec("fix it")
-    assert spec.config is not None
-    assert spec.config_factory is None
-    assert spec.config_base_dir == Path("/tmp/nemo-fabric-config")
+    payload = agent._build_spec("fix it")
+    assert payload.config_base_dir == Path("/tmp/nemo-fabric-config")
     assert environment.directory_uploads == [(bundle, "/tmp/nemo-fabric-config")]
 
 
@@ -255,7 +248,6 @@ def test_harbor_generated_config_maps_fabric_specific_options(tmp_path: Path):
 
     spec = agent._build_spec("fix it")
 
-    assert spec.config is not None
     assert spec.config.tools is not None
     assert spec.config.tools.blocked == ["browser"]
     assert spec.config.telemetry is not None
@@ -265,28 +257,20 @@ def test_harbor_generated_config_maps_fabric_specific_options(tmp_path: Path):
     assert spec.config.relay.observability.atif.enabled is True
 
 
-def test_harbor_requires_exactly_one_config_source(tmp_path: Path):
-    with pytest.raises(ValueError, match="exactly one"):
-        FabricAgent(logs_dir=tmp_path)
-    with pytest.raises(ValueError, match="exactly one"):
+def test_harbor_requires_a_nonempty_adapter_id(tmp_path: Path):
+    with pytest.raises(ValueError, match="must not be empty"):
         FabricAgent(
             logs_dir=tmp_path,
-            fabric_adapter_id="nvidia.fabric.hermes",
-            fabric_config_factory="harbor_config:build_config",
-            fabric_config_base_dir="/opt/fabric",
+            fabric_adapter_id=" ",
         )
 
 
 async def test_harbor_uploads_bundle_before_package_install(tmp_path: Path):
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    (bundle / "harbor_config.py").write_text(
-        "def build_config(): ...\n",
-        encoding="utf-8",
-    )
     agent = FabricAgent(
         logs_dir=tmp_path / "logs",
-        fabric_config_factory="harbor_config:build_config",
+        fabric_adapter_id="nvidia.fabric.hermes",
         fabric_config_bundle=bundle,
         fabric_package="/tmp/nemo-fabric-config/wheelhouse/nemo_fabric.whl",
     )
@@ -303,21 +287,14 @@ async def test_harbor_uploads_bundle_before_package_install(tmp_path: Path):
     assert upload_index < install_index
 
 
-def test_harbor_config_requires_an_explicit_base_dir(tmp_path: Path):
-    with pytest.raises(ValueError, match="fabric_config_base_dir is required"):
-        FabricAgent(
-            logs_dir=tmp_path / "logs",
-            fabric_config_factory="harbor_config:build_config",
-        )
+def test_harbor_defaults_config_base_dir_to_workspace(tmp_path: Path):
+    agent = FabricAgent(
+        logs_dir=tmp_path / "logs",
+        fabric_adapter_id="nvidia.fabric.hermes",
+        fabric_workspace="/workspace",
+    )
 
-
-def test_harbor_config_rejects_an_invalid_factory_reference(tmp_path: Path):
-    with pytest.raises(ValueError, match="module:callable"):
-        FabricAgent(
-            logs_dir=tmp_path / "logs",
-            fabric_config_factory="not-a-factory-reference",
-            fabric_config_base_dir="/opt/fabric",
-        )
+    assert agent._build_spec("fix it").config_base_dir == Path("/workspace")
 
 
 def test_harbor_config_bundle_rejects_an_explicit_base_dir(tmp_path: Path):
@@ -327,7 +304,7 @@ def test_harbor_config_bundle_rejects_an_explicit_base_dir(tmp_path: Path):
     with pytest.raises(ValueError, match="derived from fabric_config_target"):
         FabricAgent(
             logs_dir=tmp_path / "logs",
-            fabric_config_factory="harbor_config:build_config",
+            fabric_adapter_id="nvidia.fabric.hermes",
             fabric_config_base_dir="/opt/fabric",
             fabric_config_bundle=bundle,
         )
@@ -337,7 +314,7 @@ def test_harbor_config_rejects_a_relative_base_dir(tmp_path: Path):
     with pytest.raises(ValueError, match="must be an absolute"):
         FabricAgent(
             logs_dir=tmp_path / "logs",
-            fabric_config_factory="harbor_config:build_config",
+            fabric_adapter_id="nvidia.fabric.hermes",
             fabric_config_base_dir="relative/config",
         )
 

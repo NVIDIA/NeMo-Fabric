@@ -28,9 +28,8 @@ from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
 from nemo_fabric import ToolsConfig
+from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
-from nemo_fabric.integrations.harbor.models import HarborRunSpec
-from nemo_fabric.integrations.harbor.models import parse_config_factory_reference
 
 INSTALL_ENV_NAMES = {
     "HTTP_PROXY",
@@ -91,8 +90,7 @@ else:
         def __init__(
             self,
             logs_dir: Path,
-            fabric_adapter_id: str | None = None,
-            fabric_config_factory: str | None = None,
+            fabric_adapter_id: str,
             fabric_config_base_dir: str | None = None,
             fabric_config_bundle: Path | None = None,
             fabric_config_target: str = "/tmp/nemo-fabric-config",
@@ -115,12 +113,8 @@ else:
             # while newer BaseAgent versions intentionally ignore unknown kwargs.
             # Retain the mapping here for both old and new Harbor releases.
             self._extra_env = dict(extra_env or {})
-            if (fabric_adapter_id is None) == (fabric_config_factory is None):
-                raise ValueError("exactly one of fabric_adapter_id or fabric_config_factory is required")
-            if fabric_adapter_id is not None and not fabric_adapter_id.strip():
+            if not fabric_adapter_id.strip():
                 raise ValueError("fabric_adapter_id must not be empty")
-            if fabric_config_factory is not None:
-                parse_config_factory_reference(fabric_config_factory)
             workspace = PurePosixPath(fabric_workspace)
             if not workspace.is_absolute() or ".." in workspace.parts:
                 raise ValueError("fabric_workspace must be an absolute task-environment path")
@@ -130,7 +124,6 @@ else:
             if fabric_telemetry not in {"none", "relay"}:
                 raise ValueError("fabric_telemetry must be 'none' or 'relay'")
             self.fabric_adapter_id = fabric_adapter_id
-            self.fabric_config_factory = fabric_config_factory
             self.fabric_config_base_dir = fabric_config_base_dir
             self.fabric_config_bundle = fabric_config_bundle
             self.fabric_config_target = fabric_config_target
@@ -241,16 +234,14 @@ else:
                 context["harbor_context_id"] = str(context_id)
             return RunRequest(input=instruction, context=context)
 
-        def _build_spec(self, instruction: str) -> HarborRunSpec:
-            return HarborRunSpec(
-                config=(self._build_config() if self.fabric_adapter_id is not None else None),
-                config_factory=self.fabric_config_factory,
+        def _build_spec(self, instruction: str) -> FabricRunPayload:
+            return FabricRunPayload(
+                config=self._build_config(),
                 config_base_dir=self._environment_config_base_dir,
                 request=self._build_request(instruction),
             )
 
         def _build_config(self) -> FabricConfig:
-            assert self.fabric_adapter_id is not None
             return build_harbor_config(
                 adapter_id=self.fabric_adapter_id,
                 workspace=self.fabric_workspace,
@@ -278,8 +269,6 @@ else:
                     )
                 return str(target)
 
-            if self.fabric_config_base_dir is None and self.fabric_config_factory:
-                raise ValueError("fabric_config_base_dir is required when fabric_config_bundle is not set")
             base_dir = PurePosixPath(self.fabric_config_base_dir or self.fabric_workspace)
             if not base_dir.is_absolute() or ".." in base_dir.parts:
                 raise ValueError("fabric_config_base_dir must be an absolute task-environment path")

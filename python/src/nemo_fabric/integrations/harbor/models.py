@@ -12,26 +12,10 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
-from pydantic import field_validator
 from pydantic import model_validator
 
 from nemo_fabric import FabricConfig
 from nemo_fabric import RunRequest
-
-
-def parse_config_factory_reference(value: str) -> tuple[str, str]:
-    """Validate and split a Python ``module:callable`` reference."""
-
-    module_name, separator, callable_name = value.partition(":")
-    if (
-        not separator
-        or not module_name
-        or not callable_name
-        or not all(part.isidentifier() for part in module_name.split("."))
-        or not callable_name.isidentifier()
-    ):
-        raise ValueError("config_factory must use module:callable syntax")
-    return module_name, callable_name
 
 
 class HarborMcpServer(BaseModel):
@@ -55,26 +39,12 @@ class HarborMcpServer(BaseModel):
         return self
 
 
-class HarborRunSpec(BaseModel):
-    """Host-to-environment specification for one Harbor agent run."""
+class FabricRunPayload(BaseModel):
+    """Typed Fabric inputs transported into one Harbor task environment."""
 
     model_config = ConfigDict(extra="forbid")
 
-    config: FabricConfig | None = None
-    config_factory: str | None = None
+    config: FabricConfig
     config_base_dir: Path
     logs_dir: Path = Path("/logs/agent")
     request: RunRequest
-
-    @field_validator("config_factory")
-    @classmethod
-    def validate_config_factory(cls, value: str | None) -> str | None:
-        if value is not None:
-            parse_config_factory_reference(value)
-        return value
-
-    @model_validator(mode="after")
-    def validate_config_source(self) -> Self:
-        if (self.config is None) == (self.config_factory is None):
-            raise ValueError("exactly one of config or config_factory is required")
-        return self

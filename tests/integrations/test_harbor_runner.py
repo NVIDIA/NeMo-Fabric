@@ -9,17 +9,14 @@ import tomllib
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_README = ROOT / "README.md"
 DEMO_ROOT = ROOT / "examples" / "harbor" / "demo"
 DEMO_README = DEMO_ROOT / "README.md"
 DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
-DEMO_HOST_GATEWAY = DEMO_ROOT / "host-gateway.compose.yaml"
 DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
 DEMO_FABRIC_ROOT = DEMO_ROOT / "task" / "environment" / "fabric"
-DEMO_CONFIG_MODULE = DEMO_FABRIC_ROOT / "harbor_demo_config.py"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
@@ -92,59 +89,11 @@ def test_harbor_builder_leaves_optional_capabilities_unset():
     assert config.skills is None
 
 
-def test_runner_loads_a_typed_config_factory(tmp_path):
-    from nemo_fabric import FabricConfig
-    from nemo_fabric.integrations.harbor.runner import load_config_factory
-
-    (tmp_path / "typed_config_helper.py").write_text(
-        "CONFIG_NAME = 'typed'\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "typed_config.py").write_text(
-        "from nemo_fabric import FabricConfig, HarnessConfig, MetadataConfig\n"
-        "def build_config():\n"
-        "    from typed_config_helper import CONFIG_NAME\n"
-        "    return FabricConfig(metadata=MetadataConfig(name=CONFIG_NAME), "
-        "harness=HarnessConfig(adapter_id='demo.fabric.smoke'))\n",
-        encoding="utf-8",
-    )
-
-    config = load_config_factory("typed_config:build_config", tmp_path)
-
-    assert isinstance(config, FabricConfig)
-    assert config.metadata.name == "typed"
-
-
-@pytest.mark.parametrize(
-    ("reference", "message"),
-    [
-        ("missing-separator", "module:callable"),
-        ("missing_module:build_config", "config factory failed"),
-    ],
-)
-def test_runner_rejects_invalid_config_factories(tmp_path, reference, message):
-    from nemo_fabric.integrations.harbor.runner import load_config_factory
-
-    with pytest.raises((RuntimeError, ValueError), match=message):
-        load_config_factory(reference, tmp_path)
-
-
-def test_runner_rejects_a_non_typed_factory_result(tmp_path):
-    from nemo_fabric.integrations.harbor.runner import load_config_factory
-
-    (tmp_path / "mapping_config.py").write_text(
-        "def build_config():\n    return {'harness': {}}\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(TypeError, match="must return FabricConfig"):
-        load_config_factory("mapping_config:build_config", tmp_path)
-
-
 def test_harbor_transport_models_validate_mcp_targets():
     from nemo_fabric import RunRequest
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+    from nemo_fabric.integrations.harbor.models import FabricRunPayload
     from nemo_fabric.integrations.harbor.models import HarborMcpServer
-    from nemo_fabric.integrations.harbor.models import HarborRunSpec
     from pydantic import ValidationError
 
     server = HarborMcpServer(
@@ -152,43 +101,33 @@ def test_harbor_transport_models_validate_mcp_targets():
         transport="streamable-http",
         url="https://mcp.example.test",
     )
-    spec = HarborRunSpec.model_validate_json(
-        HarborRunSpec(
-            config_factory="test_config:build_config",
+    payload = FabricRunPayload.model_validate_json(
+        FabricRunPayload(
+            config=build_harbor_config(adapter_id="demo.fabric.smoke", workspace="/testbed"),
             config_base_dir="/workspace",
             request=RunRequest(input="fix it"),
         ).model_dump_json()
     )
 
-    assert spec.request.input == "fix it"
+    assert payload.request.input == "fix it"
     assert server.name == "github"
-    spec_properties = HarborRunSpec.model_json_schema()["properties"]
-    assert "config" in spec_properties
-    assert "config_path" not in spec_properties
-    assert "profile_paths" not in spec_properties
+    payload_properties = FabricRunPayload.model_json_schema()["properties"]
+    assert set(payload_properties) == {"config", "config_base_dir", "logs_dir", "request"}
     with pytest.raises(ValidationError, match="require url"):
         HarborMcpServer(name="missing", transport="sse")
     with pytest.raises(ValidationError, match="require command"):
         HarborMcpServer(name="missing", transport="stdio")
-    with pytest.raises(ValidationError, match="module:callable"):
-        HarborRunSpec.model_validate(
-            {
-                "config_factory": "not-a-factory-reference",
-                "config_base_dir": "/workspace",
-                "request": {"input": "fix it"},
-            }
-        )
     with pytest.raises(ValidationError, match="Extra inputs"):
-        HarborRunSpec.model_validate(
+        FabricRunPayload.model_validate(
             {
-                "config_factory": "test_config:build_config",
+                "config": {},
                 "config_base_dir": "/workspace",
                 "request": {"input": "fix it"},
                 "profile_paths": [],
             }
         )
-    with pytest.raises(ValidationError, match="exactly one"):
-        HarborRunSpec.model_validate(
+    with pytest.raises(ValidationError, match="Field required"):
+        FabricRunPayload.model_validate(
             {
                 "config_base_dir": "/workspace",
                 "request": {"input": "fix it"},
@@ -201,14 +140,9 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
     tmp_path: Path,
 ):
     from nemo_fabric.integrations.harbor import runner
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+    from nemo_fabric.integrations.harbor.models import FabricRunPayload
 
-    (tmp_path / "job_config.py").write_text(
-        "from nemo_fabric import FabricConfig, HarnessConfig, MetadataConfig\n"
-        "def build_config():\n"
-        "    return FabricConfig(metadata=MetadataConfig(name='harbor-demo'), "
-        "harness=HarnessConfig(adapter_id='demo.fabric.smoke'))\n",
-        encoding="utf-8",
-    )
     calls: list[dict[str, object]] = []
 
     class FakeResult:
@@ -235,11 +169,9 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
         "publish_telemetry_evidence",
         lambda result, path, **kwargs: {},
     )
-    from nemo_fabric.integrations.harbor.models import HarborRunSpec
-
-    specs = [
-        HarborRunSpec(
-            config_factory="job_config:build_config",
+    payloads = [
+        FabricRunPayload(
+            config=build_harbor_config(adapter_id="demo.fabric.smoke", workspace="/testbed"),
             config_base_dir=tmp_path,
             request={
                 "input": f"job {job_id}",
@@ -249,10 +181,10 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
         for job_id in ("job-1", "job-2")
     ]
 
-    async def run_specs():
-        return await asyncio.gather(*(runner.run(spec) for spec in specs))
+    async def run_payloads():
+        return await asyncio.gather(*(runner.run(payload) for payload in payloads))
 
-    results = asyncio.run(run_specs())
+    results = asyncio.run(run_payloads())
 
     assert [result.runtime_id for result in results] == ["runtime-1", "runtime-2"]
     requests = [call["request"] for call in calls]
@@ -319,8 +251,14 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
 
 
 def test_claude_demo_uses_current_adapter_contract():
-    config_module = load_module("harbor_demo_claude_config", DEMO_CONFIG_MODULE)
-    config = config_module.build_claude()
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+
+    config = build_harbor_config(
+        adapter_id="nvidia.fabric.claude",
+        workspace="/app",
+        model_name="anthropic/claude-sonnet-4-5",
+        harness_settings={"max_turns": 20, "timeout_seconds": 600},
+    )
     settings = config.harness.settings
 
     assert config.harness.adapter_id == "nvidia.fabric.claude"
@@ -328,32 +266,25 @@ def test_claude_demo_uses_current_adapter_contract():
     assert settings["max_turns"] == 20
     assert config.models["default"].provider == "anthropic"
     dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
-    assert "nemo-fabric[claude,harbor,hermes,relay,runtime]" in dockerfile
+    assert "-e /opt/nemo-fabric/adapters/claude" in dockerfile
+    assert "-e /opt/nemo-fabric/adapters/hermes" in dockerfile
+    assert "nemo-fabric[harbor,hermes,relay,runtime]" in dockerfile
     assert "@openai/codex" not in dockerfile
 
 
-def test_harbor_demo_uses_typed_factories_without_yaml_configs():
-    from nemo_fabric import FabricConfig
-
-    config_module = load_module("harbor_demo_factories", DEMO_CONFIG_MODULE)
-    factories = [
-        config_module.build_smoke,
-        config_module.build_hermes,
-        config_module.build_hermes_relay,
-        config_module.build_claude,
-    ]
-    for factory in factories:
-        config = factory()
-        assert isinstance(config, FabricConfig)
-        assert config.profiles is None
+def test_harbor_demo_uses_agent_inputs_without_config_files():
+    assert not (DEMO_FABRIC_ROOT / "harbor_demo_config.py").exists()
     assert not list(DEMO_FABRIC_ROOT.rglob("*.yaml"))
 
 
 def test_harbor_smoke_config_resolves_its_local_adapter():
     from nemo_fabric import Fabric
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
 
-    config_module = load_module("harbor_demo_smoke_config", DEMO_CONFIG_MODULE)
-    config = config_module.build_smoke()
+    config = build_harbor_config(
+        adapter_id="demo.fabric.scripted",
+        workspace="/app",
+    )
     plan = Fabric().plan(config, base_dir=DEMO_FABRIC_ROOT)
 
     assert plan.adapter.adapter_id == "demo.fabric.scripted"
@@ -372,8 +303,11 @@ def test_harbor_demo_documents_explicit_cli_commands():
     assert "--agent-import-path" not in integration
     assert "fabric_config_path" not in demo
     assert "fabric_config_path" not in integration
-    assert "fabric_config_factory" in demo
+    assert "fabric_config_factory" not in demo
     assert "fabric_config_factory" not in integration
+    assert "fabric_workspace=/app" in demo
+    assert "--model nvidia/nemotron-3-nano-30b-a3b" in demo
+    assert "--model anthropic/claude-sonnet-4-5" in demo
     assert "fabric_adapter_id" in integration
     assert 'export TMPDIR="$HOME/harbor-tmp"' in integration
     assert "./examples/harbor/prepare_swebench.sh" in integration
@@ -413,26 +347,23 @@ def test_harbor_demo_setup_and_solution_fail_fast():
     assert "raise SystemExit" in solution
 
 
-def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
-    config_module = load_module("harbor_demo_relay_config", DEMO_CONFIG_MODULE)
-    config = config_module.build_hermes_relay().to_mapping()
-    host_gateway = yaml.safe_load(DEMO_HOST_GATEWAY.read_text(encoding="utf-8"))
+def test_harbor_telemetry_demo_exports_direct_atof_and_atif():
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+
+    config = build_harbor_config(
+        adapter_id="nvidia.fabric.hermes",
+        workspace="/app",
+        model_name="nvidia/nemotron-3-nano-30b-a3b",
+        telemetry="relay",
+    ).to_mapping()
     assert "relay" in config["telemetry"]["providers"]
     observability = config["relay"]["observability"]
     integration = INTEGRATION_README.read_text(encoding="utf-8")
 
-    assert observability["openinference"]["enabled"] is True
-    assert observability["openinference"]["transport"] == "http_binary"
-    assert observability["openinference"]["endpoint"] == ("http://host.docker.internal:6006/v1/traces")
+    assert "openinference" not in observability
     assert observability["atof"]["enabled"] is True
     assert observability["atif"]["enabled"] is True
-    assert host_gateway == {
-        "services": {
-            "main": {
-                "extra_hosts": ["host.docker.internal=host-gateway"],
-            }
-        }
-    }
+    assert not (DEMO_ROOT / "host-gateway.compose.yaml").exists()
     assert "direct Relay ATOF and ATIF" in integration
     assert "telemetry-validation.json" in integration
     assert "canonical ATIF" in integration

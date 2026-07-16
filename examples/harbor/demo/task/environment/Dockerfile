@@ -14,7 +14,12 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-ini
 ENV PATH=/root/.cargo/bin:$PATH
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
-RUN pip install --no-cache-dir -e "/opt/nemo-fabric[claude,harbor,hermes,relay,runtime]"
+RUN pip install --no-cache-dir \
+        -e /opt/nemo-fabric/python \
+        -e /opt/nemo-fabric/adapters/common \
+        -e /opt/nemo-fabric/adapters/claude \
+        -e /opt/nemo-fabric/adapters/hermes \
+        -e "/opt/nemo-fabric[harbor,hermes,relay,runtime]"
 
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-demo
