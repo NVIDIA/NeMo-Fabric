@@ -1,0 +1,183 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: License Diff
+
+# copy-pr-bot mirrors fork PRs to pull-request/<n> branches. The generator runs
+# with read-only permissions; a separate no-checkout job owns comment writes.
+on:
+  push:
+    branches:
+      - 'pull-request/**'
+    paths:
+      - '.github/workflows/ci_license_diff.yml'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'about.toml'
+      - 'crates/**/Cargo.toml'
+      - 'pyproject.toml'
+      - 'python/**/pyproject.toml'
+      - 'adapters/**/pyproject.toml'
+      - '**/uv.lock'
+      - 'scripts/licensing/**'
+
+concurrency:
+  group: license-diff-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  UV_PYTHON_DOWNLOADS: never
+
+jobs:
+  license-diff:
+    name: Generate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr_number: ${{ steps.pull-request.outputs.pr_number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+        with:
+          version: 0.9.22
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install managed Python
+        run: UV_PYTHON_DOWNLOADS=manual uv python install --managed-python 3.11
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@150fca883cd4034361b621bd4e6a9d34e5143606 # v1.15.4
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Install cargo-about
+        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        with:
+          tool: cargo-about@0.9.0
+
+      - name: Resolve pull request base
+        id: pull-request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          pr_number="${GITHUB_REF_NAME#pull-request/}"
+          if [[ "$pr_number" == "$GITHUB_REF_NAME" || ! "$pr_number" =~ ^[0-9]+$ ]]; then
+            echo "Error: unable to derive a PR number from ref '${GITHUB_REF_NAME}'" >&2
+            exit 1
+          fi
+
+          base_branch="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" --jq '.base.ref')"
+          if [[ -z "$base_branch" ]]; then
+            echo "Error: pull request ${pr_number} has no base branch" >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin "+refs/heads/${base_branch}:refs/remotes/origin/${base_branch}"
+          printf 'base_ref=origin/%s\n' "$base_branch" >> "$GITHUB_OUTPUT"
+          printf 'pr_number=%s\n' "$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Compare lockfile licenses
+        id: compare
+        continue-on-error: true
+        env:
+          BASE_REF: ${{ steps.pull-request.outputs.base_ref }}
+        run: |
+          set -euo pipefail
+
+          echo "Comparing lockfile licenses against ${BASE_REF}"
+          set +e
+          uv run --no-project --python 3.11 python scripts/licensing/license_diff.py \
+            --base-ref "$BASE_REF" > license-diff.md 2> license-diff.status
+          diff_status=$?
+          set -e
+          printf 'diff_status=%s\n' "$diff_status" >> "$GITHUB_OUTPUT"
+
+          if [[ "$diff_status" -ne 0 ]]; then
+            echo "::warning title=License diff failed::license_diff.py exited with status ${diff_status}; see the PR comment for captured output."
+          fi
+
+          cat license-diff.status >&2
+          cat license-diff.md
+
+      - name: Build PR comment
+        if: ${{ steps.compare.outcome == 'success' }}
+        env:
+          COMPARE_REF: ${{ steps.pull-request.outputs.base_ref }}
+          DIFF_STATUS: ${{ steps.compare.outputs.diff_status }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## License Diff"
+            echo
+            echo "Compared against \`${COMPARE_REF}\`."
+            echo
+            if [[ "$DIFF_STATUS" != "0" ]]; then
+              echo "> License diff failed with exit code \`${DIFF_STATUS}\`; this informational check does not block CI."
+              echo
+            fi
+            if [[ -s license-diff.md ]]; then
+              echo "<details>"
+              echo "<summary>Lockfile license changes</summary>"
+              echo
+              cat license-diff.md
+              echo
+              echo "</details>"
+            else
+              echo "No license diff output was produced."
+            fi
+            echo
+            echo "<details><summary>Status output</summary>"
+            echo
+            echo '```text'
+            cat license-diff.status
+            echo '```'
+            echo "</details>"
+          } > license-diff-comment.md
+
+      - name: Upload PR comment
+        if: ${{ steps.compare.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: license-diff-comment
+          path: license-diff-comment.md
+          if-no-files-found: error
+          retention-days: 1
+
+  comment:
+    name: Comment
+    needs: license-diff
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Download PR comment
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: license-diff-comment
+
+      - name: Upsert PR comment
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+        with:
+          header: nemo-fabric-license-diff
+          number: ${{ needs.license-diff.outputs.pr_number }}
+          path: license-diff-comment.md

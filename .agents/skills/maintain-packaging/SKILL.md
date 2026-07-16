@@ -1,6 +1,6 @@
 ---
 name: maintain-packaging
-description: Maintain NeMo Fabric Rust and Python package metadata, module paths, native artifacts, lockfiles, and release-facing build surfaces
+description: Maintain NeMo Fabric Rust and Python dependencies, package metadata, module paths, native artifacts, lockfiles, license evidence, and release-facing build surfaces
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
@@ -29,6 +29,32 @@ consumed outside the source tree.
 - CI workflows, install commands, and example commands
 - `justfile` build, test, clean, and documentation recipes
 
+## Dependency Selection
+
+Treat every direct dependency as a long-lived API, supply-chain, and licensing
+commitment.
+
+- First prefer the standard library, an existing dependency, or a small local
+  implementation when it keeps the behavior clear and maintainable.
+- When multiple dependencies satisfy the technical requirement, prefer the
+  maintained OSS option with clear SPDX metadata, a smaller transitive graph,
+  and permissive terms such as Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, or
+  ISC. This preference is not a substitute for OSRB approval.
+- Inspect the resolved transitive graph, not only the direct package license.
+- Treat `UNKNOWN`, non-SPDX/custom, proprietary or source-available terms, and
+  copyleft or network-copyleft terms as explicit review points. Do not silently
+  accept or reject them; route them to the dependency approvers or OSRB with
+  the distribution and linkage context.
+- Record the functional need, viable alternatives considered, why the selected
+  dependency is the narrowest fit, and any unresolved licensing question.
+- Run
+  `uv run --no-project python scripts/licensing/license_diff.py --base-ref origin/main`
+  after updating manifests and lockfiles. Review added packages and license
+  changes, then regenerate affected `ATTRIBUTIONS-*.md` files.
+
+The license diff is evidence for reviewers. It does not decide whether a
+license is approved for a particular NVIDIA product or distribution model.
+
 ## Checklist
 
 - [ ] Package names, import paths, and module names are internally consistent
@@ -38,6 +64,13 @@ consumed outside the source tree.
 - [ ] Public packaging changes are reflected in release-facing docs
 - [ ] Workspace, Python, and lockfile versions remain aligned where required
 - [ ] The editable maturin build still produces `nemo_fabric._native`
+- [ ] New dependencies are necessary, maintained, and narrower than the viable
+      alternatives
+- [ ] Direct and transitive license changes were reviewed from the resolved
+      lockfiles
+- [ ] Licensing uncertainties are called out for dependency approver or OSRB
+      review
+- [ ] Changed attribution files are regenerated and included
 
 ## References
 
@@ -50,4 +83,6 @@ consumed outside the source tree.
 - `docs/package-lock.json`
 - `.github/workflows/ci_python.yml`
 - `.github/workflows/ci_rust.yml`
+- `.github/workflows/ci_license_diff.yml`
+- `scripts/licensing/license_diff.py`
 - `justfile`
