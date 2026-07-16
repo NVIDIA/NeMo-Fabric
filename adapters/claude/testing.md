@@ -16,3 +16,8 @@ RUN_FABRIC_CLAUDE_RELAY_INTEGRATION=1 uv run --no-sync pytest tests/e2e/test_cla
 ```
 
 The first command uses the mock Claude client and does not require credentials.
+Set `FABRIC_TEST_CLAUDE_MODEL` to override the default live-test model,
+`claude-sonnet-4-5`.
+The live Relay test applies the same semantic artifact contract as Codex: ATOF
+must contain structured LLM requests and token usage, and ATIF must contain the
+expected agent response.

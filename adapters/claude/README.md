@@ -9,6 +9,10 @@ The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
 Python behind Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
+This adapter pins `claude-agent-sdk==0.2.120`. The SDK supplies its compatible
+Claude Code runtime unless `harness.settings.cli_path` explicitly selects
+another executable.
+
 ## Install
 
 To install just the Claude adapter by itself:
@@ -47,8 +51,8 @@ Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.do
 for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
 
-Relay-enabled runs also require the external `nemo-relay` CLI. Install the CLI
-separately:
+Relay-enabled runs also require the external `nemo-relay` CLI. Fabric accepts
+CLI versions `>=0.6.0,<0.7.0`. Install the CLI separately:
 
 ```bash
 cargo install nemo-relay-cli

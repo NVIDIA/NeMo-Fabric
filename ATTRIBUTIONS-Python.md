@@ -1281,7 +1281,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## claude-agent-sdk (0.2.114)
+## claude-agent-sdk (0.2.120)
 
 ### Licenses
 License: `MIT`
@@ -6223,6 +6223,26 @@ Apache License
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+```
+
+## openai-codex (0.1.0b3)
+
+### Licenses
+License: `Apache-2.0`
+
+  - `LICENSE`:
+```
+(No license file found in locked artifact for openai-codex; see package metadata or PyPI.)
+```
+
+## openai-codex-cli-bin (0.137.0a4)
+
+### Licenses
+License: `Apache-2.0`
+
+  - `LICENSE`:
+```
+(No license file found in locked artifact for openai-codex-cli-bin; see package metadata or PyPI.)
 ```
 
 ## orjson (3.11.9)

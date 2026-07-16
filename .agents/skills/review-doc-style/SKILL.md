@@ -33,7 +33,7 @@ and NeMo Fabric repo conventions.
    - `README.md`
    - `docs/index.yml`
    - Package or crate READMEs
-   - Adapter and integration READMEs such as `adapters/codex-cli/README.md` or `integrations/harbor/README.md`
+   - Adapter and integration READMEs such as `adapters/codex/README.md` or `integrations/harbor/README.md`
 4. Start with `assets/nvidia-style-guide.md`, then open only the focused support document needed for the issue under review.
 5. Scan for high-signal style issues in headings, links, code formatting, terminology, procedures, and plain-English readability.
 6. Report findings in severity order with file references and concrete rewrites.
