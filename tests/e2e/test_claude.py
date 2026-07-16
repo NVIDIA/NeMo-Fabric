@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _utils.utils import assert_semantic_relay_artifacts
 from nemo_fabric import (
     EnvironmentConfig,
     Fabric,
@@ -93,7 +94,15 @@ def fabric_config(
             resolution="preinstalled",
             settings=settings,
         ),
-        models={"default": ModelConfig(provider="anthropic", model="claude-test-model")},
+        models={
+            "default": ModelConfig(
+                provider="anthropic",
+                model=os.environ.get(
+                    "FABRIC_TEST_CLAUDE_MODEL",
+                    "claude-sonnet-4-5",
+                ),
+            )
+        },
         runtime=RuntimeConfig(artifacts=tmp_path / "artifacts"),
         environment=EnvironmentConfig(
             provider="local",
@@ -254,3 +263,7 @@ async def test_live_claude_relay_one_shot(tmp_path):
         "atof",
         "atif",
     }
+    assert_semantic_relay_artifacts(
+        result.output,
+        "FABRIC_CLAUDE_RELAY_OK",
+    )

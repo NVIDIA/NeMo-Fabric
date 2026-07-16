@@ -13,7 +13,7 @@ from examples.code_review_agent import BASE_DIR
 from examples.code_review_agent import __main__ as main_module
 from examples.code_review_agent import base_config
 from examples.code_review_agent import claude_config
-from examples.code_review_agent import codex_cli_config
+from examples.code_review_agent import codex_config
 from examples.code_review_agent import hermes_config
 from examples.code_review_agent import with_fabric_managed_github_mcp
 from examples.code_review_agent import with_native_otel
@@ -29,7 +29,7 @@ from nemo_fabric import RunOutput
 def test_variant_builders_return_independent_complete_configs():
     base = base_config()
     hermes = hermes_config()
-    codex = codex_cli_config()
+    codex = codex_config()
     claude = claude_config()
 
     for config in (base, hermes, codex, claude):
@@ -40,7 +40,7 @@ def test_variant_builders_return_independent_complete_configs():
 
     assert hermes is not base
     assert hermes.harness is not base.harness
-    assert codex.harness.adapter_id == "nvidia.fabric.codex.cli"
+    assert codex.harness.adapter_id == "nvidia.fabric.codex"
     assert codex.mcp is None
     assert codex.skills is None
     assert claude is not base
@@ -86,7 +86,7 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
 def test_variants_plan_without_file_profiles():
     client = Fabric()
 
-    for config in (hermes_config(), codex_cli_config(), claude_config()):
+    for config in (hermes_config(), codex_config(), claude_config()):
         plan = client.plan(config, base_dir=BASE_DIR)
         assert plan.profiles == ()
         assert plan.agent_name == "code-review-agent"
@@ -96,7 +96,7 @@ def test_variants_plan_without_file_profiles():
 def test_example_entrypoint_plans_without_starting_a_runtime():
     cases = (
         ([], "nvidia.fabric.hermes", False),
-        (["--variant", "codex-cli"], "nvidia.fabric.codex.cli", False),
+        (["--variant", "codex"], "nvidia.fabric.codex", False),
         (["--variant", "claude"], "nvidia.fabric.claude", False),
         (["--relay"], "nvidia.fabric.hermes", True),
     )

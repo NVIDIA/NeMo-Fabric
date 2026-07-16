@@ -603,6 +603,7 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
 
     gates = [create_kwargs["middleware"][-1]]
     gates.extend(subagent["middleware"][-1] for subagent in subagents)
+    assert all(type(gate) is adapter.ToolGateMiddleware for gate in gates)
     for middleware in gates:
         blocked = await middleware.awrap_tool_call(request("write_file"), handler)
         assert isinstance(blocked, ToolMessage)
@@ -633,6 +634,26 @@ async def test_blocked_tools_reject_unenforceable_subagents(tmp_path, make_paylo
     settings = payload["effective_config"]["config"]["harness"]["settings"]
     with pytest.raises(adapter.AdapterConfigError, match="cannot be enforced"):
         await adapter.build_agent_kwargs(payload, MagicMock(), settings)
+
+
+@pytest.mark.parametrize(
+    ("subagents", "message"),
+    [
+        (
+            {"name": "researcher"},
+            "harness.settings.deepagents.subagents must be a list when tools.blocked is configured.",
+        ),
+        (
+            [{"name": "researcher"}, "invalid"],
+            "Deep Agents subagents must be mappings when tools.blocked is configured.",
+        ),
+    ],
+)
+def test_gated_subagents_reject_invalid_configuration(subagents, message):
+    with pytest.raises(adapter.AdapterConfigError) as error:
+        adapter._gated_subagents(subagents, {"write_file"})
+
+    assert str(error.value) == message
 
 
 async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):

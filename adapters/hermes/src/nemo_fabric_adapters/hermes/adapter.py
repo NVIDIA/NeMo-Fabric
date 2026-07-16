@@ -122,6 +122,16 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
     if not target:
         raise ValueError("MCP server mapping requires a URL")
 
+    if transport == "stdio":
+        return common_utils.without_none(
+            {
+                "enabled": True,
+                "command": target,
+                "args": common_utils.normalize_list(server.get("args")) or None,
+                "env": server.get("env"),
+            }
+        )
+
     return {"enabled": True, "url": target, "transport": transport}
 
 

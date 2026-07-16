@@ -1,0 +1,12 @@
+{
+  "task": "swe-bench/django__django-13741",
+  "resolved": true,
+  "reward": 1.0,
+  "fail_to_pass": {
+    "passed": [
+      "test_readonly_field_has_changed (auth_tests.test_forms.ReadOnlyPasswordHashTest)"
+    ],
+    "failed": []
+  },
+  "pass_to_pass_failures": []
+}

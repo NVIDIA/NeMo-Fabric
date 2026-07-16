@@ -14,6 +14,8 @@ navigation:
         path: ./main/pages/sdk/python.mdx
   - section: Integrations
     contents:
+      - page: Codex
+        path: ./main/pages/integrations/codex.mdx
       - page: Claude
         path: ./main/pages/integrations/claude.mdx
       - page: Harbor

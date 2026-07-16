@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "fabric-repo-inspector": {
+      "command": "python3",
+      "args": [
+        "/tmp/nemo-fabric-config/mcp/repo_inspector.py"
+      ]
+    }
+  }
+}
