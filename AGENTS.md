@@ -44,7 +44,7 @@ differences for NeMo Fabric:
 These workflow notes keep public documentation, examples, and PR preparation aligned
 with repository expectations.
 
-- Update user-facing entry points when public behavior, package names (`nemo-fabric` / `nemo_fabric`, `fabric` CLI), examples, or supported bindings change: `README.md`, the Fern docs under `docs/` (navigation in `docs/index.yml`, site config in `fern/docs.yml`), and the adapter/integration READMEs (`adapters/*/README.md`, `integrations/*/README.md`, `examples/README.md`).
+- Update user-facing entry points when public behavior, package names (`nemo-fabric` / `nemo_fabric`, `fabric` CLI), examples, or supported bindings change: `README.md`, the Fern docs under `docs/` (navigation in `docs/index.yml`, site config in `fern/docs.yml`), and the adapter/integration READMEs (`adapters/*/README.md`, `python/src/nemo_fabric/integrations/*/README.md`, `examples/README.md`).
 - Keep the Python/Rust binding contract current when the public API changes: `docs/sdk/python.mdx`, the JSON Schema notes in `schemas/SCHEMA.md`, and the generated references under `docs/reference/api/`. Regenerate docs with `just docs` after changing the docs site.
 - Keep release- and packaging-process details in maintainer surfaces (currently the `maintain-packaging` skill at `.agents/skills/maintain-packaging/SKILL.md`). Do not move release-history policy into user-facing docs. There is no `RELEASING.md` or `CHANGELOG.md` yet; add release-history policy there if those files are introduced rather than into user docs.
 - Keep the stable public wrapper `scripts/generate_api_docs.sh` at the `scripts/` root in docs and examples. Reference namespaced helper paths under `scripts/docs/` only when documenting internal maintenance work.

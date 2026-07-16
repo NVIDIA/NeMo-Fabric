@@ -57,7 +57,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
 - Select a harness adapter — the `adapter_id` set in `HarnessConfig`, for example
   `nvidia.fabric.hermes` — and install its extra the same way, for example
   `uv pip install --find-links <dist_dir> "nemo-fabric[adapters-hermes]"`
-  (available extras: `adapters-hermes`, `adapters-codex-cli`,
+  (available extras: `adapters-hermes`, `adapters-codex`,
   `adapters-deepagents`, `adapters-claude`), plus the adapter's own harness
   binaries and dependencies.
 - Provide model credentials through environment variables named by the config
@@ -111,7 +111,7 @@ def to_fabric_config(job) -> FabricConfig:
   so skills, workspaces, and artifacts anchor to the consumer's own layout.
 
 The repository [`code_review_agent` example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
-shows this pattern end to end with complete Hermes, Codex CLI, Deep Agents,
+shows this pattern end to end with complete Hermes, Codex, Deep Agents,
 environment, MCP, and telemetry variants. Reuse it rather than duplicating config
 construction.
 
@@ -130,22 +130,29 @@ Pick the smallest lifecycle the consumer needs:
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
 
-The async snippets in this skill assume an async context (for example a function
-run via `asyncio.run(main())`), so `await` is valid. The example below shows both
-lifecycles:
+The example below shows both lifecycles as a complete, runnable program; the
+shorter async snippets elsewhere in this skill are fragments that assume the same
+async context:
 
 ```python
+import asyncio
+
 from nemo_fabric import Fabric
 
-fabric = Fabric()
 
-# One-shot
-result = await fabric.run(config, base_dir=base, input="Review the changes.")
+async def main() -> None:
+    fabric = Fabric()
 
-# Multi-turn
-async with await fabric.start_runtime(config, base_dir=base) as runtime:
-    first = await runtime.invoke(input="Inspect the repository")
-    second = await runtime.invoke(input="Now review the latest patch")
+    # One-shot
+    result = await fabric.run(config, base_dir=base, input="Review the changes.")
+
+    # Multi-turn
+    async with await fabric.start_runtime(config, base_dir=base) as runtime:
+        first = await runtime.invoke(input="Inspect the repository")
+        second = await runtime.invoke(input="Now review the latest patch")
+
+
+asyncio.run(main())
 ```
 
 Fabric owns no queue, worker pool, retry policy, or concurrency limit. For
