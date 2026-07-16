@@ -47,7 +47,6 @@ def test_resolve_relay_command_rejects_missing_executable(monkeypatch, tmp_path)
 @pytest.mark.parametrize(
     ("output", "expected"),
     [
-        ("nemo-relay 0.5.0\n", 1),
         ("nemo-relay 0.6.0-alpha.20260714\n", 2),
         ("nemo-relay 1.0.0\n", 2),
     ],
@@ -65,6 +64,19 @@ def test_relay_cli_observability_version_selects_compatible_contract(
         relay_gateway.relay_cli_observability_version(tmp_path / "nemo-relay")
         == expected
     )
+
+
+def test_relay_cli_observability_version_rejects_relay_05(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        relay_gateway.subprocess,
+        "run",
+        MagicMock(
+            return_value=subprocess.CompletedProcess([], 0, stdout="nemo-relay 0.5.0\n")
+        ),
+    )
+
+    with pytest.raises(relay_gateway.RelayGatewayError, match="0.6 or newer"):
+        relay_gateway.relay_cli_observability_version(tmp_path / "nemo-relay")
 
 
 def test_relay_cli_observability_version_rejects_unparseable_output(
@@ -157,9 +169,7 @@ def test_start_relay_gateway_stops_failed_process_and_preserves_log(
     assert log_path.exists()
 
 
-def test_start_relay_gateway_reports_readiness_and_stop_failures(
-    monkeypatch, tmp_path
-):
+def test_start_relay_gateway_reports_readiness_and_stop_failures(monkeypatch, tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text("", encoding="utf-8")
     readiness_error = relay_gateway.RelayGatewayError("not ready")

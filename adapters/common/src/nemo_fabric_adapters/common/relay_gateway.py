@@ -60,7 +60,7 @@ def find_available_tcp_port(host: str = "127.0.0.1") -> int:
 
 
 def relay_cli_observability_version(executable: Path) -> int:
-    """Return the observability config version accepted by a Relay CLI."""
+    """Require a Relay CLI compatible with Fabric's observability v2 contract."""
 
     try:
         completed = subprocess.run(
@@ -79,7 +79,11 @@ def relay_cli_observability_version(executable: Path) -> int:
     if completed.returncode != 0 or match is None:
         raise RelayGatewayError("NeMo Relay CLI version could not be determined")
     major, minor, _ = (int(value) for value in match.groups())
-    return 2 if (major, minor) >= (0, 6) else 1
+    if (major, minor) < (0, 6):
+        raise RelayGatewayError(
+            "NeMo Relay 0.6 or newer is required; observability version 1 is unsupported"
+        )
+    return 2
 
 
 def wait_for_relay_gateway(

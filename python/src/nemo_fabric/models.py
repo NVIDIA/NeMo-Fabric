@@ -240,12 +240,24 @@ class RelayConfigPolicy(FabricBaseModel):
     unsupported_value: Literal["ignore", "warn", "error"] = "error"
 
 
-class RelayAtofEndpointConfig(FabricBaseModel):
-    """NeMo Relay ATOF remote endpoint configuration."""
+class RelayAtofFileSinkConfig(FabricBaseModel):
+    """NeMo Relay ATOF filesystem sink configuration."""
 
+    type: Literal["file"] = "file"
+    output_directory: str | Path | None = None
+    filename: str | None = None
+    mode: Literal["append", "overwrite"] = "append"
+
+
+class RelayAtofStreamSinkConfig(FabricBaseModel):
+    """NeMo Relay ATOF stream sink configuration."""
+
+    type: Literal["stream"] = "stream"
+    name: str | None = None
     url: str
     transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
     headers: dict[str, str] = Field(default_factory=dict)
+    header_env: dict[str, str] = Field(default_factory=dict)
     timeout_millis: int = 3000
     field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
 
@@ -254,10 +266,28 @@ class RelayAtofConfig(FabricBaseModel):
     """NeMo Relay ATOF export configuration."""
 
     enabled: bool = False
-    output_directory: str | Path | None = None
-    filename: str | None = None
-    mode: Literal["append", "overwrite"] = "append"
-    endpoints: list[RelayAtofEndpointConfig | dict[str, Any]] | None = None
+    sinks: list[
+        Annotated[
+            RelayAtofFileSinkConfig | RelayAtofStreamSinkConfig,
+            Field(discriminator="type"),
+        ]
+        | dict[str, Any]
+    ] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_legacy_atof_fields(cls, value: Any) -> Any:
+        """Reject Relay 0.5 ATOF fields with a migration-oriented error."""
+
+        if isinstance(value, Mapping):
+            legacy = sorted(
+                set(value) & {"output_directory", "filename", "mode", "endpoints"}
+            )
+            if legacy:
+                raise ValueError(
+                    f"legacy ATOF fields are unsupported: {', '.join(legacy)}; use version-2 sinks"
+                )
+        return value
 
 
 class RelayS3StorageConfig(FabricBaseModel):
@@ -311,6 +341,8 @@ class RelayOtlpConfig(FabricBaseModel):
     """NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference."""
 
     enabled: bool = False
+    mark_projection: Literal["inherit", "event", "tool"] = "inherit"
+    mark_exclude_names: list[str] = Field(default_factory=lambda: ["llm.chunk"])
     transport: Literal["http_binary", "grpc"] = "http_binary"
     endpoint: str | None = None
     headers: dict[str, str] = Field(default_factory=dict)
@@ -320,12 +352,13 @@ class RelayOtlpConfig(FabricBaseModel):
     service_version: str | None = None
     instrumentation_scope: str | None = None
     timeout_millis: int = 3000
+    attribute_mappings: list[dict[str, str]] = Field(default_factory=list)
 
 
 class RelayObservabilityConfig(FabricBaseModel):
     """NeMo Relay observability component configuration."""
 
-    version: int = 1
+    version: Literal[2] = 2
     atof: RelayAtofConfig | dict[str, Any] | None = None
     atif: RelayAtifConfig | dict[str, Any] | None = None
     opentelemetry: RelayOtlpConfig | dict[str, Any] | None = None
@@ -341,13 +374,29 @@ class RelayComponentConfig(FabricBaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+class RelayDynamicPluginConfig(FabricBaseModel):
+    """One invocation-scoped NeMo Relay dynamic plugin activation."""
+
+    plugin_id: str = Field(min_length=1)
+    kind: Literal["rust_dynamic", "worker"]
+    manifest_ref: str | Path
+    environment_ref: str | Path | None = None
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
 class RelayConfig(FabricBaseModel):
     """First-class NeMo Relay integration configuration."""
 
+    plugin_config_path: str | Path | None = None
     project: str | None = None
     output_dir: str | Path | None = None
     observability: RelayObservabilityConfig | dict[str, Any] | None = None
-    components: list[RelayComponentConfig | dict[str, Any]] = Field(default_factory=list)
+    components: list[RelayComponentConfig | dict[str, Any]] = Field(
+        default_factory=list
+    )
+    dynamic_plugins: list[RelayDynamicPluginConfig | dict[str, Any]] = Field(
+        default_factory=list
+    )
     policy: RelayConfigPolicy | dict[str, Any] | None = None
 
 
@@ -360,7 +409,9 @@ class TelemetryProviderConfig(FabricBaseModel):
 class TelemetryConfig(FabricBaseModel):
     """Telemetry configuration."""
 
-    providers: dict[Literal["relay", "native"], TelemetryProviderConfig | dict[str, Any]] = Field(default_factory=dict)
+    providers: dict[
+        Literal["relay", "native"], TelemetryProviderConfig | dict[str, Any]
+    ] = Field(default_factory=dict)
 
     def enable_relay(
         self,
@@ -493,10 +544,13 @@ class FabricConfig(FabricBaseModel):
     def enable_relay(
         self,
         *,
+        plugin_config_path: str | Path | None = None,
         project: str | None = None,
         output_dir: str | Path | None = None,
         observability: RelayObservabilityConfig | Mapping[str, Any] | None = None,
         components: Sequence[RelayComponentConfig | Mapping[str, Any]] | None = None,
+        dynamic_plugins: Sequence[RelayDynamicPluginConfig | Mapping[str, Any]]
+        | None = None,
         policy: RelayConfigPolicy | Mapping[str, Any] | None = None,
     ) -> Self:
         """Enable NeMo Relay telemetry and return this config."""
@@ -510,18 +564,32 @@ class FabricConfig(FabricBaseModel):
             relay = self.relay.model_copy(deep=True)
         else:
             relay = RelayConfig.from_mapping(self.relay)
+        if plugin_config_path is not None:
+            relay.plugin_config_path = plugin_config_path
         if project is not None:
             relay.project = project
         if output_dir is not None:
             relay.output_dir = output_dir
         if observability is not None:
             relay.observability = (
-                observability if isinstance(observability, RelayObservabilityConfig) else dict(observability)
+                observability
+                if isinstance(observability, RelayObservabilityConfig)
+                else dict(observability)
             )
         if components is not None:
-            relay.components = [item if isinstance(item, RelayComponentConfig) else dict(item) for item in components]
+            relay.components = [
+                item if isinstance(item, RelayComponentConfig) else dict(item)
+                for item in components
+            ]
+        if dynamic_plugins is not None:
+            relay.dynamic_plugins = [
+                item if isinstance(item, RelayDynamicPluginConfig) else dict(item)
+                for item in dynamic_plugins
+            ]
         if policy is not None:
-            relay.policy = policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
+            relay.policy = (
+                policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
+            )
         self.relay = relay
         return self
 

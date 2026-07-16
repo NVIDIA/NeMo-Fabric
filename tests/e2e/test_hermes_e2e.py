@@ -62,7 +62,6 @@ class TestHermesE2E:
         ).resolve()
         self.relay_artifacts = self.output["relay_artifacts"]
 
-
     async def test_artifacts(self):
         assert self.result["status"] == "succeeded"
         assert self.result["adapter_kind"] == self.adapter_kind
@@ -79,9 +78,9 @@ class TestHermesE2E:
         assert output["base_url"] == f"{self.api_server}/v1"
         assert output["error"] is None
         assert output["relay_runtime"]["enabled"] is True
-        assert output["relay_runtime"]["emitter"] == "hermes.observability/nemo_relay"        
+        assert output["relay_runtime"]["emitter"] == "hermes.observability/nemo_relay"
         assert output["failed"] is False
-        
+
         assert "echo user_count=" in output["response"]
 
         hermes_home = Path(output["hermes_home"]).resolve()
@@ -105,8 +104,7 @@ class TestHermesE2E:
         assert self.artifact_root.is_dir()
 
         artifact_by_name = {
-            artifact["name"]: artifact
-            for artifact in self.artifacts["artifacts"]
+            artifact["name"]: artifact for artifact in self.artifacts["artifacts"]
         }
         assert "relay_config" in artifact_by_name
         assert "stdout" in artifact_by_name
@@ -114,12 +112,12 @@ class TestHermesE2E:
         relay_config_path = Path(artifact_by_name["relay_config"]["path"]).resolve()
         assert relay_config_path.is_file()
         assert relay_config_path.is_relative_to(self.artifact_root)
-                
+
         relay_config = json.loads(relay_config_path.read_text(encoding="utf-8"))
         assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
         assert relay_config["relay"]["enabled"] is True
         assert relay_config["fabric"]["profiles"] == []
-        
+
     async def test_atof_artifacts(self):
         kinds = {artifact["kind"] for artifact in self.relay_artifacts}
         assert "atof" in kinds
@@ -131,13 +129,10 @@ class TestHermesE2E:
         ]
         assert atof_paths
         assert all(path.exists() for path in atof_paths)
-        assert all(
-            path.is_relative_to(self.relay_artifact_root) for path in atof_paths
-        )
+        assert all(path.is_relative_to(self.relay_artifact_root) for path in atof_paths)
 
         atof_records = [
-            json.loads(line)
-            for line in atof_paths[0].read_text().strip().splitlines()
+            json.loads(line) for line in atof_paths[0].read_text().strip().splitlines()
         ]
         expected_atof_fields = {
             "atof_version",
@@ -155,17 +150,19 @@ class TestHermesE2E:
         actual_atof_fields = set().union(*(record.keys() for record in atof_records))
         assert actual_atof_fields.issuperset(expected_atof_fields)
 
-        assert len(atof_records) == 7
-        
+        assert atof_records
+        names = [record.get("name") for record in atof_records]
+        assert names.count("hermes.turn.start") == 1
+        assert names.count("hermes.session.end") == 1
+
         assert all(
             record["metadata"]["model"] == "nvidia/nemotron-3-nano-30b-a3b"
             and record["metadata"]["platform"] == self.atof_platform
             for record in atof_records
         )
-        
+
         assert atof_records[-2]["name"] == "hermes.session.end"
         assert atof_records[-1]["scope_category"] == "end"
-
 
     async def test_atif_artifacts(self):
         kinds = {artifact["kind"] for artifact in self.relay_artifacts}
@@ -178,20 +175,20 @@ class TestHermesE2E:
         ]
         assert atif_paths
         assert all(path.exists() for path in atif_paths)
-        assert all(
-            path.is_relative_to(self.relay_artifact_root) for path in atif_paths
-        )
+        assert all(path.is_relative_to(self.relay_artifact_root) for path in atif_paths)
 
         trajectory = json.loads(atif_paths[0].read_text())
         assert trajectory["agent"]["name"] in {"code-review-agent", "Hermes Agent"}
         steps = trajectory["steps"]
-        assert len(steps) == 5
-
-        first_step = steps[0]
-        assert first_step["message"] == "hermes.turn.start"
-        assert first_step["extra"]["event_payload"]["is_first_turn"] is True
-
-        last_step = steps[-1]
-        assert last_step["message"] == "hermes.session.end"
-        assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
-        assert last_step["extra"]["invocation"]["status"] == "completed"
+        user_steps = [step for step in steps if step["source"] == "user"]
+        agent_steps = [step for step in steps if step["source"] == "agent"]
+        assert len(user_steps) == 1
+        assert len(agent_steps) == 1
+        assert user_steps[0]["message"] == "Reply with exactly: relay ok"
+        assert user_steps[0]["step_id"] < agent_steps[0]["step_id"]
+        assert agent_steps[0]["model_name"] == "nvidia/nemotron-3-nano-30b-a3b"
+        assert agent_steps[0]["extra"]["llm_response"]["model"] == (
+            "nvidia/nemotron-3-nano-30b-a3b"
+        )
+        assert agent_steps[0]["extra"]["invocation"]["framework"] == "nemo_relay"
+        assert agent_steps[0]["extra"]["invocation"]["status"] == "completed"

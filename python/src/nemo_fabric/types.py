@@ -751,6 +751,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
     def enable_relay(
         self,
         *,
+        plugin_config_path: str | Path | None = None,
         project: str | None = None,
         output_dir: str | Path | None = None,
         observability: Mapping[str, Any] | None = None,
@@ -761,6 +762,8 @@ class _ResolvedFabricConfig(_ConfigMapping):
 
         self.telemetry.enable_relay()
         relay = dict(self.get("relay") or {})
+        if plugin_config_path is not None:
+            relay["plugin_config_path"] = str(plugin_config_path)
         if project is not None:
             relay["project"] = project
         if output_dir is not None:

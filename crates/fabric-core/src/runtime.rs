@@ -1884,10 +1884,15 @@ fn prepare_relay_runtime_config(
                 .relay_output_dir
                 .as_ref()
                 .map(|path| path.to_string_lossy().into_owned()),
+            "plugin_config_path": telemetry
+                .relay_plugin_config_path
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned()),
             "config": telemetry
                 .relay_config
                 .clone()
                 .unwrap_or_else(|| Value::Object(Default::default())),
+            "dynamic_plugins": telemetry.relay_dynamic_plugins.clone(),
         },
         "fabric": {
             "agent_name": plan.agent_name.clone(),

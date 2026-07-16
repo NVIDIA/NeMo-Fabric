@@ -47,10 +47,25 @@ relay:
       agent_name: harbor-calculator-demo
     atof:
       enabled: true
-      output_directory: /logs/agent/fabric-artifacts/hermes-relay/relay
-      filename: events.atof.jsonl
-      mode: overwrite
+      sinks:
+        - type: file
+          output_directory: /logs/agent/fabric-artifacts/hermes-relay/relay
+          filename: events.atof.jsonl
+          mode: overwrite
     openinference:
       enabled: true
       transport: http_binary
       endpoint: http://host.docker.internal:6006/v1/traces
+  components:
+    - kind: pii_redaction
+      enabled: true
+      config:
+        version: 1
+        mode: builtin
+        input: true
+        output: true
+        mark: true
+        codec: openai_chat
+        builtin:
+          detector: email
+          action: mask

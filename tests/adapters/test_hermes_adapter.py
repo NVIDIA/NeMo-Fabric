@@ -41,14 +41,20 @@ def test_validate_hermes_telemetry_provider_accepts_relay(
 def test_validate_hermes_telemetry_provider_rejects_native():
     payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
         adapter.validate_hermes_telemetry_provider(payload)
 
 
 def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
-    payload = {"telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}}
+    payload = {
+        "telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}
+    }
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
         adapter.validate_hermes_telemetry_provider(payload)
 
 
@@ -132,7 +138,9 @@ def test_default_max_iterations_matches_hermes_library_default():
     # multi-step tasks while the trial still reports success.
     assert adapter.DEFAULT_MAX_ITERATIONS > 1
 
-    hermes_default = inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
+    hermes_default = (
+        inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
+    )
     assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
 
 
@@ -143,7 +151,9 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
         "effective_config": {
             "config": {
                 "harness": {"settings": {}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+                "models": {
+                    "default": {"provider": "nvidia", "model": "nvidia/test-model"}
+                },
             }
         }
     }
@@ -160,7 +170,9 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
         "effective_config": {
             "config": {
                 "harness": {"settings": {"max_iterations": None}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+                "models": {
+                    "default": {"provider": "nvidia", "model": "nvidia/test-model"}
+                },
             }
         }
     }
@@ -179,7 +191,16 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             {
                 "relay": {
                     "config": {
-                        "atof": {"enabled": True, "output_directory": "relay/atof"},
+                        "version": 2,
+                        "atof": {
+                            "enabled": True,
+                            "sinks": [
+                                {
+                                    "type": "file",
+                                    "output_directory": "relay/atof",
+                                }
+                            ],
+                        },
                         "atif": {"enabled": True, "output_directory": "relay/atif"},
                     }
                 }
@@ -261,8 +282,12 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     }
     assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
-    assert observability["atof"]["output_directory"] == str(tmp_path / "relay" / "atof" / "runtime-matrix")
-    assert observability["atif"]["output_directory"] == str(tmp_path / "relay" / "atif" / "runtime-matrix")
+    assert observability["atof"]["sinks"][0]["output_directory"] == str(
+        tmp_path / "relay" / "atof" / "runtime-matrix"
+    )
+    assert observability["atif"]["output_directory"] == str(
+        tmp_path / "relay" / "atif" / "runtime-matrix"
+    )
     assert observability["atif"]["agent_name"] == "matrix-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
@@ -272,7 +297,9 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
         "effective_config": {
             "config": {
                 "harness": {"settings": {}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+                "models": {
+                    "default": {"provider": "nvidia", "model": "nvidia/test-model"}
+                },
             }
         }
     }
@@ -348,7 +375,9 @@ def test_summarize_hermes_config():
 async def test_hermes_rejects_native_telemetry():
     payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
         await adapter.run_hermes(payload)
 
 
@@ -368,7 +397,9 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     mock_ai_agent.session_id = "runtime-fabric-123"
     mock_ai_agent.model = "test-model"
     mock_ai_agent.platform = "fabric"
-    mock_ai_agent.run_conversation.__signature__ = inspect.signature(AIAgent.run_conversation)
+    mock_ai_agent.run_conversation.__signature__ = inspect.signature(
+        AIAgent.run_conversation
+    )
     mock_ai_agent.run_conversation.return_value = {
         "response": "ok",
         "completed": True,
@@ -438,9 +469,13 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     output = await adapter.run_hermes(payload)
 
     mock_session_db_type.assert_called_once_with()
-    mock_session_db.resolve_resume_session_id.assert_called_once_with("runtime-fabric-123")
+    mock_session_db.resolve_resume_session_id.assert_called_once_with(
+        "runtime-fabric-123"
+    )
     mock_session_db.get_session.assert_called_once_with("runtime-resolved-456")
-    mock_session_db.get_messages_as_conversation.assert_called_once_with("runtime-resolved-456")
+    mock_session_db.get_messages_as_conversation.assert_called_once_with(
+        "runtime-resolved-456"
+    )
     mock_ai_agent_type.assert_called_once_with(
         base_url=None,
         api_key="secret",

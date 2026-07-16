@@ -22,10 +22,12 @@ from nemo_fabric.models import ModelConfig
 from nemo_fabric.models import ProfileRegistryConfig
 from nemo_fabric.models import RelayAtifConfig
 from nemo_fabric.models import RelayAtofConfig
-from nemo_fabric.models import RelayAtofEndpointConfig
+from nemo_fabric.models import RelayAtofFileSinkConfig
+from nemo_fabric.models import RelayAtofStreamSinkConfig
 from nemo_fabric.models import RelayComponentConfig
 from nemo_fabric.models import RelayConfig
 from nemo_fabric.models import RelayConfigPolicy
+from nemo_fabric.models import RelayDynamicPluginConfig
 from nemo_fabric.models import RelayHttpStorageConfig
 from nemo_fabric.models import RelayObservabilityConfig
 from nemo_fabric.models import RelayOtlpConfig
@@ -78,9 +80,11 @@ __all__ = [
     "ProfileRegistryConfig",
     "RelayAtifConfig",
     "RelayAtofConfig",
-    "RelayAtofEndpointConfig",
+    "RelayAtofFileSinkConfig",
+    "RelayAtofStreamSinkConfig",
     "RelayComponentConfig",
     "RelayConfigPolicy",
+    "RelayDynamicPluginConfig",
     "RelayHttpStorageConfig",
     "RelayObservabilityConfig",
     "RelayOtlpConfig",

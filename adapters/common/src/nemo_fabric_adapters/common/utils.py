@@ -8,7 +8,9 @@ from __future__ import annotations
 import copy
 import json
 import os
+import subprocess
 import sys
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
@@ -17,6 +19,8 @@ if TYPE_CHECKING:
     from nemo_relay import plugin
     from nemo_relay.observability import AtifConfig
     from nemo_relay.observability import AtofConfig
+    from nemo_relay.observability import AtofFileSinkConfig
+    from nemo_relay.observability import AtofStreamSinkConfig
     from nemo_relay.observability import HttpStorageConfig
     from nemo_relay.observability import OtlpConfig
     from nemo_relay.observability import S3StorageConfig
@@ -63,11 +67,19 @@ def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def config_root(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("config_root") or payload.get("config_root") or "."
+    return (
+        effective_config(payload).get("config_root")
+        or payload.get("config_root")
+        or "."
+    )
 
 
 def agent_name(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("agent_name") or payload.get("agent_name") or "fabric-agent"
+    return (
+        effective_config(payload).get("agent_name")
+        or payload.get("agent_name")
+        or "fabric-agent"
+    )
 
 
 def load_payload() -> dict[str, Any]:
@@ -99,7 +111,9 @@ def runtime_state_directory(base: str | Path, payload: dict[str, Any]) -> Path:
 
 
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return runtime_context(payload).get("environment") or payload.get("environment") or {}
+    return (
+        runtime_context(payload).get("environment") or payload.get("environment") or {}
+    )
 
 
 def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -135,7 +149,9 @@ def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    telemetry = fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    telemetry = (
+        fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    )
     return telemetry if isinstance(telemetry, dict) else {}
 
 
@@ -206,16 +222,49 @@ def dump_yaml(value: dict[str, Any]) -> str:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
 
 
-def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
+def _relay_runtime_document() -> dict[str, Any]:
     config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
     if not config_path:
         raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
 
     with Path(config_path).open(encoding="utf-8") as stream:
-        wrapper = json.load(stream)
+        document = json.load(stream)
+    if not isinstance(document, dict):
+        raise ValueError("Fabric Relay runtime config must be an object")
+    return document
 
+
+def _external_relay_plugin_document(
+    payload: dict[str, Any], relay: dict[str, Any]
+) -> tuple[Path, dict[str, Any]] | None:
+    configured = relay.get("plugin_config_path")
+    if configured is None:
+        return None
+    path = Path(str(configured))
+    if not path.is_absolute():
+        path = Path(config_root(payload)).resolve() / path
+    path = path.resolve()
+    if not path.is_file():
+        raise RuntimeError(f"Relay plugin config file was not found: {path}")
+    with path.open("rb") as stream:
+        document = tomllib.load(stream)
+    return path, document
+
+
+def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
+    wrapper = _relay_runtime_document()
     relay = wrapper.get("relay", {})
-    plugin_config = relay.get("config") or {}
+    external = _external_relay_plugin_document(payload, relay)
+    if external is not None:
+        _, document = external
+        plugin_config = {
+            key: copy.deepcopy(value)
+            for key, value in document.items()
+            if key != "plugins"
+        }
+    else:
+        plugin_config = copy.deepcopy(relay.get("config") or {})
+
     if "components" not in plugin_config:
         plugin_config = {
             "version": 1,
@@ -223,7 +272,7 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
                 {
                     "kind": "observability",
                     "enabled": True,
-                    "config": plugin_config or {"version": 1},
+                    "config": plugin_config or {"version": 2},
                 }
             ],
         }
@@ -233,36 +282,124 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
     return plugin_config
 
 
-def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
+def load_relay_dynamic_plugins(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Load ordered dynamic plugin specs and resolve invocation-relative paths."""
+
+    wrapper = _relay_runtime_document()
+    relay = wrapper.get("relay") or {}
+    external = _external_relay_plugin_document(payload, relay)
+    if external is not None:
+        plugin_config_path, document = external
+        entries = ((document.get("plugins") or {}).get("dynamic") or [])
+        if not isinstance(entries, list):
+            raise ValueError("plugins.dynamic must be an array of tables")
+        specs: list[dict[str, Any]] = []
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                raise ValueError(f"plugins.dynamic[{index}] must be a table")
+            manifest_value = entry.get("manifest")
+            if not isinstance(manifest_value, str) or not manifest_value:
+                raise ValueError(f"plugins.dynamic[{index}].manifest must be a string")
+            manifest_path = Path(manifest_value)
+            if not manifest_path.is_absolute():
+                manifest_path = plugin_config_path.parent / manifest_path
+            manifest_path = manifest_path.resolve()
+            if not manifest_path.is_file():
+                raise RuntimeError(f"Relay plugin manifest was not found: {manifest_path}")
+            with manifest_path.open("rb") as stream:
+                manifest = tomllib.load(stream)
+            identity = manifest.get("plugin") or {}
+            plugin_id = identity.get("id")
+            kind = identity.get("kind")
+            if not isinstance(plugin_id, str) or kind not in {"rust_dynamic", "worker"}:
+                raise ValueError(
+                    f"plugins.dynamic[{index}] manifest has an invalid plugin identity"
+                )
+            config = entry.get("config") or {}
+            if not isinstance(config, dict):
+                raise ValueError(f"plugins.dynamic[{index}].config must be a table")
+            specs.append(
+                {
+                    "plugin_id": plugin_id,
+                    "kind": kind,
+                    "manifest_ref": str(manifest_path),
+                    "config": copy.deepcopy(config),
+                }
+            )
+        return specs
+
+    specs = relay.get("dynamic_plugins") or []
+    if not isinstance(specs, list):
+        raise ValueError("relay.dynamic_plugins must be a list")
+    root = Path(config_root(payload)).resolve()
+    resolved: list[dict[str, Any]] = []
+    for index, spec in enumerate(specs):
+        if not isinstance(spec, dict):
+            raise ValueError(f"relay.dynamic_plugins[{index}] must be an object")
+        item = copy.deepcopy(spec)
+        for field in ("manifest_ref", "environment_ref"):
+            value = item.get(field)
+            if value is None:
+                continue
+            path = Path(str(value))
+            item[field] = str(path if path.is_absolute() else (root / path).resolve())
+        resolved.append(item)
+    return resolved
+
+
+def normalize_relay_output_dirs(
+    plugin_config: dict[str, Any], payload: dict[str, Any]
+) -> None:
     base = Path(config_root(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":
             continue
         config = component.setdefault("config", {})
-        config.setdefault("version", 1)
-        for section_name in ("atof", "atif"):
-            section = config.get(section_name)
-            if not isinstance(section, dict) or not section.get("enabled"):
-                continue
+        version = int(config.setdefault("version", 2))
+        if version != 2:
+            raise ValueError("NeMo Relay observability config version 2 is required")
 
-            output_directory = section.get("output_directory")
-            if output_directory:
-                path = Path(output_directory)
+        atof = config.get("atof")
+        if isinstance(atof, dict) and atof.get("enabled"):
+            sinks = atof.setdefault("sinks", [])
+            if not isinstance(sinks, list):
+                raise ValueError("Relay ATOF sinks must be a list")
+            if not any(
+                isinstance(sink, dict) and sink.get("type") == "file" for sink in sinks
+            ):
+                sinks.append({"type": "file"})
+            for sink in sinks:
+                if not isinstance(sink, dict) or sink.get("type") != "file":
+                    continue
+                output_directory = sink.get("output_directory")
+                path = (
+                    Path(output_directory)
+                    if output_directory
+                    else base / "artifacts" / "relay"
+                )
                 if not path.is_absolute():
                     path = base / path
-            else:
-                path = base / "artifacts" / "relay"
+                sink["output_directory"] = str(path / str(runtime_id))
+                Path(sink["output_directory"]).mkdir(parents=True, exist_ok=True)
+                sink.setdefault("filename", "events.atof.jsonl")
+                sink.setdefault("mode", "overwrite")
 
-            section["output_directory"] = str(path / str(runtime_id))
-            Path(section["output_directory"]).mkdir(parents=True, exist_ok=True)
-            if section_name == "atof":
-                section.setdefault("filename", "events.atof.jsonl")
-                section.setdefault("mode", "overwrite")
-            if section_name == "atif":
-                section.setdefault("filename_template", "trajectory-{session_id}.atif.json")
-                section.setdefault("agent_name", agent_name(payload))
-                section.setdefault("model_name", relay_model_name(payload))
+        atif = config.get("atif")
+        if isinstance(atif, dict) and atif.get("enabled"):
+            output_directory = atif.get("output_directory")
+            path = (
+                Path(output_directory)
+                if output_directory
+                else base / "artifacts" / "relay"
+            )
+            if not path.is_absolute():
+                path = base / path
+            atif["output_directory"] = str(path / str(runtime_id))
+            Path(atif["output_directory"]).mkdir(parents=True, exist_ok=True)
+            atif.setdefault("filename_template", "trajectory-{session_id}.atif.json")
+            atif.setdefault("agent_name", agent_name(payload))
+            atif.setdefault("model_name", relay_model_name(payload))
 
 
 def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfig:
@@ -278,17 +415,23 @@ def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfi
         enabled = bool(component.get("enabled", True))
         config = component.get("config") or {}
         if component.get("kind") == "observability" and isinstance(config, dict):
-            policy = config.get("policy") if isinstance(config.get("policy"), dict) else {}
+            policy = (
+                config.get("policy") if isinstance(config.get("policy"), dict) else {}
+            )
             components.append(
                 ComponentSpec(
                     ObservabilityConfig(
-                        version=int(config.get("version", 1)),
+                        version=int(config.get("version", 2)),
                         atof=_relay_api_atof_config(config.get("atof")),
                         atif=_relay_api_atif_config(
                             config.get("atif"),
                         ),
-                        opentelemetry=_relay_api_otlp_config(config.get("opentelemetry")),
-                        openinference=_relay_api_otlp_config(config.get("openinference")),
+                        opentelemetry=_relay_api_otlp_config(
+                            config.get("opentelemetry")
+                        ),
+                        openinference=_relay_api_otlp_config(
+                            config.get("openinference")
+                        ),
                         policy=ConfigPolicy(
                             unknown_component=policy.get("unknown_component", "warn"),
                             unknown_field=policy.get("unknown_field", "warn"),
@@ -307,7 +450,11 @@ def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfi
             )
         )
 
-    policy = plugin_config.get("policy") if isinstance(plugin_config.get("policy"), dict) else {}
+    policy = (
+        plugin_config.get("policy")
+        if isinstance(plugin_config.get("policy"), dict)
+        else {}
+    )
     plugin_config = plugin.PluginConfig(
         version=int(plugin_config.get("version", 1)),
         components=components,
@@ -325,31 +472,63 @@ def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfi
     return plugin_config
 
 
+def relay_api_dynamic_plugins(
+    specs: list[dict[str, Any]],
+) -> list[plugin.DynamicPluginActivationSpec]:
+    """Convert Fabric's typed dynamic plugin specs to Relay's owned host API."""
+
+    from nemo_relay import plugin
+
+    return [
+        plugin.DynamicPluginActivationSpec(
+            plugin_id=str(spec["plugin_id"]),
+            kind=spec["kind"],
+            manifest_ref=str(spec["manifest_ref"]),
+            environment_ref=(
+                str(spec["environment_ref"])
+                if spec.get("environment_ref") is not None
+                else None
+            ),
+            config=spec.get("config") or {},
+        )
+        for spec in specs
+    ]
+
+
 def _relay_api_atof_config(value: Any) -> AtofConfig | None:
     if not isinstance(value, dict):
         return None
     from nemo_relay.observability import AtofConfig
-    from nemo_relay.observability import AtofEndpointConfig
+    from nemo_relay.observability import AtofFileSinkConfig
+    from nemo_relay.observability import AtofStreamSinkConfig
 
-    endpoint_configs = value.get("endpoints")
-    endpoints = None
-    if isinstance(endpoint_configs, list):
-        endpoints = [
-            AtofEndpointConfig(
-                url=str(endpoint.get("url", "")),
-                transport=endpoint.get("transport", "http_post"),
-                headers=endpoint.get("headers", {}),
-                timeout_millis=int(endpoint.get("timeout_millis", 3000)),
+    sinks: list[AtofFileSinkConfig | AtofStreamSinkConfig] = []
+    for sink in value.get("sinks") or []:
+        if not isinstance(sink, dict):
+            continue
+        if sink.get("type") == "file":
+            sinks.append(
+                AtofFileSinkConfig(
+                    output_directory=sink.get("output_directory"),
+                    filename=sink.get("filename"),
+                    mode=sink.get("mode", "append"),
+                )
             )
-            for endpoint in endpoint_configs
-            if isinstance(endpoint, dict)
-        ]
+        elif sink.get("type") == "stream":
+            sinks.append(
+                AtofStreamSinkConfig(
+                    name=sink.get("name"),
+                    url=str(sink.get("url", "")),
+                    transport=sink.get("transport", "http_post"),
+                    headers=sink.get("headers", {}),
+                    header_env=sink.get("header_env", {}),
+                    timeout_millis=int(sink.get("timeout_millis", 3000)),
+                    field_name_policy=sink.get("field_name_policy", "preserve"),
+                )
+            )
     return AtofConfig(
         enabled=bool(value.get("enabled", False)),
-        output_directory=value.get("output_directory"),
-        filename=value.get("filename"),
-        mode=value.get("mode", "append"),
-        endpoints=endpoints,
+        sinks=sinks,
     )
 
 
@@ -361,7 +540,11 @@ def _relay_api_atif_config(value: Any) -> AtifConfig | None:
     storage_configs = value.get("storage")
     storage = None
     if isinstance(storage_configs, list):
-        storage = [_relay_api_storage_config(item) for item in storage_configs if isinstance(item, dict)]
+        storage = [
+            _relay_api_storage_config(item)
+            for item in storage_configs
+            if isinstance(item, dict)
+        ]
     return AtifConfig(
         enabled=bool(value.get("enabled", False)),
         agent_name=value.get("agent_name", "NeMo Relay"),
@@ -370,12 +553,16 @@ def _relay_api_atif_config(value: Any) -> AtifConfig | None:
         tool_definitions=value.get("tool_definitions"),
         extra=value.get("extra"),
         output_directory=value.get("output_directory"),
-        filename_template=value.get("filename_template", "nemo-relay-atif-{session_id}.json"),
+        filename_template=value.get(
+            "filename_template", "nemo-relay-atif-{session_id}.json"
+        ),
         storage=storage,
     )
 
 
-def _relay_api_storage_config(value: dict[str, Any]) -> HttpStorageConfig | S3StorageConfig:
+def _relay_api_storage_config(
+    value: dict[str, Any],
+) -> HttpStorageConfig | S3StorageConfig:
     if value.get("type") == "s3":
         from nemo_relay.observability import S3StorageConfig
 
@@ -406,6 +593,8 @@ def _relay_api_otlp_config(value: Any) -> OtlpConfig | None:
 
     return OtlpConfig(
         enabled=bool(value.get("enabled", False)),
+        mark_projection=value.get("mark_projection", "inherit"),
+        mark_exclude_names=value.get("mark_exclude_names", ["llm.chunk"]),
         transport=value.get("transport", "http_binary"),
         endpoint=value.get("endpoint"),
         headers=value.get("headers", {}),
@@ -415,6 +604,7 @@ def _relay_api_otlp_config(value: Any) -> OtlpConfig | None:
         service_version=value.get("service_version"),
         instrumentation_scope=value.get("instrumentation_scope"),
         timeout_millis=int(value.get("timeout_millis", 3000)),
+        attribute_mappings=value.get("attribute_mappings", []),
     )
 
 
@@ -424,18 +614,29 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
         if component.get("kind") != "observability":
             continue
         config = component.get("config") or {}
-        for section_name, pattern in (
-            ("atof", "*.jsonl"),
-            ("atif", "*.json"),
-        ):
-            section = config.get(section_name)
-            if not isinstance(section, dict) or not section.get("enabled"):
-                continue
-            directory = Path(section.get("output_directory") or ".")
-            if not directory.exists():
-                continue
-            for path in sorted(directory.glob(pattern)):
-                artifacts.append({"kind": section_name, "path": str(path)})
+        atof = config.get("atof")
+        if isinstance(atof, dict) and atof.get("enabled"):
+            for sink in atof.get("sinks") or []:
+                if not isinstance(sink, dict) or sink.get("type") != "file":
+                    continue
+                directory = Path(sink.get("output_directory") or ".")
+                if directory.exists():
+                    filename = sink.get("filename")
+                    paths = (
+                        [directory / str(filename)]
+                        if filename
+                        else sorted(directory.glob("*.jsonl"))
+                    )
+                    for path in paths:
+                        if not path.is_file():
+                            continue
+                        artifacts.append({"kind": "atof", "path": str(path)})
+        atif = config.get("atif")
+        if isinstance(atif, dict) and atif.get("enabled"):
+            directory = Path(atif.get("output_directory") or ".")
+            if directory.exists():
+                for path in sorted(directory.glob("*.json")):
+                    artifacts.append({"kind": "atif", "path": str(path)})
     return artifacts
 
 
@@ -445,55 +646,16 @@ def relay_cli_plugin_config(
     """Render normalized Relay intent for the current external CLI contract."""
 
     rendered = copy.deepcopy(plugin_config)
-    if observability_version == 1:
-        return rendered
     if observability_version != 2:
         raise ValueError(
-            f"unsupported NeMo Relay observability config version {observability_version}"
+            "NeMo Relay 0.6 or newer is required; observability version 1 is unsupported"
         )
     for component in rendered.get("components", []):
         if not isinstance(component, dict) or component.get("kind") != "observability":
             continue
         config = component.get("config")
-        if not isinstance(config, dict) or int(config.get("version", 1)) != 1:
-            continue
-
-        atof = config.get("atof")
-        if isinstance(atof, dict):
-            sinks = list(atof.get("sinks") or [])
-            if atof.get("enabled"):
-                file_sink = without_none(
-                    {
-                        "type": "file",
-                        "output_directory": atof.get("output_directory"),
-                        "filename": atof.get("filename"),
-                        "mode": atof.get("mode", "append"),
-                    }
-                )
-                sinks.append(file_sink)
-                for endpoint in atof.get("endpoints") or []:
-                    if not isinstance(endpoint, dict):
-                        continue
-                    sinks.append(
-                        without_none(
-                            {
-                                "type": "stream",
-                                "url": endpoint.get("url"),
-                                "transport": endpoint.get("transport", "http_post"),
-                                "headers": endpoint.get("headers", {}),
-                                "header_env": endpoint.get("header_env", {}),
-                                "timeout_millis": endpoint.get("timeout_millis", 3000),
-                                "field_name_policy": endpoint.get(
-                                    "field_name_policy", "preserve"
-                                ),
-                            }
-                        )
-                    )
-            config["atof"] = {
-                "enabled": bool(atof.get("enabled", False)),
-                "sinks": sinks,
-            }
-        config["version"] = 2
+        if isinstance(config, dict) and int(config.get("version", 2)) != 2:
+            raise ValueError("NeMo Relay observability config version 2 is required")
     return rendered
 
 
@@ -501,17 +663,21 @@ def write_relay_configs(
     *,
     relay_config: dict[str, Any] | None = None,
     plugin_config: dict[str, Any] | None = None,
-    observability_version: int = 1,
+    observability_version: int = 2,
+    config_directory: Path | None = None,
 ) -> tuple[Path | None, Path | None]:
     try:
         import tomli_w
 
-        config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
-        if not config_path:
-            raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
-
-        config_path = Path(config_path)
-        config_dir = config_path.parent / "relay-config"
+        if config_directory is None:
+            config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
+            if not config_path:
+                raise RuntimeError(
+                    "FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled"
+                )
+            config_dir = Path(config_path).parent / "relay-config"
+        else:
+            config_dir = Path(config_directory)
         config_dir.mkdir(parents=True, exist_ok=True)
         relay_config_path = None
         plugin_config_path = None
@@ -536,6 +702,120 @@ def write_relay_configs(
     except ImportError as e:
         raise RuntimeError("tomli_w is not installed") from e
 
+
+def provision_relay_dynamic_plugins(
+    *,
+    executable: Path,
+    relay_config_path: Path,
+    plugin_config_path: Path,
+    specs: list[dict[str, Any]],
+    env: dict[str, str],
+    cwd: Path,
+) -> list[dict[str, Any]]:
+    """Provision dynamic plugins through Relay's invocation-scoped CLI lifecycle."""
+
+    receipts: list[dict[str, Any]] = []
+    for spec in specs:
+        plugin_id = str(spec["plugin_id"])
+        manifest_ref = str(spec["manifest_ref"])
+        if not _relay_plugin_manifest_registered(plugin_config_path, manifest_ref):
+            _run_relay_lifecycle_command(
+                executable,
+                relay_config_path,
+                ["plugins", "add", manifest_ref],
+                env=env,
+                cwd=cwd,
+            )
+        _attach_relay_dynamic_plugin_config(
+            plugin_config_path,
+            manifest_ref,
+            spec.get("config") or {},
+        )
+        _run_relay_lifecycle_command(
+            executable,
+            relay_config_path,
+            ["plugins", "enable", plugin_id],
+            env=env,
+            cwd=cwd,
+        )
+        _run_relay_lifecycle_command(
+            executable,
+            relay_config_path,
+            ["plugins", "validate", plugin_id, "--json"],
+            env=env,
+            cwd=cwd,
+        )
+        receipts.append(
+            {
+                "plugin_id": plugin_id,
+                "kind": str(spec["kind"]),
+                "registered": True,
+                "enabled": True,
+                "validated": True,
+            }
+        )
+    return receipts
+
+
+def _run_relay_lifecycle_command(
+    executable: Path,
+    relay_config_path: Path,
+    args: list[str],
+    *,
+    env: dict[str, str],
+    cwd: Path,
+) -> None:
+    completed = subprocess.run(
+        [str(executable), "--config", str(relay_config_path), *args],
+        cwd=cwd,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if completed.returncode != 0:
+        action = " ".join(args[:2])
+        raise RuntimeError(
+            f"NeMo Relay {action} failed with status {completed.returncode}"
+        )
+
+
+def _relay_plugin_manifest_registered(
+    plugin_config_path: Path, manifest_ref: str
+) -> bool:
+    if not plugin_config_path.is_file():
+        return False
+    document = tomllib.loads(plugin_config_path.read_text(encoding="utf-8"))
+    entries = (document.get("plugins") or {}).get("dynamic") or []
+    target = Path(manifest_ref).resolve()
+    return any(
+        isinstance(entry, dict)
+        and Path(str(entry.get("manifest", ""))).resolve() == target
+        for entry in entries
+    )
+
+
+def _attach_relay_dynamic_plugin_config(
+    plugin_config_path: Path,
+    manifest_ref: str,
+    config: dict[str, Any],
+) -> None:
+    import tomli_w
+
+    document = tomllib.loads(plugin_config_path.read_text(encoding="utf-8"))
+    entries = (document.get("plugins") or {}).get("dynamic") or []
+    target = Path(manifest_ref).resolve()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if Path(str(entry.get("manifest", ""))).resolve() == target:
+            entry["config"] = copy.deepcopy(config)
+            plugin_config_path.write_text(tomli_w.dumps(document), encoding="utf-8")
+            return
+    raise RuntimeError(
+        "Relay lifecycle did not register the requested dynamic plugin manifest"
+    )
 
 
 def relay_model_name(payload: dict[str, Any]) -> str:
