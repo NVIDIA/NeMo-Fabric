@@ -7,57 +7,26 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 # Install NeMo Fabric
 
-## Prerequisites:
-- Rust and Cargo
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- `just` 1.50.0+
-
-## Source Installation Method
-
-1. Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
-
-```bash
-uv venv -p 3.13 --seed .venv
-source .venv/bin/activate
-```
-
-2. Build the Rust core and Python libraries.
-```bash
-just build-all
-```
-
-The above command will install only those dependencies that are strictly necessary for the build. 
-Alternately If you want to install all optional dependencies, you can run:
-
-```bash
-uv sync --all-groups --all-extras
-```
-
-Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
-
-```bash
-just build-all no_uv=true
-```
-
 ## Package Installation Method
 
-Note: Fabric is currently not available on PyPI, as such for the time being wheels must first be built from source.
+NeMo Fabric is separated into two distinct parts:
+- NeMo Fabric Runtime: This contains the core functionality of NeMo Fabric.
+- NeMo Fabric Adapters: These provide integration with agent harnesses. These need to be installed into
+  the same environment as the agent harness which may or may not be the same environment as the NeMo Fabric runtime.
 
-Build the wheels from source:
+### Supported Python Versions
+- Python version 3.11 - 3.14
 
-```bash
-just wheels
-```
-
-This will create wheel files in the `dist` directory. 
+NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations and adapters may have 
+additional requirements. Specifically the Hermes adapter doesn't support Python 3.14 yet, and the Harbor 
+integration requires Python 3.12 or later.
 
 ### Installing Fabric Runtime
 
-This installs Fabric itself.
+Install the NeMo Fabric Runtime:
 
 ```bash
-uv pip install --find-links <path_to_dist_directory> nemo-fabric[runtime]
+pip install "nemo-fabric[runtime]"
 ```
 
 ### Installing the Fabric Adapters
@@ -75,11 +44,46 @@ The following adapter packages are available:
 - `adapters-hermes`
 
 ```bash
-uv pip install --find-links <path_to_dist_directory> nemo-fabric[<adapter_name>]
+pip install "nemo-fabric[<adapter_name>]"
 ```
 
-For example, to install the Hermes adapter:
+For example, to install the Hermes Agent adapter:
 
 ```bash
-uv pip install --find-links <path_to_dist_directory> nemo-fabric[adapters-hermes]
+pip install "nemo-fabric[adapters-hermes]"
+```
+
+
+## Source Installation Method
+
+**Prerequisites:**
+- Rust and Cargo
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- `just` 1.50.0+
+
+1. Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+```
+
+2. Build the Rust core and Python libraries.
+
+```bash
+just build-all
+```
+
+The above command will install only those dependencies that are strictly necessary for the build.
+Alternately If you want to install all optional dependencies, you can run:
+
+```bash
+uv sync --all-groups --all-extras
+```
+
+Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
+
+```bash
+just build-all no_uv=true
 ```
