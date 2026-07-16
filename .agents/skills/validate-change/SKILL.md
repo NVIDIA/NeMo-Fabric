@@ -37,8 +37,10 @@ surfaces touched by a change.
 - If documentation or examples changed, run `just docs` when practical and
   verify documented commands against the current repository.
 - If code changes alter APIs, commands, paths, packaging behavior, telemetry
-  semantics, or documented best practices, update dependent maintainer skills
-  in the same branch.
+  semantics, or documented best practices, update dependent maintainer skills in
+  the same branch. Because the consumer skills under `skills/` restate SDK guide,
+  Pydantic model, and Rust type details, update them in parity whenever those
+  surfaces change.
 
 ## Start With the Change Shape
 
