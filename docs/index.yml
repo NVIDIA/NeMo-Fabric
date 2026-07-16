@@ -50,5 +50,5 @@ navigation:
             title: Rust Library Reference
   - section: Resources
     contents:
-      - page: Legal
-        path: ./resources/legal.mdx
+      - folder: ./resources/legal
+        title: Legal
