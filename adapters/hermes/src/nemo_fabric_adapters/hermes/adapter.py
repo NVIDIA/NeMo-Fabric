@@ -296,10 +296,17 @@ def prepare_relay_cli_launch(
     if base_url:
         relay_config["upstream"] = {"openai_base_url": base_url}
 
+    invocation_id = str(
+        common_utils.runtime_context(payload).get("invocation_id")
+        or common_utils.runtime_id(payload)
+    )
+    isolation_root = hermes_home / "relay-cli" / invocation_id
+    isolation_root.mkdir(parents=True, exist_ok=True)
     relay_config_path, plugin_config_path = common_utils.write_relay_configs(
         relay_config=relay_config,
         plugin_config=plugin_config,
         observability_version=2,
+        config_directory=isolation_root / "relay-config",
     )
     if relay_config_path is None or plugin_config_path is None:
         raise RuntimeError("Relay CLI wrapper configuration was not written")
@@ -308,11 +315,6 @@ def prepare_relay_cli_launch(
     env.update(
         {str(key): str(value) for key, value in (settings.get("env") or {}).items()}
     )
-    invocation_id = str(
-        common_utils.runtime_context(payload).get("invocation_id")
-        or common_utils.runtime_id(payload)
-    )
-    isolation_root = hermes_home / "relay-cli" / invocation_id
     for name, leaf in (
         ("XDG_CONFIG_HOME", "config"),
         ("XDG_STATE_HOME", "state"),

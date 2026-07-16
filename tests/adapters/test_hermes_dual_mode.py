@@ -207,6 +207,9 @@ raise SystemExit(subprocess.run(child).returncode)
     assert child_args[child_args.index("--provider") + 1] == "custom"
     with launch.config_path.open("rb") as stream:
         relay_config = tomllib.load(stream)
+    assert launch.config_path.parent == (
+        tmp_path / "hermes-home" / "relay-cli" / "runtime-123" / "relay-config"
+    )
     assert relay_config["agents"]["hermes"]["command"] == str(hermes)
     assert relay_config["upstream"]["openai_base_url"] == "https://models.example/v1"
 

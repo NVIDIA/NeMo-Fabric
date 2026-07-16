@@ -747,6 +747,22 @@ def test_write_relay_configs_preserves_current_cli_contract(tmp_path: Path):
     }
 
 
+def test_write_relay_configs_supports_isolated_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("FABRIC_RELAY_CONFIG_PATH", raising=False)
+    config_directory = tmp_path / "private-runtime" / "relay-config"
+
+    relay_path, plugin_path = common_utils.write_relay_configs(
+        relay_config={"agents": {"hermes": {"command": "hermes"}}},
+        plugin_config={"version": 1, "components": []},
+        config_directory=config_directory,
+    )
+
+    assert relay_path == config_directory / "config.toml"
+    assert plugin_path == config_directory / "plugins.toml"
+
+
 def test_write_relay_configs_rejects_legacy_observability(tmp_path: Path):
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
     plugin_config = {

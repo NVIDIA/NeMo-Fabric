@@ -664,18 +664,20 @@ def write_relay_configs(
     relay_config: dict[str, Any] | None = None,
     plugin_config: dict[str, Any] | None = None,
     observability_version: int = 2,
+    config_directory: Path | None = None,
 ) -> tuple[Path | None, Path | None]:
     try:
         import tomli_w
 
-        config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
-        if not config_path:
-            raise RuntimeError(
-                "FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled"
-            )
-
-        config_path = Path(config_path)
-        config_dir = config_path.parent / "relay-config"
+        if config_directory is None:
+            config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
+            if not config_path:
+                raise RuntimeError(
+                    "FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled"
+                )
+            config_dir = Path(config_path).parent / "relay-config"
+        else:
+            config_dir = Path(config_directory)
         config_dir.mkdir(parents=True, exist_ok=True)
         relay_config_path = None
         plugin_config_path = None
