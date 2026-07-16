@@ -62,8 +62,7 @@ def with_relay(base: FabricConfig) -> FabricConfig:
     return config
 ```
 
-Use this function-and-copy pattern for every variant. Profiles — file-backed or
-in-memory — are not part of the consumer-facing API; keep all variation in
+Use this function-and-copy pattern for every variant; keep all variation in
 ordinary Python.
 
 ## Relative Paths
@@ -93,11 +92,8 @@ package or job layout, so nothing depends on the process working directory.
 
 Do not surface these mechanics in the consumer-facing integration:
 
-- Writing, reading, or materializing `agent.yaml` or portable agent packages.
 - Serializing `FabricConfig` to disk as the integration path (`to_mapping()` is
   for inspection and logging, not a required file step).
-- Profiles of any kind: file-backed profiles, profile-by-name resolution, or
-  in-memory `FabricProfileConfig` overlays.
 - Importing `nemo_fabric._native`, `nemo_fabric._config_sources`, or
   adapter-internal modules.
 - Reimplementing harness start, invoke, or stop logic, or managing adapter

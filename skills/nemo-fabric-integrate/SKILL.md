@@ -25,15 +25,11 @@ supported and upgrade-safe:
 
 - Import only from the public `nemo_fabric` package. Never import `_native`,
   `_config_sources`, or any adapter-internal module.
-- Build configuration as a typed `FabricConfig` in memory. Do not write, read,
-  or materialize `agent.yaml`, portable agent packages, or any intermediate
-  config file from consumer integration code. (A platform integration such as
-  Harbor may bake a config file into a task image at its deployment boundary —
-  that is a deployment mechanic, not the in-memory consumer pattern here.)
-- Do not serialize configs, apply file-backed profiles, or resolve profiles by
-  name. Build every consumer variant with ordinary Python functions and
-  `model_copy(deep=True)`; profile mechanics stay behind the integration
-  boundary.
+- Build configuration as a typed `FabricConfig` in memory and pass it directly to
+  Fabric. Create every deployment or evaluation variant with ordinary Python
+  functions and `model_copy(deep=True)`. (A platform integration such as Harbor
+  may bake a config file into a task image at its deployment boundary — that is a
+  deployment mechanic, not the in-memory consumer pattern here.)
 - Let Fabric own harness control. Do not reimplement start, invoke, or stop
   logic, and do not manage adapter threads, sessions, or processes directly.
 - Treat `runtime_id`, `invocation_id`, and `request_id` as opaque correlation
@@ -240,7 +236,7 @@ result-field and error inventory, and
 
 - [ ] The consumer config object is translated directly into an in-memory `FabricConfig`.
 - [ ] Only public `nemo_fabric` symbols are imported; no `_native`, `_config_sources`, or adapter internals.
-- [ ] No `agent.yaml`, portable package, serialized config, or file profile is created or read.
+- [ ] The consumer config is built in memory and passed directly to Fabric, with no intermediate config file.
 - [ ] The right lifecycle is chosen: `run(...)` for one-shot, `start_runtime(...)` with `async with` for multi-turn.
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.
 - [ ] Installation, adapter dependencies, and credentials are owned by the environment, not consumer code.
