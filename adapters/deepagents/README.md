@@ -181,12 +181,14 @@ CLI flags are involved:
 
 ```python
 from nemo_fabric import (
-    FabricConfig,
     RelayAtifConfig,
     RelayAtofConfig,
     RelayObservabilityConfig,
 )
+from examples.code_review_agent import deepagents_config
 
+# Start from a complete Deep Agents configuration, then enable typed Relay telemetry.
+config = deepagents_config()
 config.enable_relay(
     output_dir="./artifacts/relay",
     observability=RelayObservabilityConfig(
