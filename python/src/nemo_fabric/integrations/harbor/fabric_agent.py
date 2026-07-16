@@ -55,7 +55,9 @@ try:
     from harbor.agents.base import BaseAgent
     from harbor.environments.base import BaseEnvironment
     from harbor.models.agent.context import AgentContext
-except ModuleNotFoundError as error:  # pragma: no cover - exercised without harbor extra
+except (
+    ModuleNotFoundError
+) as error:  # pragma: no cover - exercised without harbor extra
     _HARBOR_IMPORT_ERROR = error
 else:
     _HARBOR_IMPORT_ERROR = None
@@ -117,9 +119,13 @@ else:
                 raise ValueError("fabric_adapter_id must not be empty")
             workspace = PurePosixPath(fabric_workspace)
             if not workspace.is_absolute() or ".." in workspace.parts:
-                raise ValueError("fabric_workspace must be an absolute task-environment path")
+                raise ValueError(
+                    "fabric_workspace must be an absolute task-environment path"
+                )
             blocked_tools = list(fabric_blocked_tools or [])
-            if any(not isinstance(tool, str) or not tool.strip() for tool in blocked_tools):
+            if any(
+                not isinstance(tool, str) or not tool.strip() for tool in blocked_tools
+            ):
                 raise ValueError("fabric_blocked_tools must contain non-empty strings")
             if fabric_telemetry not in {"none", "relay"}:
                 raise ValueError("fabric_telemetry must be 'none' or 'relay'")
@@ -138,14 +144,19 @@ else:
             self.fabric_cwd = fabric_cwd
             self.fabric_timeout_sec = fabric_timeout_sec
             if fabric_package and fabric_install_command:
-                raise ValueError("fabric_package and fabric_install_command are mutually exclusive")
+                raise ValueError(
+                    "fabric_package and fabric_install_command are mutually exclusive"
+                )
             if fabric_install_command:
                 warnings.warn(
                     "fabric_install_command is deprecated; use fabric_package",
                     DeprecationWarning,
                     stacklevel=2,
                 )
-            self._environment_config_base_dir = self._resolve_environment_config_base_dir()
+            self._environment_config_base_dir = (
+                self._resolve_environment_config_base_dir()
+            )
+            self._result_path: Path | None = None
 
         @staticmethod
         def name() -> str:
@@ -198,6 +209,7 @@ else:
             environment: BaseEnvironment,
             context: AgentContext,
         ) -> None:
+            self._result_path = None
             token = uuid.uuid4().hex
             spec = self._build_spec(instruction)
             host_spec_path = self.logs_dir / f"fabric-run-{token}.json"
@@ -222,7 +234,7 @@ else:
             ensure_success("Fabric run failed", result)
 
             await environment.download_file(remote_result_path, host_result_path)
-            populate_context_from_result(context, host_result_path)
+            self._result_path = host_result_path
 
         def _build_request(self, instruction: str) -> RunRequest:
             context = {"source": "harbor"}
@@ -251,7 +263,8 @@ else:
                 model_name=self.model_name,
                 skills_dir=self.skills_dir,
                 mcp_servers=tuple(
-                    HarborMcpServer.model_validate(server.model_dump(mode="python")) for server in self.mcp_servers
+                    HarborMcpServer.model_validate(server.model_dump(mode="python"))
+                    for server in self.mcp_servers
                 ),
             )
 
@@ -259,24 +272,34 @@ else:
             if self.fabric_config_bundle is not None:
                 bundle = Path(self.fabric_config_bundle)
                 if not bundle.is_dir():
-                    raise ValueError(f"fabric_config_bundle must be an existing directory: {bundle}")
+                    raise ValueError(
+                        f"fabric_config_bundle must be an existing directory: {bundle}"
+                    )
                 target = PurePosixPath(self.fabric_config_target)
                 if not target.is_absolute() or ".." in target.parts:
-                    raise ValueError("fabric_config_target must be an absolute task-environment path")
+                    raise ValueError(
+                        "fabric_config_target must be an absolute task-environment path"
+                    )
                 if self.fabric_config_base_dir is not None:
                     raise ValueError(
                         "fabric_config_base_dir is derived from fabric_config_target when fabric_config_bundle is set"
                     )
                 return str(target)
 
-            base_dir = PurePosixPath(self.fabric_config_base_dir or self.fabric_workspace)
+            base_dir = PurePosixPath(
+                self.fabric_config_base_dir or self.fabric_workspace
+            )
             if not base_dir.is_absolute() or ".." in base_dir.parts:
-                raise ValueError("fabric_config_base_dir must be an absolute task-environment path")
+                raise ValueError(
+                    "fabric_config_base_dir must be an absolute task-environment path"
+                )
             return str(base_dir)
 
         def populate_context_post_run(self, context: AgentContext) -> None:
-            """Populate Harbor token and cost fields from canonical ATIF."""
+            """Populate Harbor result metadata, token counts, and cost."""
 
+            if self._result_path is not None:
+                populate_context_from_result(context, self._result_path)
             populate_context_from_trajectory(context, self.logs_dir / "trajectory.json")
             populate_context_from_telemetry_summary(
                 context,
@@ -298,7 +321,11 @@ else:
 
         @property
         def _install_env(self) -> dict[str, str]:
-            return {name: value for name, value in self._extra_env.items() if name in INSTALL_ENV_NAMES}
+            return {
+                name: value
+                for name, value in self._extra_env.items()
+                if name in INSTALL_ENV_NAMES
+            }
 
         @property
         def _runner_env(self) -> dict[str, str]:
@@ -508,7 +535,9 @@ def populate_context_from_trajectory(context: AgentContext, path: Path) -> None:
     context.cost_usd = metrics.total_cost_usd
 
 
-def _record_host_atif_validation(context: AgentContext, *, status: str, error: str | None = None) -> None:
+def _record_host_atif_validation(
+    context: AgentContext, *, status: str, error: str | None = None
+) -> None:
     if context.metadata is None:
         context.metadata = {}
     fabric = context.metadata.setdefault("fabric", {})

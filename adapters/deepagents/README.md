@@ -3,16 +3,22 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# LangChain Deep Agents Adapter
+# NVIDIA NeMo Fabric LangChain Deep Agents Adapter
 
 Runs a [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) agent
 through Fabric's inline Python adapter lifecycle. The same adapter supports
 one-shot, multi-turn, and resumed execution.
 
-Install Fabric with the adapter dependency before running it:
+To install just the Deep Agents adapter by itself:
 
 ```bash
-python3 -m pip install -e ".[deepagents]"
+pip install "nemo-fabric[deepagents]"
+```
+
+To install just the Deep Agents adapter along with the NeMo Fabric Runtime:
+
+```bash
+pip install "nemo-fabric[deepagents, runtime]"
 ```
 
 ## Model and Authentication

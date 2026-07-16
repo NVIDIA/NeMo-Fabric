@@ -129,7 +129,9 @@ async def test_harbor_integration(tmp_path: Path):
     await agent.setup(environment)  # type: ignore[arg-type]
     await agent.run("fix the bug", environment, context)  # type: ignore[arg-type]
 
-    spec_paths = [path for path in environment.files if path.startswith("/tmp/fabric-run-")]
+    spec_paths = [
+        path for path in environment.files if path.startswith("/tmp/fabric-run-")
+    ]
     assert len(spec_paths) == 1
     assert len(environment.uploads) == 1
     spec = json.loads(environment.files[spec_paths[0]])
@@ -153,7 +155,9 @@ async def test_harbor_integration(tmp_path: Path):
     assert "mcp_servers" not in spec
 
     fabric_commands = [
-        command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command
+        command
+        for command in environment.commands
+        if "nemo_fabric.integrations.harbor.runner" in command
     ]
     assert len(fabric_commands) == 1
     assert not any(command.startswith("cat > ") for command in environment.commands)
@@ -162,6 +166,10 @@ async def test_harbor_integration(tmp_path: Path):
         "NVIDIA_API_KEY": "test-key",
         "ADAPTER_PYTHON": "python3",
     }
+    assert context.is_empty()
+
+    agent.populate_context_post_run(context)
+
     assert context.metadata
     assert context.metadata["fabric"]["status"] == "succeeded"
     assert "profiles" not in context.metadata["fabric"]
@@ -181,10 +189,14 @@ async def test_harbor_exchange_paths_are_unique_per_run(tmp_path: Path):
     await agent.run("first", environment, AgentContext())  # type: ignore[arg-type]
     await agent.run("second", environment, AgentContext())  # type: ignore[arg-type]
 
-    spec_paths = [path for path in environment.files if path.startswith("/tmp/fabric-run-")]
+    spec_paths = [
+        path for path in environment.files if path.startswith("/tmp/fabric-run-")
+    ]
     assert len(spec_paths) == 2
     assert len(set(spec_paths)) == 2
-    result_paths = [path for path in environment.files if path.startswith("/tmp/fabric-result-")]
+    result_paths = [
+        path for path in environment.files if path.startswith("/tmp/fabric-result-")
+    ]
     assert len(result_paths) == 2
     assert len(set(result_paths)) == 2
     assert len(list(tmp_path.glob("fabric-result-*.json"))) == 2
@@ -192,7 +204,9 @@ async def test_harbor_exchange_paths_are_unique_per_run(tmp_path: Path):
 
 def test_harbor_rejects_invalid_downloaded_result(tmp_path: Path):
     from nemo_fabric import FabricConfigError
-    from nemo_fabric.integrations.harbor.fabric_agent import populate_context_from_result
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_result,
+    )
 
     result_path = tmp_path / "fabric-result.json"
     result_path.write_text("{}", encoding="utf-8")
@@ -278,7 +292,9 @@ async def test_harbor_uploads_bundle_before_package_install(tmp_path: Path):
 
     await agent.setup(environment)  # type: ignore[arg-type]
 
-    upload_index = environment.operations.index(("upload_dir", "/tmp/nemo-fabric-config"))
+    upload_index = environment.operations.index(
+        ("upload_dir", "/tmp/nemo-fabric-config")
+    )
     install_index = next(
         index
         for index, operation in enumerate(environment.operations)
@@ -363,8 +379,14 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
     }
 
     await agent.run("fix it", environment, AgentContext())  # type: ignore[arg-type]
-    runner = next(command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command)
-    assert runner.startswith("PATH=/tmp/nemo-fabric-venv/bin:$PATH /tmp/nemo-fabric-venv/bin/python -m ")
+    runner = next(
+        command
+        for command in environment.commands
+        if "nemo_fabric.integrations.harbor.runner" in command
+    )
+    assert runner.startswith(
+        "PATH=/tmp/nemo-fabric-venv/bin:$PATH /tmp/nemo-fabric-venv/bin/python -m "
+    )
     runner_index = environment.commands.index(runner)
     assert environment.environments[runner_index] == {
         "NVIDIA_API_KEY": "test-key",
@@ -390,8 +412,14 @@ async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: 
     assert environment.environments[install_index] == {}
     await agent.run("fix it", environment, AgentContext())  # type: ignore[arg-type]
 
-    runner = next(command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command)
-    assert runner.startswith("PATH=/tmp/custom-fabric/bin:$PATH /tmp/custom-fabric/bin/python -m ")
+    runner = next(
+        command
+        for command in environment.commands
+        if "nemo_fabric.integrations.harbor.runner" in command
+    )
+    assert runner.startswith(
+        "PATH=/tmp/custom-fabric/bin:$PATH /tmp/custom-fabric/bin/python -m "
+    )
     runner_index = environment.commands.index(runner)
     assert environment.environments[runner_index] == {
         "NVIDIA_API_KEY": "test-key",
@@ -400,7 +428,9 @@ async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: 
 
 
 def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):
-    from nemo_fabric.integrations.harbor.fabric_agent import populate_context_from_trajectory
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_trajectory,
+    )
 
     trajectory = tmp_path / "trajectory.json"
     trajectory.write_text(
@@ -434,8 +464,12 @@ def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):
     }
 
 
-def test_harbor_records_trajectory_read_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from nemo_fabric.integrations.harbor.fabric_agent import populate_context_from_trajectory
+def test_harbor_records_trajectory_read_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_trajectory,
+    )
 
     trajectory = tmp_path / "trajectory.json"
     trajectory.touch()
@@ -455,7 +489,9 @@ def test_harbor_records_trajectory_read_failure(tmp_path: Path, monkeypatch: pyt
 
 
 def test_harbor_attaches_telemetry_summary_to_metadata(tmp_path: Path):
-    from nemo_fabric.integrations.harbor.fabric_agent import populate_context_from_telemetry_summary
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_telemetry_summary,
+    )
 
     summary = tmp_path / "telemetry-validation.json"
     summary.write_text(
@@ -474,7 +510,9 @@ def test_harbor_attaches_telemetry_summary_to_metadata(tmp_path: Path):
 
 
 def test_harbor_records_malformed_telemetry_summary(tmp_path: Path):
-    from nemo_fabric.integrations.harbor.fabric_agent import populate_context_from_telemetry_summary
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_telemetry_summary,
+    )
 
     summary = tmp_path / "telemetry-validation.json"
     summary.write_text("not json", encoding="utf-8")
@@ -489,7 +527,9 @@ def test_harbor_records_malformed_telemetry_summary(tmp_path: Path):
 
 
 def test_harbor_records_non_utf8_telemetry_summary(tmp_path: Path):
-    from nemo_fabric.integrations.harbor.fabric_agent import populate_context_from_telemetry_summary
+    from nemo_fabric.integrations.harbor.fabric_agent import (
+        populate_context_from_telemetry_summary,
+    )
 
     summary = tmp_path / "telemetry-validation.json"
     summary.write_bytes(b"\xff")

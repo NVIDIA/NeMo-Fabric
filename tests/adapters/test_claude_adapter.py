@@ -25,6 +25,18 @@ from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.claude import adapter
 
 ROOT = Path(__file__).resolve().parents[2]
+ANTHROPIC_AUTH_ENV_NAMES = {
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CONFIG_DIR",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_IDENTITY_TOKEN",
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_PROFILE",
+    "ANTHROPIC_SERVICE_ACCOUNT_ID",
+    "ANTHROPIC_WORKSPACE_ID",
+}
 
 
 def test_claude_descriptor_is_narrow_and_versioned():
@@ -201,8 +213,12 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
     )
     monkeypatch.setattr(
         adapter.relay_gateway,
-        "relay_cli_observability_version",
-        MagicMock(return_value=2),
+        "relay_cli_contract",
+        MagicMock(
+            return_value=adapter.relay_gateway.RelayCliContract(
+                version=(0, 6, 0), observability_version=2
+            )
+        ),
     )
 
     relay = adapter.prepare_claude_relay(relay_payload)
@@ -272,8 +288,12 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
     )
     monkeypatch.setattr(
         adapter.relay_gateway,
-        "relay_cli_observability_version",
-        MagicMock(return_value=2),
+        "relay_cli_contract",
+        MagicMock(
+            return_value=adapter.relay_gateway.RelayCliContract(
+                version=(0, 6, 0), observability_version=2
+            )
+        ),
     )
     relay = adapter.prepare_claude_relay(relay_payload)
 
@@ -312,7 +332,9 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
 
 
 def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
-    claude_payload["effective_config"]["config"]["tools"] = {"blocked": ["Bash", "WebFetch"]}
+    claude_payload["effective_config"]["config"]["tools"] = {
+        "blocked": ["Bash", "WebFetch"]
+    }
 
     options = adapter.build_options(claude_payload, resume=None)
 
@@ -331,7 +353,9 @@ def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
         ("skills", "FabricConfig.skills"),
     ],
 )
-def test_build_options_rejects_normalized_capabilities_in_harness_settings(claude_payload, name, normalized_field):
+def test_build_options_rejects_normalized_capabilities_in_harness_settings(
+    claude_payload, name, normalized_field
+):
     claude_payload["effective_config"]["config"]["harness"]["settings"][name] = []
 
     with pytest.raises(
@@ -704,25 +728,42 @@ async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
     assert not relay.plugin_path.exists()
 
 
-async def test_run_claude_normalizes_plain_sdk_error_result(
-    claude_payload, monkeypatch
+@pytest.mark.parametrize(
+    ("subtype", "is_error"),
+    [("success", True), ("error_max_budget_usd", False)],
+)
+async def test_run_claude_preserves_failed_result_when_sdk_stream_raises(
+    claude_payload,
+    monkeypatch,
+    caplog,
+    subtype,
+    is_error,
 ):
-    async def query_failure(**_):
-        raise Exception(
-            "SDK returned an error result with secret provider diagnostic"
+    async def query_error_result(**_):
+        yield ResultMessage(
+            subtype=subtype,
+            duration_ms=10,
+            duration_api_ms=8,
+            is_error=is_error,
+            num_turns=1,
+            session_id="claude-session",
+            result="Not logged in",
         )
-        yield
+        raise RuntimeError("raw SDK stream error")
 
-    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_failure))
+    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_error_result))
 
     output = await adapter.run_claude(claude_payload)
 
+    assert output["response"] == "Not logged in"
     assert output["error"] == {
         "code": "claude_result_failed",
         "message": "Claude returned an error result",
         "retryable": False,
+        "metadata": {"subtype": subtype},
     }
-    assert "secret" not in json.dumps(output)
+    assert "raw SDK stream error" not in json.dumps(output)
+    assert "raw SDK stream error" in caplog.text
 
 
 def test_run_reports_relay_start_failure_without_raw_diagnostic(
@@ -765,16 +806,70 @@ def test_run_reports_relay_start_failure_without_raw_diagnostic(
     assert not relay.plugin_path.exists()
 
 
-def test_build_options_forwards_default_anthropic_api_key(claude_payload, monkeypatch):
+@pytest.mark.parametrize(
+    "auth_environment",
+    [
+        {
+            "ANTHROPIC_CONFIG_DIR": "/run/anthropic",
+            "ANTHROPIC_PROFILE": "production",
+        },
+        {
+            "ANTHROPIC_FEDERATION_RULE_ID": "fdrl_test",
+            "ANTHROPIC_ORGANIZATION_ID": "organization-test",
+            "ANTHROPIC_SERVICE_ACCOUNT_ID": "svac_test",
+            "ANTHROPIC_WORKSPACE_ID": "wrkspc_test",
+            "ANTHROPIC_IDENTITY_TOKEN_FILE": "/run/secrets/anthropic/token",
+        },
+        {
+            "ANTHROPIC_FEDERATION_RULE_ID": "fdrl_test",
+            "ANTHROPIC_ORGANIZATION_ID": "organization-test",
+            "ANTHROPIC_SERVICE_ACCOUNT_ID": "svac_test",
+            "ANTHROPIC_IDENTITY_TOKEN": "identity-token",
+        },
+        {"ANTHROPIC_API_KEY": "default-secret"},
+        {"ANTHROPIC_AUTH_TOKEN": "bearer-token"},
+        {
+            "ANTHROPIC_API_KEY": "",
+            "ANTHROPIC_PROFILE": "fallback-profile",
+        },
+        {
+            "ANTHROPIC_AUTH_TOKEN": "",
+            "ANTHROPIC_API_KEY": "fallback-api-key",
+            "ANTHROPIC_PROFILE": "fallback-profile",
+        },
+    ],
+)
+def test_build_options_forwards_anthropic_auth_environment(
+    claude_payload, auth_environment
+):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model.pop("api_key_env")
     settings = claude_payload["effective_config"]["config"]["harness"]["settings"]
     settings.pop("env")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "default-secret")
+    for name in ANTHROPIC_AUTH_ENV_NAMES:
+        os.environ.pop(name, None)
+    os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
+    os.environ.update(auth_environment)
 
     options = adapter.build_options(claude_payload, resume=None)
 
-    assert options.env["ANTHROPIC_API_KEY"] == "default-secret"
+    forwarded_auth_environment = {
+        name: options.env[name]
+        for name in ANTHROPIC_AUTH_ENV_NAMES
+        if name in options.env
+    }
+    assert forwarded_auth_environment == auth_environment
+    assert options.env["FABRIC_UNRELATED_SECRET"] == ""
+
+
+def test_build_options_preserves_unix_user_for_cached_login(
+    claude_payload,
+):
+    os.environ["USER"] = "fabric-user"
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.env["USER"] == "fabric-user"
 
 
 @pytest.mark.parametrize(

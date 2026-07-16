@@ -6,7 +6,8 @@
 from examples.code_review_agent.config import (
     BASE_DIR,
     base_config,
-    codex_cli_config,
+    claude_config,
+    codex_config,
     deepagents_config,
     hermes_config,
     with_fabric_managed_github_mcp,
@@ -20,7 +21,8 @@ from examples.code_review_agent.config import (
 __all__ = [
     "BASE_DIR",
     "base_config",
-    "codex_cli_config",
+    "claude_config",
+    "codex_config",
     "deepagents_config",
     "hermes_config",
     "with_fabric_managed_github_mcp",

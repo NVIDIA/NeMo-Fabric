@@ -2,11 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
-import importlib.util
 import json
-import os
-import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,23 +19,18 @@ SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_README = SWEBENCH_ROOT / "README.md"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
-SDK_INTEGRATION_README = ROOT / "python" / "src" / "nemo_fabric" / "integrations" / "harbor" / "README.md"
+SDK_INTEGRATION_README = (
+    ROOT / "python" / "src" / "nemo_fabric" / "integrations" / "harbor" / "README.md"
+)
 HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
 
 pytestmark = pytest.mark.usefixtures("requires_harbor")
 
 
-def load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def load_codex_adapter():
-    path = ROOT / "adapters/codex-cli/src/nemo_fabric_adapters/codex_cli/adapter.py"
-    return load_module("fabric_codex_adapter", path)
+    from nemo_fabric_adapters.codex import adapter
+
+    return adapter
 
 
 def test_harbor_builder_constructs_complete_config_from_harbor_inputs(tmp_path):
@@ -74,7 +67,10 @@ def test_harbor_builder_constructs_complete_config_from_harbor_inputs(tmp_path):
     assert config.mcp.servers["local"].extra_fields["args"] == ["--stdio"]
     assert config.skills is not None
     assert config.skills.paths == [str(tmp_path / "skills")]
-    assert json.loads(json.dumps(config.to_mapping()))["metadata"]["name"] == "harbor-smoke"
+    assert (
+        json.loads(json.dumps(config.to_mapping()))["metadata"]["name"]
+        == "harbor-smoke"
+    )
 
 
 def test_harbor_builder_leaves_optional_capabilities_unset():
@@ -104,7 +100,9 @@ def test_harbor_transport_models_validate_mcp_targets():
     )
     payload = FabricRunPayload.model_validate_json(
         FabricRunPayload(
-            config=build_harbor_config(adapter_id="demo.fabric.smoke", workspace="/testbed"),
+            config=build_harbor_config(
+                adapter_id="demo.fabric.smoke", workspace="/testbed"
+            ),
             config_base_dir="/workspace",
             request=RunRequest(input="fix it"),
         ).model_dump_json()
@@ -113,7 +111,12 @@ def test_harbor_transport_models_validate_mcp_targets():
     assert payload.request.input == "fix it"
     assert server.name == "github"
     payload_properties = FabricRunPayload.model_json_schema()["properties"]
-    assert set(payload_properties) == {"config", "config_base_dir", "logs_dir", "request"}
+    assert set(payload_properties) == {
+        "config",
+        "config_base_dir",
+        "logs_dir",
+        "request",
+    }
     with pytest.raises(ValidationError, match="require url"):
         HarborMcpServer(name="missing", transport="sse")
     with pytest.raises(ValidationError, match="require command"):
@@ -172,7 +175,9 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
     )
     payloads = [
         FabricRunPayload(
-            config=build_harbor_config(adapter_id="demo.fabric.smoke", workspace="/testbed"),
+            config=build_harbor_config(
+                adapter_id="demo.fabric.smoke", workspace="/testbed"
+            ),
             config_base_dir=tmp_path,
             request={
                 "input": f"job {job_id}",
@@ -195,7 +200,7 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
     ]
 
 
-def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
+def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
     adapter = load_codex_adapter()
 
     payload = {
@@ -205,8 +210,7 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
                 "harness": {
                     "settings": {
                         "sandbox": "workspace-write",
-                        "skip_git_repo_check": True,
-                        "config_overrides": {"model_reasoning_effort": "high"},
+                        "reasoning_effort": "high",
                     }
                 },
                 "models": {
@@ -225,29 +229,10 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
         "request": {"input": "Fix the calculator."},
     }
 
-    os.environ["CODEX_HOME"] = str(tmp_path)
-    profile_name = "fabric-harbor-test"
-    profile_path = tmp_path / f"{profile_name}.config.toml"
-    codex_settings = adapter.write_config_files(payload)
-    command = adapter.build_command(
-        payload,
-        codex_settings=codex_settings,
-    )
-
-    assert command == [
-        "codex",
-        "exec",
-        "--json",
-        "--sandbox",
-        "workspace-write",
-        "--profile",
-        profile_name,
-        "--model",
-        "gpt-5.4",
-        "--skip-git-repo-check",
-        "-",
-    ]
-    assert tomllib.loads(profile_path.read_text(encoding="utf-8")) == {"model_reasoning_effort": "high"}
+    assert adapter.selected_model(payload) == "gpt-5.4"
+    assert adapter.sandbox(payload) == adapter.Sandbox.workspace_write
+    assert adapter._reasoning_effort(payload) == adapter.ReasoningEffort.high
+    assert adapter.thread_config(payload, relay=None) == {}
     assert adapter.resolve_cwd(payload) == tmp_path
 
 
@@ -348,7 +333,9 @@ def test_harbor_calculator_setup_and_solution_fail_fast():
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     solution = CALCULATOR_SOLUTION.read_text(encoding="utf-8")
 
-    assert "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |" not in dockerfile
+    assert (
+        "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |" not in dockerfile
+    )
     assert "-o /tmp/rustup-init.sh" in dockerfile
     assert "if updated == source:" in solution
     assert "raise SystemExit" in solution
@@ -421,7 +408,9 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     claude = build_harbor_config(
         adapter_id="nvidia.fabric.claude",
         workspace="/testbed",
-        harness_settings={"nemo_relay_command": "/tmp/nemo-fabric-config/.relay/bin/nemo-relay"},
+        harness_settings={
+            "nemo_relay_command": "/tmp/nemo-fabric-config/.relay/bin/nemo-relay"
+        },
     )
 
     assert base.profiles is None
@@ -450,7 +439,9 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     assert relay.relay.observability.atof.enabled is True
     assert claude.harness.settings["permission_mode"] == "bypassPermissions"
     assert claude.harness.settings["env"] == {"IS_SANDBOX": "1"}
-    assert claude.harness.settings["nemo_relay_command"] == ("/tmp/nemo-fabric-config/.relay/bin/nemo-relay")
+    assert claude.harness.settings["nemo_relay_command"] == (
+        "/tmp/nemo-fabric-config/.relay/bin/nemo-relay"
+    )
     assert not list(SWEBENCH_ROOT.rglob("*.yaml"))
     assert not (SWEBENCH_ROOT / "harbor_swebench_config.py").exists()
 
@@ -462,12 +453,83 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     assert (SWEBENCH_ROOT / "adapters/claude/fabric-adapter.json").read_text() == (
         ROOT / "adapters/claude/fabric-adapter.json"
     ).read_text()
-    hermes_descriptor = json.loads((SWEBENCH_ROOT / "adapters/hermes/fabric-adapter.json").read_text())
+    hermes_descriptor = json.loads(
+        (SWEBENCH_ROOT / "adapters/hermes/fabric-adapter.json").read_text()
+    )
     assert "models" in hermes_descriptor["config"]["accepts"]
 
     readme = SWEBENCH_README.read_text(encoding="utf-8")
     assert readme.count("django__django-13741") >= 4
     assert "--n-tasks 5" in readme
+
+
+def test_harbor_lifecycle_populates_context_after_run(tmp_path: Path):
+    from harbor.models.agent.context import AgentContext
+    from harbor.trial.trial import Trial
+    from nemo_fabric.integrations.harbor import FabricAgent
+
+    result = {
+        "agent_name": "harbor-hermes",
+        "profiles": [],
+        "harness": "hermes",
+        "adapter_kind": "python",
+        "adapter_id": "nvidia.fabric.hermes",
+        "status": "succeeded",
+        "runtime_id": "runtime-1",
+        "invocation_id": "invocation-1",
+        "request_id": "request-1",
+        "output": {"response": "done"},
+        "error": None,
+        "artifacts": {"root": "/logs/agent", "artifacts": []},
+        "telemetry": [],
+        "events": [],
+        "metadata": {},
+    }
+
+    class FakeEnvironment:
+        async def upload_file(self, _source, _destination):
+            return None
+
+        async def exec(self, *_args, **_kwargs):
+            return SimpleNamespace(return_code=0, stdout="", stderr="")
+
+        async def download_file(self, _source, destination):
+            destination.write_text(json.dumps(result), encoding="utf-8")
+
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.hermes",
+    )
+    context = AgentContext()
+
+    asyncio.run(agent.run("fix it", FakeEnvironment(), context))
+
+    assert context.is_empty()
+    (tmp_path / "trajectory.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "ATIF-v1.7",
+                "session_id": "runtime-1",
+                "agent": {"name": "fabric", "version": "0.1.0"},
+                "steps": [{"step_id": 1, "source": "agent", "message": "done"}],
+                "final_metrics": {
+                    "total_prompt_tokens": 12,
+                    "total_cached_tokens": 3,
+                    "total_completion_tokens": 4,
+                    "total_cost_usd": 0.25,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    Trial._populate_agent_context(SimpleNamespace(agent=agent), context)
+
+    assert context.metadata["fabric"]["status"] == "succeeded"
+    assert context.n_input_tokens == 12
+    assert context.n_cache_tokens == 3
+    assert context.n_output_tokens == 4
+    assert context.cost_usd == 0.25
 
 
 def test_harbor_018_factory_loads_fabric_agent(tmp_path: Path):

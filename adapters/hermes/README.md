@@ -3,18 +3,27 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Hermes Agent Adapter
+# NVIDIA NeMo Fabric Hermes Agent Adapter
 
 This adapter runs Hermes Agent through its Python SDK.
 
-Fabric invokes the adapter module with `python -m` through the core runtime
-lifecycle. The module entry point and the descriptor's callable route use the
-same `run(payload: dict) -> dict` implementation.
+## Install
+
+To install just the Hermes adapter by itself:
+
+```bash
+pip install "nemo-fabric[adapters-hermes]"
+```
+
+To install just the Hermes adapter along with the NeMo Fabric Runtime:
+
+```bash
+pip install "nemo-fabric[adapters-hermes, runtime]"
+```
 
 ## What It Maps
 
-The adapter receives Fabric's normalized payload and materializes Hermes-native
-configuration for:
+The adapter receives a normalized payload from Fabric and materializes Hermes-native configuration for:
 
 - model provider, model name, base URL, temperature, and token settings;
 - workspace and terminal settings;

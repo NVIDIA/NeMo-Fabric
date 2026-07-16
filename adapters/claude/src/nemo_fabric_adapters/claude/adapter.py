@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import shlex
@@ -33,6 +34,8 @@ from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
 
+LOGGER = logging.getLogger(__name__)
+
 PERMISSION_MODES = {
     "default",
     "acceptEdits",
@@ -52,6 +55,15 @@ NORMALIZED_SETTING_FIELDS = {
 }
 INHERITED_ENV_NAMES = {
     "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CONFIG_DIR",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_IDENTITY_TOKEN",
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_PROFILE",
+    "ANTHROPIC_SERVICE_ACCOUNT_ID",
+    "ANTHROPIC_WORKSPACE_ID",
     "APPDATA",
     "CLAUDE_CONFIG_DIR",
     "COMSPEC",
@@ -72,6 +84,7 @@ INHERITED_ENV_NAMES = {
     "TEMP",
     "TMP",
     "TMPDIR",
+    "USER",
     "USERPROFILE",
     "XDG_CACHE_HOME",
     "XDG_CONFIG_HOME",
@@ -275,8 +288,12 @@ def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
         or {}
     )
     values = _mapping(native, name="capability_plan.native").get("skill_paths") or []
-    if not isinstance(values, list) or any(not isinstance(value, (str, Path)) for value in values):
-        raise AdapterConfigError("claude_invalid_configuration", "native skill_paths must be a list of paths")
+    if not isinstance(values, list) or any(
+        not isinstance(value, (str, Path)) for value in values
+    ):
+        raise AdapterConfigError(
+            "claude_invalid_configuration", "native skill_paths must be a list of paths"
+        )
     return [_resolve_path(payload, value) for value in values]
 
 
@@ -381,14 +398,12 @@ def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
         ) from error
 
     try:
-        observability_version = relay_gateway.relay_cli_observability_version(
-            executable
-        )
+        relay_contract = relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(payload)
         config_path, plugin_config_path = common_utils.write_relay_configs(
             relay_config={"agents": {"claude": {"command": "claude"}}},
             plugin_config=plugin_config,
-            observability_version=observability_version,
+            observability_version=relay_contract.observability_version,
         )
     except (
         OSError,
@@ -542,10 +557,14 @@ def load_claude_session_id(
             raise ValueError("missing Claude session")
         return session_id
     except (OSError, ValueError, json.JSONDecodeError) as error:
-        raise AdapterStateError("claude_invalid_runtime_state", "Claude runtime state is invalid") from error
+        raise AdapterStateError(
+            "claude_invalid_runtime_state", "Claude runtime state is invalid"
+        ) from error
 
 
-def save_claude_session_id(payload: dict[str, Any], fabric_runtime_id: str, claude_session_id: str) -> None:
+def save_claude_session_id(
+    payload: dict[str, Any], fabric_runtime_id: str, claude_session_id: str
+) -> None:
     if not claude_session_id:
         raise AdapterStateError(
             "claude_invalid_runtime_state", "Claude session ID is missing"
@@ -586,9 +605,17 @@ def normalize_message(message: Message) -> dict[str, Any]:
     return {"type": type(message).__name__, "message": _json_safe(message)}
 
 
-def normalize_result(payload: dict[str, Any], messages: list[Message], result: ResultMessage) -> dict[str, Any]:
+def _result_failed(result: ResultMessage) -> bool:
+    return bool(result.is_error) or (
+        isinstance(result.subtype, str) and result.subtype.startswith("error_")
+    )
+
+
+def normalize_result(
+    payload: dict[str, Any], messages: list[Message], result: ResultMessage
+) -> dict[str, Any]:
     del payload
-    failed = bool(result.is_error) or (isinstance(result.subtype, str) and result.subtype.startswith("error_"))
+    failed = _result_failed(result)
     error = None
     if failed:
         error = {
@@ -663,7 +690,7 @@ def child_environment(
 ) -> dict[str, str]:
     values = {name: "" for name in os.environ}
     values.update(
-        {name: value for name in INHERITED_ENV_NAMES if (value := os.environ.get(name))}
+        {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
     model = _selected_model_config(payload)
     api_key_env = model.get("api_key_env")
@@ -813,16 +840,14 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
                         messages.append(message)
         except (TimeoutError, ClaudeSDKError) as error:
             output = sdk_failure(error)
-        except Exception as error:
-            # Some Claude Agent SDK versions surface terminal CLI error results
-            # as a plain Exception instead of a ClaudeSDKError/ResultMessage.
-            # Normalize that known boundary without exposing provider text, but
-            # preserve genuinely unexpected exceptions for the adapter boundary.
-            if "returned an error result" not in str(error):
+        except Exception:
+            # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
+            # raise a plain Exception while closing the query stream. Preserve
+            # the typed terminal result, but do not hide unrelated exceptions.
+            if result is None or not _result_failed(result):
                 raise
-            output = _failure(
-                "claude_result_failed", "Claude returned an error result"
-            )
+            LOGGER.exception("Claude SDK stream raised after a failed terminal result")
+            output = normalize_result(payload, messages, result)
         else:
             if result is None:
                 output = _failure(
@@ -854,14 +879,20 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     except ClaudeAdapterError as error:
         return adapter_failure(error)
     except Exception:  # Adapter boundary must always return normalized JSON.
-        return _failure("claude_adapter_internal_error", "Claude adapter failed unexpectedly")
+        return _failure(
+            "claude_adapter_internal_error", "Claude adapter failed unexpectedly"
+        )
 
 
 def main() -> None:
     try:
         payload = common_utils.load_payload()
-    except Exception:  # Malformed invocation input must still satisfy the process contract.
-        output = _failure("claude_adapter_internal_error", "Claude adapter failed unexpectedly")
+    except (
+        Exception
+    ):  # Malformed invocation input must still satisfy the process contract.
+        output = _failure(
+            "claude_adapter_internal_error", "Claude adapter failed unexpectedly"
+        )
     else:
         output = run(payload)
     print(json.dumps(output, sort_keys=True))
