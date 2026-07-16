@@ -9,6 +9,10 @@ The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
 Python behind Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
+This adapter pins `claude-agent-sdk==0.2.120`. The SDK supplies its compatible
+Claude Code runtime unless `harness.settings.cli_path` explicitly selects
+another executable.
+
 ## Install
 
 ```bash
@@ -40,8 +44,8 @@ Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.do
 for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
 
-Relay-enabled runs also require the external `nemo-relay` CLI. Install the CLI
-separately:
+Relay-enabled runs also require the external `nemo-relay` CLI. Fabric accepts
+CLI versions `>=0.6.0,<0.7.0`. Install the CLI separately:
 
 ```bash
 cargo install nemo-relay-cli
@@ -217,3 +221,8 @@ RUN_FABRIC_CLAUDE_RELAY_INTEGRATION=1 uv run --no-sync pytest tests/e2e/test_cla
 ```
 
 The first command uses the mock Claude client and does not require credentials.
+Set `FABRIC_TEST_CLAUDE_MODEL` to override the default live-test model,
+`claude-sonnet-4-5`.
+The live Relay test applies the same semantic artifact contract as Codex: ATOF
+must contain structured LLM requests and token usage, and ATIF must contain the
+expected agent response.

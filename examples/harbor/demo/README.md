@@ -140,15 +140,13 @@ find "$RUNS_DIR/fabric-hermes-relay" \
   -print -exec python -m json.tool {} \;
 ```
 
-## 4. Codex CLI
+## 4. Codex SDK
 
 Harbor mounts the host Codex login as a read-only secret. The setup command
-copies it into a writable container-local `CODEX_HOME`; Fabric only passes that
-environment to Codex.
+copies it into a writable container-local `CODEX_HOME`; the Codex SDK app-server
+uses that environment without requiring a separately installed `codex` command.
 
 ```bash
-codex login status
-
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 test -f "$CODEX_HOME_DIR/auth.json"
 CODEX_AUTH_MOUNT="[{\"type\":\"bind\",\"source\":\"$CODEX_HOME_DIR/auth.json\",\"target\":\"/run/secrets/codex-auth.json\",\"read_only\":true}]"
@@ -168,9 +166,9 @@ uv run --extra runtime --extra harbor harbor run \
   --force-build
 ```
 
-The image pins Codex CLI `0.142.4`. The config uses
-`danger-full-access` because Harbor's task container is the outer sandbox and
-nested Linux namespace creation is unavailable there.
+The Fabric Codex adapter pins the Python SDK and its bundled app-server runtime.
+The config uses `danger-full-access` because Harbor's task container is the
+outer sandbox and nested Linux namespace creation is unavailable there.
 
 ## Inspect results
 

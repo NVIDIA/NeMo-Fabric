@@ -5,17 +5,14 @@ schema_version: fabric.agent/v1alpha1
 
 metadata:
   name: harbor-calculator-demo
-  description: Codex CLI code-repair example in a Harbor task environment.
+  description: Codex SDK code-repair example in a Harbor task environment.
 
 harness:
-  adapter_id: nvidia.fabric.codex.cli
+  adapter_id: nvidia.fabric.codex
   resolution: preinstalled
   settings:
-    cwd: /app
     sandbox: danger-full-access
-    skip_git_repo_check: true
-    config_overrides:
-      model_reasoning_effort: high
+    reasoning_effort: high
 
 models:
   default:

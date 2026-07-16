@@ -2,17 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 schema_version: fabric.profile/v1alpha1
-name: codex_cli
-description: Test Codex CLI file-profile resolution.
+name: codex
+description: Test Codex SDK file-profile resolution.
 
 harness:
-  adapter_id: nvidia.fabric.codex.cli
+  adapter_id: nvidia.fabric.codex
   resolution: preinstalled
   settings:
     sandbox: workspace-write
-    skip_git_repo_check: true
-    config_overrides:
-      model_reasoning_effort: high
+    reasoning_effort: high
 
 models:
   default:
@@ -27,11 +25,11 @@ mcp: null
 runtime:
   input_schema: text
   output_schema: message
-  artifacts: ./artifacts/codex-cli
+  artifacts: ./artifacts/codex
 
 environment:
   provider: local
   workspace: ./repos/my-service
-  artifacts: ./artifacts/codex-cli
+  artifacts: ./artifacts/codex
 
 telemetry: null

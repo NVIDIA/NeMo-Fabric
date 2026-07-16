@@ -8,9 +8,9 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nemo-fabric-adapters-codex-cli"
+name = "nemo-fabric-adapters-codex"
 version = "0.1.0"
-description = "Codex CLI adapter for NeMo Fabric"
+description = "Codex SDK adapter for NeMo Fabric"
 authors = [
   { name = "NVIDIA Corporation" },
 ]
@@ -26,6 +26,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "nemo-fabric-adapters-common == 0.1.0",
+  "openai-codex==0.1.0b3",
   "tomli-w~=1.2",
 ]
 
@@ -35,10 +36,15 @@ Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["nemo_fabric_adapters.codex_cli*"]
+include = ["nemo_fabric_adapters.codex*"]
 
 [tool.setuptools.data-files]
-"share/nemo-fabric/adapters/codex-cli" = ["fabric-adapter.json"]
+"share/nemo-fabric/adapters/codex" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
 nemo-fabric-adapters-common = { path = "../common", editable = true }
+
+[tool.uv]
+# The SDK pins this prerelease runtime. Constraining that transitive package
+# lets uv resolve it without enabling prereleases for unrelated dependencies.
+constraint-dependencies = ["openai-codex-cli-bin==0.137.0a4"]

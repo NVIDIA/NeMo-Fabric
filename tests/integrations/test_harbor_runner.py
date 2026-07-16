@@ -2,10 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
-import importlib.util
 import json
 import os
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -28,12 +26,9 @@ HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
 pytestmark = pytest.mark.usefixtures("requires_harbor")
 
 def load_codex_adapter():
-    path = ROOT / "adapters/codex-cli/src/nemo_fabric_adapters/codex_cli/adapter.py"
-    spec = importlib.util.spec_from_file_location("fabric_codex_adapter", path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    from nemo_fabric_adapters.codex import adapter
+
+    return adapter
 
 
 def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
@@ -256,7 +251,7 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
     ]
 
 
-def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
+def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
     adapter = load_codex_adapter()
 
     payload = {
@@ -266,8 +261,7 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
                 "harness": {
                     "settings": {
                         "sandbox": "workspace-write",
-                        "skip_git_repo_check": True,
-                        "config_overrides": {"model_reasoning_effort": "high"},
+                        "reasoning_effort": "high",
                     }
                 },
                 "models": {
@@ -286,29 +280,10 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
         "request": {"input": "Fix the calculator."},
     }
 
-    os.environ["CODEX_HOME"] = str(tmp_path)
-    profile_name = "fabric-harbor-test"
-    profile_path = tmp_path / f"{profile_name}.config.toml"
-    codex_settings = adapter.write_config_files(payload)
-    command = adapter.build_command(
-        payload,
-        codex_settings=codex_settings,
-    )
-
-    assert command == [
-        "codex",
-        "exec",
-        "--json",
-        "--sandbox",
-        "workspace-write",
-        "--profile",
-        profile_name,
-        "--model",
-        "gpt-5.4",
-        "--skip-git-repo-check",
-        "-",
-    ]
-    assert tomllib.loads(profile_path.read_text(encoding="utf-8")) == {"model_reasoning_effort": "high"}
+    assert adapter.selected_model(payload) == "gpt-5.4"
+    assert adapter.sandbox(payload) == adapter.Sandbox.workspace_write
+    assert adapter._reasoning_effort(payload) == adapter.ReasoningEffort.high
+    assert adapter.thread_config(payload, relay=None) == {}
     assert adapter.resolve_cwd(payload) == tmp_path
 
 
@@ -317,13 +292,12 @@ def test_codex_demo_uses_current_adapter_contract():
     settings = config["harness"]["settings"]
 
     assert config["schema_version"] == "fabric.agent/v1alpha1"
-    assert config["harness"]["adapter_id"] == "nvidia.fabric.codex.cli"
+    assert config["harness"]["adapter_id"] == "nvidia.fabric.codex"
     assert settings["sandbox"] == "danger-full-access"
-    assert settings["skip_git_repo_check"] is True
-    assert settings["config_overrides"]["model_reasoning_effort"] == "high"
+    assert settings["reasoning_effort"] == "high"
     dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
     assert "nemo-fabric[codex,harbor,hermes,relay,runtime]" in dockerfile
-    assert "@openai/codex@0.142.4" in dockerfile
+    assert "@openai/codex" not in dockerfile
 
 
 def test_harbor_demo_uses_complete_configs_without_profiles():

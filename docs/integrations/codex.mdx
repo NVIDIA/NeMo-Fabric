@@ -1,0 +1,125 @@
+---
+title: "Authenticate the Codex Adapter"
+description: "Configure ChatGPT or API key authentication for the NeMo Fabric Codex SDK adapter."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+# Authenticate the Codex Adapter
+
+The `nvidia.fabric.codex` adapter uses the Codex Python SDK and its pinned
+app-server runtime. Fabric does not execute `codex` for agent turns or fall back
+to the legacy Codex CLI adapter.
+
+## Select a Codex Runtime
+
+The adapter pins `openai-codex==0.1.0b3`. That SDK release installs
+`openai-codex-cli-bin==0.137.0a4` as its app-server runtime. A newer `codex`
+command on `PATH` does not replace the SDK-owned runtime.
+
+To test a newer compatible app-server explicitly, set an absolute path in
+`harness.settings.codex_bin`:
+
+```python
+config.harness.settings["codex_bin"] = "/path/to/codex"
+```
+
+Fabric passes this path to `CodexConfig.codex_bin`; it does not invoke the
+command as a CLI adapter. Pin the override in reproducible environments because
+the app-server protocol can change before a matching Python SDK is published.
+
+## Choose an Authentication Mode
+
+Codex supports the following OpenAI authentication modes for local work:
+
+| Mode | Credential Source | Recommended Use |
+| --- | --- | --- |
+| ChatGPT login | Cached Codex login under `CODEX_HOME` | Local development with an eligible ChatGPT plan |
+| API key login | API key provisioned into the Codex credential store | Usage-based or noninteractive OpenAI Platform workloads |
+
+With ChatGPT login, Fabric can run without `OPENAI_API_KEY`. With API key login,
+usage is billed through the OpenAI Platform account instead of ChatGPT plan
+credits. Refer to the
+[Codex authentication documentation](https://developers.openai.com/codex/auth/)
+for current plan availability and login commands.
+
+## Reuse a Codex Login
+
+Complete the Codex login outside Fabric. The adapter inherits `CODEX_HOME`
+(default: `~/.codex`) and the SDK reuses the cached credential. If you select a
+different credential store, use the same value for login and execution:
+
+```bash
+export CODEX_HOME=/path/to/codex-home
+codex login
+```
+
+For API key login, provision the credential store according to the current
+Codex authentication procedure:
+
+```bash
+export CODEX_HOME=/path/to/codex-home
+printenv OPENAI_API_KEY | codex login --with-api-key
+```
+
+The login command is a credential-provisioning step. Fabric's runtime path uses
+the SDK and does not invoke the command after the credential is cached. The
+adapter also forwards `OPENAI_API_KEY` and a selected model's `api_key_env`, but
+the current real-agent acceptance path validates cached Codex authentication.
+
+Treat `CODEX_HOME/auth.json` as a secret when Codex uses file-based credential
+storage. Do not commit or copy it into Fabric configuration or artifacts.
+
+## Use Authentication with Relay
+
+NeMo Relay does not replace OpenAI authentication. A Relay-enabled invocation
+starts the Relay gateway as a supervised sidecar and directs the Codex SDK's
+built-in OpenAI provider through that gateway. The SDK still obtains credentials
+from the selected Codex authentication mode.
+
+Fabric supplies Relay configuration to the SDK for only the current request. It
+does not copy the Codex credential store into Relay configuration or persist
+credentials in Relay artifacts.
+
+Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
+including, `0.7.0`. The Python package named `nemo-relay` is a separate library
+dependency and does not install the CLI. Fabric owns sidecar supervision and
+request-scoped SDK configuration. Relay owns gateway transport behavior,
+including decoding `Content-Encoding` before it constructs managed LLM events.
+There is no Fabric compression setting.
+
+The initial NeMo Relay `0.6.0` source tag cannot recover semantic fields from
+zstd-compressed Codex SDK requests. Until a later `0.6.x` release contains the
+fix, use a build that includes
+[NeMo Relay PR #452](https://github.com/NVIDIA/NeMo-Relay/pull/452). Fabric's
+opt-in Relay E2E rejects opaque request bodies and missing token usage.
+
+## Compare Phoenix Trace Modes
+
+Use native Codex OpenTelemetry when you need low-level app-server diagnostics.
+For Phoenix, send native OTLP/HTTP traces to the collector port, not the Phoenix
+web port:
+
+```python
+from examples.code_review_agent import codex_config, with_native_otel
+
+config = with_native_otel(codex_config())
+```
+
+The native configuration uses `http://localhost:4318/v1/traces`. Native Codex
+spans expose internal operations and can be high-volume; they do not provide an
+OpenInference conversation hierarchy or consistently populated prompt and
+response fields.
+
+Use Relay OpenInference for semantic Phoenix inspection:
+
+```python
+from examples.code_review_agent import codex_config, with_relay_openinference
+
+config = with_relay_openinference(codex_config())
+```
+
+Relay produces a chain root with LLM and tool children, decoded request and
+response values, and token usage. This is the recommended mode for reviewing an
+agent turn in Phoenix. Use native Codex OpenTelemetry only when the raw
+app-server trace is the required diagnostic surface.

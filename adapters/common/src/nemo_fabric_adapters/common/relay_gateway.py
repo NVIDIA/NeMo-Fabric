@@ -20,6 +20,8 @@ from typing import Any
 RELAY_HEALTH_TIMEOUT_SECONDS = 10.0
 RELAY_STOP_TIMEOUT_SECONDS = 5.0
 RELAY_VERSION_TIMEOUT_SECONDS = 5.0
+RELAY_MINIMUM_VERSION = (0, 6, 0)
+RELAY_MAXIMUM_VERSION = (0, 7, 0)
 
 
 class RelayGatewayError(RuntimeError):
@@ -35,6 +37,14 @@ class RelayGatewayLaunch:
     bind: str
     url: str
     log_path: Path
+
+
+@dataclass(frozen=True)
+class RelayCliContract:
+    """Versioned external Relay CLI contract consumed by Fabric adapters."""
+
+    version: tuple[int, int, int]
+    observability_version: int
 
 
 def resolve_relay_command(config_root: Path, value: str | Path) -> Path:
@@ -59,8 +69,8 @@ def find_available_tcp_port(host: str = "127.0.0.1") -> int:
         return int(listener.getsockname()[1])
 
 
-def relay_cli_observability_version(executable: Path) -> int:
-    """Return the observability config version accepted by a Relay CLI."""
+def relay_cli_contract(executable: Path) -> RelayCliContract:
+    """Resolve and validate the external Relay CLI contract once per invocation."""
 
     try:
         completed = subprocess.run(
@@ -78,8 +88,15 @@ def relay_cli_observability_version(executable: Path) -> int:
     match = re.search(r"\b(\d+)\.(\d+)\.(\d+)", completed.stdout)
     if completed.returncode != 0 or match is None:
         raise RelayGatewayError("NeMo Relay CLI version could not be determined")
-    major, minor, _ = (int(value) for value in match.groups())
-    return 2 if (major, minor) >= (0, 6) else 1
+    major, minor, patch = (int(value) for value in match.groups())
+    version = (major, minor, patch)
+    if not RELAY_MINIMUM_VERSION <= version < RELAY_MAXIMUM_VERSION:
+        raise RelayGatewayError(
+            "unsupported NeMo Relay CLI version "
+            f"{'.'.join(str(value) for value in version)}; "
+            "Fabric requires >=0.6.0,<0.7.0"
+        )
+    return RelayCliContract(version=version, observability_version=2)
 
 
 def wait_for_relay_gateway(

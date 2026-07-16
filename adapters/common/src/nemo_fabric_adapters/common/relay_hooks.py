@@ -7,38 +7,58 @@ from __future__ import annotations
 
 import shlex
 from pathlib import Path
-from typing import Any
-from typing import Literal
+from typing import Any, Literal
 
 
 RelayHookAgent = Literal["claude", "codex"]
 
-# NeMo Relay currently uses this union for both Claude Code and Codex. Keep the
-# snapshot centralized until Relay exposes its hook renderer as a public API.
-RELAY_HOOK_EVENTS = (
-    "SessionStart",
-    "UserPromptSubmit",
-    "UserPromptExpansion",
-    "PreToolUse",
-    "PostToolUse",
-    "PostToolUseFailure",
-    "PermissionRequest",
-    "SubagentStart",
-    "SubagentStop",
-    "Notification",
-    "Stop",
-    "PreCompact",
-    "PostCompact",
-    "SessionEnd",
-)
-RELAY_TOOL_HOOK_EVENTS = frozenset(
-    {
+RELAY_HOOK_EVENTS: dict[RelayHookAgent, tuple[str, ...]] = {
+    "claude": (
+        "SessionStart",
+        "UserPromptSubmit",
+        "UserPromptExpansion",
         "PreToolUse",
         "PostToolUse",
         "PostToolUseFailure",
         "PermissionRequest",
-    }
-)
+        "SubagentStart",
+        "SubagentStop",
+        "Notification",
+        "Stop",
+        "PreCompact",
+        "PostCompact",
+        "SessionEnd",
+    ),
+    "codex": (
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PostToolUse",
+        "PermissionRequest",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+        "PreCompact",
+        "PostCompact",
+    ),
+}
+RELAY_TOOL_HOOK_EVENTS: dict[RelayHookAgent, frozenset[str]] = {
+    "claude": frozenset(
+        {
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionRequest",
+        }
+    ),
+    "codex": frozenset(
+        {
+            "PreToolUse",
+            "PostToolUse",
+            "PermissionRequest",
+        }
+    ),
+}
 
 
 def render_relay_hooks(
@@ -52,7 +72,7 @@ def render_relay_hooks(
 
     command = f"{shlex.quote(str(executable))} hook-forward {agent}"
     hooks: dict[str, list[dict[str, Any]]] = {}
-    for event in RELAY_HOOK_EVENTS:
+    for event in RELAY_HOOK_EVENTS[agent]:
         group: dict[str, Any] = {
             "hooks": [
                 {
@@ -62,7 +82,7 @@ def render_relay_hooks(
                 }
             ]
         }
-        if event in RELAY_TOOL_HOOK_EVENTS:
+        if event in RELAY_TOOL_HOOK_EVENTS[agent]:
             group["matcher"] = "*"
         hooks[event] = [group]
     return {"hooks": hooks}
