@@ -7,25 +7,54 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib
 import json
+import sys
 from pathlib import Path
-from typing import Any
 from typing import cast
-
-import yaml
 
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RunResult
 from nemo_fabric.integrations.harbor.models import HarborRunSpec
+from nemo_fabric.integrations.harbor.models import parse_config_factory_reference
 from nemo_fabric.integrations.harbor.telemetry import publish_telemetry_evidence
 
 
-def load_config(path: Path) -> FabricConfig:
-    """Load one complete Fabric config from the task environment."""
+def load_config_factory(reference: str, base_dir: Path) -> FabricConfig:
+    """Import and invoke one typed FabricConfig factory."""
 
-    return FabricConfig.model_validate(load_yaml(path))
+    module_name, callable_name = parse_config_factory_reference(reference)
+
+    resolved_base_dir = base_dir.resolve()
+    if not resolved_base_dir.is_dir():
+        raise FileNotFoundError(f"config_base_dir does not exist: {resolved_base_dir}")
+
+    importlib.invalidate_caches()
+    search_path = str(resolved_base_dir)
+    sys.path.insert(0, search_path)
+    try:
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as error:
+            raise RuntimeError(f"config factory failed to import: {reference}") from error
+
+        factory = getattr(module, callable_name, None)
+        if not callable(factory):
+            raise TypeError(f"config factory is not callable: {reference}")
+        try:
+            config = factory()
+        except Exception as error:
+            raise RuntimeError(f"config factory failed: {reference}") from error
+    finally:
+        sys.path.remove(search_path)
+
+    if not isinstance(config, FabricConfig):
+        raise TypeError(
+            f"config factory must return FabricConfig, got {type(config).__name__}: {reference}"
+        )
+    return config
 
 
 def compose_config(base: FabricConfig, spec: HarborRunSpec) -> FabricConfig:
@@ -75,19 +104,12 @@ def model_provider(model_name: str) -> str:
     return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
 
 
-def load_yaml(path: Path) -> dict[str, Any]:
-    value = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"expected a YAML object in {path}")
-    return value
-
-
 async def run(spec: HarborRunSpec) -> RunResult:
-    base = load_config(spec.config_path)
+    base = load_config_factory(spec.config_factory, spec.config_base_dir)
     config = compose_config(base, spec)
     result = await Fabric().run(
         config,
-        base_dir=spec.config_path.parent,
+        base_dir=spec.config_base_dir,
         request=spec.request,
     )
     publish_telemetry_evidence(

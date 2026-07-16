@@ -16,6 +16,9 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("requires_harbor")
 
+CONFIG_FACTORY = "harbor_demo_config:build_hermes"
+CONFIG_BASE_DIR = "/opt/fabric-demo"
+
 try:
     from harbor.models.agent.context import AgentContext
     from harbor.models.task.config import MCPServerConfig
@@ -109,7 +112,8 @@ async def test_harbor_integration(tmp_path: Path):
 
     agent = FabricAgent(
         logs_dir=tmp_path,
-        fabric_config_path="/opt/fabric-demo/agent.yaml",
+        fabric_config_factory=CONFIG_FACTORY,
+        fabric_config_base_dir=CONFIG_BASE_DIR,
         model_name="nvidia/test-model",
         skills_dir="/opt/fabric-demo/skills",
         mcp_servers=[
@@ -137,7 +141,8 @@ async def test_harbor_integration(tmp_path: Path):
     assert request["input"] == "fix the bug"
     assert request["context"] == {"source": "harbor"}
     assert request["request_id"].startswith("request-")
-    assert spec["config_path"] == "/opt/fabric-demo/agent.yaml"
+    assert spec["config_factory"] == CONFIG_FACTORY
+    assert spec["config_base_dir"] == CONFIG_BASE_DIR
     assert spec["model_name"] == "nvidia/test-model"
     assert spec["skills_dir"] == "/opt/fabric-demo/skills"
     assert spec["mcp_servers"] == [
@@ -171,7 +176,8 @@ async def test_harbor_integration(tmp_path: Path):
 async def test_harbor_exchange_paths_are_unique_per_run(tmp_path: Path):
     agent = FabricAgent(
         logs_dir=tmp_path,
-        fabric_config_path="/opt/fabric-demo/agent.yaml",
+        fabric_config_factory=CONFIG_FACTORY,
+        fabric_config_base_dir=CONFIG_BASE_DIR,
     )
     environment = FakeHarborEnvironment()
 
@@ -202,10 +208,13 @@ def test_harbor_rejects_invalid_downloaded_result(tmp_path: Path):
 async def test_harbor_uploads_a_portable_config_bundle(tmp_path: Path):
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    (bundle / "agent.yaml").write_text("harness: {}", encoding="utf-8")
+    (bundle / "harbor_config.py").write_text(
+        "def build_config(): ...\n",
+        encoding="utf-8",
+    )
     agent = FabricAgent(
         logs_dir=tmp_path / "logs",
-        fabric_config_path="agent.yaml",
+        fabric_config_factory="harbor_config:build_config",
         fabric_config_bundle=bundle,
     )
     environment = FakeHarborEnvironment()
@@ -213,16 +222,21 @@ async def test_harbor_uploads_a_portable_config_bundle(tmp_path: Path):
     await agent.setup(environment)  # type: ignore[arg-type]
 
     assert environment.directory_uploads == [(bundle, "/tmp/nemo-fabric-config")]
-    assert agent._build_spec("fix it").config_path == Path("/tmp/nemo-fabric-config/agent.yaml")
+    spec = agent._build_spec("fix it")
+    assert spec.config_factory == "harbor_config:build_config"
+    assert spec.config_base_dir == Path("/tmp/nemo-fabric-config")
 
 
 async def test_harbor_uploads_bundle_before_package_install(tmp_path: Path):
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    (bundle / "agent.yaml").write_text("harness: {}", encoding="utf-8")
+    (bundle / "harbor_config.py").write_text(
+        "def build_config(): ...\n",
+        encoding="utf-8",
+    )
     agent = FabricAgent(
         logs_dir=tmp_path / "logs",
-        fabric_config_path="agent.yaml",
+        fabric_config_factory="harbor_config:build_config",
         fabric_config_bundle=bundle,
         fabric_package="/tmp/nemo-fabric-config/wheelhouse/nemo_fabric.whl",
     )
@@ -239,37 +253,50 @@ async def test_harbor_uploads_bundle_before_package_install(tmp_path: Path):
     assert upload_index < install_index
 
 
-def test_harbor_config_bundle_rejects_unsafe_entrypoints(tmp_path: Path):
+def test_harbor_config_requires_an_explicit_base_dir(tmp_path: Path):
+    with pytest.raises(ValueError, match="fabric_config_base_dir is required"):
+        FabricAgent(
+            logs_dir=tmp_path / "logs",
+            fabric_config_factory="harbor_config:build_config",
+        )
+
+
+def test_harbor_config_rejects_an_invalid_factory_reference(tmp_path: Path):
+    with pytest.raises(ValueError, match="module:callable"):
+        FabricAgent(
+            logs_dir=tmp_path / "logs",
+            fabric_config_factory="not-a-factory-reference",
+            fabric_config_base_dir="/opt/fabric",
+        )
+
+
+def test_harbor_config_bundle_rejects_an_explicit_base_dir(tmp_path: Path):
     bundle = tmp_path / "bundle"
     bundle.mkdir()
 
-    with pytest.raises(ValueError, match="must be relative"):
+    with pytest.raises(ValueError, match="derived from fabric_config_target"):
         FabricAgent(
             logs_dir=tmp_path / "logs",
-            fabric_config_path="../agent.yaml",
+            fabric_config_factory="harbor_config:build_config",
+            fabric_config_base_dir="/opt/fabric",
             fabric_config_bundle=bundle,
         )
 
 
-def test_harbor_config_bundle_rejects_escaping_symlink(tmp_path: Path):
-    bundle = tmp_path / "bundle"
-    bundle.mkdir()
-    outside = tmp_path / "outside.yaml"
-    outside.write_text("harness: {}", encoding="utf-8")
-    (bundle / "agent.yaml").symlink_to(outside)
-
-    with pytest.raises(ValueError, match="symlink must stay within"):
+def test_harbor_config_rejects_a_relative_base_dir(tmp_path: Path):
+    with pytest.raises(ValueError, match="must be an absolute"):
         FabricAgent(
             logs_dir=tmp_path / "logs",
-            fabric_config_path="agent.yaml",
-            fabric_config_bundle=bundle,
+            fabric_config_factory="harbor_config:build_config",
+            fabric_config_base_dir="relative/config",
         )
 
 
 def test_harbor_propagates_runtime_identity(tmp_path: Path):
     agent = FabricAgent(
         logs_dir=tmp_path,
-        fabric_config_path="/opt/fabric/agent.yaml",
+        fabric_config_factory=CONFIG_FACTORY,
+        fabric_config_base_dir=CONFIG_BASE_DIR,
     )
     agent.session_id = "trial__agent"
     agent.context_id = uuid.UUID("594025f3-7d65-4655-8576-4bee95002eae")
@@ -287,7 +314,8 @@ def test_harbor_propagates_runtime_identity(tmp_path: Path):
 async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
     agent = FabricAgent(
         logs_dir=tmp_path,
-        fabric_config_path="/opt/fabric/agent.yaml",
+        fabric_config_factory=CONFIG_FACTORY,
+        fabric_config_base_dir=CONFIG_BASE_DIR,
         fabric_package="nemo-fabric[codex,harbor,runtime]==0.1.0",
         extra_env={
             "NVIDIA_API_KEY": "test-key",
@@ -322,7 +350,8 @@ async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: 
     with pytest.warns(DeprecationWarning, match="fabric_install_command"):
         agent = FabricAgent(
             logs_dir=tmp_path,
-            fabric_config_path="/opt/fabric/agent.yaml",
+            fabric_config_factory=CONFIG_FACTORY,
+            fabric_config_base_dir=CONFIG_BASE_DIR,
             fabric_python="/tmp/custom-fabric/bin/python",
             fabric_install_command="install-fabric-for-test",
             extra_env={"NVIDIA_API_KEY": "test-key", "ADAPTER_PYTHON": "/wrong/python"},

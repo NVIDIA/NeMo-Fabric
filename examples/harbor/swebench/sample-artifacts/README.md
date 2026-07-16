@@ -3,11 +3,11 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Qualified Relay Sample
+# Relay Sample Artifacts
 
 This bundle comes from a successful Harbor run of
-`swe-bench/django__django-13741` on July 14, 2026. Fabric reported `succeeded`,
-Harbor's verifier returned reward `1.0`, and Relay emitted both ATOF and ATIF.
+`swe-bench/django__django-13741`. Fabric reported `succeeded`, Harbor's verifier
+returned reward `1.0`, and Relay emitted both ATOF and ATIF.
 
 The [`hermes-relay/`](hermes-relay/) directory contains:
 

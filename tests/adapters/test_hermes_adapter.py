@@ -60,7 +60,11 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             "native": {
                 "skill_paths": ["skills/review"],
                 "mcp_servers": {
-                    "github": {"transport": "stdio", "url": "github-mcp --stdio"},
+                    "github": {
+                        "transport": "stdio",
+                        "url": "github-mcp",
+                        "args": ["--stdio"],
+                    },
                     "memory": {"transport": "sse", "url": "${MCP_URL}"},
                 },
             }
@@ -112,8 +116,8 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         "mcp_servers": {
             "github": {
                 "enabled": True,
-                "url": "github-mcp --stdio",
-                "transport": "stdio",
+                "command": "github-mcp",
+                "args": ["--stdio"],
             },
             "memory": {
                 "enabled": True,
@@ -203,7 +207,8 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
                 "mcp_servers": {
                     "github": {
                         "transport": "stdio",
-                        "url": "github-mcp --stdio",
+                        "url": "github-mcp",
+                        "args": ["--stdio"],
                         "exposure": "harness_native",
                     },
                     "memory": {
@@ -250,8 +255,8 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     assert config["mcp_servers"] == {
         "github": {
             "enabled": True,
-            "url": "github-mcp --stdio",
-            "transport": "stdio",
+            "command": "github-mcp",
+            "args": ["--stdio"],
         },
         "memory": {
             "enabled": True,
@@ -289,8 +294,8 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     ("server", "expected"),
     [
         (
-            {"transport": "stdio", "url": "server --stdio"},
-            {"enabled": True, "url": "server --stdio", "transport": "stdio"},
+            {"transport": "stdio", "url": "python3", "args": ["server.py"]},
+            {"enabled": True, "command": "python3", "args": ["server.py"]},
         ),
         (
             {"transport": "sse", "url": "http://localhost:9000/sse"},
@@ -303,7 +308,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     ],
 )
 def test_hermes_mcp_server_config(
-    server: dict[str, str],
+    server: dict[str, object],
     expected: dict[str, object],
 ):
     assert adapter.hermes_mcp_server_config(server) == expected

@@ -18,6 +18,7 @@ from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
 from nemo_fabric.integrations.harbor.models import HarborRunSpec
+from nemo_fabric.integrations.harbor.models import parse_config_factory_reference
 
 INSTALL_ENV_NAMES = {
     "HTTP_PROXY",
@@ -75,7 +76,8 @@ else:
         def __init__(
             self,
             logs_dir: Path,
-            fabric_config_path: str,
+            fabric_config_factory: str,
+            fabric_config_base_dir: str | None = None,
             fabric_config_bundle: Path | None = None,
             fabric_config_target: str = "/tmp/nemo-fabric-config",
             fabric_python: str = "python3",
@@ -93,7 +95,9 @@ else:
             # while newer BaseAgent versions intentionally ignore unknown kwargs.
             # Retain the mapping here for both old and new Harbor releases.
             self._extra_env = dict(extra_env or {})
-            self.fabric_config_path = fabric_config_path
+            parse_config_factory_reference(fabric_config_factory)
+            self.fabric_config_factory = fabric_config_factory
+            self.fabric_config_base_dir = fabric_config_base_dir
             self.fabric_config_bundle = fabric_config_bundle
             self.fabric_config_target = fabric_config_target
             self.fabric_python = fabric_python
@@ -110,7 +114,7 @@ else:
                     DeprecationWarning,
                     stacklevel=2,
                 )
-            self._environment_config_path = self._resolve_environment_config_path()
+            self._environment_config_base_dir = self._resolve_environment_config_base_dir()
 
         @staticmethod
         def name() -> str:
@@ -201,7 +205,8 @@ else:
 
         def _build_spec(self, instruction: str) -> HarborRunSpec:
             return HarborRunSpec(
-                config_path=self._environment_config_path,
+                config_factory=self.fabric_config_factory,
+                config_base_dir=self._environment_config_base_dir,
                 request=self._build_request(instruction),
                 model_name=self.model_name,
                 skills_dir=self.skills_dir,
@@ -210,25 +215,35 @@ else:
                 ),
             )
 
-        def _resolve_environment_config_path(self) -> str:
-            if self.fabric_config_bundle is None:
-                return self.fabric_config_path
+        def _resolve_environment_config_base_dir(self) -> str:
+            if self.fabric_config_bundle is not None:
+                bundle = Path(self.fabric_config_bundle)
+                if not bundle.is_dir():
+                    raise ValueError(
+                        f"fabric_config_bundle must be an existing directory: {bundle}"
+                    )
+                target = PurePosixPath(self.fabric_config_target)
+                if not target.is_absolute() or ".." in target.parts:
+                    raise ValueError(
+                        "fabric_config_target must be an absolute task-environment path"
+                    )
+                if self.fabric_config_base_dir is not None:
+                    raise ValueError(
+                        "fabric_config_base_dir is derived from fabric_config_target "
+                        "when fabric_config_bundle is set"
+                    )
+                return str(target)
 
-            bundle = Path(self.fabric_config_bundle)
-            if not bundle.is_dir():
-                raise ValueError(f"fabric_config_bundle must be an existing directory: {bundle}")
-            entrypoint = PurePosixPath(self.fabric_config_path)
-            target = PurePosixPath(self.fabric_config_target)
-            if not target.is_absolute() or ".." in target.parts:
-                raise ValueError("fabric_config_target must be an absolute task-environment path")
-            if entrypoint.is_absolute() or ".." in entrypoint.parts:
-                raise ValueError("fabric_config_path must be relative and stay within fabric_config_bundle")
-            config_source = bundle / Path(*entrypoint.parts)
-            if not config_source.is_file():
-                raise ValueError(f"fabric config does not exist in bundle: {self.fabric_config_path}")
-            if not config_source.resolve().is_relative_to(bundle.resolve()):
-                raise ValueError("fabric config symlink must stay within its bundle")
-            return str(target / entrypoint)
+            if self.fabric_config_base_dir is None:
+                raise ValueError(
+                    "fabric_config_base_dir is required when fabric_config_bundle is not set"
+                )
+            base_dir = PurePosixPath(self.fabric_config_base_dir)
+            if not base_dir.is_absolute() or ".." in base_dir.parts:
+                raise ValueError(
+                    "fabric_config_base_dir must be an absolute task-environment path"
+                )
+            return str(base_dir)
 
         def populate_context_post_run(self, context: AgentContext) -> None:
             """Populate Harbor token and cost fields from canonical ATIF."""
