@@ -155,7 +155,7 @@ mismatched = []
 checked = 0
 
 for package in metadata["packages"]:
-    if package["id"] not in workspace_members or not package["name"].startswith("fabric-"):
+    if package["id"] not in workspace_members:
         continue
     checked += 1
     if package["version"] != version:
