@@ -43,6 +43,14 @@ def codex_payload_fixture(tmp_path):
                 "runtime": {},
             },
         },
+        "model_binding": {
+            "role": "default",
+            "provider": "openai",
+            "model_id": "gpt-5.4",
+            "wire_protocol": "openai-responses",
+            "endpoint_ref": {"kind": "provider_default"},
+            "credential_ref": {"kind": "harness_managed"},
+        },
         "runtime_context": {
             "runtime_id": "runtime-1",
             "invocation_id": "invocation-1",
@@ -293,15 +301,22 @@ def test_incomplete_sdk_turn_is_failed_without_persisting_thread(
     assert not adapter.runtime_state_path(codex_payload, "runtime-1").exists()
 
 
-def test_selected_model_rejects_unsupported_provider(codex_payload, mock_codex):
-    model = codex_payload["effective_config"]["config"]["models"]["default"]
-    model["provider"] = "nvidia"
+def test_selected_model_requires_resolved_binding(codex_payload, mock_codex):
+    codex_payload.pop("model_binding")
 
     output = adapter.run(codex_payload)
 
     assert output["error"]["code"] == "codex_invalid_configuration"
-    assert "provider must be openai" in output["error"]["message"]
+    assert "resolved model binding" in output["error"]["message"]
     mock_codex.assert_not_called()
+
+
+def test_selected_model_does_not_reinterpret_raw_model_config(codex_payload):
+    model = codex_payload["effective_config"]["config"]["models"]["default"]
+    model["provider"] = "nvidia"
+    model["model"] = "nvidia/different-model"
+
+    assert adapter.selected_model(codex_payload) == "gpt-5.4"
 
 
 def test_resume_rejects_changed_sdk_thread_identity(
@@ -577,6 +592,15 @@ def test_descriptor_has_no_codex_binary_requirement():
         "module": "nemo_fabric_adapters.codex.adapter",
         "callable": "run",
     }
+    assert descriptor["models"] == {
+        "roles": ["default"],
+        "protocols": {
+            "openai-responses": {
+                "providers": ["openai"],
+                "custom_endpoints": False,
+            }
+        },
+    }
     assert "requirements" not in descriptor
 
 
@@ -621,6 +645,22 @@ def test_environment_preserves_runtime_telemetry_env(codex_payload):
     assert child["FABRIC_RELAY_ENABLED"] == "true"
     assert child["FABRIC_RELAY_CONFIG_PATH"] == "/tmp/relay.json"
     assert child["CODEX_EXPLICIT"] == "configured"
+
+
+def test_environment_maps_resolved_credential_to_codex_api_key(
+    codex_payload, monkeypatch
+):
+    codex_payload["model_binding"]["credential_ref"] = {
+        "kind": "environment",
+        "name": "FABRIC_OPENAI_KEY",
+    }
+    monkeypatch.setenv("FABRIC_OPENAI_KEY", "resolved-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "unselected-secret")
+
+    child = adapter.child_environment(codex_payload)
+
+    assert child["OPENAI_API_KEY"] == "resolved-secret"
+    assert child["FABRIC_OPENAI_KEY"] == ""
 
 
 @pytest.mark.parametrize(

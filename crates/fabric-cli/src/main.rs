@@ -16,8 +16,8 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use nemo_fabric_core::{
-    AdapterKind, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle, SchemaName, doctor_plan,
-    generate_all_schemas, generate_schema_json, invoke_runtime,
+    AdapterKind, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle, SchemaName,
+    doctor_effective_config, generate_all_schemas, generate_schema_json, invoke_runtime,
     resolve_effective_config_with_profiles, resolve_run_plan_with_profiles, run_plan,
     start_runtime, stop_runtime, validate_agent_directory, write_schema_snapshots,
 };
@@ -136,8 +136,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", serde_json::to_string_pretty(&plan)?);
         }
         Some(Command::Doctor { path, profile }) => {
-            let plan = resolve_run_plan_with_profiles(path, &profile)?;
-            let report = doctor_plan(&plan);
+            let effective_config = resolve_effective_config_with_profiles(path, &profile)?;
+            let report = doctor_effective_config(effective_config)?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Some(Command::Chat {

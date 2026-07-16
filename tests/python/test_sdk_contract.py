@@ -30,6 +30,8 @@ from nemo_fabric import FabricStateError
 from nemo_fabric import HarnessConfig
 from nemo_fabric import McpConfig
 from nemo_fabric import MetadataConfig
+from nemo_fabric import ModelCredentialRef
+from nemo_fabric import ModelEndpointRef
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
 from nemo_fabric import RelayComponentConfig
@@ -39,6 +41,7 @@ from nemo_fabric import RunOutput
 from nemo_fabric import RunPlan
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
+from nemo_fabric import ResolvedModelBinding
 from nemo_fabric import Runtime
 from nemo_fabric import RuntimeCapabilities
 from nemo_fabric import RuntimeConfig
@@ -405,6 +408,21 @@ def test_inspection_models_are_typed_read_only_mappings():
                     "future": "value",
                 }
             },
+            "model_binding": {
+                "role": "default",
+                "provider": "anthropic",
+                "model_id": "claude-sonnet-4-5",
+                "wire_protocol": "anthropic-messages",
+                "endpoint_ref": {
+                    "kind": "configured",
+                    "url": "https://models.example.test/anthropic",
+                },
+                "credential_ref": {
+                    "kind": "environment",
+                    "name": "NVIDIA_API_KEY",
+                },
+                "capabilities": ["tool_use"],
+            },
             "capabilities": {
                 "service": False,
                 "streaming": False,
@@ -417,6 +435,15 @@ def test_inspection_models_are_typed_read_only_mappings():
 
     assert isinstance(plan.effective_config, EffectiveConfig)
     assert isinstance(plan.adapter, AdapterInfo)
+    assert isinstance(plan.model_binding, ResolvedModelBinding)
+    assert isinstance(plan.model_binding.endpoint_ref, ModelEndpointRef)
+    assert isinstance(plan.model_binding.credential_ref, ModelCredentialRef)
+    assert plan.model_binding.provider == "anthropic"
+    assert plan.model_binding.endpoint_ref.url == (
+        "https://models.example.test/anthropic"
+    )
+    assert plan.model_binding.credential_ref.name == "NVIDIA_API_KEY"
+    assert plan.model_binding.capabilities == ("tool_use",)
     assert isinstance(plan.capabilities, RuntimeCapabilities)
     assert plan.profiles == ("runtime", "telemetry")
     assert plan.adapter.harness == "hermes"
@@ -428,6 +455,49 @@ def test_inspection_models_are_typed_read_only_mappings():
     assert plan.to_mapping() == resolved
     with pytest.raises(TypeError):
         plan["agent_name"] = "mutated"  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (
+            ModelCredentialRef,
+            {
+                "kind": "environment",
+                "name": "PRIVATE_CLOUD_API_KEY",
+                "value": "must-not-be-accepted",
+            },
+        ),
+        (
+            ModelEndpointRef,
+            {
+                "kind": "configured",
+                "url": "https://models.example.test/anthropic",
+                "headers": {"authorization": "must-not-be-accepted"},
+            },
+        ),
+        (
+            ResolvedModelBinding,
+            {
+                "role": "default",
+                "provider": "private-cloud",
+                "model_id": "claude-sonnet-4-5",
+                "wire_protocol": "anthropic-messages",
+                "endpoint_ref": {"kind": "provider_default"},
+                "credential_ref": {"kind": "harness_managed"},
+                "credential_value": "must-not-be-accepted",
+            },
+        ),
+    ],
+)
+def test_model_binding_types_reject_unknown_secret_fields(
+    model: type[ModelCredentialRef]
+    | type[ModelEndpointRef]
+    | type[ResolvedModelBinding],
+    payload: dict[str, Any],
+) -> None:
+    with pytest.raises(FabricConfigError, match="unknown fields"):
+        model.from_mapping(payload)
 
 
 def test_runtime_handle_distinguishes_contract_and_extension_fields():

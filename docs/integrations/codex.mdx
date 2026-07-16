@@ -64,8 +64,16 @@ printenv OPENAI_API_KEY | codex login --with-api-key
 
 The login command is a credential-provisioning step. Fabric's runtime path uses
 the SDK and does not invoke the command after the credential is cached. The
-adapter also forwards `OPENAI_API_KEY` and a selected model's `api_key_env`, but
-the current real-agent acceptance path validates cached Codex authentication.
+adapter also forwards `OPENAI_API_KEY`. If `models.default.api_key_env` names a
+different source variable, Fabric records only that name in the resolved model
+binding and the adapter maps its runtime value to `OPENAI_API_KEY`. The current
+real-agent acceptance path validates cached Codex authentication.
+
+Codex accepts only the descriptor-declared `openai` provider over the
+`openai-responses` protocol. Fabric rejects custom providers, protocols, or
+model endpoint URLs during planning, before the SDK app-server starts. Relay is
+a request-scoped transport redirect for that built-in provider, not a custom
+model provider.
 
 Treat `CODEX_HOME/auth.json` as a secret when Codex uses file-based credential
 storage. Do not commit or copy it into Fabric configuration or artifacts.

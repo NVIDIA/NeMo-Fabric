@@ -153,6 +153,9 @@ pub struct AdapterDescriptor {
     /// Fabric config areas this adapter consumes or generates.
     #[serde(default)]
     pub config: AdapterConfigSupport,
+    /// Model roles, wire protocols, and providers accepted by this adapter.
+    #[serde(default, skip_serializing_if = "AdapterModelSupport::is_empty")]
+    pub models: AdapterModelSupport,
     /// Telemetry support declared by this adapter.
     #[serde(default)]
     pub telemetry: AdapterTelemetrySupport,
@@ -369,6 +372,43 @@ pub struct AdapterConfigSupport {
     pub extensions: BTreeMap<String, Value>,
 }
 
+/// Model compatibility declared by an adapter.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterModelSupport {
+    /// Normalized model roles the adapter can consume.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub roles: BTreeSet<String>,
+    /// Wire protocols implemented by the adapter.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub protocols: BTreeMap<String, AdapterModelProtocolSupport>,
+    /// Additive model-support fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+impl AdapterModelSupport {
+    fn is_empty(&self) -> bool {
+        self.roles.is_empty() && self.protocols.is_empty() && self.extensions.is_empty()
+    }
+}
+
+/// Compatibility for one adapter-supported model wire protocol.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterModelProtocolSupport {
+    /// Providers with a harness-native endpoint for this protocol.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub providers: BTreeSet<String>,
+    /// Whether an explicit endpoint may supply another compatible provider.
+    #[serde(default)]
+    pub custom_endpoints: bool,
+    /// Model capabilities supported through this protocol.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub capabilities: BTreeSet<String>,
+    /// Additive protocol-support fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
 /// Adapter telemetry support.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterTelemetrySupport {
@@ -507,18 +547,74 @@ pub struct ModelConfig {
     pub provider: String,
     /// Provider model identifier.
     pub model: String,
+    /// Optional wire protocol required by the selected endpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
+    /// Optional provider endpoint URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
     /// Optional temperature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
     /// Optional environment variable containing an API key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key_env: Option<String>,
+    /// Capabilities required from the selected adapter model path.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub capabilities: BTreeSet<String>,
     /// Provider-specific settings.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub settings: serde_json::Map<String, Value>,
     /// Additive normalized model fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+/// Endpoint selected for a resolved model binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ModelEndpointRef {
+    /// Use the selected provider's harness-native endpoint.
+    ProviderDefault,
+    /// Use an explicitly configured protocol-compatible endpoint.
+    Configured {
+        /// Endpoint URL. Credential values must never be embedded in this value.
+        url: String,
+    },
+}
+
+/// Credential source selected for a resolved model binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ModelCredentialRef {
+    /// Let the harness use its native login or workload-identity behavior.
+    HarnessManaged,
+    /// Read a credential from the named environment variable at invocation time.
+    Environment {
+        /// Environment variable name. The credential value is never planned or serialized.
+        name: String,
+    },
+}
+
+/// Immutable, secret-free model selection produced during planning.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedModelBinding {
+    /// Configured model role or alias.
+    pub role: String,
+    /// Normalized provider name.
+    pub provider: String,
+    /// Provider-native model identifier.
+    pub model_id: String,
+    /// Request protocol required by the adapter and endpoint.
+    pub wire_protocol: String,
+    /// Planned endpoint reference.
+    pub endpoint_ref: ModelEndpointRef,
+    /// Planned credential reference.
+    pub credential_ref: ModelCredentialRef,
+    /// Capabilities required by this model selection.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub capabilities: BTreeSet<String>,
 }
 
 /// Runtime input/output contract.
@@ -1314,6 +1410,7 @@ pub fn resolve_run_plan_from_effective_config(
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
+    let model_binding = resolve_model_binding(&config, descriptor)?;
     let resolution = resolve_resolution(&config, descriptor)?;
     let environment_plan = resolve_environment_plan(&config, &config_root);
     validate_control_location(descriptor, environment_plan.as_ref())?;
@@ -1325,6 +1422,7 @@ pub fn resolve_run_plan_from_effective_config(
         agent_name: effective_config.agent_name.clone(),
         profiles: effective_config.profiles.clone(),
         adapter_descriptor,
+        model_binding,
         resolution,
         environment_plan,
         capability_plan,
@@ -1489,6 +1587,69 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     if descriptor.harness.trim().is_empty() {
         return invalid_adapter_descriptor(path, "harness must not be empty");
     }
+    validate_adapter_model_support_shape(descriptor, path)?;
+    Ok(())
+}
+
+fn validate_adapter_model_support_shape(descriptor: &AdapterDescriptor, path: &Path) -> Result<()> {
+    let support = &descriptor.models;
+    if support.is_empty() {
+        return Ok(());
+    }
+    if support.roles.is_empty() {
+        return invalid_adapter_descriptor(path, "models.roles must not be empty");
+    }
+    if support.protocols.is_empty() {
+        return invalid_adapter_descriptor(path, "models.protocols must not be empty");
+    }
+    if let Some(role) = support
+        .roles
+        .iter()
+        .find(|role| role.trim().is_empty() || role.trim() != role.as_str())
+    {
+        return invalid_adapter_descriptor(
+            path,
+            format!("models.roles contains invalid role `{role}`"),
+        );
+    }
+    for (protocol, protocol_support) in &support.protocols {
+        if protocol.trim().is_empty() || protocol.trim() != protocol {
+            return invalid_adapter_descriptor(
+                path,
+                format!("models.protocols contains invalid protocol `{protocol}`"),
+            );
+        }
+        if let Some(provider) = protocol_support.providers.iter().find(|provider| {
+            provider.trim().is_empty()
+                || provider.trim() != provider.as_str()
+                || provider.to_ascii_lowercase() != **provider
+        }) {
+            return invalid_adapter_descriptor(
+                path,
+                format!(
+                    "models.protocols.{protocol}.providers contains invalid provider `{provider}`"
+                ),
+            );
+        }
+        if let Some(capability) = protocol_support.capabilities.iter().find(|capability| {
+            capability.trim().is_empty() || capability.trim() != capability.as_str()
+        }) {
+            return invalid_adapter_descriptor(
+                path,
+                format!(
+                    "models.protocols.{protocol}.capabilities contains invalid capability `{capability}`"
+                ),
+            );
+        }
+        if protocol_support.providers.is_empty() && !protocol_support.custom_endpoints {
+            return invalid_adapter_descriptor(
+                path,
+                format!(
+                    "models.protocols.{protocol} must declare a provider or support custom endpoints"
+                ),
+            );
+        }
+    }
     Ok(())
 }
 
@@ -1504,6 +1665,253 @@ fn validate_control_location(
     _environment_plan: Option<&EnvironmentPlan>,
 ) -> Result<()> {
     Ok(())
+}
+
+fn resolve_model_binding(
+    config: &FabricConfig,
+    adapter_descriptor: Option<&AdapterDescriptor>,
+) -> Result<Option<ResolvedModelBinding>> {
+    let Some(descriptor) = adapter_descriptor else {
+        return Ok(None);
+    };
+    if descriptor.models.is_empty() || config.models.is_empty() {
+        return Ok(None);
+    }
+
+    let configured_roles = descriptor
+        .models
+        .roles
+        .iter()
+        .filter(|role| config.models.contains_key(*role))
+        .cloned()
+        .collect::<Vec<_>>();
+    let role = match configured_roles.as_slice() {
+        [role] => role.clone(),
+        [] => {
+            let expected = descriptor
+                .models
+                .roles
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(model_compatibility_error(
+                descriptor,
+                "default",
+                None,
+                None,
+                format!(
+                    "no configured model matches an accepted role; expected one of [{expected}]"
+                ),
+            ));
+        }
+        roles => {
+            return Err(model_compatibility_error(
+                descriptor,
+                &roles.join(","),
+                None,
+                None,
+                "multiple accepted model roles are configured; model selection is ambiguous",
+            ));
+        }
+    };
+    let model = &config.models[&role];
+    let provider = model.provider.trim().to_ascii_lowercase();
+    if provider.is_empty() {
+        return Err(model_compatibility_error(
+            descriptor,
+            &role,
+            None,
+            model.protocol.clone(),
+            "provider must be a non-empty string",
+        ));
+    }
+    let base_url = model
+        .base_url
+        .as_deref()
+        .map(validate_model_base_url)
+        .transpose()
+        .map_err(|reason| {
+            model_compatibility_error(
+                descriptor,
+                &role,
+                Some(&provider),
+                model.protocol.clone(),
+                reason,
+            )
+        })?;
+
+    let (wire_protocol, protocol_support) = if let Some(protocol) = model.protocol.as_deref() {
+        let protocol = protocol.trim();
+        let Some(support) = descriptor.models.protocols.get(protocol) else {
+            return Err(model_compatibility_error(
+                descriptor,
+                &role,
+                Some(&provider),
+                Some(protocol.to_string()),
+                "wire protocol is not supported by the adapter",
+            ));
+        };
+        (protocol.to_string(), support)
+    } else {
+        let candidates = descriptor
+            .models
+            .protocols
+            .iter()
+            .filter(|(_, support)| {
+                support.providers.contains(&provider)
+                    || (base_url.is_some() && support.custom_endpoints)
+            })
+            .collect::<Vec<_>>();
+        match candidates.as_slice() {
+            [(protocol, support)] => ((*protocol).clone(), *support),
+            [] => {
+                return Err(model_compatibility_error(
+                    descriptor,
+                    &role,
+                    Some(&provider),
+                    None,
+                    "provider is not supported and no compatible custom endpoint was configured",
+                ));
+            }
+            _ => {
+                return Err(model_compatibility_error(
+                    descriptor,
+                    &role,
+                    Some(&provider),
+                    None,
+                    "multiple wire protocols are compatible; models.<role>.protocol is required",
+                ));
+            }
+        }
+    };
+
+    let native_provider = protocol_support.providers.contains(&provider);
+    if !native_provider && base_url.is_none() {
+        return Err(model_compatibility_error(
+            descriptor,
+            &role,
+            Some(&provider),
+            Some(wire_protocol.clone()),
+            "provider has no harness-native endpoint; models.<role>.base_url is required",
+        ));
+    }
+    if base_url.is_some() && !protocol_support.custom_endpoints {
+        return Err(model_compatibility_error(
+            descriptor,
+            &role,
+            Some(&provider),
+            Some(wire_protocol.clone()),
+            "wire protocol does not support a custom endpoint",
+        ));
+    }
+
+    let unsupported_capabilities = model
+        .capabilities
+        .difference(&protocol_support.capabilities)
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unsupported_capabilities.is_empty() {
+        return Err(model_compatibility_error(
+            descriptor,
+            &role,
+            Some(&provider),
+            Some(wire_protocol.clone()),
+            format!(
+                "required capabilities are not supported: {}",
+                unsupported_capabilities.join(", ")
+            ),
+        ));
+    }
+
+    let configured_model_id = model.model.trim();
+    let model_id = configured_model_id
+        .split_once('/')
+        .and_then(|(prefix, model_id)| prefix.eq_ignore_ascii_case(&provider).then_some(model_id))
+        .unwrap_or(configured_model_id)
+        .to_string();
+    if model_id.is_empty() {
+        return Err(model_compatibility_error(
+            descriptor,
+            &role,
+            Some(&provider),
+            Some(wire_protocol.clone()),
+            "model identifier must not be empty",
+        ));
+    }
+    let credential_ref = match model.api_key_env.as_deref() {
+        Some(name) if is_environment_variable_name(name) => ModelCredentialRef::Environment {
+            name: name.to_string(),
+        },
+        Some(_) => {
+            return Err(model_compatibility_error(
+                descriptor,
+                &role,
+                Some(&provider),
+                Some(wire_protocol.clone()),
+                "api_key_env must be a valid environment variable name",
+            ));
+        }
+        None => ModelCredentialRef::HarnessManaged,
+    };
+
+    Ok(Some(ResolvedModelBinding {
+        role,
+        provider,
+        model_id,
+        wire_protocol,
+        endpoint_ref: base_url.map_or(ModelEndpointRef::ProviderDefault, |url| {
+            ModelEndpointRef::Configured { url }
+        }),
+        credential_ref,
+        capabilities: model.capabilities.clone(),
+    }))
+}
+
+fn validate_model_base_url(value: &str) -> std::result::Result<String, String> {
+    let value = value.trim();
+    let authority_and_path = value
+        .strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"))
+        .ok_or_else(|| "base_url must use http or https".to_string())?;
+    let authority = authority_and_path.split('/').next().unwrap_or_default();
+    if authority.is_empty()
+        || authority.chars().any(char::is_whitespace)
+        || !authority
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_alphanumeric() || character == '[')
+    {
+        return Err("base_url must include a host".to_string());
+    }
+    if authority.contains('@') || value.contains('?') || value.contains('#') {
+        return Err(
+            "base_url must not contain credentials, a query string, or a fragment".to_string(),
+        );
+    }
+    Ok(value.to_string())
+}
+
+fn is_environment_variable_name(value: &str) -> bool {
+    let mut characters = value.chars();
+    matches!(characters.next(), Some('_' | 'A'..='Z' | 'a'..='z'))
+        && characters.all(|character| matches!(character, '_' | 'A'..='Z' | 'a'..='z' | '0'..='9'))
+}
+
+fn model_compatibility_error(
+    descriptor: &AdapterDescriptor,
+    role: &str,
+    provider: Option<&str>,
+    wire_protocol: Option<String>,
+    reason: impl Into<String>,
+) -> FabricError {
+    FabricError::ModelCompatibility {
+        adapter_id: descriptor.adapter_id.clone(),
+        role: role.to_string(),
+        provider: provider.map(str::to_string),
+        wire_protocol,
+        reason: reason.into(),
+    }
 }
 
 fn resolve_runtime_capabilities(
@@ -1844,6 +2252,9 @@ pub struct RunPlan {
     /// Adapter descriptor resolved for this plan, when configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adapter_descriptor: Option<ResolvedAdapterDescriptor>,
+    /// Model selection resolved and validated for the selected adapter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_binding: Option<ResolvedModelBinding>,
     /// Selected install or availability strategy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution: Option<ResolutionStrategy>,
@@ -2041,6 +2452,26 @@ pub struct TelemetryPlan {
 mod tests {
     use super::*;
 
+    fn model_aware_descriptor() -> AdapterDescriptor {
+        serde_json::from_value(serde_json::json!({
+            "contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_id": "nvidia.fabric.claude",
+            "harness": "claude",
+            "adapter_kind": "python",
+            "models": {
+                "roles": ["default"],
+                "protocols": {
+                    "anthropic-messages": {
+                        "providers": ["anthropic"],
+                        "custom_endpoints": true,
+                        "capabilities": ["tool_use"]
+                    }
+                }
+            }
+        }))
+        .expect("model-aware adapter descriptor")
+    }
+
     fn file_config_agent_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/file-config-agent")
     }
@@ -2130,6 +2561,338 @@ runtime:
 
         assert_eq!(config.runtime.input_schema, "text");
         assert_eq!(config.runtime.output_schema, "text");
+    }
+
+    #[test]
+    fn resolves_native_provider_model_binding_once() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.claude
+models:
+  default:
+    provider: Anthropic
+    model: ANTHROPIC/claude-sonnet-4-5
+    api_key_env: ANTHROPIC_API_KEY
+    capabilities: [tool_use]
+runtime: {}
+"#,
+        )
+        .expect("model config");
+
+        let binding = resolve_model_binding(&config, Some(&model_aware_descriptor()))
+            .expect("compatible binding")
+            .expect("configured binding");
+
+        assert_eq!(binding.role, "default");
+        assert_eq!(binding.provider, "anthropic");
+        assert_eq!(binding.model_id, "claude-sonnet-4-5");
+        assert_eq!(binding.wire_protocol, "anthropic-messages");
+        assert_eq!(binding.endpoint_ref, ModelEndpointRef::ProviderDefault);
+        assert_eq!(
+            binding.credential_ref,
+            ModelCredentialRef::Environment {
+                name: "ANTHROPIC_API_KEY".to_string()
+            }
+        );
+        assert_eq!(
+            binding.capabilities,
+            BTreeSet::from(["tool_use".to_string()])
+        );
+    }
+
+    #[test]
+    fn resolves_custom_provider_through_compatible_wire_protocol() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.claude
+models:
+  default:
+    provider: nvidia
+    model: nvidia/claude-sonnet-4-5
+    protocol: anthropic-messages
+    base_url: https://inference.example.test/anthropic
+    api_key_env: NVIDIA_API_KEY
+runtime: {}
+"#,
+        )
+        .expect("custom provider config");
+
+        let binding = resolve_model_binding(&config, Some(&model_aware_descriptor()))
+            .expect("compatible custom provider")
+            .expect("configured binding");
+
+        assert_eq!(binding.provider, "nvidia");
+        assert_eq!(binding.model_id, "claude-sonnet-4-5");
+        assert_eq!(binding.wire_protocol, "anthropic-messages");
+        assert_eq!(
+            binding.endpoint_ref,
+            ModelEndpointRef::Configured {
+                url: "https://inference.example.test/anthropic".to_string()
+            }
+        );
+        assert_eq!(
+            binding.credential_ref,
+            ModelCredentialRef::Environment {
+                name: "NVIDIA_API_KEY".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn profile_overlay_participates_in_model_binding_resolution() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.claude
+models:
+  default:
+    provider: private-cloud
+    model: private-cloud/claude-sonnet-4-5
+runtime: {}
+"#,
+        )
+        .expect("base model config");
+        let profile: ProfileConfig = serde_yaml::from_str(
+            r#"
+name: private-endpoint
+models:
+  default:
+    protocol: anthropic-messages
+    base_url: https://models.example.test/anthropic
+    api_key_env: PRIVATE_CLOUD_API_KEY
+"#,
+        )
+        .expect("model profile");
+
+        let plan = resolve_run_plan_from_config(
+            config,
+            &[profile],
+            ResolveContext::from_agent_root(std::env::temp_dir()),
+        )
+        .expect("profile-resolved model binding");
+        let binding = plan.model_binding.expect("model binding");
+
+        assert_eq!(plan.profiles, ["private-endpoint"]);
+        assert_eq!(binding.provider, "private-cloud");
+        assert_eq!(binding.wire_protocol, "anthropic-messages");
+        assert_eq!(
+            binding.endpoint_ref,
+            ModelEndpointRef::Configured {
+                url: "https://models.example.test/anthropic".to_string()
+            }
+        );
+        assert_eq!(
+            binding.credential_ref,
+            ModelCredentialRef::Environment {
+                name: "PRIVATE_CLOUD_API_KEY".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_custom_provider_without_custom_endpoint() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.claude
+models:
+  default:
+    provider: nvidia
+    model: nvidia/claude-sonnet-4-5
+runtime: {}
+"#,
+        )
+        .expect("custom provider config");
+
+        let error = resolve_model_binding(&config, Some(&model_aware_descriptor()))
+            .expect_err("provider must not inherit Anthropic's default endpoint");
+
+        assert!(matches!(
+            error,
+            FabricError::ModelCompatibility {
+                adapter_id,
+                role,
+                provider: Some(provider),
+                ..
+            } if adapter_id == "nvidia.fabric.claude"
+                && role == "default"
+                && provider == "nvidia"
+        ));
+    }
+
+    #[test]
+    fn rejects_model_capability_not_supported_by_protocol() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.claude
+models:
+  default:
+    provider: anthropic
+    model: claude-sonnet-4-5
+    capabilities: [vision]
+runtime: {}
+"#,
+        )
+        .expect("model capability config");
+
+        let error = resolve_model_binding(&config, Some(&model_aware_descriptor()))
+            .expect_err("unsupported model capability");
+
+        assert!(matches!(
+            error,
+            FabricError::ModelCompatibility { reason, .. }
+                if reason.contains("vision")
+        ));
+    }
+
+    #[test]
+    fn rejects_model_endpoint_urls_that_could_expose_credentials() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: nvidia.fabric.claude
+models:
+  default:
+    provider: private-cloud
+    model: private-cloud/claude-sonnet-4-5
+    protocol: anthropic-messages
+runtime: {}
+"#,
+        )
+        .expect("custom provider config");
+
+        for invalid_url in [
+            "https://user:secret@models.example.test/anthropic",
+            "https://models.example.test/anthropic?api_key=secret",
+            "https://models.example.test/anthropic#secret",
+            "https://:443/anthropic",
+        ] {
+            let mut invalid = config.clone();
+            invalid
+                .models
+                .get_mut("default")
+                .expect("default model")
+                .base_url = Some(invalid_url.to_string());
+
+            let error = resolve_model_binding(&invalid, Some(&model_aware_descriptor()))
+                .expect_err("unsafe endpoint URL");
+            assert!(
+                matches!(error, FabricError::ModelCompatibility { .. }),
+                "{invalid_url}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolved_model_references_reject_unknown_secret_fields() {
+        let credential_error = serde_json::from_value::<ModelCredentialRef>(serde_json::json!({
+            "kind": "environment",
+            "name": "PRIVATE_CLOUD_API_KEY",
+            "value": "must-not-be-accepted"
+        }))
+        .expect_err("credential values are not part of the reference contract");
+        assert!(credential_error.to_string().contains("unknown field"));
+
+        let endpoint_error = serde_json::from_value::<ModelEndpointRef>(serde_json::json!({
+            "kind": "configured",
+            "url": "https://models.example.test/anthropic",
+            "headers": {"authorization": "must-not-be-accepted"}
+        }))
+        .expect_err("endpoint headers are not part of the reference contract");
+        assert!(endpoint_error.to_string().contains("unknown field"));
+
+        let binding_error = serde_json::from_value::<ResolvedModelBinding>(serde_json::json!({
+            "role": "default",
+            "provider": "private-cloud",
+            "model_id": "claude-sonnet-4-5",
+            "wire_protocol": "anthropic-messages",
+            "endpoint_ref": {"kind": "provider_default"},
+            "credential_ref": {"kind": "harness_managed"},
+            "credential_value": "must-not-be-accepted"
+        }))
+        .expect_err("binding extensions cannot carry credential values");
+        assert!(binding_error.to_string().contains("unknown field"));
+    }
+
+    #[test]
+    fn rejects_adapter_protocol_without_a_reachable_endpoint_path() {
+        let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
+            "contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_id": "acme.fabric.unreachable",
+            "harness": "unreachable",
+            "adapter_kind": "python",
+            "models": {
+                "roles": ["default"],
+                "protocols": {
+                    "unreachable-protocol": {}
+                }
+            }
+        }))
+        .expect("syntactically valid descriptor");
+
+        let error = validate_adapter_descriptor_shape(
+            &descriptor,
+            Path::new("adapters/unreachable/fabric-adapter.json"),
+        )
+        .expect_err("unreachable protocol declaration");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidAdapterDescriptor { message, .. }
+                if message.contains("must declare a provider or support custom endpoints")
+        ));
+    }
+
+    #[test]
+    fn legacy_descriptor_preserves_unresolved_model_behavior() {
+        let config: FabricConfig = serde_yaml::from_str(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: demo
+harness:
+  adapter_id: acme.fabric.legacy
+models:
+  default:
+    provider: legacy
+    model: legacy/model
+runtime: {}
+"#,
+        )
+        .expect("legacy model config");
+        let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
+            "contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_id": "acme.fabric.legacy",
+            "harness": "legacy",
+            "adapter_kind": "python"
+        }))
+        .expect("legacy descriptor");
+
+        assert_eq!(
+            resolve_model_binding(&config, Some(&descriptor)).expect("legacy compatibility"),
+            None
+        );
     }
 
     #[test]

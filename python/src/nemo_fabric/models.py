@@ -166,7 +166,10 @@ class ModelConfig(FabricBaseModel):
 
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
+    protocol: str | None = None
+    base_url: str | None = None
     api_key_env: str | None = None
+    capabilities: set[str] = Field(default_factory=set)
     temperature: float | None = None
     settings: dict[str, Any] = Field(default_factory=dict)
 

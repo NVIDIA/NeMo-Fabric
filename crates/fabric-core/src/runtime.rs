@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 
 use crate::config::{
     AdapterKind, CapabilityKind, CapabilityPlan, CapabilityTarget, ControlLocation,
-    EffectiveConfig, EnvironmentOwnership, RunPlan, TelemetryPlan,
+    EffectiveConfig, EnvironmentOwnership, ResolvedModelBinding, RunPlan, TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
@@ -313,6 +313,9 @@ pub struct RuntimeTelemetryContext {
 pub struct AdapterInvocation {
     /// Merged agent config and provenance.
     pub effective_config: EffectiveConfig,
+    /// Model selection resolved and validated during planning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_binding: Option<ResolvedModelBinding>,
     /// Per-runtime/per-invocation execution context.
     pub runtime_context: RuntimeContext,
     /// Per-invocation request.
@@ -1326,6 +1329,7 @@ fn adapter_invocation(
     effective_config.config_root = absolute_path(effective_config.config_root)?;
     Ok(AdapterInvocation {
         effective_config,
+        model_binding: plan.model_binding.clone(),
         runtime_context: RuntimeContext {
             runtime_id: runtime.runtime_id.clone(),
             invocation_id: invocation.invocation_id.clone(),
@@ -2018,7 +2022,9 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::config::resolve_run_plan;
+    use crate::config::{
+        ModelCredentialRef, ModelEndpointRef, ResolvedModelBinding, resolve_run_plan,
+    };
 
     fn fixture_agent_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hermes-shim-agent")
@@ -2126,6 +2132,54 @@ environment:
         assert!(workspace.ends_with("repos/my-service"), "{workspace:?}");
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn adapter_invocation_carries_secret_free_model_credential_reference() {
+        let root = temp_process_agent_dir();
+        let mut plan = resolve_run_plan(&root, None).expect("run plan");
+        plan.model_binding = Some(ResolvedModelBinding {
+            role: "default".to_string(),
+            provider: "private-cloud".to_string(),
+            model_id: "claude-sonnet-4-5".to_string(),
+            wire_protocol: "anthropic-messages".to_string(),
+            endpoint_ref: ModelEndpointRef::Configured {
+                url: "https://models.example.test/anthropic".to_string(),
+            },
+            credential_ref: ModelCredentialRef::Environment {
+                name: "PRIVATE_CLOUD_API_KEY".to_string(),
+            },
+            capabilities: Default::default(),
+        });
+        let runtime = start_runtime(&plan).expect("runtime");
+        let request = RunRequest::text("hello fabric");
+        let invocation = InvocationHandle {
+            invocation_id: "invocation-model-binding".to_string(),
+            request_id: request.request_id.clone(),
+            runtime_id: runtime.runtime_id.clone(),
+        };
+        let artifacts = artifact_manifest(&plan).expect("artifact manifest");
+
+        let payload = adapter_invocation(&plan, &runtime, &invocation, &request, &artifacts, None)
+            .expect("adapter invocation");
+        let payload = serde_json::to_value(payload).expect("adapter payload JSON");
+
+        assert_eq!(payload["model_binding"]["provider"], "private-cloud");
+        assert_eq!(
+            payload["model_binding"]["credential_ref"],
+            serde_json::json!({
+                "kind": "environment",
+                "name": "PRIVATE_CLOUD_API_KEY"
+            })
+        );
+        let credential = payload["model_binding"]["credential_ref"]
+            .as_object()
+            .expect("credential reference object");
+        assert_eq!(credential.len(), 2);
+        assert!(!credential.contains_key("value"));
+        assert!(!credential.contains_key("secret"));
+
+        let _ = fs::remove_dir_all(root);
     }
 
     fn artifact_content(result: &RunResult, name: &str) -> String {

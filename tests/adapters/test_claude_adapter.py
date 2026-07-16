@@ -62,6 +62,15 @@ def test_claude_descriptor_is_narrow_and_versioned():
                 "telemetry",
             ]
         },
+        "models": {
+            "roles": ["default"],
+            "protocols": {
+                "anthropic-messages": {
+                    "providers": ["anthropic"],
+                    "custom_endpoints": True,
+                }
+            },
+        },
         "telemetry": {
             "providers": {
                 "relay": {
@@ -106,6 +115,17 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                     }
                 },
                 "tools": {"blocked": ["Bash"]},
+            },
+        },
+        "model_binding": {
+            "role": "default",
+            "provider": "anthropic",
+            "model_id": "claude-test-model",
+            "wire_protocol": "anthropic-messages",
+            "endpoint_ref": {"kind": "provider_default"},
+            "credential_ref": {
+                "kind": "environment",
+                "name": "ANTHROPIC_API_KEY",
             },
         },
         "runtime_context": {
@@ -308,6 +328,99 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
     ).exists()
 
 
+def test_custom_provider_maps_endpoint_and_credential_without_anthropic_fallback(
+    claude_payload, monkeypatch
+):
+    claude_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {}
+    claude_payload["model_binding"].update(
+        {
+            "provider": "nvidia",
+            "endpoint_ref": {
+                "kind": "configured",
+                "url": "https://inference.example.test/anthropic",
+            },
+            "credential_ref": {
+                "kind": "environment",
+                "name": "NVIDIA_API_KEY",
+            },
+        }
+    )
+    monkeypatch.setenv("NVIDIA_API_KEY", "nvidia-secret")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "must-not-leak")
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.env["ANTHROPIC_BASE_URL"] == (
+        "https://inference.example.test/anthropic"
+    )
+    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
+    assert options.env["ANTHROPIC_AUTH_TOKEN"] == ""
+    assert options.env["NVIDIA_API_KEY"] == ""
+
+
+def test_explicit_credential_reference_overrides_native_anthropic_auth(
+    claude_payload, monkeypatch
+):
+    settings = claude_payload["effective_config"]["config"]["harness"]["settings"]
+    settings["env"] = {"ANTHROPIC_AUTH_TOKEN": "configured-token"}
+    claude_payload["model_binding"]["credential_ref"] = {
+        "kind": "environment",
+        "name": "FABRIC_CLAUDE_KEY",
+    }
+    monkeypatch.setenv("FABRIC_CLAUDE_KEY", "selected-secret")
+    monkeypatch.setenv("ANTHROPIC_PROFILE", "inherited-profile")
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.env["ANTHROPIC_API_KEY"] == "selected-secret"
+    assert options.env["ANTHROPIC_AUTH_TOKEN"] == ""
+    assert options.env["ANTHROPIC_PROFILE"] == ""
+    assert options.env["FABRIC_CLAUDE_KEY"] == ""
+
+
+def test_relay_preserves_custom_anthropic_compatible_upstream(
+    relay_payload, monkeypatch, tmp_path
+):
+    relay_payload["model_binding"].update(
+        {
+            "provider": "custom-provider",
+            "endpoint_ref": {
+                "kind": "configured",
+                "url": "https://models.example.test/anthropic",
+            },
+        }
+    )
+    executable = tmp_path / "nemo-relay"
+    executable.touch()
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "resolve_relay_command",
+        MagicMock(return_value=executable),
+    )
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "find_available_tcp_port",
+        MagicMock(return_value=43210),
+    )
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "relay_cli_contract",
+        MagicMock(
+            return_value=adapter.relay_gateway.RelayCliContract(
+                version=(0, 6, 0), observability_version=2
+            )
+        ),
+    )
+
+    relay = adapter.prepare_claude_relay(relay_payload)
+
+    assert relay is not None
+    with relay.gateway.config_path.open("rb") as stream:
+        assert tomllib.load(stream)["upstream"] == {
+            "anthropic_base_url": "https://models.example.test/anthropic"
+        }
+
+
 def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
     relay_payload, tmp_path
 ):
@@ -372,12 +485,19 @@ def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload)
         adapter.build_options(claude_payload, resume=None)
 
 
-def test_selected_model_rejects_unsupported_provider(claude_payload):
+def test_selected_model_requires_resolved_binding(claude_payload):
+    claude_payload.pop("model_binding")
+
+    with pytest.raises(adapter.AdapterConfigError, match="resolved model binding"):
+        adapter.selected_model(claude_payload)
+
+
+def test_selected_model_does_not_reinterpret_raw_model_config(claude_payload):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model["provider"] = "nvidia"
+    model["model"] = "nvidia/different-model"
 
-    with pytest.raises(adapter.AdapterConfigError, match="provider must be anthropic"):
-        adapter.selected_model(claude_payload)
+    assert adapter.selected_model(claude_payload) == "claude-test-model"
 
 
 def test_state_round_trip_is_keyed_by_fabric_runtime(claude_payload):
@@ -844,6 +964,9 @@ def test_build_options_forwards_anthropic_auth_environment(
 ):
     model = claude_payload["effective_config"]["config"]["models"]["default"]
     model.pop("api_key_env")
+    claude_payload["model_binding"]["credential_ref"] = {
+        "kind": "harness_managed"
+    }
     settings = claude_payload["effective_config"]["config"]["harness"]["settings"]
     settings.pop("env")
     for name in ANTHROPIC_AUTH_ENV_NAMES:

@@ -76,8 +76,9 @@ return codes, stdout, or stderr.
 
 Use normalized `FabricConfig` fields for portable configuration:
 
-- `models` selects the Codex model. The adapter requires and explicitly selects
-  the built-in `openai` provider.
+- `models` selects the Codex model. The adapter requires the built-in `openai`
+  provider over the `openai-responses` wire protocol. Planning rejects custom
+  providers, protocols, and model endpoint URLs before the SDK starts.
 - `environment.workspace` sets the working directory.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
 
@@ -99,8 +100,10 @@ The removed CLI settings `codex_command`, `codex_args`, `codex_profile`,
 must use the normalized model and environment fields.
 
 The adapter filters the inherited environment. It retains portable OS and
-Codex state variables, the selected model's `api_key_env`, and explicit
-`settings.env` values while clearing unrelated parent-process secrets.
+Codex state variables and explicit `settings.env` values while clearing
+unrelated parent-process secrets. If `models.default.api_key_env` names a
+nonstandard source variable, the adapter maps its value to `OPENAI_API_KEY` at
+invocation time; the resolved plan contains only the source variable name.
 
 ## Relay Observability
 
@@ -157,4 +160,3 @@ For Phoenix, native Codex OpenTelemetry targets the OTLP collector at
 Relay OpenInference provides the semantic chain, LLM, and tool hierarchy with
 decoded prompt, response, and token attributes. Prefer Relay OpenInference for
 agent-turn inspection.
-

@@ -74,9 +74,13 @@ stays resident.
 
 Configure portable capabilities through the normalized `FabricConfig` fields:
 
-- `models` selects the Claude model. A configured model must use
-  `provider="anthropic"`; normalized hosted/custom provider resolution is
-  tracked in [FABRIC-64](https://linear.app/nvidia/issue/FABRIC-64/add-normalized-model-provider-resolution-and-harness-compatibility).
+- `models.default` selects the Claude model. `provider="anthropic"` uses
+  Claude's native endpoint. Any provider name can target an explicit
+  Anthropic Messages-compatible `base_url` by setting
+  `protocol="anthropic-messages"`.
+- `models.default.api_key_env` names the source credential variable. Fabric
+  keeps only that name in the plan; the adapter reads its value at invocation
+  time and maps it to Claude's `ANTHROPIC_API_KEY` boundary.
 - `environment.workspace` sets the Claude working directory.
 - `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool
   names.
@@ -99,9 +103,11 @@ Putting `model_name`, `cwd`, `tools`, `disallowed_tools`, `mcp_servers`, or
 field so the same consumer configuration can compose with other adapters.
 
 The adapter filters the inherited environment before launching Claude Code.
-It retains portable OS/config variables, the selected model's `api_key_env`,
-and explicitly configured `settings.env` values. Raw Claude stderr is consumed
-by the SDK and is not persisted as a Fabric artifact.
+For the native Anthropic endpoint, it retains portable OS/config variables and
+Claude's native authentication selectors. For a custom endpoint, it does not
+inherit unrelated Anthropic credentials; it maps only the resolved credential
+reference plus explicitly configured `settings.env` values. Raw Claude stderr
+is consumed by the SDK and is not persisted as a Fabric artifact.
 
 ## Relay Observability
 
@@ -120,6 +126,11 @@ out, or is canceled. Fabric passes the gateway URL to Claude Code through
 `ANTHROPIC_BASE_URL` and `NEMO_RELAY_GATEWAY_URL`. It also stages an
 invocation-scoped Claude plugin that forwards lifecycle hooks with
 `nemo-relay hook-forward claude`.
+
+When `models.default.base_url` selects a custom Anthropic-compatible endpoint,
+Fabric also writes that URL as Relay's `upstream.anthropic_base_url`. Claude
+still connects to the local Relay gateway, and Relay forwards the request to
+the endpoint selected by the resolved model binding.
 
 The Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
@@ -186,6 +197,29 @@ config = FabricConfig(
 
 fabric = Fabric()
 ```
+
+For an Anthropic-compatible endpoint operated by another provider, configure
+the provider, protocol, URL, and credential reference together:
+
+```python
+config.models["default"] = ModelConfig(
+    provider="private-cloud",
+    model="private-cloud/claude-sonnet-4-5",
+    protocol="anthropic-messages",
+    base_url="https://models.example.test/anthropic",
+    api_key_env="PRIVATE_CLOUD_API_KEY",
+)
+```
+
+Fabric rejects an unknown provider without an explicit compatible endpoint
+during planning. The plan contains the endpoint URL and credential variable
+name, never the credential value.
+
+For an NVIDIA-hosted Claude endpoint, use `provider="nvidia"`, supply the
+deployment URL through `base_url`, and set `api_key_env="NVIDIA_API_KEY"`. The
+adapter reads `NVIDIA_API_KEY` only when the invocation starts and maps it to
+Claude's native authentication boundary. Fabric does not hardcode a
+deployment-specific endpoint URL.
 
 ## One-Shot Run
 

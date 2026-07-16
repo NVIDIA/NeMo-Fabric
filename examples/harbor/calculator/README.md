@@ -20,8 +20,9 @@ same shell. Commit the Fabric revision you want to run because the build context
 is created from `HEAD`.
 
 The credential-free smoke does not require an API key. Export `NVIDIA_API_KEY`
-for Hermes runs or `ANTHROPIC_API_KEY` for the Claude run before using that
-harness. The first image build can take several minutes.
+for the NVIDIA-hosted Hermes and Claude runs. The Claude run also requires the
+non-secret endpoint configuration in `CLAUDE_BASE_URL`. The first image build
+can take several minutes.
 
 ## Prepare the Build Context
 
@@ -134,22 +135,28 @@ find "$RUNS_DIR/fabric-hermes-relay" \
 
 ## 4. Claude
 
-The Claude Agent SDK supplies its compatible Claude Code executable. Harbor
-passes the API key into the task environment; Fabric forwards only the model's
-configured credential variable to Claude.
+The Claude Agent SDK supplies its compatible Claude Code executable. This
+example uses an NVIDIA-hosted Anthropic Messages-compatible endpoint without
+exposing an internal URL in the repository. Harbor passes `NVIDIA_API_KEY` into
+the task environment, and the adapter translates it to Claude's native
+authentication variable only when the invocation starts.
 
 ```bash
-: "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
+: "${CLAUDE_BASE_URL:?Set the NVIDIA-hosted Claude endpoint URL}"
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Claude}"
 
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --model anthropic/claude-sonnet-4-5 \
+  --model nvidia/claude-sonnet-4-5 \
   --ak fabric_adapter_id=nvidia.fabric.claude \
+  --ak fabric_model_provider=nvidia \
+  --ak fabric_model_protocol=anthropic-messages \
+  --ak "fabric_model_base_url=$CLAUDE_BASE_URL" \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak 'fabric_harness_settings={"max_turns":20,"timeout_seconds":600}' \
-  --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
+  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-claude \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
@@ -161,6 +168,27 @@ The config uses `bypassPermissions` and `IS_SANDBOX=1` because Harbor runs the
 harness as root inside an ephemeral task container and the benchmark expects it
 to edit `/app`. Do not reuse this combination outside a deliberately isolated
 evaluation container.
+
+`FabricAgent` defaults the credential reference to `NVIDIA_API_KEY` for the
+`nvidia` provider. Fabric records the variable name, not its value. The URL is
+ordinary configuration, so internal and public Anthropic Messages-compatible
+endpoints use the same model path.
+
+For direct Anthropic usage, omit `fabric_model_protocol` and
+`fabric_model_base_url`, then replace the NVIDIA model and credential arguments
+with the following explicit override:
+
+```bash
+: "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
+--model anthropic/claude-sonnet-4-5 \
+--ak fabric_model_provider=anthropic \
+--ak fabric_model_api_key_env=ANTHROPIC_API_KEY \
+--ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+```
+
+For another provider, set its provider name, compatible URL, and credential
+reference through the same `fabric_model_*` arguments. Fabric rejects an
+incompatible provider or endpoint before the Claude runtime starts.
 
 ## Inspect Results
 

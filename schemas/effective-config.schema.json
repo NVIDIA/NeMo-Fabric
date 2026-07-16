@@ -304,9 +304,31 @@
             "null"
           ]
         },
+        "base_url": {
+          "description": "Optional provider endpoint URL.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capabilities": {
+          "description": "Capabilities required from the selected adapter model path.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
         "model": {
           "description": "Provider model identifier.",
           "type": "string"
+        },
+        "protocol": {
+          "description": "Optional wire protocol required by the selected endpoint.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "provider": {
           "description": "Model provider name.",

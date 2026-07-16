@@ -46,6 +46,56 @@
         }
       ]
     },
+    "AdapterModelProtocolSupport": {
+      "additionalProperties": true,
+      "description": "Compatibility for one adapter-supported model wire protocol.",
+      "properties": {
+        "capabilities": {
+          "description": "Model capabilities supported through this protocol.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "custom_endpoints": {
+          "default": false,
+          "description": "Whether an explicit endpoint may supply another compatible provider.",
+          "type": "boolean"
+        },
+        "providers": {
+          "description": "Providers with a harness-native endpoint for this protocol.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "type": "object"
+    },
+    "AdapterModelSupport": {
+      "additionalProperties": true,
+      "description": "Model compatibility declared by an adapter.",
+      "properties": {
+        "protocols": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AdapterModelProtocolSupport"
+          },
+          "description": "Wire protocols implemented by the adapter.",
+          "type": "object"
+        },
+        "roles": {
+          "description": "Normalized model roles the adapter can consume.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "type": "object"
+    },
     "AdapterRequirements": {
       "additionalProperties": true,
       "description": "Adapter runtime requirements.",
@@ -192,6 +242,10 @@
       "description": "Stable machine-readable harness identifier implemented by this adapter.",
       "minLength": 1,
       "type": "string"
+    },
+    "models": {
+      "$ref": "#/$defs/AdapterModelSupport",
+      "description": "Model roles, wire protocols, and providers accepted by this adapter."
     },
     "requirements": {
       "$ref": "#/$defs/AdapterRequirements",

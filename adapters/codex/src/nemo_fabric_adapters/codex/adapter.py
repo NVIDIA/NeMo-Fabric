@@ -184,28 +184,69 @@ def resolve_cwd(payload: dict[str, Any]) -> Path:
     return path.resolve()
 
 
-def _selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = _settings(payload)
-    models = _mapping(common_utils.models_payload(payload), name="models")
-    selected = models.get(settings.get("model", "default")) or {}
-    return _mapping(selected, name="selected model")
+def _model_binding(payload: dict[str, Any]) -> dict[str, Any]:
+    value = common_utils.model_binding_payload(payload)
+    if not value:
+        if common_utils.models_payload(payload):
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                "a resolved model binding is required when models are configured",
+            )
+        return {}
+    binding = _mapping(value, name="model_binding")
+    if binding.get("role") != "default":
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "model_binding.role must be default",
+        )
+    if binding.get("provider") != "openai":
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "model_binding.provider must be openai",
+        )
+    if binding.get("wire_protocol") != "openai-responses":
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "model_binding.wire_protocol must be openai-responses",
+        )
+    if not isinstance(binding.get("model_id"), str) or not binding["model_id"]:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "model_binding.model_id must be a non-empty string",
+        )
+    endpoint = _mapping(
+        binding.get("endpoint_ref"), name="model_binding.endpoint_ref"
+    )
+    if endpoint.get("kind") != "provider_default":
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "model_binding.endpoint_ref must use the OpenAI provider default",
+        )
+    return binding
+
+
+def _model_credential_env(binding: dict[str, Any]) -> str | None:
+    if not binding:
+        return None
+    credential = _mapping(
+        binding.get("credential_ref"), name="model_binding.credential_ref"
+    )
+    kind = credential.get("kind")
+    if kind == "harness_managed":
+        return None
+    if (
+        kind == "environment"
+        and isinstance(credential.get("name"), str)
+        and credential["name"]
+    ):
+        return credential["name"]
+    raise AdapterConfigError(
+        "codex_invalid_configuration", "model_binding.credential_ref is invalid"
+    )
 
 
 def selected_model(payload: dict[str, Any]) -> str | None:
-    model_config = _selected_model_config(payload)
-    value = model_config.get("model")
-    if value is None:
-        return None
-    if model_config.get("provider") != "openai":
-        raise AdapterConfigError(
-            "codex_invalid_configuration",
-            "selected model provider must be openai for the Codex adapter",
-        )
-    if not isinstance(value, str) or not value:
-        raise AdapterConfigError(
-            "codex_invalid_configuration", "model must be a non-empty string"
-        )
-    return value.removeprefix("openai/")
+    return _model_binding(payload).get("model_id")
 
 
 def sandbox(payload: dict[str, Any]) -> Sandbox:
@@ -282,10 +323,6 @@ def child_environment(
             "runtime_context.telemetry.env must contain strings",
         )
     values.update(telemetry_env)
-    model_config = _selected_model_config(payload)
-    api_key_env = model_config.get("api_key_env")
-    if isinstance(api_key_env, str) and api_key_env in os.environ:
-        values[api_key_env] = os.environ[api_key_env]
     configured = _mapping(_settings(payload).get("env"), name="harness.settings.env")
     if any(
         not isinstance(key, str) or not isinstance(value, str)
@@ -296,6 +333,12 @@ def child_environment(
             "harness.settings.env must contain strings",
         )
     values.update(configured)
+    credential_env = _model_credential_env(_model_binding(payload))
+    if credential_env is not None:
+        values["OPENAI_API_KEY"] = ""
+        credential = configured.get(credential_env, os.environ.get(credential_env))
+        if credential is not None:
+            values["OPENAI_API_KEY"] = credential
     # The SDK overlays this mapping on the parent environment. An empty
     # originator is still treated as an override by Codex and produces invalid
     # initialize metadata ("/<version>"). Use the official SDK client identity
@@ -764,6 +807,7 @@ async def invoke_codex_sdk(
     """Execute one SDK turn and always close the app-server transport."""
 
     settings = _settings(payload)
+    model_binding = _model_binding(payload)
     config = thread_config(payload, relay)
     codex = AsyncCodex(config=sdk_config(payload, relay))
     handle = None
@@ -780,7 +824,7 @@ async def invoke_codex_sdk(
                     settings, "developer_instructions"
                 ),
                 "model": selected_model(payload),
-                "model_provider": "openai",
+                "model_provider": model_binding.get("provider"),
                 "personality": _personality(payload),
                 "sandbox": sandbox(payload),
                 "service_tier": _optional_string(settings, "service_tier"),

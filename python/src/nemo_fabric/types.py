@@ -943,6 +943,115 @@ class RuntimeCapabilities(FabricMapping):
         return data
 
 
+class ModelEndpointRef(FabricMapping):
+    """Secret-free endpoint selected during model planning."""
+
+    kind: str
+    url: str | None
+    _fields = frozenset({"kind", "url"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        unknown = set(data).difference(cls._fields)
+        if unknown:
+            raise FabricConfigError(
+                "model endpoint reference has unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        kind = _required_text(data.get("kind"), "model endpoint kind")
+        if kind not in {"provider_default", "configured"}:
+            raise FabricConfigError(f"unsupported model endpoint kind: {kind}")
+        if kind == "configured":
+            data["url"] = _required_text(data.get("url"), "model endpoint URL")
+        elif data.get("url") is not None:
+            raise FabricConfigError("provider-default model endpoint must not define a URL")
+        data["kind"] = kind
+        return data
+
+
+class ModelCredentialRef(FabricMapping):
+    """Credential reference selected during model planning."""
+
+    kind: str
+    name: str | None
+    _fields = frozenset({"kind", "name"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        unknown = set(data).difference(cls._fields)
+        if unknown:
+            raise FabricConfigError(
+                "model credential reference has unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        kind = _required_text(data.get("kind"), "model credential kind")
+        if kind not in {"harness_managed", "environment"}:
+            raise FabricConfigError(f"unsupported model credential kind: {kind}")
+        if kind == "environment":
+            data["name"] = _required_text(
+                data.get("name"), "model credential environment variable"
+            )
+        elif data.get("name") is not None:
+            raise FabricConfigError(
+                "harness-managed model credential must not define an environment variable"
+            )
+        data["kind"] = kind
+        return data
+
+
+class ResolvedModelBinding(FabricMapping):
+    """Immutable, secret-free model selection produced by Fabric planning."""
+
+    role: str
+    provider: str
+    model_id: str
+    wire_protocol: str
+    endpoint_ref: ModelEndpointRef
+    credential_ref: ModelCredentialRef
+    capabilities: Sequence[str]
+    _fields = frozenset(
+        {
+            "role",
+            "provider",
+            "model_id",
+            "wire_protocol",
+            "endpoint_ref",
+            "credential_ref",
+            "capabilities",
+        }
+    )
+    _omit_if_empty = frozenset({"capabilities"})
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        unknown = set(data).difference(cls._fields)
+        if unknown:
+            raise FabricConfigError(
+                "resolved model binding has unknown fields: "
+                + ", ".join(sorted(unknown))
+            )
+        for field in ("role", "provider", "model_id", "wire_protocol"):
+            data[field] = _required_text(data.get(field), f"model binding {field}")
+        data["endpoint_ref"] = ModelEndpointRef.from_mapping(
+            data.get("endpoint_ref", {})
+        )
+        data["credential_ref"] = ModelCredentialRef.from_mapping(
+            data.get("credential_ref", {})
+        )
+        capabilities = data.get("capabilities", [])
+        if isinstance(capabilities, (str, bytes)) or not isinstance(
+            capabilities, Sequence
+        ):
+            raise FabricConfigError(
+                "model binding capabilities must be a sequence of strings"
+            )
+        data["capabilities"] = tuple(
+            _required_text(capability, "model binding capability")
+            for capability in capabilities
+        )
+        return data
+
+
 class EffectiveConfig(FabricMapping):
     """Immutable result of config loading and ordered profile application.
 
@@ -981,6 +1090,7 @@ class RunPlan(FabricMapping):
         agent_name: Resolved agent name.
         profiles: Applied profile names in caller order.
         adapter: Resolved adapter identity.
+        model_binding: Model selection resolved for the adapter, when configured.
         capabilities: Operations declared by the resolved runtime.
     """
 
@@ -988,8 +1098,18 @@ class RunPlan(FabricMapping):
     agent_name: str
     profiles: Sequence[str]
     adapter: AdapterInfo
+    model_binding: ResolvedModelBinding | None
     capabilities: RuntimeCapabilities
-    _fields = frozenset({"effective_config", "agent_name", "profiles", "adapter", "capabilities"})
+    _fields = frozenset(
+        {
+            "effective_config",
+            "agent_name",
+            "profiles",
+            "adapter",
+            "model_binding",
+            "capabilities",
+        }
+    )
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -999,6 +1119,10 @@ class RunPlan(FabricMapping):
         data["effective_config"] = EffectiveConfig.from_mapping(data["effective_config"])
         data["profiles"] = _required_profiles(data, "RunPlan")
         data["adapter"] = AdapterInfo.from_mapping(descriptor)
+        binding = data.get("model_binding")
+        data["model_binding"] = (
+            None if binding is None else ResolvedModelBinding.from_mapping(binding)
+        )
         data["capabilities"] = RuntimeCapabilities.from_mapping(data.get("capabilities", {}))
         return data
 

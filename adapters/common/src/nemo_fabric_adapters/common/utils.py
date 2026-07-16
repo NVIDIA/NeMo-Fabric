@@ -111,6 +111,12 @@ def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return fabric_config(payload).get("models") or payload.get("models") or {}
 
 
+def model_binding_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return the model binding resolved by Fabric planning."""
+
+    return payload.get("model_binding") or {}
+
+
 def default_base_url(provider: str | None) -> str | None:
     if provider == "nvidia":
         return "https://integrate.api.nvidia.com/v1"

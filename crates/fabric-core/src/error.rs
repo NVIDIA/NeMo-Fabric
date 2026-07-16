@@ -72,6 +72,20 @@ pub enum FabricError {
         /// Unsupported value.
         value: String,
     },
+    /// A configured model is incompatible with the selected adapter.
+    #[error("model role `{role}` is incompatible with adapter `{adapter_id}`: {reason}")]
+    ModelCompatibility {
+        /// Selected adapter id.
+        adapter_id: String,
+        /// Configured model role or the role that could not be selected.
+        role: String,
+        /// Configured provider, when a role was selected.
+        provider: Option<String>,
+        /// Configured or inferred wire protocol, when available.
+        wire_protocol: Option<String>,
+        /// Stable human-readable incompatibility detail.
+        reason: String,
+    },
     /// An adapter descriptor is malformed.
     #[error("invalid adapter descriptor in {path}: {message}")]
     InvalidAdapterDescriptor {

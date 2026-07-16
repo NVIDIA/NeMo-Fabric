@@ -10,6 +10,15 @@
   "config": {
     "accepts": ["models", "tools", "tools.blocked", "mcp", "skills", "telemetry"]
   },
+  "models": {
+    "roles": ["default"],
+    "protocols": {
+      "anthropic-messages": {
+        "providers": ["anthropic"],
+        "custom_endpoints": true
+      }
+    }
+  },
   "telemetry": {
     "providers": {
       "relay": {

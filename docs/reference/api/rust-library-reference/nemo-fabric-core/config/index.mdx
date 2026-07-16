@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "Fabric config models and loading helpers."
-position: 76
+position: 82
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -15,6 +15,8 @@ Fabric config models and loading helpers.
 
 - [AdapterConfigSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterconfigsupport): Adapter config support.
 - [AdapterDescriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterdescriptor): Language-neutral adapter descriptor for a harness integration.
+- [AdapterModelProtocolSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adaptermodelprotocolsupport): Compatibility for one adapter-supported model wire protocol.
+- [AdapterModelSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adaptermodelsupport): Model compatibility declared by an adapter.
 - [AdapterRequirements](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterrequirements): Adapter runtime requirements.
 - [AdapterTelemetryProviderSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adaptertelemetryprovidersupport): Telemetry capabilities for one adapter-supported provider.
 - [AdapterTelemetrySupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adaptertelemetrysupport): Adapter telemetry support.
@@ -43,6 +45,7 @@ Fabric config models and loading helpers.
 - [RelayOtlpConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayotlpconfig): Relay OpenTelemetry/OpenInference export configuration.
 - [ResolveContext](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-resolvecontext): Source context used when resolving an in-memory Fabric config.
 - [ResolvedAdapterDescriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-resolvedadapterdescriptor): Adapter descriptor selected for a run plan.
+- [ResolvedModelBinding](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-resolvedmodelbinding): Immutable, secret-free model selection produced during planning.
 - [RunPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runplan): Resolved Fabric run plan.
 - [RuntimeCapabilities](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runtimecapabilities): Lifecycle behavior implemented by a resolved runtime path.
 - [RuntimeConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runtimeconfig): Runtime input/output contract.
@@ -63,6 +66,8 @@ Fabric config models and loading helpers.
 - [EnvironmentOwnership](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-environmentownership): Whether Fabric owns the underlying environment resource.
 - [FabricDocument](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-fabricdocument): A loaded Fabric document with resolved source path and agent root.
 - [McpExposure](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-mcpexposure): MCP exposure strategy.
+- [ModelCredentialRef](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-modelcredentialref): Credential source selected for a resolved model binding.
+- [ModelEndpointRef](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-modelendpointref): Endpoint selected for a resolved model binding.
 - [RelayAtifStorageConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatifstorageconfig): Relay ATIF remote storage configuration.
 - [RelayAtofEndpointFieldNamePolicy](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatofendpointfieldnamepolicy): Relay ATOF endpoint field-name policy.
 - [RelayAtofEndpointTransport](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatofendpointtransport): Relay ATOF endpoint transport.

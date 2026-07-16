@@ -93,6 +93,9 @@ INHERITED_ENV_NAMES = {
     "https_proxy",
     "no_proxy",
 }
+ANTHROPIC_AUTH_ENV_NAMES = {
+    name for name in INHERITED_ENV_NAMES if name.startswith("ANTHROPIC_")
+}
 
 
 @dataclass(frozen=True)
@@ -202,16 +205,71 @@ def _validate_settings_boundary(settings: dict[str, Any]) -> None:
             )
 
 
-def _models(payload: dict[str, Any]) -> dict[str, Any]:
-    return _mapping(common_utils.models_payload(payload), name="models")
-
-
-def _selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    models = _models(payload)
-    if not models:
+def _model_binding(payload: dict[str, Any]) -> dict[str, Any]:
+    value = common_utils.model_binding_payload(payload)
+    if not value:
+        if common_utils.models_payload(payload):
+            raise AdapterConfigError(
+                "claude_invalid_configuration",
+                "a resolved model binding is required when models are configured",
+            )
         return {}
-    selected = models.get("default") or next(iter(models.values()))
-    return _mapping(selected, name="selected model")
+    binding = _mapping(value, name="model_binding")
+    if binding.get("role") != "default":
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "model_binding.role must be default",
+        )
+    if binding.get("wire_protocol") != "anthropic-messages":
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "model_binding.wire_protocol must be anthropic-messages",
+        )
+    for field in ("provider", "model_id"):
+        if not isinstance(binding.get(field), str) or not binding[field]:
+            raise AdapterConfigError(
+                "claude_invalid_configuration",
+                f"model_binding.{field} must be a non-empty string",
+            )
+    return binding
+
+
+def _model_endpoint(binding: dict[str, Any]) -> str | None:
+    if not binding:
+        return None
+    endpoint = _mapping(binding.get("endpoint_ref"), name="model_binding.endpoint_ref")
+    kind = endpoint.get("kind")
+    if kind == "provider_default":
+        return None
+    if (
+        kind == "configured"
+        and isinstance(endpoint.get("url"), str)
+        and endpoint["url"]
+    ):
+        return endpoint["url"]
+    raise AdapterConfigError(
+        "claude_invalid_configuration", "model_binding.endpoint_ref is invalid"
+    )
+
+
+def _model_credential_env(binding: dict[str, Any]) -> str | None:
+    if not binding:
+        return None
+    credential = _mapping(
+        binding.get("credential_ref"), name="model_binding.credential_ref"
+    )
+    kind = credential.get("kind")
+    if kind == "harness_managed":
+        return None
+    if (
+        kind == "environment"
+        and isinstance(credential.get("name"), str)
+        and credential["name"]
+    ):
+        return credential["name"]
+    raise AdapterConfigError(
+        "claude_invalid_configuration", "model_binding.credential_ref is invalid"
+    )
 
 
 def _resolve_path(payload: dict[str, Any], value: str | Path) -> Path:
@@ -228,20 +286,7 @@ def resolve_cwd(payload: dict[str, Any]) -> Path:
 
 
 def selected_model(payload: dict[str, Any]) -> str | None:
-    model_config = _selected_model_config(payload)
-    value = model_config.get("model")
-    if value is None:
-        return None
-    if model_config.get("provider") != "anthropic":
-        raise AdapterConfigError(
-            "claude_invalid_configuration",
-            "models.default.provider must be anthropic for the Claude adapter",
-        )
-    if not isinstance(value, str) or not value:
-        raise AdapterConfigError(
-            "claude_invalid_configuration", "model must be a non-empty string"
-        )
-    return value.removeprefix("anthropic/")
+    return _model_binding(payload).get("model_id")
 
 
 def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
@@ -400,8 +445,14 @@ def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
     try:
         relay_contract = relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(payload)
+        relay_config: dict[str, Any] = {
+            "agents": {"claude": {"command": "claude"}}
+        }
+        endpoint = _model_endpoint(_model_binding(payload))
+        if endpoint is not None:
+            relay_config["upstream"] = {"anthropic_base_url": endpoint}
         config_path, plugin_config_path = common_utils.write_relay_configs(
-            relay_config={"agents": {"claude": {"command": "claude"}}},
+            relay_config=relay_config,
             plugin_config=plugin_config,
             observability_version=relay_contract.observability_version,
         )
@@ -689,13 +740,15 @@ def child_environment(
     relay_gateway_url: str | None = None,
 ) -> dict[str, str]:
     values = {name: "" for name in os.environ}
+    binding = _model_binding(payload)
+    endpoint = _model_endpoint(binding)
+    credential_env = _model_credential_env(binding)
+    inherited_names = INHERITED_ENV_NAMES
+    if endpoint is not None or credential_env is not None:
+        inherited_names = inherited_names - ANTHROPIC_AUTH_ENV_NAMES
     values.update(
-        {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
+        {name: os.environ[name] for name in inherited_names if name in os.environ}
     )
-    model = _selected_model_config(payload)
-    api_key_env = model.get("api_key_env")
-    if isinstance(api_key_env, str) and api_key_env in os.environ:
-        values[api_key_env] = os.environ[api_key_env]
     configured = _mapping(_settings(payload).get("env"), name="harness.settings.env")
     if any(
         not isinstance(key, str) or not isinstance(value, str)
@@ -703,8 +756,18 @@ def child_environment(
     ):
         raise AdapterConfigError(
             "claude_invalid_configuration", "harness.settings.env must contain strings"
-        )
+    )
     values.update(configured)
+    if credential_env is not None:
+        credential = configured.get(credential_env, os.environ.get(credential_env))
+        for name in ANTHROPIC_AUTH_ENV_NAMES:
+            values[name] = ""
+        values["ANTHROPIC_API_KEY"] = credential or ""
+    if binding:
+        if endpoint is None:
+            values.pop("ANTHROPIC_BASE_URL", None)
+        else:
+            values["ANTHROPIC_BASE_URL"] = endpoint
     if relay_gateway_url is not None:
         values["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
         values["ANTHROPIC_BASE_URL"] = relay_gateway_url

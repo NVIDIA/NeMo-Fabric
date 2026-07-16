@@ -55,6 +55,9 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.EffectiveConfig`](./nemo_fabric.types.md#class-effectiveconfig): Immutable result of config loading and ordered profile application.
 - [`types.ErrorInfo`](./nemo_fabric.types.md#class-errorinfo): Structured failure returned inside a normalized ``RunResult``.
 - [`types.FabricEvent`](./nemo_fabric.types.md#class-fabricevent): One normalized lifecycle or invocation event.
+- [`types.ModelCredentialRef`](./nemo_fabric.types.md#class-modelcredentialref): Credential reference selected during model planning.
+- [`types.ModelEndpointRef`](./nemo_fabric.types.md#class-modelendpointref): Secret-free endpoint selected during model planning.
+- [`types.ResolvedModelBinding`](./nemo_fabric.types.md#class-resolvedmodelbinding): Immutable, secret-free model selection produced by Fabric planning.
 - [`types.RunOutput`](./nemo_fabric.types.md#class-runoutput): Normalized adapter output.
 - [`types.RunPlan`](./nemo_fabric.types.md#class-runplan): Immutable execution plan produced before a runtime is started.
 - [`types.RunResult`](./nemo_fabric.types.md#class-runresult): Normalized terminal result from one Fabric invocation.

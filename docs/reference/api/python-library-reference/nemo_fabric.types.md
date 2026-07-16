@@ -155,6 +155,186 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `ModelEndpointRef`
+Secret-free endpoint selected during model planning.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+__init__(mapping: 'Mapping[str, Any]') → None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+to_dict() → dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `ModelCredentialRef`
+Credential reference selected during model planning.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+__init__(mapping: 'Mapping[str, Any]') → None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+to_dict() → dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
+## <kbd>class</kbd> `ResolvedModelBinding`
+Immutable, secret-free model selection produced by Fabric planning.
+
+
+### <kbd>method</kbd> `__init__`
+
+```python
+__init__(mapping: 'Mapping[str, Any]') → None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+to_dict() → dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `EffectiveConfig`
 Immutable result of config loading and ordered profile application.
 
@@ -237,6 +417,7 @@ Immutable execution plan produced before a runtime is started.
  - <b>`agent_name`</b>:  Resolved agent name.
  - <b>`profiles`</b>:  Applied profile names in caller order.
  - <b>`adapter`</b>:  Resolved adapter identity.
+ - <b>`model_binding`</b>:  Model selection resolved for the adapter, when configured.
  - <b>`capabilities`</b>:  Operations declared by the resolved runtime.
 
 

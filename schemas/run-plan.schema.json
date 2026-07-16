@@ -59,6 +59,10 @@
           "minLength": 1,
           "type": "string"
         },
+        "models": {
+          "$ref": "#/$defs/AdapterModelSupport",
+          "description": "Model roles, wire protocols, and providers accepted by this adapter."
+        },
         "requirements": {
           "$ref": "#/$defs/AdapterRequirements",
           "default": {},
@@ -122,6 +126,56 @@
           "type": "string"
         }
       ]
+    },
+    "AdapterModelProtocolSupport": {
+      "additionalProperties": true,
+      "description": "Compatibility for one adapter-supported model wire protocol.",
+      "properties": {
+        "capabilities": {
+          "description": "Model capabilities supported through this protocol.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "custom_endpoints": {
+          "default": false,
+          "description": "Whether an explicit endpoint may supply another compatible provider.",
+          "type": "boolean"
+        },
+        "providers": {
+          "description": "Providers with a harness-native endpoint for this protocol.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "type": "object"
+    },
+    "AdapterModelSupport": {
+      "additionalProperties": true,
+      "description": "Model compatibility declared by an adapter.",
+      "properties": {
+        "protocols": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AdapterModelProtocolSupport"
+          },
+          "description": "Wire protocols implemented by the adapter.",
+          "type": "object"
+        },
+        "roles": {
+          "description": "Normalized model roles the adapter can consume.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "type": "object"
     },
     "AdapterRequirements": {
       "additionalProperties": true,
@@ -771,9 +825,31 @@
             "null"
           ]
         },
+        "base_url": {
+          "description": "Optional provider endpoint URL.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "capabilities": {
+          "description": "Capabilities required from the selected adapter model path.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
         "model": {
           "description": "Provider model identifier.",
           "type": "string"
+        },
+        "protocol": {
+          "description": "Optional wire protocol required by the selected endpoint.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "provider": {
           "description": "Model provider name.",
@@ -798,6 +874,82 @@
         "model"
       ],
       "type": "object"
+    },
+    "ModelCredentialRef": {
+      "description": "Credential source selected for a resolved model binding.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Let the harness use its native login or workload-identity behavior.",
+          "properties": {
+            "kind": {
+              "const": "harness_managed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Read a credential from the named environment variable at invocation time.",
+          "properties": {
+            "kind": {
+              "const": "environment",
+              "type": "string"
+            },
+            "name": {
+              "description": "Environment variable name. The credential value is never planned or serialized.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ModelEndpointRef": {
+      "description": "Endpoint selected for a resolved model binding.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Use the selected provider's harness-native endpoint.",
+          "properties": {
+            "kind": {
+              "const": "provider_default",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Use an explicitly configured protocol-compatible endpoint.",
+          "properties": {
+            "kind": {
+              "const": "configured",
+              "type": "string"
+            },
+            "url": {
+              "description": "Endpoint URL. Credential values must never be embedded in this value.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "ProfileRegistryConfig": {
       "additionalProperties": true,
@@ -1452,6 +1604,53 @@
       ],
       "type": "object"
     },
+    "ResolvedModelBinding": {
+      "additionalProperties": false,
+      "description": "Immutable, secret-free model selection produced during planning.",
+      "properties": {
+        "capabilities": {
+          "description": "Capabilities required by this model selection.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "credential_ref": {
+          "$ref": "#/$defs/ModelCredentialRef",
+          "description": "Planned credential reference."
+        },
+        "endpoint_ref": {
+          "$ref": "#/$defs/ModelEndpointRef",
+          "description": "Planned endpoint reference."
+        },
+        "model_id": {
+          "description": "Provider-native model identifier.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Normalized provider name.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Configured model role or alias.",
+          "type": "string"
+        },
+        "wire_protocol": {
+          "description": "Request protocol required by the adapter and endpoint.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "provider",
+        "model_id",
+        "wire_protocol",
+        "endpoint_ref",
+        "credential_ref"
+      ],
+      "type": "object"
+    },
     "RuntimeCapabilities": {
       "description": "Lifecycle behavior implemented by a resolved runtime path.",
       "properties": {
@@ -1705,6 +1904,17 @@
         }
       ],
       "description": "Resolved environment plan."
+    },
+    "model_binding": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResolvedModelBinding"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Model selection resolved and validated for the selected adapter."
     },
     "profiles": {
       "description": "Ordered selected profiles.",

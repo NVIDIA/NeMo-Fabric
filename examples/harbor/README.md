@@ -73,11 +73,21 @@ container boundary:
 | --- | --- |
 | `--ak fabric_adapter_id=...` | `harness.adapter_id` |
 | `--model` | `models.default` |
+| `--ak fabric_model_provider=...` | `models.default.provider` override |
+| `--ak fabric_model_protocol=...` | `models.default.protocol` |
+| `--ak fabric_model_base_url=...` | `models.default.base_url` |
+| `--ak fabric_model_api_key_env=...` | `models.default.api_key_env` credential reference |
 | `--skill` | `skills.paths` |
 | `--mcp-config` | `mcp.servers` |
 | `--ak fabric_blocked_tools='[...]'` | `tools.blocked` |
 | `--ak fabric_telemetry=relay` | `telemetry` and Relay ATOF/ATIF configuration |
 | `--ak fabric_harness_settings='{...}'` | `harness.settings` for adapter-specific runtime controls |
+
+When the resolved model provider is `nvidia`, `FabricAgent` defaults
+`models.default.api_key_env` to `NVIDIA_API_KEY`. An explicit
+`fabric_model_api_key_env` value always takes precedence. Endpoint URLs remain
+ordinary `fabric_model_base_url` configuration and are never hardcoded for an
+internal deployment.
 
 The result is the complete `FabricConfig` uploaded with the `RunRequest` and
 task-local `base_dir`. The container-side runner deserializes that payload and

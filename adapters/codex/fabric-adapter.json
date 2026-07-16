@@ -10,6 +10,15 @@
   "config": {
     "accepts": ["models", "telemetry"]
   },
+  "models": {
+    "roles": ["default"],
+    "protocols": {
+      "openai-responses": {
+        "providers": ["openai"],
+        "custom_endpoints": false
+      }
+    }
+  },
   "telemetry": {
     "providers": {
       "relay": {

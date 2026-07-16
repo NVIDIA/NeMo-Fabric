@@ -46,6 +46,9 @@ from nemo_fabric.types import DoctorReport
 from nemo_fabric.types import EffectiveConfig
 from nemo_fabric.types import ErrorInfo
 from nemo_fabric.types import FabricEvent
+from nemo_fabric.types import ModelCredentialRef
+from nemo_fabric.types import ModelEndpointRef
+from nemo_fabric.types import ResolvedModelBinding
 from nemo_fabric.types import RunOutput
 from nemo_fabric.types import RunPlan
 from nemo_fabric.types import RunResult
@@ -75,6 +78,8 @@ __all__ = [
     "McpServerConfig",
     "MetadataConfig",
     "ModelConfig",
+    "ModelCredentialRef",
+    "ModelEndpointRef",
     "ProfileRegistryConfig",
     "RelayAtifConfig",
     "RelayAtofConfig",
@@ -93,6 +98,7 @@ __all__ = [
     "RunPlan",
     "RunRequest",
     "RunResult",
+    "ResolvedModelBinding",
     "RuntimeCapabilities",
     "RuntimeHandle",
     "RuntimeConfig",

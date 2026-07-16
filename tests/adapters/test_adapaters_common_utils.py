@@ -151,6 +151,18 @@ def test_selected_model_config(
     assert common_utils.selected_model_config(payload) == expected
 
 
+def test_model_binding_payload_reads_planning_result():
+    binding = {
+        "role": "default",
+        "provider": "anthropic",
+        "model_id": "claude-sonnet-4-5",
+        "wire_protocol": "anthropic-messages",
+    }
+
+    assert common_utils.model_binding_payload({"model_binding": binding}) is binding
+    assert common_utils.model_binding_payload({}) == {}
+
+
 def test_payload_accessors_prefer_effective_config():
     payload = {
         "agent_name": "outer-agent",

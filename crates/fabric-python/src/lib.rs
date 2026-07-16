@@ -6,8 +6,8 @@
 use std::path::PathBuf;
 
 use nemo_fabric_core::{
-    FabricConfig, ProfileConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
-    load_fabric_document, resolve_effective_config_from_config,
+    FabricConfig, ProfileConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle,
+    doctor_effective_config, load_fabric_document, resolve_effective_config_from_config,
     resolve_effective_config_with_profiles, resolve_run_plan_from_config,
     resolve_run_plan_with_profiles, run_plan,
 };
@@ -82,8 +82,9 @@ fn plan_config(
 #[pyo3(signature = (path, profile=None))]
 fn doctor(py: Python<'_>, path: String, profile: Option<Py<PyAny>>) -> PyResult<String> {
     let profiles = profile_values(py, profile)?;
-    let plan = resolve_run_plan_with_profiles(path, &profiles).map_err(to_py_error)?;
-    to_json(&doctor_plan(&plan))
+    let effective = resolve_effective_config_with_profiles(path, &profiles).map_err(to_py_error)?;
+    let report = doctor_effective_config(effective).map_err(to_py_error)?;
+    to_json(&report)
 }
 
 /// Diagnose typed config/profile JSON without installing or running it.
@@ -96,9 +97,11 @@ fn doctor_config(
 ) -> PyResult<String> {
     let config = parse_config(config_json)?;
     let profiles = parse_profiles(profiles_json)?;
-    let plan = resolve_run_plan_from_config(config, &profiles, resolve_context(base_dir))
-        .map_err(to_py_error)?;
-    to_json(&doctor_plan(&plan))
+    let effective =
+        resolve_effective_config_from_config(config, &profiles, resolve_context(base_dir))
+            .map_err(to_py_error)?;
+    let report = doctor_effective_config(effective).map_err(to_py_error)?;
+    to_json(&report)
 }
 
 /// Run an agent/profile through its Fabric adapter and return JSON.

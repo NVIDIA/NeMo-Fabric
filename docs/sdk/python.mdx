@@ -152,6 +152,46 @@ do not modify already-started runtimes. Use `remove_mcp_server(name)` and
 Telemetry is enabled by adding entries to `telemetry.providers`; Relay-specific
 settings live in the top-level `relay` block.
 
+### Resolve Model Compatibility During Planning
+
+`ModelConfig.provider` is an open provider name, not a fixed enum. The selected
+adapter descriptor determines which provider defaults and wire protocols are
+compatible. Use these normalized fields to describe a model connection:
+
+| Field | Meaning |
+| --- | --- |
+| `provider` | Provider identity used for compatibility and model-prefix normalization |
+| `model` | Provider model identifier; an exact `<provider>/` prefix is removed in the resolved binding |
+| `protocol` | Optional wire protocol; required when more than one adapter protocol could match |
+| `base_url` | Explicit HTTP or HTTPS endpoint for a protocol-compatible custom provider |
+| `api_key_env` | Name of the environment variable containing a credential, never the credential value |
+| `capabilities` | Capabilities required from the adapter's selected model path |
+
+For example, configure any Anthropic Messages-compatible service without adding
+that provider name to Fabric source code:
+
+```python
+custom_claude = ModelConfig(
+    provider="private-cloud",
+    model="private-cloud/claude-sonnet-4-5",
+    protocol="anthropic-messages",
+    base_url="https://models.example.test/anthropic",
+    api_key_env="PRIVATE_CLOUD_API_KEY",
+)
+```
+
+Planning produces one immutable `plan.model_binding` with the normalized model
+ID, wire protocol, endpoint reference, credential reference, and required
+capabilities. The same resolver backs `plan`, `doctor`, and `run`. An unknown
+provider without an explicit compatible endpoint, an unsupported protocol, or
+an unsupported required capability fails before runtime startup.
+
+Endpoint URLs must not contain credentials, query strings, or fragments.
+Credential values remain in the invocation environment and never enter plans,
+schemas, logs, or adapter payloads. Adapters whose descriptors do not yet
+declare model compatibility retain their existing behavior and expose no
+resolved model binding.
+
 For evaluation or deployment variations, use ordinary Python functions and
 copies of the typed config. Supply the final config to Fabric when the variation
 does not need file-profile merge semantics.

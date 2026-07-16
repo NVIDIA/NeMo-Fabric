@@ -222,6 +222,14 @@ def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
                 "runtime": {},
             },
         },
+        "model_binding": {
+            "role": "default",
+            "provider": "openai",
+            "model_id": "gpt-5.4",
+            "wire_protocol": "openai-responses",
+            "endpoint_ref": {"kind": "provider_default"},
+            "credential_ref": {"kind": "harness_managed"},
+        },
         "runtime_context": {
             "runtime_id": "harbor-test",
             "environment": {"workspace": str(tmp_path)},
@@ -256,6 +264,87 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     assert "-e /opt/nemo-fabric/adapters/hermes" in dockerfile
     assert "nemo-fabric[harbor,hermes,relay,runtime]" in dockerfile
     assert "@openai/codex" not in dockerfile
+
+
+def test_harbor_config_preserves_generic_model_endpoint_and_credential():
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+
+    config = build_harbor_config(
+        adapter_id="nvidia.fabric.claude",
+        workspace="/app",
+        model_name="vendor/claude-sonnet-4-5",
+        model_provider="private-cloud",
+        model_protocol="anthropic-messages",
+        model_base_url="https://models.example.test/anthropic",
+        model_api_key_env="PRIVATE_CLOUD_API_KEY",
+    )
+
+    model = config.models["default"]
+    assert model.provider == "private-cloud"
+    assert model.protocol == "anthropic-messages"
+    assert str(model.base_url) == "https://models.example.test/anthropic"
+    assert model.api_key_env == "PRIVATE_CLOUD_API_KEY"
+
+
+def test_harbor_config_defaults_nvidia_credential_reference():
+    from nemo_fabric import Fabric
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+
+    config = build_harbor_config(
+        adapter_id="nvidia.fabric.claude",
+        workspace="/app",
+        model_name="nvidia/claude-sonnet-4-5",
+        model_base_url="https://models.example.test/anthropic",
+    )
+
+    model = config.models["default"]
+    assert model.provider == "nvidia"
+    assert model.api_key_env == "NVIDIA_API_KEY"
+
+    plan = Fabric().plan(config, base_dir=ROOT)
+    assert plan.model_binding is not None
+    assert plan.model_binding.provider == "nvidia"
+    assert plan.model_binding.credential_ref.name == "NVIDIA_API_KEY"
+
+    override = build_harbor_config(
+        adapter_id="nvidia.fabric.claude",
+        workspace="/app",
+        model_name="nvidia/claude-sonnet-4-5",
+        model_base_url="https://models.example.test/anthropic",
+        model_api_key_env="EXPLICIT_CLAUDE_KEY",
+    )
+    assert override.models["default"].api_key_env == "EXPLICIT_CLAUDE_KEY"
+
+
+def test_harbor_agent_propagates_generic_model_connection(tmp_path: Path):
+    from nemo_fabric.integrations.harbor import FabricAgent
+
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.claude",
+        model_name="private-cloud/claude-sonnet-4-5",
+        fabric_model_provider="private-cloud",
+        fabric_model_protocol="anthropic-messages",
+        fabric_model_base_url="https://models.example.test/anthropic",
+        fabric_model_api_key_env="PRIVATE_CLOUD_API_KEY",
+    )
+
+    model = agent._build_config().models["default"]
+    assert model.provider == "private-cloud"
+    assert model.protocol == "anthropic-messages"
+    assert str(model.base_url) == "https://models.example.test/anthropic"
+    assert model.api_key_env == "PRIVATE_CLOUD_API_KEY"
+
+
+def test_harbor_config_rejects_model_connection_without_model_name():
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+
+    with pytest.raises(ValueError, match="model_name is required"):
+        build_harbor_config(
+            adapter_id="nvidia.fabric.claude",
+            workspace="/app",
+            model_base_url="https://models.example.test/anthropic",
+        )
 
 
 def test_harbor_calculator_uses_agent_inputs_without_config_files():
@@ -296,7 +385,11 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "fabric_config_factory" not in swebench
     assert "fabric_workspace=/app" in calculator
     assert "--model nvidia/nemotron-3-nano-30b-a3b" in calculator
-    assert "--model anthropic/claude-sonnet-4-5" in calculator
+    assert "--model nvidia/claude-sonnet-4-5" in calculator
+    assert "fabric_model_base_url=$CLAUDE_BASE_URL" in calculator
+    assert "fabric_model_base_url=$CLAUDE_BASE_URL" in swebench
+    assert '--ae "NVIDIA_API_KEY=$NVIDIA_API_KEY"' in calculator
+    assert '--ae "NVIDIA_API_KEY=$NVIDIA_API_KEY"' in swebench
     assert 'CALCULATOR_DIR="$PWD/examples/harbor/calculator"' in calculator
     assert "calculator/README.md" in landing
     assert "swebench/README.md" in landing

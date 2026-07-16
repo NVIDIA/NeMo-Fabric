@@ -11,9 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::config::{
-    AdapterKind, CapabilityKind, CapabilityTarget, ControlLocation, EnvironmentOwnership,
-    ResolutionStrategy, RunPlan,
+    AdapterKind, CapabilityKind, CapabilityTarget, ControlLocation, EffectiveConfig,
+    EnvironmentOwnership, ModelCredentialRef, ModelEndpointRef, ResolutionStrategy, RunPlan,
+    resolve_run_plan_from_effective_config,
 };
+use crate::error::{FabricError, Result};
 
 /// Diagnostic status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -58,6 +60,9 @@ pub struct DoctorReport {
 pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
     let mut checks = Vec::new();
     checks.push(check_adapter_descriptor(plan));
+    if let Some(check) = check_model_binding(plan) {
+        checks.push(check);
+    }
     checks.push(check_resolution(plan));
     checks.extend(check_runtime_execution_surface(plan));
     checks.push(check_environment_context(plan));
@@ -72,6 +77,91 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
         status,
         checks,
     }
+}
+
+/// Diagnose an effective config using the same planning path as execution.
+pub fn doctor_effective_config(effective_config: EffectiveConfig) -> Result<DoctorReport> {
+    let agent_name = effective_config.agent_name.clone();
+    let profiles = effective_config.profiles.clone();
+    match resolve_run_plan_from_effective_config(effective_config) {
+        Ok(plan) => Ok(doctor_plan(&plan)),
+        Err(FabricError::ModelCompatibility {
+            adapter_id,
+            role,
+            provider,
+            wire_protocol,
+            reason,
+        }) => {
+            let mut metadata = BTreeMap::new();
+            metadata.insert("adapter_id".to_string(), Value::String(adapter_id));
+            metadata.insert("role".to_string(), Value::String(role));
+            if let Some(provider) = provider {
+                metadata.insert("provider".to_string(), Value::String(provider));
+            }
+            if let Some(wire_protocol) = wire_protocol {
+                metadata.insert("wire_protocol".to_string(), Value::String(wire_protocol));
+            }
+            Ok(DoctorReport {
+                agent_name,
+                profiles,
+                status: DoctorStatus::Fail,
+                checks: vec![check_with_metadata(
+                    "model.compatibility",
+                    DoctorStatus::Fail,
+                    reason,
+                    metadata,
+                )],
+            })
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn check_model_binding(plan: &RunPlan) -> Option<DoctorCheck> {
+    let binding = plan.model_binding.as_ref()?;
+    let mut metadata = BTreeMap::new();
+    metadata.insert("role".to_string(), Value::String(binding.role.clone()));
+    metadata.insert(
+        "provider".to_string(),
+        Value::String(binding.provider.clone()),
+    );
+    metadata.insert(
+        "model_id".to_string(),
+        Value::String(binding.model_id.clone()),
+    );
+    metadata.insert(
+        "wire_protocol".to_string(),
+        Value::String(binding.wire_protocol.clone()),
+    );
+    metadata.insert(
+        "endpoint".to_string(),
+        Value::String(
+            match binding.endpoint_ref {
+                ModelEndpointRef::ProviderDefault => "provider_default",
+                ModelEndpointRef::Configured { .. } => "configured",
+            }
+            .to_string(),
+        ),
+    );
+    metadata.insert(
+        "credential".to_string(),
+        Value::String(
+            match binding.credential_ref {
+                ModelCredentialRef::HarnessManaged => "harness_managed",
+                ModelCredentialRef::Environment { .. } => "environment",
+            }
+            .to_string(),
+        ),
+    );
+    Some(check_with_metadata(
+        "model.compatibility",
+        DoctorStatus::Pass,
+        format!(
+            "resolved model role `{}` through `{}`",
+            binding.role, binding.wire_protocol
+        ),
+        metadata,
+    ))
 }
 
 fn check_adapter_descriptor(plan: &RunPlan) -> DoctorCheck {
@@ -475,12 +565,70 @@ mod tests {
 
     use super::*;
     use crate::config::{
-        AdapterKind, CapabilityKind, CapabilityRoute, CapabilityTarget, ResolutionStrategy,
-        resolve_run_plan,
+        AdapterKind, CapabilityKind, CapabilityRoute, CapabilityTarget, FabricConfig,
+        ResolutionStrategy, ResolveContext, resolve_effective_config_from_config, resolve_run_plan,
+        resolve_run_plan_from_effective_config,
     };
 
     fn file_config_agent_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/file-config-agent")
+    }
+
+    fn claude_effective_config(model: &str) -> EffectiveConfig {
+        let config: FabricConfig = serde_yaml::from_str(&format!(
+            r#"
+schema_version: fabric.agent/v1alpha1
+metadata:
+  name: doctor-model-test
+harness:
+  adapter_id: nvidia.fabric.claude
+models:
+  default:
+{model}
+runtime: {{}}
+"#
+        ))
+        .expect("Claude config");
+        resolve_effective_config_from_config(config, &[], ResolveContext::from_agent_root("."))
+            .expect("effective config")
+    }
+
+    #[test]
+    fn doctor_reports_the_same_resolved_model_binding_as_plan() {
+        let effective = claude_effective_config(
+            "    provider: anthropic\n    model: anthropic/claude-sonnet-4-5",
+        );
+        let plan = resolve_run_plan_from_effective_config(effective.clone()).expect("run plan");
+
+        let report = doctor_effective_config(effective).expect("doctor report");
+
+        let binding = plan.model_binding.expect("model binding");
+        let check = report
+            .checks
+            .iter()
+            .find(|check| check.name == "model.compatibility")
+            .expect("model compatibility check");
+        assert_eq!(check.status, DoctorStatus::Pass);
+        assert_eq!(check.metadata["provider"], binding.provider);
+        assert_eq!(check.metadata["model_id"], binding.model_id);
+        assert_eq!(check.metadata["wire_protocol"], binding.wire_protocol);
+    }
+
+    #[test]
+    fn doctor_turns_planning_model_incompatibility_into_structured_failure() {
+        let effective = claude_effective_config(
+            "    provider: private-cloud\n    model: private-cloud/claude-sonnet-4-5",
+        );
+
+        let report = doctor_effective_config(effective).expect("doctor report");
+
+        assert_eq!(report.status, DoctorStatus::Fail);
+        assert_eq!(report.checks.len(), 1);
+        let check = &report.checks[0];
+        assert_eq!(check.name, "model.compatibility");
+        assert_eq!(check.status, DoctorStatus::Fail);
+        assert_eq!(check.metadata["provider"], "private-cloud");
+        assert!(check.message.contains("custom endpoint"));
     }
 
     #[test]

@@ -11,18 +11,20 @@ pub mod schema;
 
 pub use config::{
     ADAPTER_CONTRACT_VERSION, AdapterConfigSupport, AdapterDescriptor, AdapterDescriptorSource,
-    AdapterKind, AdapterRequirements, AdapterTelemetryProviderSupport, AdapterTelemetrySupport,
-    CapabilityPlan, ControlLocation, EffectiveConfig, EnvironmentConfig, EnvironmentOwnership,
-    EnvironmentPlan, FabricConfig, FabricDocument, HarnessConfig, McpConfig, McpExposure,
-    McpServerPlan, MetadataConfig, ModelConfig, ProfileConfig, ResolutionStrategy, ResolveContext,
-    ResolvedAdapterDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
-    TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig,
-    load_adapter_descriptor, load_fabric_document, resolve_effective_config,
-    resolve_effective_config_from_config, resolve_effective_config_with_profiles, resolve_run_plan,
-    resolve_run_plan_from_config, resolve_run_plan_from_effective_config,
-    resolve_run_plan_with_profiles, validate_agent_directory,
+    AdapterKind, AdapterModelProtocolSupport, AdapterModelSupport, AdapterRequirements,
+    AdapterTelemetryProviderSupport, AdapterTelemetrySupport, CapabilityPlan, ControlLocation,
+    EffectiveConfig, EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan, FabricConfig,
+    FabricDocument, HarnessConfig, McpConfig, McpExposure, McpServerPlan, MetadataConfig,
+    ModelConfig, ModelCredentialRef, ModelEndpointRef, ProfileConfig, ResolutionStrategy,
+    ResolveContext, ResolvedAdapterDescriptor, ResolvedModelBinding, RunPlan, RuntimeCapabilities,
+    RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan, TelemetryProvider,
+    TelemetryProviderConfig, load_adapter_descriptor, load_fabric_document,
+    resolve_effective_config, resolve_effective_config_from_config,
+    resolve_effective_config_with_profiles, resolve_run_plan, resolve_run_plan_from_config,
+    resolve_run_plan_from_effective_config, resolve_run_plan_with_profiles,
+    validate_agent_directory,
 };
-pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
+pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_effective_config, doctor_plan};
 pub use error::{FabricError, Result};
 pub use runtime::{
     AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage,

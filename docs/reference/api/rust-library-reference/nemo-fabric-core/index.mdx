@@ -18,6 +18,8 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::AdapterDescriptor;`
 - `pub use config::AdapterDescriptorSource;`
 - `pub use config::AdapterKind;`
+- `pub use config::AdapterModelProtocolSupport;`
+- `pub use config::AdapterModelSupport;`
 - `pub use config::AdapterRequirements;`
 - `pub use config::AdapterTelemetryProviderSupport;`
 - `pub use config::AdapterTelemetrySupport;`
@@ -35,10 +37,13 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::McpServerPlan;`
 - `pub use config::MetadataConfig;`
 - `pub use config::ModelConfig;`
+- `pub use config::ModelCredentialRef;`
+- `pub use config::ModelEndpointRef;`
 - `pub use config::ProfileConfig;`
 - `pub use config::ResolutionStrategy;`
 - `pub use config::ResolveContext;`
 - `pub use config::ResolvedAdapterDescriptor;`
+- `pub use config::ResolvedModelBinding;`
 - `pub use config::RunPlan;`
 - `pub use config::RuntimeCapabilities;`
 - `pub use config::RuntimeConfig;`
@@ -60,6 +65,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use doctor::DoctorCheck;`
 - `pub use doctor::DoctorReport;`
 - `pub use doctor::DoctorStatus;`
+- `pub use doctor::doctor_effective_config;`
 - `pub use doctor::doctor_plan;`
 - `pub use error::FabricError;`
 - `pub use error::Result;`
