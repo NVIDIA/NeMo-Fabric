@@ -131,3 +131,10 @@ nemo-fabric-adapters-hermes = { path = "adapters/hermes", editable = true }
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
+
+[tool.ruff.lint]
+# flake8-bugbear: enforce only the cached-instance-method rule (B019).
+# Using functools.lru_cache/cache on methods keeps a reference to `self` in
+# the cache, leaking every instance for the process lifetime. The full "B"
+# category is intentionally not enabled to avoid noisy, low-value warnings.
+select = ["B019"]
