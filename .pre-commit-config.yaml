@@ -62,12 +62,7 @@ repos:
 
       - id: license-diff
         name: Dependency license diff
-        entry: >-
-          bash -c 'git diff --quiet HEAD --
-          Cargo.toml Cargo.lock pyproject.toml uv.lock
-          ":(glob)**/Cargo.toml" ":(glob)**/Cargo.lock"
-          ":(glob)**/pyproject.toml" ":(glob)**/uv.lock"
-          || uv run --no-project python scripts/licensing/license_diff.py --base-ref HEAD'
+        entry: uv run --no-project python scripts/licensing/license_diff.py --base-ref HEAD
         language: system
         files: '(^|/)(Cargo\.toml|Cargo\.lock|pyproject\.toml|uv\.lock)$'
         pass_filenames: false
