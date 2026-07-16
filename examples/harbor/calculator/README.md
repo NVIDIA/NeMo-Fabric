@@ -3,13 +3,14 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Harbor Multi-Harness Demo
+# Harbor Calculator Smoke Test
 
-This demo keeps one Harbor task and one `FabricAgent` class while Harbor options
-select the harness, model, and telemetry behavior. `FabricAgent` translates
-those options into a complete typed `FabricConfig`. Harbor owns the task,
-container, verifier, reward, concurrency, and run layout. Fabric runs one
-independent harness runtime for each Harbor agent run.
+This self-contained calculator task is the fastest way to check the complete
+Harbor → `FabricAgent` → Fabric → verifier path. Start with the deterministic,
+credential-free scripted run, then use the same task to try Hermes, Relay
+telemetry, or Claude. `FabricAgent` translates Harbor options into a complete
+typed `FabricConfig`; Harbor owns the task, container, verifier, reward,
+concurrency, and run layout.
 
 ## Requirements
 
@@ -33,9 +34,9 @@ Fabric revision from your checkout:
 ```bash
 set -euo pipefail
 
-DEMO_DIR="$PWD/examples/harbor/demo"
-TASK_DIR="$DEMO_DIR/task"
-RUNS_DIR="$DEMO_DIR/runs"
+CALCULATOR_DIR="$PWD/examples/harbor/calculator"
+TASK_DIR="$CALCULATOR_DIR/task"
+RUNS_DIR="$CALCULATOR_DIR/runs"
 STAGING_DIR="$(mktemp -d "$TASK_DIR/environment/.vendor.XXXXXX")"
 trap 'rm -rf "$STAGING_DIR"' EXIT
 
@@ -79,7 +80,7 @@ uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --ak fabric_adapter_id=demo.fabric.scripted \
-  --ak fabric_config_base_dir=/opt/fabric-demo \
+  --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --job-name fabric-smoke \
   --jobs-dir "$RUNS_DIR" \
@@ -100,7 +101,7 @@ uv run --extra runtime --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
-  --ak fabric_config_base_dir=/opt/fabric-demo \
+  --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak 'fabric_harness_settings={"cwd":"/app","base_url":"https://integrate.api.nvidia.com/v1","max_iterations":20}' \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
@@ -122,7 +123,7 @@ uv run --extra runtime --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
-  --ak fabric_config_base_dir=/opt/fabric-demo \
+  --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak fabric_telemetry=relay \
   --ak 'fabric_harness_settings={"cwd":"/app","base_url":"https://integrate.api.nvidia.com/v1","max_iterations":4,"terminal_timeout":120}' \
@@ -161,7 +162,7 @@ uv run --extra runtime --extra harbor harbor run \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model anthropic/claude-sonnet-4-5 \
   --ak fabric_adapter_id=nvidia.fabric.claude \
-  --ak fabric_config_base_dir=/opt/fabric-demo \
+  --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak 'fabric_harness_settings={"max_turns":20,"timeout_seconds":600}' \
   --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
@@ -191,7 +192,7 @@ Check Fabric status, harness and adapter identity, runtime and invocation IDs,
 artifacts, telemetry, Harbor exceptions, and reward. A successful smoke run has
 Fabric status `succeeded` and Harbor mean reward `1.0`.
 
-After the demo, remove the generated build-context copy:
+After the runs, remove the generated build-context copy:
 
 ```bash
 rm -rf "$TASK_DIR/environment/vendor"

@@ -12,11 +12,11 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ROOT_README = ROOT / "README.md"
-DEMO_ROOT = ROOT / "examples" / "harbor" / "demo"
-DEMO_README = DEMO_ROOT / "README.md"
-DEMO_DOCKERFILE = DEMO_ROOT / "task" / "environment" / "Dockerfile"
-DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
-DEMO_FABRIC_ROOT = DEMO_ROOT / "task" / "environment" / "fabric"
+CALCULATOR_ROOT = ROOT / "examples" / "harbor" / "calculator"
+CALCULATOR_README = CALCULATOR_ROOT / "README.md"
+CALCULATOR_DOCKERFILE = CALCULATOR_ROOT / "task" / "environment" / "Dockerfile"
+CALCULATOR_SOLUTION = CALCULATOR_ROOT / "task" / "solution" / "solve.sh"
+CALCULATOR_FABRIC_ROOT = CALCULATOR_ROOT / "task" / "environment" / "fabric"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
@@ -250,7 +250,7 @@ def test_codex_adapter_maps_fabric_request_to_cli(tmp_path):
     assert adapter.resolve_cwd(payload) == tmp_path
 
 
-def test_claude_demo_uses_current_adapter_contract():
+def test_claude_calculator_run_uses_current_adapter_contract():
     from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
 
     config = build_harbor_config(
@@ -265,16 +265,16 @@ def test_claude_demo_uses_current_adapter_contract():
     assert settings["permission_mode"] == "bypassPermissions"
     assert settings["max_turns"] == 20
     assert config.models["default"].provider == "anthropic"
-    dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
+    dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     assert "-e /opt/nemo-fabric/adapters/claude" in dockerfile
     assert "-e /opt/nemo-fabric/adapters/hermes" in dockerfile
     assert "nemo-fabric[harbor,hermes,relay,runtime]" in dockerfile
     assert "@openai/codex" not in dockerfile
 
 
-def test_harbor_demo_uses_agent_inputs_without_config_files():
-    assert not (DEMO_FABRIC_ROOT / "harbor_demo_config.py").exists()
-    assert not list(DEMO_FABRIC_ROOT.rglob("*.yaml"))
+def test_harbor_calculator_uses_agent_inputs_without_config_files():
+    assert not list(CALCULATOR_FABRIC_ROOT.glob("*.py"))
+    assert not list(CALCULATOR_FABRIC_ROOT.rglob("*.yaml"))
 
 
 def test_harbor_smoke_config_resolves_its_local_adapter():
@@ -285,29 +285,30 @@ def test_harbor_smoke_config_resolves_its_local_adapter():
         adapter_id="demo.fabric.scripted",
         workspace="/app",
     )
-    plan = Fabric().plan(config, base_dir=DEMO_FABRIC_ROOT)
+    plan = Fabric().plan(config, base_dir=CALCULATOR_FABRIC_ROOT)
 
     assert plan.adapter.adapter_id == "demo.fabric.scripted"
     assert plan["adapter_descriptor"]["source"] == "local"
     assert plan["adapter_descriptor"]["root"].endswith("adapters/scripted")
 
 
-def test_harbor_demo_documents_explicit_cli_commands():
-    demo = DEMO_README.read_text(encoding="utf-8")
+def test_harbor_calculator_documents_explicit_cli_commands():
+    calculator = CALCULATOR_README.read_text(encoding="utf-8")
     integration = INTEGRATION_README.read_text(encoding="utf-8")
 
-    assert "run.sh" not in demo
-    assert "demo/run.sh" not in integration
-    assert demo.count("uv run --extra runtime --extra harbor harbor run") == 4
+    assert "run.sh" not in calculator
+    assert calculator.count("uv run --extra runtime --extra harbor harbor run") == 4
     assert integration.count("uv run --extra runtime --extra harbor harbor run") == 5
     assert "--agent-import-path" not in integration
-    assert "fabric_config_path" not in demo
+    assert "fabric_config_path" not in calculator
     assert "fabric_config_path" not in integration
-    assert "fabric_config_factory" not in demo
+    assert "fabric_config_factory" not in calculator
     assert "fabric_config_factory" not in integration
-    assert "fabric_workspace=/app" in demo
-    assert "--model nvidia/nemotron-3-nano-30b-a3b" in demo
-    assert "--model anthropic/claude-sonnet-4-5" in demo
+    assert "fabric_workspace=/app" in calculator
+    assert "--model nvidia/nemotron-3-nano-30b-a3b" in calculator
+    assert "--model anthropic/claude-sonnet-4-5" in calculator
+    assert 'CALCULATOR_DIR="$PWD/examples/harbor/calculator"' in calculator
+    assert "calculator/README.md" in integration
     assert "fabric_adapter_id" in integration
     assert 'export TMPDIR="$HOME/harbor-tmp"' in integration
     assert "./examples/harbor/prepare_swebench.sh" in integration
@@ -320,7 +321,7 @@ def test_harbor_demo_documents_explicit_cli_commands():
         "--ak",
         "--job-name",
     ):
-        assert flag in demo
+        assert flag in calculator
     for value in (
         "swe-bench/swe-bench-verified",
         "django__django-13741",
@@ -337,9 +338,9 @@ def test_harbor_demo_documents_explicit_cli_commands():
         assert value in integration
 
 
-def test_harbor_demo_setup_and_solution_fail_fast():
-    dockerfile = DEMO_DOCKERFILE.read_text(encoding="utf-8")
-    solution = DEMO_SOLUTION.read_text(encoding="utf-8")
+def test_harbor_calculator_setup_and_solution_fail_fast():
+    dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
+    solution = CALCULATOR_SOLUTION.read_text(encoding="utf-8")
 
     assert "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |" not in dockerfile
     assert "-o /tmp/rustup-init.sh" in dockerfile
@@ -347,7 +348,7 @@ def test_harbor_demo_setup_and_solution_fail_fast():
     assert "raise SystemExit" in solution
 
 
-def test_harbor_telemetry_demo_exports_direct_atof_and_atif():
+def test_harbor_calculator_telemetry_exports_direct_atof_and_atif():
     from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
 
     config = build_harbor_config(
@@ -363,7 +364,7 @@ def test_harbor_telemetry_demo_exports_direct_atof_and_atif():
     assert "openinference" not in observability
     assert observability["atof"]["enabled"] is True
     assert observability["atif"]["enabled"] is True
-    assert not (DEMO_ROOT / "host-gateway.compose.yaml").exists()
+    assert not (CALCULATOR_ROOT / "host-gateway.compose.yaml").exists()
     assert "direct Relay ATOF and ATIF" in integration
     assert "telemetry-validation.json" in integration
     assert "canonical ATIF" in integration
@@ -492,4 +493,4 @@ def test_root_readme_routes_to_sdk_and_harbor_guides():
     assert "runtime execution layer" in readme
     assert "docs/sdk/python.mdx" in readme
     assert "examples/harbor/README.md" in readme
-    assert "examples/harbor/demo/README.md" in readme
+    assert "examples/harbor/calculator/README.md" in readme

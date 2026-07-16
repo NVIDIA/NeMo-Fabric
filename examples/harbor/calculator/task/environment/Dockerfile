@@ -22,6 +22,6 @@ RUN pip install --no-cache-dir \
         -e "/opt/nemo-fabric[harbor,hermes,relay,runtime]"
 
 COPY calculator.py /app/calculator.py
-COPY fabric /opt/fabric-demo
+COPY fabric /opt/fabric-calculator
 
 WORKDIR /app

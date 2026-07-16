@@ -12,6 +12,19 @@ the selected adapter, model, skills, MCP servers, tool policy, and telemetry
 mode into one final typed config and asks Fabric to run it inside the task
 container.
 
+## Choose a Path
+
+| Path | Use it to |
+| --- | --- |
+| [Calculator smoke test](calculator/README.md) | Check the complete integration and Harbor reward quickly, without credentials or a SWE-Bench download. |
+| SWE-Bench walkthrough (this guide) | Run realistic Hermes and Claude experiments with skills, MCP servers, tool policy, Relay telemetry, and SWE-Bench verification. |
+
+Start with the calculator when validating a new checkout or environment. Use
+the rest of this guide when you are ready to exercise a real coding task and
+compare configuration variations.
+
+## Execution Model
+
 ```mermaid
 flowchart LR
     subgraph Host["<b>Harbor host process</b>"]

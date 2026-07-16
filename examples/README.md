@@ -31,5 +31,6 @@ just build-all
 [`harbor`](harbor/README.md) shows how to run Fabric agents in Harbor. Start
 with one SWE-Bench task, switch between Hermes and Claude, vary skills, MCP
 servers, tools, and telemetry through Harbor options, then verify the reward
-and Fabric artifacts. The [calculator demo](harbor/demo/README.md) provides a
-smaller credential-free starting point plus the same harness variations.
+and Fabric artifacts. The [calculator smoke test](harbor/calculator/README.md)
+provides a smaller credential-free starting point plus the same harness
+variations.
