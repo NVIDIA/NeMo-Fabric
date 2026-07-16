@@ -65,8 +65,9 @@ The entrypoint exposes complete harness configs defined in
 
 Add `--relay` to any variant to enable the Relay ATOF and ATIF configuration:
 
-Relay runs require the optional NeMo Relay dependency in the selected adapter
-environment.
+Relay requirements depend on the selected adapter. The Codex and Claude SDK
+adapters require an external `nemo-relay` CLI in the supported `0.6.x` range;
+the Python package named `nemo-relay` does not install that command.
 
 ```bash
 .venv/bin/python -m examples.code_review_agent \

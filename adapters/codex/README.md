@@ -48,6 +48,13 @@ The dependency graph includes `openai-codex-cli-bin`. The Codex SDK owns this
 pinned app-server distribution; Fabric does not treat it as a user-installed
 command or an adapter descriptor requirement.
 
+This adapter pins `openai-codex==0.1.0b3`, which pins
+`openai-codex-cli-bin==0.137.0a4`. A newer `codex` command on `PATH` is not used
+implicitly. When testing a newer compatible runtime, set
+`harness.settings.codex_bin` to an app-server path that is absolute or relative
+to the Fabric config root. Fabric passes the resolved path through
+`CodexConfig.codex_bin`; the SDK remains the execution driver.
+
 ## Execution Model
 
 Each Fabric invocation starts a fresh SDK client and closes its app-server
@@ -76,6 +83,7 @@ Codex-specific controls belong in `harness.settings`:
 - `base_instructions` and `developer_instructions`
 - `personality`, `reasoning_effort`, `service_name`, and `service_tier`
 - `output_schema` for SDK-native structured output
+- `codex_bin` for an explicit Codex app-server runtime override
 - `config_overrides` as dotted request-scoped Codex configuration keys
 - `timeout_seconds`, defaulting to 1800
 - `env` for variables explicitly forwarded to the Codex runtime
@@ -115,7 +123,7 @@ back to CLI execution. Relay routes and observes requests; it does not provide
 OpenAI credentials or change the selected Codex authentication mode.
 
 Relay-enabled runs require the external `nemo-relay` CLI in addition to the
-Python package dependencies:
+Python package dependencies. Fabric accepts CLI versions `>=0.6.0,<0.7.0`:
 
 ```bash
 cargo install nemo-relay-cli
@@ -124,6 +132,18 @@ cargo install nemo-relay-cli
 The `nemo-relay` Python package does not install this executable. Refer to the
 [NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)
 for other supported installation methods.
+
+Relay owns HTTP content decoding at the gateway boundary; Fabric does not
+configure Codex request compression. The initial Relay `0.6.0` source tag
+cannot recover semantic fields from zstd-compressed SDK requests. Until a later
+`0.6.x` release contains the fix, use a build that includes
+[NeMo Relay PR #452](https://github.com/NVIDIA/NeMo-Relay/pull/452).
+
+For Phoenix, native Codex OpenTelemetry targets the OTLP collector at
+`http://localhost:4318/v1/traces` and provides low-level app-server spans.
+Relay OpenInference provides the semantic chain, LLM, and tool hierarchy with
+decoded prompt, response, and token attributes. Prefer Relay OpenInference for
+agent-turn inspection.
 
 ## Local Validation
 
@@ -137,8 +157,12 @@ RUN_FABRIC_CODEX_RELAY_INTEGRATION=1 \
   uv run pytest tests/e2e/test_codex.py -q
 ```
 
+Set `FABRIC_TEST_CODEX_BIN=/path/to/codex` on either opt-in command to validate
+an explicit app-server override instead of the SDK-pinned runtime.
+
 The SDK test uses the current Codex authentication state and exercises both a
 one-shot invocation and multi-turn thread resume. The Relay test additionally
 requires an external gateway binary and verifies one-shot and resumed model
 responses, stable thread identity, ATOF, and ATIF; gateway startup alone is not
-a passing result.
+a passing result. The semantic regression also requires decoded LLM request
+content, a model, token usage, and the expected agent response in ATIF.
