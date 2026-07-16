@@ -15,6 +15,7 @@ pip install "nemo-fabric[codex]"
 ```
 
 To install just the Codex adapter along with the NeMo Fabric Runtime:
+
 ```bash
 pip install "nemo-fabric[codex, runtime]"
 ```

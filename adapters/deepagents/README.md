@@ -10,11 +10,13 @@ through Fabric's inline Python adapter lifecycle. The same adapter supports
 one-shot, multi-turn, and resumed execution.
 
 To install just the Deep Agents adapter by itself:
+
 ```bash
 pip install "nemo-fabric[deepagents]"
 ```
 
 To install just the Deep Agents adapter along with the NeMo Fabric Runtime:
+
 ```bash
 pip install "nemo-fabric[deepagents, runtime]"
 ```

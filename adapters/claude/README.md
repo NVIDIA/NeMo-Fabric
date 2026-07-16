@@ -12,11 +12,13 @@ implementation detail; consumers select the Claude harness by adapter ID.
 ## Install
 
 To install just the Claude adapter by itself:
+
 ```bash
 pip install "nemo-fabric[claude]"
 ```
 
 To install just the Claude adapter along with the NeMo Fabric Runtime:
+
 ```bash
 pip install "nemo-fabric[claude, runtime]"
 ```
