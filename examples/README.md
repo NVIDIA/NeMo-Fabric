@@ -28,7 +28,18 @@ just build-all
 
 ## Harbor
 
-[`harbor`](harbor/README.md) provides shared setup and routes to two runnable
-paths: a credential-free calculator smoke test and a SWE-Bench walkthrough for
-Hermes and Claude harnesses, capability variations, Relay telemetry, and Harbor
-rewards.
+[`harbor`](harbor/README.md) demonstrates how to evaluate Fabric agents with
+Harbor while preserving Fabric's typed configuration workflow. Harbor manages
+the task environment, retries, concurrency, verification, rewards, and result
+layout. `FabricAgent` translates Harbor inputs—including the harness, model,
+skills, MCP servers, tool policy, and telemetry—into the final `FabricConfig`.
+
+The walkthroughs include:
+
+- a credential-free calculator smoke test for quickly validating the complete
+  integration and Harbor reward; and
+- a SWE-Bench workflow for running Hermes and Claude, comparing capability
+  variations, inspecting Relay telemetry, and verifying real coding tasks.
+
+Start with the shared setup and execution model in the
+[Harbor guide](harbor/README.md).
