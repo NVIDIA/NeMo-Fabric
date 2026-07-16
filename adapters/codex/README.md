@@ -133,6 +133,9 @@ git -C nemo-relay checkout --detach 0b02e01ac10d7d678da28830feba0ebf6743a7c0
 cargo install --locked --path nemo-relay/crates/cli
 ```
 
+Removal of this temporary source installation is tracked in
+[TODO.md](../../TODO.md#nemo-relay-06x-request-decoding-release).
+
 The `nemo-relay` Python package does not install this executable. Refer to the
 [NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)
 for other supported installation methods.
