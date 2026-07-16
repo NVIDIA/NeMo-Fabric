@@ -13,31 +13,33 @@ mode into one final typed config and asks Fabric to run it inside the task
 container.
 
 ```mermaid
-flowchart TB
+flowchart LR
     subgraph Host["Harbor host process"]
-        direction LR
-        Inputs["Harbor task and agent options"]
-        Harbor["Harbor orchestrator"]
-        Agent["FabricAgent"]
-        Config["Final FabricConfig"]
+        direction TB
+        Inputs["Harbor task and agent options"]:::data
+        Start["Start Harbor run"]
+        Build["FabricAgent builds<br/>final FabricConfig"]
 
-        Inputs --> Harbor --> Agent --> Config
+        Inputs --> Start --> Build
     end
 
     subgraph Container["Harbor task container"]
-        direction LR
-        Setup["Install pinned Fabric<br/>and upload assets"]
-        Runner["Fabric runner"]
-        Fabric["Fabric.run()<br/>resolve adapter and assets"]
-        Execution["Selected harness<br/>in task workspace"]
-        Verifier["Harbor verifier<br/>returns reward"]
-        Result["Result and artifacts<br/>returned to host"]
+        direction TB
+        Prepare["Prepare task environment"]
+        Invoke["Invoke Fabric runner"]
+        Resolve["Fabric.run(): resolve<br/>adapter and assets"]
+        Execute["Run selected harness<br/>in task workspace"]
+        Verify["Verify task"]
+        Result["Result and artifacts<br/>returned to host"]:::data
+        Reward["Reward"]:::data
 
-        Setup -- "upload config,<br/>request, and base_dir" --> Runner --> Fabric --> Execution --> Verifier
-        Fabric --> Result
+        Prepare --> Invoke --> Resolve --> Execute --> Verify --> Reward
+        Execute --> Result
     end
 
-    Config -- "prepare task" --> Setup
+    Host -- "FabricConfig + RunRequest + base_dir" --> Container
+
+    classDef data fill:transparent,stroke:transparent
 ```
 
 `FabricAgent` and `FabricConfig` construction run in the Harbor host process.
