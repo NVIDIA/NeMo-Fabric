@@ -724,6 +724,36 @@ async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
     assert not relay.plugin_path.exists()
 
 
+async def test_run_claude_preserves_error_result_when_sdk_stream_raises(
+    claude_payload,
+    monkeypatch,
+):
+    async def query_error_result(**_):
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=10,
+            duration_api_ms=8,
+            is_error=True,
+            num_turns=1,
+            session_id="claude-session",
+            result="Not logged in",
+        )
+        raise RuntimeError("raw SDK stream error")
+
+    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_error_result))
+
+    output = await adapter.run_claude(claude_payload)
+
+    assert output["response"] == "Not logged in"
+    assert output["error"] == {
+        "code": "claude_result_failed",
+        "message": "Claude returned an error result",
+        "retryable": False,
+        "metadata": {"subtype": "success"},
+    }
+    assert "raw SDK stream error" not in json.dumps(output)
+
+
 def test_run_reports_relay_start_failure_without_raw_diagnostic(
     relay_payload, monkeypatch, tmp_path
 ):
@@ -818,6 +848,17 @@ def test_build_options_forwards_anthropic_auth_environment(
     }
     assert forwarded_auth_environment == auth_environment
     assert options.env["FABRIC_UNRELATED_SECRET"] == ""
+
+
+def test_build_options_preserves_unix_user_for_cached_login(
+    claude_payload,
+    monkeypatch,
+):
+    monkeypatch.setenv("USER", "fabric-user")
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.env["USER"] == "fabric-user"
 
 
 @pytest.mark.parametrize(

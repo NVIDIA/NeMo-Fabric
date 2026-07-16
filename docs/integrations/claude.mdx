@@ -12,6 +12,10 @@ Claude Code runtime. Fabric preserves Claude's native credential precedence and
 forwards only supported operating-system, configuration, and authentication
 variables plus values explicitly configured in `harness.settings.env`.
 
+The adapter pins `claude-agent-sdk==0.2.120`. The SDK owns its compatible Claude
+Code runtime unless `harness.settings.cli_path` explicitly selects another
+executable.
+
 ## Choose an Authentication Mode
 
 Use the mode that matches the execution environment:
@@ -88,3 +92,8 @@ starts the gateway as a supervised sidecar and sets `ANTHROPIC_BASE_URL` for the
 Claude runtime. Claude still resolves its credential through the selected mode,
 and Fabric does not write authentication values to Relay configuration or
 artifacts.
+
+Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
+including, `0.7.0`. The Python package named `nemo-relay` does not install this
+CLI. Fabric owns sidecar supervision and Claude configuration; Relay owns the
+gateway transport and semantic observability pipeline.

@@ -80,6 +80,7 @@ INHERITED_ENV_NAMES = {
     "TEMP",
     "TMP",
     "TMPDIR",
+    "USER",
     "USERPROFILE",
     "XDG_CACHE_HOME",
     "XDG_CONFIG_HOME",
@@ -741,6 +742,13 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
                         messages.append(message)
         except (TimeoutError, ClaudeSDKError) as error:
             output = sdk_failure(error)
+        except Exception:
+            # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
+            # raise a plain Exception while closing the query stream. Preserve
+            # the typed terminal result, but do not hide unrelated exceptions.
+            if result is None or not result.is_error:
+                raise
+            output = normalize_result(payload, messages, result)
         else:
             if result is None:
                 output = _failure(
