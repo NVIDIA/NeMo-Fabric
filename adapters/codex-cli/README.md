@@ -3,19 +3,20 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Codex CLI Adapter
+# NVIDIA NeMo Fabric Codex Adapter
 
-Runs an installed Codex CLI through Fabric's Python-adapter lifecycle. One
+Runs an installed Codex through Fabric's Python-adapter lifecycle. One
 Fabric runtime maps to one Codex thread.
 
-Keep `fabric-adapter.json` aligned with the adapter implementation.
-`contract_version` must match the adapter contract supported by Fabric core;
-`adapter_id` is the stable id selected by `harness.adapter_id`.
-
-Install Fabric with the adapter dependency before running it:
+To install just the Codex adapter by itself:
 
 ```bash
-python3 -m pip install -e ".[runtime,codex]"
+pip install "nemo-fabric[codex]"
+```
+
+To install just the Codex adapter along with the NeMo Fabric Runtime:
+```bash
+pip install "nemo-fabric[codex, runtime]"
 ```
 
 ## Authentication and Codex Config
