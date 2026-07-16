@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 # Authenticate the Claude Adapter
 
 The `nvidia.fabric.claude` adapter uses the Claude Agent SDK and its bundled
-Claude Code runtime. Fabric preserves Claude's native credential precedence and
+Claude Code runtime. NeMo Fabric preserves Claude's native credential precedence and
 forwards only supported operating-system, configuration, and authentication
 variables plus values explicitly configured in `harness.settings.env`.
 
@@ -39,13 +39,13 @@ for the current subscription and enterprise options.
 
 ## Use a Cached Claude Code Login
 
-Authenticate Claude Code outside Fabric. The adapter inherits `HOME` and
+Authenticate Claude Code outside NeMo Fabric. The adapter inherits `HOME` and
 `CLAUDE_CONFIG_DIR`, so the bundled runtime can reuse the same cached login.
-Fabric does not copy the credential store into its configuration or artifacts.
+NeMo Fabric does not copy the credential store into its configuration or artifacts.
 
 ## Use an API Key
 
-Set the API key in the process that invokes Fabric:
+Set the API key in the process that invokes NeMo Fabric:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-api03-example
@@ -87,13 +87,13 @@ variables take precedence over federation even when their value is empty.
 
 ## Use Authentication with Relay
 
-NeMo Relay does not authenticate Claude. A Relay-enabled Fabric invocation
+NeMo Relay does not authenticate Claude. A Relay-enabled NeMo Fabric invocation
 starts the gateway as a supervised sidecar and sets `ANTHROPIC_BASE_URL` for the
 Claude runtime. Claude still resolves its credential through the selected mode,
-and Fabric does not write authentication values to Relay configuration or
+and NeMo Fabric does not write authentication values to Relay configuration or
 artifacts.
 
-Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
+NeMo Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
 including, `0.7.0`. The Python package named `nemo-relay` does not install this
-CLI. Fabric owns sidecar supervision and Claude configuration; Relay owns the
+CLI. NeMo Fabric owns sidecar supervision and Claude configuration; Relay owns the
 gateway transport and semantic observability pipeline.

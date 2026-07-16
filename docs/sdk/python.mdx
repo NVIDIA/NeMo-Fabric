@@ -16,7 +16,7 @@ The SDK is config-first. Applications should construct a Pydantic
 `FabricConfig` from their own job, deployment, or evaluation config.
 Portable file formats such as `agent.yaml` remain useful for examples, CI, and
 reproducibility, but the SDK does not require callers to write intermediate
-files before invoking Fabric.
+files before invoking NeMo Fabric.
 
 Generated API reference pages remain the source of truth for exact signatures.
 This guide explains how the pieces are intended to fit together.
@@ -75,7 +75,7 @@ The remaining examples reuse this `config` value.
 
 ## Execution Model
 
-Fabric separates configuration, planning, runtime lifecycle, and individual
+NeMo Fabric separates configuration, planning, runtime lifecycle, and individual
 invocations. It does not expose a separate portable session layer.
 
 ```mermaid
@@ -116,13 +116,13 @@ handles directly.
 
 A runtime is a logical execution boundary, not necessarily an operating-system
 process. An adapter may use an in-process SDK, a process, or shared service
-infrastructure while preserving isolated state for each Fabric runtime.
+infrastructure while preserving isolated state for each NeMo Fabric runtime.
 
 Harness-native threads, sessions, and conversations remain adapter-owned state
-associated with the Fabric runtime. They are not additional Fabric lifecycle
+associated with the NeMo Fabric runtime. They are not additional NeMo Fabric lifecycle
 objects.
 
-Fabric provides the runtime contract. Applications own scheduling, queues,
+NeMo Fabric provides the runtime contract. Applications own scheduling, queues,
 retries, worker scaling, and the number of runtimes to run.
 
 ## Configure Agents In Code
@@ -153,7 +153,7 @@ Telemetry is enabled by adding entries to `telemetry.providers`; Relay-specific
 settings live in the top-level `relay` block.
 
 For evaluation or deployment variations, use ordinary Python functions and
-copies of the typed config. Supply the final config to Fabric when the variation
+copies of the typed config. Supply the final config to NeMo Fabric when the variation
 does not need file-profile merge semantics.
 
 ```python
@@ -197,7 +197,7 @@ environment, MCP, and telemetry variants.
 
 When an in-memory caller needs the same ordered overlay behavior as file-backed
 profiles, construct `FabricProfileConfig` values and pass them through
-`profiles=[...]`. Fabric does not accept raw profile mappings.
+`profiles=[...]`. NeMo Fabric does not accept raw profile mappings.
 
 If a config contains relative paths, pass a `base_dir` to `resolve(...)`,
 `plan(...)`, `doctor(...)`, `run(...)`, or `start_runtime(...)`. The base
@@ -248,16 +248,16 @@ print(result.artifacts)
 
 Use `input=...` for the common case. Use `request=RunRequest(...)` for structured
 invocation metadata. Applications read files themselves and pass either the
-loaded input or a validated request to Fabric.
+loaded input or a validated request to NeMo Fabric.
 
-Fabric generates runtime and invocation IDs for lifecycle correlation. An
+NeMo Fabric generates runtime and invocation IDs for lifecycle correlation. An
 application may include its own identifiers in opaque request metadata, but
-Fabric does not interpret them as job, session, scheduling, or resume state.
+NeMo Fabric does not interpret them as job, session, scheduling, or resume state.
 
 ## Multi-Turn Runtimes
 
 Use `start_runtime(...)` when the selected harness should keep state across
-turns. Every call creates a new logical Fabric runtime; callers reuse the
+turns. Every call creates a new logical NeMo Fabric runtime; callers reuse the
 returned object rather than selecting it with a job or session ID. The runtime
 stops when its async context exits.
 
@@ -281,7 +281,7 @@ turn. That thread ID remains adapter-internal.
 
 ## Application-Owned Parallelism
 
-Applications create independent runtimes when they want parallel work. Fabric
+Applications create independent runtimes when they want parallel work. NeMo Fabric
 does not own a queue, worker pool, semaphore, retry policy, timeout policy, or
 numeric concurrency limit. Each `Runtime` accepts one invocation at a time so
 its ordered harness state cannot be changed by two calls at once. If an
@@ -291,7 +291,7 @@ the application decides how many to run.
 
 Async lifecycle calls run blocking native work outside the Python event loop,
 so independent runtimes can make progress concurrently. This does not add a
-Fabric concurrency limit or scheduler.
+NeMo Fabric concurrency limit or scheduler.
 
 ```python
 import asyncio
@@ -312,8 +312,8 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-For example, each Harbor job starts an independent Fabric runtime. Harbor owns
-job IDs and concurrency policy; Fabric does not use a job ID to select or
+For example, each Harbor job starts an independent NeMo Fabric runtime. Harbor owns
+job IDs and concurrency policy; NeMo Fabric does not use a job ID to select or
 resume runtime state.
 
 ## Unified Run Results
@@ -339,12 +339,12 @@ Important fields:
 These are structured correlation fields, not interchangeable metadata:
 `runtime_id` identifies the runtime lifecycle, `invocation_id` identifies one
 invocation within that runtime, and `request_id` correlates the caller's
-request. Fabric-generated values use type-specific prefixes such as `runtime-`,
+request. NeMo Fabric-generated values use type-specific prefixes such as `runtime-`,
 `invocation-`, and `request-`; callers may provide their own `request_id`.
 Consumers should store and log each field separately and otherwise treat its
 value as opaque rather than parsing the identifier encoding.
 
-If Fabric cannot resolve config, start a runtime, or obtain a normalized result,
+If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
 the SDK raises a `FabricError` subclass instead of returning a partial
 `RunResult`.
 
@@ -352,7 +352,7 @@ the SDK raises a `FabricError` subclass instead of returning a partial
 
 Each `RunResult` includes the normalized events collected for that invocation.
 Event kinds and detail may vary by adapter, but their lifecycle and correlation
-fields use the common Fabric contract.
+fields use the common NeMo Fabric contract.
 
 Events are useful for:
 
@@ -384,8 +384,8 @@ problems before starting a runtime.
 ## Install And Runtime Responsibilities
 
 In production, the consumer or execution environment is responsible for
-installing Fabric, the selected harness, adapter dependencies, model access,
-credentials, and any required native tools. Fabric validates and diagnoses the
+installing NeMo Fabric, the selected harness, adapter dependencies, model access,
+credentials, and any required native tools. NeMo Fabric validates and diagnoses the
 runtime assumptions, but it does not silently install harnesses or credentials at
 invocation time.
 
@@ -395,7 +395,7 @@ images, preinstalled dependencies, or managed deployment packages.
 
 Runtime compatibility checks should validate:
 
-- Fabric SDK and native extension versions;
+- NeMo Fabric SDK and native extension versions;
 - selected adapter version;
 - selected harness version or version range;
 - required environment variables or secret references;
@@ -403,14 +403,14 @@ Runtime compatibility checks should validate:
 
 ## Custom Fields And Adapter Settings
 
-Use normalized Fabric fields for portable behavior: models, runtime,
+Use normalized NeMo Fabric fields for portable behavior: models, runtime,
 environment, skills, MCP, telemetry, tools, artifacts, and request context.
 
 Use `harness.settings` for adapter-owned configuration that the selected adapter
 understands. Examples include Hermes-specific launch options, Codex SDK controls,
 or adapter-specific config file locations.
 
-Use `metadata` for caller-owned annotations that Fabric should preserve and echo
+Use `metadata` for caller-owned annotations that NeMo Fabric should preserve and echo
 back, but not interpret.
 
 Adapter settings are not portable by default. An adapter must explicitly read
@@ -432,13 +432,13 @@ All public SDK errors inherit from `FabricError`.
 Consumers own job-level retries and rollout-level failure policy. One-shot runs
 attempt to stop the runtime before returning. A `Runtime` used with `async with`
 also attempts cleanup after an invocation error; if cleanup fails, that failure
-is attached to the original exception rather than replacing it. Fabric records
+is attached to the original exception rather than replacing it. NeMo Fabric records
 structured error metadata when possible and returns enough detail for the
 consumer to decide what to do next.
 
 ## SDK Contract Boundaries
 
-Fabric keeps a narrow execution contract. Applications own product behavior
+NeMo Fabric keeps a narrow execution contract. Applications own product behavior
 around that contract.
 
 ### Schemas And Python Models
@@ -459,7 +459,7 @@ reference for exact Python signatures. New application code should prefer
 
 ### Versioning
 
-Fabric uses explicit contract versions where persisted or independently
+NeMo Fabric uses explicit contract versions where persisted or independently
 maintained artifacts cross package boundaries:
 
 - `schema_version` identifies portable config documents such as `agent.yaml`
@@ -468,22 +468,22 @@ maintained artifacts cross package boundaries:
   a `fabric-adapter.json` file.
 - Python and Rust package versions identify the installed SDK/core release.
 
-Fabric versions top-level persisted documents and independently maintained
+NeMo Fabric versions top-level persisted documents and independently maintained
 contracts. It does not version each config subsection independently. For
 example, MCP, skills, models, telemetry, and runtime fields evolve under the
 enclosing `schema_version`.
 
-Fabric validates adapter descriptor contract versions during planning. Package
+NeMo Fabric validates adapter descriptor contract versions during planning. Package
 semver identifies the installed implementation, but it is not the compatibility
 contract for saved agent packages or independently maintained adapters.
 
 ### Config Extensibility
 
-The public schema has typed fields for stable Fabric concepts and controlled
+The public schema has typed fields for stable NeMo Fabric concepts and controlled
 extension points for adapter- or application-owned data. Use known fields for
 portable concepts such as harness selection, models, runtime, skills, MCP,
 telemetry, and artifacts. Use adapter-owned `harness.settings`, metadata, or
-preserved extension fields for data Fabric should carry but not interpret.
+preserved extension fields for data NeMo Fabric should carry but not interpret.
 
 Additive optional fields may be introduced within the existing document schema
 version when old configs remain valid. Required fields, removed fields, or
@@ -491,16 +491,16 @@ semantic changes that alter how existing configs are interpreted require a new
 enclosing document schema version or an explicit compatibility path.
 
 Unknown data is not the same as supported behavior. An adapter must advertise
-and implement a capability before Fabric treats it as runnable.
+and implement a capability before NeMo Fabric treats it as runnable.
 
 ### Resilience
 
-Fabric reports lifecycle failures; applications own recovery policy. If a
+NeMo Fabric reports lifecycle failures; applications own recovery policy. If a
 runtime process dies, a connection is permanently lost, or an adapter cannot
-complete an invocation, Fabric marks the relevant runtime/invocation as
+complete an invocation, NeMo Fabric marks the relevant runtime/invocation as
 failed and returns structured error metadata when possible.
 
-Transient I/O failures may be marked with retryable error metadata, but Fabric
+Transient I/O failures may be marked with retryable error metadata, but NeMo Fabric
 does not perform job-level retries by default. Consumers decide whether to retry
 the request, start a replacement runtime, fail the job, or escalate to a user.
 
