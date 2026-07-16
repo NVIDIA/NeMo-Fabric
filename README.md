@@ -188,8 +188,9 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
 - [Getting Started overview](docs/getting-started/overview.mdx): interface
   selection and the end-to-end Fabric workflow.
-- [Harbor examples](examples/harbor/README.md): choose a fast calculator smoke
-  test or a realistic SWE-Bench walkthrough.
+- [Harbor examples](examples/harbor/README.md): validate the integration with a
+  deterministic, credential-free calculator smoke, optionally run the same
+  task with Hermes or Claude, and evaluate real coding tasks with SWE-Bench.
 - Adapter guides: [Hermes](adapters/hermes/README.md),
   [Codex CLI](adapters/codex-cli/README.md), and
   [Deep Agents](adapters/deepagents/README.md).

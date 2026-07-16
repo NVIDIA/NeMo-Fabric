@@ -15,12 +15,13 @@ you want to exercise.
 
 | Walkthrough | What it demonstrates |
 | --- | --- |
-| [Calculator smoke test](calculator/README.md) | Check the complete integration and Harbor reward quickly, without credentials or a SWE-Bench download. |
+| [Calculator walkthrough](calculator/README.md) | Validate the complete integration and Harbor reward with a deterministic, credential-free smoke test, then optionally run the same task with the LLM-backed Hermes or Claude harness. |
 | [SWE-Bench walkthrough](swebench/README.md) | Run Hermes and Claude experiments with skills, MCP servers, tool policy, Relay telemetry, and SWE-Bench verification. |
 
-The calculator is useful for validating a new checkout or environment.
-SWE-Bench exercises a real coding task and supports comparisons across
-configuration variations.
+The calculator's scripted run is useful for validating a new checkout or
+environment without calling an LLM. Its Hermes and Claude runs exercise real
+model integrations on the same small task. SWE-Bench exercises a real coding
+task and supports comparisons across configuration variations.
 
 ## Execution Model
 
