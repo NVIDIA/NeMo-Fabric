@@ -96,8 +96,8 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
     assert "      - section: APIs\n" not in navigation
 
     for heading in (
-        "## What Fabric gives you",
-        "## How Fabric fits",
+        "## What NeMo Fabric gives you",
+        "## How NeMo Fabric fits",
         "## Quick start",
         "## Choose your interface",
         "## Core workflow",
