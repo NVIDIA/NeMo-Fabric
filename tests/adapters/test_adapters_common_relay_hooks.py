@@ -63,18 +63,14 @@ def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events)
             ]
         }
     ]
-    assert {
+    expected_matchers = {
         event for event, groups in hooks.items() if groups[0].get("matcher") == "*"
-    } == (
-        {
-            "PreToolUse",
-            "PostToolUse",
-            "PostToolUseFailure",
-            "PermissionRequest",
-        }
-        if agent == "claude"
-        else {"PreToolUse", "PostToolUse", "PermissionRequest"}
-    )
+    }
+    assert expected_matchers == {
+        "PreToolUse",
+        "PostToolUse",
+        "PermissionRequest",
+    } | ({"PostToolUseFailure"} if agent == "claude" else set())
 
 
 def test_render_relay_hooks_rejects_unsupported_agent():

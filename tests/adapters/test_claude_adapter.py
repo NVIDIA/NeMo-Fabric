@@ -195,8 +195,12 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
     )
     monkeypatch.setattr(
         adapter.relay_gateway,
-        "relay_cli_observability_version",
-        MagicMock(return_value=2),
+        "relay_cli_contract",
+        MagicMock(
+            return_value=adapter.relay_gateway.RelayCliContract(
+                version=(0, 6, 0), observability_version=2
+            )
+        ),
     )
 
     relay = adapter.prepare_claude_relay(relay_payload)
@@ -266,8 +270,12 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
     )
     monkeypatch.setattr(
         adapter.relay_gateway,
-        "relay_cli_observability_version",
-        MagicMock(return_value=2),
+        "relay_cli_contract",
+        MagicMock(
+            return_value=adapter.relay_gateway.RelayCliContract(
+                version=(0, 6, 0), observability_version=2
+            )
+        ),
     )
     relay = adapter.prepare_claude_relay(relay_payload)
 

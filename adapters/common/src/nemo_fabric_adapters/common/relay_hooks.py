@@ -12,42 +12,53 @@ from typing import Any, Literal
 
 RelayHookAgent = Literal["claude", "codex"]
 
-CLAUDE_RELAY_HOOK_EVENTS = (
-    "SessionStart",
-    "UserPromptSubmit",
-    "UserPromptExpansion",
-    "PreToolUse",
-    "PostToolUse",
-    "PostToolUseFailure",
-    "PermissionRequest",
-    "SubagentStart",
-    "SubagentStop",
-    "Notification",
-    "Stop",
-    "PreCompact",
-    "PostCompact",
-    "SessionEnd",
-)
-CODEX_RELAY_HOOK_EVENTS = (
-    "SessionStart",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PostToolUse",
-    "PermissionRequest",
-    "SubagentStart",
-    "SubagentStop",
-    "Stop",
-    "PreCompact",
-    "PostCompact",
-)
-RELAY_TOOL_HOOK_EVENTS = frozenset(
-    {
+RELAY_HOOK_EVENTS: dict[RelayHookAgent, tuple[str, ...]] = {
+    "claude": (
+        "SessionStart",
+        "UserPromptSubmit",
+        "UserPromptExpansion",
         "PreToolUse",
         "PostToolUse",
         "PostToolUseFailure",
         "PermissionRequest",
-    }
-)
+        "SubagentStart",
+        "SubagentStop",
+        "Notification",
+        "Stop",
+        "PreCompact",
+        "PostCompact",
+        "SessionEnd",
+    ),
+    "codex": (
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PostToolUse",
+        "PermissionRequest",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+        "PreCompact",
+        "PostCompact",
+    ),
+}
+RELAY_TOOL_HOOK_EVENTS = {
+    "claude": frozenset(
+        {
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionRequest",
+        }
+    ),
+    "codex": frozenset(
+        {
+            "PreToolUse",
+            "PostToolUse",
+            "PermissionRequest",
+        }
+    ),
+}
 
 
 def render_relay_hooks(
@@ -61,12 +72,7 @@ def render_relay_hooks(
 
     command = f"{shlex.quote(str(executable))} hook-forward {agent}"
     hooks: dict[str, list[dict[str, Any]]] = {}
-    events = (
-        CLAUDE_RELAY_HOOK_EVENTS
-        if agent == "claude"
-        else CODEX_RELAY_HOOK_EVENTS
-    )
-    for event in events:
+    for event in RELAY_HOOK_EVENTS[agent]:
         group: dict[str, Any] = {
             "hooks": [
                 {
@@ -76,7 +82,7 @@ def render_relay_hooks(
                 }
             ]
         }
-        if event in RELAY_TOOL_HOOK_EVENTS:
+        if event in RELAY_TOOL_HOOK_EVENTS[agent]:
             group["matcher"] = "*"
         hooks[event] = [group]
     return {"hooks": hooks}

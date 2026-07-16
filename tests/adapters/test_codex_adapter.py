@@ -192,6 +192,20 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
     )
 
 
+def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_path):
+    codex_bin = tmp_path / "bin" / "codex"
+    codex_bin.parent.mkdir()
+    codex_bin.touch()
+    codex_payload["effective_config"]["config"]["harness"]["settings"][
+        "codex_bin"
+    ] = str(codex_bin)
+
+    output = adapter.run(codex_payload)
+
+    assert output["completed"] is True
+    assert mock_codex.instances[0].config.codex_bin == str(codex_bin)
+
+
 def test_runtime_resumes_sdk_thread_across_invocations(
     codex_payload, mock_codex
 ):
@@ -316,9 +330,9 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
     assert client.config.env["NEMO_RELAY_GATEWAY_URL"] == gateway.url
     assert config["bypass_hook_trust"] is True
     assert config["features"]["hooks"] is True
+    assert config["features"]["multi_agent_v2"]["enabled"] is False
     assert config["features"]["web_search"] is False
     assert config["openai_base_url"] == gateway.url
-    assert "model_provider" not in config
     assert "model_providers" not in config
     assert config["hooks"]["SessionStart"][0]["hooks"][0] == {
         "type": "command",
@@ -352,11 +366,15 @@ def test_prepare_relay_reuses_one_resolved_executable(
     config_path = tmp_path / "relay-config" / "config.toml"
     plugin_path = config_path.parent / "plugins.toml"
     resolve = MagicMock(return_value=executable)
-    version = MagicMock(return_value=2)
+    contract = MagicMock(
+        return_value=adapter.relay_gateway.RelayCliContract(
+            version=(0, 6, 0), observability_version=2
+        )
+    )
     write = MagicMock(return_value=(config_path, plugin_path))
     monkeypatch.setattr(adapter.relay_gateway, "resolve_relay_command", resolve)
     monkeypatch.setattr(
-        adapter.relay_gateway, "relay_cli_observability_version", version
+        adapter.relay_gateway, "relay_cli_contract", contract
     )
     monkeypatch.setattr(adapter.relay_gateway, "find_available_tcp_port", lambda: 43210)
     monkeypatch.setattr(
@@ -371,7 +389,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     assert relay is not None
     assert relay.gateway.executable == executable
     assert relay.gateway.url == "http://127.0.0.1:43210"
-    version.assert_called_once_with(executable)
+    contract.assert_called_once_with(executable)
     write.assert_called_once_with(
         relay_config={},
         plugin_config={"version": 1, "components": []},

@@ -9,11 +9,53 @@ RUN_FABRIC_CODEX_INTEGRATION=1 uv run pytest tests/e2e/test_codex.py
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
 import uuid
+from pathlib import Path
 
 import pytest
+
+
+def _assert_semantic_relay_artifacts(output, expected_response: str) -> None:
+    artifacts = {
+        item["kind"]: Path(item["path"]) for item in output["relay_artifacts"]
+    }
+    events = [
+        json.loads(line)
+        for line in artifacts["atof"].read_text(encoding="utf-8").splitlines()
+    ]
+    llm_starts = [
+        event
+        for event in events
+        if event.get("category") == "llm" and event.get("scope_category") == "start"
+    ]
+    assert llm_starts, events
+    assert all(
+        isinstance(event.get("data", {}).get("content"), dict)
+        for event in llm_starts
+    )
+    assert all(event["data"]["content"].get("model") for event in llm_starts)
+
+    llm_ends = [
+        event
+        for event in events
+        if event.get("category") == "llm" and event.get("scope_category") == "end"
+    ]
+    assert llm_ends, events
+    assert any(
+        (event.get("data", {}).get("usage") or {}).get("total_tokens", 0) > 0
+        for event in llm_ends
+    )
+
+    trajectory = json.loads(artifacts["atif"].read_text(encoding="utf-8"))
+    agent_messages = [
+        step.get("message", "")
+        for step in trajectory.get("steps", [])
+        if step.get("source") == "agent"
+    ]
+    assert any(expected_response.lower() in message.lower() for message in agent_messages)
 
 
 async def test_codex_sdk():
@@ -99,6 +141,7 @@ async def _run_relay(relay_command: str) -> None:
         "atof",
         "atif",
     }, mapping
+    _assert_semantic_relay_artifacts(result["output"], "FABRIC_CODEX_RELAY_OK")
 
     nonce = f"fabric-relay-{uuid.uuid4().hex[:8]}"
     async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:

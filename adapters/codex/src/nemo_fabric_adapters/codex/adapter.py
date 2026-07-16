@@ -479,9 +479,7 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
         ) from error
 
     try:
-        observability_version = relay_gateway.relay_cli_observability_version(
-            executable
-        )
+        relay_contract = relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(payload)
         config_path, plugin_config_path = common_utils.write_relay_configs(
             # The SDK owns Codex execution. Relay needs only gateway defaults and
@@ -489,7 +487,7 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
             # a misleading dependency on the removed Codex CLI launch path.
             relay_config={},
             plugin_config=plugin_config,
-            observability_version=observability_version,
+            observability_version=relay_contract.observability_version,
         )
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         raise AdapterRelayError(
@@ -531,12 +529,17 @@ def thread_config(
         _merge_config(
             config,
             {
-                # Keep Codex's reserved built-in provider so the SDK preserves
-                # its supported ChatGPT/API-key auth and host metadata paths.
-                # Relay is an OpenAI transport proxy, not a distinct model
-                # provider, so only redirect the built-in provider's base URL.
+                # Keep the SDK-selected built-in provider so Codex retains its
+                # native API-key and ChatGPT authentication behavior. Relay is
+                # only the transport endpoint for this invocation.
                 "openai_base_url": relay.gateway.url,
-                "features": {"hooks": True},
+                "features": {
+                    "hooks": True,
+                    # Relay disables delegated multi-agent execution because
+                    # Codex encrypts delegated task content before it reaches
+                    # the gateway, making those spans opaque.
+                    "multi_agent_v2": {"enabled": False},
+                },
                 "hooks": relay_hooks.render_relay_hooks(
                     "codex", relay.gateway.executable
                 )["hooks"],
@@ -552,7 +555,14 @@ def thread_config(
 def sdk_config(
     payload: dict[str, Any], relay: CodexRelaySettings | None
 ) -> CodexConfig:
+    codex_bin = _optional_string(_settings(payload), "codex_bin")
+    if codex_bin is not None:
+        path = Path(codex_bin).expanduser()
+        if not path.is_absolute():
+            path = Path(common_utils.config_root(payload)) / path
+        codex_bin = str(path.resolve())
     return CodexConfig(
+        codex_bin=codex_bin,
         cwd=str(resolve_cwd(payload)),
         env=child_environment(
             payload,
@@ -770,8 +780,6 @@ async def invoke_codex_sdk(
                     settings, "developer_instructions"
                 ),
                 "model": selected_model(payload),
-                # Keep the SDK's built-in provider authoritative. Relay-enabled
-                # execution changes only its request-scoped base URL.
                 "model_provider": "openai",
                 "personality": _personality(payload),
                 "sandbox": sandbox(payload),
