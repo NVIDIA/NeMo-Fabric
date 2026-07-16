@@ -1,3 +1,12 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:16768c2aef518b848ff5d32efb88b076ac21a2770adb54e549da11ed538bc74e
-size 463
+diff --git a/django/contrib/auth/forms.py b/django/contrib/auth/forms.py
+index b9eb33329f..11d188f86d 100644
+--- a/django/contrib/auth/forms.py
++++ b/django/contrib/auth/forms.py
+@@ -56,6 +56,7 @@ class ReadOnlyPasswordHashField(forms.Field):
+
+     def __init__(self, *args, **kwargs):
+         kwargs.setdefault("required", False)
++        kwargs.setdefault('disabled', True)
+         super().__init__(*args, **kwargs)
+
+     def bound_data(self, data, initial):

@@ -18,6 +18,5 @@ Each harness directory contains:
 - concise Fabric, Harbor verifier, and telemetry summaries; and
 - the resulting workspace patch.
 
-The complete telemetry files and workspace patches use Git LFS. Use these
-samples to compare Harbor's canonical trajectory with Relay's direct ATOF and
-ATIF output before running the example yourself.
+Use these samples to compare Harbor's canonical trajectory with Relay's direct
+ATOF and ATIF output before running the example yourself.

@@ -1,4 +1,0 @@
-examples/harbor/swebench/sample-artifacts/*/relay/*.jsonl filter=lfs diff=lfs merge=lfs -text
-examples/harbor/swebench/sample-artifacts/*/relay/*.atif.json filter=lfs diff=lfs merge=lfs -text
-examples/harbor/swebench/sample-artifacts/*/trajectory.json filter=lfs diff=lfs merge=lfs -text
-examples/harbor/swebench/sample-artifacts/*/workspace.patch filter=lfs diff=lfs merge=lfs -text

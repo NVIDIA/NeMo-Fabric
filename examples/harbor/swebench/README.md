@@ -226,8 +226,7 @@ and also publishes `agent/telemetry-validation.json` plus the normalized
 `agent/fabric-result-<id>.json`. Validate ATOF and ATIF independently.
 
 Sample output from successful Relay-enabled Hermes and Claude runs is checked
-in under [`sample-artifacts/`](sample-artifacts/). Large telemetry files use
-Git LFS.
+in under [`sample-artifacts/`](sample-artifacts/).
 
 ## Progress to a Full Run
 
