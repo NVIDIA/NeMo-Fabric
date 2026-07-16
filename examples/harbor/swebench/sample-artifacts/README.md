@@ -5,11 +5,12 @@ SPDX-License-Identifier: Apache-2.0
 
 # Relay Sample Artifacts
 
-This bundle comes from a successful Harbor run of
-`swe-bench/django__django-13741`. Fabric reported `succeeded`, Harbor's verifier
-returned reward `1.0`, and Relay emitted both ATOF and ATIF.
+These bundles come from successful Harbor runs of
+`swe-bench/django__django-13741` through Hermes and Claude. Fabric reported
+`succeeded`, Harbor's verifier returned reward `1.0` for both runs, and Relay
+emitted both ATOF and ATIF.
 
-The [`hermes-relay/`](hermes-relay/) directory contains:
+Each harness directory contains:
 
 - Relay's complete `events.atof.jsonl` and native ATIF trajectory;
 - `trajectory.json`, the byte-identical ATIF copy promoted to Harbor's canonical

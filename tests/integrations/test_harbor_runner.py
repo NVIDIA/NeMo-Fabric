@@ -21,7 +21,7 @@ DEMO_SOLUTION = DEMO_ROOT / "task" / "solution" / "solve.sh"
 DEMO_FABRIC_ROOT = DEMO_ROOT / "task" / "environment" / "fabric"
 DEMO_CONFIG_MODULE = DEMO_FABRIC_ROOT / "harbor_demo_config.py"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
-SWEBENCH_CONFIG_MODULE = SWEBENCH_ROOT / "harbor_swebench_config.py"
+SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = ROOT / "python" / "src" / "nemo_fabric" / "integrations" / "harbor" / "README.md"
 HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
@@ -48,6 +48,7 @@ def test_runner_composes_harbor_values_on_an_independent_config(tmp_path):
     from nemo_fabric.integrations.harbor.models import HarborMcpServer
     from nemo_fabric.integrations.harbor.models import HarborRunSpec
     from nemo_fabric.integrations.harbor.runner import compose_config
+
     base = FabricConfig.model_validate(
         {
             "metadata": {"name": "harbor-demo"},
@@ -223,6 +224,7 @@ def test_harbor_transport_models_validate_mcp_targets():
     assert spec.request.input == "fix it"
     assert spec.mcp_servers[0].name == "github"
     spec_properties = HarborRunSpec.model_json_schema()["properties"]
+    assert "config" in spec_properties
     assert "config_path" not in spec_properties
     assert "profile_paths" not in spec_properties
     with pytest.raises(ValidationError, match="require url"):
@@ -244,6 +246,13 @@ def test_harbor_transport_models_validate_mcp_targets():
                 "config_base_dir": "/workspace",
                 "request": {"input": "fix it"},
                 "profile_paths": [],
+            }
+        )
+    with pytest.raises(ValidationError, match="exactly one"):
+        HarborRunSpec.model_validate(
+            {
+                "config_base_dir": "/workspace",
+                "request": {"input": "fix it"},
             }
         )
 
@@ -428,14 +437,15 @@ def test_harbor_demo_documents_explicit_cli_commands():
     assert "run.sh" not in demo
     assert "demo/run.sh" not in integration
     assert demo.count("uv run --extra runtime --extra harbor harbor run") == 4
-    assert integration.count("uv run --extra runtime --extra harbor harbor run") == 2
+    assert integration.count("uv run --extra runtime --extra harbor harbor run") == 4
     assert "--agent-import-path" not in integration
     assert "fabric_config_path" not in demo
     assert "fabric_config_path" not in integration
     assert "fabric_config_factory" in demo
-    assert "fabric_config_factory" in integration
+    assert "fabric_config_factory" not in integration
+    assert "fabric_adapter_id" in integration
     assert 'export TMPDIR="$HOME/harbor-tmp"' in integration
-    assert '${FABRIC_PACKAGE:?' in integration
+    assert "${FABRIC_PACKAGE:?" in integration
     for flag in (
         "--path",
         "--agent",
@@ -447,8 +457,11 @@ def test_harbor_demo_documents_explicit_cli_commands():
         "swe-bench/swe-bench-verified",
         "django__django-13741",
         "--task swe-bench/django__django-13741",
-        "build_hermes_skill",
-        "build_hermes_mcp",
+        "--model",
+        "--skill",
+        "--mcp-config",
+        "fabric_blocked_tools",
+        "fabric_telemetry=relay",
         "harbor job resume",
         "telemetry-validation.json",
         "agent/trajectory.json",
@@ -476,9 +489,7 @@ def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
 
     assert observability["openinference"]["enabled"] is True
     assert observability["openinference"]["transport"] == "http_binary"
-    assert observability["openinference"]["endpoint"] == (
-        "http://host.docker.internal:6006/v1/traces"
-    )
+    assert observability["openinference"]["endpoint"] == ("http://host.docker.internal:6006/v1/traces")
     assert observability["atof"]["enabled"] is True
     assert observability["atif"]["enabled"] is True
     assert host_gateway == {
@@ -488,7 +499,7 @@ def test_harbor_telemetry_demo_exports_phoenix_atof_and_atif():
             }
         }
     }
-    assert "ATOF JSONL" in integration
+    assert "direct Relay ATOF and ATIF" in integration
     assert "telemetry-validation.json" in integration
     assert "canonical ATIF" in integration
 
@@ -510,46 +521,78 @@ def test_harbor_sdk_package_documents_execution_boundary():
     assert "fabric_agent import FabricAgent" in package_init
 
 
-def test_swebench_matrix_uses_typed_variants_and_one_fixed_task():
-    from nemo_fabric import FabricConfig
-    from nemo_fabric.integrations.harbor.runner import load_config_factory
+def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path):
+    from harbor.cli.utils import load_mcp_servers
+    from nemo_fabric import RunRequest
+    from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
+    from nemo_fabric.integrations.harbor.models import HarborMcpServer
+    from nemo_fabric.integrations.harbor.models import HarborRunSpec
+    from nemo_fabric.integrations.harbor.runner import compose_config
 
-    factory_names = [
-        "build_hermes",
-        "build_claude",
-        "build_hermes_skill",
-        "build_hermes_mcp",
-        "build_hermes_tools",
-        "build_hermes_relay",
+    base = build_harbor_config(
+        adapter_id="nvidia.fabric.hermes",
+        workspace="/testbed",
+    )
+    relay = build_harbor_config(
+        adapter_id="nvidia.fabric.hermes",
+        workspace="/testbed",
+        telemetry="relay",
+    )
+    tools = build_harbor_config(
+        adapter_id="nvidia.fabric.hermes",
+        workspace="/testbed",
+        blocked_tools=["browser"],
+        telemetry="relay",
+    )
+    claude = build_harbor_config(
+        adapter_id="nvidia.fabric.claude",
+        workspace="/testbed",
+        harness_settings={"nemo_relay_command": "/tmp/nemo-fabric-config/.relay/bin/nemo-relay"},
+    )
+
+    mcp_servers = tuple(
+        HarborMcpServer.model_validate(server.model_dump(mode="python"))
+        for server in load_mcp_servers(SWEBENCH_MCP_CONFIG)
+    )
+    spec = HarborRunSpec(
+        config=relay,
+        config_base_dir="/tmp/nemo-fabric-config",
+        request=RunRequest(input="fix it"),
+        model_name="nvidia/nemotron-3-nano-30b-a3b",
+        skills_dir="/harbor/skills",
+        mcp_servers=mcp_servers,
+    )
+    composed = compose_config(relay, spec)
+
+    assert base.profiles is None
+    assert base.environment is not None
+    assert str(base.environment.workspace) == "/testbed"
+    assert base.models == {}
+    assert base.skills is None
+    assert base.mcp is None
+    assert base.tools is None
+    assert base.telemetry is None
+    assert composed.models["default"].model == "nvidia/nemotron-3-nano-30b-a3b"
+    assert composed.skills is not None
+    assert composed.skills.paths == ["/harbor/skills"]
+    assert composed.mcp is not None
+    assert set(composed.mcp.servers) == {"fabric-repo-inspector"}
+    assert composed.mcp.servers["fabric-repo-inspector"].extra_fields["args"] == [
+        "/tmp/nemo-fabric-config/mcp/repo_inspector.py"
     ]
-    configs = {
-        name: load_config_factory(f"harbor_swebench_config:{name}", SWEBENCH_ROOT)
-        for name in factory_names
-    }
-    for config in configs.values():
-        assert isinstance(config, FabricConfig)
-        assert config.profiles is None
-        assert config.environment is not None
-        assert str(config.environment.workspace) == "/testbed"
-
-    baseline = configs["build_hermes"]
-    for name in factory_names[2:]:
-        variant = configs[name]
-        assert variant.harness.adapter_id == baseline.harness.adapter_id
-        assert variant.models == baseline.models
-        assert variant.environment is not None
-        assert variant.environment.workspace == baseline.environment.workspace
-
-    assert configs["build_hermes_skill"].skills is not None
-    assert configs["build_hermes_mcp"].mcp is not None
-    tools_config = configs["build_hermes_tools"]
-    assert tools_config.tools is not None
-    assert tools_config.tools.blocked == ["browser"]
-    assert "enabled_toolsets" not in tools_config.harness.settings
-    relay_config = configs["build_hermes_relay"]
-    assert relay_config.telemetry is not None
-    assert "relay" in relay_config.telemetry.providers
+    assert tools.tools is not None
+    assert tools.tools.blocked == ["browser"]
+    assert "enabled_toolsets" not in tools.harness.settings
+    assert relay.telemetry is not None
+    assert "relay" in relay.telemetry.providers
+    assert relay.relay is not None
+    assert relay.relay.observability.atif.enabled is True
+    assert relay.relay.observability.atof.enabled is True
+    assert claude.harness.settings["permission_mode"] == "bypassPermissions"
+    assert claude.harness.settings["env"] == {"IS_SANDBOX": "1"}
+    assert claude.harness.settings["nemo_relay_command"] == ("/tmp/nemo-fabric-config/.relay/bin/nemo-relay")
     assert not list(SWEBENCH_ROOT.rglob("*.yaml"))
+    assert not (SWEBENCH_ROOT / "harbor_swebench_config.py").exists()
 
     # TODO: Remove the bundled copies and these equality checks after Fabric
     # discovers adapter descriptors directly from source checkouts and wheels.
@@ -559,14 +602,11 @@ def test_swebench_matrix_uses_typed_variants_and_one_fixed_task():
     assert (SWEBENCH_ROOT / "adapters/claude/fabric-adapter.json").read_text() == (
         ROOT / "adapters/claude/fabric-adapter.json"
     ).read_text()
-    hermes_descriptor = json.loads(
-        (SWEBENCH_ROOT / "adapters/hermes/fabric-adapter.json").read_text()
-    )
+    hermes_descriptor = json.loads((SWEBENCH_ROOT / "adapters/hermes/fabric-adapter.json").read_text())
     assert "models" in hermes_descriptor["config"]["accepts"]
 
     readme = INTEGRATION_README.read_text(encoding="utf-8")
     assert readme.count("django__django-13741") >= 4
-    assert "500 tasks" in readme
     assert "--n-tasks 5" in readme
 
 
@@ -576,25 +616,21 @@ def test_harbor_018_factory_loads_fabric_agent(tmp_path: Path):
     agent = AgentFactory.create_agent_from_import_path(
         "nemo_fabric.integrations.harbor:FabricAgent",
         logs_dir=tmp_path,
-        fabric_config_factory="harbor_config:build_config",
-        fabric_config_base_dir="/opt/fabric",
+        fabric_adapter_id="nvidia.fabric.hermes",
     )
 
     assert agent.name() == "fabric"
     assert agent.SUPPORTS_ATIF is True
 
 
-def test_swebench_mcp_factory_uses_the_bundled_repo_inspector():
-    config_module = load_module("harbor_swebench_mcp_config", SWEBENCH_CONFIG_MODULE)
-    config = config_module.build_hermes_mcp()
+def test_swebench_mcp_config_uses_the_bundled_repo_inspector():
+    from harbor.cli.utils import load_mcp_servers
 
-    assert config.mcp is not None
-    server = config.mcp.servers["fabric-repo-inspector"]
+    [server] = load_mcp_servers(SWEBENCH_MCP_CONFIG)
+
     assert server.transport == "stdio"
-    assert server.url == "python3"
-    assert server.extra_fields["args"] == [
-        "/tmp/nemo-fabric-config/mcp/repo_inspector.py"
-    ]
+    assert server.command == "python3"
+    assert server.args == ["/tmp/nemo-fabric-config/mcp/repo_inspector.py"]
 
 
 def test_root_readme_routes_to_sdk_and_harbor_guides():

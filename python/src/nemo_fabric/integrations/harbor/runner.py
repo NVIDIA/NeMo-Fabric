@@ -51,9 +51,7 @@ def load_config_factory(reference: str, base_dir: Path) -> FabricConfig:
         sys.path.remove(search_path)
 
     if not isinstance(config, FabricConfig):
-        raise TypeError(
-            f"config factory must return FabricConfig, got {type(config).__name__}: {reference}"
-        )
+        raise TypeError(f"config factory must return FabricConfig, got {type(config).__name__}: {reference}")
     return config
 
 
@@ -105,7 +103,11 @@ def model_provider(model_name: str) -> str:
 
 
 async def run(spec: HarborRunSpec) -> RunResult:
-    base = load_config_factory(spec.config_factory, spec.config_base_dir)
+    base = (
+        spec.config.model_copy(deep=True)
+        if spec.config is not None
+        else load_config_factory(cast(str, spec.config_factory), spec.config_base_dir)
+    )
     config = compose_config(base, spec)
     result = await Fabric().run(
         config,

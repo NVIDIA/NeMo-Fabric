@@ -16,9 +16,6 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("requires_harbor")
 
-CONFIG_FACTORY = "harbor_demo_config:build_hermes"
-CONFIG_BASE_DIR = "/opt/fabric-demo"
-
 try:
     from harbor.models.agent.context import AgentContext
     from harbor.models.task.config import MCPServerConfig
@@ -112,8 +109,7 @@ async def test_harbor_integration(tmp_path: Path):
 
     agent = FabricAgent(
         logs_dir=tmp_path,
-        fabric_config_factory=CONFIG_FACTORY,
-        fabric_config_base_dir=CONFIG_BASE_DIR,
+        fabric_adapter_id="nvidia.fabric.hermes",
         model_name="nvidia/test-model",
         skills_dir="/opt/fabric-demo/skills",
         mcp_servers=[
@@ -141,8 +137,13 @@ async def test_harbor_integration(tmp_path: Path):
     assert request["input"] == "fix the bug"
     assert request["context"] == {"source": "harbor"}
     assert request["request_id"].startswith("request-")
-    assert spec["config_factory"] == CONFIG_FACTORY
-    assert spec["config_base_dir"] == CONFIG_BASE_DIR
+    assert spec["config_factory"] is None
+    assert spec["config_base_dir"] == "/testbed"
+    assert spec["config"]["harness"]["adapter_id"] == "nvidia.fabric.hermes"
+    assert spec["config"]["environment"]["workspace"] == "/testbed"
+    assert spec["config"]["models"] == {}
+    assert spec["config"]["skills"] is None
+    assert spec["config"]["mcp"] is None
     assert spec["model_name"] == "nvidia/test-model"
     assert spec["skills_dir"] == "/opt/fabric-demo/skills"
     assert spec["mcp_servers"] == [
@@ -176,8 +177,7 @@ async def test_harbor_integration(tmp_path: Path):
 async def test_harbor_exchange_paths_are_unique_per_run(tmp_path: Path):
     agent = FabricAgent(
         logs_dir=tmp_path,
-        fabric_config_factory=CONFIG_FACTORY,
-        fabric_config_base_dir=CONFIG_BASE_DIR,
+        fabric_adapter_id="nvidia.fabric.hermes",
     )
     environment = FakeHarborEnvironment()
 
@@ -225,6 +225,59 @@ async def test_harbor_uploads_a_portable_config_bundle(tmp_path: Path):
     spec = agent._build_spec("fix it")
     assert spec.config_factory == "harbor_config:build_config"
     assert spec.config_base_dir == Path("/tmp/nemo-fabric-config")
+
+
+async def test_harbor_generated_config_uses_an_uploaded_bundle_as_base_dir(
+    tmp_path: Path,
+):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    agent = FabricAgent(
+        logs_dir=tmp_path / "logs",
+        fabric_adapter_id="nvidia.fabric.hermes",
+        fabric_config_bundle=bundle,
+    )
+    environment = FakeHarborEnvironment()
+
+    await agent.setup(environment)  # type: ignore[arg-type]
+
+    spec = agent._build_spec("fix it")
+    assert spec.config is not None
+    assert spec.config_factory is None
+    assert spec.config_base_dir == Path("/tmp/nemo-fabric-config")
+    assert environment.directory_uploads == [(bundle, "/tmp/nemo-fabric-config")]
+
+
+def test_harbor_generated_config_maps_fabric_specific_options(tmp_path: Path):
+    agent = FabricAgent(
+        logs_dir=tmp_path,
+        fabric_adapter_id="nvidia.fabric.hermes",
+        fabric_blocked_tools=["browser"],
+        fabric_telemetry="relay",
+    )
+
+    spec = agent._build_spec("fix it")
+
+    assert spec.config is not None
+    assert spec.config.tools is not None
+    assert spec.config.tools.blocked == ["browser"]
+    assert spec.config.telemetry is not None
+    assert "relay" in spec.config.telemetry.providers
+    assert spec.config.relay is not None
+    assert spec.config.relay.observability.atof.enabled is True
+    assert spec.config.relay.observability.atif.enabled is True
+
+
+def test_harbor_requires_exactly_one_config_source(tmp_path: Path):
+    with pytest.raises(ValueError, match="exactly one"):
+        FabricAgent(logs_dir=tmp_path)
+    with pytest.raises(ValueError, match="exactly one"):
+        FabricAgent(
+            logs_dir=tmp_path,
+            fabric_adapter_id="nvidia.fabric.hermes",
+            fabric_config_factory="harbor_config:build_config",
+            fabric_config_base_dir="/opt/fabric",
+        )
 
 
 async def test_harbor_uploads_bundle_before_package_install(tmp_path: Path):
@@ -295,8 +348,7 @@ def test_harbor_config_rejects_a_relative_base_dir(tmp_path: Path):
 def test_harbor_propagates_runtime_identity(tmp_path: Path):
     agent = FabricAgent(
         logs_dir=tmp_path,
-        fabric_config_factory=CONFIG_FACTORY,
-        fabric_config_base_dir=CONFIG_BASE_DIR,
+        fabric_adapter_id="nvidia.fabric.hermes",
     )
     agent.session_id = "trial__agent"
     agent.context_id = uuid.UUID("594025f3-7d65-4655-8576-4bee95002eae")
@@ -314,11 +366,11 @@ def test_harbor_propagates_runtime_identity(tmp_path: Path):
 async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
     agent = FabricAgent(
         logs_dir=tmp_path,
-        fabric_config_factory=CONFIG_FACTORY,
-        fabric_config_base_dir=CONFIG_BASE_DIR,
+        fabric_adapter_id="nvidia.fabric.hermes",
         fabric_package="nemo-fabric[codex,harbor,runtime]==0.1.0",
         extra_env={
             "NVIDIA_API_KEY": "test-key",
+            "PIP_FIND_LINKS": "/tmp/nemo-fabric-config/wheelhouse",
             "PIP_INDEX_URL": "https://packages.example/simple",
         },
     )
@@ -332,7 +384,8 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
         "--disable-pip-version-check 'nemo-fabric[codex,harbor,runtime]==0.1.0'"
     )
     assert environment.environments[1] == {
-        "PIP_INDEX_URL": "https://packages.example/simple"
+        "PIP_FIND_LINKS": "/tmp/nemo-fabric-config/wheelhouse",
+        "PIP_INDEX_URL": "https://packages.example/simple",
     }
 
     await agent.run("fix it", environment, AgentContext())  # type: ignore[arg-type]
@@ -341,6 +394,7 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
     runner_index = environment.commands.index(runner)
     assert environment.environments[runner_index] == {
         "NVIDIA_API_KEY": "test-key",
+        "PIP_FIND_LINKS": "/tmp/nemo-fabric-config/wheelhouse",
         "PIP_INDEX_URL": "https://packages.example/simple",
         "ADAPTER_PYTHON": "/tmp/nemo-fabric-venv/bin/python",
     }
@@ -350,8 +404,7 @@ async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: 
     with pytest.warns(DeprecationWarning, match="fabric_install_command"):
         agent = FabricAgent(
             logs_dir=tmp_path,
-            fabric_config_factory=CONFIG_FACTORY,
-            fabric_config_base_dir=CONFIG_BASE_DIR,
+            fabric_adapter_id="nvidia.fabric.hermes",
             fabric_python="/tmp/custom-fabric/bin/python",
             fabric_install_command="install-fabric-for-test",
             extra_env={"NVIDIA_API_KEY": "test-key", "ADAPTER_PYTHON": "/wrong/python"},
@@ -364,9 +417,7 @@ async def test_harbor_custom_install_uses_explicit_runner_environment(tmp_path: 
     await agent.run("fix it", environment, AgentContext())  # type: ignore[arg-type]
 
     runner = next(command for command in environment.commands if "nemo_fabric.integrations.harbor.runner" in command)
-    assert runner.startswith(
-        "PATH=/tmp/custom-fabric/bin:$PATH /tmp/custom-fabric/bin/python -m "
-    )
+    assert runner.startswith("PATH=/tmp/custom-fabric/bin:$PATH /tmp/custom-fabric/bin/python -m ")
     runner_index = environment.commands.index(runner)
     assert environment.environments[runner_index] == {
         "NVIDIA_API_KEY": "test-key",
@@ -390,7 +441,7 @@ def test_harbor_populates_usage_from_canonical_atif(tmp_path: Path):
                     "total_cached_tokens": 3,
                     "total_completion_tokens": 4,
                     "total_cost_usd": 0.25,
-                }
+                },
             }
         ),
         encoding="utf-8",

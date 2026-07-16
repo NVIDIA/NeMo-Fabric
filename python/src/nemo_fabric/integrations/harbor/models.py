@@ -15,6 +15,7 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+from nemo_fabric import FabricConfig
 from nemo_fabric import RunRequest
 
 
@@ -59,7 +60,8 @@ class HarborRunSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    config_factory: str = Field(min_length=3)
+    config: FabricConfig | None = None
+    config_factory: str | None = None
     config_base_dir: Path
     logs_dir: Path = Path("/logs/agent")
     request: RunRequest
@@ -69,6 +71,13 @@ class HarborRunSpec(BaseModel):
 
     @field_validator("config_factory")
     @classmethod
-    def validate_config_factory(cls, value: str) -> str:
-        parse_config_factory_reference(value)
+    def validate_config_factory(cls, value: str | None) -> str | None:
+        if value is not None:
+            parse_config_factory_reference(value)
         return value
+
+    @model_validator(mode="after")
+    def validate_config_source(self) -> Self:
+        if (self.config is None) == (self.config_factory is None):
+            raise ValueError("exactly one of config or config_factory is required")
+        return self

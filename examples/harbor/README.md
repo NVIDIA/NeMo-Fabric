@@ -5,27 +5,25 @@ SPDX-License-Identifier: Apache-2.0
 
 # Run Fabric Agents with Harbor
 
-This is the canonical guide for the Fabric–Harbor integration. Start with the
-local [calculator smoke](demo/README.md), then use the
-[SWE-Bench assets](swebench/) to compare harnesses and capabilities on one
-unchanged task.
-
-Harbor owns task materialization, containers, verification, rewards, retries,
-concurrency, and job layout. Fabric owns typed configuration, harness execution,
-normalized results, artifacts, and telemetry. One Harbor trial calls one Python
-factory that returns a complete `FabricConfig` and therefore selects one
-harness:
+This example runs one unchanged Harbor SWE-Bench task while Harbor inputs vary
+the resulting in-memory `FabricConfig`. Harbor owns the task, container,
+verifier, reward, retries, concurrency, and job layout. `FabricAgent` translates
+the selected adapter, model, skills, MCP servers, tool policy, and telemetry
+mode into one typed config and asks Fabric to run it.
 
 ```text
-Harbor task -> FabricAgent -> Fabric.run -> selected adapter -> harness
-            -> Harbor verifier and reward
-            -> Fabric result + ATOF/ATIF evidence
+Harbor task + agent options
+  -> FabricAgent
+  -> one FabricConfig
+  -> Fabric.run
+  -> selected adapter and harness
+  -> Harbor verifier and reward
+  -> Fabric result + optional Relay ATOF/ATIF
 ```
 
-Run the same task again with another factory to compare harnesses. A skill,
-MCP, tool, or telemetry variant is an ordinary Python function returning a
-copied `FabricConfig`; each variant runs separately so results remain
-attributable.
+The [calculator demo](demo/README.md) remains available as a small,
+credential-free integration smoke. The SWE-Bench workflow below is the primary
+example.
 
 ## Install and Preflight
 
@@ -38,16 +36,13 @@ uv run --extra runtime --extra harbor python -c \
   'from nemo_fabric.integrations.harbor import FabricAgent; print(FabricAgent.import_path())'
 ```
 
-The version command must report Harbor 0.18.x. The explicit extras make each
-command independent of whichever optional dependencies are already installed
-in the active environment.
+The version command must report Harbor 0.18.x.
 
 ### Docker installed with Snap
 
 The Snap build of Docker sees a private `/tmp`, while Harbor generates temporary
 Docker Compose overlays in the host temporary directory. If `command -v docker`
-prints `/snap/bin/docker`, select a host directory that both processes can see
-and verify it before running Harbor:
+prints `/snap/bin/docker`, use a directory visible to both processes:
 
 ```bash
 mkdir -p "$HOME/harbor-tmp"
@@ -56,45 +51,24 @@ uv run --extra runtime --extra harbor python -c \
   'import tempfile; print(tempfile.gettempdir())'
 ```
 
-The verification command must print the directory exported above. Installing
-Docker Engine and the Compose plugin outside Snap avoids this workaround.
+The final command must print `$HOME/harbor-tmp`. Installing Docker Engine and
+the Compose plugin outside Snap avoids this workaround.
 
 ### Make Fabric available inside the task
 
-`FabricAgent` has two environment modes:
-
-- **preinstalled**: `fabric_config_factory` identifies a `module:callable`
-  already importable in the task image, and `fabric_config_base_dir` explicitly
-  anchors relative assets;
-- **portable**: `fabric_config_bundle` is a host directory containing the
-  factory module and its assets. Harbor uploads it to
-  `/tmp/nemo-fabric-config`, which becomes the factory import path and explicit
-  base directory.
-
-The callable is invoked once inside the task and must return a `FabricConfig`.
-Fabric does not load a persisted YAML, TOML, or JSON agent configuration.
-The selected adapter package supplies its executable Python code.
-
-Set `fabric_package` to a PEP 508 requirement when the task image needs Fabric
-installed. The requirement must identify the exact Fabric revision under test
-and be reachable from the task container. Fabric installs it in an isolated
-environment at `/tmp/nemo-fabric-venv`.
-
-The Fabric runtime includes a native extension. A wheel built directly on a
-new workstation may require a newer glibc than an older SWE-Bench image. Use a
-wheel built for the image's manylinux baseline, or preinstall Fabric in a
-purpose-built evaluation image. Do not assume a locally tagged `linux_x86_64`
-wheel will run in SWE-Bench images.
-
-Set `FABRIC_PACKAGE` before using the commands below:
+Set `fabric_package` to a PEP 508 requirement for the exact Fabric revision
+under test. The requirement must be reachable from the task container. Harbor
+installs it into `/tmp/nemo-fabric-venv`:
 
 ```bash
 export FABRIC_PACKAGE='<PEP-508-requirement-for-the-Fabric-revision-under-test>'
 ```
 
-### Verify installation in the task image
+The Fabric runtime includes a native extension. Use a wheel compatible with the
+SWE-Bench image's manylinux baseline; a wheel built directly on a newer
+workstation may require a newer glibc.
 
-Run Harbor's installation-only gate before spending model tokens:
+Verify installation before spending model tokens:
 
 ```bash
 : "${FABRIC_PACKAGE:?Set FABRIC_PACKAGE to the Fabric revision under test}"
@@ -102,166 +76,218 @@ Run Harbor's installation-only gate before spending model tokens:
 uv run --extra runtime --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
+  --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_bundle="$PWD/examples/harbor/swebench" \
-  --ak fabric_config_factory=harbor_swebench_config:build_hermes \
   --ak "fabric_package=$FABRIC_PACKAGE" \
   --install-only \
   --n-concurrent 1
 ```
 
-This gate verifies Fabric and the selected adapter can be installed in the real
-task image. Harness binaries and credentials must also be available; use a
-purpose-built evaluation image for large runs.
+## How Harbor Inputs Become FabricConfig
 
-## Run One SWE-Bench Task with FabricConfig Variants
+`FabricAgent` starts with the selected adapter and the Harbor task workspace,
+then applies the run inputs through typed Fabric models:
 
-The task `django__django-13741` is available from Harbor's
-`swe-bench/swe-bench-verified` dataset. Each run uses that same Harbor task.
-The selected factory controls the harness, model, skills, MCP servers, tool
-policy, and telemetry. Harbor continues to own task execution, concurrency,
-retries, and job output; credentials enter through the agent environment.
+| Harbor input | `FabricConfig` field |
+| --- | --- |
+| `--ak fabric_adapter_id=...` | `harness.adapter_id` |
+| `--model` | `models.default` |
+| `--skill` | `skills.paths` |
+| `--mcp-config` | `mcp.servers` |
+| `--ak fabric_blocked_tools='[...]'` | `tools.blocked` |
+| `--ak fabric_telemetry=relay` | `telemetry` and Relay ATOF/ATIF configuration |
+| `--ak fabric_harness_settings='{...}'` | `harness.settings` for adapter-specific runtime controls |
 
-The factories live in
-[`harbor_swebench_config.py`](swebench/harbor_swebench_config.py):
+The task, verifier, and `FabricAgent` stay fixed. Each command changes only the
+input named by the experiment, so the effective config and resulting evidence
+remain attributable.
 
-| Experiment | Factory | Configuration difference |
-| --- | --- | --- |
-| Hermes baseline | `build_hermes` | Baseline Hermes harness and model |
-| Claude baseline | `build_claude` | Claude harness and model |
-| Skill | `build_hermes_skill` | Adds `skills.paths` |
-| MCP | `build_hermes_mcp` | Adds the repository-inspector MCP server |
-| Tools | `build_hermes_tools` | Adds normalized `tools.blocked` policy |
-| Relay | `build_hermes_relay` | Enables Relay with ATOF and ATIF output |
+## Run One SWE-Bench Task
 
-Set the shared execution inputs, then select one factory, credential, and job
-name:
+Set the shared inputs:
 
 ```bash
-export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
 export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
+export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 export NVIDIA_API_KEY=...
 export ANTHROPIC_API_KEY=...
-
-export FABRIC_CONFIG_FACTORY=harbor_swebench_config:build_hermes_skill
-export MODEL_CREDENTIAL="NVIDIA_API_KEY=$NVIDIA_API_KEY"
-export JOB_NAME=django-13741-hermes-skill
 ```
 
-Run the fixed task:
+`fabric_config_bundle` uploads the example-owned adapter descriptors and MCP
+implementation. It does not contain or load a persisted Fabric configuration;
+`FabricAgent` constructs that config in memory from the Harbor inputs.
+
+### Hermes
 
 ```bash
 uv run --extra runtime --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
   --agent "$FABRIC_AGENT" \
+  --model nvidia/nemotron-3-nano-30b-a3b \
+  --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
-  --ak fabric_config_factory="$FABRIC_CONFIG_FACTORY" \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "$MODEL_CREDENTIAL" \
-  --job-name "$JOB_NAME" \
+  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --job-name django-13741-hermes \
   --jobs-dir "$RUNS_DIR" \
   --n-concurrent 1 \
   --n-attempts 1 \
   --max-retries 1
 ```
 
-For Claude, select its factory and credential, then rerun the same command:
+### Claude
+
+The task and verifier are unchanged. Only the adapter, model, credential, and
+job name differ. Claude's Relay integration also uses the standalone
+`nemo-relay` gateway CLI. Build Relay 0.5.0 in an older Linux image so the
+binary is compatible with the SWE-Bench task image, then place it in the
+uploaded example bundle:
 
 ```bash
-export FABRIC_CONFIG_FACTORY=harbor_swebench_config:build_claude
-export MODEL_CREDENTIAL="ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
-export JOB_NAME=django-13741-claude
+mkdir -p "$FABRIC_BUNDLE/.relay"
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -e CARGO_HOME=/tmp/cargo \
+  -e CARGO_TARGET_DIR=/tmp/target \
+  -v "$FABRIC_BUNDLE/.relay:/out" \
+  rust:1.94-bullseye \
+  cargo install nemo-relay-cli --version 0.5.0 --root /out
 ```
 
-Do not add Harbor `--model`, `--skill`, or `--mcp-config` overrides to these
-comparison runs. The experiment intentionally selects those capabilities
-through the typed `FabricConfig` factory.
-
-Claude's config uses `bypassPermissions` and marks the process with
-`IS_SANDBOX=1` because Harbor executes it as root inside an ephemeral task
-container. Keep that marker scoped to a deliberately isolated evaluation
-container; do not copy this permission mode into a normal host environment.
-
-For a self-hosted model, Hermes requires an OpenAI-compatible endpoint with
-automatic tool calling enabled. Record the immutable server image version or
-digest with the run metadata, and verify one request containing `tools` with
-`tool_choice: "auto"` before starting Harbor. A plain chat completion can
-succeed even when this required agent capability is disabled. Refer to NVIDIA's
-[tool-calling guidance](https://docs.nvidia.com/nim/large-language-models/latest/advanced-use-cases/tool-calling-and-mcp.html).
-
-The MCP factory references the dependency-free, read-only
-[`repo_inspector.py`](swebench/mcp/repo_inspector.py). Its absolute command path
-is the portable bundle target inside the task, not a workstation path.
-
-## Verify Reward and ATOF/ATIF
-
-Harbor's verifier remains the correctness authority. Fabric telemetry is a
-separate quality gate and never changes the SWE-Bench reward.
-
-Relay runs validate ATOF JSONL and the native ATIF structure, scan for obvious
-credential leakage, and write:
-
-- the original Fabric ATOF and ATIF files;
-- `agent/trajectory.json`, Harbor's canonical ATIF path;
-- `agent/telemetry-validation.json`, a concise machine-readable summary;
-- `agent/fabric-result-<id>.json`, the normalized Fabric result.
-
-Inspect a completed job:
+The `.relay` directory is ignored by Git. `fabric_config_bundle` uploads it
+with the rest of the example inputs; the harness setting below selects the
+task-local executable.
 
 ```bash
-find "$RUNS_DIR/django-13741-hermes-relay" \
-  -path '*/agent/telemetry-validation.json' -exec python -m json.tool {} \;
-find "$RUNS_DIR/django-13741-hermes-relay" \
-  -path '*/agent/trajectory.json' -exec python -m json.tool {} \;
-cat "$RUNS_DIR/django-13741-hermes-relay/result.json"
+uv run --extra runtime --extra harbor harbor run \
+  --task swe-bench/django__django-13741 \
+  --agent "$FABRIC_AGENT" \
+  --model anthropic/claude-sonnet-4-5 \
+  --ak fabric_adapter_id=nvidia.fabric.claude \
+  --ak fabric_config_bundle="$FABRIC_BUNDLE" \
+  --ak fabric_telemetry=relay \
+  --ak 'fabric_harness_settings={"nemo_relay_command":"/tmp/nemo-fabric-config/.relay/bin/nemo-relay"}' \
+  --ak "fabric_package=$FABRIC_PACKAGE" \
+  --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
+  --job-name django-13741-claude \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --n-attempts 1 \
+  --max-retries 1
+```
+
+Relay is enabled so the resulting ATIF confirms that the harness switch reached
+Claude. Claude uses unattended permissions only inside Harbor's ephemeral task
+container. Do not apply that permission mode to a normal host environment.
+
+For a self-hosted Hermes model, use an OpenAI-compatible endpoint with
+automatic tool calling enabled. A plain chat completion can succeed even when
+tool calling is unavailable.
+
+## Vary One Capability Through Harbor
+
+Keep the Hermes command fixed and add one of the following variations. Relay is
+enabled for the skill, MCP, and tool-policy runs so their ATIF trajectories can
+confirm that the capability reached the harness.
+
+| Experiment | Add to the Hermes command | Job name |
+| --- | --- | --- |
+| Skill | `--skill "$PWD/examples/harbor/swebench/skills/swebench-debugging" --ak fabric_telemetry=relay` | `django-13741-hermes-skill` |
+| MCP | `--mcp-config "$FABRIC_BUNDLE/mcp/repo-inspector.mcp.json" --ak fabric_telemetry=relay` | `django-13741-hermes-mcp` |
+| Blocked tool | `--ak 'fabric_blocked_tools=["browser"]' --ak fabric_telemetry=relay` | `django-13741-hermes-tools` |
+| Relay telemetry | `--ak fabric_telemetry=relay` | `django-13741-hermes-relay` |
+
+For example, the skill variation is:
+
+```bash
+uv run --extra runtime --extra harbor harbor run \
+  --task swe-bench/django__django-13741 \
+  --agent "$FABRIC_AGENT" \
+  --model nvidia/nemotron-3-nano-30b-a3b \
+  --skill "$PWD/examples/harbor/swebench/skills/swebench-debugging" \
+  --ak fabric_adapter_id=nvidia.fabric.hermes \
+  --ak fabric_config_bundle="$FABRIC_BUNDLE" \
+  --ak fabric_telemetry=relay \
+  --ak "fabric_package=$FABRIC_PACKAGE" \
+  --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
+  --job-name django-13741-hermes-skill \
+  --jobs-dir "$RUNS_DIR" \
+  --n-concurrent 1 \
+  --n-attempts 1 \
+  --max-retries 1
+```
+
+The MCP variation uploads this example directory because the MCP config starts
+the local, dependency-free [`repo_inspector.py`](swebench/mcp/repo_inspector.py)
+inside the task container. The MCP definition itself still enters through
+Harbor's `--mcp-config` option.
+
+For a pure telemetry comparison, run the Hermes baseline once without
+`fabric_telemetry`, then repeat it with `--ak fabric_telemetry=relay`. No model,
+harness, skill, MCP, tool-policy, task, or verifier input changes.
+
+## Verify Reward and Relay Evidence
+
+Harbor's verifier remains the correctness authority. Relay telemetry is a
+separate run-evidence check and never changes the SWE-Bench reward.
+
+Every completed variant must have a normal Harbor result with one trial, no
+exception, and a verifier reward:
+
+```bash
+python -m json.tool "$RUNS_DIR/<job-name>/result.json"
 uv run --extra runtime --extra harbor harbor view "$RUNS_DIR"
 ```
 
-Direct Relay output is the telemetry contract. Validate the emitted ATOF stream
-and ATIF independently; do not derive ATIF from ATOF through a separate
-converter. Fabric promotes Relay's ATIF to `agent/trajectory.json`, and Harbor
-validates that canonical file with its trajectory model.
+Relay-enabled runs preserve the direct Relay ATOF and ATIF files and publish:
 
-## Review Sample Artifacts
+- `agent/trajectory.json`, Harbor's canonical ATIF path;
+- `agent/telemetry-validation.json`, the telemetry validation summary;
+- `agent/fabric-result-<id>.json`, the normalized Fabric result.
 
-Artifacts from a successful Hermes Relay run live under
-[`swebench/sample-artifacts/`](swebench/sample-artifacts/). The bundle includes
-the complete Relay ATOF and ATIF outputs, Harbor's canonical ATIF copy, a
-telemetry summary, a verifier summary, and the resulting workspace patch. Large
+Inspect them with:
+
+```bash
+find "$RUNS_DIR/<job-name>" \
+  -path '*/agent/telemetry-validation.json' -exec python -m json.tool {} \;
+find "$RUNS_DIR/<job-name>" \
+  -path '*/agent/trajectory.json' -exec python -m json.tool {} \;
+find "$RUNS_DIR/<job-name>" \
+  -name '*.atof.jsonl' -o -name '*.atif.json'
+```
+
+Validate the direct ATOF stream and direct ATIF document independently. Fabric
+promotes Relay's ATIF to `agent/trajectory.json`; it does not derive that file
+from ATOF through a separate converter.
+
+Sample output from successful Relay-enabled Hermes and Claude runs is checked
+in under [`swebench/sample-artifacts/`](swebench/sample-artifacts/). Large
 telemetry files use Git LFS.
 
-## Progress from a Spot Check to a Full Run
+## Progress from One Task to a Full Run
 
-Do not begin with all 500 tasks:
+Before scaling, run the install-only gate and complete each single-task
+variation above. Then replace the one `--task` argument with a five-task shard:
 
-### Spot-Check
+```bash
+--dataset swe-bench/swe-bench-verified --n-tasks 5
+```
 
-1. Run `--install-only` on the chosen task image.
-2. Run the credential-free calculator smoke.
-3. Run `django__django-13741` once with one harness.
-4. Repeat it with the second harness.
-5. Exercise the skill, MCP, tool, and Relay variants individually.
+Inspect every exception and reward plus at least one Fabric result and telemetry
+summary. Remove `--n-tasks` only after the shard is healthy, and choose
+concurrency that respects model and environment limits.
 
-### Scale Up
-
-1. Run a five-task shard by replacing `--task swe-bench/django__django-13741`
-   with `--dataset swe-bench/swe-bench-verified --n-tasks 5`.
-2. Inspect every exception and reward plus at least one Fabric result and
-   telemetry summary before scaling.
-3. Start the full dataset by removing `--n-tasks` and choosing concurrency that
-   respects model and environment limits.
-
-For a long run, use a stable job name and directory. Spot-check without changing
-the running job:
+Spot-check a running job without changing it:
 
 ```bash
 find "$RUNS_DIR/<job-name>" -name result.json -print | head
-find "$RUNS_DIR/<job-name>" -path '*/agent/telemetry-validation.json' -print | head
+find "$RUNS_DIR/<job-name>" \
+  -path '*/agent/telemetry-validation.json' -print | head
 uv run --extra runtime --extra harbor harbor view "$RUNS_DIR/<job-name>"
 ```
 
-After interruption or infrastructure failures, resume the recorded job config
-instead of launching a differently configured replacement:
+Resume an interrupted job from its recorded configuration:
 
 ```bash
 uv run --extra runtime --extra harbor harbor job resume \

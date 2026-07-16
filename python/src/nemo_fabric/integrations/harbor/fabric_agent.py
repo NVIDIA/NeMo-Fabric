@@ -13,9 +13,19 @@ import warnings
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
+from typing import Literal
 
+from nemo_fabric import EnvironmentConfig
+from nemo_fabric import FabricConfig
+from nemo_fabric import HarnessConfig
+from nemo_fabric import MetadataConfig
+from nemo_fabric import RelayAtifConfig
+from nemo_fabric import RelayAtofConfig
+from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
+from nemo_fabric import RuntimeConfig
+from nemo_fabric import ToolsConfig
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
 from nemo_fabric.integrations.harbor.models import HarborRunSpec
 from nemo_fabric.integrations.harbor.models import parse_config_factory_reference
@@ -27,6 +37,7 @@ INSTALL_ENV_NAMES = {
     "PIP_CERT",
     "PIP_CLIENT_CERT",
     "PIP_EXTRA_INDEX_URL",
+    "PIP_FIND_LINKS",
     "PIP_INDEX_URL",
     "PIP_TRUSTED_HOST",
     "REQUESTS_CA_BUNDLE",
@@ -36,6 +47,8 @@ INSTALL_ENV_NAMES = {
     "https_proxy",
     "no_proxy",
 }
+HARBOR_ARTIFACT_ROOT = "/logs/agent/fabric-artifacts"
+HARBOR_DEFAULT_WORKSPACE = "/testbed"
 
 try:
     from harbor.agents.base import BaseAgent
@@ -76,10 +89,15 @@ else:
         def __init__(
             self,
             logs_dir: Path,
-            fabric_config_factory: str,
+            fabric_adapter_id: str | None = None,
+            fabric_config_factory: str | None = None,
             fabric_config_base_dir: str | None = None,
             fabric_config_bundle: Path | None = None,
             fabric_config_target: str = "/tmp/nemo-fabric-config",
+            fabric_workspace: str = HARBOR_DEFAULT_WORKSPACE,
+            fabric_harness_settings: dict[str, Any] | None = None,
+            fabric_blocked_tools: list[str] | None = None,
+            fabric_telemetry: Literal["none", "relay"] = "none",
             fabric_python: str = "python3",
             fabric_package: str | None = None,
             fabric_venv_path: str = "/tmp/nemo-fabric-venv",
@@ -95,11 +113,29 @@ else:
             # while newer BaseAgent versions intentionally ignore unknown kwargs.
             # Retain the mapping here for both old and new Harbor releases.
             self._extra_env = dict(extra_env or {})
-            parse_config_factory_reference(fabric_config_factory)
+            if (fabric_adapter_id is None) == (fabric_config_factory is None):
+                raise ValueError("exactly one of fabric_adapter_id or fabric_config_factory is required")
+            if fabric_adapter_id is not None and not fabric_adapter_id.strip():
+                raise ValueError("fabric_adapter_id must not be empty")
+            if fabric_config_factory is not None:
+                parse_config_factory_reference(fabric_config_factory)
+            workspace = PurePosixPath(fabric_workspace)
+            if not workspace.is_absolute() or ".." in workspace.parts:
+                raise ValueError("fabric_workspace must be an absolute task-environment path")
+            blocked_tools = list(fabric_blocked_tools or [])
+            if any(not isinstance(tool, str) or not tool.strip() for tool in blocked_tools):
+                raise ValueError("fabric_blocked_tools must contain non-empty strings")
+            if fabric_telemetry not in {"none", "relay"}:
+                raise ValueError("fabric_telemetry must be 'none' or 'relay'")
+            self.fabric_adapter_id = fabric_adapter_id
             self.fabric_config_factory = fabric_config_factory
             self.fabric_config_base_dir = fabric_config_base_dir
             self.fabric_config_bundle = fabric_config_bundle
             self.fabric_config_target = fabric_config_target
+            self.fabric_workspace = str(workspace)
+            self.fabric_harness_settings = dict(fabric_harness_settings or {})
+            self.fabric_blocked_tools = blocked_tools
+            self.fabric_telemetry = fabric_telemetry
             self.fabric_python = fabric_python
             self.fabric_package = fabric_package
             self.fabric_venv_path = fabric_venv_path
@@ -205,6 +241,7 @@ else:
 
         def _build_spec(self, instruction: str) -> HarborRunSpec:
             return HarborRunSpec(
+                config=(self._build_config() if self.fabric_adapter_id is not None else None),
                 config_factory=self.fabric_config_factory,
                 config_base_dir=self._environment_config_base_dir,
                 request=self._build_request(instruction),
@@ -215,34 +252,35 @@ else:
                 ),
             )
 
+        def _build_config(self) -> FabricConfig:
+            assert self.fabric_adapter_id is not None
+            return build_harbor_config(
+                adapter_id=self.fabric_adapter_id,
+                workspace=self.fabric_workspace,
+                harness_settings=self.fabric_harness_settings,
+                blocked_tools=self.fabric_blocked_tools,
+                telemetry=self.fabric_telemetry,
+            )
+
         def _resolve_environment_config_base_dir(self) -> str:
             if self.fabric_config_bundle is not None:
                 bundle = Path(self.fabric_config_bundle)
                 if not bundle.is_dir():
-                    raise ValueError(
-                        f"fabric_config_bundle must be an existing directory: {bundle}"
-                    )
+                    raise ValueError(f"fabric_config_bundle must be an existing directory: {bundle}")
                 target = PurePosixPath(self.fabric_config_target)
                 if not target.is_absolute() or ".." in target.parts:
-                    raise ValueError(
-                        "fabric_config_target must be an absolute task-environment path"
-                    )
+                    raise ValueError("fabric_config_target must be an absolute task-environment path")
                 if self.fabric_config_base_dir is not None:
                     raise ValueError(
-                        "fabric_config_base_dir is derived from fabric_config_target "
-                        "when fabric_config_bundle is set"
+                        "fabric_config_base_dir is derived from fabric_config_target when fabric_config_bundle is set"
                     )
                 return str(target)
 
-            if self.fabric_config_base_dir is None:
-                raise ValueError(
-                    "fabric_config_base_dir is required when fabric_config_bundle is not set"
-                )
-            base_dir = PurePosixPath(self.fabric_config_base_dir)
+            if self.fabric_config_base_dir is None and self.fabric_config_factory:
+                raise ValueError("fabric_config_base_dir is required when fabric_config_bundle is not set")
+            base_dir = PurePosixPath(self.fabric_config_base_dir or self.fabric_workspace)
             if not base_dir.is_absolute() or ".." in base_dir.parts:
-                raise ValueError(
-                    "fabric_config_base_dir must be an absolute task-environment path"
-                )
+                raise ValueError("fabric_config_base_dir must be an absolute task-environment path")
             return str(base_dir)
 
         def populate_context_post_run(self, context: AgentContext) -> None:
@@ -269,17 +307,89 @@ else:
 
         @property
         def _install_env(self) -> dict[str, str]:
-            return {
-                name: value
-                for name, value in self._extra_env.items()
-                if name in INSTALL_ENV_NAMES
-            }
+            return {name: value for name, value in self._extra_env.items() if name in INSTALL_ENV_NAMES}
 
         @property
         def _runner_env(self) -> dict[str, str]:
             env = dict(self._extra_env)
             env["ADAPTER_PYTHON"] = self._runner_python
             return env
+
+
+def build_harbor_config(
+    *,
+    adapter_id: str,
+    workspace: str,
+    harness_settings: dict[str, Any] | None = None,
+    blocked_tools: list[str] | None = None,
+    telemetry: Literal["none", "relay"] = "none",
+) -> FabricConfig:
+    """Construct the typed config controlled by Harbor agent inputs."""
+
+    name = f"harbor-{adapter_id.rsplit('.', maxsplit=1)[-1]}"
+    artifact_root = f"{HARBOR_ARTIFACT_ROOT}/{name}"
+    settings = harbor_harness_defaults(adapter_id)
+    settings.update(harness_settings or {})
+    config = FabricConfig(
+        metadata=MetadataConfig(
+            name=name,
+            description="Fabric agent configured through Harbor run inputs.",
+        ),
+        harness=HarnessConfig(
+            adapter_id=adapter_id,
+            resolution="preinstalled",
+            settings=settings,
+        ),
+        runtime=RuntimeConfig(
+            input_schema="text",
+            output_schema="message",
+            artifacts=artifact_root,
+        ),
+        environment=EnvironmentConfig(
+            provider="local",
+            workspace=workspace,
+            artifacts=artifact_root,
+        ),
+        tools=(ToolsConfig(blocked=list(blocked_tools)) if blocked_tools else None),
+    )
+    if telemetry == "relay":
+        relay_output = f"{artifact_root}/relay"
+        config.enable_relay(
+            output_dir=relay_output,
+            observability=RelayObservabilityConfig(
+                atif=RelayAtifConfig(
+                    enabled=True,
+                    output_directory=relay_output,
+                    filename_template="trajectory-{session_id}.atif.json",
+                    agent_name=name,
+                ),
+                atof=RelayAtofConfig(
+                    enabled=True,
+                    output_directory=relay_output,
+                    filename="events.atof.jsonl",
+                    mode="overwrite",
+                ),
+            ),
+        )
+    return config
+
+
+def harbor_harness_defaults(adapter_id: str) -> dict[str, Any]:
+    """Return the minimal unattended settings required in a Harbor task."""
+
+    if adapter_id == "nvidia.fabric.hermes":
+        return {
+            "hermes_home": "/tmp/fabric-hermes",
+            "terminal_timeout": 300,
+        }
+    if adapter_id == "nvidia.fabric.claude":
+        return {
+            "permission_mode": "bypassPermissions",
+            "max_turns": 75,
+            "timeout_seconds": 1800,
+            "env": {"IS_SANDBOX": "1"},
+        }
+    return {}
 
 
 def fabric_runner_command(
