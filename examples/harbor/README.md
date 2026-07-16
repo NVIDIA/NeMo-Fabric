@@ -14,7 +14,7 @@ container.
 
 ```mermaid
 flowchart LR
-    subgraph Host["Harbor host process"]
+    subgraph Host["<b>Harbor host process</b>"]
         direction TB
         Inputs["Harbor task and agent options"]:::data
         Start["Start Harbor run"]
@@ -23,7 +23,7 @@ flowchart LR
         Inputs --> Start --> Build
     end
 
-    subgraph Container["Harbor task container"]
+    subgraph Container["<b>Harbor task container</b>"]
         direction TB
         Prepare["Prepare task environment"]
         Invoke["Invoke Fabric runner"]
@@ -40,6 +40,8 @@ flowchart LR
     Host -- "FabricConfig + RunRequest + base_dir" --> Container
 
     classDef data fill:transparent,stroke:transparent
+    style Host stroke-width:2px
+    style Container stroke-width:2px
 ```
 
 `FabricAgent` and `FabricConfig` construction run in the Harbor host process.
