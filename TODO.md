@@ -6,13 +6,12 @@ SPDX-License-Identifier: Apache-2.0
 # Temporary Workarounds
 
 Track repository workarounds that must be removed after an upstream dependency
-ships. Each entry must identify an owner, upstream reference, removal condition,
-and cleanup validation.
+ships. Each entry must identify an upstream reference, removal condition, and
+cleanup validation.
 
 ## NeMo Relay 0.6.x Request Decoding Release
 
 - **Status:** Waiting for an upstream release
-- **Owner:** `@AjayThorve`
 - **Added:** July 16, 2026
 - **Affected documentation:** `adapters/codex/README.md` and
   `docs/integrations/codex.mdx`
