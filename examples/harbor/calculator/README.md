@@ -12,18 +12,16 @@ telemetry, or Claude. `FabricAgent` translates Harbor options into a complete
 typed `FabricConfig`; Harbor owns the task, container, verifier, reward,
 concurrency, and run layout.
 
-## Requirements
+## Before You Start
 
-- Python 3.12+
-- `uv`
-- Docker
-- this repository checkout at the revision you want to run
-- `NVIDIA_API_KEY` for the Hermes and Hermes Relay runs
-- `ANTHROPIC_API_KEY` for the Claude run
+Complete the shared host setup in the
+[Harbor landing page](../README.md#before-either-path), then continue in the
+same shell. Commit the Fabric revision you want to run because the build context
+is created from `HEAD`.
 
-The credential-free smoke does not require either API key.
-
-The first image build can take several minutes.
+The credential-free smoke does not require an API key. Export `NVIDIA_API_KEY`
+for Hermes runs or `ANTHROPIC_API_KEY` for the Claude run before using that
+harness. The first image build can take several minutes.
 
 ## Prepare the Build Context
 
@@ -33,6 +31,7 @@ Fabric revision from your checkout:
 
 ```bash
 set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
 
 CALCULATOR_DIR="$PWD/examples/harbor/calculator"
 TASK_DIR="$CALCULATOR_DIR/task"
@@ -52,23 +51,6 @@ created successfully.
 
 Keep this shell open for the commands below. Use a new `--job-name`, or remove
 the matching generated directory under `$RUNS_DIR`, before repeating a run.
-
-## Harbor Arguments
-
-| Argument | Meaning |
-| --- | --- |
-| `--path` | Harbor task directory containing the environment and verifier |
-| `--agent` | Harbor agent class imported from Fabric |
-| `--ak` | Constructor argument passed to `FabricAgent` |
-| `fabric_adapter_id` | Fabric adapter selected for the run |
-| `fabric_config_base_dir` | Task path used to resolve adapter assets |
-| `fabric_workspace` | Task workspace that the harness can modify |
-| `fabric_harness_settings` | Adapter-specific runtime settings |
-| `fabric_telemetry` | Optional Relay ATOF and ATIF capture |
-| `--model` | Model translated into `FabricConfig.models.default` |
-| `--ae` | Environment variable passed to the Harbor agent |
-| `--job-name` | Harbor output directory name for this run |
-| `--force-build` | Rebuild the task image from the prepared context |
 
 ## 1. Credential-Free Smoke
 
@@ -94,7 +76,7 @@ Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 ## 2. Hermes
 
 ```bash
-export NVIDIA_API_KEY=...
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes}"
 
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
@@ -118,6 +100,8 @@ typed config. The API key is passed separately as a task credential.
 ## 3. Hermes with Relay Telemetry
 
 ```bash
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes}"
+
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
@@ -155,7 +139,7 @@ passes the API key into the task environment; Fabric forwards only the model's
 configured credential variable to Claude.
 
 ```bash
-export ANTHROPIC_API_KEY=...
+: "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
 
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \

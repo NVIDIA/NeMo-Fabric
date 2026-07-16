@@ -18,6 +18,7 @@ CALCULATOR_DOCKERFILE = CALCULATOR_ROOT / "task" / "environment" / "Dockerfile"
 CALCULATOR_SOLUTION = CALCULATOR_ROOT / "task" / "solution" / "solve.sh"
 CALCULATOR_FABRIC_ROOT = CALCULATOR_ROOT / "task" / "environment" / "fabric"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
+SWEBENCH_README = SWEBENCH_ROOT / "README.md"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = ROOT / "python" / "src" / "nemo_fabric" / "integrations" / "harbor" / "README.md"
@@ -294,27 +295,32 @@ def test_harbor_smoke_config_resolves_its_local_adapter():
 
 def test_harbor_calculator_documents_explicit_cli_commands():
     calculator = CALCULATOR_README.read_text(encoding="utf-8")
-    integration = INTEGRATION_README.read_text(encoding="utf-8")
+    landing = INTEGRATION_README.read_text(encoding="utf-8")
+    swebench = SWEBENCH_README.read_text(encoding="utf-8")
 
     assert "run.sh" not in calculator
     assert calculator.count("uv run --extra runtime --extra harbor harbor run") == 4
-    assert integration.count("uv run --extra runtime --extra harbor harbor run") == 5
-    assert "--agent-import-path" not in integration
+    assert landing.count("uv run --extra runtime --extra harbor harbor run") == 0
+    assert swebench.count("uv run --extra runtime --extra harbor harbor run") == 5
+    assert "--agent-import-path" not in landing + calculator + swebench
     assert "fabric_config_path" not in calculator
-    assert "fabric_config_path" not in integration
+    assert "fabric_config_path" not in landing
+    assert "fabric_config_path" not in swebench
     assert "fabric_config_factory" not in calculator
-    assert "fabric_config_factory" not in integration
+    assert "fabric_config_factory" not in landing
+    assert "fabric_config_factory" not in swebench
     assert "fabric_workspace=/app" in calculator
     assert "--model nvidia/nemotron-3-nano-30b-a3b" in calculator
     assert "--model anthropic/claude-sonnet-4-5" in calculator
     assert 'CALCULATOR_DIR="$PWD/examples/harbor/calculator"' in calculator
-    assert "calculator/README.md" in integration
-    assert "fabric_adapter_id" in integration
-    assert 'export TMPDIR="$HOME/harbor-tmp"' in integration
-    assert "./examples/harbor/prepare_swebench.sh" in integration
-    assert 'FABRIC_PACKAGE="$(< "$FABRIC_BUNDLE/.fabric-package")"' in integration
-    assert '--ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS"' in integration
-    assert "--dataset swe-bench/swe-bench-verified" in integration
+    assert "calculator/README.md" in landing
+    assert "swebench/README.md" in landing
+    assert "fabric_adapter_id" in landing
+    assert 'export TMPDIR="$HOME/harbor-tmp"' in landing
+    assert "./examples/harbor/prepare_swebench.sh" in swebench
+    assert 'FABRIC_PACKAGE="$(< "$FABRIC_BUNDLE/.fabric-package")"' in swebench
+    assert '--ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS"' in swebench
+    assert "--dataset swe-bench/swe-bench-verified" in swebench
     for flag in (
         "--path",
         "--agent",
@@ -335,7 +341,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
         "telemetry-validation.json",
         "agent/trajectory.json",
     ):
-        assert value in integration
+        assert value in swebench
 
 
 def test_harbor_calculator_setup_and_solution_fail_fast():
@@ -348,7 +354,7 @@ def test_harbor_calculator_setup_and_solution_fail_fast():
     assert "raise SystemExit" in solution
 
 
-def test_harbor_calculator_telemetry_exports_direct_atof_and_atif():
+def test_harbor_relay_telemetry_exports_direct_atof_and_atif():
     from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
 
     config = build_harbor_config(
@@ -359,15 +365,15 @@ def test_harbor_calculator_telemetry_exports_direct_atof_and_atif():
     ).to_mapping()
     assert "relay" in config["telemetry"]["providers"]
     observability = config["relay"]["observability"]
-    integration = INTEGRATION_README.read_text(encoding="utf-8")
+    swebench = SWEBENCH_README.read_text(encoding="utf-8")
 
     assert "openinference" not in observability
     assert observability["atof"]["enabled"] is True
     assert observability["atif"]["enabled"] is True
     assert not (CALCULATOR_ROOT / "host-gateway.compose.yaml").exists()
-    assert "direct Relay ATOF and ATIF" in integration
-    assert "telemetry-validation.json" in integration
-    assert "canonical ATIF" in integration
+    assert "direct Relay ATOF and ATIF" in swebench
+    assert "telemetry-validation.json" in swebench
+    assert "canonical ATIF" in swebench
 
 
 def test_harbor_sdk_package_points_to_the_public_example():
@@ -459,7 +465,7 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     hermes_descriptor = json.loads((SWEBENCH_ROOT / "adapters/hermes/fabric-adapter.json").read_text())
     assert "models" in hermes_descriptor["config"]["accepts"]
 
-    readme = INTEGRATION_README.read_text(encoding="utf-8")
+    readme = SWEBENCH_README.read_text(encoding="utf-8")
     assert readme.count("django__django-13741") >= 4
     assert "--n-tasks 5" in readme
 
@@ -493,4 +499,3 @@ def test_root_readme_routes_to_sdk_and_harbor_guides():
     assert "runtime execution layer" in readme
     assert "docs/sdk/python.mdx" in readme
     assert "examples/harbor/README.md" in readme
-    assert "examples/harbor/calculator/README.md" in readme
