@@ -332,7 +332,9 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
 
 
 def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
-    claude_payload["effective_config"]["config"]["tools"] = {"blocked": ["Bash", "WebFetch"]}
+    claude_payload["effective_config"]["config"]["tools"] = {
+        "blocked": ["Bash", "WebFetch"]
+    }
 
     options = adapter.build_options(claude_payload, resume=None)
 
@@ -351,7 +353,9 @@ def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
         ("skills", "FabricConfig.skills"),
     ],
 )
-def test_build_options_rejects_normalized_capabilities_in_harness_settings(claude_payload, name, normalized_field):
+def test_build_options_rejects_normalized_capabilities_in_harness_settings(
+    claude_payload, name, normalized_field
+):
     claude_payload["effective_config"]["config"]["harness"]["settings"][name] = []
 
     with pytest.raises(
