@@ -29,7 +29,7 @@ Adapters are distributed as optional extras. For example, install the Hermes ada
 uv pip install --find-links dist "nemo-fabric[adapters-hermes]"
 ```
 
-Refer to the [installation guide](docs/getting-started/install.mdx) for the
+Refer to the [installation guide](fern/versions/main/pages/getting-started/install.mdx) for the
 complete list of adapters and installation options.
 
 ### Source Development

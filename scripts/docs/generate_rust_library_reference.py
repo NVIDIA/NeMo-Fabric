@@ -27,7 +27,8 @@ CRATES = (
         "Core Rust contract, config, and runtime APIs for NeMo Fabric.",
     ),
 )
-BASE_URL = "/reference/api/rust-library-reference"
+VERSION_PREFIX = "/main"
+BASE_URL = f"{VERSION_PREFIX}/reference/api/rust-library-reference"
 GENERATED_BY = "Generated from `cargo doc --no-deps -p nemo-fabric-core`."
 TRANSLATION_TABLE = str.maketrans(
     {
@@ -572,7 +573,7 @@ def _render_page(page: Page, pages_by_html: dict[Path, Page], position: int) -> 
             description,
             position,
             sidebar_title=_sidebar_title(soup, page),
-            slug=page.url if _needs_explicit_slug(page) else None,
+            slug=page.url.removeprefix(VERSION_PREFIX) if _needs_explicit_slug(page) else None,
             normalize=_ascii,
         ),
     ]
@@ -652,7 +653,7 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("docs/reference/api/rust-library-reference"),
+        default=Path("fern/versions/main/pages/reference/api/rust-library-reference"),
     )
     parser.add_argument("--skip-cargo-doc", action="store_true")
     args = parser.parse_args()

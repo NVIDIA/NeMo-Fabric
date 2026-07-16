@@ -17,8 +17,8 @@ README = ROOT / "README.md"
 DOCUMENTED_SNIPPETS = [
     ".venv/bin/python -m examples.code_review_agent \\",
     "examples/code_review_agent/config.py",
-    "[Python SDK guide](docs/sdk/python.mdx)",
-    "[generated Python API reference](docs/reference/api/python-library-reference/index.md)",
+    "[Python SDK guide](fern/versions/main/pages/sdk/python.mdx)",
+    "[generated Python API reference](fern/versions/main/pages/reference/api/python-library-reference/index.md)",
 ]
 
 DETAILED_SDK_SNIPPETS = (

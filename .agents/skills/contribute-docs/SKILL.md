@@ -27,7 +27,7 @@ Use this skill for docs-only or example-heavy changes.
 
 ## Checklist
 
-- [ ] `README.md` or `docs/index.yml` updated when entry points changed
+- [ ] `README.md` or `fern/versions/main.yml` updated when entry points changed
 - [ ] Relevant getting-started or reference docs updated
 - [ ] Example commands still match current package names and paths
 - [ ] Relevant adapter or example `README.md` files updated when examples
@@ -38,5 +38,5 @@ Use this skill for docs-only or example-heavy changes.
 ## References
 
 - `README.md`
-- `docs/index.yml`
+- `fern/versions/main.yml`
 - `review-doc-style`

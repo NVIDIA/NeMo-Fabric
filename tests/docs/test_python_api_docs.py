@@ -15,9 +15,10 @@ from pydantic import BaseModel
 
 
 ROOT = Path(__file__).resolve().parents[2]
-REFERENCE_DIR = ROOT / "docs" / "reference" / "api" / "python-library-reference"
-LANDING_PAGE = ROOT / "docs" / "getting-started" / "overview.mdx"
-NAVIGATION = ROOT / "docs" / "index.yml"
+MAIN_DOCS = ROOT / "fern" / "versions" / "main"
+REFERENCE_DIR = MAIN_DOCS / "pages" / "reference" / "api" / "python-library-reference"
+LANDING_PAGE = MAIN_DOCS / "pages" / "getting-started" / "overview.mdx"
+NAVIGATION = MAIN_DOCS.with_suffix(".yml")
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
@@ -106,10 +107,10 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
         assert heading in landing
 
     for destination in (
-        "/reference/api/python-library-reference/client",
-        "/reference/api/python-library-reference/runtime",
-        "/reference/api/python-library-reference/types",
-        "/reference/api/python-library-reference/errors",
+        "/main/reference/api/python-library-reference/client",
+        "/main/reference/api/python-library-reference/runtime",
+        "/main/reference/api/python-library-reference/types",
+        "/main/reference/api/python-library-reference/errors",
     ):
         assert destination in landing
 
@@ -118,4 +119,4 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
     )[0]
     assert "client.plan(" not in quick_start
     assert "client.doctor(" not in quick_start
-    assert "/sdk/python" in quick_start
+    assert "/main/sdk/python" in quick_start

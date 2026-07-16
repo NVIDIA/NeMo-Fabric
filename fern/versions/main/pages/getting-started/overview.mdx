@@ -120,15 +120,15 @@ Harness installation and credential requirements differ by adapter. The
 [repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes)
 contains the complete Hermes environment recipe.
 
-See the [Python SDK guide](/sdk/python) for planning, diagnostics, typed
+See the [Python SDK guide](/main/sdk/python) for planning, diagnostics, typed
 requests, and multi-turn runtime examples.
 
 ## Choose your interface
 
 | Interface | Use it when | Start with |
 | --- | --- | --- |
-| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
-| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
+| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/main/reference/api/python-library-reference/client) |
+| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/main/reference/api/python-library-reference/runtime) |
 | `fabric` CLI | You are validating packages, debugging profiles, or running reproducible local/CI jobs | `fabric validate`, `plan`, `doctor`, `run`, and `chat` |
 | JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
 
@@ -155,26 +155,26 @@ and wants to pass only its Fabric slice in memory.
 <CardGroup cols={2}>
   <Card
     title="Client API"
-    href="/reference/api/python-library-reference/client"
+    href="/main/reference/api/python-library-reference/client"
   >
     Resolve, plan, diagnose, run, and start stateful runtimes.
   </Card>
   <Card
     title="Runtime"
-    href="/reference/api/python-library-reference/runtime"
+    href="/main/reference/api/python-library-reference/runtime"
   >
     Invoke multiple ordered turns and stop runtime handles safely.
   </Card>
   <Card
     title="Types"
-    href="/reference/api/python-library-reference/types"
+    href="/main/reference/api/python-library-reference/types"
   >
     Explore all mutable config objects and immutable request, plan, result,
     artifact, telemetry, and runtime models.
   </Card>
   <Card
     title="Errors"
-    href="/reference/api/python-library-reference/errors"
+    href="/main/reference/api/python-library-reference/errors"
   >
     Handle config, capability, lifecycle, state, and native-extension failures.
   </Card>

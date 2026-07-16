@@ -173,20 +173,20 @@ Path sources select profiles by name. Typed `FabricConfig` sources usually
 compose the final config in Python; `FabricProfileConfig` values are available
 for callers that need ordered file-style overlays. The SDK rejects raw profile
 mappings and mixed profile stacks. See the
-[Python SDK guide](docs/sdk/python.mdx) for the complete public API,
+[Python SDK guide](fern/versions/main/pages/sdk/python.mdx) for the complete public API,
 type definitions, lifecycle semantics, and error behavior.
 
 `run(...)` owns the complete start, invoke, and stop lifecycle. For typed
 in-memory configuration, planning and diagnostics, explicit requests,
 multi-turn runtimes, application-owned parallelism, results, and errors, see
-the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
-[generated Python API reference](docs/reference/api/python-library-reference/index.md).
+the [Python SDK guide](fern/versions/main/pages/sdk/python.mdx). Exact signatures are in the
+[generated Python API reference](fern/versions/main/pages/reference/api/python-library-reference/index.md).
 
 ## More Workflows
 
-- [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
+- [Python SDK guide](fern/versions/main/pages/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
-- [Getting Started overview](docs/getting-started/overview.mdx): interface
+- [Getting Started overview](fern/versions/main/pages/getting-started/overview.mdx): interface
   selection and the end-to-end Fabric workflow.
 - [Harbor example](examples/harbor/README.md) and
   [multi-harness demo](examples/harbor/demo/README.md): ownership,

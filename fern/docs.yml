@@ -13,7 +13,11 @@ navbar-links:
 
 global-theme: nvidia
 
-products:
-  - display-name: "NeMo Fabric"
-    slug: /
-    path: ../docs/index.yml
+versions:
+  - display-name: "Coming soon"
+    path: versions/soon.yml
+    slug: soon
+  - display-name: "Main · preview"
+    path: versions/main.yml
+    slug: main
+    availability: beta

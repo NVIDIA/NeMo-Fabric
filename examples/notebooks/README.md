@@ -56,4 +56,4 @@ traces write to `examples/notebooks/artifacts/`, while the variations notebook's
 harness runs reuse the code-review example's builders and write under
 `examples/code_review_agent/artifacts/`.
 
-For the complete API, see the [Python SDK guide](../../docs/sdk/python.mdx).
+For the complete API, see the [Python SDK guide](../../fern/versions/main/pages/sdk/python.mdx).
