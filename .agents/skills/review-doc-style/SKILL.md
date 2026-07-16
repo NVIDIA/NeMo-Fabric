@@ -18,6 +18,18 @@ Use this skill when reviewing docs-only changes, example-heavy changes, or any
 public-facing text update that should be checked against NVIDIA style guidance
 and NeMo Fabric repo conventions.
 
+## Generated API Reference
+
+- Treat all files under `docs/reference/api/` as generated output. Do not modify
+  them directly.
+- For Python API reference changes, update the source docstrings under
+  `python/src/nemo_fabric/` or the generator in `scripts/generate_api_docs.sh`.
+- For Rust API reference changes, update the Rust documentation comments under
+  `crates/fabric-core/` or the generator in
+  `scripts/docs/generate_rust_library_reference.py`.
+- Run `just docs` to regenerate and validate the API reference after changing a
+  source or generator.
+
 ## Review Priorities
 
 - Prioritize factual accuracy over copy polish
