@@ -22,7 +22,7 @@ classifiers = [
 ]
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-readme = "README.md"
+readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = []
 
@@ -54,12 +54,12 @@ adapters-hermes = [
   "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
 ]
 
-codex = [
-  "nemo-fabric-adapters-codex-cli == 0.1.0",
-]
-
 claude = [
   "nemo-fabric-adapters-claude == 0.1.0",
+]
+
+codex = [
+  "nemo-fabric-adapters-codex-cli == 0.1.0",
 ]
 
 deepagents = [
