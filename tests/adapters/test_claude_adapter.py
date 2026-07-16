@@ -852,9 +852,8 @@ def test_build_options_forwards_anthropic_auth_environment(
 
 def test_build_options_preserves_unix_user_for_cached_login(
     claude_payload,
-    monkeypatch,
 ):
-    monkeypatch.setenv("USER", "fabric-user")
+    os.environ["USER"] = "fabric-user"
 
     options = adapter.build_options(claude_payload, resume=None)
 
