@@ -1,0 +1,44 @@
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0 -->
+<svg viewBox="0 0 840 430" width="620" height="317" xmlns="http://www.w3.org/2000/svg" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+  <title>Two ways to vary an agent with Fabric</title>
+  <desc>One logical agent can be varied two ways: harness variation (run the same agent on Hermes, Codex, Claude, or Deep Agents) and agent configuration variation (vary FabricConfig fields such as skills, MCP servers, models, and telemetry).</desc>
+  <defs>
+    <marker id="av" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#76B900"/></marker>
+  </defs>
+
+  <rect x="1.5" y="1.5" width="837" height="427" rx="16" fill="#FBFCFD" stroke="#E3E6EA"/>
+
+  <rect x="280" y="26" width="280" height="54" rx="10" fill="#FFFFFF" stroke="#76B900" stroke-width="2.5"/>
+  <text x="420" y="50" text-anchor="middle" font-size="16" font-weight="800" fill="#1B2026">One logical agent</text>
+  <text x="420" y="70" text-anchor="middle" font-size="12.5" fill="#5B6670" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">FabricConfig</text>
+  <text x="420" y="102" text-anchor="middle" font-size="13" fill="#3A4149">Two ways to change how it runs — without changing your app</text>
+
+  <line x1="420" y1="108" x2="220" y2="138" stroke="#76B900" stroke-width="2" marker-end="url(#av)"/>
+  <line x1="420" y1="108" x2="620" y2="138" stroke="#76B900" stroke-width="2" marker-end="url(#av)"/>
+
+  <rect x="40" y="140" width="360" height="205" rx="10" fill="#FFFFFF" stroke="#D5DBE1"/>
+  <rect x="440" y="140" width="360" height="205" rx="10" fill="#FFFFFF" stroke="#D5DBE1"/>
+  <path d="M40,182 L40,150 Q40,140 50,140 L390,140 Q400,140 400,150 L400,182 Z" fill="#F0F7E0"/>
+  <path d="M440,182 L440,150 Q440,140 450,140 L790,140 Q800,140 800,150 L800,182 Z" fill="#F0F7E0"/>
+  <g text-anchor="middle" font-weight="800" fill="#4A7A00">
+    <text x="220" y="160" font-size="14.5">Harness variation</text>
+    <text x="220" y="176" font-size="11.5" font-weight="600" fill="#6E7B57">same agent, different harness</text>
+    <text x="620" y="160" font-size="14.5">Agent configuration variation</text>
+    <text x="620" y="176" font-size="11.5" font-weight="600" fill="#6E7B57">vary FabricConfig fields</text>
+  </g>
+
+  <g font-size="13" fill="#2E3338" text-anchor="middle">
+    <rect x="60" y="196" width="320" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="220" y="216">Hermes</text>
+    <rect x="60" y="232" width="320" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="220" y="252">Codex</text>
+    <rect x="60" y="268" width="320" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="220" y="288">Claude</text>
+    <rect x="60" y="304" width="320" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="220" y="324">Deep Agents</text>
+
+    <rect x="460" y="196" width="320" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="620" y="216">Skills</text>
+    <rect x="460" y="232" width="320" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="620" y="252">MCP servers</text>
+    <rect x="460" y="268" width="320" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="620" y="288">Models</text>
+    <rect x="460" y="304" width="320" height="30" rx="6" fill="#F4F6F9" stroke="#E1E6EB"/><text x="620" y="324">Telemetry</text>
+  </g>
+
+  <rect x="40" y="366" width="760" height="46" rx="10" fill="#EFF6E0" stroke="#76B900"/>
+  <text x="420" y="394" text-anchor="middle" font-size="13.5" font-weight="600" fill="#3A4149">Same agent, same RunResult shape — the basis for comparison, evaluation &amp; ablation</text>
+</svg>

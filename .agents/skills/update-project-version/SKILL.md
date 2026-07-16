@@ -50,7 +50,7 @@ versions rather than blindly copying incompatible syntax.
 2. Run `just set-version <cargo-version>`. The recipe converts supported Cargo
    SemVer prereleases to PEP 440 and updates:
    - `Cargo.toml` `[workspace.package].version`
-   - `Cargo.toml` `workspace.dependencies.fabric-core.version`
+   - `Cargo.toml` `workspace.dependencies.nemo-fabric-core.version`
    - The root setuptools `project.version` and every
      `adapters/**/pyproject.toml` `project.version`
    - Every internal `nemo-fabric-*` exact-version requirement
@@ -64,7 +64,7 @@ If editing the helper code, keep these contracts aligned:
 
 - `set_project_version` must call the Cargo and Python project version helpers.
 - `set_cargo_workspace_version` must update the workspace version and the
-  `fabric-core` workspace dependency, then verify every `fabric-*` workspace
+  `nemo-fabric-core` workspace dependency, then verify every `nemo-fabric-*` workspace
   package through Cargo metadata.
 - `set_python_project_versions` must update the root setuptools version, every
   adapter `pyproject.toml` discovered recursively under `adapters/`, and all
@@ -76,7 +76,7 @@ If editing the helper code, keep these contracts aligned:
 ## Validation
 
 - Inspect Cargo version fields:
-  `rg -n '^version =|fabric-core = \{ path = .*version =' Cargo.toml`
+  `rg -n '^version =|nemo-fabric-core = \{ path = .*version =' Cargo.toml`
 - Inspect explicit Python versions and internal pins:
   `rg -n '^version =|nemo-fabric-[a-z-]+ == ' pyproject.toml adapters --glob 'pyproject.toml'`
 - Confirm the runtime remains dynamic:

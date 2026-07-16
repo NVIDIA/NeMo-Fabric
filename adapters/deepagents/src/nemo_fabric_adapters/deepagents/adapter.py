@@ -18,10 +18,13 @@ import json
 import os
 import shlex
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from typing import NamedTuple
 
+from langchain.agents.middleware import AgentMiddleware
+from langchain_core.messages import ToolMessage
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
@@ -55,6 +58,36 @@ class AdapterConfigError(RuntimeError):
     """Raised for invalid Deep Agents adapter configuration (normalized to a failure)."""
 
 
+class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
+    """Block tool calls selected by an adapter-owned policy."""
+
+    def __init__(
+        self,
+        is_blocked: Callable[[Any], bool],
+        message: Callable[[Any], str],
+    ):
+        self._is_blocked = is_blocked
+        self._message = message
+
+    def _blocked(self, request: Any) -> ToolMessage:
+        name = request.tool_call.get("name")
+        return ToolMessage(
+            content=self._message(name),
+            tool_call_id=request.tool_call.get("id", ""),
+            status="error",
+        )
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        if self._is_blocked(request.tool_call.get("name")):
+            return self._blocked(request)
+        return await handler(request)
+
+    def wrap_tool_call(self, request: Any, handler: Any) -> Any:
+        if self._is_blocked(request.tool_call.get("name")):
+            return self._blocked(request)
+        return handler(request)
+
+
 def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) -> str:
     """Resolve the credential env var, defaulting per provider.
 
@@ -69,9 +102,7 @@ def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) 
     provider = (settings.get("provider") or model_config.get("provider") or "").lower()
     default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
     if default is None:
-        raise AdapterConfigError(
-            f"models.default.api_key_env is required for provider '{provider}'."
-        )
+        raise AdapterConfigError(f"models.default.api_key_env is required for provider '{provider}'.")
     return default
 
 
@@ -128,9 +159,7 @@ def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 def resolve_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
     base_url = (
-        settings.get("base_url")
-        or (model_config.get("settings") or {}).get("base_url")
-        or model_config.get("base_url")
+        settings.get("base_url") or (model_config.get("settings") or {}).get("base_url") or model_config.get("base_url")
     )
     if base_url:
         return base_url
@@ -211,54 +240,23 @@ async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
     return tools or None
 
 
-def _allowed_tool_names(payload: dict[str, Any]) -> set[str] | None:
-    # The routed plan only marks ``native.tools_configured``; the value lives in
-    # ``effective_config.config.tools``. Return ``None`` only when tools are not
-    # configured; an explicitly empty list is a deny-all allow-list, not "no list".
-    # A wrong-shaped value must fail loudly rather than silently disable gating.
-    tools = common_utils.fabric_config(payload).get("tools")
-    if tools is None:
-        return None
-    if not isinstance(tools, (list, str)):
-        raise AdapterConfigError(
-            "config.tools must be a list of tool names (a deny/allow-list), "
-            f"not {type(tools).__name__}."
-        )
-    return set(common_utils.normalize_list(tools))
+def _blocked_tool_names(payload: dict[str, Any]) -> set[str]:
+    return set(common_utils.blocked_tools(payload))
 
 
-def allowed_tools_middleware(allowed: set[str]) -> Any:
-    """Middleware that blocks tool calls whose name is not in the allow-list.
+def _tool_gate_middleware(
+    is_blocked: Callable[[Any], bool], message: Callable[[Any], str]
+) -> ToolGateMiddleware:
+    return ToolGateMiddleware(is_blocked, message)
 
-    Enforces Fabric's ``config.tools`` allow-list across the *full* tool surface
-    (Deep Agents built-ins such as ``write_file``/``execute``/``task`` and MCP
-    tools alike), since the built-ins are contributed by middleware rather than the
-    ``tools`` argument and cannot be pre-filtered out of the ``tools`` list.
-    """
 
-    from langchain.agents.middleware import AgentMiddleware
-    from langchain_core.messages import ToolMessage
+def blocked_tools_middleware(blocked: set[str]) -> Any:
+    """Middleware that blocks explicitly denied tool calls across the full tool surface."""
 
-    def _blocked(request: Any) -> Any:
-        name = request.tool_call.get("name")
-        return ToolMessage(
-            content=f"Tool '{name}' is not permitted by the configured tools allow-list.",
-            tool_call_id=request.tool_call.get("id", ""),
-            status="error",
-        )
-
-    class AllowedToolsMiddleware(AgentMiddleware):  # type: ignore[misc]
-        async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
-            if request.tool_call.get("name") not in allowed:
-                return _blocked(request)
-            return await handler(request)
-
-        def wrap_tool_call(self, request: Any, handler: Any) -> Any:
-            if request.tool_call.get("name") not in allowed:
-                return _blocked(request)
-            return handler(request)
-
-    return AllowedToolsMiddleware()
+    return _tool_gate_middleware(
+        lambda name: name in blocked,
+        lambda name: f"Tool '{name}' is blocked by the configured tools policy.",
+    )
 
 
 def resolve_skills(payload: dict[str, Any]) -> list[str] | None:
@@ -298,16 +296,14 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
     if transport in ("", "http", "streamable_http", "streamablehttp"):
         transport = "streamable_http"
     if transport not in VALID_MCP_TRANSPORTS:
-        raise AdapterConfigError(
-            f"MCP server '{name}' has unsupported transport '{transport}'."
-        )
+        raise AdapterConfigError(f"MCP server '{name}' has unsupported transport '{transport}'.")
     return {"transport": transport, "url": target}
 
 
 # --- runtime / resume state ------------------------------------------------
 #
 # Resume is keyed by the Fabric ``runtime_id`` (stable across ``invoke`` calls in
-# a started runtime, fresh for each one-shot ``run``), mirroring the codex-cli
+# a started runtime, fresh for each one-shot ``run``), mirroring the Codex
 # adapter. LangGraph owns the transcript via a persistent SQLite checkpointer;
 # Fabric owns the runtime-to-LangGraph-thread correlation record.
 
@@ -337,9 +333,7 @@ def load_thread_id(payload: dict[str, Any], runtime_id: str) -> str | None:
     if not json_path.is_file():
         return None
     value = json.loads(json_path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get(
-        "thread_id"
-    ):
+    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get("thread_id"):
         raise RuntimeError(f"invalid Deep Agents runtime state in {json_path}")
     return str(value["thread_id"])
 
@@ -349,9 +343,7 @@ def save_thread_id(payload: dict[str, Any], runtime_id: str, thread_id: str) -> 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     invocation_id = common_utils.runtime_context(payload).get("invocation_id") or "pending"
     tmp = json_path.with_suffix(f".{invocation_id}.tmp")
-    tmp.write_text(
-        json.dumps({"runtime_id": runtime_id, "thread_id": thread_id}, indent=2), encoding="utf-8"
-    )
+    tmp.write_text(json.dumps({"runtime_id": runtime_id, "thread_id": thread_id}, indent=2), encoding="utf-8")
     os.replace(tmp, json_path)
 
 
@@ -381,9 +373,7 @@ async def close_checkpointer(checkpointer: Any) -> None:
 # --- invocation ------------------------------------------------------------
 
 
-async def build_agent_kwargs(
-    payload: dict[str, Any], model: Any, settings: dict[str, Any]
-) -> dict[str, Any]:
+async def build_agent_kwargs(payload: dict[str, Any], model: Any, settings: dict[str, Any]) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
         "tools": await resolve_tools(payload),
@@ -397,18 +387,12 @@ async def build_agent_kwargs(
     extra = settings.get("deepagents")
     if extra is not None:
         kwargs.update(_validated_passthrough(extra))
-    allowed = _allowed_tool_names(payload)
-    if allowed is not None:
-        # Gate the main agent AND every configured subagent, so the allow-list
-        # covers the full tool surface. The built-in ``task`` tool (which spawns
-        # the general-purpose subagent) is itself gated on the main agent, so a
-        # list that omits ``task`` blocks all delegation.
+    blocked = _blocked_tool_names(payload)
+    if blocked:
         middleware = list(kwargs.get("middleware") or [])
-        middleware.append(allowed_tools_middleware(allowed))
+        middleware.append(blocked_tools_middleware(blocked))
         kwargs["middleware"] = middleware
-        subagents = kwargs.get("subagents")
-        if isinstance(subagents, list):
-            kwargs["subagents"] = [_gate_subagent(sub, allowed) for sub in subagents]
+        kwargs["subagents"] = _gated_subagents(kwargs.get("subagents"), blocked)
     return {key: value for key, value in kwargs.items() if value is not None}
 
 
@@ -423,8 +407,7 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
 
     if not isinstance(extra, dict):
         raise AdapterConfigError(
-            "harness.settings.deepagents must be a mapping of JSON-serializable options, "
-            f"not {type(extra).__name__}."
+            f"harness.settings.deepagents must be a mapping of JSON-serializable options, not {type(extra).__name__}."
         )
     reserved = sorted(FABRIC_OWNED_AGENT_KEYS.intersection(extra))
     if reserved:
@@ -441,11 +424,37 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
     return dict(extra)
 
 
-def _gate_subagent(subagent: Any, allowed: set[str]) -> Any:
-    if not isinstance(subagent, dict):
-        return subagent
+def _block_subagent(subagent: dict[str, Any], blocked: set[str]) -> dict[str, Any]:
     gated = dict(subagent)
-    gated["middleware"] = [*(gated.get("middleware") or []), allowed_tools_middleware(allowed)]
+    gated["middleware"] = [*(gated.get("middleware") or []), blocked_tools_middleware(blocked)]
+    return gated
+
+
+def _gated_subagents(subagents: Any, blocked: set[str]) -> list[dict[str, Any]]:
+    if subagents is None:
+        configured: list[Any] = []
+    elif isinstance(subagents, list):
+        configured = subagents
+    else:
+        raise AdapterConfigError(
+            "harness.settings.deepagents.subagents must be a list when tools.blocked is configured."
+        )
+
+    gated: list[dict[str, Any]] = []
+    for subagent in configured:
+        if not isinstance(subagent, dict):
+            raise AdapterConfigError("Deep Agents subagents must be mappings when tools.blocked is configured.")
+        name = str(subagent.get("name") or "<unnamed>")
+        if "graph_id" in subagent:
+            raise AdapterConfigError(f"tools.blocked cannot be enforced for remote Deep Agents subagent '{name}'.")
+        if "runnable" in subagent:
+            raise AdapterConfigError(f"tools.blocked cannot be enforced for precompiled Deep Agents subagent '{name}'.")
+        gated.append(_block_subagent(subagent, blocked))
+
+    if not any(subagent.get("name") == "general-purpose" for subagent in gated):
+        from deepagents.middleware.subagents import GENERAL_PURPOSE_SUBAGENT
+
+        gated.insert(0, _block_subagent(dict(GENERAL_PURPOSE_SUBAGENT), blocked))
     return gated
 
 
@@ -496,13 +505,9 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
 
             wrapped = add_nemo_relay_integration(agent_kwargs)
             async with plugin.plugin(api_config):
-                result_state, events, turn_messages = await invoke_agent(
-                    wrapped, user_message, thread_id
-                )
+                result_state, events, turn_messages = await invoke_agent(wrapped, user_message, thread_id)
         else:
-            result_state, events, turn_messages = await invoke_agent(
-                agent_kwargs, user_message, thread_id
-            )
+            result_state, events, turn_messages = await invoke_agent(agent_kwargs, user_message, thread_id)
     except Exception as exc:  # normalized adapter failure
         error = f"{type(exc).__name__}: {exc}"
     finally:

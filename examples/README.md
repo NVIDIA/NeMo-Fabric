@@ -7,6 +7,17 @@ SPDX-License-Identifier: Apache-2.0
 
 This directory holds runnable Fabric examples.
 
+New to Fabric? Start with the [onboarding notebooks](notebooks/README.md) for a
+guided, human-facing tour of the Python SDK, then come back to the runnable
+examples below.
+
+## Onboarding notebooks
+
+[`notebooks`](notebooks/README.md) is a two-notebook tour of the Python SDK:
+a quickstart (configure, plan, diagnose, run, inspect, and multi-turn) and a
+variations notebook that runs the same agent across available harnesses and
+varies its capabilities and telemetry.
+
 ## Code review agent
 
 [`code_review_agent`](code_review_agent/README.md) demonstrates the
@@ -16,7 +27,7 @@ application-facing Python SDK contract:
 - creating harness, environment, capability, and telemetry variants from deep
   copies;
 - resolving relative workspace and skill paths with `base_dir`;
-- running maintained Hermes, Codex, and Deep Agents adapters through the Python SDK.
+- running maintained Hermes, Codex, Claude, and Deep Agents adapters through the Python SDK.
 
 Start with:
 
@@ -28,11 +39,18 @@ just build-all
 
 ## Harbor
 
-[`harbor`](harbor/README.md) demonstrates the installed `FabricAgent`
-integration through a complete Harbor task, config matrix, verifier, and
-multi-harness demo.
+[`harbor`](harbor/README.md) demonstrates how to evaluate Fabric agents with
+Harbor while preserving Fabric's typed configuration workflow. Harbor manages
+the task environment, retries, concurrency, verification, rewards, and result
+layout. `FabricAgent` translates Harbor inputs—including the harness, model,
+skills, MCP servers, tool policy, and telemetry—into the final `FabricConfig`.
 
-Portable manifest and profile behavior is covered by
-`tests/fixtures/file-config-agent`. The dependency-free Hermes shim used by
-runtime tests lives under `tests/fixtures/hermes-shim-agent`; neither fixture is
-a public SDK example.
+The walkthroughs include:
+
+- a calculator walkthrough with a deterministic, credential-free integration
+  smoke test and optional LLM-backed Hermes and Claude runs; and
+- a SWE-Bench workflow for running Hermes and Claude, comparing capability
+  variations, inspecting Relay telemetry, and verifying real coding tasks.
+
+Start with the shared setup and execution model in the
+[Harbor guide](harbor/README.md).

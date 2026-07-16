@@ -99,29 +99,28 @@ def hermes_config() -> FabricConfig:
     return config
 
 
-def codex_cli_config() -> FabricConfig:
-    """Return the complete Codex CLI variant without inherited capabilities."""
+def codex_config() -> FabricConfig:
+    """Return the complete Codex SDK variant without inherited capabilities."""
 
     config = base_config().model_copy(deep=True)
     config.harness = HarnessConfig(
-        adapter_id="nvidia.fabric.codex.cli",
+        adapter_id="nvidia.fabric.codex",
         resolution="preinstalled",
         settings={
             "sandbox": "workspace-write",
-            "skip_git_repo_check": True,
-            "config_overrides": {"model_reasoning_effort": "high"},
+            "reasoning_effort": "high",
         },
     )
     config.models = {"default": ModelConfig(provider="openai", model="openai/gpt-5.4")}
     config.runtime = RuntimeConfig(
         input_schema="text",
         output_schema="message",
-        artifacts="./artifacts/codex-cli",
+        artifacts="./artifacts/codex",
     )
     config.environment = EnvironmentConfig(
         provider="local",
         workspace=WORKSPACE,
-        artifacts="./artifacts/codex-cli",
+        artifacts="./artifacts/codex",
     )
     config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)
@@ -149,6 +148,45 @@ def deepagents_config() -> FabricConfig:
         provider="local",
         workspace=WORKSPACE,
         artifacts="./artifacts/deepagents",
+    )
+    config.remove_mcp_server("github")
+    config.remove_skill_path(SKILL_PATH)
+    return config
+
+
+def claude_config() -> FabricConfig:
+    """Return the complete Claude adapter variant.
+
+    The Claude adapter reads the working directory from ``environment.workspace``
+    and rejects ``cwd`` in ``harness.settings``; only Claude-specific controls
+    such as ``system_prompt`` and ``permission_mode`` belong there.
+    """
+
+    config = base_config().model_copy(deep=True)
+    config.harness = HarnessConfig(
+        adapter_id="nvidia.fabric.claude",
+        resolution="preinstalled",
+        settings={
+            "system_prompt": "You are a concise code reviewer. Point out correctness bugs and risks.",
+            "permission_mode": "dontAsk",
+        },
+    )
+    config.models = {
+        "default": ModelConfig(
+            provider="anthropic",
+            model="anthropic/claude-sonnet-4-5",
+            api_key_env="ANTHROPIC_API_KEY",
+        )
+    }
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts="./artifacts/claude",
+    )
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=WORKSPACE,
+        artifacts="./artifacts/claude",
     )
     config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)

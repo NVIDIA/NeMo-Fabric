@@ -35,6 +35,7 @@ from nemo_fabric.models import RuntimeConfig
 from nemo_fabric.models import SkillConfig
 from nemo_fabric.models import TelemetryConfig
 from nemo_fabric.models import TelemetryProviderConfig
+from nemo_fabric.models import ToolsConfig
 from nemo_fabric.runtime import Runtime
 from nemo_fabric.runtime import RuntimeStatus
 from nemo_fabric.types import AdapterInfo
@@ -101,4 +102,5 @@ __all__ = [
     "TelemetryConfig",
     "TelemetryProviderConfig",
     "TelemetryRef",
+    "ToolsConfig",
 ]

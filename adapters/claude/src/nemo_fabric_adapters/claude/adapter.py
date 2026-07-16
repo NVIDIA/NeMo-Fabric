@@ -7,32 +7,34 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import shlex
 import shutil
-from dataclasses import asdict, dataclass, is_dataclass
+import subprocess
+from dataclasses import asdict
+from dataclasses import dataclass
+from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
-from claude_agent_sdk import (
-    CLIConnectionError,
-    CLIJSONDecodeError,
-    CLINotFoundError,
-    ClaudeAgentOptions,
-    ClaudeSDKError,
-    Message,
-    ProcessError,
-    ResultMessage,
-    query,
-)
+from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk import ClaudeSDKError
+from claude_agent_sdk import CLIConnectionError
+from claude_agent_sdk import CLIJSONDecodeError
+from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import Message
+from claude_agent_sdk import ProcessError
+from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import query
 from claude_agent_sdk._errors import MessageParseError
+from nemo_fabric_adapters.common import relay_gateway
+from nemo_fabric_adapters.common import relay_hooks
+from nemo_fabric_adapters.common import utils as common_utils
 
-import nemo_fabric_adapters.common.relay_gateway as relay_gateway
-import nemo_fabric_adapters.common.relay_hooks as relay_hooks
-import nemo_fabric_adapters.common.utils as common_utils
-
+LOGGER = logging.getLogger(__name__)
 
 PERMISSION_MODES = {
     "default",
@@ -47,11 +49,21 @@ NORMALIZED_SETTING_FIELDS = {
     "model_name": "FabricConfig.models",
     "cwd": "FabricConfig.environment.workspace",
     "tools": "FabricConfig.tools",
+    "disallowed_tools": "FabricConfig.tools.blocked",
     "mcp_servers": "FabricConfig.mcp",
     "skills": "FabricConfig.skills",
 }
 INHERITED_ENV_NAMES = {
     "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_CONFIG_DIR",
+    "ANTHROPIC_FEDERATION_RULE_ID",
+    "ANTHROPIC_IDENTITY_TOKEN",
+    "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    "ANTHROPIC_ORGANIZATION_ID",
+    "ANTHROPIC_PROFILE",
+    "ANTHROPIC_SERVICE_ACCOUNT_ID",
+    "ANTHROPIC_WORKSPACE_ID",
     "APPDATA",
     "CLAUDE_CONFIG_DIR",
     "COMSPEC",
@@ -72,6 +84,7 @@ INHERITED_ENV_NAMES = {
     "TEMP",
     "TMP",
     "TMPDIR",
+    "USER",
     "USERPROFILE",
     "XDG_CACHE_HOME",
     "XDG_CONFIG_HOME",
@@ -267,33 +280,6 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _normalized_tools(
-    payload: dict[str, Any], *, include_skills: bool
-) -> list[str] | dict[str, Any] | None:
-    native = (
-        _mapping(common_utils.capability_plan(payload), name="capability_plan").get(
-            "native"
-        )
-        or {}
-    )
-    if not _mapping(native, name="capability_plan.native").get("tools_configured"):
-        return None
-    tools = common_utils.fabric_config(payload).get("tools")
-    if tools is not None and not isinstance(tools, (list, dict)):
-        raise AdapterConfigError("claude_invalid_configuration", "tools is invalid")
-    if isinstance(tools, list):
-        normalized = _string_list(tools, name="tools")
-        if include_skills and "Skill" not in normalized:
-            normalized.append("Skill")
-        return normalized
-    if isinstance(tools, dict) and tools != {"type": "preset", "preset": "claude_code"}:
-        raise AdapterConfigError(
-            "claude_invalid_configuration",
-            "tools preset must be {'type': 'preset', 'preset': 'claude_code'}",
-        )
-    return tools
-
-
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
     native = (
         _mapping(common_utils.capability_plan(payload), name="capability_plan").get(
@@ -412,14 +398,12 @@ def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
         ) from error
 
     try:
-        observability_version = relay_gateway.relay_cli_observability_version(
-            executable
-        )
+        relay_contract = relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(payload)
         config_path, plugin_config_path = common_utils.write_relay_configs(
             relay_config={"agents": {"claude": {"command": "claude"}}},
             plugin_config=plugin_config,
-            observability_version=observability_version,
+            observability_version=relay_contract.observability_version,
         )
     except (
         OSError,
@@ -516,11 +500,9 @@ def build_options(
         cwd=resolve_cwd(payload),
         model=selected_model(payload),
         system_prompt=system_prompt,
-        tools=_normalized_tools(payload, include_skills=has_skill_plugin),
+        tools=None,
         allowed_tools=_string_list(settings.get("allowed_tools"), name="allowed_tools"),
-        disallowed_tools=_string_list(
-            settings.get("disallowed_tools"), name="disallowed_tools"
-        ),
+        disallowed_tools=common_utils.blocked_tools(payload),
         permission_mode=permission_mode,
         max_turns=max_turns,
         max_budget_usd=max_budget,
@@ -623,13 +605,17 @@ def normalize_message(message: Message) -> dict[str, Any]:
     return {"type": type(message).__name__, "message": _json_safe(message)}
 
 
+def _result_failed(result: ResultMessage) -> bool:
+    return bool(result.is_error) or (
+        isinstance(result.subtype, str) and result.subtype.startswith("error_")
+    )
+
+
 def normalize_result(
     payload: dict[str, Any], messages: list[Message], result: ResultMessage
 ) -> dict[str, Any]:
     del payload
-    failed = bool(result.is_error) or (
-        isinstance(result.subtype, str) and result.subtype.startswith("error_")
-    )
+    failed = _result_failed(result)
     error = None
     if failed:
         error = {
@@ -704,7 +690,7 @@ def child_environment(
 ) -> dict[str, str]:
     values = {name: "" for name in os.environ}
     values.update(
-        {name: value for name in INHERITED_ENV_NAMES if (value := os.environ.get(name))}
+        {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
     model = _selected_model_config(payload)
     api_key_env = model.get("api_key_env")
@@ -743,6 +729,95 @@ def _relay_output(
     return output
 
 
+def _start_relay_gateway(
+    payload: dict[str, Any],
+    relay: ClaudeRelaySettings | None,
+) -> subprocess.Popen[Any] | None:
+    if relay is None:
+        return None
+    try:
+        return relay_gateway.start_relay_gateway(
+            launch=relay.gateway,
+            cwd=resolve_cwd(payload),
+        )
+    except relay_gateway.RelayGatewayError as error:
+        raise AdapterRelayError(
+            "claude_relay_start_failed",
+            "NeMo Relay gateway failed to start",
+            metadata={"gateway_log_path": str(relay.gateway.log_path)},
+        ) from error
+
+
+def _cleanup_relay(
+    relay: ClaudeRelaySettings | None,
+    gateway_process: subprocess.Popen[Any] | None,
+) -> AdapterRelayError | None:
+    cleanup_error: AdapterRelayError | None = None
+    if gateway_process is not None:
+        try:
+            relay_gateway.stop_relay_gateway(gateway_process)
+        except relay_gateway.RelayGatewayError:
+            cleanup_error = AdapterRelayError(
+                "claude_relay_stop_failed",
+                "NeMo Relay gateway failed to stop",
+                metadata={
+                    "gateway_log_path": str(relay.gateway.log_path)
+                    if relay is not None
+                    else ""
+                },
+            )
+    if relay is not None and relay.plugin_path.exists():
+        try:
+            shutil.rmtree(relay.plugin_path)
+        except OSError:
+            if cleanup_error is None:
+                cleanup_error = AdapterRelayError(
+                    "claude_relay_cleanup_failed",
+                    "Claude Relay hook configuration could not be removed",
+                )
+    return cleanup_error
+
+
+def _merge_relay_output(
+    output: dict[str, Any],
+    relay: ClaudeRelaySettings | None,
+    cleanup_error: AdapterRelayError | None,
+) -> dict[str, Any]:
+    if relay is None:
+        return output
+    output = _relay_output(output, relay)
+    if cleanup_error is None:
+        return output
+    cleanup: dict[str, Any] = {
+        "code": cleanup_error.code,
+        "message": cleanup_error.message,
+        "retryable": False,
+    }
+    if cleanup_error.metadata:
+        cleanup["metadata"] = cleanup_error.metadata
+    output["relay_runtime"]["cleanup_error"] = cleanup
+    if not output["failed"]:
+        output["completed"] = False
+        output["failed"] = True
+        output["error"] = cleanup
+    return output
+
+
+def _persist_result_session(
+    payload: dict[str, Any],
+    fabric_runtime_id: str,
+    prior_session_id: str | None,
+    result: ResultMessage,
+) -> dict[str, Any] | None:
+    if prior_session_id is not None and result.session_id != prior_session_id:
+        return _failure(
+            "claude_session_mismatch",
+            "Claude session identity changed during resume",
+        )
+    save_claude_session_id(payload, fabric_runtime_id, result.session_id)
+    return None
+
+
 async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
     fabric_runtime_id = runtime_id(payload)
     prior_session_id = load_claude_session_id(payload, fabric_runtime_id)
@@ -752,18 +827,7 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
     messages: list[Message] = []
     result: ResultMessage | None = None
     try:
-        if relay is not None:
-            try:
-                gateway_process = relay_gateway.start_relay_gateway(
-                    launch=relay.gateway,
-                    cwd=resolve_cwd(payload),
-                )
-            except relay_gateway.RelayGatewayError as error:
-                raise AdapterRelayError(
-                    "claude_relay_start_failed",
-                    "NeMo Relay gateway failed to start",
-                    metadata={"gateway_log_path": str(relay.gateway.log_path)},
-                ) from error
+        gateway_process = _start_relay_gateway(payload, relay)
         options = build_options(payload, resume=prior_session_id, relay=relay)
         try:
             async with asyncio.timeout(timeout_seconds(payload)):
@@ -776,6 +840,14 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
                         messages.append(message)
         except (TimeoutError, ClaudeSDKError) as error:
             output = sdk_failure(error)
+        except Exception:
+            # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
+            # raise a plain Exception while closing the query stream. Preserve
+            # the typed terminal result, but do not hide unrelated exceptions.
+            if result is None or not _result_failed(result):
+                raise
+            LOGGER.exception("Claude SDK stream raised after a failed terminal result")
+            output = normalize_result(payload, messages, result)
         else:
             if result is None:
                 output = _failure(
@@ -784,59 +856,19 @@ async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
             else:
                 output = normalize_result(payload, messages, result)
                 if not output["failed"]:
-                    if (
-                        prior_session_id is not None
-                        and result.session_id != prior_session_id
-                    ):
-                        output = _failure(
-                            "claude_session_mismatch",
-                            "Claude session identity changed during resume",
+                    output = (
+                        _persist_result_session(
+                            payload,
+                            fabric_runtime_id,
+                            prior_session_id,
+                            result,
                         )
-                    else:
-                        save_claude_session_id(
-                            payload, fabric_runtime_id, result.session_id
-                        )
-    finally:
-        if gateway_process is not None:
-            try:
-                relay_gateway.stop_relay_gateway(gateway_process)
-            except relay_gateway.RelayGatewayError:
-                cleanup_error = AdapterRelayError(
-                    "claude_relay_stop_failed",
-                    "NeMo Relay gateway failed to stop",
-                    metadata={
-                        "gateway_log_path": str(relay.gateway.log_path)
-                        if relay is not None
-                        else ""
-                    },
-                )
-        if relay is not None and relay.plugin_path.exists():
-            try:
-                shutil.rmtree(relay.plugin_path)
-            except OSError:
-                if cleanup_error is None:
-                    cleanup_error = AdapterRelayError(
-                        "claude_relay_cleanup_failed",
-                        "Claude Relay hook configuration could not be removed",
+                        or output
                     )
+    finally:
+        cleanup_error = _cleanup_relay(relay, gateway_process)
 
-    if relay is not None:
-        output = _relay_output(output, relay)
-    if cleanup_error is not None:
-        cleanup: dict[str, Any] = {
-            "code": cleanup_error.code,
-            "message": cleanup_error.message,
-            "retryable": False,
-        }
-        if cleanup_error.metadata:
-            cleanup["metadata"] = cleanup_error.metadata
-        output["relay_runtime"]["cleanup_error"] = cleanup
-        if not output["failed"]:
-            output["completed"] = False
-            output["failed"] = True
-            output["error"] = cleanup
-
-    return output
+    return _merge_relay_output(output, relay, cleanup_error)
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:

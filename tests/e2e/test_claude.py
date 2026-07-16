@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from _utils.utils import assert_semantic_relay_artifacts
 from nemo_fabric import (
     EnvironmentConfig,
     Fabric,
@@ -23,7 +24,6 @@ from nemo_fabric import (
     RelayObservabilityConfig,
     RuntimeConfig,
 )
-
 
 ROOT = Path(__file__).resolve().parents[2]
 MOCK_CLAUDE_CLI = ROOT / "tests" / "fixtures" / "claude" / "mock-claude-cli.py"
@@ -95,7 +95,13 @@ def fabric_config(
             settings=settings,
         ),
         models={
-            "default": ModelConfig(provider="anthropic", model="claude-test-model")
+            "default": ModelConfig(
+                provider="anthropic",
+                model=os.environ.get(
+                    "FABRIC_TEST_CLAUDE_MODEL",
+                    "claude-sonnet-4-5",
+                ),
+            )
         },
         runtime=RuntimeConfig(artifacts=tmp_path / "artifacts"),
         environment=EnvironmentConfig(
@@ -108,7 +114,6 @@ def fabric_config(
         skill_path = tmp_path / "skills" / "review"
         skill_path.mkdir(parents=True)
         (skill_path / "SKILL.md").write_text("# Review\n", encoding="utf-8")
-        config.tools = ["Read", "Glob", "Grep"]
         config.add_skill_path(skill_path)
         config.add_mcp_server(
             "docs",
@@ -141,21 +146,14 @@ async def test_fabric_session_launches_fresh_processes_and_resumes(tmp_path):
     assert first.output["usage"] == {"input_tokens": 1, "output_tokens": 2}
     assert first.output["cost_usd"] == 0.001
     assert [event["type"] for event in first.output["events"]] == ["AssistantMessage"]
-    arguments = [
-        json.loads(line)
-        for line in (tmp_path / "claude-args.jsonl").read_text().splitlines()
-    ]
+    arguments = [json.loads(line) for line in (tmp_path / "claude-args.jsonl").read_text().splitlines()]
     assert len(arguments) == 2
     assert "--resume" not in arguments[0]
     assert arguments[1][arguments[1].index("--resume") + 1] == SESSION_ID
-    assert all(
-        args[args.index("--tools") + 1] == "Read,Glob,Grep,Skill" for args in arguments
-    )
     assert all("--mcp-config" in args for args in arguments)
     assert all("--plugin-dir" in args for args in arguments)
     plugin_paths = [args[args.index("--plugin-dir") + 1] for args in arguments]
     assert plugin_paths[0] == plugin_paths[1]
-    assert all("Skill" in args[args.index("--allowedTools") + 1] for args in arguments)
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
 
 
@@ -238,9 +236,7 @@ async def test_live_claude_one_shot_and_session(tmp_path):
     assert one_shot.status == "succeeded"
 
     session_root = tmp_path / "session"
-    async with await fabric.start_runtime(
-        fabric_config(session_root), base_dir=session_root
-    ) as session:
+    async with await fabric.start_runtime(fabric_config(session_root), base_dir=session_root) as session:
         first = await session.invoke(input="Remember token FABRIC-CONTINUITY-7")
         second = await session.invoke(
             input="Reply only with the token I asked you to remember"
@@ -267,3 +263,7 @@ async def test_live_claude_relay_one_shot(tmp_path):
         "atof",
         "atif",
     }
+    assert_semantic_relay_artifacts(
+        result.output,
+        "FABRIC_CLAUDE_RELAY_OK",
+    )

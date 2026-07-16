@@ -15,7 +15,7 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use fabric_core::{
+use nemo_fabric_core::{
     AdapterKind, RunPlan, RunRequest, RunResult, RunStatus, RuntimeHandle, SchemaName, doctor_plan,
     generate_all_schemas, generate_schema_json, invoke_runtime,
     resolve_effective_config_with_profiles, resolve_run_plan_with_profiles, run_plan,
@@ -221,7 +221,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Some(Command::Version) | None => {
-            println!("fabric {}", fabric_core::version());
+            println!("fabric {}", nemo_fabric_core::version());
         }
     }
     Ok(())

@@ -394,6 +394,12 @@ class ProfileRegistryConfig(FabricBaseModel):
     directories: list[str | Path] = Field(default_factory=list)
 
 
+class ToolsConfig(FabricBaseModel):
+    """Harness-neutral tool capability configuration."""
+
+    blocked: list[str] = Field(default_factory=list)
+
+
 class FabricConfig(FabricBaseModel):
     """SDK-facing typed Fabric agent configuration."""
 
@@ -408,7 +414,7 @@ class FabricConfig(FabricBaseModel):
     telemetry: TelemetryConfig | None = None
     relay: RelayConfig | dict[str, Any] | None = None
     profiles: ProfileRegistryConfig | dict[str, Any] | None = None
-    tools: Any = None
+    tools: ToolsConfig | dict[str, Any] | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> Self:
@@ -472,6 +478,18 @@ class FabricConfig(FabricBaseModel):
                 self.skills = None
         return self
 
+    def block_tools(self, *tools: str) -> Self:
+        """Block adapter-native tool names or toolsets and return this config."""
+
+        if self.tools is None or isinstance(self.tools, dict):
+            self.tools = ToolsConfig.model_validate(self.tools or {})
+        existing = list(self.tools.blocked)
+        for tool in tools:
+            if tool not in existing:
+                existing.append(tool)
+        self.tools.blocked = existing
+        return self
+
     def enable_relay(
         self,
         *,
@@ -522,7 +540,7 @@ class FabricProfileConfig(FabricBaseModel):
     skills: SkillConfig | dict[str, Any] | None = None
     telemetry: TelemetryConfig | dict[str, Any] | None = None
     relay: RelayConfig | dict[str, Any] | None = None
-    tools: Any = None
+    tools: ToolsConfig | dict[str, Any] | None = None
 
 
 class RunRequest(FabricBaseModel):

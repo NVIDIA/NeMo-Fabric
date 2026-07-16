@@ -45,9 +45,7 @@ def virtualenv_subprocess_env() -> dict[str, str]:
     scripts = virtualenv / ("Scripts" if os.name == "nt" else "bin")
     path = env.get("PATH")
     env["VIRTUAL_ENV"] = str(virtualenv)
-    env["PATH"] = os.pathsep.join(
-        part for part in (str(scripts), path) if part
-    )
+    env["PATH"] = os.pathsep.join(part for part in (str(scripts), path) if part)
     env.pop("PYTHONHOME", None)
     return env
 
@@ -166,6 +164,16 @@ def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("capability_plan") or payload.get("capabilities") or {}
 
 
+def tools_config(payload: dict[str, Any]) -> dict[str, Any]:
+    tools = fabric_config(payload).get("tools") or {}
+    return tools if isinstance(tools, dict) else {}
+
+
+def blocked_tools(payload: dict[str, Any]) -> list[str]:
+    blocked = tools_config(payload).get("blocked")
+    return normalize_list(blocked)
+
+
 def normalize_list(value: Any) -> list[str]:
     if value is None:
         return []
@@ -174,6 +182,15 @@ def normalize_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         value = [value]
     return [str(item) for item in value if str(item)]
+
+
+def merge_unique(*values: Any) -> list[str]:
+    merged: list[str] = []
+    for value in values:
+        for item in normalize_list(value):
+            if item not in merged:
+                merged.append(item)
+    return merged
 
 
 def without_none(mapping: dict[str, Any]) -> dict[str, Any]:

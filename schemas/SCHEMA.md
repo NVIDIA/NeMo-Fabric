@@ -60,13 +60,13 @@ and export them here.
 Use the Fabric CLI to regenerate them after intentional contract changes:
 
 ```bash
-cargo run -p fabric-cli -- schema --output-dir schemas
+cargo run -p nemo-fabric-cli -- schema --output-dir schemas
 ```
 
 Use the CLI to inspect one schema:
 
 ```bash
-cargo run -p fabric-cli -- schema --name agent
+cargo run -p nemo-fabric-cli -- schema --name agent
 ```
 
 To add a new schema-backed typed model:
@@ -76,7 +76,7 @@ To add a new schema-backed typed model:
 3. Add a `SchemaName` variant in `crates/fabric-core/src/schema.rs`.
 4. Add the variant to `SchemaName::ALL`, `as_str()`, `parse()`, and
    `generate_schema()`.
-5. Regenerate schemas with `cargo run -p fabric-cli -- schema --output-dir
+5. Regenerate schemas with `cargo run -p nemo-fabric-cli -- schema --output-dir
    schemas`.
 6. Add the new schema to the exported list above.
 

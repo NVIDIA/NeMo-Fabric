@@ -3,16 +3,22 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# LangChain Deep Agents Adapter
+# NVIDIA NeMo Fabric LangChain Deep Agents Adapter
 
 Runs a [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) agent
 through Fabric's inline Python adapter lifecycle. The same adapter supports
 one-shot, multi-turn, and resumed execution.
 
-Install Fabric with the adapter dependency before running it:
+To install just the Deep Agents adapter by itself:
 
 ```bash
-python3 -m pip install -e ".[deepagents]"
+pip install "nemo-fabric[deepagents]"
+```
+
+To install just the Deep Agents adapter along with the NeMo Fabric Runtime:
+
+```bash
+pip install "nemo-fabric[deepagents, runtime]"
 ```
 
 ## Model and Authentication
@@ -52,12 +58,9 @@ Fabric maps the following into the harness:
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
-- `tools` (Fabric's `config.tools` allow-list) is enforced by a gating middleware
-  across the full tool surface — Deep Agents built-ins (including `task`), MCP
-  tools, and **delegated subagents** alike; tool calls whose name is not on the
-  list are blocked, so tools routed through the `task` tool cannot run ungated. A
-  non-list `tools` value is a normalized configuration failure rather than a
-  silently disabled allow-list.
+- `tools.blocked` is enforced by middleware across the full tool surface — Deep
+  Agents built-ins (including `task`), MCP tools, and **delegated subagents**
+  alike. Use Deep Agents/native tool names in the blocked list.
 - `harness.settings.deepagents` forwards a small set of **documented,
   JSON-serializable** `create_deep_agent` options (currently `subagents` and
   `interrupt_on`). It is not a general Python-object escape hatch: the SDK config
@@ -72,20 +75,20 @@ Fabric maps the following into the harness:
 
 Deep Agents can delegate to subagents through its built-in `task` tool. Subagents
 **inherit** the parent run's model, tools, skills, workspace, telemetry, and
-permissions — in particular, the parent `config.tools` allow-list applies to
-delegated execution, so a subagent cannot broaden capabilities beyond the parent.
-Independently configured subagent tools, skills, models, MCP servers, middleware,
-or permissions are **not** exposed through the Fabric SDK yet; a `subagents`
-definition here only carries JSON-shaped fields. Deterministic verification of
-delegated tool-gating is currently mock-based (see the adapter tests); a fuller
-real-subagent contract is future work.
+permissions. When `tools.blocked` is configured, Fabric supplies an explicitly
+gated `general-purpose` subagent and gates every declarative local subagent, so
+delegation cannot broaden capabilities beyond the parent. Remote and precompiled
+subagents are rejected in that case because their execution cannot be governed by
+the local middleware. Independently configured subagent tools, skills, models,
+MCP servers, middleware, or permissions are **not** exposed through the Fabric SDK
+yet; a `subagents` definition here only carries JSON-shaped fields.
 
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
 reports it), and errors. Usage aggregates the current turn across the main agent
 and any delegated subagents (streamed with `subgraphs=True`). Configuration and
 preflight failures (a missing credential, an absent `deepagents` package, an
-invalid allow-list, MCP server, or passthrough option) are returned as a
+invalid MCP server, or a passthrough option) are returned as a
 normalized failure result rather than a raw traceback.
 
 ## Runtime Modes

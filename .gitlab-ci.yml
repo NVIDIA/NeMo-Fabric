@@ -232,14 +232,14 @@ publish:artifactory:cargo:
 
       manifest = Path("Cargo.toml")
       text = manifest.read_text()
-      before = 'fabric-core = { path = "crates/fabric-core", version = '
-      after = 'fabric-core = { path = "crates/fabric-core", registry = "artifactory", version = '
+      before = 'nemo-fabric-core = { path = "crates/fabric-core", version = '
+      after = 'nemo-fabric-core = { path = "crates/fabric-core", registry = "artifactory", version = '
       if after not in text:
           if before not in text:
-              raise SystemExit("Failed to find the fabric-core workspace dependency")
+              raise SystemExit("Failed to find the nemo-fabric-core workspace dependency")
           text = text.replace(before, after)
       manifest.write_text(text)
       PY
 
-      cargo publish --package fabric-core --registry artifactory --allow-dirty
-      cargo publish --package fabric-cli --registry artifactory --allow-dirty
+      cargo publish --package nemo-fabric-core --registry artifactory --allow-dirty
+      cargo publish --package nemo-fabric-cli --registry artifactory --allow-dirty

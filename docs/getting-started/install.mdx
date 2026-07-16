@@ -61,14 +61,18 @@ uv pip install --find-links <path_to_dist_directory> nemo-fabric[runtime]
 ```
 
 ### Installing the Fabric Adapters
-This will install the Fabric adapter and it's dependencies, adapters intentionally have minimal dependencies,
-and are intended to be installed in the same environment as the agent harness (which may or may not be the same environment as the Fabric runtime).
 
-At time of writing, the following adapter packages are available:
-* adapters-claude
-* adapters-codex-cli
-* adapters-deepagents
-* adapters-hermes
+This command installs a Fabric adapter and its dependencies. Adapters
+intentionally have minimal dependencies and belong in the same environment as
+the agent harness. That environment can differ from the Fabric runtime
+environment.
+
+The following adapter packages are available:
+
+- `adapters-claude`
+- `adapters-codex`
+- `adapters-deepagents`
+- `adapters-hermes`
 
 ```bash
 uv pip install --find-links <path_to_dist_directory> nemo-fabric[<adapter_name>]
