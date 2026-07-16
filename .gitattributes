@@ -1,6 +1,4 @@
-examples/harbor/swebench/sample-artifacts/hermes-relay/relay/*.jsonl filter=lfs diff=lfs merge=lfs -text
-examples/harbor/swebench/sample-artifacts/hermes-relay/relay/*.atif.json filter=lfs diff=lfs merge=lfs -text
-examples/harbor/swebench/sample-artifacts/hermes-relay/trajectory.json filter=lfs diff=lfs merge=lfs -text
-examples/harbor/swebench/sample-artifacts/claude-relay/relay/*.jsonl filter=lfs diff=lfs merge=lfs -text
-examples/harbor/swebench/sample-artifacts/claude-relay/relay/*.atif.json filter=lfs diff=lfs merge=lfs -text
-examples/harbor/swebench/sample-artifacts/claude-relay/trajectory.json filter=lfs diff=lfs merge=lfs -text
+examples/harbor/swebench/sample-artifacts/*/relay/*.jsonl filter=lfs diff=lfs merge=lfs -text
+examples/harbor/swebench/sample-artifacts/*/relay/*.atif.json filter=lfs diff=lfs merge=lfs -text
+examples/harbor/swebench/sample-artifacts/*/trajectory.json filter=lfs diff=lfs merge=lfs -text
+examples/harbor/swebench/sample-artifacts/*/workspace.patch filter=lfs diff=lfs merge=lfs -text
