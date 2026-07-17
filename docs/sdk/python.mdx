@@ -115,6 +115,30 @@ A runtime is a logical execution boundary, not necessarily an operating-system
 process. An adapter may use an in-process SDK, a process, or shared service
 infrastructure while preserving isolated state for each NeMo Fabric runtime.
 
+Runtime hosting is selected by the adapter descriptor, not by a public
+`FabricConfig` setting. An adapter that declares the versioned persistent local
+host contract starts one local host during `start_runtime(...)`, reuses its
+adapter-owned native resources across ordered invocations, and releases them
+during `stop()`.
+
+### Bundled Adapter Capability Matrix
+
+The following matrix summarizes the current bundled adapter descriptors. The
+descriptor selected in `RunPlan` remains authoritative. Telemetry output names
+use the descriptor contract values.
+
+| Adapter ID | Accepted Normalized Config | Declared Telemetry | Runtime Hosting and Native Resources | Remote Service |
+| --- | --- | --- | --- | --- |
+| `nvidia.fabric.claude` | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay: `atif`, `otel`, `openinference`; hooks and gateway | Persistent local host; one connected `ClaudeSDKClient` | Not implemented |
+| `nvidia.fabric.codex` | `models`, `telemetry` | Relay: `atif`, `otel`, `openinference`; hooks and gateway. Native: `otel` | Persistent local host; one `AsyncCodex` app-server client and thread | Not implemented |
+| `nvidia.fabric.langchain.deepagents` | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay: `atif`, `otel`, `openinference`. Native: `otel`, `openinference` | Persistent local host; one compiled graph and async LangGraph checkpointer | Not implemented |
+| `nvidia.fabric.hermes` | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay: `atif`, `otel`, `openinference` | Persistent local host; one `AIAgent` and `SessionDB` | Not implemented |
+
+Third-party adapters that have not implemented the contract continue to use
+the per-invocation compatibility path. NeMo Fabric does not currently define a
+remote-service adapter contract. A crashed persistent host is terminal for that
+runtime; NeMo Fabric does not silently respawn it or replay a request.
+
 Harness-native threads, sessions, and conversations remain adapter-owned state
 associated with the NeMo Fabric runtime. They are not additional NeMo Fabric lifecycle
 objects.
@@ -266,9 +290,10 @@ async with await fabric.start_runtime(
 print(first.status, second.status)
 ```
 
-The adapter reuses its native state between calls. For example, the Codex
-adapter uses one Codex thread for the runtime and maps each invocation to one
-turn. That thread ID remains adapter-internal.
+The adapter reuses its native state between calls. Codex maps the calls to turns
+on one live thread, Deep Agents invokes one compiled graph and checkpointer,
+Hermes reuses one agent and session database, and Claude keeps one connected SDK
+client. Harness-native identifiers remain adapter-internal.
 
 ## Application-Owned Parallelism
 

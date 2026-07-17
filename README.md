@@ -144,6 +144,23 @@ under `examples/code_review_agent/artifacts/hermes/`. Its complete base
 config and clone-based variants live in
 `examples/code_review_agent/config.py`.
 
+## Bundled Adapter Capability Matrix
+
+The adapter descriptors are the source of truth for normalized configuration,
+telemetry, and runtime-hosting support. The bundled adapters currently expose
+the following capabilities:
+
+| Adapter | Accepted Normalized Config | Telemetry Providers | Runtime Hosting | Remote Service |
+| --- | --- | --- | --- | --- |
+| [Claude](adapters/claude/README.md) | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay | Persistent local host; one connected `ClaudeSDKClient` | Not implemented |
+| [Codex](adapters/codex/README.md) | `models`, `telemetry` | Relay and native | Persistent local host; one `AsyncCodex` client and thread | Not implemented |
+| [Deep Agents](adapters/deepagents/README.md) | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay and native | Persistent local host; one compiled graph and checkpointer | Not implemented |
+| [Hermes](adapters/hermes/README.md) | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay | Persistent local host; one `AIAgent` and `SessionDB` | Not implemented |
+
+Consumers use the same `Fabric.start_runtime(...)` contract for all four
+bundled adapters. Adapter hosting remains descriptor-owned; it is not selected
+through public `FabricConfig` settings.
+
 ## Claude Adapter
 
 Build the local wheels and install Fabric with the independent Claude adapter:
@@ -154,8 +171,8 @@ python -m pip install --find-links dist "nemo-fabric[claude]"
 ```
 
 Refer to the [Claude adapter guide](adapters/claude/README.md) for
-typed configuration, normalized tools, MCP and skills, multi-turn resume,
-authentication, and execution details.
+typed configuration, normalized tools, MCP and skills, persistent multi-turn
+runtimes, authentication, and execution details.
 
 ## Core Concepts
 

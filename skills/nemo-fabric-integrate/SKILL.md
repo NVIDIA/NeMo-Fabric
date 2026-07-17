@@ -119,12 +119,20 @@ Pick the smallest lifecycle the consumer needs:
   runs the full start, invoke, and stop cycle and returns a `RunResult`. Pass
   `request=RunRequest(...)` instead of `input=...` when the invocation needs a
   caller-owned request ID or context (the two are mutually exclusive).
-- **Stateful runtime** — ordered turns over one live harness. Start it with
+- **Stateful runtime** — ordered turns over one logical harness lifecycle. Start it with
   `start_runtime(...)` and use the returned `Runtime` as an async context
   manager so cleanup runs on exit — shutdown is attempted, not guaranteed
   (`stop()` can raise `FabricRuntimeError`; see Consume Results And Handle
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
+
+The selected adapter owns the execution topology. The bundled Claude, Codex,
+Deep Agents, and Hermes adapters retain their native client, graph/checkpointer,
+or agent/database inside one local host for the full runtime. Third-party
+compatibility adapters may reconstruct continuity from persisted harness state.
+Consumers do not select that mechanism in `FabricConfig` and must not replay an
+invocation after a runtime failure. Stop the failed runtime and explicitly start
+a new one according to the application's retry policy.
 
 The lifecycle fragment below shows both forms. It assumes the caller has already
 set `config = to_fabric_config(job)` and chosen `base`, as described in the
