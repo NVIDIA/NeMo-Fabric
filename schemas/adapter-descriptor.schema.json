@@ -46,6 +46,21 @@
         }
       ]
     },
+    "AdapterLocalHostSupport": {
+      "additionalProperties": true,
+      "description": "Persistent local-host protocol implemented by an adapter.",
+      "properties": {
+        "contract_version": {
+          "description": "Adapter lifecycle protocol version spoken over the host transport.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract_version"
+      ],
+      "type": "object"
+    },
     "AdapterRequirements": {
       "additionalProperties": true,
       "description": "Adapter runtime requirements.",
@@ -84,6 +99,24 @@
             "type": "string"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "AdapterRuntimeSupport": {
+      "additionalProperties": true,
+      "description": "Runtime hosting mechanisms implemented by an adapter.",
+      "properties": {
+        "local_host": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdapterLocalHostSupport"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Versioned persistent local-host support, when implemented."
         }
       },
       "type": "object"
@@ -202,6 +235,10 @@
       "additionalProperties": true,
       "description": "Generic runner defaults consumed by the selected runtime adapter.",
       "type": "object"
+    },
+    "runtime": {
+      "$ref": "#/$defs/AdapterRuntimeSupport",
+      "description": "Adapter-owned runtime hosting support."
     },
     "telemetry": {
       "$ref": "#/$defs/AdapterTelemetrySupport",

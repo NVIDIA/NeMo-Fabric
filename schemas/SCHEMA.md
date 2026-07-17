@@ -22,7 +22,8 @@ The core schema generator exports the current public typed contract.
 - `agent`: complete typed `FabricConfig`.
 - `adapter-descriptor`: minimal adapter descriptor consumed by Fabric. Each
   descriptor declares a `contract_version`; Fabric rejects descriptors for
-  unsupported adapter contracts during planning.
+  unsupported adapter contracts during planning. Adapters can also declare a
+  versioned persistent local-host lifecycle under `runtime.local_host`.
 - `run-plan`: executable plan containing the canonical typed config, absolute
   base directory, selected adapter, and derived execution metadata.
 

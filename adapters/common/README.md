@@ -21,6 +21,39 @@ Alternately through the NeMo Fabric metapackage:
 pip install "nemo-fabric[adapters-common]"
 ```
 
+## Persistent Local Hosts
+
+Adapters that declare `runtime.local_host` in `fabric-adapter.json` implement
+the versioned lifecycle contract with
+`nemo_fabric_adapters.common.lifecycle`. Supply a factory that creates one
+adapter-owned runtime with asynchronous `start`, `invoke`, and `stop` methods:
+
+```python
+from nemo_fabric_adapters.common import lifecycle
+
+
+class AdapterRuntime:
+    async def start(self, payload):
+        self.client = await connect_client(payload)
+
+    async def invoke(self, payload):
+        return await self.client.run(payload["request"]["input"])
+
+    async def stop(self):
+        await self.client.close()
+
+
+if lifecycle.is_lifecycle_host():
+    lifecycle.serve(AdapterRuntime)
+```
+
+Fabric creates one factory instance per local host and serializes invocations
+through it. The host keeps one event loop alive for the complete lifecycle so
+SDK clients, compiled graphs, checkpointers, and harness databases can remain
+live safely. Adapter stdout is reserved for the protocol; diagnostics are
+redirected to stderr. A host crash is terminal for that runtime and never falls
+back to per-invocation execution.
+
 Refer to the [NeMo Fabric documentation](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric)
 for adapter and configuration guidance. Source code is available in the
 [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).
