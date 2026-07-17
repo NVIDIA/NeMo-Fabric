@@ -69,11 +69,14 @@ to the explicit `base_dir`. Fabric passes the resolved path through
 
 ## Execution Model
 
-Each Fabric invocation starts a fresh SDK client and closes its app-server
-transport before returning. The first invocation creates a Codex thread and
-persists its ID under the Fabric artifact root. Later invocations for the same
-Fabric runtime resume that exact thread. Codex owns the transcript; Fabric owns
-runtime-to-thread correlation, timeout, cancellation, and cleanup.
+Each Fabric runtime starts one local adapter host, one `AsyncCodex` app-server
+client, and one Codex thread. Ordered `Runtime.invoke(...)` calls reuse that
+client and thread directly; the adapter closes the app-server transport during
+`Runtime.stop()`. The first successful invocation also persists the thread ID
+under the Fabric artifact root for the adapter's direct per-invocation
+compatibility path. The persistent host does not resume the thread between
+turns. Codex owns the transcript; Fabric owns runtime-to-thread correlation,
+timeout, cancellation, and cleanup.
 
 The result includes the SDK's typed terminal response, turn status, token
 usage, timing, and completed thread items. It does not expose CLI commands,
@@ -125,15 +128,16 @@ Codex state variables, the selected model's `api_key_env`, and explicit
 ## Relay Observability
 
 Enable Relay through Fabric's normalized telemetry configuration. For each
-Relay-enabled invocation, Fabric:
+Relay-enabled Fabric runtime, the adapter:
 
 1. Resolves one external `nemo-relay` executable.
-2. Generates invocation-scoped gateway and plugin configuration.
+2. Generates runtime-scoped gateway and plugin configuration.
 3. Starts and health-checks `nemo-relay --config ... --bind ...`.
-4. Redirects the built-in OpenAI provider with request-scoped
+4. Redirects the built-in OpenAI provider with runtime-scoped
    `openai_base_url` and passes Relay hooks through the Codex SDK's `config`
    argument.
-5. Interrupts timed-out turns, closes the SDK runtime, and stops the gateway.
+5. Reuses the SDK client and gateway across turns, interrupting a timed-out turn.
+6. Closes the SDK runtime and stops the gateway during runtime shutdown.
 
 The SDK remains the Codex execution driver. Relay is a supervised sidecar and
 hook forwarder; the adapter never invokes a `nemo-relay codex` wrapper. The

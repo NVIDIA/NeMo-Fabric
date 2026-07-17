@@ -70,6 +70,11 @@ def test_claude_descriptor_is_narrow_and_versioned():
                 }
             }
         },
+        "runtime": {
+            "local_host": {
+                "contract_version": adapter.lifecycle.CONTRACT_VERSION,
+            }
+        },
     }
 
 
@@ -557,6 +562,144 @@ async def test_run_claude_resumes_and_persists_session(claude_payload, monkeypat
         entry[3]["FABRIC_UNRELATED_SECRET"] == "do-not-forward" for entry in captured
     )
     assert os.environ["FABRIC_UNRELATED_SECRET"] == "do-not-forward"
+
+
+async def test_claude_runtime_reuses_one_connected_sdk_client(
+    claude_payload, monkeypatch
+):
+    clients = []
+
+    class FakeClient:
+        def __init__(self, options):
+            self.options = options
+            self.connect_count = 0
+            self.disconnect_count = 0
+            self.prompts = []
+            clients.append(self)
+
+        async def connect(self):
+            self.connect_count += 1
+
+        async def query(self, prompt):
+            self.prompts.append(prompt)
+
+        async def receive_response(self):
+            yield AssistantMessage(
+                content=[TextBlock(text="done")], model="claude-test-model"
+            )
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=100,
+                duration_api_ms=80,
+                is_error=False,
+                num_turns=1,
+                session_id="claude-session",
+                total_cost_usd=0.02,
+                usage={"input_tokens": 1, "output_tokens": 1},
+                result=f"done-{len(self.prompts)}",
+            )
+
+        async def disconnect(self):
+            self.disconnect_count += 1
+
+        async def interrupt(self):
+            raise AssertionError("successful invocation must not be interrupted")
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", FakeClient)
+
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(claude_payload)
+    first = await runtime.invoke(claude_payload)
+    claude_payload["runtime_context"]["invocation_id"] = "invocation-2"
+    claude_payload["request"]["input"] = {"not": "text"}
+    invalid = await runtime.invoke(claude_payload)
+    claude_payload["runtime_context"]["invocation_id"] = "invocation-3"
+    claude_payload["request"]["input"] = "Inspect the tests"
+    second = await runtime.invoke(claude_payload)
+    await runtime.stop()
+
+    assert len(clients) == 1
+    assert clients[0].connect_count == 1
+    assert clients[0].disconnect_count == 1
+    assert clients[0].prompts == ["Inspect the patch", "Inspect the tests"]
+    assert clients[0].options.resume is None
+    assert first["response"] == "done-1"
+    assert second["response"] == "done-2"
+    assert invalid["error"]["code"] == "claude_invalid_request"
+    assert first["session_id"] == second["session_id"] == "claude-session"
+
+
+async def test_claude_runtime_owns_one_relay_gateway_until_stop(
+    relay_payload, monkeypatch, tmp_path
+):
+    relay = adapter.ClaudeRelaySettings(
+        gateway=adapter.relay_gateway.RelayGatewayLaunch(
+            executable=tmp_path / "nemo-relay",
+            config_path=tmp_path / "relay-config" / "config.toml",
+            bind="127.0.0.1:43210",
+            url="http://127.0.0.1:43210",
+            log_path=tmp_path / "relay-config" / "gateway.log",
+        ),
+        plugin_config={"version": 1, "components": []},
+        plugin_path=tmp_path / "relay-plugin",
+    )
+    relay.plugin_path.mkdir()
+    process = MagicMock()
+    mock_start = MagicMock(return_value=process)
+    mock_stop = MagicMock()
+
+    class FakeClient:
+        def __init__(self, options):
+            self.options = options
+
+        async def connect(self):
+            pass
+
+        async def query(self, _prompt):
+            pass
+
+        async def receive_response(self):
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=10,
+                duration_api_ms=8,
+                is_error=False,
+                num_turns=1,
+                session_id="claude-session",
+                total_cost_usd=0.01,
+                usage={"input_tokens": 1, "output_tokens": 1},
+                result="done",
+            )
+
+        async def disconnect(self):
+            pass
+
+        async def interrupt(self):
+            raise AssertionError("successful invocation must not be interrupted")
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", FakeClient)
+    monkeypatch.setattr(adapter, "prepare_claude_relay", MagicMock(return_value=relay))
+    monkeypatch.setattr(adapter.relay_gateway, "start_relay_gateway", mock_start)
+    monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
+
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(relay_payload)
+    first = await runtime.invoke(relay_payload)
+    relay_payload["runtime_context"]["invocation_id"] = "invocation-2"
+    second = await runtime.invoke(relay_payload)
+
+    mock_start.assert_called_once_with(
+        launch=relay.gateway,
+        cwd=Path(relay_payload["runtime_context"]["environment"]["workspace"]),
+    )
+    mock_stop.assert_not_called()
+    assert first["relay_runtime"]["gateway_url"] == relay.gateway.url
+    assert second["relay_runtime"]["gateway_url"] == relay.gateway.url
+
+    await runtime.stop()
+
+    mock_stop.assert_called_once_with(process)
+    assert not relay.plugin_path.exists()
 
 
 async def test_run_claude_supervises_relay_and_reports_artifacts(

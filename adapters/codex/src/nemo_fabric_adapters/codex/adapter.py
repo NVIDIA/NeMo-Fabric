@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import shlex
+import subprocess
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from hashlib import sha256
@@ -32,6 +34,7 @@ from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.common import lifecycle
 
 
 DEFAULT_TIMEOUT_SECONDS = 1800.0
@@ -89,11 +92,12 @@ NORMALIZED_SETTING_FIELDS = {
     "model_name": "FabricConfig.models",
     "skills": "FabricConfig.skills",
 }
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class CodexRelaySettings:
-    """Invocation-scoped Relay state consumed by the Codex SDK adapter."""
+    """Runtime-scoped Relay state consumed by the Codex SDK adapter."""
 
     gateway: relay_gateway.RelayGatewayLaunch
     plugin_config: dict[str, Any]
@@ -557,9 +561,7 @@ def _json_value(value: Any, *, name: str) -> Any:
     return value
 
 
-def _apply_config_overrides(
-    config: dict[str, Any], overrides: dict[str, Any]
-) -> None:
+def _apply_config_overrides(config: dict[str, Any], overrides: dict[str, Any]) -> None:
     for dotted_key, value in sorted(overrides.items()):
         if not isinstance(dotted_key, str):
             raise AdapterConfigError(
@@ -581,9 +583,7 @@ def _apply_config_overrides(
                     f"Codex config override {dotted_key!r} conflicts with {part!r}",
                 )
             target = existing
-        target[parts[-1]] = _json_value(
-            value, name=f"config_overrides.{dotted_key}"
-        )
+        target[parts[-1]] = _json_value(value, name=f"config_overrides.{dotted_key}")
 
 
 def native_codex_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -778,12 +778,11 @@ def _output_schema(payload: dict[str, Any]) -> dict[str, Any] | None:
     return _mapping(_json_value(value, name="output_schema"), name="output_schema")
 
 
-def validate_payload(payload: dict[str, Any]) -> str:
-    """Validate pure invocation inputs before starting SDK or Relay processes."""
+def validate_runtime_payload(payload: dict[str, Any]) -> str:
+    """Validate runtime-owned configuration before starting SDK or Relay processes."""
 
     settings = _settings(payload)
     _validate_settings_boundary(settings)
-    request_prompt(payload)
     _native_skill_paths(payload)
     fabric_runtime_id = runtime_id(payload)
     resolve_cwd(payload)
@@ -811,6 +810,14 @@ def validate_payload(payload: dict[str, Any]) -> str:
         )
     child_environment(payload)
     thread_config(payload, None)
+    return fabric_runtime_id
+
+
+def validate_payload(payload: dict[str, Any]) -> str:
+    """Validate runtime configuration and invocation input."""
+
+    fabric_runtime_id = validate_runtime_payload(payload)
+    request_prompt(payload)
     return fabric_runtime_id
 
 
@@ -892,7 +899,9 @@ def normalize_result(
     payload: dict[str, Any], *, thread_id: str, result: Any
 ) -> dict[str, Any]:
     status = _json_safe(result.status)
-    completed = result.status == TurnStatus.completed and result.final_response is not None
+    completed = (
+        result.status == TurnStatus.completed and result.final_response is not None
+    )
     error = None
     if not completed:
         message = (
@@ -940,6 +949,72 @@ async def _interrupt_turn(handle: Any) -> None:
         pass
 
 
+def _thread_options(
+    payload: dict[str, Any], relay: CodexRelaySettings | None
+) -> dict[str, Any]:
+    settings = _settings(payload)
+    return {
+        "approval_mode": approval_mode(payload),
+        "base_instructions": _optional_string(settings, "base_instructions"),
+        "config": thread_config(payload, relay) or None,
+        "cwd": str(resolve_cwd(payload)),
+        "developer_instructions": _optional_string(settings, "developer_instructions"),
+        "model": selected_model(payload),
+        "model_provider": selected_model_provider(payload),
+        "personality": _personality(payload),
+        "sandbox": sandbox(payload),
+        "service_tier": _optional_string(settings, "service_tier"),
+    }
+
+
+async def _open_thread(
+    codex: AsyncCodex,
+    payload: dict[str, Any],
+    *,
+    prior_thread_id: str | None,
+    relay: CodexRelaySettings | None,
+) -> Any:
+    settings = _settings(payload)
+    options = _thread_options(payload, relay)
+    if prior_thread_id is None:
+        return await codex.thread_start(
+            **options,
+            service_name=_optional_string(settings, "service_name"),
+        )
+
+    thread = await codex.thread_resume(prior_thread_id, **options)
+    if thread.id != prior_thread_id:
+        raise AdapterStateError(
+            "codex_thread_mismatch",
+            "Codex thread identity changed during resume",
+        )
+    return thread
+
+
+async def _invoke_thread(
+    payload: dict[str, Any], thread: Any
+) -> tuple[dict[str, Any], bool]:
+    """Run one turn and report whether the connected SDK transport remains usable."""
+
+    handle = None
+    try:
+        async with asyncio.timeout(timeout_seconds(payload)):
+            handle = await thread.turn(
+                request_prompt(payload),
+                effort=_reasoning_effort(payload),
+                output_schema=_output_schema(payload),
+            )
+            result = await handle.run()
+            return normalize_result(payload, thread_id=thread.id, result=result), True
+    except TimeoutError as error:
+        await _interrupt_turn(handle)
+        return sdk_failure(error), False
+    except CodexAdapterError:
+        raise
+    except (CodexError, RuntimeError, OSError) as error:
+        return sdk_failure(error), False
+
+
 async def invoke_codex_sdk(
     payload: dict[str, Any],
     *,
@@ -948,13 +1023,9 @@ async def invoke_codex_sdk(
 ) -> tuple[dict[str, Any], str | None]:
     """Execute one SDK turn and always close the app-server transport."""
 
-    settings = _settings(payload)
-    config = thread_config(payload, relay)
     skill_paths = _native_skill_paths(payload)
-    prompt = request_prompt(payload)
     client_config = sdk_config(payload, relay)
     codex: AsyncCodex | None = None
-    handle = None
     output: dict[str, Any]
     thread_id: str | None = None
     try:
@@ -965,45 +1036,15 @@ async def invoke_codex_sdk(
                 exist_ok=True,
             )
         codex = AsyncCodex(config=client_config)
-        async with asyncio.timeout(timeout_seconds(payload)):
-            await _register_skill_roots(codex, skill_paths)
-            common = {
-                "approval_mode": approval_mode(payload),
-                "base_instructions": _optional_string(settings, "base_instructions"),
-                "config": config or None,
-                "cwd": str(resolve_cwd(payload)),
-                "developer_instructions": _optional_string(
-                    settings, "developer_instructions"
-                ),
-                "model": selected_model(payload),
-                "model_provider": selected_model_provider(payload),
-                "personality": _personality(payload),
-                "sandbox": sandbox(payload),
-                "service_tier": _optional_string(settings, "service_tier"),
-            }
-            if prior_thread_id is None:
-                thread = await codex.thread_start(
-                    **common,
-                    service_name=_optional_string(settings, "service_name"),
-                )
-            else:
-                thread = await codex.thread_resume(prior_thread_id, **common)
-                if thread.id != prior_thread_id:
-                    raise AdapterStateError(
-                        "codex_thread_mismatch",
-                        "Codex thread identity changed during resume",
-                    )
-            thread_id = thread.id
-            handle = await thread.turn(
-                prompt,
-                effort=_reasoning_effort(payload),
-                output_schema=_output_schema(payload),
-            )
-            result = await handle.run()
-            output = normalize_result(payload, thread_id=thread.id, result=result)
-    except TimeoutError as error:
-        await _interrupt_turn(handle)
-        output = sdk_failure(error)
+        await _register_skill_roots(codex, skill_paths)
+        thread = await _open_thread(
+            codex,
+            payload,
+            prior_thread_id=prior_thread_id,
+            relay=relay,
+        )
+        thread_id = thread.id
+        output, _ = await _invoke_thread(payload, thread)
     except CodexAdapterError:
         raise
     except (CodexError, RuntimeError, OSError) as error:
@@ -1019,9 +1060,7 @@ async def invoke_codex_sdk(
     return output, thread_id
 
 
-def _relay_output(
-    output: dict[str, Any], relay: CodexRelaySettings
-) -> dict[str, Any]:
+def _relay_output(output: dict[str, Any], relay: CodexRelaySettings) -> dict[str, Any]:
     output["relay_runtime"] = {
         "enabled": True,
         "emitter": "codex-sdk/nemo-relay",
@@ -1036,6 +1075,211 @@ def _relay_output(
     return output
 
 
+def _start_relay_gateway(
+    payload: dict[str, Any], relay: CodexRelaySettings | None
+) -> subprocess.Popen[Any] | None:
+    if relay is None:
+        return None
+    try:
+        return relay_gateway.start_relay_gateway(
+            launch=relay.gateway, cwd=resolve_cwd(payload)
+        )
+    except relay_gateway.RelayGatewayError as error:
+        raise AdapterRelayError(
+            "codex_relay_start_failed",
+            "NeMo Relay gateway failed to start",
+            metadata={"gateway_log_path": str(relay.gateway.log_path)},
+        ) from error
+
+
+def _cleanup_relay(
+    relay: CodexRelaySettings | None,
+    process: subprocess.Popen[Any] | None,
+) -> AdapterRelayError | None:
+    if process is None:
+        return None
+    try:
+        relay_gateway.stop_relay_gateway(process)
+    except relay_gateway.RelayGatewayError:
+        return AdapterRelayError(
+            "codex_relay_stop_failed",
+            "NeMo Relay gateway failed to stop",
+            metadata={
+                "gateway_log_path": str(relay.gateway.log_path)
+                if relay is not None
+                else ""
+            },
+        )
+    return None
+
+
+def _as_lifecycle_error(error: CodexAdapterError) -> lifecycle.LifecycleError:
+    return lifecycle.LifecycleError(
+        error.code,
+        error.message,
+        metadata=error.metadata,
+    )
+
+
+class CodexRuntime:
+    """One Codex app-server client and thread owned by a Fabric runtime."""
+
+    def __init__(self) -> None:
+        self._fabric_runtime_id: str | None = None
+        self._client: AsyncCodex | None = None
+        self._thread: Any = None
+        self._relay: CodexRelaySettings | None = None
+        self._gateway_process: subprocess.Popen[Any] | None = None
+        self._unusable = False
+
+    async def start(self, payload: dict[str, Any]) -> None:
+        if self._client is not None:
+            raise lifecycle.LifecycleError(
+                "codex_runtime_already_started",
+                "Codex runtime is already started",
+            )
+
+        try:
+            fabric_runtime_id = validate_runtime_payload(payload)
+            prior_thread_id = load_thread_id(payload, fabric_runtime_id)
+            relay = prepare_codex_relay(payload)
+            self._relay = relay
+            self._gateway_process = _start_relay_gateway(payload, relay)
+            client_config = sdk_config(payload, relay)
+            if selected_model_provider(payload) == "nvidia":
+                await asyncio.to_thread(
+                    Path(client_config.env["CODEX_HOME"]).mkdir,
+                    parents=True,
+                    exist_ok=True,
+                )
+            client = AsyncCodex(config=client_config)
+            self._client = client
+            await _register_skill_roots(client, _native_skill_paths(payload))
+            thread = await _open_thread(
+                client,
+                payload,
+                prior_thread_id=prior_thread_id,
+                relay=relay,
+            )
+        except CodexAdapterError as error:
+            await self._cleanup_failed_start()
+            raise _as_lifecycle_error(error) from error
+        except (CodexError, RuntimeError, OSError) as error:
+            await self._cleanup_failed_start()
+            reported = sdk_failure(error)["error"]
+            raise lifecycle.LifecycleError(
+                reported["code"],
+                reported["message"],
+                retryable=reported["retryable"],
+                metadata=reported.get("metadata"),
+            ) from error
+        except BaseException:
+            await self._cleanup_failed_start()
+            raise
+
+        self._fabric_runtime_id = fabric_runtime_id
+        self._thread = thread
+
+    async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if (
+            self._client is None
+            or self._thread is None
+            or self._fabric_runtime_id is None
+        ):
+            raise lifecycle.LifecycleError(
+                "codex_runtime_not_started",
+                "Codex runtime is not started",
+            )
+        if runtime_id(payload) != self._fabric_runtime_id:
+            raise lifecycle.LifecycleError(
+                "codex_runtime_mismatch",
+                "Codex invocation does not match the connected runtime",
+            )
+        if self._unusable:
+            output = _failure(
+                "codex_runtime_unavailable",
+                "Codex runtime cannot accept another invocation after an SDK failure",
+            )
+            return _relay_output(output, self._relay) if self._relay else output
+
+        try:
+            request_prompt(payload)
+            timeout_seconds(payload)
+            _reasoning_effort(payload)
+            _output_schema(payload)
+            output, usable = await _invoke_thread(payload, self._thread)
+        except CodexAdapterError as error:
+            output = adapter_failure(error)
+            usable = True
+
+        self._unusable = not usable
+        if not output["failed"]:
+            try:
+                save_thread_id(
+                    payload,
+                    self._fabric_runtime_id,
+                    self._thread.id,
+                )
+            except CodexAdapterError as error:
+                self._unusable = True
+                output = adapter_failure(error)
+        if self._relay is not None:
+            output = _relay_output(output, self._relay)
+        return output
+
+    async def stop(self) -> None:
+        client = self._client
+        self._client = None
+        self._thread = None
+        self._fabric_runtime_id = None
+        self._unusable = True
+
+        close_error: BaseException | None = None
+        try:
+            if client is not None:
+                await client.close()
+        except BaseException as error:
+            if not isinstance(error, asyncio.CancelledError):
+                LOGGER.exception("Codex SDK client failed to close")
+            close_error = error
+        finally:
+            cleanup_error = _cleanup_relay(self._relay, self._gateway_process)
+            self._relay = None
+            self._gateway_process = None
+
+        if isinstance(close_error, asyncio.CancelledError):
+            raise close_error
+        if close_error is not None:
+            if cleanup_error is not None:
+                LOGGER.error(
+                    "Codex Relay cleanup also failed during close: %s",
+                    cleanup_error.code,
+                )
+            raise lifecycle.LifecycleError(
+                "codex_sdk_stop_failed",
+                "Codex SDK runtime failed to stop",
+            ) from close_error
+        if cleanup_error is not None:
+            raise _as_lifecycle_error(cleanup_error)
+
+    async def _cleanup_failed_start(self) -> None:
+        client = self._client
+        self._client = None
+        if client is not None:
+            try:
+                await client.close()
+            except Exception:
+                LOGGER.exception("Codex SDK cleanup after start failure also failed")
+        cleanup_error = _cleanup_relay(self._relay, self._gateway_process)
+        self._relay = None
+        self._gateway_process = None
+        if cleanup_error is not None:
+            LOGGER.error(
+                "Codex Relay cleanup after start failure also failed: %s",
+                cleanup_error.code,
+            )
+
+
 async def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     """Run one Fabric invocation with SDK-owned Codex execution."""
 
@@ -1045,36 +1289,14 @@ async def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
     gateway_process = None
     cleanup_error: AdapterRelayError | None = None
     try:
-        if relay is not None:
-            try:
-                gateway_process = relay_gateway.start_relay_gateway(
-                    launch=relay.gateway, cwd=resolve_cwd(payload)
-                )
-            except relay_gateway.RelayGatewayError as error:
-                raise AdapterRelayError(
-                    "codex_relay_start_failed",
-                    "NeMo Relay gateway failed to start",
-                    metadata={"gateway_log_path": str(relay.gateway.log_path)},
-                ) from error
+        gateway_process = _start_relay_gateway(payload, relay)
         output, thread_id = await invoke_codex_sdk(
             payload, prior_thread_id=prior_thread_id, relay=relay
         )
         if not output["failed"] and thread_id is not None:
             save_thread_id(payload, fabric_runtime_id, thread_id)
     finally:
-        if gateway_process is not None:
-            try:
-                relay_gateway.stop_relay_gateway(gateway_process)
-            except relay_gateway.RelayGatewayError:
-                cleanup_error = AdapterRelayError(
-                    "codex_relay_stop_failed",
-                    "NeMo Relay gateway failed to stop",
-                    metadata={
-                        "gateway_log_path": str(relay.gateway.log_path)
-                        if relay is not None
-                        else ""
-                    },
-                )
+        cleanup_error = _cleanup_relay(relay, gateway_process)
 
     if relay is not None:
         output = _relay_output(output, relay)
@@ -1108,6 +1330,9 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    if lifecycle.is_lifecycle_host(os.environ):
+        lifecycle.serve(CodexRuntime)
+        return
     try:
         payload = common_utils.load_payload()
     except Exception:

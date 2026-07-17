@@ -30,7 +30,7 @@ class RelayGatewayError(RuntimeError):
 
 @dataclass(frozen=True)
 class RelayGatewayLaunch:
-    """Complete invocation-scoped inputs for launching a Relay gateway."""
+    """Complete inputs for launching one Relay gateway."""
 
     executable: Path
     config_path: Path
@@ -70,7 +70,7 @@ def find_available_tcp_port(host: str = "127.0.0.1") -> int:
 
 
 def relay_cli_contract(executable: Path) -> RelayCliContract:
-    """Resolve and validate the external Relay CLI contract once per invocation."""
+    """Resolve and validate the external Relay CLI contract for one launch."""
 
     try:
         completed = subprocess.run(
@@ -150,7 +150,7 @@ def start_relay_gateway(
     launch: RelayGatewayLaunch,
     cwd: Path,
 ) -> subprocess.Popen[Any]:
-    """Launch and health-check one invocation-scoped Relay gateway."""
+    """Launch and health-check one Relay gateway."""
 
     if not launch.config_path.is_file():
         raise RelayGatewayError("NeMo Relay gateway configuration was not generated")

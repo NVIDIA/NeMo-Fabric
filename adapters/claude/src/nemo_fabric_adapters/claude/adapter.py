@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run Claude Agent SDK through the Fabric adapter process contract."""
+"""Run Claude Agent SDK through the Fabric adapter contract."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions
+from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk import ClaudeSDKError
 from claude_agent_sdk import CLIConnectionError
 from claude_agent_sdk import CLIJSONDecodeError
@@ -30,6 +31,7 @@ from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import query
 from claude_agent_sdk._errors import MessageParseError
+from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
@@ -97,7 +99,7 @@ INHERITED_ENV_NAMES = {
 
 @dataclass(frozen=True)
 class ClaudeRelaySettings:
-    """Invocation-scoped Relay gateway and Claude plugin settings."""
+    """Relay gateway and Claude plugin settings owned by one adapter run."""
 
     gateway: relay_gateway.RelayGatewayLaunch
     plugin_config: dict[str, Any]
@@ -415,7 +417,7 @@ def _stage_relay_plugin(plugin_path: Path, executable: Path) -> None:
 
 
 def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
-    """Generate invocation-scoped Relay and Claude hook configuration."""
+    """Generate Relay gateway and Claude hook configuration."""
 
     if not common_utils.relay_enabled(payload):
         return None
@@ -859,6 +861,206 @@ def _persist_result_session(
     return None
 
 
+def _as_lifecycle_error(error: ClaudeAdapterError) -> lifecycle.LifecycleError:
+    return lifecycle.LifecycleError(
+        error.code,
+        error.message,
+        metadata=error.metadata,
+    )
+
+
+def _sdk_lifecycle_error(error: BaseException) -> lifecycle.LifecycleError:
+    output = sdk_failure(error)
+    reported = output["error"]
+    return lifecycle.LifecycleError(
+        reported["code"],
+        reported["message"],
+        retryable=reported["retryable"],
+        metadata=reported.get("metadata"),
+    )
+
+
+class ClaudeRuntime:
+    """One connected Claude SDK client owned by a Fabric runtime."""
+
+    def __init__(self) -> None:
+        self._fabric_runtime_id: str | None = None
+        self._claude_session_id: str | None = None
+        self._client: ClaudeSDKClient | None = None
+        self._relay: ClaudeRelaySettings | None = None
+        self._gateway_process: subprocess.Popen[Any] | None = None
+        self._unusable = False
+
+    async def start(self, payload: dict[str, Any]) -> None:
+        if self._client is not None:
+            raise lifecycle.LifecycleError(
+                "claude_runtime_already_started",
+                "Claude runtime is already started",
+            )
+        try:
+            fabric_runtime_id = runtime_id(payload)
+            claude_session_id = load_claude_session_id(payload, fabric_runtime_id)
+            relay = prepare_claude_relay(payload)
+            self._relay = relay
+            self._gateway_process = _start_relay_gateway(payload, relay)
+            options = build_options(payload, resume=claude_session_id, relay=relay)
+            client = ClaudeSDKClient(options)
+            await client.connect()
+        except ClaudeAdapterError as error:
+            self._cleanup_failed_start()
+            raise _as_lifecycle_error(error) from error
+        except ClaudeSDKError as error:
+            self._cleanup_failed_start()
+            raise _sdk_lifecycle_error(error) from error
+        except BaseException:
+            self._cleanup_failed_start()
+            raise
+
+        self._fabric_runtime_id = fabric_runtime_id
+        self._claude_session_id = claude_session_id
+        self._client = client
+
+    async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+        client = self._client
+        fabric_runtime_id = self._fabric_runtime_id
+        if client is None or fabric_runtime_id is None:
+            raise lifecycle.LifecycleError(
+                "claude_runtime_not_started",
+                "Claude runtime is not started",
+            )
+        if runtime_id(payload) != fabric_runtime_id:
+            raise lifecycle.LifecycleError(
+                "claude_runtime_mismatch",
+                "Claude invocation does not match the connected runtime",
+            )
+        if self._unusable:
+            return _failure(
+                "claude_runtime_unavailable",
+                "Claude runtime cannot accept another invocation after an SDK failure",
+            )
+
+        try:
+            prompt = request_prompt(payload)
+            invocation_timeout = timeout_seconds(payload)
+        except ClaudeAdapterError as error:
+            output = adapter_failure(error)
+            if self._relay is not None:
+                output = _relay_output(output, self._relay)
+            return output
+
+        messages: list[Message] = []
+        result: ResultMessage | None = None
+        try:
+            async with asyncio.timeout(invocation_timeout):
+                await client.query(prompt)
+                async for message in client.receive_response():
+                    if isinstance(message, ResultMessage):
+                        result = message
+                    else:
+                        messages.append(message)
+        except (TimeoutError, ClaudeSDKError) as error:
+            self._unusable = True
+            await self._interrupt_failed_invocation()
+            output = sdk_failure(error)
+        except Exception:
+            # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
+            # raise a plain Exception while closing the response stream.
+            self._unusable = True
+            if result is None or not _result_failed(result):
+                raise
+            LOGGER.exception("Claude SDK stream raised after a failed terminal result")
+            output = self._normalize_invocation(payload, messages, result)
+        else:
+            if result is None:
+                self._unusable = True
+                output = _failure(
+                    "claude_missing_result", "Claude returned no terminal result"
+                )
+            else:
+                output = self._normalize_invocation(payload, messages, result)
+
+        if self._relay is not None:
+            output = _relay_output(output, self._relay)
+        return output
+
+    def _normalize_invocation(
+        self,
+        payload: dict[str, Any],
+        messages: list[Message],
+        result: ResultMessage,
+    ) -> dict[str, Any]:
+        try:
+            output = normalize_result(payload, messages, result)
+            if not output["failed"]:
+                persisted = _persist_result_session(
+                    payload,
+                    runtime_id(payload),
+                    self._claude_session_id,
+                    result,
+                )
+                if persisted is not None:
+                    self._unusable = True
+                    return persisted
+                self._claude_session_id = result.session_id
+            return output
+        except ClaudeAdapterError as error:
+            self._unusable = True
+            return adapter_failure(error)
+
+    async def stop(self) -> None:
+        client = self._client
+        self._client = None
+        self._fabric_runtime_id = None
+        self._claude_session_id = None
+        self._unusable = True
+
+        disconnect_error: BaseException | None = None
+        try:
+            if client is not None:
+                await client.disconnect()
+        except BaseException as error:
+            if not isinstance(error, asyncio.CancelledError):
+                LOGGER.exception("Claude SDK client failed to disconnect")
+            disconnect_error = error
+        finally:
+            cleanup_error = _cleanup_relay(self._relay, self._gateway_process)
+            self._relay = None
+            self._gateway_process = None
+        if isinstance(disconnect_error, asyncio.CancelledError):
+            raise disconnect_error
+        if disconnect_error is not None:
+            if cleanup_error is not None:
+                LOGGER.error(
+                    "Claude Relay cleanup also failed during disconnect: %s",
+                    cleanup_error.code,
+                )
+            raise lifecycle.LifecycleError(
+                "claude_disconnect_failed",
+                "Claude SDK client failed to disconnect",
+            ) from disconnect_error
+        if cleanup_error is not None:
+            raise _as_lifecycle_error(cleanup_error)
+
+    def _cleanup_failed_start(self) -> None:
+        cleanup_error = _cleanup_relay(self._relay, self._gateway_process)
+        self._relay = None
+        self._gateway_process = None
+        if cleanup_error is not None:
+            LOGGER.error(
+                "Claude runtime cleanup after start failure also failed: %s",
+                cleanup_error.code,
+            )
+
+    async def _interrupt_failed_invocation(self) -> None:
+        if self._client is None:
+            return
+        try:
+            async with asyncio.timeout(5):
+                await self._client.interrupt()
+        except Exception:
+            LOGGER.exception("Claude SDK invocation could not be interrupted")
+
+
 async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
     fabric_runtime_id = runtime_id(payload)
     prior_session_id = load_claude_session_id(payload, fabric_runtime_id)
@@ -926,6 +1128,9 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    if lifecycle.is_lifecycle_host(os.environ):
+        lifecycle.serve(ClaudeRuntime)
+        return
     try:
         payload = common_utils.load_payload()
     except (

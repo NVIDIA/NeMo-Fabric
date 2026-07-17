@@ -128,9 +128,7 @@ def mock_codex_fixture(monkeypatch):
 
         async def thread_resume(thread_id, **_kwargs):
             resumed_thread_id = mock_codex.resume_thread_id or thread_id
-            mock_client.thread = mock_thread(
-                resumed_thread_id, mock_codex.next_result
-            )
+            mock_client.thread = mock_thread(resumed_thread_id, mock_codex.next_result)
             return mock_client.thread
 
         mock_client.close.side_effect = close
@@ -175,10 +173,7 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
     )
     assert client.config.env["CODEX_HOME"] == str(tmp_path / "codex-home")
     assert client.config.env["CODEX_EXPLICIT"] == "forward-me"
-    assert (
-        client.config.env["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"]
-        == "codex_python_sdk"
-    )
+    assert client.config.env["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] == "codex_python_sdk"
     assert client.config.env["FABRIC_UNRELATED_SECRET"] == ""
     start = client.thread_start.await_args.kwargs
     assert start["model"] == "gpt-5.4"
@@ -364,9 +359,7 @@ def test_sdk_keeps_absolute_codex_runtime_path(codex_payload, tmp_path):
     assert config.codex_bin == str(codex_bin)
 
 
-def test_runtime_resumes_sdk_thread_across_invocations(
-    codex_payload, mock_codex
-):
+def test_runtime_resumes_sdk_thread_across_invocations(codex_payload, mock_codex):
     first = adapter.run(codex_payload)
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
     codex_payload["request"]["input"] = "Continue."
@@ -385,6 +378,72 @@ def test_runtime_resumes_sdk_thread_across_invocations(
         "runtime_id": "runtime-1",
         "codex_thread_id": "thread-123",
     }
+
+
+async def test_persistent_runtime_reuses_one_client_and_thread(
+    codex_payload, mock_codex
+):
+    start_payload = dict(codex_payload)
+    start_payload.pop("request")
+    runtime = adapter.CodexRuntime()
+
+    await runtime.start(start_payload)
+    first = await runtime.invoke(codex_payload)
+    codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
+    codex_payload["request"]["input"] = "Continue."
+    second = await runtime.invoke(codex_payload)
+    await runtime.stop()
+
+    assert first["thread_id"] == second["thread_id"] == "thread-123"
+    assert len(mock_codex.instances) == 1
+    client = mock_codex.instances[0]
+    client.thread_start.assert_awaited_once()
+    client.thread_resume.assert_not_awaited()
+    assert client.thread.turn.await_count == 2
+    assert client.thread.turn.await_args_list[1].args[0] == "Continue."
+    client.close.assert_awaited_once()
+
+
+async def test_persistent_runtime_owns_one_relay_gateway(
+    codex_payload, mock_codex, monkeypatch, tmp_path
+):
+    codex_payload["telemetry_plan"] = {
+        "providers": ["relay"],
+        "relay_enabled": True,
+    }
+    gateway = adapter.relay_gateway.RelayGatewayLaunch(
+        executable=tmp_path / "nemo-relay",
+        config_path=tmp_path / "relay" / "config.toml",
+        bind="127.0.0.1:43210",
+        url="http://127.0.0.1:43210",
+        log_path=tmp_path / "relay" / "gateway.log",
+    )
+    relay = adapter.CodexRelaySettings(
+        gateway=gateway,
+        plugin_config={"version": 1, "components": []},
+    )
+    process = MagicMock()
+    start_gateway = MagicMock(return_value=process)
+    stop_gateway = MagicMock()
+    monkeypatch.setattr(adapter, "prepare_codex_relay", MagicMock(return_value=relay))
+    monkeypatch.setattr(adapter.relay_gateway, "start_relay_gateway", start_gateway)
+    monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", stop_gateway)
+    start_payload = dict(codex_payload)
+    start_payload.pop("request")
+    runtime = adapter.CodexRuntime()
+
+    await runtime.start(start_payload)
+    await runtime.invoke(codex_payload)
+    codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
+    await runtime.invoke(codex_payload)
+    await runtime.stop()
+
+    assert len(mock_codex.instances) == 1
+    start_gateway.assert_called_once_with(
+        launch=gateway,
+        cwd=Path(codex_payload["runtime_context"]["environment"]["workspace"]),
+    )
+    stop_gateway.assert_called_once_with(process)
 
 
 def test_runtime_rejects_corrupt_thread_state(codex_payload):
@@ -536,9 +595,7 @@ def test_nvidia_provider_requires_endpoint(codex_payload, mock_codex):
     mock_codex.assert_not_called()
 
 
-def test_resume_rejects_changed_sdk_thread_identity(
-    codex_payload, mock_codex
-):
+def test_resume_rejects_changed_sdk_thread_identity(codex_payload, mock_codex):
     adapter.save_thread_id(codex_payload, "runtime-1", "thread-persisted")
     mock_codex.resume_thread_id = "thread-replaced"
 
@@ -572,9 +629,7 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
     start_gateway = MagicMock(return_value=process)
     stop_gateway = MagicMock()
     monkeypatch.setattr(adapter, "prepare_codex_relay", MagicMock(return_value=relay))
-    monkeypatch.setattr(
-        adapter.relay_gateway, "start_relay_gateway", start_gateway
-    )
+    monkeypatch.setattr(adapter.relay_gateway, "start_relay_gateway", start_gateway)
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", stop_gateway)
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
 
@@ -655,9 +710,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     )
     write = MagicMock(return_value=(config_path, plugin_path))
     monkeypatch.setattr(adapter.relay_gateway, "resolve_relay_command", resolve)
-    monkeypatch.setattr(
-        adapter.relay_gateway, "relay_cli_contract", contract
-    )
+    monkeypatch.setattr(adapter.relay_gateway, "relay_cli_contract", contract)
     monkeypatch.setattr(adapter.relay_gateway, "find_available_tcp_port", lambda: 43210)
     monkeypatch.setattr(
         adapter.common_utils,
@@ -745,9 +798,7 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
                             "enabled": True,
                             "endpoint": "http://localhost:4318/v1/traces",
                             "transport": "http_binary",
-                            "resource_attributes": {
-                                "deployment.environment": "test"
-                            },
+                            "resource_attributes": {"deployment.environment": "test"},
                         }
                     },
                 }
@@ -776,9 +827,7 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
     assert turn["output_schema"]["required"] == ["summary"]
 
 
-def test_timeout_interrupts_native_turn_and_closes_sdk(
-    codex_payload, mock_codex
-):
+def test_timeout_interrupts_native_turn_and_closes_sdk(codex_payload, mock_codex):
     mock_blocking_thread = mock_thread("thread-timeout")
 
     async def block():
@@ -856,6 +905,9 @@ def test_descriptor_has_no_codex_binary_requirement():
         "skills",
         "telemetry",
     ]
+    assert descriptor["runtime"]["local_host"] == {
+        "contract_version": "fabric.adapter.lifecycle/v1alpha1"
+    }
     assert "requirements" not in descriptor
 
 
@@ -939,9 +991,7 @@ def test_environment_rejects_non_string_runtime_telemetry_env(
 
 
 @pytest.mark.parametrize("telemetry", [[], "invalid"])
-def test_environment_rejects_non_mapping_runtime_telemetry(
-    codex_payload, telemetry
-):
+def test_environment_rejects_non_mapping_runtime_telemetry(codex_payload, telemetry):
     codex_payload["runtime_context"]["telemetry"] = telemetry
 
     with pytest.raises(

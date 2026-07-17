@@ -81,6 +81,8 @@ async def _run() -> None:
     assert first["status"] == second["status"] == "succeeded", results
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results
     assert nonce in second["output"]["response"], second.to_mapping()
+    assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
+    assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     assert first["output"]["events"], first.to_mapping()
     assert second["output"]["usage"] is not None, second.to_mapping()
 
@@ -120,6 +122,8 @@ async def _run_relay(relay_command: str) -> None:
     assert first["status"] == second["status"] == "succeeded", results
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results
     assert nonce in second["output"]["response"], second.to_mapping()
+    assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
+    assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     for turn in (first, second):
         assert turn["output"]["relay_runtime"]["enabled"] is True, turn.to_mapping()
         assert {item["kind"] for item in turn["output"]["relay_artifacts"]} >= {
