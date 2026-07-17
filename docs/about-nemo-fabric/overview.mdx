@@ -77,6 +77,9 @@ committed JSON Schemas to validate packages and build language bindings.
 
 ## Choose Your Interface
 
+Use the following table to choose the NeMo Fabric interface that best fits how
+your application works with harnesses:
+
 | Interface | Use it when | Start with |
 | --- | --- | --- |
 | Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
@@ -103,7 +106,7 @@ NeMo Fabric Rust core
         |
         |  resolved adapter contract
         v
-Hermes | Codex SDK | custom harness
+Hermes Agent | Codex | custom harness
         |
         v
 RunResult + artifacts + events + telemetry references
