@@ -2,10 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 def version() -> str: ...
-def resolve_config(
-    config_json: str,
-    base_dir: str | None = None,
-) -> str: ...
+def cli_main(args: list[str]) -> None: ...
 def plan_config(
     config_json: str,
     base_dir: str | None = None,

@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "Fabric config models and loading helpers."
-position: 68
+position: 65
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -21,7 +21,6 @@ Fabric config models and loading helpers.
 - [CapabilityPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-capabilityplan): Resolved capability configuration.
 - [CapabilityRoute](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-capabilityroute): One capability routing decision.
 - [CapabilityTargetPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-capabilitytargetplan): Capabilities routed to one target.
-- [EffectiveConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-effectiveconfig): Resolved Fabric config with explicit path context.
 - [EnvironmentConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-environmentconfig): Execution environment configuration.
 - [EnvironmentPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-environmentplan): Resolved environment plan.
 - [FabricConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-fabricconfig): Versioned Fabric agent config.
@@ -76,6 +75,4 @@ Fabric config models and loading helpers.
 ## Functions
 
 - [load_adapter_descriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-load-adapter-descriptor): Load an adapter descriptor from JSON package metadata.
-- [resolve_effective_config_from_config](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-resolve-effective-config-from-config): Resolve a typed Fabric config into an effective config.
 - [resolve_run_plan_from_config](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-resolve-run-plan-from-config): Resolve a typed Fabric config into a runnable plan.
-- [resolve_run_plan_from_effective_config](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-resolve-run-plan-from-effective-config): Resolve execution planning metadata from merged effective config.

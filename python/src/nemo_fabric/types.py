@@ -541,11 +541,11 @@ class _TelemetryConfig(_ConfigMapping):
         return value
 
 
-class _ResolvedFabricConfig(_ConfigMapping):
-    """Mutable typed representation of a Fabric agent configuration.
+class _FabricConfigSnapshot(_ConfigMapping):
+    """Typed snapshot of the Fabric configuration stored in a run plan.
 
-    It is mutable while callers compose a job, then copied into immutable
-    resolution and plan snapshots. Unknown fields survive round trips through
+    It is reconstructed from the native plan payload and exposed through the
+    immutable ``RunPlan`` mapping. Unknown fields survive round trips through
     ``extra_fields``.
 
     Attributes:
@@ -629,7 +629,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "_ResolvedFabricConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_FabricConfigSnapshot":
         """Build a typed agent config from a mapping."""
 
         data = _mapping(value, "FabricConfig")
@@ -715,7 +715,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
         url: str,
         exposure: str = "harness_native",
         extra_fields: Mapping[str, Any] | None = None,
-    ) -> "_ResolvedFabricConfig":
+    ) -> "_FabricConfigSnapshot":
         """Add or replace a named MCP server and return this config."""
 
         self.mcp.add_server(
@@ -727,13 +727,13 @@ class _ResolvedFabricConfig(_ConfigMapping):
         )
         return self
 
-    def add_skill_path(self, path: str | Path) -> "_ResolvedFabricConfig":
+    def add_skill_path(self, path: str | Path) -> "_FabricConfigSnapshot":
         """Add a skill path and return this config."""
 
         self.skills.add_path(path)
         return self
 
-    def block_tools(self, *tools: str) -> _ResolvedFabricConfig:
+    def block_tools(self, *tools: str) -> _FabricConfigSnapshot:
         """Block adapter-native tool names or toolsets and return this config."""
 
         self.tools.block(*tools)
@@ -747,7 +747,7 @@ class _ResolvedFabricConfig(_ConfigMapping):
         observability: Mapping[str, Any] | None = None,
         components: Sequence[Mapping[str, Any]] | None = None,
         policy: Mapping[str, Any] | None = None,
-    ) -> "_ResolvedFabricConfig":
+    ) -> "_FabricConfigSnapshot":
         """Enable NeMo Relay telemetry and return this config."""
 
         self.telemetry.enable_relay()
@@ -934,51 +934,33 @@ class RuntimeCapabilities(FabricMapping):
         return data
 
 
-class EffectiveConfig(FabricMapping):
-    """Immutable result of resolving a complete typed config.
-
-    Attributes:
-        agent_name: Resolved agent name.
-        base_dir: Base directory used to resolve relative paths.
-        config: Fully resolved typed ``FabricConfig``.
-    """
-
-    agent_name: str
-    base_dir: Path
-    config: _ResolvedFabricConfig
-    _fields = frozenset({"agent_name", "base_dir", "config"})
-
-    @classmethod
-    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        if "base_dir" not in data:
-            raise FabricConfigError("EffectiveConfig base_dir is required")
-        data["base_dir"] = Path(data["base_dir"])
-        data["config"] = _ResolvedFabricConfig.from_mapping(data.get("config", {}))
-        return data
-
-
 class RunPlan(FabricMapping):
     """Immutable execution plan produced before a runtime is started.
 
     Attributes:
-        effective_config: Resolved configuration snapshot.
         agent_name: Resolved agent name.
+        base_dir: Base directory used to resolve relative paths.
+        config: Typed configuration snapshot.
         adapter: Resolved adapter identity.
         capabilities: Operations declared by the resolved runtime.
     """
 
-    effective_config: EffectiveConfig
     agent_name: str
+    base_dir: Path
+    config: _FabricConfigSnapshot
     adapter: AdapterInfo
     capabilities: RuntimeCapabilities
-    _fields = frozenset({"effective_config", "agent_name", "adapter", "capabilities"})
+    _fields = frozenset({"agent_name", "base_dir", "config", "adapter", "capabilities"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
         descriptor = data.get("adapter")
         if descriptor is None:
             descriptor = (data.get("adapter_descriptor") or {}).get("descriptor", {})
-        data["effective_config"] = EffectiveConfig.from_mapping(data["effective_config"])
+        if "base_dir" not in data:
+            raise FabricConfigError("RunPlan base_dir is required")
+        data["base_dir"] = Path(data["base_dir"])
+        data["config"] = _FabricConfigSnapshot.from_mapping(data.get("config", {}))
         data["adapter"] = AdapterInfo.from_mapping(descriptor)
         data["capabilities"] = RuntimeCapabilities.from_mapping(data.get("capabilities", {}))
         return data

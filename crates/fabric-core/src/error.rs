@@ -104,14 +104,6 @@ pub enum FabricError {
         /// Runtime handle id.
         runtime_id: String,
     },
-    /// A run plan contains conflicting copies of resolved configuration state.
-    #[error(
-        "run plan contains conflicting `{field}` values between its top-level and effective config"
-    )]
-    RunPlanMismatch {
-        /// Conflicting run-plan field.
-        field: &'static str,
-    },
     /// An environment provider is not runnable for the selected adapter in this POC.
     #[error("environment provider `{provider}` is not implemented for adapter `{adapter_kind:?}`")]
     UnsupportedEnvironmentProvider {

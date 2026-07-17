@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use nemo_fabric_core::{
     FabricConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
-    resolve_effective_config_from_config, resolve_run_plan_from_config, run_plan,
+    resolve_run_plan_from_config, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -18,14 +18,11 @@ fn version() -> PyResult<String> {
     Ok(nemo_fabric_core::version().to_string())
 }
 
-/// Resolve typed config JSON into effective config and return JSON.
+/// Execute the Rust experimentation CLI using arguments supplied by the console bridge.
 #[pyfunction]
-#[pyo3(signature = (config_json, base_dir=None))]
-fn resolve_config(config_json: String, base_dir: Option<String>) -> PyResult<String> {
-    let config = parse_config(config_json)?;
-    let effective = resolve_effective_config_from_config(config, resolve_context(base_dir))
-        .map_err(to_py_error)?;
-    to_json(&effective)
+fn cli_main(args: Vec<String>) -> PyResult<()> {
+    nemo_fabric_cli::app::execute_from(std::iter::once("nemo-fabric".to_string()).chain(args))
+        .map_err(PyRuntimeError::new_err)
 }
 
 /// Resolve typed config JSON into a runnable plan and return JSON.
@@ -136,7 +133,7 @@ fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyRe
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
-    m.add_function(wrap_pyfunction!(resolve_config, m)?)?;
+    m.add_function(wrap_pyfunction!(cli_main, m)?)?;
     m.add_function(wrap_pyfunction!(plan_config, m)?)?;
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
@@ -170,10 +167,7 @@ fn parse_run_request(contents: String) -> PyResult<RunRequest> {
 }
 
 fn parse_run_plan(contents: String) -> PyResult<RunPlan> {
-    let plan: RunPlan = serde_json::from_str(&contents)
-        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-    plan.validate_consistency().map_err(to_py_error)?;
-    Ok(plan)
+    serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
 }
 
 fn parse_runtime_handle(contents: String) -> PyResult<RuntimeHandle> {

@@ -16,7 +16,6 @@ import nemo_fabric.errors as fabric_errors
 import pytest
 from nemo_fabric import AdapterInfo
 from nemo_fabric import DoctorReport
-from nemo_fabric import EffectiveConfig
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import Fabric
 from nemo_fabric import FabricCapabilityError
@@ -45,7 +44,7 @@ from nemo_fabric import RuntimeHandle
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
 from nemo_fabric import ToolsConfig
-from nemo_fabric.types import _ResolvedFabricConfig
+from nemo_fabric.types import _FabricConfigSnapshot
 from nemo_fabric.types import _ToolsConfig
 from pydantic import ValidationError
 
@@ -59,7 +58,8 @@ def test_public_contract_has_no_unreleased_aliases():
     for name in ("plan_config", "run_config", "doctor_config", "start", "start_config"):
         assert not hasattr(Fabric, name)
 
-    for name in ("resolve", "plan", "doctor", "run", "start_runtime"):
+    assert not hasattr(Fabric, "resolve")
+    for name in ("plan", "doctor", "run", "start_runtime"):
         assert not get_overloads(getattr(Fabric, name)), name
 
     assert not hasattr(fabric_errors, "FabricCliError")
@@ -200,7 +200,7 @@ def test_typed_tools_config_serializes_blocked_policy():
 
 
 def test_run_plan_config_block_tools_emits_canonical_shape():
-    config = _ResolvedFabricConfig.from_mapping(_plan()["config"])
+    config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
 
     config.block_tools("browser", "shell", "browser")
 
@@ -383,14 +383,11 @@ def test_inspection_models_are_typed_read_only_mappings():
     plan = RunPlan.from_mapping(
         {
             "agent_name": "demo",
-            "effective_config": {
-                "agent_name": "demo",
-                "base_dir": ".",
-                "config": {
-                    "metadata": {"name": "demo"},
-                    "harness": {"adapter_id": "test.fabric.shim"},
-                    "runtime": {"input_schema": "chat"},
-                },
+            "base_dir": ".",
+            "config": {
+                "metadata": {"name": "demo"},
+                "harness": {"adapter_id": "test.fabric.shim"},
+                "runtime": {"input_schema": "chat"},
             },
             "adapter_descriptor": {
                 "descriptor": {
@@ -410,24 +407,23 @@ def test_inspection_models_are_typed_read_only_mappings():
         }
     )
 
-    assert isinstance(plan.effective_config, EffectiveConfig)
     assert isinstance(plan.adapter, AdapterInfo)
     assert isinstance(plan.capabilities, RuntimeCapabilities)
-    assert plan.effective_config.base_dir == Path(".")
+    assert plan.base_dir == Path(".")
     assert plan.adapter.harness == "hermes"
     assert "harness_type" not in plan.adapter
     assert plan.adapter.extra_fields["future"] == "value"
     assert plan.capabilities.extra_fields["future_capability"] == "declared"
     resolved = plan.to_mapping()
-    plan.effective_config.config.metadata.name = "mutated"
+    plan.config.metadata.name = "mutated"
     assert plan.to_mapping() == resolved
     with pytest.raises(TypeError):
         plan["agent_name"] = "mutated"  # type: ignore[index]
 
 
-def test_resolved_config_rejects_removed_profiles_and_missing_base_dir():
+def test_run_plan_config_rejects_removed_profiles_and_missing_base_dir():
     with pytest.raises(FabricConfigError, match="profiles are no longer supported"):
-        _ResolvedFabricConfig.from_mapping(
+        _FabricConfigSnapshot.from_mapping(
             {
                 "metadata": {"name": "demo"},
                 "harness": {"adapter_id": "test.fabric.shim"},
@@ -436,13 +432,19 @@ def test_resolved_config_rejects_removed_profiles_and_missing_base_dir():
         )
 
     with pytest.raises(FabricConfigError, match="base_dir is required"):
-        EffectiveConfig.from_mapping(
+        RunPlan.from_mapping(
             {
                 "agent_name": "demo",
                 "config": {
                     "metadata": {"name": "demo"},
                     "harness": {"adapter_id": "test.fabric.shim"},
                 },
+                "adapter": {
+                    "adapter_id": "test.fabric.shim",
+                    "harness": "shim",
+                    "adapter_kind": "python",
+                },
+                "capabilities": {},
             }
         )
 
@@ -489,7 +491,7 @@ def test_runtime_handle_requires_native_contract_fields(field):
 
 
 def test_run_plan_config_enable_relay_preserves_existing_relay_fields():
-    config = _ResolvedFabricConfig.from_mapping(_plan()["config"])
+    config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
 
     config.enable_relay(
         output_dir="./artifacts/relay",
@@ -505,7 +507,7 @@ def test_run_plan_config_enable_relay_preserves_existing_relay_fields():
 
 
 def test_run_plan_config_enable_native_preserves_existing_native_config():
-    config = _ResolvedFabricConfig.from_mapping(_plan()["config"])
+    config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
 
     config.telemetry.enable_native(config={"components": [{"kind": "observability"}]})
     config.telemetry.enable_native()
@@ -560,11 +562,7 @@ def _plan() -> dict[str, Any]:
     }
     return {
         "agent_name": "demo",
-        "effective_config": {
-            "agent_name": "demo",
-            "base_dir": ".",
-            "config": config,
-        },
+        "base_dir": ".",
         "config": config,
         "adapter_descriptor": {
             "descriptor": {
@@ -631,15 +629,6 @@ class NativeRecorder:
         self.config_base_dir_calls: list[str | None] = []
         self.stopped = 0
         self.fail_invoke = False
-
-    def resolve_config(
-        self,
-        config_json: str,
-        base_dir: str | None = None,
-    ) -> str:
-        assert json.loads(config_json)["metadata"]["name"] == "demo"
-        self.config_base_dir_calls.append(base_dir)
-        return json.dumps(_plan()["effective_config"])
 
     def plan_config(
         self,
@@ -1176,14 +1165,6 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
 
     client = NativeClient(NativeRecorder())
     client.plan(config)
-
-
-def test_resolve_accepts_a_complete_fabric_config():
-    client = NativeClient(NativeRecorder())
-
-    typed_config = client.resolve(_fabric_config())
-
-    assert typed_config["config"]["runtime"]["input_schema"] == "chat"
 
 
 async def test_start_runtime_returns_runtime_with_typed_handle():

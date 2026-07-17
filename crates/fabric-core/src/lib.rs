@@ -12,13 +12,12 @@ pub mod schema;
 pub use config::{
     ADAPTER_CONTRACT_VERSION, AdapterConfigSupport, AdapterDescriptor, AdapterDescriptorSource,
     AdapterKind, AdapterRequirements, AdapterTelemetryProviderSupport, AdapterTelemetrySupport,
-    CapabilityPlan, ControlLocation, EffectiveConfig, EnvironmentConfig, EnvironmentOwnership,
-    EnvironmentPlan, FabricConfig, HarnessConfig, McpConfig, McpExposure, McpServerPlan,
-    MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor,
-    RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
+    CapabilityPlan, ControlLocation, EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan,
+    FabricConfig, HarnessConfig, McpConfig, McpExposure, McpServerPlan, MetadataConfig,
+    ModelConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, RunPlan,
+    RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
     TelemetryProvider, TelemetryProviderConfig, load_adapter_descriptor,
-    resolve_effective_config_from_config, resolve_run_plan_from_config,
-    resolve_run_plan_from_effective_config,
+    resolve_run_plan_from_config,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};

@@ -41,7 +41,6 @@ from nemo_fabric.types import ArtifactManifest
 from nemo_fabric.types import ArtifactRef
 from nemo_fabric.types import DoctorCheck
 from nemo_fabric.types import DoctorReport
-from nemo_fabric.types import EffectiveConfig
 from nemo_fabric.types import ErrorInfo
 from nemo_fabric.types import FabricEvent
 from nemo_fabric.types import RunOutput
@@ -57,7 +56,6 @@ __all__ = [
     "ArtifactRef",
     "DoctorCheck",
     "DoctorReport",
-    "EffectiveConfig",
     "EnvironmentConfig",
     "ErrorInfo",
     "Fabric",

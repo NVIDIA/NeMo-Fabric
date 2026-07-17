@@ -1,9 +1,0 @@
-{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "nvidia.fabric.claude",
-  "harness": "claude",
-  "adapter_kind": "python",
-  "runner": {"module": "nemo_fabric_adapters.claude.adapter", "callable": "run"},
-  "config": {"accepts": ["models", "tools", "tools.blocked", "mcp", "skills", "telemetry"]},
-  "telemetry": {"providers": {"relay": {"outputs": ["atif", "otel", "openinference"], "integration_modes": ["hooks", "gateway"]}}}
-}

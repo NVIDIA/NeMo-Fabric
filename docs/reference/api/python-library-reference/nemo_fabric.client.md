@@ -87,48 +87,13 @@ Planning resolves the selected adapter and reports optional runtime capabilities
 
 
 **Returns:**
- A ``RunPlan`` containing the effective config, adapter, and declared runtime capabilities.
+ A ``RunPlan`` containing the canonical config, path context, adapter, and declared runtime capabilities.
 
 
 
 **Raises:**
 
  - <b>`FabricConfigError`</b>:  If the config or adapter resolution is invalid.
- - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
-
----
-
-
-### <kbd>method</kbd> `resolve`
-
-```python
-resolve(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None
-) → EffectiveConfig
-```
-
-Resolve a complete typed configuration.
-
-Resolution validates and normalizes configuration but does not resolve an adapter or compute runtime capabilities. Use ``plan()`` when those execution details are required.
-
-
-
-**Args:**
-
- - <b>`config`</b>:  Complete typed ``FabricConfig``. Raw mappings are not  accepted; convert them with  ``FabricConfig.from_mapping()``.
- - <b>`base_dir`</b>:  Base directory for resolving relative paths.
-
-
-
-**Returns:**
- The normalized ``EffectiveConfig`` snapshot.
-
-
-
-**Raises:**
-
- - <b>`FabricConfigError`</b>:  If the config is invalid.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
 
 ---

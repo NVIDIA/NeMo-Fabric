@@ -204,9 +204,8 @@ def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
     adapter = load_codex_adapter()
 
     payload = {
-        "effective_config": {
-            "config_root": str(tmp_path),
-            "config": {
+        "base_dir": str(tmp_path),
+        "config": {
                 "harness": {
                     "settings": {
                         "sandbox": "workspace-write",
@@ -220,7 +219,6 @@ def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
                     }
                 },
                 "runtime": {},
-            },
         },
         "runtime_context": {
             "runtime_id": "harbor-test",

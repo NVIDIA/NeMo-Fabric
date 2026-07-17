@@ -88,7 +88,7 @@ def test_variants_plan_from_complete_configs():
 
     for config in (hermes_config(), codex_config(), claude_config()):
         plan = client.plan(config, base_dir=BASE_DIR)
-        assert plan.effective_config.base_dir == BASE_DIR
+        assert plan.base_dir == BASE_DIR
         assert plan.agent_name == "code-review-agent"
         assert plan.adapter.adapter_id == config.harness.adapter_id
 

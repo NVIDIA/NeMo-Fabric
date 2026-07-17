@@ -54,20 +54,16 @@ def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("request") or {}
 
 
-def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("effective_config") or {}
-
-
 def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return effective_config(payload).get("config") or {}
+    return payload.get("config") or {}
 
 
 def base_dir(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("base_dir") or payload.get("base_dir") or "."
+    return payload.get("base_dir") or "."
 
 
 def agent_name(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("agent_name") or payload.get("agent_name") or "fabric-agent"
+    return payload.get("agent_name") or "fabric-agent"
 
 
 def load_payload() -> dict[str, Any]:

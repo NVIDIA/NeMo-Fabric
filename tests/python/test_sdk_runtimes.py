@@ -22,11 +22,7 @@ def _plan() -> dict[str, Any]:
     }
     return {
         "agent_name": "demo",
-        "effective_config": {
-            "agent_name": "demo",
-            "base_dir": ".",
-            "config": config,
-        },
+        "base_dir": ".",
         "config": config,
         "adapter_descriptor": {
             "descriptor": {

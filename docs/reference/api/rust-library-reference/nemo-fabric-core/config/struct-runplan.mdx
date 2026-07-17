@@ -2,26 +2,30 @@
 title: "Struct RunPlan"
 sidebar-title: "RunPlan"
 description: "Resolved Fabric run plan."
-position: 25
+position: 24
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RunPlan &#123;\n    pub effective_config: <a href=\"struct-effectiveconfig\">EffectiveConfig</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub adapter_descriptor: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-resolvedadapterdescriptor\">ResolvedAdapterDescriptor</a>&gt;,\n    pub resolution: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-resolutionstrategy\">ResolutionStrategy</a>&gt;,\n    pub environment_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentplan\">EnvironmentPlan</a>&gt;,\n    pub capability_plan: <a href=\"struct-capabilityplan\">CapabilityPlan</a>,\n    pub capabilities: <a href=\"struct-runtimecapabilities\">RuntimeCapabilities</a>,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryplan\">TelemetryPlan</a>&gt;,\n    pub base_dir: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RunPlan &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub base_dir: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n    pub adapter_descriptor: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-resolvedadapterdescriptor\">ResolvedAdapterDescriptor</a>&gt;,\n    pub resolution: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-resolutionstrategy\">ResolutionStrategy</a>&gt;,\n    pub environment_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentplan\">EnvironmentPlan</a>&gt;,\n    pub capability_plan: <a href=\"struct-capabilityplan\">CapabilityPlan</a>,\n    pub capabilities: <a href=\"struct-runtimecapabilities\">RuntimeCapabilities</a>,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryplan\">TelemetryPlan</a>&gt;,\n&#125;"}} /></pre>
 
 Resolved Fabric run plan.
 
 ## Fields
 
-### `effective_config: EffectiveConfig`
-
-Resolved typed configuration and path context used by this plan.
-
 ### `agent_name: String`
 
 Stable agent name.
+
+### `base_dir: PathBuf`
+
+Base directory used to resolve relative Fabric paths.
+
+### `config: FabricConfig`
+
+Complete typed Fabric config.
 
 ### `adapter_descriptor: Option<ResolvedAdapterDescriptor>`
 
@@ -46,26 +50,6 @@ Lifecycle behavior implemented by the selected runtime path.
 ### `telemetry_plan: Option<TelemetryPlan>`
 
 Resolved telemetry pass-through plan.
-
-### `base_dir: PathBuf`
-
-Base directory used to resolve relative Fabric paths.
-
-### `config: FabricConfig`
-
-Complete typed Fabric config.
-
-## Implementations
-
-### `impl RunPlan`
-
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
-
-#### `validate_consistency`
-
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn validate_consistency(&amp;self) -&gt; <a href=\"../error/type-result\">Result</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.unit.html\">()</a>&gt;"}} /></pre>
-
-Reject conflicting duplicated state before a plan enters a lifecycle boundary.
 
 ## Trait Implementations
 

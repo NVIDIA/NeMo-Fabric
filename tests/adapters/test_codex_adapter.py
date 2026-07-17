@@ -20,10 +20,9 @@ def codex_payload_fixture(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     return {
-        "effective_config": {
-            "agent_name": "codex-test",
-            "base_dir": str(tmp_path),
-            "config": {
+        "agent_name": "codex-test",
+        "base_dir": str(tmp_path),
+        "config": {
                 "harness": {
                     "adapter_id": "nvidia.fabric.codex",
                     "settings": {
@@ -41,7 +40,6 @@ def codex_payload_fixture(tmp_path):
                     }
                 },
                 "runtime": {},
-            },
         },
         "runtime_context": {
             "runtime_id": "runtime-1",
@@ -149,7 +147,7 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
     os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
     os.environ["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] = "parent-codex"
     os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
-    codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
+    codex_payload["config"]["harness"]["settings"]["env"] = {
         "CODEX_EXPLICIT": "forward-me"
     }
 
@@ -196,7 +194,7 @@ def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_pa
     codex_bin = tmp_path / "bin" / "codex"
     codex_bin.parent.mkdir()
     codex_bin.touch()
-    codex_payload["effective_config"]["config"]["harness"]["settings"][
+    codex_payload["config"]["harness"]["settings"][
         "codex_bin"
     ] = str(codex_bin)
 
@@ -210,19 +208,19 @@ def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_pa
 def test_sdk_resolves_relative_codex_runtime_from_base_dir(
     codex_payload, codex_bin
 ):
-    codex_payload["effective_config"]["config"]["harness"]["settings"][
+    codex_payload["config"]["harness"]["settings"][
         "codex_bin"
     ] = codex_bin
 
     config = adapter.sdk_config(codex_payload, relay=None)
 
-    base_dir = Path(codex_payload["effective_config"]["base_dir"])
+    base_dir = Path(codex_payload["base_dir"])
     assert config.codex_bin == str((base_dir / codex_bin).resolve())
 
 
 def test_sdk_keeps_absolute_codex_runtime_path(codex_payload, tmp_path):
     codex_bin = tmp_path / "bin" / ".." / "codex"
-    codex_payload["effective_config"]["config"]["harness"]["settings"][
+    codex_payload["config"]["harness"]["settings"][
         "codex_bin"
     ] = str(codex_bin)
 
@@ -294,7 +292,7 @@ def test_incomplete_sdk_turn_is_failed_without_persisting_thread(
 
 
 def test_selected_model_rejects_unsupported_provider(codex_payload, mock_codex):
-    model = codex_payload["effective_config"]["config"]["models"]["default"]
+    model = codex_payload["config"]["models"]["default"]
     model["provider"] = "nvidia"
 
     output = adapter.run(codex_payload)
@@ -415,7 +413,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     assert relay.gateway.executable == executable
     assert relay.gateway.url == "http://127.0.0.1:43210"
     resolve.assert_called_once_with(
-        Path(codex_payload["effective_config"]["base_dir"]).resolve(),
+        Path(codex_payload["base_dir"]).resolve(),
         "nemo-relay",
     )
     contract.assert_called_once_with(executable)
@@ -462,7 +460,7 @@ def test_relay_cleanup_failure_changes_success_to_failure(
 def test_native_sdk_controls_and_telemetry_are_request_scoped(
     codex_payload, mock_codex
 ):
-    settings = codex_payload["effective_config"]["config"]["harness"]["settings"]
+    settings = codex_payload["config"]["harness"]["settings"]
     settings.update(
         {
             "personality": "pragmatic",
@@ -529,7 +527,7 @@ def test_timeout_interrupts_native_turn_and_closes_sdk(
 
     mock_blocking_thread.handle.run.side_effect = block
     mock_codex.next_thread = mock_blocking_thread
-    codex_payload["effective_config"]["config"]["harness"]["settings"][
+    codex_payload["config"]["harness"]["settings"][
         "timeout_seconds"
     ] = 0.01
 
@@ -545,7 +543,7 @@ def test_timeout_interrupts_native_turn_and_closes_sdk(
     "setting", ["codex_command", "codex_args", "codex_profile", "skip_git_repo_check"]
 )
 def test_cli_only_settings_are_rejected(codex_payload, setting):
-    codex_payload["effective_config"]["config"]["harness"]["settings"][setting] = (
+    codex_payload["config"]["harness"]["settings"][setting] = (
         "legacy"
     )
 
@@ -587,8 +585,8 @@ def test_codex_config_resolves_sdk_adapter():
 
     assert plan.adapter.adapter_id == "nvidia.fabric.codex"
     assert plan.adapter.harness == "codex"
-    assert plan.effective_config.config.runtime.input_schema == "text"
-    assert plan.effective_config.config.harness.settings["reasoning_effort"] == "high"
+    assert plan.config.runtime.input_schema == "text"
+    assert plan.config.harness.settings["reasoning_effort"] == "high"
     unsupported = plan["capability_plan"]["unsupported"]
     assert not unsupported.get("skill_paths")
     assert not unsupported.get("mcp_servers")
@@ -611,7 +609,7 @@ def test_environment_preserves_runtime_telemetry_env(codex_payload):
             "CODEX_EXPLICIT": "telemetry",
         }
     }
-    codex_payload["effective_config"]["config"]["harness"]["settings"]["env"] = {
+    codex_payload["config"]["harness"]["settings"]["env"] = {
         "CODEX_EXPLICIT": "configured"
     }
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = "/tmp/parent-relay.json"

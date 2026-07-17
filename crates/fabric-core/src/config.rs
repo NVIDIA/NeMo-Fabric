@@ -972,26 +972,6 @@ pub fn load_adapter_descriptor(path: impl AsRef<Path>) -> Result<AdapterDescript
     Ok(descriptor)
 }
 
-/// Resolve a typed Fabric config into an effective config.
-pub fn resolve_effective_config_from_config(
-    config: FabricConfig,
-    context: ResolveContext,
-) -> Result<EffectiveConfig> {
-    validate_config(&config)?;
-    let supplied_base_dir = context.base_dir;
-    let base_dir = std::path::absolute(&supplied_base_dir)
-        .map(normalize_path)
-        .map_err(|source| FabricError::ResolveBaseDirectory {
-            path: supplied_base_dir,
-            source,
-        })?;
-    Ok(EffectiveConfig {
-        agent_name: config.metadata.name.clone(),
-        base_dir,
-        config,
-    })
-}
-
 fn validate_config(config: &FabricConfig) -> Result<()> {
     if config.harness.adapter_id.trim().is_empty() {
         return Err(FabricError::UnknownAdapter {
@@ -1010,7 +990,15 @@ pub fn resolve_run_plan_from_config(
     config: FabricConfig,
     context: ResolveContext,
 ) -> Result<RunPlan> {
-    resolve_run_plan_from_effective_config(resolve_effective_config_from_config(config, context)?)
+    validate_config(&config)?;
+    let supplied_base_dir = context.base_dir;
+    let base_dir = std::path::absolute(&supplied_base_dir)
+        .map(normalize_path)
+        .map_err(|source| FabricError::ResolveBaseDirectory {
+            path: supplied_base_dir,
+            source,
+        })?;
+    resolve_run_plan(config, base_dir)
 }
 
 fn read_json<T>(path: &Path) -> Result<T>
@@ -1027,12 +1015,7 @@ where
     })
 }
 
-/// Resolve execution planning metadata from merged effective config.
-pub fn resolve_run_plan_from_effective_config(
-    effective_config: EffectiveConfig,
-) -> Result<RunPlan> {
-    let config = effective_config.config.clone();
-    let base_dir = effective_config.base_dir.clone();
+fn resolve_run_plan(config: FabricConfig, base_dir: PathBuf) -> Result<RunPlan> {
     let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir)?;
     let descriptor = adapter_descriptor
         .as_ref()
@@ -1044,16 +1027,15 @@ pub fn resolve_run_plan_from_effective_config(
     let capabilities = resolve_runtime_capabilities(&config, descriptor);
     let telemetry_plan = resolve_telemetry_plan(&config, descriptor)?;
     Ok(RunPlan {
-        agent_name: effective_config.agent_name.clone(),
+        agent_name: config.metadata.name.clone(),
+        base_dir,
+        config,
         adapter_descriptor,
         resolution,
         environment_plan,
         capability_plan,
         capabilities,
         telemetry_plan,
-        base_dir,
-        config,
-        effective_config,
     })
 }
 
@@ -1438,24 +1420,15 @@ fn normalize_path(path: PathBuf) -> PathBuf {
         .collect()
 }
 
-/// Resolved Fabric config with explicit path context.
+/// Resolved Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct EffectiveConfig {
+pub struct RunPlan {
     /// Stable agent name.
     pub agent_name: String,
     /// Base directory used to resolve relative Fabric paths.
     pub base_dir: PathBuf,
     /// Complete typed Fabric config.
     pub config: FabricConfig,
-}
-
-/// Resolved Fabric run plan.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct RunPlan {
-    /// Resolved typed configuration and path context used by this plan.
-    pub effective_config: EffectiveConfig,
-    /// Stable agent name.
-    pub agent_name: String,
     /// Adapter descriptor resolved for this plan, when configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adapter_descriptor: Option<ResolvedAdapterDescriptor>,
@@ -1473,28 +1446,6 @@ pub struct RunPlan {
     /// Resolved telemetry pass-through plan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry_plan: Option<TelemetryPlan>,
-    /// Base directory used to resolve relative Fabric paths.
-    pub base_dir: PathBuf,
-    /// Complete typed Fabric config.
-    pub config: FabricConfig,
-}
-
-impl RunPlan {
-    /// Reject conflicting duplicated state before a plan enters a lifecycle boundary.
-    pub fn validate_consistency(&self) -> Result<()> {
-        if self.agent_name != self.effective_config.agent_name {
-            return Err(FabricError::RunPlanMismatch {
-                field: "agent_name",
-            });
-        }
-        if self.base_dir != self.effective_config.base_dir {
-            return Err(FabricError::RunPlanMismatch { field: "base_dir" });
-        }
-        if self.config != self.effective_config.config {
-            return Err(FabricError::RunPlanMismatch { field: "config" });
-        }
-        Ok(())
-    }
 }
 
 /// Lifecycle behavior implemented by a resolved runtime path.
@@ -1567,7 +1518,7 @@ pub struct CapabilityPlan {
     /// Capabilities that are configured but not executable by this Fabric build.
     #[serde(default)]
     pub unsupported: CapabilityTargetPlan,
-    /// Routing decisions made while resolving the effective config.
+    /// Routing decisions made while planning the configured capabilities.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub routes: Vec<CapabilityRoute>,
 }
@@ -1704,7 +1655,6 @@ mod tests {
 
         assert_eq!(plan.agent_name, "typed-agent");
         assert_eq!(plan.base_dir, base_dir);
-        assert_eq!(plan.effective_config.base_dir, plan.base_dir);
         assert_eq!(
             plan.capability_plan.skill_paths,
             vec![plan.base_dir.join("skills/review")]
@@ -1740,32 +1690,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_conflicting_duplicated_plan_state() {
-        let mut plan = resolve_run_plan_from_config(
-            typed_config("nvidia.fabric.hermes"),
-            ResolveContext::new(repository_root()),
-        )
-        .expect("typed plan");
-        plan.effective_config.base_dir = plan.base_dir.join("other");
-
-        assert!(matches!(
-            plan.validate_consistency(),
-            Err(FabricError::RunPlanMismatch { field: "base_dir" })
-        ));
-    }
-
-    #[test]
     fn typed_config_round_trip_has_no_file_provenance() {
-        let effective = resolve_effective_config_from_config(
+        let plan = resolve_run_plan_from_config(
             typed_config("nvidia.fabric.hermes"),
             ResolveContext::new("/tmp/fabric-base"),
         )
-        .expect("effective config");
-        let value = serde_json::to_value(effective).expect("effective config JSON");
+        .expect("run plan");
+        let value = serde_json::to_value(plan).expect("run plan JSON");
 
         assert_eq!(value["base_dir"], "/tmp/fabric-base");
         assert_eq!(value["config"]["metadata"]["name"], "typed-agent");
-        assert_eq!(value.as_object().map(serde_json::Map::len), Some(3));
+        assert!(value.get("effective_config").is_none());
     }
 
     #[test]

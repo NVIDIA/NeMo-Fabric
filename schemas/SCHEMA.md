@@ -23,8 +23,8 @@ The core schema generator exports the current public typed contract.
 - `adapter-descriptor`: minimal adapter descriptor consumed by Fabric. Each
   descriptor declares a `contract_version`; Fabric rejects descriptors for
   unsupported adapter contracts during planning.
-- `effective-config`: validated config plus its explicit base directory.
-- `run-plan`: executable plan derived from effective config.
+- `run-plan`: executable plan containing the canonical typed config, absolute
+  base directory, selected adapter, and derived execution metadata.
 
 ### Adapter Invocation
 

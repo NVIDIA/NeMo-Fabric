@@ -66,7 +66,7 @@ nemo-fabric run --preset scripted --input "fabric works"
 Copy an editable Python starting point with:
 
 ```bash
-nemo-fabric example init examples.code_review_agent ./my_agent
+nemo-fabric example init code-review ./my-agent --language python
 ```
 
 See [CLI.md](CLI.md) for the CLI's intent and boundaries.
@@ -164,8 +164,8 @@ authentication, and execution details.
 - **Variants:** ordinary Python functions copy and modify complete configs to
   vary the harness, model, MCP, tools, skills, telemetry, or environment.
 - **Experimentation CLI:** presets provide quick probes, examples provide
-  editable starting points, and `--factory module:callable` executes a
-  user-owned config through the public SDK.
+  maintained runnable workflows, and `example init` generates editable Python
+  or Rust applications that call a language API directly.
 - **Tools policy:** use top-level `tools.blocked` for harness-neutral blocked
   tool policy. Names are interpreted by the selected adapter:
 
@@ -200,8 +200,8 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 
 - [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
-- [Experimentation CLI](CLI.md): presets, examples, factories, and explicit
-  non-goals.
+- [Experimentation CLI](CLI.md): presets, maintained examples, editable
+  application scaffolds, and explicit non-goals.
 - [Consumer integration skills](skills/README.md): repository-local coding-agent
   skills for integrating Fabric into an application through the Python SDK.
 - [Getting Started overview](docs/about-nemo-fabric/overview.mdx): interface

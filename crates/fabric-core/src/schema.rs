@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use schemars::schema_for;
 use serde_json::Value;
 
-use crate::config::{AdapterDescriptor, EffectiveConfig, FabricConfig, RunPlan};
+use crate::config::{AdapterDescriptor, FabricConfig, RunPlan};
 use crate::error::{FabricError, Result};
 use crate::runtime::{
     AdapterInvocation, ArtifactManifest, EnvironmentHandle, ErrorInfo, FabricEvent,
@@ -23,8 +23,6 @@ pub enum SchemaName {
     Agent,
     /// Adapter descriptor schema.
     AdapterDescriptor,
-    /// Effective merged config schema.
-    EffectiveConfig,
     /// Resolved run plan schema.
     RunPlan,
     /// Adapter-facing invocation payload schema.
@@ -51,10 +49,9 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 13] = [
         Self::Agent,
         Self::AdapterDescriptor,
-        Self::EffectiveConfig,
         Self::RunPlan,
         Self::AdapterInvocation,
         Self::RuntimeContext,
@@ -73,7 +70,6 @@ impl SchemaName {
         match self {
             Self::Agent => "agent",
             Self::AdapterDescriptor => "adapter-descriptor",
-            Self::EffectiveConfig => "effective-config",
             Self::RunPlan => "run-plan",
             Self::AdapterInvocation => "adapter-invocation",
             Self::RuntimeContext => "runtime-context",
@@ -98,7 +94,6 @@ impl SchemaName {
         match value {
             "agent" => Ok(Self::Agent),
             "adapter-descriptor" | "adapter_descriptor" => Ok(Self::AdapterDescriptor),
-            "effective-config" | "effective_config" => Ok(Self::EffectiveConfig),
             "run-plan" | "run_plan" => Ok(Self::RunPlan),
             "adapter-invocation" | "adapter_invocation" => Ok(Self::AdapterInvocation),
             "runtime-context" | "runtime_context" => Ok(Self::RuntimeContext),
@@ -126,7 +121,6 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
     match schema {
         SchemaName::Agent => to_value(schema_for!(FabricConfig)),
         SchemaName::AdapterDescriptor => to_value(schema_for!(AdapterDescriptor)),
-        SchemaName::EffectiveConfig => to_value(schema_for!(EffectiveConfig)),
         SchemaName::RunPlan => to_value(schema_for!(RunPlan)),
         SchemaName::AdapterInvocation => to_value(schema_for!(AdapterInvocation)),
         SchemaName::RuntimeContext => to_value(schema_for!(RuntimeContext)),

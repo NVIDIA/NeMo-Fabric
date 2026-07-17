@@ -95,7 +95,7 @@
           "description": "Capabilities mapped into the harness-native surface."
         },
         "routes": {
-          "description": "Routing decisions made while resolving the effective config.",
+          "description": "Routing decisions made while planning the configured capabilities.",
           "items": {
             "$ref": "#/$defs/CapabilityRoute"
           },
@@ -215,29 +215,6 @@
           "type": "string"
         }
       ]
-    },
-    "EffectiveConfig": {
-      "description": "Resolved Fabric config with explicit path context.",
-      "properties": {
-        "agent_name": {
-          "description": "Stable agent name.",
-          "type": "string"
-        },
-        "base_dir": {
-          "description": "Base directory used to resolve relative Fabric paths.",
-          "type": "string"
-        },
-        "config": {
-          "$ref": "#/$defs/FabricConfig",
-          "description": "Complete typed Fabric config."
-        }
-      },
-      "required": [
-        "agent_name",
-        "base_dir",
-        "config"
-      ],
-      "type": "object"
     },
     "EnvironmentConfig": {
       "additionalProperties": true,
@@ -1495,6 +1472,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Adapter-facing invocation payload.",
   "properties": {
+    "agent_name": {
+      "description": "Stable agent name.",
+      "type": "string"
+    },
+    "base_dir": {
+      "description": "Absolute base directory used to resolve relative Fabric paths.",
+      "type": "string"
+    },
     "capability_plan": {
       "$ref": "#/$defs/CapabilityPlan",
       "default": {
@@ -1512,9 +1497,9 @@
       },
       "description": "Derived capability routing plan for the selected adapter."
     },
-    "effective_config": {
-      "$ref": "#/$defs/EffectiveConfig",
-      "description": "Resolved typed configuration with explicit path context."
+    "config": {
+      "$ref": "#/$defs/FabricConfig",
+      "description": "Complete typed Fabric config."
     },
     "request": {
       "$ref": "#/$defs/RunRequest",
@@ -1537,7 +1522,9 @@
     }
   },
   "required": [
-    "effective_config",
+    "agent_name",
+    "base_dir",
+    "config",
     "runtime_context",
     "request"
   ],

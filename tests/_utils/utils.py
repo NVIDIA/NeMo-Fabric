@@ -2,16 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
-import os
-import subprocess
-import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-FABRIC_COMMAND = (sys.executable, "-m", "nemo_fabric.cli")
-
 
 def _relay_event_total_tokens(event: dict) -> int:
     profile = event.get("category_profile") or {}
@@ -64,31 +57,6 @@ def assert_semantic_relay_artifacts(
     assert any(
         expected_response.lower() in message.lower() for message in agent_messages
     ), agent_messages
-
-
-def run_fabric_cli(
-    *args: object,
-    stdin: str | None = None,
-    timeout: float = 60.0,
-) -> subprocess.CompletedProcess[str]:
-    """Run the Fabric CLI from the repository root and capture its output."""
-    env = os.environ.copy()
-    python_path = [str(REPO_ROOT / "python" / "src"), str(REPO_ROOT / "tests")]
-    if env.get("PYTHONPATH"):
-        python_path.append(env["PYTHONPATH"])
-    env["PYTHONPATH"] = os.pathsep.join(python_path)
-    return subprocess.run(
-        [*FABRIC_COMMAND, *(str(arg) for arg in args)],
-        cwd=REPO_ROOT,
-        env=env,
-        input=stdin,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=timeout,
-    )
-
-
 def assert_relay_disabled_native_observability(result: dict):
     """Assert telemetry-off runs still surface native harness evidence."""
 

@@ -55,7 +55,6 @@ pub struct DoctorReport {
 /// Inspect a resolved run plan without mutating the environment.
 pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
     let mut checks = Vec::new();
-    checks.push(check_plan_consistency(plan));
     checks.push(check_adapter_descriptor(plan));
     checks.push(check_resolution(plan));
     checks.extend(check_runtime_execution_surface(plan));
@@ -69,17 +68,6 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
         agent_name: plan.agent_name.clone(),
         status,
         checks,
-    }
-}
-
-fn check_plan_consistency(plan: &RunPlan) -> DoctorCheck {
-    match plan.validate_consistency() {
-        Ok(()) => check(
-            "plan.consistency",
-            DoctorStatus::Pass,
-            "run plan configuration state is internally consistent",
-        ),
-        Err(error) => check("plan.consistency", DoctorStatus::Fail, error.to_string()),
     }
 }
 

@@ -69,8 +69,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                 },
             }
         },
-        "effective_config": {
-            "config": {
+        "config": {
                 "harness": {
                     "settings": {
                         "model": "review",
@@ -91,7 +90,6 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                         "settings": {"base_url": "https://model.example/v1"},
                     }
                 },
-            }
         },
     }
 
@@ -144,11 +142,9 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
     # When max_iterations is unset the config layer must leave agent.max_turns
     # absent so Hermes applies its own default rather than a starving override.
     payload = {
-        "effective_config": {
-            "config": {
+        "config": {
                 "harness": {"settings": {}},
                 "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
-            }
         }
     }
 
@@ -161,11 +157,9 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
     # An explicit null max_iterations is treated like unset: agent.max_turns is
     # omitted so Hermes applies its own default instead of a starving override.
     payload = {
-        "effective_config": {
-            "config": {
+        "config": {
                 "harness": {"settings": {"max_iterations": None}},
                 "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
-            }
         }
     }
 
@@ -219,10 +213,9 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
                 },
             }
         },
-        "effective_config": {
-            "agent_name": "matrix-agent",
-            "base_dir": str(tmp_path),
-            "config": {
+        "agent_name": "matrix-agent",
+        "base_dir": str(tmp_path),
+        "config": {
                 "harness": {
                     "settings": {
                         "model": "review",
@@ -237,7 +230,6 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
                         "model": "nvidia/review-model",
                     }
                 },
-            },
         },
     }
 
@@ -274,11 +266,9 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
 
 def test_write_hermes_config_writes_file(tmp_path: Path):
     payload = {
-        "effective_config": {
-            "config": {
+        "config": {
                 "harness": {"settings": {}},
                 "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
-            }
         }
     }
 
@@ -407,10 +397,9 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     os.environ["TEST_API_KEY"] = "secret"
 
     payload = {
-        "effective_config": {
-            "agent_name": "demo",
-            "base_dir": str(tmp_path),
-            "config": {
+        "agent_name": "demo",
+        "base_dir": str(tmp_path),
+        "config": {
                 "harness": {
                     "settings": {
                         "hermes_home": "./hermes-home",
@@ -427,7 +416,6 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
                         "api_key_env": "TEST_API_KEY",
                     }
                 },
-            },
         },
         "runtime_context": {
             "runtime_id": "runtime-fabric-123",

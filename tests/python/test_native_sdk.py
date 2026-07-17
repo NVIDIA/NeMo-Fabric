@@ -70,13 +70,10 @@ def test_native_run_rejects_multiple_request_sources(hermes_shim_agent_dir: Path
 async def smoke(client: Fabric, fixture_agent: Path) -> None:
     example_config = base_config()
 
-    inspected = client.resolve(example_config, base_dir=BASE_DIR)
-    assert inspected["agent_name"] == "code-review-agent"
-    assert inspected.base_dir == BASE_DIR
-    assert inspected["config"]["metadata"]["name"] == "code-review-agent"
-
     plan = client.plan(example_config, base_dir=BASE_DIR)
     assert plan["agent_name"] == "code-review-agent"
+    assert plan.base_dir == BASE_DIR
+    assert plan.config.metadata.name == "code-review-agent"
     assert (
         plan["adapter_descriptor"]["descriptor"]["adapter_id"]
         == "nvidia.fabric.hermes"
@@ -90,9 +87,9 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
             "harness": {"adapter_id": "nvidia.fabric.hermes"},
         }
     )
-    minimal_resolved = client.resolve(minimal)
-    assert minimal_resolved.config.runtime.input_schema == "text"
-    assert minimal_resolved.config.runtime.output_schema == "text"
+    minimal_plan = client.plan(minimal)
+    assert minimal_plan.config.runtime.input_schema == "text"
+    assert minimal_plan.config.runtime.output_schema == "text"
 
     typed_config = FabricConfig.from_mapping(
         {
@@ -141,19 +138,14 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
             },
         }
     )
-    typed_config_resolved = client.resolve(
-        typed_config,
-        base_dir=fixture_agent,
-    )
     typed_plan = client.plan(
         typed_config,
         base_dir=fixture_agent,
     )
-    assert typed_config_resolved.agent_name == "typed-hermes-shim-agent"
     assert typed_plan["agent_name"] == "typed-hermes-shim-agent"
     assert typed_plan["adapter_descriptor"]["source"] == "local"
     assert typed_plan["telemetry_plan"]["relay_enabled"] is True
-    resolved_config = typed_config_resolved.config.to_mapping()
+    resolved_config = typed_plan.config.to_mapping()
     assert resolved_config["harness"]["adapter_id"] == "test.fabric.hermes_shim"
     assert resolved_config["harness"]["settings"]["workspace"] == "./repos/my-service"
     assert resolved_config["harness"]["settings"]["timeout_seconds"] == 30

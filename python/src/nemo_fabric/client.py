@@ -27,7 +27,6 @@ from nemo_fabric.runtime import (
 )
 from nemo_fabric.types import (
     DoctorReport,
-    EffectiveConfig,
     RunPlan,
     RunResult,
 )
@@ -55,45 +54,6 @@ class Fabric:
     multi-turn examples.
     """
 
-    def resolve(
-        self,
-        config: FabricConfig,
-        *,
-        base_dir: str | os.PathLike[str] | None = None,
-    ) -> EffectiveConfig:
-        """Resolve a complete typed configuration.
-
-        Resolution validates and normalizes configuration but does not resolve
-        an adapter or compute runtime capabilities. Use ``plan()`` when those
-        execution details are required.
-
-        Args:
-            config: Complete typed ``FabricConfig``. Raw mappings are not
-                accepted; convert them with
-                ``FabricConfig.from_mapping()``.
-            base_dir: Base directory for resolving relative paths.
-
-        Returns:
-            The normalized ``EffectiveConfig`` snapshot.
-
-        Raises:
-            FabricConfigError: If the config is invalid.
-            FabricNativeUnavailableError: If the native extension is not
-                installed.
-        """
-
-        native = self._require_native_module("resolve")
-        try:
-            raw = native.resolve_config(
-                _config_json(config),
-                _base_dir_arg(base_dir),
-            )
-            return EffectiveConfig.from_mapping(json.loads(raw))
-        except FabricError:
-            raise
-        except Exception as error:
-            raise FabricConfigError(str(error)) from error
-
     def plan(
         self,
         config: FabricConfig,
@@ -112,8 +72,8 @@ class Fabric:
             base_dir: Base directory for resolving relative paths.
 
         Returns:
-            A ``RunPlan`` containing the effective config, adapter, and
-            declared runtime capabilities.
+            A ``RunPlan`` containing the canonical config, path context,
+            adapter, and declared runtime capabilities.
 
         Raises:
             FabricConfigError: If the config or adapter resolution is invalid.

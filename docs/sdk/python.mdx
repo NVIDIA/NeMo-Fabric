@@ -96,7 +96,7 @@ Most application code works with four objects:
 | Concept | What It Represents | How Consumers Use It |
 | --- | --- | --- |
 | `FabricConfig` | Typed configuration for the harness, models, runtime, and capabilities. | Construct it from application config before planning or running. |
-| `RunPlan` | The resolved config, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
+| `RunPlan` | The canonical config and path context, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
 | `Runtime` | The Python object for one logical, stateful harness execution. | Use it to send ordered invocations and stop the execution. Use it as an async context manager for cleanup. |
 | `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, events, artifacts, and correlation IDs. |
 
@@ -204,7 +204,6 @@ multiple independent runtimes.
 
 | API | Async | Use When | Notes |
 | --- | --- | --- | --- |
-| `Fabric.resolve(config, base_dir=...)` | No | You need the normalized effective config without resolving an adapter. | Does not start a runtime. |
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
 | `Fabric.run(config, input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |

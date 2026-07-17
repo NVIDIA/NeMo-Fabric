@@ -175,8 +175,6 @@ print(plan.adapter.adapter_id, report.status)
   contents of `harness.settings`: an unknown or misspelled adapter setting still
   passes and is silently ignored unless the adapter reads it, so validate
   settings against the adapter's own docs and your integration tests.
-- Use `resolve(...)` when only the normalized effective config is needed, with
-  no adapter resolution.
 
 ## Consume Results And Handle Errors
 

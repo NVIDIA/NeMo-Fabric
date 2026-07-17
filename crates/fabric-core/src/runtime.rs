@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 
 use crate::config::{
     AdapterKind, CapabilityKind, CapabilityPlan, CapabilityTarget, ControlLocation,
-    EffectiveConfig, EnvironmentOwnership, RunPlan, TelemetryPlan,
+    EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
@@ -309,8 +309,12 @@ pub struct RuntimeTelemetryContext {
 /// Adapter-facing invocation payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterInvocation {
-    /// Resolved typed configuration with explicit path context.
-    pub effective_config: EffectiveConfig,
+    /// Stable agent name.
+    pub agent_name: String,
+    /// Absolute base directory used to resolve relative Fabric paths.
+    pub base_dir: PathBuf,
+    /// Complete typed Fabric config.
+    pub config: FabricConfig,
     /// Per-runtime/per-invocation execution context.
     pub runtime_context: RuntimeContext,
     /// Per-invocation request.
@@ -359,7 +363,6 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
 
 /// Resolve or attach to the execution environment context for a run plan.
 pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
-    plan.validate_consistency()?;
     let mut metadata = BTreeMap::new();
     let mut connection = BTreeMap::new();
     let (
@@ -443,7 +446,6 @@ pub fn invoke_runtime(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
-    plan.validate_consistency()?;
     validate_blocked_tools_support(plan)?;
     validate_runtime_handle(plan, runtime)?;
     match adapter_kind(plan) {
@@ -470,7 +472,6 @@ fn validate_blocked_tools_support(plan: &RunPlan) -> Result<()> {
 
 /// Stop or detach from a harness runtime.
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
-    plan.validate_consistency()?;
     validate_runtime_handle(plan, runtime)?;
     match runtime.adapter_kind {
         AdapterKind::Process => ProcessAdapter.stop(runtime),
@@ -1319,10 +1320,10 @@ fn adapter_invocation(
     artifacts: &ArtifactManifest,
     relay_config: Option<&RelayRuntimeConfig>,
 ) -> Result<AdapterInvocation> {
-    let mut effective_config = plan.effective_config.clone();
-    effective_config.base_dir = absolute_path(effective_config.base_dir)?;
     Ok(AdapterInvocation {
-        effective_config,
+        agent_name: plan.agent_name.clone(),
+        base_dir: absolute_path(plan.base_dir.clone())?,
+        config: plan.config.clone(),
         runtime_context: RuntimeContext {
             runtime_id: runtime.runtime_id.clone(),
             invocation_id: invocation.invocation_id.clone(),
