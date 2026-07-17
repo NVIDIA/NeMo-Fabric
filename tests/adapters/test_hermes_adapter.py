@@ -69,6 +69,7 @@ def test_finalize_relay_session_flushes_before_artifact_collection(monkeypatch):
         platform="fabric",
     )
     runtime._invoke_hook = invoke_hook
+    runtime._relay_session_pending = True
 
     from nemo_relay import subscribers
 
@@ -83,6 +84,37 @@ def test_finalize_relay_session_flushes_before_artifact_collection(monkeypatch):
         model="test-model",
         platform="fabric",
     )
+
+
+async def test_stop_does_not_refinalize_completed_relay_turn(monkeypatch):
+    invoke_hook = MagicMock()
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._relay_plugin_config = {"components": []}
+    runtime._agent = MagicMock(
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    runtime._session_db = MagicMock()
+    runtime._invoke_hook = invoke_hook
+    runtime._relay_session_pending = True
+
+    from nemo_relay import subscribers
+
+    flush = MagicMock()
+    monkeypatch.setattr(subscribers, "flush", flush)
+
+    runtime._finalize_relay_session()
+    await runtime.stop()
+
+    invoke_hook.assert_called_once_with(
+        "on_session_finalize",
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    flush.assert_called_once_with()
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():

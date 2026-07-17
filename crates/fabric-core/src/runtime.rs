@@ -455,6 +455,14 @@ struct RelayRuntimeConfig {
     env: BTreeMap<String, String>,
 }
 
+enum RelayConfigCorrelation<'a> {
+    Runtime,
+    Invocation {
+        invocation: &'a InvocationHandle,
+        request: &'a RunRequest,
+    },
+}
+
 struct LocalAdapterHost {
     child: Child,
     stdin: ChildStdin,
@@ -945,8 +953,7 @@ impl RuntimeAdapter for LocalHostAdapter {
         let relay_config = prepare_relay_runtime_config(
             plan,
             &runtime,
-            &start_invocation,
-            &start_request,
+            RelayConfigCorrelation::Runtime,
             &fabric_home,
             &mut artifacts,
         )?;
@@ -1716,8 +1723,10 @@ fn run_process_adapter(
     let relay_config = prepare_relay_runtime_config(
         plan,
         runtime,
-        &invocation,
-        &request,
+        RelayConfigCorrelation::Invocation {
+            invocation: &invocation,
+            request: &request,
+        },
         &fabric_home,
         &mut artifacts,
     )?;
@@ -1938,8 +1947,10 @@ fn run_python_adapter(
     let relay_config = prepare_relay_runtime_config(
         plan,
         runtime,
-        &invocation,
-        &request,
+        RelayConfigCorrelation::Invocation {
+            invocation: &invocation,
+            request: &request,
+        },
         &fabric_home,
         &mut artifacts,
     )?;
@@ -2788,8 +2799,7 @@ fn untracked_workspace_patch(workspace: &Path) -> Result<String> {
 fn prepare_relay_runtime_config(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
-    invocation: &InvocationHandle,
-    request: &RunRequest,
+    correlation: RelayConfigCorrelation<'_>,
     artifact_directory: &Path,
     artifacts: &mut ArtifactManifest,
 ) -> Result<Option<RelayRuntimeConfig>> {
@@ -2801,6 +2811,21 @@ fn prepare_relay_runtime_config(
     }
     if artifacts.root.is_none() {
         return Ok(None);
+    }
+    let mut fabric = serde_json::json!({
+        "agent_name": plan.agent_name.clone(),
+        "harness": harness(plan),
+        "adapter_id": adapter_id(plan),
+        "runtime_id": runtime.runtime_id.clone(),
+        "adapter_outputs": telemetry.adapter_outputs.clone(),
+    });
+    if let RelayConfigCorrelation::Invocation {
+        invocation,
+        request,
+    } = correlation
+    {
+        fabric["invocation_id"] = Value::String(invocation.invocation_id.clone());
+        fabric["request_id"] = Value::String(request.request_id.clone());
     }
     let relay_config = serde_json::json!({
         "schema_version": "fabric.relay/v1alpha1",
@@ -2816,15 +2841,7 @@ fn prepare_relay_runtime_config(
                 .clone()
                 .unwrap_or_else(|| Value::Object(Default::default())),
         },
-        "fabric": {
-            "agent_name": plan.agent_name.clone(),
-            "harness": harness(plan),
-            "adapter_id": adapter_id(plan),
-            "runtime_id": runtime.runtime_id.clone(),
-            "invocation_id": invocation.invocation_id.clone(),
-            "request_id": request.request_id.clone(),
-            "adapter_outputs": telemetry.adapter_outputs.clone(),
-        }
+        "fabric": fabric,
     });
     let contents =
         serde_json::to_string_pretty(&relay_config).map_err(FabricError::SerializeJson)?;

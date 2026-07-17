@@ -225,6 +225,7 @@ class HermesRuntime:
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_context: Any = None
         self._relay_context_entered = False
+        self._relay_session_pending = False
         self._relay_model_name = "unknown"
 
     async def start(self, payload: dict[str, Any]) -> None:
@@ -235,6 +236,7 @@ class HermesRuntime:
             )
 
         try:
+            self._relay_session_pending = False
             validate_hermes_telemetry_provider(payload)
             self._settings = common_utils.settings_payload(payload)
             self._model_config = common_utils.selected_model_config(payload)
@@ -368,6 +370,7 @@ class HermesRuntime:
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
         try:
+            self._relay_session_pending = self._relay_plugin_config is not None
             result, adapter_stdout = _invoke_hermes_turn(
                 agent=self._agent,
                 settings=self._settings,
@@ -418,6 +421,7 @@ class HermesRuntime:
             self._relay_plugin_config is None
             or self._agent is None
             or self._invoke_hook is None
+            or not self._relay_session_pending
         ):
             return
         self._invoke_hook(
@@ -426,6 +430,7 @@ class HermesRuntime:
             model=getattr(self._agent, "model", None) or self._relay_model_name,
             platform=getattr(self._agent, "platform", None) or "fabric",
         )
+        self._relay_session_pending = False
         # Relay subscriber callbacks are queued. The long-lived plugin context
         # does not flush them until runtime shutdown, but invocation results
         # must include artifacts produced by this turn.
@@ -449,6 +454,7 @@ class HermesRuntime:
         self._session_db = None
         self._relay_context = None
         self._relay_context_entered = False
+        self._relay_session_pending = False
         self._invoke_hook = None
         self._relay_plugin_config = None
         self._started = False
