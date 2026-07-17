@@ -20,10 +20,9 @@ into the caller.
 ## What Fabric gives you
 
 <CardGroup cols={2}>
-  <Card title="Portable configuration">
-    Use a versioned `agent.yaml` package or construct the same typed
-    `FabricConfig` in Python. Applications create variants from typed copies;
-    portable file packages can use ordered profiles.
+  <Card title="Typed configuration">
+    Construct a complete, versioned `FabricConfig` in Python. Applications
+    create variants with ordinary functions and typed copies.
   </Card>
   <Card title="Harness-neutral execution">
     Plan and invoke different harnesses through one Rust core, CLI, and Python
@@ -44,7 +43,7 @@ into the caller.
 ```text
 Application or evaluation harness
         |
-        |  Python SDK or fabric CLI
+        |  Python SDK or nemo-fabric experimentation CLI
         v
 NeMo Fabric Rust core
   config -> plan -> lifecycle
@@ -57,10 +56,10 @@ Hermes | Codex SDK | custom harness
 RunResult + artifacts + events + telemetry references
 ```
 
-The CLI and Python SDK are separate interfaces over the same core. File-backed
-and typed configs converge on the same resolved config and run-plan contracts.
-Adapters own harness-specific preparation and invocation; consumers own the
-request and the use of returned evidence.
+The experimentation CLI is a thin client of the Python SDK. Presets, examples,
+and user factories all produce a complete `FabricConfig` before using the same
+resolved config and run-plan contracts. Adapters own harness-specific
+preparation and invocation; consumers own the request and returned evidence.
 
 ## Quick start
 
@@ -129,20 +128,19 @@ requests, and multi-turn runtime examples.
 | --- | --- | --- |
 | Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
 | Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
-| `fabric` CLI | You are validating packages, debugging profiles, or running reproducible local/CI jobs | `fabric validate`, `plan`, `doctor`, `run`, and `chat` |
+| `nemo-fabric` CLI | You are experimenting with harnesses, running examples, or troubleshooting configs | `preset`, `example`, `plan`, `doctor`, `run`, and `chat` |
 | JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
 
-Use `agent.yaml` when the agent package is the portable artifact. Use
-`FabricConfig` when a platform already owns a larger job or deployment object
-and wants to pass only its Fabric slice in memory.
+Use `FabricConfig` as the canonical configuration contract. The CLI does not
+load a persisted YAML, TOML, or JSON Fabric config; its selectors obtain a
+typed config from maintained presets, examples, or user-owned Python factories.
 
 ## Core workflow
 
-1. **Configure** an agent package or typed `FabricConfig` with a harness adapter,
+1. **Configure** a typed `FabricConfig` with a harness adapter,
    environment, models, tools, skills, MCP, and telemetry.
 2. **Create variants** from deep copies to vary harness, model, environment, or
-   observability settings without mutating the base config. File-backed
-   packages may instead apply ordered profiles.
+   observability settings without mutating the base config.
 3. **Plan and diagnose** to resolve the adapter and check capabilities and
    requirements before spending work on a runtime.
 4. **Run or start a runtime** through the shared start, invoke, and stop

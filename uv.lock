@@ -1949,6 +1949,9 @@ wheels = [
 name = "nemo-fabric"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "nemo-fabric-runtime" },
+]
 
 [package.optional-dependencies]
 adapters-claude = [
@@ -2033,6 +2036,7 @@ requires-dist = [
     { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'adapters-hermes'", editable = "adapters/hermes" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-runtime", editable = "python" },
     { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = "~=0.5.0" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },

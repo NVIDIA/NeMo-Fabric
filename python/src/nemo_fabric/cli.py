@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""SDK-backed command line interface for NeMo Fabric."""
+"""Developer experimentation interface backed by the NeMo Fabric SDK."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.metadata
 import json
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +48,8 @@ def select_source(args: argparse.Namespace) -> SelectedSource:
     """Resolve one mutually exclusive CLI selector."""
 
     override = Path(args.base_dir).resolve() if args.base_dir else None
+    if args.variant and not args.example:
+        raise SourceError("--variant requires --example")
     if args.preset:
         try:
             preset = PRESETS[args.preset]
@@ -83,14 +87,28 @@ def _add_selector(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="nemo-fabric", description=__doc__)
+    parser = argparse.ArgumentParser(
+        prog="nemo-fabric",
+        description=__doc__,
+        epilog="For stable application integration, construct FabricConfig and use the SDK directly.",
+    )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     for name in ("plan", "doctor", "run", "chat"):
         command = subcommands.add_parser(name)
         _add_selector(command)
         if name in {"run", "chat"}:
-            command.add_argument("--input", default=None, help="Invocation text; defaults to an empty string.")
+            inputs = command.add_mutually_exclusive_group()
+            inputs.add_argument(
+                "--input",
+                default=None,
+                help="Invocation text; defaults to an empty string.",
+            )
+            inputs.add_argument(
+                "--input-file",
+                type=Path,
+                help="Read invocation text from this path, or use - for stdin.",
+            )
         if name == "run":
             command.add_argument("--request-json", help="JSON object or @path containing a RunRequest.")
         command.add_argument("--output", type=Path, help="Write JSON output to this path instead of stdout.")
@@ -106,14 +124,27 @@ def build_parser() -> argparse.ArgumentParser:
     example_commands.add_parser("list")
     example_show = example_commands.add_parser("show")
     example_show.add_argument("name")
+    example_init = example_commands.add_parser("init")
+    example_init.add_argument("name")
+    example_init.add_argument("destination", type=Path)
+
+    subcommands.add_parser("version", help="Show the installed Fabric runtime version.")
     return parser
 
 
+def _input(args: argparse.Namespace) -> str:
+    if args.input_file is None:
+        return args.input or ""
+    if args.input_file == Path("-"):
+        return sys.stdin.read()
+    return args.input_file.read_text(encoding="utf-8")
+
+
 def _request(args: argparse.Namespace) -> RunRequest:
-    if args.request_json and args.input is not None:
-        raise SourceError("--input and --request-json are mutually exclusive")
+    if args.request_json and (args.input is not None or args.input_file is not None):
+        raise SourceError("--input/--input-file and --request-json are mutually exclusive")
     if not args.request_json:
-        return RunRequest(input=args.input or "")
+        return RunRequest(input=_input(args))
     raw = args.request_json
     if raw.startswith("@"):
         raw = Path(raw[1:]).read_text(encoding="utf-8")
@@ -154,7 +185,7 @@ async def _execute(args: argparse.Namespace) -> int:
 async def _chat(fabric: Fabric, selected: SelectedSource, args: argparse.Namespace) -> int:
     transcript: list[dict[str, Any]] = []
     async with await fabric.start_runtime(selected.config, base_dir=selected.base_dir) as runtime:
-        pending = args.input
+        pending = _input(args) if args.input is not None or args.input_file is not None else None
         while True:
             if pending is None:
                 try:
@@ -174,6 +205,9 @@ async def _chat(fabric: Fabric, selected: SelectedSource, args: argparse.Namespa
 
 
 def _discovery(args: argparse.Namespace) -> int | None:
+    if args.command == "version":
+        print(_runtime_version())
+        return 0
     if args.command == "preset":
         if args.preset_command == "list":
             for name in sorted(PRESETS):
@@ -183,13 +217,13 @@ def _discovery(args: argparse.Namespace) -> int | None:
                 item = PRESETS[args.name]
             except KeyError as error:
                 raise SourceError(_unknown("preset", args.name, PRESETS)) from error
-            _emit({"name": item.name, "description": item.description}, None)
+            _emit(item.discovery(), None)
         return 0
     if args.command == "example":
         if args.example_command == "list":
             for name in sorted(EXAMPLES):
                 print(name)
-        else:
+        elif args.example_command == "show":
             try:
                 item = EXAMPLES[args.name]
             except KeyError as error:
@@ -200,20 +234,61 @@ def _discovery(args: argparse.Namespace) -> int | None:
                     "description": item.description,
                     "default_variant": item.default_variant,
                     "variants": sorted(item.variants),
+                    "init_supported": item.template_dir is not None,
                 },
                 None,
             )
+        else:
+            _init_example(args.name, args.destination)
         return 0
     return None
+
+
+def _runtime_version() -> str:
+    try:
+        return importlib.metadata.version("nemo-fabric-runtime")
+    except importlib.metadata.PackageNotFoundError:
+        from nemo_fabric import _native
+
+        return _native.version()
+
+
+def _init_example(name: str, destination: Path) -> None:
+    try:
+        item = EXAMPLES[name]
+    except KeyError as error:
+        raise SourceError(_unknown("example", name, EXAMPLES)) from error
+    if item.template_dir is None:
+        raise SourceError(f"example {name!r} cannot be copied")
+    destination = destination.resolve()
+    if not destination.name.isidentifier():
+        raise SourceError("destination name must be a valid Python package name")
+    if destination.exists():
+        raise SourceError(f"destination already exists: {destination}")
+    shutil.copytree(item.template_dir, destination)
+    print(f"Created {name} in {destination}")
+    print(
+        f"From {destination.parent}, run: nemo-fabric run "
+        f"--factory {destination.name}.config:build_config "
+        f"--base-dir {destination} --input 'Review the workspace'"
+    )
 
 
 def cli(argv: list[str] | None = None) -> int:
     """Run the CLI and return a process exit code."""
 
-    args = build_parser().parse_args(argv)
+    arguments = list(argv) if argv is not None else sys.argv[1:]
+    parser = build_parser()
+    if not arguments:
+        parser.print_help()
+        return 0
+    args = parser.parse_args(arguments)
     try:
         discovery = _discovery(args)
         return discovery if discovery is not None else asyncio.run(_execute(args))
+    except KeyboardInterrupt:
+        print("nemo-fabric: interrupted", file=sys.stderr)
+        return 130
     except (FabricError, SourceError, OSError, ValueError) as error:
         print(f"nemo-fabric: {error}", file=sys.stderr)
         return 2

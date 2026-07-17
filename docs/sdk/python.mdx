@@ -14,9 +14,9 @@ telemetry references.
 
 The SDK is config-first. Applications should construct a Pydantic
 `FabricConfig` from their own job, deployment, or evaluation config.
-Portable file formats such as `agent.yaml` remain useful for examples, CI, and
-reproducibility, but the SDK does not require callers to write intermediate
-files before invoking Fabric.
+Fabric does not load a persisted YAML, TOML, or JSON agent configuration.
+Examples, CI jobs, and applications construct the typed config directly and
+may use ordinary Python functions to create variants.
 
 Generated API reference pages remain the source of truth for exact signatures.
 This guide explains how the pieces are intended to fit together.
@@ -153,8 +153,7 @@ Telemetry is enabled by adding entries to `telemetry.providers`; Relay-specific
 settings live in the top-level `relay` block.
 
 For evaluation or deployment variations, use ordinary Python functions and
-copies of the typed config. Supply the final config to Fabric when the variation
-does not need file-profile merge semantics.
+copies of the typed config. Supply the complete final config to Fabric.
 
 ```python
 def review_agent_config(base, *, github_mcp: bool, relay: bool):
@@ -194,10 +193,6 @@ The repository's
 [code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
 uses this pattern for complete Hermes, Codex SDK, Deep Agents,
 environment, MCP, and telemetry variants.
-
-When an in-memory caller needs the same ordered overlay behavior as file-backed
-profiles, construct `FabricProfileConfig` values and pass them through
-`profiles=[...]`. Fabric does not accept raw profile mappings.
 
 If a config contains relative paths, pass a `base_dir` to `resolve(...)`,
 `plan(...)`, `doctor(...)`, `run(...)`, or `start_runtime(...)`. The base
@@ -444,9 +439,9 @@ around that contract.
 ### Schemas And Python Models
 
 The SDK's Pydantic models are maintained against the Rust-generated public
-schemas. Use the schemas for persisted field definitions and the generated API
-reference for exact Python signatures. New application code should prefer
-`FabricConfig` and `RunRequest` for validated SDK inputs.
+schemas. The schemas describe typed cross-language contracts; they are not a
+supported Fabric config-file format. Use the generated API reference for exact
+Python signatures.
 
 | Contract | Source |
 | --- | --- |
@@ -462,20 +457,20 @@ reference for exact Python signatures. New application code should prefer
 Fabric uses explicit contract versions where persisted or independently
 maintained artifacts cross package boundaries:
 
-- `schema_version` identifies portable config documents such as `agent.yaml`
-  and profile files.
+- `schema_version` identifies the typed Fabric config contract transported
+  across SDK and language boundaries.
 - `contract_version` identifies the adapter descriptor contract implemented by
   a `fabric-adapter.json` file.
 - Python and Rust package versions identify the installed SDK/core release.
 
-Fabric versions top-level persisted documents and independently maintained
-contracts. It does not version each config subsection independently. For
+Fabric versions top-level typed contracts and independently maintained adapter
+metadata. It does not version each config subsection independently. For
 example, MCP, skills, models, telemetry, and runtime fields evolve under the
 enclosing `schema_version`.
 
 Fabric validates adapter descriptor contract versions during planning. Package
 semver identifies the installed implementation, but it is not the compatibility
-contract for saved agent packages or independently maintained adapters.
+contract for independently maintained adapters.
 
 ### Config Extensibility
 

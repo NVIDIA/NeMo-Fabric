@@ -3,14 +3,20 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NeMo Fabric CLI Experiments
+# NeMo Fabric Experimentation CLI
 
-This is a working note for experimentation and team discussion. It is not a
-committed public interface or release contract.
+`nemo-fabric` is a maintained developer experimentation interface over the
+NeMo Fabric SDK. It provides a fast way to try harnesses, run examples, inspect
+plans, diagnose integrations, and execute user-owned Python configurations.
+The SDK remains the canonical configuration and execution contract.
+
+The CLI is intentionally an experimentation surface. Its command grammar may
+evolve as workflows mature; typed SDK applications should be used when API
+stability or production integration is required.
 
 ## Intent
 
-Keep `nemo-fabric` as a thin SDK-backed runner:
+Keep the CLI as a thin SDK-backed runner:
 
 - every run starts from a complete, typed `FabricConfig`;
 - the CLI only selects where that config comes from;
@@ -19,9 +25,9 @@ Keep `nemo-fabric` as a thin SDK-backed runner:
 - Fabric does not load a persisted YAML, TOML, or JSON configuration.
 
 Profiles, overlays, config discovery, and compatibility loaders are out of
-scope. Fabric has not been released, so this experiment makes a clean break.
+scope. Fabric has not been released, so the CLI makes a clean break.
 
-## Current Variation
+## Supported Inputs
 
 ### 1. Preset
 
@@ -45,6 +51,12 @@ A runnable SDK example with complete variants. Examples are Python source and
 assets that people can read, copy, and edit. A variant is a factory, not a
 profile.
 
+Copy the bundled example into an editable Python package with:
+
+```bash
+nemo-fabric example init examples.code_review_agent my_agent
+```
+
 ### 3. User factory
 
 ```bash
@@ -57,8 +69,7 @@ nemo-fabric run \
 The unrestricted customization path. The callable takes no arguments and
 returns a complete `FabricConfig`.
 
-`--factory` is the current spelling of the earlier `--custom` idea because it
-makes the Python contract explicit.
+The `--factory` name makes the executable Python contract explicit.
 
 All three selectors feed the same commands:
 
@@ -66,17 +77,23 @@ All three selectors feed the same commands:
 plan   doctor   run   chat
 ```
 
-## Variations to Discuss
+## Designed For
 
-| Question | Lean option | Other reasonable experiments |
-| --- | --- | --- |
-| Selector grammar | `--preset`, `--example`, `--factory` | source subcommands; `preset:name` references |
-| Editable starting points | copy an example's Python source | `example init`; `preset eject`; repository-only samples |
-| Example distribution | bundle a small runnable example in the wheel | repository examples only; plugin/entry-point discovery |
-| Preset customization | keep presets complete and intentionally small | a few typed flags for model/workspace; no arbitrary `--set` |
-| Custom source name | `--factory module:callable` | `--custom module:callable`; `--agent module:callable` |
-| Interactive surface | retain `chat` for harness probing | ship only `plan`, `doctor`, and `run` |
-| Output | JSON as the automation contract | explicit human-readable output mode |
+- quick harness and model experiments;
+- smoke tests and troubleshooting;
+- comparing complete preset or example variants;
+- copying and editing Python examples;
+- invoking custom `FabricConfig` factories; and
+- inspecting plans and diagnostics.
+
+## Not Designed For
+
+- production deployment or scheduling;
+- persistent configuration or secrets management;
+- profiles, inheritance, or configuration overlays;
+- arbitrary CLI configuration mutation;
+- evaluation orchestration or experiment tracking; or
+- replacing direct SDK applications.
 
 ## Boundaries
 
@@ -89,9 +106,9 @@ plan   doctor   run   chat
 - Private serialization across Python/Rust or Harbor process boundaries is not
   a public authoring format.
 
-## Current Bias
+## Design Bias
 
 Start with the three explicit selectors. Keep presets tiny, make examples the
 editable learning surface, and use Python factories for real customization.
-Add scaffolding or plugin discovery only after the basic run path proves
-useful.
+Keep registration package-owned for now; consider plugin discovery only after
+the workflows prove useful.

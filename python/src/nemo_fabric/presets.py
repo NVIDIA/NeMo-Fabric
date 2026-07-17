@@ -5,11 +5,18 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from nemo_fabric.models import EnvironmentConfig, FabricConfig, HarnessConfig, MetadataConfig, ModelConfig
+from nemo_fabric.models import EnvironmentConfig
+from nemo_fabric.models import FabricConfig
+from nemo_fabric.models import HarnessConfig
+from nemo_fabric.models import MetadataConfig
+from nemo_fabric.models import ModelConfig
+from nemo_fabric.models import RuntimeConfig
 
 ConfigFactory = Callable[[], FabricConfig]
 BUNDLED_BASE_DIR = Path(__file__).resolve().parent / "_bundled"
@@ -23,6 +30,35 @@ class Preset:
     description: str
     factory: ConfigFactory
     base_dir: Path = BUNDLED_BASE_DIR
+    install_extra: str | None = None
+    required_env: tuple[str, ...] = ()
+    probe_module: str | None = None
+
+    @property
+    def available(self) -> bool:
+        """Return whether the preset's adapter implementation is importable."""
+
+        if self.probe_module is None:
+            return True
+        try:
+            return importlib.util.find_spec(self.probe_module) is not None
+        except (ImportError, ModuleNotFoundError, ValueError):
+            return False
+
+    def discovery(self) -> dict[str, object]:
+        """Return user-facing preset requirements without serializing config."""
+
+        install = "pip install nemo-fabric"
+        if self.install_extra is not None:
+            install = f"pip install 'nemo-fabric[{self.install_extra}]'"
+        return {
+            "name": self.name,
+            "description": self.description,
+            "available": self.available,
+            "install": install,
+            "required_env": list(self.required_env),
+            "missing_env": [name for name in self.required_env if not os.environ.get(name)],
+        }
 
 
 @dataclass(frozen=True)
@@ -34,6 +70,7 @@ class Example:
     variants: dict[str, ConfigFactory]
     default_variant: str
     base_dir: Path
+    template_dir: Path | None = None
 
 
 def _preset(
@@ -48,6 +85,23 @@ def _preset(
         metadata=MetadataConfig(name=f"{name}-agent", description=f"NeMo Fabric {name} CLI preset."),
         harness=HarnessConfig(adapter_id=adapter_id, resolution="preinstalled", settings=settings or {}),
         models={"default": ModelConfig(provider=provider, model=model)},
+        environment=EnvironmentConfig(provider="local"),
+    )
+
+
+def scripted() -> FabricConfig:
+    """Return a deterministic credential-free experimentation preset."""
+
+    return FabricConfig(
+        metadata=MetadataConfig(
+            name="scripted-agent",
+            description="Credential-free NeMo Fabric CLI smoke preset.",
+        ),
+        harness=HarnessConfig(
+            adapter_id="nvidia.fabric.scripted",
+            resolution="preinstalled",
+        ),
+        runtime=RuntimeConfig(input_schema="text", output_schema="message"),
         environment=EnvironmentConfig(provider="local"),
     )
 
@@ -111,18 +165,54 @@ def _code_review(variant: str) -> FabricConfig:
 
 
 PRESETS: dict[str, Preset] = {
-    "hermes": Preset("hermes", "Hermes Agent with an NVIDIA-hosted model.", hermes),
-    "claude": Preset("claude", "Claude Code with an Anthropic model.", claude),
-    "codex": Preset("codex", "Codex with an OpenAI model.", codex),
-    "deepagents": Preset("deepagents", "LangChain Deep Agents with an NVIDIA-hosted model.", deepagents),
+    "scripted": Preset(
+        "scripted",
+        "Credential-free deterministic smoke preset.",
+        scripted,
+    ),
+    "hermes": Preset(
+        "hermes",
+        "Hermes Agent with an NVIDIA-hosted model.",
+        hermes,
+        install_extra="hermes",
+        required_env=("NVIDIA_API_KEY",),
+        probe_module="nemo_fabric_adapters.hermes.adapter",
+    ),
+    "claude": Preset(
+        "claude",
+        "Claude Code with an Anthropic model.",
+        claude,
+        install_extra="claude",
+        required_env=("ANTHROPIC_API_KEY",),
+        probe_module="nemo_fabric_adapters.claude.adapter",
+    ),
+    "codex": Preset(
+        "codex",
+        "Codex with an OpenAI model.",
+        codex,
+        install_extra="codex",
+        required_env=("OPENAI_API_KEY",),
+        probe_module="nemo_fabric_adapters.codex.adapter",
+    ),
+    "deepagents": Preset(
+        "deepagents",
+        "LangChain Deep Agents with an NVIDIA-hosted model.",
+        deepagents,
+        install_extra="deepagents",
+        required_env=("NVIDIA_API_KEY",),
+        probe_module="nemo_fabric_adapters.deepagents.adapter",
+    ),
 }
+
+EXAMPLE_VARIANTS = ("hermes", "claude", "codex", "deepagents")
 
 EXAMPLES: dict[str, Example] = {
     "examples.code_review_agent": Example(
         name="examples.code_review_agent",
         description="Installed, editable-in-Python code review example.",
-        variants={name: (lambda name=name: _code_review(name)) for name in PRESETS},
+        variants={name: (lambda name=name: _code_review(name)) for name in EXAMPLE_VARIANTS},
         default_variant="hermes",
         base_dir=BUNDLED_BASE_DIR,
+        template_dir=BUNDLED_BASE_DIR / "examples" / "code_review_agent",
     )
 }
