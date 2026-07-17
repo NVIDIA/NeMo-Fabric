@@ -653,7 +653,7 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("fern/versions/main/pages/reference/api/rust-library-reference"),
+        default=Path("docs/reference/api/rust-library-reference"),
     )
     parser.add_argument("--skip-cargo-doc", action="store_true")
     args = parser.parse_args()

@@ -31,7 +31,7 @@ and NeMo Fabric repo conventions.
 2. Confirm the described behavior is still true in the current repo.
 3. Check whether entry-point docs also need updates:
    - `README.md`
-   - `fern/versions/main.yml`
+   - `docs/index.yml`
    - Package or crate READMEs
    - Adapter and integration READMEs such as `adapters/codex/README.md` or `integrations/harbor/README.md`
 4. Start with `assets/nvidia-style-guide.md`, then open only the focused support document needed for the issue under review.
@@ -112,7 +112,7 @@ docs selectively instead of reading every asset for routine reviews.
 ## References
 
 - `README.md`
-- `fern/versions/main.yml`
+- `docs/index.yml`
 - `assets/nvidia-style-guide.md`
 - `assets/nvidia-style-technical-docs.md`
 - `assets/nvidia-style-language-mechanics.md`

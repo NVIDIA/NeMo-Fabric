@@ -15,10 +15,10 @@ from pydantic import BaseModel
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MAIN_DOCS = ROOT / "fern" / "versions" / "main"
-REFERENCE_DIR = MAIN_DOCS / "pages" / "reference" / "api" / "python-library-reference"
-LANDING_PAGE = MAIN_DOCS / "pages" / "getting-started" / "overview.mdx"
-NAVIGATION = MAIN_DOCS.with_suffix(".yml")
+MAIN_DOCS = ROOT / "docs"
+REFERENCE_DIR = MAIN_DOCS / "reference" / "api" / "python-library-reference"
+LANDING_PAGE = MAIN_DOCS / "getting-started" / "overview.mdx"
+NAVIGATION = MAIN_DOCS / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",

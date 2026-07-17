@@ -4,4 +4,4 @@
 navigation:
   - page: NeMo Fabric
     slug: ""
-    path: ./soon/pages/index.mdx
+    path: ../pages-soon/index.mdx

@@ -5,107 +5,105 @@ SPDX-License-Identifier: Apache-2.0
 
 # NeMo Fabric Fern Documentation
 
-This directory contains the Fern configuration and versioned documentation
-source for NeMo Fabric.
+NeMo Fabric uses Fern to publish documentation at
+`nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric` and
+`docs.nvidia.com/nemo/fabric`.
+
+## Branch Model
+
+Documentation is authored on `main`:
+
+- `docs/` contains Markdown and MDX page source.
+- `docs/index.yml` contains source navigation.
+- `fern/` contains local Fern configuration and the temporary cover page.
+
+The orphan `docs-website` branch is mostly CI-managed. It stores the generated
+Fern publishing layout and retains release snapshots after their source branch
+or tag is no longer active:
+
+- `fern/pages-main/` contains generated bleeding-edge pages.
+- `fern/versions/main.yml` contains rewritten bleeding-edge navigation.
+- `fern/pages-vX.Y.Z/` and `fern/versions/vX.Y.Z.yml` contain release snapshots.
+- `fern/docs.yml` preserves the accumulated version list.
+- `.github/workflows/publish-fern-docs.yml` provides a branch-local manual and
+  direct-push publishing fallback.
+
+The source workflow creates `docs-website` as an orphan branch if it does not
+exist. Files under `scripts/docs/docs_website_branch/` seed its branch-local
+README, ignore rules, and fallback workflow. After bootstrap, update those
+three files through a pull request that targets `docs-website`.
 
 ## Site Configuration
 
-The site publishes to the `/nemo/fabric` subpath of the shared
-`docs.nvidia.com` domain. Keep the following settings in `docs.yml`:
+Keep these settings in `docs.yml`:
 
-- Set `instances[].multi-source: true` so a publish updates only the Fabric
-  subpath. Keep the `/nemo/fabric` basepath identical in `url` and
-  `custom-domain`.
-- Set `global-theme: nvidia` to inherit the shared NVIDIA documentation theme.
-- Set `logo.right-text: NeMo Fabric` to replace the theme's generic
-  documentation label with the product name.
+- `instances[].multi-source: true` limits publishing to the Fabric subpath on
+  the shared NVIDIA documentation domain.
+- `global-theme: nvidia` applies the shared NVIDIA documentation theme.
+- `logo.right-text: NeMo Fabric` replaces the generic theme label with the
+  product name.
 
-Do not copy product-specific redirect, generated-library, or custom-component
-configuration from another NeMo site unless Fabric needs that feature.
+Do not copy product-specific redirects or custom components from another NeMo
+site unless Fabric needs them.
 
-## Temporary Cover Version
+## Temporary Cover
 
-The public root currently displays a temporary cover page while the full
-documentation remains available for preview. This pattern has three parts:
+The public root displays a temporary cover while the complete documentation is
+available at `/main/`. The cover uses a separate version so it is never copied
+into a release snapshot:
 
-- `docs.yml` lists `Coming soon` first because Fern uses the first version as
-  the default version for unversioned URLs. It lists `Main · preview` second,
-  which keeps the bleeding-edge documentation at `/main/...`.
-- `versions/soon.yml` contains one navigation entry with an empty slug. That
-  entry resolves to the documentation root.
-- `versions/soon/pages/index.mdx` uses Fern's `custom` page layout. The custom
-  layout removes the generated article heading and content constraints so the
-  MDX can render one centered heading with page-scoped CSS.
+- `versions/soon.yml` maps the documentation root to the cover page.
+- `pages-soon/index.mdx` uses Fern's custom layout for the centered design.
+- `docs.yml` makes the cover the default and lists `Main · preview` separately.
 
-Keep the cover in a separate version instead of adding it to `main`. Release
-snapshots copy `main`, so separating the cover prevents temporary launch
-content from entering a release snapshot.
+The first stable docs release automatically makes that release the default and
+removes the cover from the version selector. Beta and release-candidate docs
+retain the current default. To remove the cover before a stable release, update
+the preserved product configuration on `docs-website` and publish that branch.
 
-### Reuse the Cover Pattern
+## Publishing and Versioning
 
-To reuse this pattern in another versioned Fern site:
+`.github/workflows/fern-docs.yml` handles previews, `main` publishing, and
+release snapshots:
 
-1. Create a version configuration that contains one page with `slug: ""`.
-2. Add the temporary version as the first entry under `versions` in
-   `docs.yml`.
-3. Add the real documentation version after it and set an explicit slug such
-   as `main`.
-4. Set `layout: custom` in the cover page frontmatter and render the page with
-   one `<h1>` element. Scope any inline CSS to a cover-specific class.
-5. Run `just docs` and verify both the root page and the real documentation
-   version in the Fern preview.
+- Pushes to `pull-request/**` validate the source, assemble the same generated
+  layout used for publishing, and create a stable Fern preview.
+- Pushes to `main` regenerate API references, sync `docs-website`, commit any
+  generated changes, and publish the bleeding-edge docs.
+- Raw SemVer tags such as `0.1.0`, `0.1.0-beta.1`, and `0.1.0-rc.1` create or
+  replace a public snapshot displayed with a leading `v`.
 
-Use a Fern custom React component only when multiple pages or sites must share
-the same cover implementation. For a single temporary page, page-local MDX and
-CSS keep the implementation self-contained.
+Stable tags use `availability: stable` and update `Latest`. Beta and
+release-candidate tags use `availability: beta`, replace the snapshot for the
+same base version, and do not update `Latest`. Alpha tags and tags with a
+leading `v` are not published.
 
-### Remove the Cover Version
-
-When the documentation is ready to replace the cover page, remove the
-`Coming soon` entry from `docs.yml` and delete `versions/soon.yml` and
-`versions/soon/`. Keep the `Main · preview` version.
-
-## Layout
-
-- `versions/main.yml` defines navigation for bleeding-edge documentation.
-- `versions/main/pages/` contains documentation for the `main` branch.
-- `versions/soon.yml` temporarily defines the public cover page.
-- `versions/<release>.yml` defines navigation for an immutable SemVer release.
-- `versions/<release>/pages/` contains the corresponding release snapshot.
-
-After the temporary cover is removed and before the first stable release,
-`main` is the only configured version. After the first stable release, the
-stable snapshot becomes the first version in `docs.yml`, so unversioned URLs
-resolve to stable documentation while `/main/...` remains the bleeding-edge
-site.
+Version snapshots are generated from the selected tag checkout, not from the
+current contents of `docs-website`. The helper also rewrites internal `/main/`
+links and GitHub `main` links to the released version.
 
 ## Local Validation
 
-From the repository root, run:
+Run the normal docs check from the repository root:
 
 ```bash
 just docs
 ```
 
-This command regenerates the Python and Rust API references under
-`versions/main/pages/reference/` and runs `fern check`.
+To inspect the generated publishing layout locally, use an empty temporary
+directory or a checkout of `docs-website`:
 
-## Create a Release Snapshot
+```bash
+python scripts/docs/sync_fern_docs_branch.py sync-main \
+  --source-root . \
+  --target-root /path/to/docs-website-checkout
+```
 
-Use the raw SemVer release tag without a leading `v`, consistent with
-`CONTRIBUTING.md`. For a release such as `0.1.0`:
+To test a release snapshot without publishing it, run:
 
-1. Run `just docs` and commit the regenerated `main` reference pages.
-2. Copy `versions/main/pages/` to `versions/0.1.0/pages/`.
-3. Copy `versions/main.yml` to `versions/0.1.0.yml` and replace
-   `./main/pages/` with `./0.1.0/pages/` in the snapshot navigation.
-4. In the copied pages, replace version-scoped links beginning with `/main/`
-   with `/0.1.0/`. Do not rewrite external GitHub links that contain `main`.
-5. Create `versions/latest.yml` as a symlink to `0.1.0.yml`.
-6. Add `Latest · 0.1.0` first in the `versions:` list in `docs.yml`, keep
-   `Main · preview` second, and add the immutable `0.1.0` entry after it.
-7. Run `just docs` again to validate all configured versions.
-
-For later releases, create a new snapshot and retarget `latest.yml`. Do not
-regenerate or edit an older snapshot except for a deliberate documentation
-backport.
+```bash
+python scripts/docs/sync_fern_docs_branch.py release-version \
+  --source-root . \
+  --target-root /path/to/docs-website-checkout \
+  --tag 0.1.0
+```

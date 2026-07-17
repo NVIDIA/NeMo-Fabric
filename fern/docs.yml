@@ -17,11 +17,15 @@ global-theme: nvidia
 logo:
   right-text: NeMo Fabric
 
-versions:
-  - display-name: "Coming soon"
-    path: versions/soon.yml
-    slug: soon
-  - display-name: "Main · preview"
-    path: versions/main.yml
-    slug: main
-    availability: beta
+products:
+  - display-name: "NeMo Fabric"
+    slug: /
+    path: ./versions/soon.yml
+    versions:
+      - display-name: "Coming soon"
+        path: ./versions/soon.yml
+        slug: soon
+      - display-name: "Main · preview"
+        path: ../docs/index.yml
+        slug: main
+        availability: beta

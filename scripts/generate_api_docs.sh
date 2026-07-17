@@ -14,7 +14,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
 
-out="fern/versions/main/pages/reference/api/python-library-reference"
+out="docs/reference/api/python-library-reference"
 rm -rf "$out"
 mkdir -p "$out"
 
