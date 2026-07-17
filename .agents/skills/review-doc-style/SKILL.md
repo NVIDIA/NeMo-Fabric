@@ -16,7 +16,7 @@ before editing.
 
 Use this skill when reviewing docs-only changes, example-heavy changes, or any
 public-facing text update that should be checked against NVIDIA style guidance
-and NeMo Fabric repo conventions.
+and NVIDIA NeMo Fabric repo conventions.
 
 ## Generated API Reference
 
