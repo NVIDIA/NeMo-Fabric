@@ -23,8 +23,8 @@ Fabric itself, use the maintainer skills in `.agents/skills/` instead.
 Stay on the public, in-memory contract. These rules keep a consumer integration
 supported and upgrade-safe:
 
-- Import only from the public `nemo_fabric` package. Never import `_native`,
-  `_config_sources`, or any adapter-internal module.
+- Import only from the public `nemo_fabric` package. Never import `_native` or
+  any adapter-internal module.
 - Build configuration as a typed `FabricConfig` in memory and pass it directly to
   Fabric. Create every deployment or evaluation variant with ordinary Python
   functions and `model_copy(deep=True)`. A platform integration can serialize
@@ -230,13 +230,14 @@ result-field and error inventory, and
 - Run the consumer project's own build and test commands. For a source checkout
   of Fabric, `just build-all` rebuilds the native extension and
   `just test-python` runs the Python suite.
-- Confirm no config files were written and no non-public imports were added.
+- Confirm the typed config is passed directly to Fabric and no non-public
+  imports were added.
 
 ## Checklist
 
 - [ ] The consumer config object is translated directly into an in-memory `FabricConfig`.
-- [ ] Only public `nemo_fabric` symbols are imported; no `_native`, `_config_sources`, or adapter internals.
-- [ ] The consumer config is built in memory and passed directly to Fabric, with no intermediate config file.
+- [ ] Only public `nemo_fabric` symbols are imported; no `_native` or adapter internals.
+- [ ] The consumer config is built in memory and passed directly to Fabric.
 - [ ] The right lifecycle is chosen: `run(...)` for one-shot, `start_runtime(...)` with `async with` for multi-turn.
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.
 - [ ] Installation, adapter dependencies, and credentials are owned by the environment, not consumer code.
@@ -266,5 +267,5 @@ Link to these canonical sources instead of duplicating them:
   [nemo_fabric.integrations.harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/python/src/nemo_fabric/integrations/harbor).
   Harbor constructs a typed config from explicit agent inputs and transports it
   inside a private transient run specification at the task-process boundary.
-  Follow the code-review example for consumer integration code; do not treat
-  Harbor's transport representation as a public Fabric config-file format.
+  Follow the code-review example for consumer integration code; Harbor's
+  transport representation is an internal process-boundary contract.

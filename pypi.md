@@ -67,8 +67,9 @@ NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations
 - **Artifacts:** Receive normalized output, logs, patches, and telemetry
   references through an `ArtifactManifest`.
 
-The CLI does not load persisted YAML, TOML, or JSON Fabric configuration.
-Applications that need a stable integration surface should use the Python SDK.
+The CLI selects complete typed configs from presets, examples, or Python
+factories. Applications that need a stable integration surface should use the
+Python SDK.
 
 ## Learn More
 

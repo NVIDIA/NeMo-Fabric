@@ -19,13 +19,10 @@ stability or production integration is required.
 Keep the CLI as a thin SDK-backed runner:
 
 - every run starts from a complete, typed `FabricConfig`;
-- the CLI only selects where that config comes from;
+- the CLI selects a preset, example variant, or Python factory;
 - planning and execution go through the public Python SDK;
 - `base_dir` only resolves relative resource paths; and
-- Fabric does not load a persisted YAML, TOML, or JSON configuration.
-
-Profiles, overlays, config discovery, and compatibility loaders are out of
-scope. Fabric has not been released, so the CLI makes a clean break.
+- each selector returns a complete config without implicit merging.
 
 ## Supported Inputs
 
@@ -48,8 +45,8 @@ nemo-fabric run \
 ```
 
 A runnable SDK example with complete variants. Examples are Python source and
-assets that people can read, copy, and edit. A variant is a factory, not a
-profile.
+assets that people can read, copy, and edit. Each variant is an independent
+factory.
 
 Copy the bundled example into an editable Python package with:
 
@@ -90,15 +87,14 @@ plan   doctor   run   chat
 
 - production deployment or scheduling;
 - persistent configuration or secrets management;
-- profiles, inheritance, or configuration overlays;
+- implicit configuration merging or inheritance;
 - arbitrary CLI configuration mutation;
 - evaluation orchestration or experiment tracking; or
 - replacing direct SDK applications.
 
 ## Boundaries
 
-- No `agent.yaml` or profile directories.
-- No Fabric config loader for YAML, TOML, or JSON.
+- Presets, examples, and factories each return a complete `FabricConfig`.
 - No preset inheritance or core merge semantics.
 - No implicit user/project/system config discovery.
 - JSON request input is still valid; it describes an invocation, not an agent.

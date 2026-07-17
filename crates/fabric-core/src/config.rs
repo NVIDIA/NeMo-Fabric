@@ -475,7 +475,7 @@ fn default_environment_ownership() -> EnvironmentOwnership {
 /// Skill capability configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
 pub struct SkillConfig {
-    /// Skill paths relative to the agent root.
+    /// Skill paths resolved relative to the config base directory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<PathBuf>,
     /// Additive skill fields.

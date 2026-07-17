@@ -1368,7 +1368,7 @@
       "description": "Skill capability configuration.",
       "properties": {
         "paths": {
-          "description": "Skill paths relative to the agent root.",
+          "description": "Skill paths resolved relative to the config base directory.",
           "items": {
             "type": "string"
           },

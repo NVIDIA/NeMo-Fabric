@@ -129,9 +129,9 @@ requests, and multi-turn runtime examples.
 | `nemo-fabric` CLI | You are experimenting with harnesses, running examples, or troubleshooting configs | `preset`, `example`, `plan`, `doctor`, `run`, and `chat` |
 | JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
 
-Use `FabricConfig` as the canonical configuration contract. The CLI does not
-load a persisted YAML, TOML, or JSON Fabric config; its selectors obtain a
-typed config from maintained presets, examples, or user-owned Python factories.
+Use `FabricConfig` as the canonical configuration contract. CLI selectors
+obtain complete typed configs from maintained presets, examples, or user-owned
+Python factories.
 
 ## Core Workflow
 

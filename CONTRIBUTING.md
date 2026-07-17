@@ -249,7 +249,7 @@ Valid types:
 Examples:
 
 ```text
-feat: add typed runtime configuration overlays
+feat: add typed runtime diagnostics
 fix: preserve adapter errors in run results
 docs: clarify Hermes adapter installation
 test: cover concurrent Python runtime invocations

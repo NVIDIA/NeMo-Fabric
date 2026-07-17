@@ -57,7 +57,7 @@ This adapter pins `openai-codex==0.1.0b3`, which pins
 `openai-codex-cli-bin==0.137.0a4`. A newer `codex` command on `PATH` is not used
 implicitly. When testing a newer compatible runtime, set
 `harness.settings.codex_bin` to an app-server path that is absolute or relative
-to the Fabric config root. Fabric passes the resolved path through
+to the explicit `base_dir`. Fabric passes the resolved path through
 `CodexConfig.codex_bin`; the SDK remains the execution driver.
 
 ## Execution Model
@@ -94,9 +94,8 @@ Codex-specific controls belong in `harness.settings`:
 - `env` for variables explicitly forwarded to the Codex runtime
 - `nemo_relay_command` for the optional external Relay gateway executable
 
-The removed CLI settings `codex_command`, `codex_args`, `codex_profile`,
-`codex_state_dir`, and `skip_git_repo_check` are errors. `model_name` and `cwd`
-must use the normalized model and environment fields.
+Set model selection through `models` and the working directory through
+`environment.workspace`.
 
 The adapter filters the inherited environment. It retains portable OS and
 Codex state variables, the selected model's `api_key_env`, and explicit
@@ -157,4 +156,3 @@ For Phoenix, native Codex OpenTelemetry targets the OTLP collector at
 Relay OpenInference provides the semantic chain, LLM, and tool hierarchy with
 decoded prompt, response, and token attributes. Prefer Relay OpenInference for
 agent-turn inspection.
-

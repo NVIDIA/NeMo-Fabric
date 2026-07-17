@@ -186,10 +186,9 @@ authentication, and execution details.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
 
-Fabric accepts complete typed configs and does not load agent or profile
-configuration files. Compose variants in Python before calling the SDK. See
-the [Python SDK guide](docs/sdk/python.mdx) for the complete public API, type
-definitions, lifecycle semantics, and error behavior.
+Fabric accepts complete typed configs. Compose variants in Python before
+calling the SDK. Refer to the [Python SDK guide](docs/sdk/python.mdx) for the
+complete public API, type definitions, lifecycle semantics, and error behavior.
 
 `run(...)` owns the complete start, invoke, and stop lifecycle. For typed
 in-memory configuration, planning and diagnostics, explicit requests,

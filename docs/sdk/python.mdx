@@ -12,7 +12,6 @@ telemetry references.
 
 The SDK is config-first. Applications should construct a Pydantic
 `FabricConfig` from their own job, deployment, or evaluation config.
-NeMo Fabric does not load a persisted YAML, TOML, or JSON agent configuration.
 Examples, CI jobs, and applications construct the typed config directly and
 can use ordinary Python functions to create variants.
 
@@ -401,7 +400,7 @@ environment, skills, MCP, telemetry, tools, artifacts, and request context.
 
 Use `harness.settings` for adapter-owned configuration that the selected adapter
 understands. Examples include Hermes-specific launch options, Codex SDK controls,
-or adapter-specific config file locations.
+or adapter-specific launch paths.
 
 Use `metadata` for caller-owned annotations that NeMo Fabric should preserve and echo
 back, but not interpret.
@@ -437,9 +436,8 @@ around that contract.
 ### Schemas And Python Models
 
 The SDK's Pydantic models are maintained against the Rust-generated public
-schemas. The schemas describe typed cross-language contracts; they are not a
-supported Fabric config-file format. Use the generated API reference for exact
-Python signatures.
+schemas. The schemas describe the typed cross-language contracts. Use the
+generated API reference for exact Python signatures.
 
 | Contract | Source |
 | --- | --- |
