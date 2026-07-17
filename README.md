@@ -188,7 +188,7 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
 - [Consumer integration skills](skills/README.md): repository-local coding-agent
   skills for integrating Fabric into an application through the Python SDK.
-- [Getting Started overview](docs/getting-started/overview.mdx): interface
+- [Getting Started overview](docs/about-nemo-fabric/overview.mdx): interface
   selection and the end-to-end Fabric workflow.
 - [Harbor examples](examples/harbor/README.md): validate the integration with a
   deterministic, credential-free calculator smoke, optionally run the same

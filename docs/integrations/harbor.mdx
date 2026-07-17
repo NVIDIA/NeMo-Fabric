@@ -1,23 +1,22 @@
 ---
 title: Harbor
-description: Run Fabric-selected harnesses in Harbor evaluations.
+description: Run NeMo Fabric-selected harnesses in Harbor evaluations.
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-
 Use `nemo_fabric.integrations.harbor:FabricAgent` when Harbor should own task
-materialization, environments, verification, rewards, and retries while Fabric
+materialization, environments, verification, rewards, and retries while NeMo Fabric
 selects and runs the agent harness.
 
-One Harbor trial consumes one complete Fabric config. Compare harnesses or
+One Harbor trial consumes one complete NeMo Fabric config. Compare harnesses or
 capability variants by holding the Harbor task and verifier fixed and starting
 a separate run with a different config or explicit Harbor skill/MCP input.
 The checked-in Harbor workflow currently qualifies Hermes and Claude end to
-end; other Fabric adapters are not yet presented as Harbor-qualified examples.
+end; other NeMo Fabric adapters are not yet presented as Harbor-qualified examples.
 
 The repository example is the single source for installation, the local smoke,
 the SWE-Bench harness/capability matrix, ATOF/ATIF verification, and the
 progressive full-run workflow:
 
-[Run Fabric agents with Harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor)
+[Run NeMo Fabric agents with Harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor)

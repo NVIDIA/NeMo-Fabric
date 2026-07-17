@@ -1,23 +1,21 @@
 ---
-title: "NeMo Fabric"
+title: "NVIDIA NeMo Fabric"
 description: "Configure, plan, run, and observe agent harnesses through one typed execution contract."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
-
-# One contract for agent harnesses
 
 NeMo Fabric is the harness-management layer that turns multiple agent runtimes
 into one configurable, observable execution surface. Applications use the same
 versioned config, lifecycle, result, artifact, and telemetry contracts whether
 the selected harness is Hermes, Codex SDK, or a custom adapter.
 
-Fabric owns the seam between an application and its harness. It resolves
+NeMo Fabric owns the seam between an application and its harness. It resolves
 configuration, selects an adapter, drives the runtime lifecycle,
 and returns normalized evidence without leaking harness-specific control code
 into the caller.
 
-## What Fabric gives you
+## What NeMo Fabric gives you
 
 <CardGroup cols={2}>
   <Card title="Portable configuration">
@@ -39,12 +37,12 @@ into the caller.
   </Card>
 </CardGroup>
 
-## How Fabric fits
+## How NeMo Fabric fits
 
 ```text
 Application or evaluation harness
         |
-        |  Python SDK or fabric CLI
+        |  Python SDK or `fabric` CLI
         v
 NeMo Fabric Rust core
   config -> plan -> lifecycle
@@ -120,7 +118,7 @@ Harness installation and credential requirements differ by adapter. The
 [repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes)
 contains the complete Hermes environment recipe.
 
-See the [Python SDK guide](/sdk/python) for planning, diagnostics, typed
+Refer to the [Python SDK guide](/sdk/python) for planning, diagnostics, typed
 requests, and multi-turn runtime examples.
 
 ## Choose your interface
@@ -134,7 +132,7 @@ requests, and multi-turn runtime examples.
 
 Use `agent.yaml` when the agent package is the portable artifact. Use
 `FabricConfig` when a platform already owns a larger job or deployment object
-and wants to pass only its Fabric slice in memory.
+and wants to pass only its NeMo Fabric slice in memory.
 
 ## Core workflow
 

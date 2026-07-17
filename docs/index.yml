@@ -2,12 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 navigation:
-  - section: Getting Started
+  - section: About NeMo Fabric
     contents:
       - page: Overview
-        path: ./getting-started/overview.mdx
+        path: ./about-nemo-fabric/overview.mdx
+      - page: Release Notes
+        path: ./about-nemo-fabric/release-notes.mdx
+  - section: Getting Started
+    contents:
       - page: Install
         path: ./getting-started/install.mdx
+      - page: Quickstart
+        path: ./getting-started/quickstart.mdx
   - section: SDK
     contents:
       - page: Python SDK
@@ -42,3 +48,7 @@ navigation:
           # (cargo doc -p nemo-fabric-core, via scripts/docs/generate_rust_library_reference.py).
           - folder: ./reference/api/rust-library-reference
             title: Rust Library Reference
+  - section: Resources
+    contents:
+      - folder: ./resources/legal
+        title: Legal
