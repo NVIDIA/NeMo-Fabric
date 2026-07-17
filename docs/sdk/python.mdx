@@ -127,12 +127,21 @@ The following matrix summarizes the current bundled adapter descriptors. The
 descriptor selected in `RunPlan` remains authoritative. Telemetry output names
 use the descriptor contract values.
 
-| Adapter ID | Accepted Normalized Config | Declared Telemetry | Runtime Hosting and Native Resources | Remote Service |
-| --- | --- | --- | --- | --- |
-| `nvidia.fabric.claude` | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay: `atif`, `otel`, `openinference`; hooks and gateway | Persistent local host; one connected `ClaudeSDKClient` | Not implemented |
-| `nvidia.fabric.codex` | `models`, `telemetry` | Relay: `atif`, `otel`, `openinference`; hooks and gateway. Native: `otel` | Persistent local host; one `AsyncCodex` app-server client and thread | Not implemented |
-| `nvidia.fabric.langchain.deepagents` | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay: `atif`, `otel`, `openinference`. Native: `otel`, `openinference` | Persistent local host; one compiled graph and async LangGraph checkpointer | Not implemented |
-| `nvidia.fabric.hermes` | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay: `atif`, `otel`, `openinference` | Persistent local host; one `AIAgent` and `SessionDB` | Not implemented |
+| Adapter ID | Models | Tools / Blocked Tools | MCP | Skills | Subagents | Telemetry | Persistent Local Host | Remote Service |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `nvidia.fabric.claude` | Anthropic provider and Claude models | `allowed_tools` adapter setting / normalized `tools.blocked` | Normalized | Normalized | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway | Yes: connected `ClaudeSDKClient`, session, and optional Relay gateway | Not implemented |
+| `nvidia.fabric.codex` | Built-in OpenAI provider and Codex models | Not normalized | Not normalized | Not normalized | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway; native `otel` | Yes: `AsyncCodex` app-server client, thread, and optional Relay gateway | Not implemented |
+| `nvidia.fabric.langchain.deepagents` | NVIDIA, OpenAI, OpenAI-compatible, and other LangChain providers | Built-ins and MCP / normalized middleware block list | Normalized | Normalized | Constrained: declarative local subagents inherit parent capabilities | Relay: `atif`, `otel`, and `openinference`; native `otel` and `openinference` | Yes: compiled graph and async LangGraph checkpointer | Not implemented |
+| `nvidia.fabric.hermes` | Normalized provider, model, and base URL | Toolsets / normalized disabled toolsets | Normalized | Normalized | Not exposed | Relay: `atif`, `otel`, and `openinference` | Yes: `AIAgent`, `SessionDB`, and Relay plugin context | Not implemented |
+
+"Normalized" means the adapter accepts the corresponding `FabricConfig`
+field and maps it to the harness. "Not normalized" does not mean that the
+underlying harness lacks the feature; it means that Fabric does not expose a
+portable configuration surface for it. Fabric currently normalizes
+`tools.blocked`, not a portable tool definition catalog. Deep Agents supports
+only JSON-shaped, in-process subagent definitions through
+`harness.settings.deepagents.subagents`; independently configured or remote
+subagent capabilities are not exposed.
 
 Third-party adapters that have not implemented the contract continue to use
 the per-invocation compatibility path. NeMo Fabric does not currently define a

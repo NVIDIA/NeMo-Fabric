@@ -150,12 +150,19 @@ The adapter descriptors are the source of truth for normalized configuration,
 telemetry, and runtime-hosting support. The bundled adapters currently expose
 the following capabilities:
 
-| Adapter | Accepted Normalized Config | Telemetry Providers | Runtime Hosting | Remote Service |
-| --- | --- | --- | --- | --- |
-| [Claude](adapters/claude/README.md) | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay | Persistent local host; one connected `ClaudeSDKClient` | Not implemented |
-| [Codex](adapters/codex/README.md) | `models`, `telemetry` | Relay and native | Persistent local host; one `AsyncCodex` client and thread | Not implemented |
-| [Deep Agents](adapters/deepagents/README.md) | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay and native | Persistent local host; one compiled graph and checkpointer | Not implemented |
-| [Hermes](adapters/hermes/README.md) | `models`, `tools`, `tools.blocked`, `mcp`, `skills`, `telemetry` | Relay | Persistent local host; one `AIAgent` and `SessionDB` | Not implemented |
+| Adapter | Models | Tools / Blocked Tools | MCP | Skills | Subagents | Telemetry | Persistent Local Host | Remote Service |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [Claude](adapters/claude/README.md) | Anthropic / Claude | `allowed_tools` adapter setting / normalized block list | Normalized | Normalized | Not exposed | Relay: ATIF, OTel, and OpenInference through hooks and gateway | Yes: `ClaudeSDKClient`, session, and optional Relay gateway | Not implemented |
+| [Codex](adapters/codex/README.md) | OpenAI / Codex | Not normalized | Not normalized | Not normalized | Not exposed | Relay: ATIF, OTel, and OpenInference through hooks and gateway; native OTel | Yes: `AsyncCodex`, app server, thread, and optional Relay gateway | Not implemented |
+| [Deep Agents](adapters/deepagents/README.md) | LangChain providers | Built-ins and MCP / normalized middleware block list | Normalized | Normalized | Constrained local delegation | Relay: ATIF, OTel, and OpenInference; native OTel and OpenInference | Yes: compiled graph and async checkpointer | Not implemented |
+| [Hermes](adapters/hermes/README.md) | Normalized provider and base URL | Toolsets / normalized disabled toolsets | Normalized | Normalized | Not exposed | Relay: ATIF, OTel, and OpenInference | Yes: `AIAgent`, `SessionDB`, and Relay context | Not implemented |
+
+"Normalized" means the adapter accepts the corresponding `FabricConfig`
+field. "Not normalized" does not mean that the underlying harness lacks the
+feature; it means that Fabric does not expose a portable configuration surface
+for it. Fabric currently normalizes a blocked-tool list, not a portable tool
+definition catalog. Deep Agents subagents are limited to declarative local
+subagents that inherit the parent agent's capabilities.
 
 Consumers use the same `Fabric.start_runtime(...)` contract for all four
 bundled adapters. Adapter hosting remains descriptor-owned; it is not selected
