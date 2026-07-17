@@ -79,7 +79,9 @@ hermes = [
 ]
 
 relay = [
-  "nemo-relay~=0.5.0",
+  # Allow the current 0.5 line and the upcoming 0.6 release; resolves to 0.5.x
+  # today and adopts 0.6 automatically once it is published.
+  "nemo-relay>=0.5.0,<0.7",
   "tomli-w~=1.2", # Needed by adapters to write relay config files
 ]
 
@@ -92,7 +94,9 @@ adapters = [
   "nemo-fabric-adapters-common",
   "nemo-fabric-adapters-claude",
   "nemo-fabric-adapters-codex",
-  "nemo-fabric-adapters-deepagents",
+  # Install the deepagents adapter with its optional [relay] extra so the dev
+  # and test environments exercise the SDK-native NeMo Relay integration.
+  "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
 ]
 

@@ -34,7 +34,19 @@ dependencies = [
   # Requires 3.x: the 2.x line is incompatible with the langgraph core deepagents
   # pulls (AsyncSqliteSaver fails with 'Connection has no attribute is_alive').
   "langgraph-checkpoint-sqlite>=3.0,<4.0",
-  "nemo-relay~=0.5.0",
+]
+
+# NeMo Relay is an optional, SDK-native integration. It is installed through
+# Relay's own ``deepagents`` extra, which pulls the Deep Agents / LangGraph
+# instrumentation Relay needs. The adapter imports nemo_relay lazily and only
+# when telemetry.providers.relay is enabled, so the core install stays
+# Relay-neutral at import time.
+[project.optional-dependencies]
+# Allow both the current 0.5 line and the upcoming 0.6 release (which ships the
+# same SDK-native Deep Agents API). Resolves to 0.5.x today and adopts 0.6
+# automatically once it is published.
+relay = [
+  "nemo-relay[deepagents]>=0.5.0,<0.7",
 ]
 
 [project.urls]

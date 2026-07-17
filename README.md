@@ -202,6 +202,8 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
 - [Experimentation CLI](CLI.md): presets, examples, factories, and explicit
   non-goals.
+- [Consumer integration skills](skills/README.md): repository-local coding-agent
+  skills for integrating Fabric into an application through the Python SDK.
 - [Getting Started overview](docs/getting-started/overview.mdx): interface
   selection and the end-to-end Fabric workflow.
 - [Harbor examples](examples/harbor/README.md): validate the integration with a

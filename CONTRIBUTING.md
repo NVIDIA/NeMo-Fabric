@@ -20,7 +20,7 @@ build wheels from a source checkout:
 
 ```bash
 just wheels
-uv pip install --find-links dist "nemo-fabric[runtime]"
+uv pip install --find-links dist nemo-fabric
 ```
 
 Adapters are distributed as optional extras. For example, install the Hermes adapter with:
