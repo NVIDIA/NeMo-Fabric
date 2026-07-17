@@ -137,11 +137,73 @@ async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
 
 ## Telemetry
 
-- **Relay** (`telemetry.providers.relay`): the agent is wrapped with
-  `nemo_relay.integrations.deepagents.add_nemo_relay_integration`, emitting
-  ATOF/ATIF artifacts referenced in the `ArtifactManifest`. OTel/OpenInference
-  export is available through the relay plugin config (see the `relay-otel` and
-  `relay-openinference` profiles).
+NeMo Relay is Deep Agents' single, SDK-native observability path — the adapter
+does not expose gateway, CLI, or plugin launch modes for this harness. Relay is
+**optional**: `nemo_relay` is imported lazily and only when telemetry is enabled,
+so the core install stays Relay-neutral at import time. Install it through Relay's
+own `deepagents` integration extra:
+
+```bash
+pip install "nemo-fabric-adapters-deepagents[relay]"   # -> nemo-relay[deepagents]
+```
+
+- **Relay** (`telemetry.providers.relay`): the SDK-native integration attaches
+  three complementary pieces around `create_deep_agent`, applied uniformly to
+  one-shot, multi-turn, resumed, and subagent-enabled runs:
+  - `nemo_relay.integrations.deepagents.add_nemo_relay_integration(...)` injects
+    Deep Agents-aware **middleware** that routes model and tool calls through
+    Relay and emits skill/subagent configuration marks.
+  - The top-level invocation runs inside a
+    `nemo_relay.scope.scope("deepagents-request", nemo_relay.ScopeType.Agent)`
+    scope, so the whole Fabric turn is captured under one Agent scope.
+  - `NemoRelayDeepAgentsCallbackHandler()` is added to the LangGraph run config
+    (without dropping consumer-provided callbacks) to capture LangGraph scopes
+    and human-in-the-loop interrupt/resume marks.
+
+  Runs emit ATOF/ATIF artifacts to the configured output directory, referenced in
+  the normalized result's `relay_artifacts` (and the `RunResult` `ArtifactManifest`).
+  OTel/OpenInference export is available through the relay plugin config (see the
+  `relay-otel` and `relay-openinference` profiles).
 - **Native** (`telemetry.providers.native.config`): the provider config
   OpenTelemetry/OpenInference exporter is applied and spans export directly to
   the configured collector, without writing ATOF/ATIF relay artifacts.
+
+**Subagent boundary.** In-process, dictionary-style subagents are instrumented
+with the same Relay middleware, so their model/tool calls appear under the same
+trajectory. Remote and precompiled subagents (those defined with `graph_id` or
+`url`) are **out of scope**: their internals execute in a separate runtime and
+must be instrumented there with their own Relay integration.
+
+### Typed Relay configuration
+
+Enable Relay on a `FabricConfig` with the typed helpers — no gateway process or
+CLI flags are involved:
+
+```python
+from nemo_fabric import (
+    RelayAtifConfig,
+    RelayAtofConfig,
+    RelayObservabilityConfig,
+)
+from examples.code_review_agent import deepagents_config
+
+# Start from a complete Deep Agents configuration, then enable typed Relay telemetry.
+config = deepagents_config()
+config.enable_relay(
+    output_dir="./artifacts/relay",
+    observability=RelayObservabilityConfig(
+        atof=RelayAtofConfig(
+            enabled=True,
+            output_directory="./artifacts/relay",
+            filename="events.atof.jsonl",
+            mode="overwrite",
+        ),
+        atif=RelayAtifConfig(
+            enabled=True,
+            output_directory="./artifacts/relay",
+            filename_template="trajectory-{session_id}.atif.json",
+            agent_name="deepagents-agent",
+        ),
+    ),
+)
+```
