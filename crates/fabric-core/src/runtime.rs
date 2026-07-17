@@ -5,27 +5,33 @@
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::{ErrorKind, Write};
+use std::fs::File;
+use std::io::{BufRead, BufReader, ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-#[cfg(test)]
-use std::sync::Mutex;
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::config::{
-    AdapterKind, CapabilityKind, CapabilityPlan, CapabilityTarget, ControlLocation,
-    EffectiveConfig, EnvironmentOwnership, RunPlan, TelemetryPlan,
+    ADAPTER_LIFECYCLE_CONTRACT_VERSION, AdapterKind, CapabilityKind, CapabilityPlan,
+    CapabilityTarget, ControlLocation, EffectiveConfig, EnvironmentOwnership, ExecutionStrategy,
+    RunPlan, RuntimeCapabilities, TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
+const PERSISTENT_HOST_START_TIMEOUT: Duration = Duration::from_secs(10);
+const PERSISTENT_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(5);
+const PERSISTENT_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
 
 #[cfg(not(windows))]
 const VENV_BIN_DIR: &str = "bin";
@@ -45,6 +51,8 @@ const DEFAULT_PYTHON: &str = "python3";
 const DEFAULT_PYTHON: &str = "python.exe";
 #[cfg(test)]
 static TEST_STOPPED_AGENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static PERSISTENT_HOSTS: LazyLock<Mutex<BTreeMap<String, Arc<Mutex<PersistentHost>>>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
 
 /// A request passed to a Fabric-managed harness runtime.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
@@ -259,6 +267,8 @@ pub struct RuntimeHandle {
     /// Adapter implementation id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adapter_id: Option<String>,
+    /// Execution strategy selected for this runtime.
+    pub execution_strategy: ExecutionStrategy,
     /// Prepared environment.
     pub environment: EnvironmentHandle,
 }
@@ -313,6 +323,8 @@ pub struct RuntimeTelemetryContext {
 pub struct AdapterInvocation {
     /// Merged agent config and provenance.
     pub effective_config: EffectiveConfig,
+    /// Execution strategy selected during planning.
+    pub execution_strategy: ExecutionStrategy,
     /// Per-runtime/per-invocation execution context.
     pub runtime_context: RuntimeContext,
     /// Per-invocation request.
@@ -323,6 +335,135 @@ pub struct AdapterInvocation {
     /// Derived telemetry plan for the selected adapter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry_plan: Option<TelemetryPlan>,
+}
+
+/// Operation exchanged over the versioned persistent-host adapter protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdapterLifecycleOperation {
+    /// Initialize one adapter-owned host for a Fabric runtime.
+    Start,
+    /// Execute one invocation against an initialized host.
+    Invoke,
+    /// Release the host and all runtime-owned resources.
+    Stop,
+}
+
+impl AdapterLifecycleOperation {
+    /// Stable serialized operation name.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Invoke => "invoke",
+            Self::Stop => "stop",
+        }
+    }
+
+    fn error_stage(self) -> ErrorStage {
+        match self {
+            Self::Start => ErrorStage::Start,
+            Self::Invoke => ErrorStage::Invoke,
+            Self::Stop => ErrorStage::Stop,
+        }
+    }
+}
+
+/// Start payload sent once when Fabric creates a persistent adapter host.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterLifecycleStart {
+    /// Runtime identity and prepared environment owned by this host.
+    pub runtime: RuntimeHandle,
+    /// Merged agent config and provenance for this runtime.
+    pub effective_config: EffectiveConfig,
+    /// Capability routing selected during planning.
+    #[serde(default)]
+    pub capability_plan: CapabilityPlan,
+    /// Lifecycle capabilities selected during planning.
+    #[serde(default)]
+    pub capabilities: RuntimeCapabilities,
+    /// Telemetry routing selected during planning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub telemetry_plan: Option<TelemetryPlan>,
+}
+
+/// Stop payload sent once when Fabric releases a persistent adapter host.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterLifecycleStop {
+    /// Runtime being stopped.
+    pub runtime_id: String,
+}
+
+/// Typed operation payload carried by an adapter lifecycle request.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "operation", content = "payload", rename_all = "snake_case")]
+pub enum AdapterLifecycleRequestKind {
+    /// Initialize the host.
+    Start(AdapterLifecycleStart),
+    /// Execute one invocation.
+    Invoke(AdapterInvocation),
+    /// Stop the host.
+    Stop(AdapterLifecycleStop),
+}
+
+impl AdapterLifecycleRequestKind {
+    fn operation(&self) -> AdapterLifecycleOperation {
+        match self {
+            Self::Start(_) => AdapterLifecycleOperation::Start,
+            Self::Invoke(_) => AdapterLifecycleOperation::Invoke,
+            Self::Stop(_) => AdapterLifecycleOperation::Stop,
+        }
+    }
+}
+
+/// One newline-delimited request sent to a persistent adapter host.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterLifecycleRequest {
+    /// Lifecycle protocol version.
+    pub contract_version: String,
+    /// Typed lifecycle operation and payload.
+    #[serde(flatten)]
+    pub request: AdapterLifecycleRequestKind,
+}
+
+impl AdapterLifecycleRequest {
+    fn new(request: AdapterLifecycleRequestKind) -> Self {
+        Self {
+            contract_version: ADAPTER_LIFECYCLE_CONTRACT_VERSION.to_string(),
+            request,
+        }
+    }
+
+    fn operation(&self) -> AdapterLifecycleOperation {
+        self.request.operation()
+    }
+}
+
+/// Outcome returned by a persistent adapter host lifecycle operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum AdapterLifecycleOutcome {
+    /// The operation completed successfully.
+    Succeeded {
+        /// Operation output. Only invoke normally returns a non-null value.
+        #[serde(default)]
+        output: Value,
+    },
+    /// The operation failed with normalized lifecycle diagnostics.
+    Failed {
+        /// Structured failure reported by the adapter host.
+        error: ErrorInfo,
+    },
+}
+
+/// One newline-delimited response returned by a persistent adapter host.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterLifecycleResponse {
+    /// Lifecycle protocol version.
+    pub contract_version: String,
+    /// Operation completed by this response.
+    pub operation: AdapterLifecycleOperation,
+    /// Normalized success or failure outcome.
+    pub outcome: AdapterLifecycleOutcome,
 }
 
 trait RuntimeAdapter {
@@ -338,11 +479,21 @@ trait RuntimeAdapter {
 
 struct ProcessAdapter;
 struct PythonAdapter;
+struct PersistentHostAdapter;
 
 #[derive(Debug, Clone)]
 struct RelayRuntimeConfig {
     path: PathBuf,
     env: BTreeMap<String, String>,
+}
+
+struct PersistentHost {
+    child: Child,
+    stdin: ChildStdin,
+    responses: Receiver<std::result::Result<String, String>>,
+    command: String,
+    runtime_dir: PathBuf,
+    stderr_path: PathBuf,
 }
 
 /// Invoke a Fabric run plan.
@@ -428,6 +579,13 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
     validate_blocked_tools_support(plan)?;
     let environment = prepare_environment(plan)?;
+    match plan.execution_strategy {
+        ExecutionStrategy::PersistentLocalHost => {
+            return PersistentHostAdapter.start(plan, environment);
+        }
+        ExecutionStrategy::RemoteService => return remote_service_unavailable(plan),
+        ExecutionStrategy::ProcessPerInvocation => {}
+    }
     match adapter_kind(plan) {
         AdapterKind::Process => ProcessAdapter.start(plan, environment),
         AdapterKind::Python => PythonAdapter.start(plan, environment),
@@ -446,6 +604,13 @@ pub fn invoke_runtime(
 ) -> Result<RunResult> {
     validate_blocked_tools_support(plan)?;
     validate_runtime_handle(plan, runtime)?;
+    match plan.execution_strategy {
+        ExecutionStrategy::PersistentLocalHost => {
+            return PersistentHostAdapter.invoke(plan, runtime, request);
+        }
+        ExecutionStrategy::RemoteService => return remote_service_unavailable(plan),
+        ExecutionStrategy::ProcessPerInvocation => {}
+    }
     match adapter_kind(plan) {
         AdapterKind::Process => ProcessAdapter.invoke(plan, runtime, request),
         AdapterKind::Python => PythonAdapter.invoke(plan, runtime, request),
@@ -471,6 +636,11 @@ fn validate_blocked_tools_support(plan: &RunPlan) -> Result<()> {
 /// Stop or detach from a harness runtime.
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
     validate_runtime_handle(plan, runtime)?;
+    match plan.execution_strategy {
+        ExecutionStrategy::PersistentLocalHost => return PersistentHostAdapter.stop(runtime),
+        ExecutionStrategy::RemoteService => return remote_service_unavailable(plan),
+        ExecutionStrategy::ProcessPerInvocation => {}
+    }
     match runtime.adapter_kind {
         AdapterKind::Process => ProcessAdapter.stop(runtime),
         AdapterKind::Python => PythonAdapter.stop(runtime),
@@ -479,6 +649,14 @@ pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabri
             adapter_kind,
         }),
     }
+}
+
+fn remote_service_unavailable<T>(plan: &RunPlan) -> Result<T> {
+    Err(FabricError::RuntimeStrategyUnavailable {
+        adapter_id: adapter_id(plan).unwrap_or_else(|| plan.config.harness.adapter_id.clone()),
+        strategy: ExecutionStrategy::RemoteService,
+        reason: "the adapter does not provide a remote lifecycle transport",
+    })
 }
 
 fn validate_runtime_handle(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<()> {
@@ -502,6 +680,12 @@ fn validate_runtime_handle(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<()
         "adapter_id",
         &optional_runtime_value(adapter_id(plan).as_deref()),
         &optional_runtime_value(runtime.adapter_id.as_deref()),
+    )?;
+    expect_runtime_field(
+        runtime,
+        "execution_strategy",
+        plan.execution_strategy.as_str(),
+        runtime.execution_strategy.as_str(),
     )?;
     Ok(())
 }
@@ -676,6 +860,7 @@ impl RuntimeAdapter for ProcessAdapter {
             harness: harness(plan),
             adapter_kind: adapter_kind(plan),
             adapter_id: adapter_id(plan),
+            execution_strategy: plan.execution_strategy,
             environment,
         })
     }
@@ -724,6 +909,7 @@ impl RuntimeAdapter for PythonAdapter {
             harness: harness(plan),
             adapter_kind: adapter_kind(plan),
             adapter_id: adapter_id(plan),
+            execution_strategy: plan.execution_strategy,
             environment,
         })
     }
@@ -752,6 +938,676 @@ impl RuntimeAdapter for PythonAdapter {
             )]),
         )])
     }
+}
+
+impl RuntimeAdapter for PersistentHostAdapter {
+    fn start(&self, plan: &RunPlan, environment: EnvironmentHandle) -> Result<RuntimeHandle> {
+        if environment.provider != "local" {
+            return Err(FabricError::UnsupportedEnvironmentProvider {
+                provider: environment.provider,
+                adapter_kind: adapter_kind(plan),
+            });
+        }
+        match adapter_kind(plan) {
+            AdapterKind::Python => preflight_python_adapter(plan)?,
+            AdapterKind::Process => {}
+            adapter_kind => {
+                return Err(FabricError::UnsupportedRuntimeAdapter {
+                    harness: harness(plan),
+                    adapter_kind,
+                });
+            }
+        }
+
+        let runtime_id = new_id("runtime");
+        let runtime_binding = runtime_binding(&runtime_id, plan, &environment)?;
+        let runtime = RuntimeHandle {
+            runtime_id,
+            runtime_binding,
+            agent_name: plan.agent_name.clone(),
+            harness: harness(plan),
+            adapter_kind: adapter_kind(plan),
+            adapter_id: adapter_id(plan),
+            execution_strategy: plan.execution_strategy,
+            environment,
+        };
+        let mut host = spawn_persistent_host(plan, &runtime)?;
+        let request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Start(
+            AdapterLifecycleStart {
+                runtime: runtime.clone(),
+                effective_config: adapter_effective_config(plan)?,
+                capability_plan: plan.capability_plan.clone(),
+                capabilities: plan.capabilities.clone(),
+                telemetry_plan: plan.telemetry_plan.clone(),
+            },
+        ));
+        if let Err(error) = exchange_lifecycle_message(
+            &mut host,
+            &runtime.runtime_id,
+            &request,
+            Some(PERSISTENT_HOST_START_TIMEOUT),
+        ) {
+            terminate_persistent_host(&mut host);
+            remove_persistent_host_files(&host);
+            return Err(error);
+        }
+
+        persistent_hosts().insert(runtime.runtime_id.clone(), Arc::new(Mutex::new(host)));
+        Ok(runtime)
+    }
+
+    fn invoke(
+        &self,
+        plan: &RunPlan,
+        runtime: &RuntimeHandle,
+        request: RunRequest,
+    ) -> Result<RunResult> {
+        run_persistent_host_adapter(plan, runtime, request)
+    }
+
+    fn stop(&self, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+        let Some(host) = persistent_hosts().remove(&runtime.runtime_id) else {
+            return Ok(vec![persistent_host_stop_event(runtime, true)]);
+        };
+        let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
+        let request =
+            AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
+                runtime_id: runtime.runtime_id.clone(),
+            }));
+        let result = exchange_lifecycle_message(
+            &mut host,
+            &runtime.runtime_id,
+            &request,
+            Some(PERSISTENT_HOST_STOP_TIMEOUT),
+        );
+        terminate_persistent_host(&mut host);
+        remove_persistent_host_files(&host);
+        result?;
+
+        #[cfg(test)]
+        TEST_STOPPED_AGENTS
+            .lock()
+            .expect("stop tracker")
+            .push(runtime.agent_name.clone());
+        Ok(vec![persistent_host_stop_event(runtime, false)])
+    }
+}
+
+fn run_persistent_host_adapter(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
+    mut request: RunRequest,
+) -> Result<RunResult> {
+    if request.request_id.is_empty() {
+        request.request_id = new_id("request");
+    }
+    let invocation = InvocationHandle {
+        invocation_id: new_id("invocation"),
+        request_id: request.request_id.clone(),
+        runtime_id: runtime.runtime_id.clone(),
+    };
+    let mut artifacts = artifact_manifest(plan)?;
+    let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
+    let relay_config = prepare_relay_runtime_config(
+        plan,
+        runtime,
+        &invocation,
+        &request,
+        &fabric_home,
+        &mut artifacts,
+    )?;
+    let adapter_invocation = adapter_invocation(
+        plan,
+        runtime,
+        &invocation,
+        &request,
+        &artifacts,
+        relay_config.as_ref(),
+    )?;
+    let adapter_payload =
+        serde_json::to_string_pretty(&adapter_invocation).map_err(FabricError::SerializeJson)?;
+    let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
+    let lifecycle_request =
+        AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Invoke(adapter_invocation));
+
+    let host = persistent_hosts()
+        .get(&runtime.runtime_id)
+        .cloned()
+        .ok_or_else(|| {
+            lifecycle_error(
+                AdapterLifecycleOperation::Invoke,
+                &runtime.runtime_id,
+                "host_unavailable",
+                "persistent adapter host is not active",
+                "",
+            )
+        })?;
+    let (output, host_command) = {
+        let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
+        let output =
+            exchange_lifecycle_message(&mut host, &runtime.runtime_id, &lifecycle_request, None)?;
+        (output, host.command.clone())
+    };
+
+    let mut events = vec![event_with_metadata(
+        "runtime_start",
+        format!("started runtime {}", runtime.runtime_id),
+        BTreeMap::from([
+            (
+                "runtime_id".to_string(),
+                Value::String(runtime.runtime_id.clone()),
+            ),
+            (
+                "environment_id".to_string(),
+                Value::String(runtime.environment.environment_id.clone()),
+            ),
+            (
+                "environment_provider".to_string(),
+                Value::String(runtime.environment.provider.clone()),
+            ),
+            (
+                "execution_strategy".to_string(),
+                Value::String(runtime.execution_strategy.as_str().to_string()),
+            ),
+        ]),
+    )];
+    events.push(event_with_metadata(
+        "invocation_start",
+        format!("invoking persistent adapter host for {}", harness(plan)),
+        BTreeMap::from([
+            (
+                "runtime_id".to_string(),
+                Value::String(runtime.runtime_id.clone()),
+            ),
+            (
+                "invocation_id".to_string(),
+                Value::String(invocation.invocation_id.clone()),
+            ),
+        ]),
+    ));
+    let (status, error) = adapter_output_status(&output);
+    events.push(event_with_metadata(
+        "invocation_end",
+        format!("persistent adapter host completed with status {status:?}"),
+        BTreeMap::from([
+            (
+                "runtime_id".to_string(),
+                Value::String(runtime.runtime_id.clone()),
+            ),
+            (
+                "invocation_id".to_string(),
+                Value::String(invocation.invocation_id.clone()),
+            ),
+        ]),
+    ));
+    collect_workspace_artifacts(&mut artifacts, &fabric_home, runtime, &mut events)?;
+    promote_relay_artifacts_to_manifest(&output, &mut artifacts);
+
+    let metadata = BTreeMap::from([
+        (
+            "adapter_runner".to_string(),
+            Value::String("persistent_local_host".to_string()),
+        ),
+        ("host_command".to_string(), Value::String(host_command)),
+        (
+            "fabric_home".to_string(),
+            Value::String(fabric_home.to_string_lossy().into_owned()),
+        ),
+        (
+            "fabric_invocation".to_string(),
+            Value::String(fabric_invocation.to_string_lossy().into_owned()),
+        ),
+        (
+            "environment_provider".to_string(),
+            Value::String(runtime.environment.provider.clone()),
+        ),
+    ]);
+    Ok(RunResult {
+        agent_name: plan.agent_name.clone(),
+        profiles: plan.profiles.clone(),
+        harness: harness(plan),
+        adapter_kind: adapter_kind(plan),
+        adapter_id: adapter_id(plan),
+        runtime_id: invocation.runtime_id,
+        invocation_id: invocation.invocation_id,
+        request_id: request.request_id,
+        status,
+        output,
+        error,
+        artifacts,
+        telemetry: telemetry_ref(plan, relay_config.as_ref()),
+        events,
+        metadata,
+    })
+}
+
+fn adapter_output_status(output: &Value) -> (RunStatus, Option<ErrorInfo>) {
+    let failed = output
+        .as_object()
+        .and_then(|output| output.get("failed"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if !failed {
+        return (RunStatus::Succeeded, None);
+    }
+
+    let reported = output
+        .as_object()
+        .and_then(|output| output.get("error"))
+        .and_then(Value::as_object);
+    let code = reported
+        .and_then(|error| error.get("code"))
+        .and_then(Value::as_str)
+        .unwrap_or("adapter_reported_failure")
+        .to_string();
+    let message = reported
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or("adapter reported an invocation failure")
+        .to_string();
+    let retryable = reported
+        .and_then(|error| error.get("retryable"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let metadata = reported
+        .and_then(|error| error.get("metadata"))
+        .and_then(Value::as_object)
+        .map(|metadata| {
+            metadata
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    (
+        RunStatus::Failed,
+        Some(ErrorInfo {
+            stage: ErrorStage::Invoke,
+            code,
+            message,
+            retryable,
+            metadata,
+        }),
+    )
+}
+
+fn persistent_host_stop_event(runtime: &RuntimeHandle, already_stopped: bool) -> FabricEvent {
+    event_with_metadata(
+        "runtime_stop",
+        format!("stopped runtime {}", runtime.runtime_id),
+        BTreeMap::from([
+            (
+                "runtime_id".to_string(),
+                Value::String(runtime.runtime_id.clone()),
+            ),
+            ("already_stopped".to_string(), Value::Bool(already_stopped)),
+        ]),
+    )
+}
+
+fn persistent_hosts() -> std::sync::MutexGuard<'static, BTreeMap<String, Arc<Mutex<PersistentHost>>>>
+{
+    PERSISTENT_HOSTS
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+}
+
+fn spawn_persistent_host(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<PersistentHost> {
+    let runtime_dir = std::env::temp_dir()
+        .join("nemo-fabric")
+        .join(&runtime.runtime_id);
+    std::fs::create_dir_all(&runtime_dir).map_err(|source| FabricError::Write {
+        path: runtime_dir.clone(),
+        source,
+    })?;
+    let stderr_path = runtime_dir.join("host.stderr.log");
+    let stderr = File::create(&stderr_path).map_err(|source| FabricError::Write {
+        path: stderr_path.clone(),
+        source,
+    })?;
+    let (mut command, command_display) = match persistent_host_command(plan, runtime) {
+        Ok(command) => command,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&runtime_dir);
+            return Err(error);
+        }
+    };
+    command
+        .env(
+            "FABRIC_ADAPTER_LIFECYCLE_CONTRACT",
+            ADAPTER_LIFECYCLE_CONTRACT_VERSION,
+        )
+        .env("FABRIC_RUNTIME_ID", &runtime.runtime_id)
+        .env("FABRIC_HOME", &runtime_dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::from(stderr));
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(source) => {
+            let _ = std::fs::remove_dir_all(&runtime_dir);
+            return Err(FabricError::ProcessRunner {
+                command: command_display,
+                source,
+            });
+        }
+    };
+    let Some(stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&runtime_dir);
+        return Err(lifecycle_error(
+            AdapterLifecycleOperation::Start,
+            &runtime.runtime_id,
+            "host_io",
+            "persistent adapter host stdin was not available",
+            "",
+        ));
+    };
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&runtime_dir);
+        return Err(lifecycle_error(
+            AdapterLifecycleOperation::Start,
+            &runtime.runtime_id,
+            "host_io",
+            "persistent adapter host stdout was not available",
+            "",
+        ));
+    };
+    let (sender, responses) = mpsc::channel();
+    if let Err(source) = thread::Builder::new()
+        .name(format!("fabric-host-{}", runtime.runtime_id))
+        .spawn(move || {
+            let mut stdout = BufReader::new(stdout);
+            loop {
+                let mut line = String::new();
+                match stdout.read_line(&mut line) {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        while line.ends_with(['\n', '\r']) {
+                            line.pop();
+                        }
+                        if sender.send(Ok(line)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = sender.send(Err(error.to_string()));
+                        break;
+                    }
+                }
+            }
+        })
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = std::fs::remove_dir_all(&runtime_dir);
+        return Err(FabricError::ProcessRunner {
+            command: command_display,
+            source,
+        });
+    }
+    Ok(PersistentHost {
+        child,
+        stdin,
+        responses,
+        command: command_display,
+        runtime_dir,
+        stderr_path,
+    })
+}
+
+fn persistent_host_command(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<(Command, String)> {
+    let cwd = |configured: Option<&Path>| {
+        configured
+            .map(|path| resolve_path(&plan.config_root, path))
+            .or_else(|| runtime.environment.workspace.clone())
+            .unwrap_or_else(|| plan.agent_root.clone())
+    };
+    match adapter_kind(plan) {
+        AdapterKind::Python => {
+            let settings = parse_python_settings(plan)?;
+            let python = resolve_python_command(&plan.config_root, &settings).path;
+            let mut command = Command::new(&python);
+            command
+                .arg("-m")
+                .arg(&settings.module)
+                .args(&settings.args)
+                .current_dir(cwd(settings.cwd.as_deref()))
+                .envs(&settings.env);
+            Ok((
+                command,
+                format!("{} -m {}", python.to_string_lossy(), settings.module),
+            ))
+        }
+        AdapterKind::Process => {
+            let settings = parse_process_settings(plan)?;
+            let command_path = resolve_command_path(
+                adapter_setting_root(plan, "command"),
+                Path::new(&settings.command),
+            );
+            let command_args = process_command_args(plan, &settings);
+            let mut command = Command::new(&command_path);
+            command
+                .args(&command_args)
+                .current_dir(cwd(settings.cwd.as_deref()))
+                .envs(&settings.env);
+            Ok((command, command_path.to_string_lossy().into_owned()))
+        }
+        adapter_kind => Err(FabricError::UnsupportedRuntimeAdapter {
+            harness: harness(plan),
+            adapter_kind,
+        }),
+    }
+}
+
+fn exchange_lifecycle_message(
+    host: &mut PersistentHost,
+    runtime_id: &str,
+    request: &AdapterLifecycleRequest,
+    timeout: Option<Duration>,
+) -> Result<Value> {
+    let operation = request.operation();
+    if let Some(status) = host.child.try_wait().map_err(|source| {
+        lifecycle_error(
+            operation,
+            runtime_id,
+            "host_io",
+            format!("failed to inspect persistent adapter host: {source}"),
+            persistent_host_diagnostics(host),
+        )
+    })? {
+        return Err(lifecycle_error(
+            operation,
+            runtime_id,
+            "host_crashed",
+            format!(
+                "persistent adapter host exited before {} ({status})",
+                operation.as_str()
+            ),
+            persistent_host_diagnostics(host),
+        ));
+    }
+    let mut message = serde_json::to_string(request).map_err(FabricError::SerializeJson)?;
+    message.push('\n');
+    if let Err(source) = host
+        .stdin
+        .write_all(message.as_bytes())
+        .and_then(|()| host.stdin.flush())
+    {
+        let code = match host.child.try_wait() {
+            Ok(Some(_)) => "host_crashed",
+            _ => "host_io",
+        };
+        return Err(lifecycle_error(
+            operation,
+            runtime_id,
+            code,
+            format!(
+                "failed to send {} to persistent adapter host: {source}",
+                operation.as_str()
+            ),
+            persistent_host_diagnostics(host),
+        ));
+    }
+
+    let line = match timeout {
+        Some(timeout) => match host.responses.recv_timeout(timeout) {
+            Ok(line) => line,
+            Err(RecvTimeoutError::Timeout) => {
+                return Err(lifecycle_error(
+                    operation,
+                    runtime_id,
+                    "host_timeout",
+                    format!(
+                        "persistent adapter host did not complete {} within {} ms",
+                        operation.as_str(),
+                        timeout.as_millis()
+                    ),
+                    persistent_host_diagnostics(host),
+                ));
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(lifecycle_error(
+                    operation,
+                    runtime_id,
+                    "host_crashed",
+                    format!(
+                        "persistent adapter host exited while processing {}",
+                        operation.as_str()
+                    ),
+                    persistent_host_diagnostics(host),
+                ));
+            }
+        },
+        None => host.responses.recv().map_err(|_| {
+            lifecycle_error(
+                operation,
+                runtime_id,
+                "host_crashed",
+                format!(
+                    "persistent adapter host exited while processing {}",
+                    operation.as_str()
+                ),
+                persistent_host_diagnostics(host),
+            )
+        })?,
+    }
+    .map_err(|message| {
+        lifecycle_error(
+            operation,
+            runtime_id,
+            "host_io",
+            message,
+            persistent_host_diagnostics(host),
+        )
+    })?;
+    let response: AdapterLifecycleResponse = serde_json::from_str(&line).map_err(|source| {
+        lifecycle_error(
+            operation,
+            runtime_id,
+            "protocol_error",
+            format!("invalid lifecycle response: {source}"),
+            persistent_host_diagnostics(host),
+        )
+    })?;
+    if response.contract_version != ADAPTER_LIFECYCLE_CONTRACT_VERSION {
+        return Err(lifecycle_error(
+            operation,
+            runtime_id,
+            "protocol_version_mismatch",
+            format!(
+                "expected lifecycle contract `{ADAPTER_LIFECYCLE_CONTRACT_VERSION}` but host returned `{}`",
+                response.contract_version
+            ),
+            persistent_host_diagnostics(host),
+        ));
+    }
+    if response.operation != operation {
+        return Err(lifecycle_error(
+            operation,
+            runtime_id,
+            "protocol_error",
+            format!(
+                "expected `{}` response but host returned `{}`",
+                operation.as_str(),
+                response.operation.as_str()
+            ),
+            persistent_host_diagnostics(host),
+        ));
+    }
+    match response.outcome {
+        AdapterLifecycleOutcome::Succeeded { output } => Ok(output),
+        AdapterLifecycleOutcome::Failed { error } => {
+            if error.stage != operation.error_stage() {
+                return Err(lifecycle_error(
+                    operation,
+                    runtime_id,
+                    "protocol_error",
+                    format!(
+                        "{} failure reported the wrong lifecycle stage `{:?}`",
+                        operation.as_str(),
+                        error.stage
+                    ),
+                    persistent_host_diagnostics(host),
+                ));
+            }
+            let mut diagnostics = persistent_host_diagnostics(host);
+            if !error.metadata.is_empty()
+                && let Ok(metadata) = serde_json::to_string(&error.metadata)
+            {
+                if !diagnostics.is_empty() {
+                    diagnostics.push('\n');
+                }
+                diagnostics.push_str("adapter metadata: ");
+                diagnostics.push_str(&metadata);
+            }
+            Err(lifecycle_error(
+                operation,
+                runtime_id,
+                error.code,
+                error.message,
+                diagnostics,
+            ))
+        }
+    }
+}
+
+fn lifecycle_error(
+    operation: AdapterLifecycleOperation,
+    runtime_id: &str,
+    code: impl Into<String>,
+    message: impl Into<String>,
+    diagnostics: impl Into<String>,
+) -> FabricError {
+    FabricError::AdapterLifecycleOperation {
+        operation: operation.as_str(),
+        runtime_id: runtime_id.to_string(),
+        code: code.into(),
+        message: message.into(),
+        diagnostics: diagnostics.into(),
+    }
+}
+
+fn persistent_host_diagnostics(host: &PersistentHost) -> String {
+    let Ok(bytes) = std::fs::read(&host.stderr_path) else {
+        return String::new();
+    };
+    let start = bytes.len().saturating_sub(PERSISTENT_HOST_DIAGNOSTIC_LIMIT);
+    String::from_utf8_lossy(&bytes[start..]).trim().to_string()
+}
+
+fn terminate_persistent_host(host: &mut PersistentHost) {
+    if matches!(host.child.try_wait(), Ok(None)) {
+        let _ = host.child.kill();
+    }
+    let _ = host.child.wait();
+}
+
+fn remove_persistent_host_files(host: &PersistentHost) {
+    let _ = std::fs::remove_dir_all(&host.runtime_dir);
 }
 
 fn run_process_adapter(
@@ -1320,12 +2176,9 @@ fn adapter_invocation(
     artifacts: &ArtifactManifest,
     relay_config: Option<&RelayRuntimeConfig>,
 ) -> Result<AdapterInvocation> {
-    let mut effective_config = plan.effective_config.clone();
-    effective_config.agent_root = absolute_path(effective_config.agent_root)?;
-    effective_config.config_path = absolute_path(effective_config.config_path)?;
-    effective_config.config_root = absolute_path(effective_config.config_root)?;
     Ok(AdapterInvocation {
-        effective_config,
+        effective_config: adapter_effective_config(plan)?,
+        execution_strategy: plan.execution_strategy,
         runtime_context: RuntimeContext {
             runtime_id: runtime.runtime_id.clone(),
             invocation_id: invocation.invocation_id.clone(),
@@ -1338,6 +2191,14 @@ fn adapter_invocation(
         capability_plan: plan.capability_plan.clone(),
         telemetry_plan: plan.telemetry_plan.clone(),
     })
+}
+
+fn adapter_effective_config(plan: &RunPlan) -> Result<EffectiveConfig> {
+    let mut effective_config = plan.effective_config.clone();
+    effective_config.agent_root = absolute_path(effective_config.agent_root)?;
+    effective_config.config_path = absolute_path(effective_config.config_path)?;
+    effective_config.config_root = absolute_path(effective_config.config_root)?;
+    Ok(effective_config)
 }
 
 fn runtime_telemetry_context(
@@ -2070,6 +2931,125 @@ runtime:
 }"#
     }
 
+    fn persistent_host_agent_dir(mode: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(new_id("fabric-persistent-host-test"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("adapters/persistent")).expect("create adapters dir");
+        fs::write(
+            root.join("agent.yaml"),
+            format!(
+                r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: persistent-host-test-agent
+harness:
+  adapter_id: acme.fabric.persistent
+  settings:
+    runtime_strategy: persistent_local_host
+    command: python3
+    script: ./fake_host.py
+    env:
+      FABRIC_FAKE_HOST_MODE: {mode}
+models:
+  default:
+    provider: test
+    model: test-model
+runtime:
+  input_schema: text
+  output_schema: text
+  artifacts: ./artifacts
+"#
+            ),
+        )
+        .expect("write config");
+        fs::write(
+            root.join("adapters/persistent/fabric-adapter.json"),
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.persistent",
+  "harness": "persistent-test",
+  "adapter_kind": "process",
+  "execution": {
+    "lifecycle_contract_version": "fabric.adapter.lifecycle/v1alpha1",
+    "strategies": ["process_per_invocation", "persistent_local_host"]
+  }
+}"#,
+        )
+        .expect("write adapter descriptor");
+        fs::write(
+            root.join("fake_host.py"),
+            r#"import json
+import os
+import sys
+
+VERSION = "fabric.adapter.lifecycle/v1alpha1"
+MODE = os.environ.get("FABRIC_FAKE_HOST_MODE", "success")
+invocations = 0
+
+def response(operation, *, output=None, error=None):
+    if error is None:
+        outcome = {"status": "succeeded", "output": output}
+    else:
+        outcome = {"status": "failed", "error": error}
+    print(json.dumps({
+        "contract_version": VERSION,
+        "operation": operation,
+        "outcome": outcome,
+    }), flush=True)
+
+def failure(stage, code, message):
+    return {
+        "stage": stage,
+        "code": code,
+        "message": message,
+        "retryable": False,
+    }
+
+for line in sys.stdin:
+    message = json.loads(line)
+    operation = message["operation"]
+    if operation == "start":
+        if MODE == "start_failure":
+            print("start diagnostic", file=sys.stderr, flush=True)
+            response("start", error=failure("start", "fake_start", "start rejected"))
+            continue
+        response("start")
+        if MODE == "crash_after_start":
+            print("host crashed intentionally", file=sys.stderr, flush=True)
+            sys.exit(17)
+    elif operation == "invoke":
+        invocations += 1
+        if MODE == "invoke_failure":
+            response("invoke", error=failure("invoke", "fake_invoke", "invoke rejected"))
+            continue
+        invocation = message["payload"]
+        output = {
+            "host_pid": os.getpid(),
+            "invocation_count": invocations,
+            "input": invocation["request"]["input"],
+        }
+        if MODE == "adapter_reported_failure":
+            output.update({
+                "failed": True,
+                "error": {
+                    "code": "fake_adapter_failure",
+                    "message": "adapter rejected the invocation",
+                    "retryable": True,
+                    "metadata": {"source": "fake-host"},
+                },
+            })
+        response("invoke", output=output)
+    elif operation == "stop":
+        if MODE == "stop_failure":
+            response("stop", error=failure("stop", "fake_stop", "stop rejected"))
+            sys.exit(18)
+        response("stop")
+        break
+"#,
+        )
+        .expect("write fake host");
+        root
+    }
+
     fn stopped_agents() -> Vec<String> {
         TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
     }
@@ -2320,6 +3300,10 @@ relay:
         let payload = serde_json::to_value(payload).expect("adapter payload json");
 
         assert!(relay.is_none());
+        assert_eq!(
+            payload["execution_strategy"],
+            serde_json::json!("process_per_invocation")
+        );
         assert!(
             !artifacts
                 .artifacts
@@ -2380,6 +3364,128 @@ relay:
     }
 
     #[test]
+    fn persistent_host_reuses_one_process_and_stops_idempotently() {
+        let root = persistent_host_agent_dir("success");
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("start persistent host");
+
+        let first =
+            invoke_runtime(&plan, &runtime, RunRequest::text("first")).expect("first invocation");
+        let second =
+            invoke_runtime(&plan, &runtime, RunRequest::text("second")).expect("second invocation");
+
+        assert_eq!(first.output["host_pid"], second.output["host_pid"]);
+        assert_eq!(first.output["invocation_count"], serde_json::json!(1));
+        assert_eq!(second.output["invocation_count"], serde_json::json!(2));
+        assert_eq!(first.output["input"], serde_json::json!("first"));
+        assert_eq!(second.output["input"], serde_json::json!("second"));
+        assert_eq!(
+            first.metadata["adapter_runner"],
+            serde_json::json!("persistent_local_host")
+        );
+
+        let first_stop = stop_runtime(&plan, &runtime).expect("first stop");
+        let second_stop = stop_runtime(&plan, &runtime).expect("idempotent stop");
+        assert_eq!(first_stop[0].metadata["already_stopped"], false);
+        assert_eq!(second_stop[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn persistent_host_start_failure_preserves_stage_and_diagnostics() {
+        let root = persistent_host_agent_dir("start_failure");
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+
+        let error = start_runtime(&plan).expect_err("start must fail");
+        let message = error.to_string();
+        assert!(message.contains("lifecycle start"), "{message}");
+        assert!(message.contains("fake_start"), "{message}");
+        assert!(message.contains("start diagnostic"), "{message}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn persistent_host_invoke_failure_is_stopped_by_run_plan() {
+        let root = persistent_host_agent_dir("invoke_failure");
+        let mut plan = resolve_run_plan(&root, None).expect("run plan");
+        plan.agent_name = new_id("persistent-invoke-error-agent");
+        plan.effective_config.agent_name = plan.agent_name.clone();
+        let agent_name = plan.agent_name.clone();
+
+        let error = run_plan(&plan, RunRequest::text("fail")).expect_err("invoke must fail");
+        let message = error.to_string();
+        assert!(message.contains("lifecycle invoke"), "{message}");
+        assert!(message.contains("fake_invoke"), "{message}");
+        assert!(
+            stopped_agents().contains(&agent_name),
+            "run_plan must stop the persistent host after invocation failure"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn persistent_host_preserves_normalized_adapter_failure() {
+        let root = persistent_host_agent_dir("adapter_reported_failure");
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+
+        let result = run_plan(&plan, RunRequest::text("fail")).expect("normalized result");
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(result.output["failed"], true);
+        assert_eq!(
+            result.error,
+            Some(ErrorInfo {
+                stage: ErrorStage::Invoke,
+                code: "fake_adapter_failure".to_string(),
+                message: "adapter rejected the invocation".to_string(),
+                retryable: true,
+                metadata: BTreeMap::from([("source".to_string(), serde_json::json!("fake-host"),)]),
+            })
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn persistent_host_crash_rejects_new_invocations() {
+        let root = persistent_host_agent_dir("crash_after_start");
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("start persistent host");
+
+        let first = invoke_runtime(&plan, &runtime, RunRequest::text("first"))
+            .expect_err("crashed host must reject invocation");
+        let second = invoke_runtime(&plan, &runtime, RunRequest::text("second"))
+            .expect_err("dead runtime handle must remain unusable");
+        assert!(first.to_string().contains("host_crashed"), "{first}");
+        assert!(second.to_string().contains("host_crashed"), "{second}");
+
+        let stop = stop_runtime(&plan, &runtime).expect_err("crashed host cannot acknowledge stop");
+        assert!(stop.to_string().contains("lifecycle stop"), "{stop}");
+        stop_runtime(&plan, &runtime).expect("cleanup remains idempotent");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn persistent_host_stop_failure_cleans_up_before_retry() {
+        let root = persistent_host_agent_dir("stop_failure");
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let runtime = start_runtime(&plan).expect("start persistent host");
+
+        let error = stop_runtime(&plan, &runtime).expect_err("stop must fail");
+        let message = error.to_string();
+        assert!(message.contains("lifecycle stop"), "{message}");
+        assert!(message.contains("fake_stop"), "{message}");
+        let retry = stop_runtime(&plan, &runtime).expect("cleanup retry is idempotent");
+        assert_eq!(retry[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn runtime_handle_exposes_single_opaque_binding() {
         let root = temp_process_agent_dir();
         let plan = resolve_run_plan(&root, None).expect("run plan");
@@ -2387,9 +3493,31 @@ relay:
 
         let value = serde_json::to_value(&runtime).expect("runtime json");
         assert!(value.get("runtime_binding").is_some());
+        assert_eq!(
+            value["execution_strategy"],
+            serde_json::json!("process_per_invocation")
+        );
         assert!(value.get("plan_fingerprint").is_none());
         assert!(value.get("environment_fingerprint").is_none());
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn remote_service_never_falls_back_to_per_invocation_execution() {
+        let root = temp_process_agent_dir();
+        let mut plan = resolve_run_plan(&root, None).expect("run plan");
+        plan.execution_strategy = ExecutionStrategy::RemoteService;
+
+        let error = start_runtime(&plan).expect_err("remote transport is required");
+
+        assert!(matches!(
+            error,
+            FabricError::RuntimeStrategyUnavailable {
+                strategy: ExecutionStrategy::RemoteService,
+                ..
+            }
+        ));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -2533,6 +3661,20 @@ relay:
             "{error}"
         );
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn invoke_runtime_rejects_mutated_execution_strategy() {
+        let root = temp_process_agent_dir();
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+        let mut runtime = start_runtime(&plan).expect("runtime");
+        runtime.execution_strategy = ExecutionStrategy::PersistentLocalHost;
+
+        let error = invoke_runtime(&plan, &runtime, RunRequest::text("hello fabric"))
+            .expect_err("runtime mismatch");
+
+        assert!(error.to_string().contains("execution_strategy"), "{error}");
         let _ = fs::remove_dir_all(root);
     }
 

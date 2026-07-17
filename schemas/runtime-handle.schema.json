@@ -106,6 +106,26 @@
           "type": "string"
         }
       ]
+    },
+    "ExecutionStrategy": {
+      "description": "How the selected adapter executes harness work for one Fabric runtime.",
+      "oneOf": [
+        {
+          "const": "process_per_invocation",
+          "description": "Launch a fresh adapter process for each invocation.",
+          "type": "string"
+        },
+        {
+          "const": "persistent_local_host",
+          "description": "Start one adapter-owned local host and reuse it for the runtime.",
+          "type": "string"
+        },
+        {
+          "const": "remote_service",
+          "description": "Allocate or connect to an adapter-owned remote harness service.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -130,6 +150,10 @@
       "$ref": "#/$defs/EnvironmentHandle",
       "description": "Prepared environment."
     },
+    "execution_strategy": {
+      "$ref": "#/$defs/ExecutionStrategy",
+      "description": "Execution strategy selected for this runtime."
+    },
     "harness": {
       "description": "Stable machine-readable harness identifier.",
       "type": "string"
@@ -149,6 +173,7 @@
     "agent_name",
     "harness",
     "adapter_kind",
+    "execution_strategy",
     "environment"
   ],
   "title": "RuntimeHandle",

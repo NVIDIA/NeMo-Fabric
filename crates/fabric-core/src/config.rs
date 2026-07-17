@@ -17,6 +17,8 @@ use crate::error::{FabricError, Result};
 const AGENT_YAML: &str = "agent.yaml";
 /// Adapter descriptor contract version supported by this core.
 pub const ADAPTER_CONTRACT_VERSION: &str = "fabric.adapter/v1alpha1";
+/// Adapter lifecycle contract version supported by this core.
+pub const ADAPTER_LIFECYCLE_CONTRACT_VERSION: &str = "fabric.adapter.lifecycle/v1alpha1";
 
 /// A loaded Fabric document with resolved source path and agent root.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -156,6 +158,9 @@ pub struct AdapterDescriptor {
     /// Telemetry support declared by this adapter.
     #[serde(default)]
     pub telemetry: AdapterTelemetrySupport,
+    /// Runtime execution strategies implemented by this adapter.
+    #[serde(default, skip_serializing_if = "AdapterExecutionSupport::is_empty")]
+    pub execution: AdapterExecutionSupport,
     /// Runtime lifecycle operations supported by this adapter.
     #[serde(default)]
     pub capabilities: RuntimeCapabilities,
@@ -394,6 +399,35 @@ pub struct AdapterTelemetryProviderSupport {
     pub extensions: BTreeMap<String, Value>,
 }
 
+/// Execution strategies implemented by an adapter.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct AdapterExecutionSupport {
+    /// Version of the external start/invoke/stop contract used by persistent strategies.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle_contract_version: Option<String>,
+    /// Execution strategies implemented by this adapter.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub strategies: BTreeSet<ExecutionStrategy>,
+    /// Additive execution-support fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+impl AdapterExecutionSupport {
+    fn is_empty(&self) -> bool {
+        self.lifecycle_contract_version.is_none()
+            && self.strategies.is_empty()
+            && self.extensions.is_empty()
+    }
+
+    fn effective_strategies(&self) -> BTreeSet<ExecutionStrategy> {
+        if self.strategies.is_empty() {
+            return BTreeSet::from([ExecutionStrategy::ProcessPerInvocation]);
+        }
+        self.strategies.clone()
+    }
+}
+
 /// Profile config applied on top of a Fabric config.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ProfileConfig {
@@ -498,6 +532,32 @@ pub enum AdapterKind {
     Python,
     /// Delegate to a harness-native plugin package.
     NativePlugin,
+}
+
+/// How the selected adapter executes harness work for one Fabric runtime.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionStrategy {
+    /// Launch a fresh adapter process for each invocation.
+    #[default]
+    ProcessPerInvocation,
+    /// Start one adapter-owned local host and reuse it for the runtime.
+    PersistentLocalHost,
+    /// Allocate or connect to an adapter-owned remote harness service.
+    RemoteService,
+}
+
+impl ExecutionStrategy {
+    /// Stable serialized strategy name.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ProcessPerInvocation => "process_per_invocation",
+            Self::PersistentLocalHost => "persistent_local_host",
+            Self::RemoteService => "remote_service",
+        }
+    }
 }
 
 /// Model configuration.
@@ -1315,6 +1375,7 @@ pub fn resolve_run_plan_from_effective_config(
         .as_ref()
         .map(|adapter| &adapter.descriptor);
     let resolution = resolve_resolution(&config, descriptor)?;
+    let execution_strategy = resolve_execution_strategy(&config, descriptor)?;
     let environment_plan = resolve_environment_plan(&config, &config_root);
     validate_control_location(descriptor, environment_plan.as_ref())?;
     let capability_plan =
@@ -1326,6 +1387,7 @@ pub fn resolve_run_plan_from_effective_config(
         profiles: effective_config.profiles.clone(),
         adapter_descriptor,
         resolution,
+        execution_strategy,
         environment_plan,
         capability_plan,
         capabilities,
@@ -1489,6 +1551,28 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     if descriptor.harness.trim().is_empty() {
         return invalid_adapter_descriptor(path, "harness must not be empty");
     }
+    if let Some(version) = descriptor.execution.lifecycle_contract_version.as_deref()
+        && version != ADAPTER_LIFECYCLE_CONTRACT_VERSION
+    {
+        return Err(FabricError::AdapterDescriptorUnsupported {
+            adapter_id: descriptor.adapter_id.clone(),
+            field: "execution.lifecycle_contract_version",
+            value: version.to_string(),
+        });
+    }
+    if descriptor.execution.strategies.iter().any(|strategy| {
+        matches!(
+            strategy,
+            ExecutionStrategy::PersistentLocalHost | ExecutionStrategy::RemoteService
+        )
+    }) && descriptor.execution.lifecycle_contract_version.as_deref()
+        != Some(ADAPTER_LIFECYCLE_CONTRACT_VERSION)
+    {
+        return invalid_adapter_descriptor(
+            path,
+            "execution.lifecycle_contract_version is required for persistent_local_host and remote_service",
+        );
+    }
     Ok(())
 }
 
@@ -1504,6 +1588,32 @@ fn validate_control_location(
     _environment_plan: Option<&EnvironmentPlan>,
 ) -> Result<()> {
     Ok(())
+}
+
+fn resolve_execution_strategy(
+    config: &FabricConfig,
+    adapter_descriptor: Option<&AdapterDescriptor>,
+) -> Result<ExecutionStrategy> {
+    let requested = match config.harness.settings.get("runtime_strategy") {
+        Some(value) => serde_json::from_value(value.clone()).map_err(|_| {
+            FabricError::InvalidRuntimeStrategy {
+                adapter_id: config.harness.adapter_id.clone(),
+                value: value.to_string(),
+            }
+        })?,
+        None => ExecutionStrategy::ProcessPerInvocation,
+    };
+    let supported = adapter_descriptor
+        .map(|descriptor| descriptor.execution.effective_strategies())
+        .unwrap_or_else(|| BTreeSet::from([ExecutionStrategy::ProcessPerInvocation]));
+    if supported.contains(&requested) {
+        return Ok(requested);
+    }
+    Err(FabricError::UnsupportedExecutionStrategy {
+        adapter_id: config.harness.adapter_id.clone(),
+        requested,
+        supported: supported.into_iter().collect(),
+    })
 }
 
 fn resolve_runtime_capabilities(
@@ -1847,6 +1957,8 @@ pub struct RunPlan {
     /// Selected install or availability strategy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution: Option<ResolutionStrategy>,
+    /// Adapter execution strategy selected during planning.
+    pub execution_strategy: ExecutionStrategy,
     /// Resolved environment plan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment_plan: Option<EnvironmentPlan>,
@@ -3012,5 +3124,181 @@ environment:
         ));
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_adapter_defaults_to_process_per_invocation() {
+        let plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
+
+        assert_eq!(
+            plan.execution_strategy,
+            ExecutionStrategy::ProcessPerInvocation
+        );
+    }
+
+    #[test]
+    fn planning_selects_supported_persistent_local_host() {
+        let root = execution_strategy_agent_dir(
+            "persistent_local_host",
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.lifecycle",
+  "harness": "lifecycle",
+  "adapter_kind": "python",
+  "execution": {
+    "lifecycle_contract_version": "fabric.adapter.lifecycle/v1alpha1",
+    "strategies": ["process_per_invocation", "persistent_local_host"]
+  }
+}"#,
+        );
+
+        let plan = resolve_run_plan(&root, None).expect("run plan");
+
+        assert_eq!(
+            plan.execution_strategy,
+            ExecutionStrategy::PersistentLocalHost
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn planning_rejects_unsupported_execution_strategy() {
+        let root = execution_strategy_agent_dir(
+            "persistent_local_host",
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.lifecycle",
+  "harness": "lifecycle",
+  "adapter_kind": "python",
+  "execution": {
+    "strategies": ["process_per_invocation"]
+  }
+}"#,
+        );
+
+        let error = resolve_run_plan(&root, None).expect_err("unsupported strategy");
+
+        assert!(matches!(
+            error,
+            FabricError::UnsupportedExecutionStrategy {
+                adapter_id,
+                requested: ExecutionStrategy::PersistentLocalHost,
+                supported,
+            } if adapter_id == "acme.fabric.lifecycle"
+                && supported == vec![ExecutionStrategy::ProcessPerInvocation]
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn planning_rejects_unsupported_remote_service_strategy() {
+        let root = execution_strategy_agent_dir(
+            "remote_service",
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.lifecycle",
+  "harness": "lifecycle",
+  "adapter_kind": "python",
+  "execution": {
+    "lifecycle_contract_version": "fabric.adapter.lifecycle/v1alpha1",
+    "strategies": ["process_per_invocation", "persistent_local_host"]
+  }
+}"#,
+        );
+
+        let error = resolve_run_plan(&root, None).expect_err("unsupported strategy");
+
+        assert!(matches!(
+            error,
+            FabricError::UnsupportedExecutionStrategy {
+                adapter_id,
+                requested: ExecutionStrategy::RemoteService,
+                supported,
+            } if adapter_id == "acme.fabric.lifecycle"
+                && supported == vec![
+                    ExecutionStrategy::ProcessPerInvocation,
+                    ExecutionStrategy::PersistentLocalHost,
+                ]
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn planning_rejects_unknown_runtime_strategy_value() {
+        let root = execution_strategy_agent_dir(
+            "future_strategy",
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.lifecycle",
+  "harness": "lifecycle",
+  "adapter_kind": "python"
+}"#,
+        );
+
+        let error = resolve_run_plan(&root, None).expect_err("invalid strategy");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidRuntimeStrategy { adapter_id, value }
+                if adapter_id == "acme.fabric.lifecycle" && value == "\"future_strategy\""
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn descriptor_rejects_persistent_host_without_lifecycle_contract() {
+        let root = execution_strategy_agent_dir(
+            "process_per_invocation",
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.lifecycle",
+  "harness": "lifecycle",
+  "adapter_kind": "python",
+  "execution": {
+    "strategies": ["persistent_local_host"]
+  }
+}"#,
+        );
+
+        let error = resolve_run_plan(&root, None).expect_err("invalid descriptor");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidAdapterDescriptor { message, .. }
+                if message.contains("lifecycle_contract_version")
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn execution_strategy_agent_dir(execution_strategy: &str, descriptor: &str) -> PathBuf {
+        static NEXT_FIXTURE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let fixture_id = NEXT_FIXTURE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "fabric-execution-strategy-test-{}-{fixture_id}-{execution_strategy}",
+            std::process::id(),
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("adapters/lifecycle")).expect("create adapter directory");
+        std::fs::write(
+            root.join("agent.yaml"),
+            format!(
+                r#"schema_version: fabric.agent/v1alpha1
+metadata:
+  name: lifecycle-agent
+harness:
+  adapter_id: acme.fabric.lifecycle
+  settings:
+    runtime_strategy: {execution_strategy}
+runtime:
+"#
+            ),
+        )
+        .expect("write agent config");
+        std::fs::write(
+            root.join("adapters/lifecycle/fabric-adapter.json"),
+            descriptor,
+        )
+        .expect("write adapter descriptor");
+        root
     }
 }

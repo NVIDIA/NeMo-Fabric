@@ -59,6 +59,7 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
     let mut checks = Vec::new();
     checks.push(check_adapter_descriptor(plan));
     checks.push(check_resolution(plan));
+    checks.push(check_execution_strategy(plan));
     checks.extend(check_runtime_execution_surface(plan));
     checks.push(check_environment_context(plan));
     checks.extend(check_capability_routes(plan));
@@ -72,6 +73,35 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
         status,
         checks,
     }
+}
+
+fn check_execution_strategy(plan: &RunPlan) -> DoctorCheck {
+    let mut metadata = BTreeMap::new();
+    metadata.insert(
+        "strategy".to_string(),
+        Value::String(plan.execution_strategy.as_str().to_string()),
+    );
+    if let Some(version) = plan.adapter_descriptor.as_ref().and_then(|adapter| {
+        adapter
+            .descriptor
+            .execution
+            .lifecycle_contract_version
+            .as_ref()
+    }) {
+        metadata.insert(
+            "lifecycle_contract_version".to_string(),
+            Value::String(version.clone()),
+        );
+    }
+    check_with_metadata(
+        "execution_strategy",
+        DoctorStatus::Pass,
+        format!(
+            "selected execution strategy `{}`",
+            plan.execution_strategy.as_str()
+        ),
+        metadata,
+    )
 }
 
 fn check_adapter_descriptor(plan: &RunPlan) -> DoctorCheck {

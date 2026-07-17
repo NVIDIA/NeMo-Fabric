@@ -22,7 +22,8 @@ Fabric provides:
 - a versioned typed config contract, with `agent.yaml` as the portable file
   format;
 - profile-based config variation for evaluation and ablation runs;
-- adapter descriptors for harness-specific launch and control;
+- adapter descriptors for harness-specific launch, lifecycle control, and
+  supported execution strategies;
 - a Rust core with a CLI and Python bindings;
 - JSON Schema snapshots for the public config and runtime contract;
 - normalized run results, artifact manifests, and telemetry references.

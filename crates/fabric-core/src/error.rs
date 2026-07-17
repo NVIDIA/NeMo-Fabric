@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::config::AdapterKind;
+use crate::config::{AdapterKind, ExecutionStrategy};
 
 /// Core Fabric result type.
 pub type Result<T> = std::result::Result<T, FabricError>;
@@ -72,6 +72,42 @@ pub enum FabricError {
         /// Unsupported value.
         value: String,
     },
+    /// The selected adapter does not implement the requested execution strategy.
+    #[error(
+        "adapter `{adapter_id}` does not support execution strategy `{}`; supported strategies: {supported:?}",
+        requested.as_str()
+    )]
+    UnsupportedExecutionStrategy {
+        /// Adapter id selected by the config.
+        adapter_id: String,
+        /// Requested execution strategy.
+        requested: ExecutionStrategy,
+        /// Strategies implemented by the selected adapter.
+        supported: Vec<ExecutionStrategy>,
+    },
+    /// The runtime strategy setting is not part of the shared strategy vocabulary.
+    #[error(
+        "invalid harness.settings.runtime_strategy for adapter `{adapter_id}`: expected `process_per_invocation`, `persistent_local_host`, or `remote_service`, found {value}"
+    )]
+    InvalidRuntimeStrategy {
+        /// Adapter id selected by the config.
+        adapter_id: String,
+        /// Invalid JSON value supplied by the consumer.
+        value: String,
+    },
+    /// The selected adapter declares a strategy whose runtime transport is unavailable.
+    #[error(
+        "runtime strategy `{}` is not executable for adapter `{adapter_id}`: {reason}",
+        strategy.as_str()
+    )]
+    RuntimeStrategyUnavailable {
+        /// Adapter id selected by the config.
+        adapter_id: String,
+        /// Strategy selected during planning.
+        strategy: ExecutionStrategy,
+        /// Missing adapter/runtime contract.
+        reason: &'static str,
+    },
     /// An adapter descriptor is malformed.
     #[error("invalid adapter descriptor in {path}: {message}")]
     InvalidAdapterDescriptor {
@@ -108,6 +144,27 @@ pub enum FabricError {
         harness: String,
         /// Adapter kind.
         adapter_kind: AdapterKind,
+    },
+    /// A versioned persistent-host lifecycle operation failed.
+    #[error(
+        "adapter lifecycle {operation} failed for runtime `{runtime_id}` ({code}): {message}{diagnostics_suffix}",
+        diagnostics_suffix = if diagnostics.is_empty() {
+            String::new()
+        } else {
+            format!("; diagnostics: {diagnostics}")
+        }
+    )]
+    AdapterLifecycleOperation {
+        /// Lifecycle operation that failed.
+        operation: &'static str,
+        /// Runtime whose host failed.
+        runtime_id: String,
+        /// Stable failure code.
+        code: String,
+        /// Human-readable failure message.
+        message: String,
+        /// Bounded adapter-host diagnostics.
+        diagnostics: String,
     },
     /// The selected harness cannot enforce the configured blocked-tools policy.
     #[error("harness `{harness}` cannot enforce configured blocked tools: {reason}")]

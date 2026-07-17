@@ -377,6 +377,26 @@
         }
       ]
     },
+    "ExecutionStrategy": {
+      "description": "How the selected adapter executes harness work for one Fabric runtime.",
+      "oneOf": [
+        {
+          "const": "process_per_invocation",
+          "description": "Launch a fresh adapter process for each invocation.",
+          "type": "string"
+        },
+        {
+          "const": "persistent_local_host",
+          "description": "Start one adapter-owned local host and reuse it for the runtime.",
+          "type": "string"
+        },
+        {
+          "const": "remote_service",
+          "description": "Allocate or connect to an adapter-owned remote harness service.",
+          "type": "string"
+        }
+      ]
+    },
     "FabricConfig": {
       "additionalProperties": true,
       "description": "Versioned Fabric agent config.",
@@ -1552,6 +1572,10 @@
       "$ref": "#/$defs/EffectiveConfig",
       "description": "Merged agent config and provenance."
     },
+    "execution_strategy": {
+      "$ref": "#/$defs/ExecutionStrategy",
+      "description": "Execution strategy selected during planning."
+    },
     "request": {
       "$ref": "#/$defs/RunRequest",
       "description": "Per-invocation request."
@@ -1574,6 +1598,7 @@
   },
   "required": [
     "effective_config",
+    "execution_strategy",
     "runtime_context",
     "request"
   ],

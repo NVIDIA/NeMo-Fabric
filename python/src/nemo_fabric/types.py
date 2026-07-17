@@ -981,6 +981,7 @@ class RunPlan(FabricMapping):
         agent_name: Resolved agent name.
         profiles: Applied profile names in caller order.
         adapter: Resolved adapter identity.
+        execution_strategy: Adapter execution strategy selected by planning.
         capabilities: Operations declared by the resolved runtime.
     """
 
@@ -988,8 +989,18 @@ class RunPlan(FabricMapping):
     agent_name: str
     profiles: Sequence[str]
     adapter: AdapterInfo
+    execution_strategy: str
     capabilities: RuntimeCapabilities
-    _fields = frozenset({"effective_config", "agent_name", "profiles", "adapter", "capabilities"})
+    _fields = frozenset(
+        {
+            "effective_config",
+            "agent_name",
+            "profiles",
+            "adapter",
+            "execution_strategy",
+            "capabilities",
+        }
+    )
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -999,6 +1010,9 @@ class RunPlan(FabricMapping):
         data["effective_config"] = EffectiveConfig.from_mapping(data["effective_config"])
         data["profiles"] = _required_profiles(data, "RunPlan")
         data["adapter"] = AdapterInfo.from_mapping(descriptor)
+        data["execution_strategy"] = _required_text(
+            data.get("execution_strategy"), "execution strategy"
+        )
         data["capabilities"] = RuntimeCapabilities.from_mapping(data.get("capabilities", {}))
         return data
 
@@ -1199,6 +1213,7 @@ class RuntimeHandle(FabricMapping):
         harness: Stable harness identifier.
         adapter_kind: Adapter execution mechanism.
         adapter_id: Optional Fabric adapter identifier.
+        execution_strategy: Adapter execution strategy selected for this runtime.
         environment: Prepared environment snapshot.
     """
 
@@ -1208,6 +1223,7 @@ class RuntimeHandle(FabricMapping):
     harness: str
     adapter_kind: str
     adapter_id: str | None
+    execution_strategy: str
     environment: Mapping[str, Any]
     _fields = frozenset(
         {
@@ -1217,6 +1233,7 @@ class RuntimeHandle(FabricMapping):
             "harness",
             "adapter_kind",
             "adapter_id",
+            "execution_strategy",
             "environment",
         }
     )
@@ -1230,6 +1247,7 @@ class RuntimeHandle(FabricMapping):
             "agent_name",
             "harness",
             "adapter_kind",
+            "execution_strategy",
         ):
             data[field] = _required_text(data.get(field), field.replace("_", " "))
         if data.get("adapter_id") is not None:

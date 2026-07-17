@@ -93,6 +93,27 @@ def test_variants_plan_without_file_profiles():
         assert plan.adapter.adapter_id == config.harness.adapter_id
 
 
+def test_claude_and_codex_plan_persistent_local_hosts():
+    client = Fabric()
+
+    for config in (claude_config(), codex_config()):
+        config.harness.settings["runtime_strategy"] = "persistent_local_host"
+
+        plan = client.plan(config, base_dir=BASE_DIR)
+
+        assert plan.execution_strategy == "persistent_local_host"
+
+
+async def test_claude_and_codex_persistent_hosts_start_and_stop():
+    client = Fabric()
+
+    for config in (claude_config(), codex_config()):
+        config.harness.settings["runtime_strategy"] = "persistent_local_host"
+
+        async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
+            assert runtime.handle.execution_strategy == "persistent_local_host"
+
+
 def test_example_entrypoint_plans_without_starting_a_runtime():
     cases = (
         ([], "nvidia.fabric.hermes", False),

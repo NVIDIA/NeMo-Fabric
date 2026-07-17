@@ -2,7 +2,7 @@
 title: "Module runtime"
 sidebar-title: "runtime"
 description: "Runtime invocation helpers."
-position: 79
+position: 89
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -14,6 +14,10 @@ Runtime invocation helpers.
 ## Structs
 
 - [AdapterInvocation](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-adapterinvocation): Adapter-facing invocation payload.
+- [AdapterLifecycleRequest](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-adapterlifecyclerequest): One newline-delimited request sent to a persistent adapter host.
+- [AdapterLifecycleResponse](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-adapterlifecycleresponse): One newline-delimited response returned by a persistent adapter host.
+- [AdapterLifecycleStart](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-adapterlifecyclestart): Start payload sent once when Fabric creates a persistent adapter host.
+- [AdapterLifecycleStop](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-adapterlifecyclestop): Stop payload sent once when Fabric releases a persistent adapter host.
 - [ArtifactManifest](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-artifactmanifest): Manifest of run artifacts.
 - [ArtifactRef](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-artifactref): Reference to one artifact.
 - [EnvironmentHandle](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-environmenthandle): Resolved execution environment context.
@@ -29,6 +33,9 @@ Runtime invocation helpers.
 
 ## Enums
 
+- [AdapterLifecycleOperation](/reference/api/rust-library-reference/nemo-fabric-core/runtime/enum-adapterlifecycleoperation): Operation exchanged over the versioned persistent-host adapter protocol.
+- [AdapterLifecycleOutcome](/reference/api/rust-library-reference/nemo-fabric-core/runtime/enum-adapterlifecycleoutcome): Outcome returned by a persistent adapter host lifecycle operation.
+- [AdapterLifecycleRequestKind](/reference/api/rust-library-reference/nemo-fabric-core/runtime/enum-adapterlifecyclerequestkind): Typed operation payload carried by an adapter lifecycle request.
 - [ErrorStage](/reference/api/rust-library-reference/nemo-fabric-core/runtime/enum-errorstage): Fabric lifecycle stage associated with an error.
 - [RunStatus](/reference/api/rust-library-reference/nemo-fabric-core/runtime/enum-runstatus): Runtime completion status.
 

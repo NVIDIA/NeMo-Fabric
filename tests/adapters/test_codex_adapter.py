@@ -15,6 +15,22 @@ from openai_codex import AsyncCodex, AsyncThread, AsyncTurnHandle
 from openai_codex.types import TurnStatus
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_codex_descriptor_declares_supported_runtime_strategies():
+    descriptor = json.loads(
+        (ROOT / "adapters" / "codex" / "fabric-adapter.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert descriptor["execution"] == {
+        "lifecycle_contract_version": "fabric.adapter.lifecycle/v1alpha1",
+        "strategies": ["process_per_invocation", "persistent_local_host"],
+    }
+
+
 @pytest.fixture(name="codex_payload")
 def codex_payload_fixture(tmp_path):
     workspace = tmp_path / "workspace"
@@ -563,6 +579,19 @@ def test_adapter_rejects_structured_input(codex_payload):
     output = adapter.run(codex_payload)
 
     assert output["error"]["code"] == "codex_invalid_request"
+
+
+def test_main_serves_lifecycle_protocol_when_requested(monkeypatch):
+    serve = MagicMock()
+    monkeypatch.setenv(
+        adapter.lifecycle.CONTRACT_ENV,
+        adapter.lifecycle.CONTRACT_VERSION,
+    )
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
+
+    adapter.main()
+
+    serve.assert_called_once_with(adapter.run)
 
 
 def test_descriptor_has_no_codex_binary_requirement():

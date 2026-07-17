@@ -10,6 +10,10 @@
   "config": {
     "accepts": ["models", "tools", "tools.blocked", "mcp", "skills", "telemetry"]
   },
+  "execution": {
+    "lifecycle_contract_version": "fabric.adapter.lifecycle/v1alpha1",
+    "strategies": ["process_per_invocation", "persistent_local_host"]
+  },
   "telemetry": {
     "providers": {
       "relay": {

@@ -10,10 +10,11 @@ pub mod runtime;
 pub mod schema;
 
 pub use config::{
-    ADAPTER_CONTRACT_VERSION, AdapterConfigSupport, AdapterDescriptor, AdapterDescriptorSource,
-    AdapterKind, AdapterRequirements, AdapterTelemetryProviderSupport, AdapterTelemetrySupport,
-    CapabilityPlan, ControlLocation, EffectiveConfig, EnvironmentConfig, EnvironmentOwnership,
-    EnvironmentPlan, FabricConfig, FabricDocument, HarnessConfig, McpConfig, McpExposure,
+    ADAPTER_CONTRACT_VERSION, ADAPTER_LIFECYCLE_CONTRACT_VERSION, AdapterConfigSupport,
+    AdapterDescriptor, AdapterDescriptorSource, AdapterExecutionSupport, AdapterKind,
+    AdapterRequirements, AdapterTelemetryProviderSupport, AdapterTelemetrySupport, CapabilityPlan,
+    ControlLocation, EffectiveConfig, EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan,
+    ExecutionStrategy, FabricConfig, FabricDocument, HarnessConfig, McpConfig, McpExposure,
     McpServerPlan, MetadataConfig, ModelConfig, ProfileConfig, ResolutionStrategy, ResolveContext,
     ResolvedAdapterDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
     TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig,
@@ -25,7 +26,9 @@ pub use config::{
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
 pub use runtime::{
-    AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage,
+    AdapterInvocation, AdapterLifecycleOperation, AdapterLifecycleOutcome, AdapterLifecycleRequest,
+    AdapterLifecycleRequestKind, AdapterLifecycleResponse, AdapterLifecycleStart,
+    AdapterLifecycleStop, ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage,
     FabricEvent, InvocationHandle, RunRequest, RunResult, RunStatus, RuntimeContext, RuntimeHandle,
     RuntimeTelemetryContext, TelemetryRef, invoke_runtime, prepare_environment, run_plan,
     start_runtime, stop_runtime,

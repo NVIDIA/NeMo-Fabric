@@ -2,14 +2,14 @@
 title: "Struct Runtime Handle"
 sidebar-title: "RuntimeHandle"
 description: "Active or resumable harness runtime."
-position: 11
+position: 15
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeHandle &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub runtime_binding: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub adapter_kind: <a href=\"../config/enum-adapterkind\">AdapterKind</a>,\n    pub adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub environment: <a href=\"struct-environmenthandle\">EnvironmentHandle</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeHandle &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub runtime_binding: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub adapter_kind: <a href=\"../config/enum-adapterkind\">AdapterKind</a>,\n    pub adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub execution_strategy: <a href=\"../config/enum-executionstrategy\">ExecutionStrategy</a>,\n    pub environment: <a href=\"struct-environmenthandle\">EnvironmentHandle</a>,\n&#125;"}} /></pre>
 
 Active or resumable harness runtime.
 
@@ -38,6 +38,10 @@ Adapter kind.
 ### `adapter_id: Option<String>`
 
 Adapter implementation id.
+
+### `execution_strategy: ExecutionStrategy`
+
+Execution strategy selected for this runtime.
 
 ### `environment: EnvironmentHandle`
 

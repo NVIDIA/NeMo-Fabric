@@ -57,6 +57,7 @@ def _plan() -> dict[str, Any]:
                 "adapter_kind": "python",
             }
         },
+        "execution_strategy": "process_per_invocation",
         "capabilities": {
             "service": False,
             "streaming": False,
@@ -74,6 +75,7 @@ def _runtime(runtime_id: str = "runtime-1") -> dict[str, Any]:
         "harness": "hermes",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
+        "execution_strategy": "process_per_invocation",
         "environment": {
             "environment_id": "environment-1",
             "provider": "local",

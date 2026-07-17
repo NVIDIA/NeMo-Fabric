@@ -237,6 +237,7 @@ Immutable execution plan produced before a runtime is started.
  - <b>`agent_name`</b>:  Resolved agent name.
  - <b>`profiles`</b>:  Applied profile names in caller order.
  - <b>`adapter`</b>:  Resolved adapter identity.
+ - <b>`execution_strategy`</b>:  Adapter execution strategy selected by planning.
  - <b>`capabilities`</b>:  Operations declared by the resolved runtime.
 
 
@@ -796,6 +797,7 @@ Applications should treat ``runtime_binding`` as opaque. Fabric validates the ha
  - <b>`harness`</b>:  Stable harness identifier.
  - <b>`adapter_kind`</b>:  Adapter execution mechanism.
  - <b>`adapter_id`</b>:  Optional Fabric adapter identifier.
+ - <b>`execution_strategy`</b>:  Adapter execution strategy selected for this runtime.
  - <b>`environment`</b>:  Prepared environment snapshot.
 
 

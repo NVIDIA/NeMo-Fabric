@@ -21,6 +21,28 @@
       },
       "type": "object"
     },
+    "AdapterExecutionSupport": {
+      "additionalProperties": true,
+      "description": "Execution strategies implemented by an adapter.",
+      "properties": {
+        "lifecycle_contract_version": {
+          "description": "Version of the external start/invoke/stop contract used by persistent strategies.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "strategies": {
+          "description": "Execution strategies implemented by this adapter.",
+          "items": {
+            "$ref": "#/$defs/ExecutionStrategy"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "type": "object"
+    },
     "AdapterKind": {
       "description": "Adapter implementation kind.",
       "oneOf": [
@@ -123,6 +145,26 @@
       },
       "type": "object"
     },
+    "ExecutionStrategy": {
+      "description": "How the selected adapter executes harness work for one Fabric runtime.",
+      "oneOf": [
+        {
+          "const": "process_per_invocation",
+          "description": "Launch a fresh adapter process for each invocation.",
+          "type": "string"
+        },
+        {
+          "const": "persistent_local_host",
+          "description": "Start one adapter-owned local host and reuse it for the runtime.",
+          "type": "string"
+        },
+        {
+          "const": "remote_service",
+          "description": "Allocate or connect to an adapter-owned remote harness service.",
+          "type": "string"
+        }
+      ]
+    },
     "RuntimeCapabilities": {
       "description": "Lifecycle behavior implemented by a resolved runtime path.",
       "properties": {
@@ -187,6 +229,10 @@
       "description": "Adapter descriptor contract version.",
       "minLength": 1,
       "type": "string"
+    },
+    "execution": {
+      "$ref": "#/$defs/AdapterExecutionSupport",
+      "description": "Runtime execution strategies implemented by this adapter."
     },
     "harness": {
       "description": "Stable machine-readable harness identifier implemented by this adapter.",

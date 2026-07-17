@@ -2,14 +2,14 @@
 title: "Struct Adapter Descriptor"
 sidebar-title: "AdapterDescriptor"
 description: "Language-neutral adapter descriptor for a harness integration."
-position: 3
+position: 4
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AdapterDescriptor &#123;\n    pub contract_version: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub adapter_kind: <a href=\"enum-adapterkind\">AdapterKind</a>,\n    pub runner: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/map/struct.Map.html\">Map</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub requirements: <a href=\"struct-adapterrequirements\">AdapterRequirements</a>,\n    pub config: <a href=\"struct-adapterconfigsupport\">AdapterConfigSupport</a>,\n    pub telemetry: <a href=\"struct-adaptertelemetrysupport\">AdapterTelemetrySupport</a>,\n    pub capabilities: <a href=\"struct-runtimecapabilities\">RuntimeCapabilities</a>,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AdapterDescriptor &#123;\n    pub contract_version: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub harness: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub adapter_kind: <a href=\"enum-adapterkind\">AdapterKind</a>,\n    pub runner: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/map/struct.Map.html\">Map</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub requirements: <a href=\"struct-adapterrequirements\">AdapterRequirements</a>,\n    pub config: <a href=\"struct-adapterconfigsupport\">AdapterConfigSupport</a>,\n    pub telemetry: <a href=\"struct-adaptertelemetrysupport\">AdapterTelemetrySupport</a>,\n    pub execution: <a href=\"struct-adapterexecutionsupport\">AdapterExecutionSupport</a>,\n    pub capabilities: <a href=\"struct-runtimecapabilities\">RuntimeCapabilities</a>,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
 Language-neutral adapter descriptor for a harness integration.
 
@@ -46,6 +46,10 @@ Fabric config areas this adapter consumes or generates.
 ### `telemetry: AdapterTelemetrySupport`
 
 Telemetry support declared by this adapter.
+
+### `execution: AdapterExecutionSupport`
+
+Runtime execution strategies implemented by this adapter.
 
 ### `capabilities: RuntimeCapabilities`
 

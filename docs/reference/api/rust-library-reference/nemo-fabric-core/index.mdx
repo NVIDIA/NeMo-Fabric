@@ -14,9 +14,11 @@ Core config and runtime contract for NeMo Fabric.
 ## Re-exports
 
 - `pub use config::ADAPTER_CONTRACT_VERSION;`
+- `pub use config::ADAPTER_LIFECYCLE_CONTRACT_VERSION;`
 - `pub use config::AdapterConfigSupport;`
 - `pub use config::AdapterDescriptor;`
 - `pub use config::AdapterDescriptorSource;`
+- `pub use config::AdapterExecutionSupport;`
 - `pub use config::AdapterKind;`
 - `pub use config::AdapterRequirements;`
 - `pub use config::AdapterTelemetryProviderSupport;`
@@ -27,6 +29,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::EnvironmentConfig;`
 - `pub use config::EnvironmentOwnership;`
 - `pub use config::EnvironmentPlan;`
+- `pub use config::ExecutionStrategy;`
 - `pub use config::FabricConfig;`
 - `pub use config::FabricDocument;`
 - `pub use config::HarnessConfig;`
@@ -64,6 +67,13 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use error::FabricError;`
 - `pub use error::Result;`
 - `pub use runtime::AdapterInvocation;`
+- `pub use runtime::AdapterLifecycleOperation;`
+- `pub use runtime::AdapterLifecycleOutcome;`
+- `pub use runtime::AdapterLifecycleRequest;`
+- `pub use runtime::AdapterLifecycleRequestKind;`
+- `pub use runtime::AdapterLifecycleResponse;`
+- `pub use runtime::AdapterLifecycleStart;`
+- `pub use runtime::AdapterLifecycleStop;`
 - `pub use runtime::ArtifactManifest;`
 - `pub use runtime::ArtifactRef;`
 - `pub use runtime::EnvironmentHandle;`

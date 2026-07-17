@@ -32,6 +32,7 @@ from claude_agent_sdk import query
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
+from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import utils as common_utils
 
 LOGGER = logging.getLogger(__name__)
@@ -885,6 +886,9 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    if lifecycle.is_lifecycle_host(os.environ):
+        lifecycle.serve(run)
+        return
     try:
         payload = common_utils.load_payload()
     except (

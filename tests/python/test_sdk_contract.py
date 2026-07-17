@@ -405,6 +405,7 @@ def test_inspection_models_are_typed_read_only_mappings():
                     "future": "value",
                 }
             },
+            "execution_strategy": "process_per_invocation",
             "capabilities": {
                 "service": False,
                 "streaming": False,
@@ -419,6 +420,7 @@ def test_inspection_models_are_typed_read_only_mappings():
     assert isinstance(plan.adapter, AdapterInfo)
     assert isinstance(plan.capabilities, RuntimeCapabilities)
     assert plan.profiles == ("runtime", "telemetry")
+    assert plan.execution_strategy == "process_per_invocation"
     assert plan.adapter.harness == "hermes"
     assert "harness_type" not in plan.adapter
     assert plan.adapter.extra_fields["future"] == "value"
@@ -439,6 +441,7 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
             "harness": "hermes",
             "adapter_kind": "python",
             "adapter_id": "test.fabric.shim",
+            "execution_strategy": "process_per_invocation",
             "environment": {
                 "environment_id": "environment-1",
                 "provider": "local",
@@ -449,6 +452,7 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
         }
     )
 
+    assert handle.execution_strategy == "process_per_invocation"
     assert handle.extra_fields == {"future_handle_field": "value"}
 
 
@@ -460,6 +464,7 @@ def test_runtime_handle_distinguishes_contract_and_extension_fields():
         "agent_name",
         "harness",
         "adapter_kind",
+        "execution_strategy",
         "environment",
     ),
 )
@@ -489,6 +494,14 @@ def test_run_plan_requires_profiles():
     del raw["profiles"]
 
     with pytest.raises(FabricConfigError, match="RunPlan profiles is required"):
+        RunPlan.from_mapping(raw)
+
+
+def test_run_plan_requires_selected_execution_strategy():
+    raw = _plan()
+    del raw["execution_strategy"]
+
+    with pytest.raises(FabricConfigError, match="execution strategy"):
         RunPlan.from_mapping(raw)
 
 
@@ -582,6 +595,7 @@ def _plan() -> dict[str, Any]:
                 "harness": "hermes",
             }
         },
+        "execution_strategy": "process_per_invocation",
         "capabilities": {
             "service": False,
             "streaming": False,
@@ -599,6 +613,7 @@ def _runtime() -> dict[str, Any]:
         "harness": "hermes",
         "adapter_kind": "python",
         "adapter_id": "test.fabric.shim",
+        "execution_strategy": "process_per_invocation",
         "environment": {
             "environment_id": "environment-1",
             "provider": "local",

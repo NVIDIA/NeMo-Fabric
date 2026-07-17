@@ -2,14 +2,14 @@
 title: "Enum Fabric Error"
 sidebar-title: "FabricError"
 description: "Errors raised by Fabric config loading and validation."
-position: 49
+position: 52
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum FabricError &#123;\nShow 25 variants    PathNotFound(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    MissingEntrypoint(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    UnsupportedExtension(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    UnknownProfile &#123;\n        profile: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        agent: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    ProfileError &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnknownAdapter &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    AdapterDescriptorMismatch &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>,\n        expected: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        actual: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    AdapterDescriptorUnsupported &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>,\n        value: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    InvalidAdapterDescriptor &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnknownSchema &#123;\n        schema: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    ProfileTargetNotConfig &#123;\n        profile: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    &#125;,\n    ProfileSelectionNotSupported(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    UnsupportedRuntimeAdapter &#123;\n        harness: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        adapter_kind: <a href=\"../config/enum-adapterkind\">AdapterKind</a>,\n    &#125;,\n    UnsupportedToolsPolicy &#123;\n        harness: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    RuntimeHandleMismatch &#123;\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>,\n        expected: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        actual: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnsupportedEnvironmentProvider &#123;\n        provider: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        adapter_kind: <a href=\"../config/enum-adapterkind\">AdapterKind</a>,\n    &#125;,\n    InvalidProcessSettings &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n    InvalidPythonSettings &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n    PythonInterpreterUnavailable &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        origin: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    ProcessRunner &#123;\n        command: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.94.0/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    SerializeJson(<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>),\n    Read &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.94.0/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    Write &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.94.0/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    ParseYaml &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_yaml/0.9.34+deprecated/serde_yaml/error/struct.Error.html\">Error</a>,\n    &#125;,\n    ParseJson &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub enum FabricError &#123;\nShow 29 variants    PathNotFound(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    MissingEntrypoint(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    UnsupportedExtension(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    UnknownProfile &#123;\n        profile: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        agent: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    ProfileError &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnknownAdapter &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    AdapterDescriptorMismatch &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>,\n        expected: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        actual: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    AdapterDescriptorUnsupported &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>,\n        value: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnsupportedExecutionStrategy &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        requested: <a href=\"../config/enum-executionstrategy\">ExecutionStrategy</a>,\n        supported: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"../config/enum-executionstrategy\">ExecutionStrategy</a>&gt;,\n    &#125;,\n    InvalidRuntimeStrategy &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        value: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    RuntimeStrategyUnavailable &#123;\n        adapter_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        strategy: <a href=\"../config/enum-executionstrategy\">ExecutionStrategy</a>,\n        reason: &amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>,\n    &#125;,\n    InvalidAdapterDescriptor &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnknownSchema &#123;\n        schema: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        available: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    &#125;,\n    ProfileTargetNotConfig &#123;\n        profile: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    &#125;,\n    ProfileSelectionNotSupported(<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>),\n    UnsupportedRuntimeAdapter &#123;\n        harness: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        adapter_kind: <a href=\"../config/enum-adapterkind\">AdapterKind</a>,\n    &#125;,\n    AdapterLifecycleOperation &#123;\n        operation: &amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        code: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        message: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        diagnostics: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnsupportedToolsPolicy &#123;\n        harness: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    RuntimeHandleMismatch &#123;\n        field: &amp;'static <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.str.html\">str</a>,\n        expected: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        actual: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        runtime_id: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    UnsupportedEnvironmentProvider &#123;\n        provider: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        adapter_kind: <a href=\"../config/enum-adapterkind\">AdapterKind</a>,\n    &#125;,\n    InvalidProcessSettings &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n    InvalidPythonSettings &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n    PythonInterpreterUnavailable &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        origin: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        reason: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    &#125;,\n    ProcessRunner &#123;\n        command: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.94.0/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    SerializeJson(<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>),\n    Read &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.94.0/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    Write &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://doc.rust-lang.org/1.94.0/std/io/error/struct.Error.html\">Error</a>,\n    &#125;,\n    ParseYaml &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_yaml/0.9.34+deprecated/serde_yaml/error/struct.Error.html\">Error</a>,\n    &#125;,\n    ParseJson &#123;\n        path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n        source: <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/error/struct.Error.html\">Error</a>,\n    &#125;,\n&#125;"}} /></pre>
 
 Errors raised by Fabric config loading and validation.
 
@@ -129,6 +129,62 @@ Unsupported field.
 
 Unsupported value.
 
+### `UnsupportedExecutionStrategy`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "UnsupportedExecutionStrategy"}} /></pre>
+
+The selected adapter does not implement the requested execution strategy.
+
+#### Fields
+
+### `adapter_id: String`
+
+Adapter id selected by the config.
+
+### `requested: ExecutionStrategy`
+
+Requested execution strategy.
+
+### `supported: Vec<ExecutionStrategy>`
+
+Strategies implemented by the selected adapter.
+
+### `InvalidRuntimeStrategy`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "InvalidRuntimeStrategy"}} /></pre>
+
+The runtime strategy setting is not part of the shared strategy vocabulary.
+
+#### Fields
+
+### `adapter_id: String`
+
+Adapter id selected by the config.
+
+### `value: String`
+
+Invalid JSON value supplied by the consumer.
+
+### `RuntimeStrategyUnavailable`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "RuntimeStrategyUnavailable"}} /></pre>
+
+The selected adapter declares a strategy whose runtime transport is unavailable.
+
+#### Fields
+
+### `adapter_id: String`
+
+Adapter id selected by the config.
+
+### `strategy: ExecutionStrategy`
+
+Strategy selected during planning.
+
+### `reason: &'static str`
+
+Missing adapter/runtime contract.
+
 ### `InvalidAdapterDescriptor`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "InvalidAdapterDescriptor"}} /></pre>
@@ -198,6 +254,34 @@ Harness type.
 ### `adapter_kind: AdapterKind`
 
 Adapter kind.
+
+### `AdapterLifecycleOperation`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterLifecycleOperation"}} /></pre>
+
+A versioned persistent-host lifecycle operation failed.
+
+#### Fields
+
+### `operation: &'static str`
+
+Lifecycle operation that failed.
+
+### `runtime_id: String`
+
+Runtime whose host failed.
+
+### `code: String`
+
+Stable failure code.
+
+### `message: String`
+
+Human-readable failure message.
+
+### `diagnostics: String`
+
+Bounded adapter-host diagnostics.
 
 ### `UnsupportedToolsPolicy`
 

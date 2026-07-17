@@ -31,6 +31,10 @@ schema-alignment tests in the same change.
 
 - `adapter-invocation`: adapter-facing payload sent to inline or process
   adapters.
+- `adapter-lifecycle-request`: versioned `start`, `invoke`, or `stop` request
+  sent over an adapter-owned stateful lifecycle transport.
+- `adapter-lifecycle-response`: normalized success or failure returned for one
+  stateful lifecycle operation.
 - `runtime-context`: per-run/per-invocation context included in adapter
   invocations.
 - `run-request`: per-invocation request/input.

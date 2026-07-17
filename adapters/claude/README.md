@@ -64,11 +64,18 @@ for other supported installation methods.
 
 ## Execution Model
 
-Each `invoke` starts a fresh adapter process. The adapter persists the terminal
-Claude session ID under the Fabric artifact root, keyed by `runtime_id`, and
-passes it as `ClaudeAgentOptions.resume` on the next invocation. One Fabric
-runtime therefore maps to one Claude session even though no adapter process
-stays resident.
+The compatibility default, `process_per_invocation`, starts a fresh adapter
+process for each `invoke`. Set
+`harness.settings.runtime_strategy="persistent_local_host"` to keep one
+adapter host for the Fabric runtime and process invocations in order. Both
+strategies persist the terminal Claude session ID under the Fabric artifact
+root, keyed by `runtime_id`, and pass it as `ClaudeAgentOptions.resume` on the
+next invocation. One Fabric runtime therefore maps to one Claude session
+independently of adapter-process lifetime.
+
+The adapter does not declare `remote_service`. The Claude Agent SDK still uses
+a local Claude Code control process, even when the selected model is remotely
+hosted.
 
 ## Configuration
 
@@ -87,6 +94,7 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 
 Only Claude-specific controls belong in `harness.settings`:
 
+- `runtime_strategy`: `process_per_invocation` or `persistent_local_host`
 - `system_prompt`, `allowed_tools`, and `permission_mode`
 - `max_turns`, `max_budget_usd`, and `timeout_seconds`
 - `setting_sources` (defaults to `[]` for deterministic isolation)

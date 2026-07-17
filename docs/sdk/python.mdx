@@ -125,6 +125,69 @@ objects.
 Fabric provides the runtime contract. Applications own scheduling, queues,
 retries, worker scaling, and the number of runtimes to run.
 
+### Select An Adapter Execution Strategy
+
+`harness.settings.runtime_strategy` requests how the selected adapter is
+hosted. Fabric validates the requested value against the selected adapter
+descriptor. The resolved value is recorded in `RunPlan`, `RuntimeHandle`, and
+the adapter invocation payload so execution cannot silently use a different
+strategy.
+
+The shared contract defines three values:
+
+| Strategy | Behavior |
+| --- | --- |
+| `process_per_invocation` | Start a fresh adapter process for each invocation. This is the compatibility default, including for descriptors that omit execution support. |
+| `persistent_local_host` | Start one local adapter host for a Fabric runtime, reuse it for ordered invocations, and stop it deterministically. |
+| `remote_service` | Allocate or connect to an adapter-owned remote harness service. Endpoint resolution, authentication, connection ownership, health checks, and release behavior remain adapter-owned. |
+
+Request a persistent host only when its adapter descriptor declares support:
+
+```python
+config = FabricConfig(
+    metadata=MetadataConfig(name="review-agent"),
+    harness=HarnessConfig(
+        adapter_id="example.fabric.adapter",
+        settings={"runtime_strategy": "persistent_local_host"},
+    ),
+)
+```
+
+```json
+{
+  "execution": {
+    "lifecycle_contract_version": "fabric.adapter.lifecycle/v1alpha1",
+    "strategies": ["process_per_invocation", "persistent_local_host"]
+  }
+}
+```
+
+Planning fails when the requested strategy is not declared by the selected
+adapter. Unknown values also fail during planning. Fabric never falls back to
+`process_per_invocation` after another strategy has been selected.
+
+The Claude and Codex adapters currently declare `process_per_invocation` and
+`persistent_local_host`. Their SDK calls still depend on local harness control
+processes, so they do not declare `remote_service`. A remote-capable adapter
+must provide an actual remote harness lifecycle transport; calling a remotely
+hosted model from a local harness does not satisfy that contract.
+
+Persistent hosts exchange one JSON request and response per line over standard
+input and output. The protocol uses the `adapter-lifecycle-request` and
+`adapter-lifecycle-response` schemas and has three operations: `start`,
+`invoke`, and `stop`. Standard output is reserved for protocol responses;
+adapter diagnostics belong on standard error.
+
+Fabric owns the host process, runtime identifier, protocol files, and teardown.
+The adapter owns harness-native session or conversation identifiers and keeps
+them private inside the host. One persistent host belongs to one Fabric
+runtime. A host crash makes that runtime handle unusable; Fabric does not
+silently create a replacement or replay an invocation. Stop removes the host
+from the active registry before requesting shutdown, force-releases the child
+after either a success or failure response, and is idempotent on retry. Hosts
+must exit after a successful `stop` response and when protocol input reaches
+end-of-file.
+
 ## Configure Agents In Code
 
 Build the complete nested `FabricConfig` directly, or start with a base
@@ -455,6 +518,7 @@ reference for exact Python signatures. New application code should prefer
 | Run plan | `schemas/run-plan.schema.json` |
 | Request, result, and events | `schemas/run-request.schema.json`, `schemas/run-result.schema.json`, `schemas/fabric-event.schema.json` |
 | Runtime and invocation handles | `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
+| Persistent-host adapter protocol | `schemas/adapter-lifecycle-request.schema.json`, `schemas/adapter-lifecycle-response.schema.json` |
 | Artifacts and errors | `schemas/artifact-manifest.schema.json`, `schemas/error-info.schema.json` |
 
 ### Versioning
@@ -466,6 +530,8 @@ maintained artifacts cross package boundaries:
   and profile files.
 - `contract_version` identifies the adapter descriptor contract implemented by
   a `fabric-adapter.json` file.
+- `execution.lifecycle_contract_version` identifies the stateful
+  start/invoke/stop protocol implemented by an adapter.
 - Python and Rust package versions identify the installed SDK/core release.
 
 Fabric versions top-level persisted documents and independently maintained

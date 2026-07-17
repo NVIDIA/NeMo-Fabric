@@ -11,6 +11,9 @@
   "config": {
     "accepts": ["models", "tools", "tools.blocked", "mcp", "skills", "telemetry"]
   },
+  "execution": {
+    "strategies": ["process_per_invocation"]
+  },
   "telemetry": {
     "providers": {
       "relay": {

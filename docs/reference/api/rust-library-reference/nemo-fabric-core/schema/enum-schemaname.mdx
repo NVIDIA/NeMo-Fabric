@@ -11,12 +11,14 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 ```rust
 pub enum SchemaName {
-Show 15 variants    Agent,
+Show 17 variants    Agent,
     Profile,
     AdapterDescriptor,
     EffectiveConfig,
     RunPlan,
     AdapterInvocation,
+    AdapterLifecycleRequest,
+    AdapterLifecycleResponse,
     RuntimeContext,
     EnvironmentHandle,
     RuntimeHandle,
@@ -68,6 +70,18 @@ Resolved run plan schema.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterInvocation"}} /></pre>
 
 Adapter-facing invocation payload schema.
+
+### `AdapterLifecycleRequest`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterLifecycleRequest"}} /></pre>
+
+Persistent-host adapter lifecycle request schema.
+
+### `AdapterLifecycleResponse`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterLifecycleResponse"}} /></pre>
+
+Persistent-host adapter lifecycle response schema.
 
 ### `RuntimeContext`
 
@@ -131,7 +145,7 @@ Fabric lifecycle event schema.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">15</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.array.html\">17</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

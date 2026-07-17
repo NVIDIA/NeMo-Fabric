@@ -62,11 +62,18 @@ to the Fabric config root. Fabric passes the resolved path through
 
 ## Execution Model
 
-Each Fabric invocation starts a fresh SDK client and closes its app-server
-transport before returning. The first invocation creates a Codex thread and
+The compatibility default, `process_per_invocation`, starts a fresh adapter
+process for each Fabric invocation. Set
+`harness.settings.runtime_strategy="persistent_local_host"` to keep one
+adapter host for the Fabric runtime and process invocations in order. The
+current SDK integration creates and closes its app-server client for each turn
+under either strategy. The first invocation creates a Codex thread and
 persists its ID under the Fabric artifact root. Later invocations for the same
 Fabric runtime resume that exact thread. Codex owns the transcript; Fabric owns
 runtime-to-thread correlation, timeout, cancellation, and cleanup.
+
+The adapter does not declare `remote_service`. The Codex SDK still uses a local
+app-server control process, even when model inference is remotely hosted.
 
 The result includes the SDK's typed terminal response, turn status, token
 usage, timing, and completed thread items. It does not expose CLI commands,
@@ -83,6 +90,7 @@ Use normalized `FabricConfig` fields for portable configuration:
 
 Codex-specific controls belong in `harness.settings`:
 
+- `runtime_strategy`: `process_per_invocation` or `persistent_local_host`
 - `sandbox`: `read-only`, `workspace-write`, or `danger-full-access`
 - `approval_mode`: `auto_review` or `deny_all`
 - `base_instructions` and `developer_instructions`
@@ -157,4 +165,3 @@ For Phoenix, native Codex OpenTelemetry targets the OTLP collector at
 Relay OpenInference provides the semantic chain, LLM, and tool hierarchy with
 decoded prompt, response, and token attributes. Prefer Relay OpenInference for
 agent-turn inspection.
-

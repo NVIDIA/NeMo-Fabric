@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AdapterInvocation &#123;\n    pub effective_config: <a href=\"../config/struct-effectiveconfig\">EffectiveConfig</a>,\n    pub runtime_context: <a href=\"struct-runtimecontext\">RuntimeContext</a>,\n    pub request: <a href=\"struct-runrequest\">RunRequest</a>,\n    pub capability_plan: <a href=\"../config/struct-capabilityplan\">CapabilityPlan</a>,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"../config/struct-telemetryplan\">TelemetryPlan</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct AdapterInvocation &#123;\n    pub effective_config: <a href=\"../config/struct-effectiveconfig\">EffectiveConfig</a>,\n    pub execution_strategy: <a href=\"../config/enum-executionstrategy\">ExecutionStrategy</a>,\n    pub runtime_context: <a href=\"struct-runtimecontext\">RuntimeContext</a>,\n    pub request: <a href=\"struct-runrequest\">RunRequest</a>,\n    pub capability_plan: <a href=\"../config/struct-capabilityplan\">CapabilityPlan</a>,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"../config/struct-telemetryplan\">TelemetryPlan</a>&gt;,\n&#125;"}} /></pre>
 
 Adapter-facing invocation payload.
 
@@ -18,6 +18,10 @@ Adapter-facing invocation payload.
 ### `effective_config: EffectiveConfig`
 
 Merged agent config and provenance.
+
+### `execution_strategy: ExecutionStrategy`
+
+Execution strategy selected during planning.
 
 ### `runtime_context: RuntimeContext`
 

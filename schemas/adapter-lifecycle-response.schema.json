@@ -1,0 +1,165 @@
+{
+  "$defs": {
+    "AdapterLifecycleOperation": {
+      "description": "Operation exchanged over the versioned persistent-host adapter protocol.",
+      "oneOf": [
+        {
+          "const": "start",
+          "description": "Initialize one adapter-owned host for a Fabric runtime.",
+          "type": "string"
+        },
+        {
+          "const": "invoke",
+          "description": "Execute one invocation against an initialized host.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "Release the host and all runtime-owned resources.",
+          "type": "string"
+        }
+      ]
+    },
+    "AdapterLifecycleOutcome": {
+      "description": "Outcome returned by a persistent adapter host lifecycle operation.",
+      "oneOf": [
+        {
+          "description": "The operation completed successfully.",
+          "properties": {
+            "output": {
+              "default": null,
+              "description": "Operation output. Only invoke normally returns a non-null value."
+            },
+            "status": {
+              "const": "succeeded",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The operation failed with normalized lifecycle diagnostics.",
+          "properties": {
+            "error": {
+              "$ref": "#/$defs/ErrorInfo",
+              "description": "Structured failure reported by the adapter host."
+            },
+            "status": {
+              "const": "failed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ErrorInfo": {
+      "description": "Normalized error metadata.",
+      "properties": {
+        "code": {
+          "description": "Stable error code.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable error message.",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Adapter or runtime metadata useful for diagnostics.",
+          "type": "object"
+        },
+        "retryable": {
+          "default": false,
+          "description": "Whether Fabric considers this failure safe for a consumer-level retry.",
+          "type": "boolean"
+        },
+        "stage": {
+          "$ref": "#/$defs/ErrorStage",
+          "description": "Fabric lifecycle stage where the failure surfaced."
+        }
+      },
+      "required": [
+        "stage",
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ErrorStage": {
+      "description": "Fabric lifecycle stage associated with an error.",
+      "oneOf": [
+        {
+          "const": "config",
+          "description": "Configuration or profile loading failed.",
+          "type": "string"
+        },
+        {
+          "const": "plan",
+          "description": "Effective config planning failed.",
+          "type": "string"
+        },
+        {
+          "const": "prepare",
+          "description": "Environment preparation failed.",
+          "type": "string"
+        },
+        {
+          "const": "start",
+          "description": "Runtime start/connect failed.",
+          "type": "string"
+        },
+        {
+          "const": "invoke",
+          "description": "Runtime invocation failed.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "Runtime stop/detach failed.",
+          "type": "string"
+        },
+        {
+          "const": "release",
+          "description": "Environment release failed.",
+          "type": "string"
+        },
+        {
+          "const": "artifact",
+          "description": "Artifact collection or writing failed.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One newline-delimited response returned by a persistent adapter host.",
+  "properties": {
+    "contract_version": {
+      "description": "Lifecycle protocol version.",
+      "type": "string"
+    },
+    "operation": {
+      "$ref": "#/$defs/AdapterLifecycleOperation",
+      "description": "Operation completed by this response."
+    },
+    "outcome": {
+      "$ref": "#/$defs/AdapterLifecycleOutcome",
+      "description": "Normalized success or failure outcome."
+    }
+  },
+  "required": [
+    "contract_version",
+    "operation",
+    "outcome"
+  ],
+  "title": "AdapterLifecycleResponse",
+  "type": "object"
+}

@@ -62,6 +62,10 @@ def test_claude_descriptor_is_narrow_and_versioned():
                 "telemetry",
             ]
         },
+        "execution": {
+            "lifecycle_contract_version": "fabric.adapter.lifecycle/v1alpha1",
+            "strategies": ["process_per_invocation", "persistent_local_host"],
+        },
         "telemetry": {
             "providers": {
                 "relay": {
@@ -963,3 +967,16 @@ def test_main_normalizes_payload_load_failure(monkeypatch, capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["error"]["code"] == "claude_adapter_internal_error"
     assert "secret" not in json.dumps(output)
+
+
+def test_main_serves_lifecycle_protocol_when_requested(monkeypatch):
+    serve = MagicMock()
+    monkeypatch.setenv(
+        adapter.lifecycle.CONTRACT_ENV,
+        adapter.lifecycle.CONTRACT_VERSION,
+    )
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
+
+    adapter.main()
+
+    serve.assert_called_once_with(adapter.run)

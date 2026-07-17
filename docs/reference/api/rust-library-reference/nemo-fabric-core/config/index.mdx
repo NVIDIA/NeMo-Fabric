@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "Fabric config models and loading helpers."
-position: 76
+position: 86
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -15,6 +15,7 @@ Fabric config models and loading helpers.
 
 - [AdapterConfigSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterconfigsupport): Adapter config support.
 - [AdapterDescriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterdescriptor): Language-neutral adapter descriptor for a harness integration.
+- [AdapterExecutionSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterexecutionsupport): Execution strategies implemented by an adapter.
 - [AdapterRequirements](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterrequirements): Adapter runtime requirements.
 - [AdapterTelemetryProviderSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adaptertelemetryprovidersupport): Telemetry capabilities for one adapter-supported provider.
 - [AdapterTelemetrySupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adaptertelemetrysupport): Adapter telemetry support.
@@ -61,6 +62,7 @@ Fabric config models and loading helpers.
 - [CapabilityTarget](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-capabilitytarget): Capability routing target.
 - [ControlLocation](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-controllocation): Where Fabric control code runs relative to the environment.
 - [EnvironmentOwnership](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-environmentownership): Whether Fabric owns the underlying environment resource.
+- [ExecutionStrategy](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-executionstrategy): How the selected adapter executes harness work for one Fabric runtime.
 - [FabricDocument](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-fabricdocument): A loaded Fabric document with resolved source path and agent root.
 - [McpExposure](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-mcpexposure): MCP exposure strategy.
 - [RelayAtifStorageConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatifstorageconfig): Relay ATIF remote storage configuration.
@@ -75,6 +77,7 @@ Fabric config models and loading helpers.
 ## Constants
 
 - [ADAPTER_CONTRACT_VERSION](/reference/api/rust-library-reference/nemo-fabric-core/config/constant-adapter-contract-version): Adapter descriptor contract version supported by this core.
+- [ADAPTER_LIFECYCLE_CONTRACT_VERSION](/reference/api/rust-library-reference/nemo-fabric-core/config/constant-adapter-lifecycle-contract-version): Adapter lifecycle contract version supported by this core.
 
 ## Functions
 

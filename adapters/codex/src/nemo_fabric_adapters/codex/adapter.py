@@ -29,6 +29,7 @@ from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
+import nemo_fabric_adapters.common.lifecycle as lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
 
@@ -911,6 +912,9 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    if lifecycle.is_lifecycle_host(os.environ):
+        lifecycle.serve(run)
+        return
     try:
         payload = common_utils.load_payload()
     except Exception:
