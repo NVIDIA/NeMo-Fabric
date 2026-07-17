@@ -88,7 +88,7 @@ def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
     assert len(set(instances[0].loop_ids)) == 1
 
 
-def test_lifecycle_host_rejects_runtime_mismatch_without_invoking_adapter():
+def test_lifecycle_host_rejects_runtime_mismatch_without_poisoning_runtime():
     input_stream, output_stream = _streams(
         [
             _request("start", {"runtime_context": {"runtime_id": "runtime-1"}}),
@@ -99,16 +99,25 @@ def test_lifecycle_host_rejects_runtime_mismatch_without_invoking_adapter():
                     "request": {"input": "do not run"},
                 },
             ),
+            _request(
+                "invoke",
+                {
+                    "runtime_context": {"runtime_id": "runtime-1"},
+                    "request": {"input": "run"},
+                },
+            ),
             _request("stop", {"runtime_id": "runtime-1"}),
         ]
     )
+    invocations = []
 
     class Runtime:
         async def start(self, _payload):
             pass
 
         async def invoke(self, payload):
-            raise AssertionError(payload)
+            invocations.append(payload)
+            return {"input": payload["request"]["input"]}
 
         async def stop(self):
             pass
@@ -118,6 +127,11 @@ def test_lifecycle_host_rejects_runtime_mismatch_without_invoking_adapter():
     responses = [json.loads(line) for line in output_stream.getvalue().splitlines()]
     assert responses[1]["outcome"]["status"] == "failed"
     assert responses[1]["outcome"]["error"]["code"] == "lifecycle_runtime_mismatch"
+    assert responses[2]["outcome"] == {
+        "status": "succeeded",
+        "output": {"input": "run"},
+    }
+    assert len(invocations) == 1
 
 
 def test_lifecycle_host_keeps_adapter_stdout_out_of_protocol(capsys):
@@ -153,10 +167,10 @@ def test_lifecycle_host_keeps_adapter_stdout_out_of_protocol(capsys):
     assert "adapter diagnostic" in capsys.readouterr().err
 
 
-def test_lifecycle_host_scopes_invocation_telemetry_environment(monkeypatch):
+def test_lifecycle_host_scopes_invocation_telemetry_environment():
     runtime_id = "runtime-1"
     variable = "FABRIC_TEST_LIFECYCLE_ENV"
-    monkeypatch.setenv(variable, "host-value")
+    os.environ[variable] = "host-value"
     input_stream, output_stream = _streams(
         [
             _request("start", {"runtime_context": {"runtime_id": runtime_id}}),

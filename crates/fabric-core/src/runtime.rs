@@ -29,6 +29,9 @@ static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 const ADAPTER_PYTHON_ENV: &str = "ADAPTER_PYTHON";
 const VIRTUAL_ENV_ENV: &str = "VIRTUAL_ENV";
 const LOCAL_HOST_START_TIMEOUT: Duration = Duration::from_secs(90);
+// Protocol liveness backstop. Adapters remain responsible for normal request
+// timeouts and should return a normalized response before this bound.
+const LOCAL_HOST_INVOKE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const LOCAL_HOST_STOP_TIMEOUT: Duration = Duration::from_secs(10);
 const LOCAL_HOST_EXIT_GRACE: Duration = Duration::from_secs(2);
 const LOCAL_HOST_DIAGNOSTIC_LIMIT: usize = 16 * 1024;
@@ -988,7 +991,7 @@ impl RuntimeAdapter for LocalHostAdapter {
             &mut host,
             &runtime.runtime_id,
             &request,
-            Some(LOCAL_HOST_START_TIMEOUT),
+            LOCAL_HOST_START_TIMEOUT,
         ) {
             let _ = terminate_local_host(&mut host);
             let _ = remove_local_host_files(&host);
@@ -1021,7 +1024,7 @@ impl RuntimeAdapter for LocalHostAdapter {
             &mut host,
             &runtime.runtime_id,
             &request,
-            Some(LOCAL_HOST_STOP_TIMEOUT),
+            LOCAL_HOST_STOP_TIMEOUT,
         );
         let termination = terminate_local_host(&mut host);
         let diagnostics = local_host_diagnostics(&host);
@@ -1065,7 +1068,16 @@ impl RuntimeAdapter for LocalHostAdapter {
 fn run_local_host_adapter(
     plan: &RunPlan,
     runtime: &RuntimeHandle,
+    request: RunRequest,
+) -> Result<RunResult> {
+    run_local_host_adapter_with_timeout(plan, runtime, request, LOCAL_HOST_INVOKE_TIMEOUT)
+}
+
+fn run_local_host_adapter_with_timeout(
+    plan: &RunPlan,
+    runtime: &RuntimeHandle,
     mut request: RunRequest,
+    invoke_timeout: Duration,
 ) -> Result<RunResult> {
     if request.request_id.is_empty() {
         request.request_id = new_id("request");
@@ -1088,16 +1100,7 @@ fn run_local_host_adapter(
             )
         })?;
 
-    let (
-        output,
-        stderr,
-        host_command,
-        host_pid,
-        mut artifacts,
-        relay_config,
-        fabric_home,
-        fabric_invocation,
-    ) = {
+    let exchange_result = {
         let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
         let artifacts = host.artifacts.clone();
         let relay_config = host.relay_config.clone();
@@ -1115,19 +1118,48 @@ fn run_local_host_adapter(
         let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
         let lifecycle_request =
             AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Invoke(adapter_invocation));
-        let output =
-            exchange_lifecycle_message(&mut host, &runtime.runtime_id, &lifecycle_request, None)?;
-        let stderr = take_local_host_stderr(&mut host);
-        (
-            output,
-            stderr,
-            host.command.clone(),
-            host.child.id(),
-            artifacts,
-            relay_config,
-            fabric_home,
-            fabric_invocation,
-        )
+        match exchange_lifecycle_message(
+            &mut host,
+            &runtime.runtime_id,
+            &lifecycle_request,
+            invoke_timeout,
+        ) {
+            Ok(output) => {
+                let stderr = take_local_host_stderr(&mut host);
+                Ok((
+                    output,
+                    stderr,
+                    host.command.clone(),
+                    host.child.id(),
+                    artifacts,
+                    relay_config,
+                    fabric_home,
+                    fabric_invocation,
+                ))
+            }
+            Err(error) => Err(error),
+        }
+    };
+    let (
+        output,
+        stderr,
+        host_command,
+        host_pid,
+        mut artifacts,
+        relay_config,
+        fabric_home,
+        fabric_invocation,
+    ) = match exchange_result {
+        Ok(result) => result,
+        Err(error) => {
+            if matches!(
+                &error,
+                FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
+            ) {
+                invalidate_timed_out_local_host(&runtime.runtime_id, &host);
+            }
+            return Err(error);
+        }
     };
 
     let mut events = vec![event_with_metadata(
@@ -1239,6 +1271,24 @@ fn run_local_host_adapter(
         events,
         metadata,
     })
+}
+
+fn invalidate_timed_out_local_host(runtime_id: &str, expected_host: &Arc<Mutex<LocalAdapterHost>>) {
+    {
+        let mut hosts = local_hosts();
+        if hosts
+            .get(runtime_id)
+            .is_some_and(|host| Arc::ptr_eq(host, expected_host))
+        {
+            hosts.remove(runtime_id);
+        }
+    }
+
+    let mut host = expected_host
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let _ = terminate_local_host(&mut host);
+    let _ = remove_local_host_files(&host);
 }
 
 fn adapter_output_status(output: &Value) -> (RunStatus, Option<ErrorInfo>) {
@@ -1462,7 +1512,7 @@ fn exchange_lifecycle_message(
     host: &mut LocalAdapterHost,
     runtime_id: &str,
     request: &AdapterLifecycleRequest,
-    timeout: Option<Duration>,
+    timeout: Duration,
 ) -> Result<Value> {
     let operation = request.operation();
     if let Some(status) = host.child.try_wait().map_err(|source| {
@@ -1508,37 +1558,23 @@ fn exchange_lifecycle_message(
         ));
     }
 
-    let line = match timeout {
-        Some(timeout) => match host.responses.recv_timeout(timeout) {
-            Ok(line) => line,
-            Err(RecvTimeoutError::Timeout) => {
-                return Err(lifecycle_error(
-                    operation,
-                    runtime_id,
-                    "host_timeout",
-                    format!(
-                        "persistent local adapter host did not complete {} within {} ms",
-                        operation.as_str(),
-                        timeout.as_millis()
-                    ),
-                    local_host_diagnostics(host),
-                ));
-            }
-            Err(RecvTimeoutError::Disconnected) => {
-                return Err(lifecycle_error(
-                    operation,
-                    runtime_id,
-                    "host_crashed",
-                    format!(
-                        "persistent local adapter host exited while processing {}",
-                        operation.as_str()
-                    ),
-                    local_host_diagnostics(host),
-                ));
-            }
-        },
-        None => host.responses.recv().map_err(|_| {
-            lifecycle_error(
+    let line = match host.responses.recv_timeout(timeout) {
+        Ok(line) => line,
+        Err(RecvTimeoutError::Timeout) => {
+            return Err(lifecycle_error(
+                operation,
+                runtime_id,
+                "host_timeout",
+                format!(
+                    "persistent local adapter host did not complete {} within {} ms",
+                    operation.as_str(),
+                    timeout.as_millis()
+                ),
+                local_host_diagnostics(host),
+            ));
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            return Err(lifecycle_error(
                 operation,
                 runtime_id,
                 "host_crashed",
@@ -1547,8 +1583,8 @@ fn exchange_lifecycle_message(
                     operation.as_str()
                 ),
                 local_host_diagnostics(host),
-            )
-        })?,
+            ));
+        }
     }
     .map_err(|message| {
         lifecycle_error(

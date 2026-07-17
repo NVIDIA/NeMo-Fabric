@@ -263,7 +263,11 @@ async def _serve(
                             should_stop = True
                         response = _response(operation)
             except LifecycleError as error:
-                if operation == "invoke" and runtime is not None:
+                if (
+                    operation == "invoke"
+                    and runtime is not None
+                    and error.code == "lifecycle_adapter_invoke_failed"
+                ):
                     runtime_failed = True
                 response = _failure_response(operation, error)
                 should_stop = should_stop or operation in {"start", "stop"}
