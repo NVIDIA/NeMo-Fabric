@@ -55,6 +55,7 @@ pub struct DoctorReport {
 /// Inspect a resolved run plan without mutating the environment.
 pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
     let mut checks = Vec::new();
+    checks.push(check_plan_consistency(plan));
     checks.push(check_adapter_descriptor(plan));
     checks.push(check_resolution(plan));
     checks.extend(check_runtime_execution_surface(plan));
@@ -68,6 +69,17 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
         agent_name: plan.agent_name.clone(),
         status,
         checks,
+    }
+}
+
+fn check_plan_consistency(plan: &RunPlan) -> DoctorCheck {
+    match plan.validate_consistency() {
+        Ok(()) => check(
+            "plan.consistency",
+            DoctorStatus::Pass,
+            "run plan configuration state is internally consistent",
+        ),
+        Err(error) => check("plan.consistency", DoctorStatus::Fail, error.to_string()),
     }
 }
 
@@ -475,14 +487,15 @@ mod tests {
             "schema_version": "fabric.agent/v1alpha1",
             "metadata": {"name": "doctor-agent"},
             "harness": {
-                "adapter_id": "nvidia.fabric.hermes",
-                "resolution": "preinstalled"
+                "adapter_id": "test.fabric.hermes_shim",
+                "resolution": "preinstalled",
+                "settings": {"python3_command": "bin/tool"}
             },
             "runtime": {},
             "environment": {"provider": "local"}
         }))
         .expect("typed config");
-        let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let base_dir = PathBuf::from("../../tests/fixtures/hermes-shim-agent");
         let plan = resolve_run_plan_from_config(config, ResolveContext::new(base_dir))
             .expect("typed plan");
 
@@ -491,5 +504,16 @@ mod tests {
         assert_eq!(report.agent_name, "doctor-agent");
         assert!(!report.checks.is_empty());
         assert_eq!(value["agent_name"], "doctor-agent");
+        let expected_command =
+            std::path::absolute("../../tests/fixtures/hermes-shim-agent/bin/tool")
+                .expect("absolute command path")
+                .to_string_lossy()
+                .into_owned();
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.message.contains(&expected_command))
+        );
     }
 }

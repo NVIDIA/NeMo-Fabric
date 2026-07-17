@@ -1024,7 +1024,7 @@
       "type": "string"
     },
     "base_dir": {
-      "description": "Base directory used to resolve relative config paths.",
+      "description": "Base directory used to resolve relative Fabric paths.",
       "type": "string"
     },
     "config": {

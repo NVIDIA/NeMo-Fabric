@@ -633,6 +633,11 @@ class _ResolvedFabricConfig(_ConfigMapping):
         """Build a typed agent config from a mapping."""
 
         data = _mapping(value, "FabricConfig")
+        if "profiles" in data:
+            raise FabricConfigError(
+                "FabricConfig profiles are no longer supported; "
+                "compose a complete typed config before calling the SDK"
+            )
         if "metadata" not in data:
             raise FabricConfigError("FabricConfig metadata is required")
         if "harness" not in data:
@@ -945,7 +950,9 @@ class EffectiveConfig(FabricMapping):
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
-        data["base_dir"] = Path(data.get("base_dir", "."))
+        if "base_dir" not in data:
+            raise FabricConfigError("EffectiveConfig base_dir is required")
+        data["base_dir"] = Path(data["base_dir"])
         data["config"] = _ResolvedFabricConfig.from_mapping(data.get("config", {}))
         return data
 

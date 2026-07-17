@@ -31,20 +31,26 @@ fn resolve_config(config_json: String, base_dir: Option<String>) -> PyResult<Str
 /// Resolve typed config JSON into a runnable plan and return JSON.
 #[pyfunction]
 #[pyo3(signature = (config_json, base_dir=None))]
-fn plan_config(config_json: String, base_dir: Option<String>) -> PyResult<String> {
+fn plan_config(py: Python<'_>, config_json: String, base_dir: Option<String>) -> PyResult<String> {
     let config = parse_config(config_json)?;
-    let plan =
-        resolve_run_plan_from_config(config, resolve_context(base_dir)).map_err(to_py_error)?;
+    let plan = py
+        .detach(|| resolve_run_plan_from_config(config, resolve_context(base_dir)))
+        .map_err(to_py_error)?;
     to_json(&plan)
 }
 
 /// Diagnose typed config JSON without installing or running it.
 #[pyfunction]
 #[pyo3(signature = (config_json, base_dir=None))]
-fn doctor_config(config_json: String, base_dir: Option<String>) -> PyResult<String> {
+fn doctor_config(
+    py: Python<'_>,
+    config_json: String,
+    base_dir: Option<String>,
+) -> PyResult<String> {
     let config = parse_config(config_json)?;
-    let plan =
-        resolve_run_plan_from_config(config, resolve_context(base_dir)).map_err(to_py_error)?;
+    let plan = py
+        .detach(|| resolve_run_plan_from_config(config, resolve_context(base_dir)))
+        .map_err(to_py_error)?;
     to_json(&doctor_plan(&plan))
 }
 
@@ -52,6 +58,7 @@ fn doctor_config(config_json: String, base_dir: Option<String>) -> PyResult<Stri
 #[pyfunction]
 #[pyo3(signature = (config_json, base_dir=None, input_text=None, input_file=None, request_json=None, request_file=None))]
 fn run_config(
+    py: Python<'_>,
     config_json: String,
     base_dir: Option<String>,
     input_text: Option<String>,
@@ -60,27 +67,31 @@ fn run_config(
     request_file: Option<String>,
 ) -> PyResult<String> {
     let config = parse_config(config_json)?;
-    let plan =
-        resolve_run_plan_from_config(config, resolve_context(base_dir)).map_err(to_py_error)?;
-    let request = match (request_file, request_json, input_file) {
-        (Some(path), None, None) => std::fs::read_to_string(PathBuf::from(&path))
+    let plan = py
+        .detach(|| resolve_run_plan_from_config(config, resolve_context(base_dir)))
+        .map_err(to_py_error)?;
+    let request = match (request_file, request_json, input_file, input_text) {
+        (Some(path), None, None, None) => std::fs::read_to_string(PathBuf::from(&path))
             .map_err(|error| PyRuntimeError::new_err(format!("failed to read {path}: {error}")))
             .and_then(parse_run_request)?,
-        (None, Some(json), None) => parse_run_request(json)?,
-        (None, None, Some(path)) => {
+        (None, Some(json), None, None) => parse_run_request(json)?,
+        (None, None, Some(path), None) => {
             let input = std::fs::read_to_string(PathBuf::from(&path)).map_err(|error| {
                 PyRuntimeError::new_err(format!("failed to read {path}: {error}"))
             })?;
             RunRequest::text(input)
         }
-        (None, None, None) => RunRequest::text(input_text.unwrap_or_default()),
+        (None, None, None, Some(text)) => RunRequest::text(text),
+        (None, None, None, None) => RunRequest::text(""),
         _ => {
             return Err(PyRuntimeError::new_err(
-                "request_file, request_json, and input_file are mutually exclusive",
+                "input_text, input_file, request_json, and request_file are mutually exclusive",
             ));
         }
     };
-    let result = run_plan(&plan, request).map_err(to_py_error)?;
+    let result = py
+        .detach(|| run_plan(&plan, request))
+        .map_err(to_py_error)?;
     to_json(&result)
 }
 
@@ -159,7 +170,10 @@ fn parse_run_request(contents: String) -> PyResult<RunRequest> {
 }
 
 fn parse_run_plan(contents: String) -> PyResult<RunPlan> {
-    serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+    let plan: RunPlan = serde_json::from_str(&contents)
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    plan.validate_consistency().map_err(to_py_error)?;
+    Ok(plan)
 }
 
 fn parse_runtime_handle(contents: String) -> PyResult<RuntimeHandle> {

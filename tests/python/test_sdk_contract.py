@@ -425,6 +425,28 @@ def test_inspection_models_are_typed_read_only_mappings():
         plan["agent_name"] = "mutated"  # type: ignore[index]
 
 
+def test_resolved_config_rejects_removed_profiles_and_missing_base_dir():
+    with pytest.raises(FabricConfigError, match="profiles are no longer supported"):
+        _ResolvedFabricConfig.from_mapping(
+            {
+                "metadata": {"name": "demo"},
+                "harness": {"adapter_id": "test.fabric.shim"},
+                "profiles": {"review": {}},
+            }
+        )
+
+    with pytest.raises(FabricConfigError, match="base_dir is required"):
+        EffectiveConfig.from_mapping(
+            {
+                "agent_name": "demo",
+                "config": {
+                    "metadata": {"name": "demo"},
+                    "harness": {"adapter_id": "test.fabric.shim"},
+                },
+            }
+        )
+
+
 def test_runtime_handle_distinguishes_contract_and_extension_fields():
     handle = RuntimeHandle.from_mapping(
         {

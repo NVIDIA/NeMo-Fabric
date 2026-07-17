@@ -17,7 +17,7 @@ Resolved Fabric run plan.
 
 ### `effective_config: EffectiveConfig`
 
-Resolved config used as the base for this plan.
+Resolved typed configuration and path context used by this plan.
 
 ### `agent_name: String`
 
@@ -49,11 +49,23 @@ Resolved telemetry pass-through plan.
 
 ### `base_dir: PathBuf`
 
-Base directory used to resolve relative config paths.
+Base directory used to resolve relative Fabric paths.
 
 ### `config: FabricConfig`
 
 Complete typed Fabric config.
+
+## Implementations
+
+### `impl RunPlan`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+
+#### `validate_consistency`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn validate_consistency(&amp;self) -&gt; <a href=\"../error/type-result\">Result</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.unit.html\">()</a>&gt;"}} /></pre>
+
+Reject conflicting duplicated state before a plan enters a lifecycle boundary.
 
 ## Trait Implementations
 

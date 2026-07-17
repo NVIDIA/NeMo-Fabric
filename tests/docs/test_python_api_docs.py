@@ -100,7 +100,7 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
         "## How NeMo Fabric fits",
         "## Quick start",
         "## Choose your interface",
-        "## Core workflow",
+        "## Core Workflow",
         "## Next steps",
     ):
         assert heading in landing

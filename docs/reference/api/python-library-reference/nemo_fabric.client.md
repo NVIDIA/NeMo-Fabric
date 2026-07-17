@@ -73,7 +73,7 @@ plan(
 ) → RunPlan
 ```
 
-Resolve an agent source into an immutable execution plan.
+Resolve a complete typed configuration into an immutable execution plan.
 
 Planning resolves the selected adapter and reports optional runtime capabilities such as streaming, updates, and cancellation. Planning does not start the runtime.
 
@@ -108,7 +108,7 @@ resolve(
 ) → EffectiveConfig
 ```
 
-Resolve an agent source.
+Resolve a complete typed configuration.
 
 Resolution validates and normalizes configuration but does not resolve an adapter or compute runtime capabilities. Use ``plan()`` when those execution details are required.
 

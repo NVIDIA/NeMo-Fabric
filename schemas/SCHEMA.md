@@ -17,7 +17,7 @@ schema-alignment tests in the same change.
 
 The core schema generator exports the current public typed contract.
 
-### Config And Planning
+### Config and Planning
 
 - `agent`: complete typed `FabricConfig`.
 - `adapter-descriptor`: minimal adapter descriptor consumed by Fabric. Each

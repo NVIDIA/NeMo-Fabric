@@ -48,9 +48,10 @@ flowchart TB
 
 ## Quick Start: Experimentation CLI
 
-The `nemo-fabric` CLI is a maintained developer interface for quick harness
-experiments, smoke tests, examples, planning, and diagnostics. The Python SDK
-remains the stable application-facing contract.
+The `nemo-fabric` CLI is a maintained, experimental developer interface for
+quick harness experiments, smoke tests, examples, planning, and diagnostics.
+Its command contract can evolve as experiments mature. The Python SDK remains
+the stable application-facing contract.
 
 Build and install the local wheels, then run the credential-free preset:
 
@@ -109,7 +110,7 @@ Install Fabric, Hermes Agent, and the Hermes adapter into an environment:
 ```bash
 # Use any Python 3.11-3.13 interpreter for Hermes.
 python3 -m venv .tmp/hermes-venv
-.tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[hermes]"
+.tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[adapters-hermes]"
 ```
 
 If you are working from a local Hermes checkout, replace the final install line

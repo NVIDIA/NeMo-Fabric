@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -52,6 +53,18 @@ async def test_adapter_python_rejects_invalid_path_before_start(
         )
 
     assert caught.value.stage == "start"
+
+
+def test_native_run_rejects_multiple_request_sources(hermes_shim_agent_dir: Path):
+    with pytest.raises(RuntimeError, match="mutually exclusive"):
+        native.run_config(
+            json.dumps(hermes_shim_config().model_dump(mode="json", exclude_none=True)),
+            str(hermes_shim_agent_dir),
+            "text",
+            None,
+            "{}",
+            None,
+        )
 
 
 async def smoke(client: Fabric, fixture_agent: Path) -> None:

@@ -360,7 +360,7 @@ pub struct AdapterTelemetryProviderSupport {
 /// Source context used when resolving an in-memory Fabric config.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolveContext {
-    /// Base directory used to resolve relative config paths.
+    /// Base directory used to resolve relative Fabric paths.
     pub base_dir: PathBuf,
 }
 
@@ -978,9 +978,16 @@ pub fn resolve_effective_config_from_config(
     context: ResolveContext,
 ) -> Result<EffectiveConfig> {
     validate_config(&config)?;
+    let supplied_base_dir = context.base_dir;
+    let base_dir = std::path::absolute(&supplied_base_dir)
+        .map(normalize_path)
+        .map_err(|source| FabricError::ResolveBaseDirectory {
+            path: supplied_base_dir,
+            source,
+        })?;
     Ok(EffectiveConfig {
         agent_name: config.metadata.name.clone(),
-        base_dir: context.base_dir,
+        base_dir,
         config,
     })
 }
@@ -1436,7 +1443,7 @@ fn normalize_path(path: PathBuf) -> PathBuf {
 pub struct EffectiveConfig {
     /// Stable agent name.
     pub agent_name: String,
-    /// Base directory used to resolve relative config paths.
+    /// Base directory used to resolve relative Fabric paths.
     pub base_dir: PathBuf,
     /// Complete typed Fabric config.
     pub config: FabricConfig,
@@ -1445,7 +1452,7 @@ pub struct EffectiveConfig {
 /// Resolved Fabric run plan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RunPlan {
-    /// Resolved config used as the base for this plan.
+    /// Resolved typed configuration and path context used by this plan.
     pub effective_config: EffectiveConfig,
     /// Stable agent name.
     pub agent_name: String,
@@ -1466,10 +1473,28 @@ pub struct RunPlan {
     /// Resolved telemetry pass-through plan.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telemetry_plan: Option<TelemetryPlan>,
-    /// Base directory used to resolve relative config paths.
+    /// Base directory used to resolve relative Fabric paths.
     pub base_dir: PathBuf,
     /// Complete typed Fabric config.
     pub config: FabricConfig,
+}
+
+impl RunPlan {
+    /// Reject conflicting duplicated state before a plan enters a lifecycle boundary.
+    pub fn validate_consistency(&self) -> Result<()> {
+        if self.agent_name != self.effective_config.agent_name {
+            return Err(FabricError::RunPlanMismatch {
+                field: "agent_name",
+            });
+        }
+        if self.base_dir != self.effective_config.base_dir {
+            return Err(FabricError::RunPlanMismatch { field: "base_dir" });
+        }
+        if self.config != self.effective_config.config {
+            return Err(FabricError::RunPlanMismatch { field: "config" });
+        }
+        Ok(())
+    }
 }
 
 /// Lifecycle behavior implemented by a resolved runtime path.
@@ -1675,6 +1700,7 @@ mod tests {
             ResolveContext::new(&base_dir),
         )
         .expect("typed plan");
+        let base_dir = std::path::absolute(base_dir).expect("absolute base directory");
 
         assert_eq!(plan.agent_name, "typed-agent");
         assert_eq!(plan.base_dir, base_dir);
@@ -1689,6 +1715,43 @@ mod tests {
                 .map(|adapter| adapter.descriptor.adapter_id.as_str()),
             Some("nvidia.fabric.hermes")
         );
+    }
+
+    #[test]
+    fn relative_base_dir_becomes_absolute_before_deriving_paths() {
+        let plan = resolve_run_plan_from_config(
+            typed_config("nvidia.fabric.hermes"),
+            ResolveContext::new("."),
+        )
+        .expect("typed plan");
+        let expected_base = std::env::current_dir().expect("current directory");
+
+        assert_eq!(plan.base_dir, expected_base);
+        assert_eq!(
+            plan.environment_plan
+                .as_ref()
+                .and_then(|environment| environment.workspace.as_ref()),
+            Some(&expected_base.join("workspace"))
+        );
+        assert_eq!(
+            plan.capability_plan.skill_paths,
+            vec![expected_base.join("skills/review")]
+        );
+    }
+
+    #[test]
+    fn rejects_conflicting_duplicated_plan_state() {
+        let mut plan = resolve_run_plan_from_config(
+            typed_config("nvidia.fabric.hermes"),
+            ResolveContext::new(repository_root()),
+        )
+        .expect("typed plan");
+        plan.effective_config.base_dir = plan.base_dir.join("other");
+
+        assert!(matches!(
+            plan.validate_consistency(),
+            Err(FabricError::RunPlanMismatch { field: "base_dir" })
+        ));
     }
 
     #[test]

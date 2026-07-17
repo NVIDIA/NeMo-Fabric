@@ -224,7 +224,7 @@
           "type": "string"
         },
         "base_dir": {
-          "description": "Base directory used to resolve relative config paths.",
+          "description": "Base directory used to resolve relative Fabric paths.",
           "type": "string"
         },
         "config": {
@@ -1514,7 +1514,7 @@
     },
     "effective_config": {
       "$ref": "#/$defs/EffectiveConfig",
-      "description": "Merged agent config and provenance."
+      "description": "Resolved typed configuration with explicit path context."
     },
     "request": {
       "$ref": "#/$defs/RunRequest",

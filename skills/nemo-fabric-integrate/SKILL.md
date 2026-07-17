@@ -126,9 +126,9 @@ Pick the smallest lifecycle the consumer needs:
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
 
-The example below shows both lifecycles as a complete, runnable program; the
-shorter async snippets elsewhere in this skill are fragments that assume the same
-async context:
+The lifecycle fragment below shows both forms. It assumes the caller has already
+set `config = to_fabric_config(job)` and chosen `base`, as described in the
+configuration example above:
 
 ```python
 import asyncio

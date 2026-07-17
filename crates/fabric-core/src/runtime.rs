@@ -309,7 +309,7 @@ pub struct RuntimeTelemetryContext {
 /// Adapter-facing invocation payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterInvocation {
-    /// Merged agent config and provenance.
+    /// Resolved typed configuration with explicit path context.
     pub effective_config: EffectiveConfig,
     /// Per-runtime/per-invocation execution context.
     pub runtime_context: RuntimeContext,
@@ -359,6 +359,7 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
 
 /// Resolve or attach to the execution environment context for a run plan.
 pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
+    plan.validate_consistency()?;
     let mut metadata = BTreeMap::new();
     let mut connection = BTreeMap::new();
     let (
@@ -442,6 +443,7 @@ pub fn invoke_runtime(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
+    plan.validate_consistency()?;
     validate_blocked_tools_support(plan)?;
     validate_runtime_handle(plan, runtime)?;
     match adapter_kind(plan) {
@@ -468,6 +470,7 @@ fn validate_blocked_tools_support(plan: &RunPlan) -> Result<()> {
 
 /// Stop or detach from a harness runtime.
 pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<FabricEvent>> {
+    plan.validate_consistency()?;
     validate_runtime_handle(plan, runtime)?;
     match runtime.adapter_kind {
         AdapterKind::Process => ProcessAdapter.stop(runtime),

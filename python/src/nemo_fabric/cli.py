@@ -44,6 +44,17 @@ def load_factory(spec: str) -> FabricConfig:
         raise SourceError(str(error)) from error
 
 
+def _invoke_factory(label: str, factory: Any) -> FabricConfig:
+    """Invoke a bundled config factory with CLI-friendly failures."""
+
+    try:
+        return factory()
+    except (FabricError, SourceError, OSError, ValueError):
+        raise
+    except Exception as error:
+        raise SourceError(f"failed to build {label}: {error}") from error
+
+
 def select_source(args: argparse.Namespace) -> SelectedSource:
     """Resolve one mutually exclusive CLI selector."""
 
@@ -55,7 +66,8 @@ def select_source(args: argparse.Namespace) -> SelectedSource:
             preset = PRESETS[args.preset]
         except KeyError as error:
             raise SourceError(_unknown("preset", args.preset, PRESETS)) from error
-        return SelectedSource(preset.factory(), override or preset.base_dir, f"preset:{preset.name}")
+        label = f"preset:{preset.name}"
+        return SelectedSource(_invoke_factory(label, preset.factory), override or preset.base_dir, label)
     if args.example:
         try:
             example = EXAMPLES[args.example]
@@ -67,7 +79,8 @@ def select_source(args: argparse.Namespace) -> SelectedSource:
         except KeyError as error:
             choices = ", ".join(sorted(example.variants))
             raise SourceError(f"unknown variant {variant!r} for {example.name}; available: {choices}") from error
-        return SelectedSource(factory(), override or example.base_dir, f"example:{example.name}:{variant}")
+        label = f"example:{example.name}:{variant}"
+        return SelectedSource(_invoke_factory(label, factory), override or example.base_dir, label)
     if args.factory:
         return SelectedSource(load_factory(args.factory), override or Path.cwd(), f"factory:{args.factory}")
     raise SourceError("select exactly one of --preset, --example, or --factory")
@@ -179,7 +192,7 @@ async def _execute(args: argparse.Namespace) -> int:
     else:
         return await _chat(fabric, selected, args)
     _emit(result, args.output)
-    return 1 if getattr(result, "status", None) == "fail" else 0
+    return 1 if getattr(result, "status", None) in {"fail", "failed"} else 0
 
 
 async def _chat(fabric: Fabric, selected: SelectedSource, args: argparse.Namespace) -> int:
@@ -189,7 +202,7 @@ async def _chat(fabric: Fabric, selected: SelectedSource, args: argparse.Namespa
         while True:
             if pending is None:
                 try:
-                    pending = input("you> ")
+                    pending = await asyncio.to_thread(input, "you> ")
                 except EOFError:
                     break
             if pending.strip().lower() in {"/exit", "/quit"}:

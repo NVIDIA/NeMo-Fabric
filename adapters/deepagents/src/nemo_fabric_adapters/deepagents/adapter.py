@@ -507,16 +507,16 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
             import importlib.util
 
             if importlib.util.find_spec("nemo_relay") is None:
-                raise RuntimeError(
-                    "telemetry is enabled but the 'nemo-relay' package is not installed; "
-                    "install the Relay extra (pip install 'nemo-fabric-adapters-deepagents[relay]')."
+                raise _relay_dependency_error()
+            try:
+                api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
+                from nemo_relay import ScopeType, plugin, scope
+                from nemo_relay.integrations.deepagents import (
+                    NemoRelayDeepAgentsCallbackHandler,
+                    add_nemo_relay_integration,
                 )
-            api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
-            from nemo_relay import ScopeType, plugin, scope
-            from nemo_relay.integrations.deepagents import (
-                NemoRelayDeepAgentsCallbackHandler,
-                add_nemo_relay_integration,
-            )
+            except (ImportError, AttributeError) as exc:
+                raise _relay_dependency_error() from exc
 
             # add_nemo_relay_integration injects the Deep Agents middleware (model/tool
             # calls, skill/subagent config marks) into create_deep_agent's kwargs and the
@@ -643,6 +643,13 @@ class Observability(NamedTuple):
     plugin_config: dict[str, Any]
     emitter: str
     collect_artifacts: bool
+
+
+def _relay_dependency_error() -> RuntimeError:
+    return RuntimeError(
+        "telemetry is enabled but a compatible 'nemo-relay' package is not installed; "
+        "install the Relay extra (pip install 'nemo-fabric-adapters-deepagents[relay]')."
+    )
 
 
 def resolve_observability(

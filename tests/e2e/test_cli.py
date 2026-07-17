@@ -11,11 +11,15 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import nemo_fabric.cli as cli_module
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_discovery_commands() -> None:
+def test_discovery_commands():
     presets = run("preset", "list")
     examples = run("example", "list")
 
@@ -38,7 +42,7 @@ def test_discovery_commands() -> None:
     assert scripted["install"] == "pip install nemo-fabric"
 
 
-def test_scripted_preset_runs_without_credentials(tmp_path: Path) -> None:
+def test_scripted_preset_runs_without_credentials(tmp_path: Path):
     input_file = tmp_path / "input.txt"
     input_file.write_text("credential-free smoke", encoding="utf-8")
 
@@ -49,7 +53,7 @@ def test_scripted_preset_runs_without_credentials(tmp_path: Path) -> None:
     assert result["output"]["response"] == "credential-free smoke"
 
 
-def test_help_and_version_are_available() -> None:
+def test_help_and_version_are_available():
     help_result = run()
     version = run("version")
 
@@ -59,7 +63,7 @@ def test_help_and_version_are_available() -> None:
     assert version.stdout.strip()
 
 
-def test_example_can_be_copied_and_run_as_a_factory(tmp_path: Path) -> None:
+def test_example_can_be_copied_and_run_as_a_factory(tmp_path: Path):
     destination = tmp_path / "my_agent"
     initialized = run("example", "init", "examples.code_review_agent", destination)
 
@@ -81,7 +85,7 @@ def test_example_can_be_copied_and_run_as_a_factory(tmp_path: Path) -> None:
     assert result["output"]["response"] == "review this"
 
 
-def test_preset_and_example_reach_the_same_sdk_plan_path() -> None:
+def test_preset_and_example_reach_the_same_sdk_plan_path():
     preset = call_json("plan", "--preset", "hermes")
     example = call_json(
         "plan",
@@ -93,11 +97,12 @@ def test_preset_and_example_reach_the_same_sdk_plan_path() -> None:
 
     assert preset["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes"
     assert example["adapter_descriptor"]["descriptor"]["adapter_id"] == "nvidia.fabric.hermes"
-    assert preset["effective_config"]["base_dir"].endswith("nemo_fabric/_bundled")
+    expected_base = (ROOT / "python" / "src" / "nemo_fabric" / "_bundled").resolve()
+    assert Path(preset["effective_config"]["base_dir"]).resolve() == expected_base
     assert example["capability_plan"]["native"]["skill_paths"]
 
 
-def test_factory_plan_doctor_and_run(hermes_shim_agent_dir: Path) -> None:
+def test_factory_plan_doctor_and_run(hermes_shim_agent_dir: Path):
     selector = (
         "--factory",
         "_utils.configs:hermes_shim_config",
@@ -116,7 +121,7 @@ def test_factory_plan_doctor_and_run(hermes_shim_agent_dir: Path) -> None:
     assert result["output"]["received"] == "hello factory"
 
 
-def test_factory_request_json_and_output_file(hermes_shim_agent_dir: Path, tmp_path: Path) -> None:
+def test_factory_request_json_and_output_file(hermes_shim_agent_dir: Path, tmp_path: Path):
     output = tmp_path / "result.json"
     request = json.dumps(
         {
@@ -144,7 +149,7 @@ def test_factory_request_json_and_output_file(hermes_shim_agent_dir: Path, tmp_p
     assert result["output"]["received"] == "hello request"
 
 
-def test_selector_errors_are_actionable() -> None:
+def test_selector_errors_are_actionable():
     unknown = run("plan", "--preset", "missing")
     malformed = run("plan", "--factory", "missing-factory")
     conflict = run("plan", "--preset", "hermes", "--factory", "mod:factory")
@@ -160,11 +165,37 @@ def test_selector_errors_are_actionable() -> None:
     assert "--variant requires --example" in misplaced_variant.stderr
 
 
-def call_json(*args: Any) -> dict[str, Any]:
+async def test_failed_run_returns_nonzero(monkeypatch):
+    result = MagicMock()
+    result.status = "failed"
+    result.to_mapping.return_value = {"status": "failed"}
+    fabric = MagicMock()
+    fabric.run = AsyncMock(return_value=result)
+    monkeypatch.setattr(cli_module, "Fabric", MagicMock(return_value=fabric))
+    args = cli_module.build_parser().parse_args(
+        ["run", "--preset", "scripted", "--input", "fail"]
+    )
+
+    assert await cli_module._execute(args) == 1
+
+
+def test_bundled_factory_errors_are_normalized(monkeypatch):
+    preset = MagicMock()
+    preset.name = "broken"
+    preset.base_dir = ROOT
+    preset.factory.side_effect = RuntimeError("builder exploded")
+    monkeypatch.setitem(cli_module.PRESETS, "broken", preset)
+    args = cli_module.build_parser().parse_args(["plan", "--preset", "broken"])
+
+    with pytest.raises(cli_module.SourceError, match="failed to build preset:broken"):
+        cli_module.select_source(args)
+
+
+def call_json(*args: object) -> dict[str, Any]:
     return call_json_from(ROOT, *args)
 
 
-def call_json_from(cwd: Path, *args: Any) -> dict[str, Any]:
+def call_json_from(cwd: Path, *args: object) -> dict[str, Any]:
     completed = run_from(cwd, *args)
     assert completed.returncode == 0, completed.stderr
     value = json.loads(completed.stdout)
@@ -172,11 +203,11 @@ def call_json_from(cwd: Path, *args: Any) -> dict[str, Any]:
     return value
 
 
-def run(*args: Any) -> subprocess.CompletedProcess[str]:
+def run(*args: object) -> subprocess.CompletedProcess[str]:
     return run_from(ROOT, *args)
 
 
-def run_from(cwd: Path, *args: Any) -> subprocess.CompletedProcess[str]:
+def run_from(cwd: Path, *args: object) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     python_path = [str(ROOT / "python" / "src"), str(ROOT / "tests")]
     if env.get("PYTHONPATH"):

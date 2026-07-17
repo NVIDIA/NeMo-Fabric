@@ -374,7 +374,7 @@
           "type": "string"
         },
         "base_dir": {
-          "description": "Base directory used to resolve relative config paths.",
+          "description": "Base directory used to resolve relative Fabric paths.",
           "type": "string"
         },
         "config": {
@@ -1619,7 +1619,7 @@
       "type": "string"
     },
     "base_dir": {
-      "description": "Base directory used to resolve relative config paths.",
+      "description": "Base directory used to resolve relative Fabric paths.",
       "type": "string"
     },
     "capabilities": {
@@ -1649,7 +1649,7 @@
     },
     "effective_config": {
       "$ref": "#/$defs/EffectiveConfig",
-      "description": "Resolved config used as the base for this plan."
+      "description": "Resolved typed configuration and path context used by this plan."
     },
     "environment_plan": {
       "anyOf": [

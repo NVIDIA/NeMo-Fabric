@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Editable code-review example
+# Editable Code Review Example
 
 This directory is ordinary Python source copied by `nemo-fabric example init`.
 Edit `config.py` to choose a real harness, model, tools, or telemetry. The

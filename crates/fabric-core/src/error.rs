@@ -13,6 +13,14 @@ pub type Result<T> = std::result::Result<T, FabricError>;
 /// Errors raised by Fabric config loading and validation.
 #[derive(Debug, thiserror::Error)]
 pub enum FabricError {
+    /// The base directory could not be resolved to an absolute path.
+    #[error("failed to resolve base directory {path}: {source}")]
+    ResolveBaseDirectory {
+        /// Base directory supplied by the caller.
+        path: PathBuf,
+        /// Underlying path-resolution error.
+        source: std::io::Error,
+    },
     /// The requested path does not exist.
     #[error("path does not exist: {0}")]
     PathNotFound(PathBuf),
@@ -95,6 +103,14 @@ pub enum FabricError {
         actual: String,
         /// Runtime handle id.
         runtime_id: String,
+    },
+    /// A run plan contains conflicting copies of resolved configuration state.
+    #[error(
+        "run plan contains conflicting `{field}` values between its top-level and effective config"
+    )]
+    RunPlanMismatch {
+        /// Conflicting run-plan field.
+        field: &'static str,
     },
     /// An environment provider is not runnable for the selected adapter in this POC.
     #[error("environment provider `{provider}` is not implemented for adapter `{adapter_kind:?}`")]

@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.machinery
 import sys
 import types
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -174,14 +175,14 @@ def fake_relay_fixture(monkeypatch):
         Agent = "agent"
 
     @contextlib.contextmanager
-    def scope_ctx(name, scope_type, **_):
+    def scope_ctx(name: str, scope_type: object, **_: object) -> Iterator[None]:
         # Record every scope entered so tests can assert the top-level
         # ``deepagents-request`` Agent scope wraps the invocation.
         calls.setdefault("scopes", []).append((name, scope_type))
         yield
 
     class NemoRelayDeepAgentsCallbackHandler:
-        def __init__(self, *_args, **_kwargs):
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
             calls["callback_handler"] = self
 
     relay_root = types.ModuleType("nemo_relay")
@@ -269,7 +270,9 @@ async def test_missing_deepagents_package_is_normalized(tmp_path, make_payload, 
 
     real_find_spec = importlib_util.find_spec
 
-    def fake_find_spec(name, *args, **kwargs):
+    def fake_find_spec(
+        name: str, *args: object, **kwargs: object
+    ) -> importlib.machinery.ModuleSpec | None:
         if name == "deepagents":
             return None
         return real_find_spec(name, *args, **kwargs)
@@ -401,7 +404,9 @@ async def test_missing_nemo_relay_with_native_telemetry_is_normalized(tmp_path, 
 
     real_find_spec = importlib_util.find_spec
 
-    def fake_find_spec(name, *args, **kwargs):
+    def fake_find_spec(
+        name: str, *args: object, **kwargs: object
+    ) -> importlib.machinery.ModuleSpec | None:
         if name == "nemo_relay":
             return None
         return real_find_spec(name, *args, **kwargs)
@@ -423,6 +428,30 @@ async def test_missing_nemo_relay_with_native_telemetry_is_normalized(tmp_path, 
 
     assert output["failed"] is True
     assert "nemo-relay" in output["error"]
+    assert "[relay]" in output["error"]
+
+
+async def test_incomplete_nemo_relay_install_is_normalized(
+    tmp_path, make_payload, monkeypatch, fake_relay
+):
+    monkeypatch.delitem(sys.modules, "nemo_relay.integrations.deepagents")
+    payload = make_payload(tmp_path)
+    payload["telemetry_plan"] = {
+        "providers": ["native"],
+        "relay_enabled": False,
+        "native_config": {
+            "version": 1,
+            "components": [
+                {"kind": "observability", "enabled": True, "config": {"version": 1}}
+            ],
+        },
+        "adapter_outputs": [],
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "compatible 'nemo-relay' package" in output["error"]
     assert "[relay]" in output["error"]
 
 
