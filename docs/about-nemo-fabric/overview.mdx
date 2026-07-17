@@ -54,10 +54,12 @@ Hermes | Codex SDK | custom harness
 RunResult + artifacts + events + telemetry references
 ```
 
-The experimentation CLI is a thin client of the Python SDK. Presets, examples,
-and user factories all produce a complete `FabricConfig` before using the same
-resolved config and run-plan contracts. Adapters own harness-specific
-preparation and invocation; consumers own the request and returned evidence.
+The experimentation CLI and its catalogs are implemented once in the Rust
+`fabric-cli` crate. The Python package exposes the same implementation as a
+console command. Built-in presets and maintained examples produce a complete
+`FabricConfig` before using the same run-plan contract. Adapters own
+harness-specific preparation and invocation; consumers own the request and
+returned evidence.
 
 ## Quick Start
 
@@ -126,12 +128,11 @@ requests, and multi-turn runtime examples.
 | --- | --- | --- |
 | Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
 | Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
-| `nemo-fabric` CLI | You are experimenting with harnesses, running examples, or troubleshooting configs | `preset`, `example`, `plan`, `doctor`, `run`, and `chat` |
+| `nemo-fabric` CLI | You are experimenting with harnesses, running maintained examples, or troubleshooting configs | [Experimentation CLI](/experimentation/cli) |
 | JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
 
 Use `FabricConfig` as the canonical configuration contract. CLI selectors
-obtain complete typed configs from maintained presets, examples, or user-owned
-Python factories.
+obtain complete typed configs from built-in presets or maintained examples.
 
 ## Core Workflow
 

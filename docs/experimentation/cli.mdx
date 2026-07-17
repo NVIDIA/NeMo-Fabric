@@ -1,0 +1,62 @@
+---
+title: "Experimentation CLI"
+description: "Use presets, maintained examples, and editable scaffolds to experiment with NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+<Warning>
+  The `nemo-fabric` CLI is an experimentation surface. Use it for quick harness
+  probes, maintained examples, planning, and diagnostics. Applications and
+  services should construct `FabricConfig` through a language API directly.
+</Warning>
+
+The command implementation and catalogs live in the Rust `fabric-cli` crate.
+The `nemo-fabric-runtime` Python package exposes that same implementation
+through a thin console-script bridge. Package and standalone installs do not
+maintain separate parsers, presets, or example catalogs.
+
+## Run a Preset
+
+Use a preset for the shortest complete probe:
+
+```bash
+nemo-fabric run --preset hermes --input "Say hello"
+```
+
+## Run a Maintained Example
+
+Use an example to exercise a complete workflow and harness variant:
+
+```bash
+nemo-fabric run --example code-review --variant hermes \
+  --input "Review the workspace"
+```
+
+## Generate an Editable Application
+
+Generate ordinary application code when you want to customize an example:
+
+```bash
+nemo-fabric example init code-review my-agent --language python --variant hermes
+nemo-fabric example init code-review my-agent-rs --language rust --variant hermes
+```
+
+The Python scaffold calls the Python SDK. The Rust scaffold calls
+`fabric-core`. Neither scaffold is loaded back into the CLI.
+
+## Boundaries
+
+- Every preset and example variant constructs a complete typed `FabricConfig`.
+- Examples reuse preset constructors and one shared workspace and skill asset
+  tree; Python and Rust launchers do not duplicate those definitions.
+- Variants do not inherit, merge, or behave like profiles.
+- There is no `--config`, `--profile`, or `--factory` input.
+- Fabric does not discover or persist YAML, TOML, or JSON agent configuration.
+- JSON request payloads and harness-generated files remain valid; they are not
+  Fabric configuration sources.
+- The CLI is not an application API, scheduler, evaluation framework, or
+  production deployment interface.
+
+Current lifecycle commands are `plan`, `doctor`, and `run`. Catalog discovery
+is available through `preset list/show` and `example list/show`.

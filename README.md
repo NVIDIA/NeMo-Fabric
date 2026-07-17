@@ -69,7 +69,8 @@ Copy an editable Python starting point with:
 nemo-fabric example init code-review ./my-agent --language python
 ```
 
-See [CLI.md](CLI.md) for the CLI's intent and boundaries.
+See the [experimentation CLI guide](docs/experimentation/cli.mdx) for the CLI's
+intent and boundaries.
 
 ## Quick Start: Hermes Agent
 
@@ -200,8 +201,8 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 
 - [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
-- [Experimentation CLI](CLI.md): presets, maintained examples, editable
-  application scaffolds, and explicit non-goals.
+- [Experimentation CLI](docs/experimentation/cli.mdx): presets, maintained
+  examples, editable application scaffolds, and explicit non-goals.
 - [Consumer integration skills](skills/README.md): repository-local coding-agent
   skills for integrating Fabric into an application through the Python SDK.
 - [Getting Started overview](docs/about-nemo-fabric/overview.mdx): interface
