@@ -499,13 +499,39 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
             agent_kwargs["checkpointer"] = checkpointer
 
         if observability is not None:
-            api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
-            from nemo_relay import plugin
-            from nemo_relay.integrations.deepagents import add_nemo_relay_integration
+            # Both the relay and native telemetry providers run through nemo_relay's
+            # plugin, so nemo-relay is required for either. It is imported lazily only
+            # here (import-time dependency neutrality); fail with an actionable message
+            # when the optional Relay extra is not installed rather than a raw
+            # ModuleNotFoundError from the imports below.
+            import importlib.util
 
+            if importlib.util.find_spec("nemo_relay") is None:
+                raise RuntimeError(
+                    "telemetry is enabled but the 'nemo-relay' package is not installed; "
+                    "install the Relay extra (pip install 'nemo-fabric-adapters-deepagents[relay]')."
+                )
+            api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
+            from nemo_relay import ScopeType, plugin, scope
+            from nemo_relay.integrations.deepagents import (
+                NemoRelayDeepAgentsCallbackHandler,
+                add_nemo_relay_integration,
+            )
+
+            # add_nemo_relay_integration injects the Deep Agents middleware (model/tool
+            # calls, skill/subagent config marks) into create_deep_agent's kwargs and the
+            # same middleware into in-process dictionary-style subagents. The callback
+            # handler captures LangGraph scopes and human-in-the-loop interrupt/resume
+            # marks. The "deepagents-request" Agent scope contains the top-level Fabric
+            # invocation. All three apply uniformly to one-shot, multi-turn, resumed, and
+            # subagent-enabled runs because they share this single invocation path.
             wrapped = add_nemo_relay_integration(agent_kwargs)
+            callback_handler = NemoRelayDeepAgentsCallbackHandler()
             async with plugin.plugin(api_config):
-                result_state, events, turn_messages = await invoke_agent(wrapped, user_message, thread_id)
+                with scope.scope("deepagents-request", ScopeType.Agent):
+                    result_state, events, turn_messages = await invoke_agent(
+                        wrapped, user_message, thread_id, callbacks=[callback_handler]
+                    )
         else:
             result_state, events, turn_messages = await invoke_agent(agent_kwargs, user_message, thread_id)
     except Exception as exc:  # normalized adapter failure
@@ -543,21 +569,45 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _apply_callbacks(config: dict[str, Any], callbacks: list[Any] | None) -> dict[str, Any]:
+    """Append ``callbacks`` to a LangGraph run config, preserving any already set.
+
+    The Relay callback handler is added after any consumer-provided callbacks so
+    it never replaces them; the existing callbacks keep their order and position
+    ahead of the appended ones.
+    """
+
+    if callbacks:
+        config["callbacks"] = [*(config.get("callbacks") or []), *callbacks]
+    return config
+
+
 async def invoke_agent(
-    agent_kwargs: dict[str, Any], user_message: str, thread_id: str | None
+    agent_kwargs: dict[str, Any],
+    user_message: str,
+    thread_id: str | None,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
     """Run the agent; return the final state, per-step events, and this turn's messages.
 
     On a resumed run the final ``values`` state also replays prior-turn messages,
     so usage/cost must be aggregated from the messages emitted *this* turn — the
     ``updates`` deltas — rather than the full final state.
+
+    ``callbacks`` (e.g. the NeMo Relay callback handler) are appended to the
+    LangGraph run config; any callbacks already present are preserved rather than
+    dropped.
     """
 
     from deepagents import create_deep_agent
 
     agent = create_deep_agent(**_supported_kwargs(create_deep_agent, agent_kwargs))
     inputs = {"messages": [{"role": "user", "content": user_message}]}
-    config = {"configurable": {"thread_id": thread_id}} if thread_id else None
+    config: dict[str, Any] = {}
+    if thread_id:
+        config["configurable"] = {"thread_id": thread_id}
+    _apply_callbacks(config, callbacks)
+    config = config or None
 
     events: list[dict[str, Any]] = []
     turn_messages: list[Any] = []

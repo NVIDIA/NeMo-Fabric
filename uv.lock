@@ -1996,7 +1996,7 @@ adapters = [
     { name = "nemo-fabric-adapters-claude" },
     { name = "nemo-fabric-adapters-codex" },
     { name = "nemo-fabric-adapters-common" },
-    { name = "nemo-fabric-adapters-deepagents" },
+    { name = "nemo-fabric-adapters-deepagents", extra = ["relay"] },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
 ]
 dev = [
@@ -2034,7 +2034,7 @@ requires-dist = [
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'adapters-hermes'", editable = "adapters/hermes" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes'", editable = "adapters/hermes" },
     { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
-    { name = "nemo-relay", marker = "extra == 'relay'", specifier = "~=0.5.0" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.5.0,<0.7" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
     { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
 ]
@@ -2045,7 +2045,7 @@ adapters = [
     { name = "nemo-fabric-adapters-claude", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-fabric-adapters-deepagents", editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-deepagents", extras = ["relay"], editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
 ]
 dev = [
@@ -2120,7 +2120,11 @@ dependencies = [
     { name = "langgraph" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "nemo-fabric-adapters-common" },
-    { name = "nemo-relay" },
+]
+
+[package.optional-dependencies]
+relay = [
+    { name = "nemo-relay", extra = ["deepagents"] },
 ]
 
 [package.metadata]
@@ -2132,8 +2136,9 @@ requires-dist = [
     { name = "langgraph", specifier = ">=1.2,<2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0,<4.0" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-relay", specifier = "~=0.5.0" },
+    { name = "nemo-relay", extras = ["deepagents"], marker = "extra == 'relay'", specifier = ">=0.5.0,<0.7" },
 ]
+provides-extras = ["relay"]
 
 [[package]]
 name = "nemo-fabric-adapters-hermes"
@@ -2174,6 +2179,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/49/97/bd4c77e975d50f7d09f8bfcb74d7e704e05a8b2205f555bf557f84edc5fe/nemo_relay-0.5.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cb323569f104506f4f1a0e2104b22d74c9a0bbf3280ec4d58ad3d768de76fb15", size = 7430817, upload-time = "2026-07-08T18:44:02.165Z" },
     { url = "https://files.pythonhosted.org/packages/da/8b/5681f3430e6d25bf7419dbe576da14599e1cfadc083edb74e691a0c3a980/nemo_relay-0.5.0-cp311-abi3-win_amd64.whl", hash = "sha256:da1bd1e1dec79b7bda3984dd8c59b32ba97abf96c37e85cd1f38d208a29f42b9", size = 7359048, upload-time = "2026-07-08T18:44:04.169Z" },
     { url = "https://files.pythonhosted.org/packages/4e/f2/65c3ef0435e671c829063d4872897f9054f369f0aeacab12c5aefe486705/nemo_relay-0.5.0-cp311-abi3-win_arm64.whl", hash = "sha256:87462585f17b40ce82c54347acef5ace96ee11de3015f234e0b902f23b3793fb", size = 6934235, upload-time = "2026-07-08T18:44:06.078Z" },
+]
+
+[package.optional-dependencies]
+deepagents = [
+    { name = "deepagents" },
+    { name = "langchain" },
+    { name = "langchain-anthropic" },
+    { name = "langchain-core" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint" },
+    { name = "langsmith" },
 ]
 
 [[package]]

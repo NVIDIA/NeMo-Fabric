@@ -170,16 +170,39 @@ def fake_relay_fixture(monkeypatch):
         calls["plugin_open"] = True
         yield
 
+    class ScopeType:
+        Agent = "agent"
+
+    @contextlib.contextmanager
+    def scope_ctx(name, scope_type, **_):
+        # Record every scope entered so tests can assert the top-level
+        # ``deepagents-request`` Agent scope wraps the invocation.
+        calls.setdefault("scopes", []).append((name, scope_type))
+        yield
+
+    class NemoRelayDeepAgentsCallbackHandler:
+        def __init__(self, *_args, **_kwargs):
+            calls["callback_handler"] = self
+
     relay_root = types.ModuleType("nemo_relay")
+    # A real spec so the adapter preflight's importlib.util.find_spec("nemo_relay")
+    # check sees Relay as installed.
+    relay_root.__spec__ = importlib.machinery.ModuleSpec("nemo_relay", loader=None)
     plugin_mod = types.ModuleType("nemo_relay.plugin")
     plugin_mod.plugin = plugin_ctx
+    scope_mod = types.ModuleType("nemo_relay.scope")
+    scope_mod.scope = scope_ctx
     relay_root.plugin = plugin_mod
+    relay_root.scope = scope_mod
+    relay_root.ScopeType = ScopeType
     integrations_pkg = types.ModuleType("nemo_relay.integrations")
     da_integ = types.ModuleType("nemo_relay.integrations.deepagents")
     da_integ.add_nemo_relay_integration = add_nemo_relay_integration
+    da_integ.NemoRelayDeepAgentsCallbackHandler = NemoRelayDeepAgentsCallbackHandler
     for name, mod in (
         ("nemo_relay", relay_root),
         ("nemo_relay.plugin", plugin_mod),
+        ("nemo_relay.scope", scope_mod),
         ("nemo_relay.integrations", integrations_pkg),
         ("nemo_relay.integrations.deepagents", da_integ),
     ):
@@ -303,6 +326,12 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     assert output["relay_artifacts"] == artifacts
     # the relay middleware reached the deepagents kwargs
     assert "relay-mw" in fake_sdks["create_kwargs"]["middleware"]
+    # the top-level invocation is wrapped in the deepagents-request Agent scope
+    # ("agent" is the fake ScopeType.Agent sentinel from the fake_relay fixture)
+    assert fake_relay["scopes"] == [("deepagents-request", "agent")]
+    # the Deep Agents callback handler is added to the LangGraph run config so
+    # LangGraph scopes and human-in-the-loop interrupt/resume marks are captured
+    assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get("callbacks", [])
 
 
 async def test_native_telemetry_exports_without_artifacts(tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay):
@@ -346,6 +375,87 @@ async def test_native_telemetry_exports_without_artifacts(tmp_path, make_payload
     # native telemetry exports directly; no ATOF/ATIF relay artifacts are written
     assert "relay_artifacts" not in output
     assert "relay-mw" in fake_sdks["create_kwargs"]["middleware"]
+    # the scope + callback handler apply to any observability-enabled run, native included
+    assert fake_relay["scopes"] == [("deepagents-request", "agent")]
+    assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get("callbacks", [])
+
+
+async def test_relay_disabled_adds_no_scope_or_callbacks(tmp_path, make_payload, fake_sdks):
+    # With telemetry disabled the invocation runs without a Relay scope, callback
+    # handler, or middleware, preserving the Relay-neutral default behavior.
+    output = await adapter.run_deepagents(make_payload(tmp_path))
+
+    assert output["completed"] is True
+    assert "telemetry" not in output
+    assert (fake_sdks["config"] or {}).get("callbacks") is None
+    assert "relay-mw" not in (fake_sdks["create_kwargs"].get("middleware") or [])
+
+
+async def test_missing_nemo_relay_with_native_telemetry_is_normalized(tmp_path, make_payload, monkeypatch):
+    # Native telemetry also runs through the nemo_relay plugin, so a core-only
+    # install configured with native telemetry must fail with the actionable
+    # extra-install message rather than a raw ModuleNotFoundError -- even though
+    # relay itself is not enabled. Force find_spec("nemo_relay") -> None (no
+    # fake_relay module) so the guard fires regardless of the environment.
+    import importlib.util as importlib_util
+
+    real_find_spec = importlib_util.find_spec
+
+    def fake_find_spec(name, *args, **kwargs):
+        if name == "nemo_relay":
+            return None
+        return real_find_spec(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib_util, "find_spec", fake_find_spec)
+
+    payload = make_payload(tmp_path)
+    payload["telemetry_plan"] = {
+        "providers": ["native"],
+        "relay_enabled": False,
+        "native_config": {
+            "version": 1,
+            "components": [{"kind": "observability", "enabled": True, "config": {"version": 1}}],
+        },
+        "adapter_outputs": [],
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "nemo-relay" in output["error"]
+    assert "[relay]" in output["error"]
+
+
+def test_apply_callbacks_preserves_existing_ahead_of_new():
+    # A consumer-provided callback already on the run config must be kept, with the
+    # Relay callback appended after it rather than replacing it.
+    config = {"configurable": {"thread_id": "t"}, "callbacks": ["consumer-cb"]}
+    result = adapter._apply_callbacks(config, ["relay-cb"])
+
+    assert result["callbacks"] == ["consumer-cb", "relay-cb"]
+    assert result["configurable"] == {"thread_id": "t"}
+
+
+def test_apply_callbacks_without_callbacks_leaves_config_untouched():
+    config = {"configurable": {"thread_id": "t"}}
+    assert adapter._apply_callbacks(config, None) == {"configurable": {"thread_id": "t"}}
+
+
+async def test_invoke_agent_wires_callbacks_into_run_config(fake_sdks):
+    # invoke_agent threads the supplied callbacks into the LangGraph run config.
+    agent_kwargs = {"model": object()}
+    await adapter.invoke_agent(agent_kwargs, "hello", "thread-1", callbacks=["cb-a", "cb-b"])
+
+    config = fake_sdks["config"]
+    assert config["configurable"]["thread_id"] == "thread-1"
+    assert config["callbacks"] == ["cb-a", "cb-b"]
+
+
+async def test_invoke_agent_without_callbacks_sets_no_callbacks_key(fake_sdks):
+    await adapter.invoke_agent({"model": object()}, "hello", None, callbacks=None)
+
+    # No thread and no callbacks means the agent is streamed without a config.
+    assert fake_sdks["config"] is None
 
 
 async def test_workspace_roots_filesystem_backend(tmp_path, make_payload, fake_sdks):
