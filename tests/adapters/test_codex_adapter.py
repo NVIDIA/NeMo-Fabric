@@ -436,6 +436,7 @@ async def test_persistent_runtime_owns_one_relay_gateway(
     await runtime.invoke(codex_payload)
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
     await runtime.invoke(codex_payload)
+    stop_gateway.assert_not_called()
     await runtime.stop()
 
     assert len(mock_codex.instances) == 1

@@ -607,8 +607,10 @@ async def test_claude_runtime_reuses_one_connected_sdk_client(
 
     monkeypatch.setattr(adapter, "ClaudeSDKClient", FakeClient)
 
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
     runtime = adapter.ClaudeRuntime()
-    await runtime.start(claude_payload)
+    await runtime.start(start_payload)
     first = await runtime.invoke(claude_payload)
     claude_payload["runtime_context"]["invocation_id"] = "invocation-2"
     claude_payload["request"]["input"] = {"not": "text"}
@@ -682,8 +684,10 @@ async def test_claude_runtime_owns_one_relay_gateway_until_stop(
     monkeypatch.setattr(adapter.relay_gateway, "start_relay_gateway", mock_start)
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
 
+    start_payload = dict(relay_payload)
+    start_payload.pop("request")
     runtime = adapter.ClaudeRuntime()
-    await runtime.start(relay_payload)
+    await runtime.start(start_payload)
     first = await runtime.invoke(relay_payload)
     relay_payload["runtime_context"]["invocation_id"] = "invocation-2"
     second = await runtime.invoke(relay_payload)
