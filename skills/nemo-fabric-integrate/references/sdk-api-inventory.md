@@ -69,7 +69,8 @@ FabricConfig -> plan() -> RunPlan -> start_runtime() -> Runtime -> invoke() -> R
 - Runtime hosting is adapter-declared, not consumer-configured. The bundled
   Claude, Codex, Deep Agents, and Hermes adapters retain their native runtime
   resources in one local host; third-party compatibility adapters may
-  reconstruct continuity on each invocation. A persistent-host crash is
-  terminal; Fabric does not silently respawn the host or replay the request.
+  reconstruct continuity on each invocation. A persistent-host crash or
+  protocol timeout is terminal; Fabric does not silently respawn the host or
+  replay the request.
 - The application owns scheduling, queues, retries, and how many runtimes to
   run. Fabric provides only the runtime contract.

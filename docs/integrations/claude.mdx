@@ -85,11 +85,12 @@ variables take precedence over federation even when their value is empty.
 
 ## Use Authentication with Relay
 
-NeMo Relay does not authenticate Claude. A Relay-enabled NeMo Fabric invocation
-starts the gateway as a supervised sidecar and sets `ANTHROPIC_BASE_URL` for the
-Claude runtime. Claude still resolves its credential through the selected mode,
-and NeMo Fabric does not write authentication values to Relay configuration or
-artifacts.
+NeMo Relay does not authenticate Claude. A Relay-enabled NeMo Fabric runtime
+starts one gateway as a supervised sidecar, sets `ANTHROPIC_BASE_URL` for the
+Claude runtime, and reuses the gateway across ordered invocations. A one-shot
+`Fabric.run(...)` owns the gateway for one invocation. Claude still resolves its
+credential through the selected mode, and NeMo Fabric does not write
+authentication values to Relay configuration or artifacts.
 
 NeMo Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
 including, `0.7.0`. The Python package named `nemo-relay` does not install this

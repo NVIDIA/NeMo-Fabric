@@ -118,8 +118,8 @@ infrastructure while preserving isolated state for each NeMo Fabric runtime.
 Runtime hosting is selected by the adapter descriptor, not by a public
 `FabricConfig` setting. An adapter that declares the versioned persistent local
 host contract starts one local host during `start_runtime(...)`, reuses its
-adapter-owned native resources across ordered invocations, and releases them
-during `stop()`.
+adapter-owned native resources across ordered invocations, and attempts to
+release them during `stop()`.
 
 ### Bundled Adapter Capability Matrix
 
@@ -146,7 +146,8 @@ subagent capabilities are not exposed.
 Third-party adapters that have not implemented the contract continue to use
 the per-invocation compatibility path. NeMo Fabric does not currently define a
 remote-service adapter contract. A crashed persistent host is terminal for that
-runtime; NeMo Fabric does not silently respawn it or replay a request.
+runtime. The same applies when the host exceeds the protocol response timeout.
+NeMo Fabric does not silently respawn the host or replay a request.
 
 Harness-native threads, sessions, and conversations remain adapter-owned state
 associated with the NeMo Fabric runtime. They are not additional NeMo Fabric lifecycle

@@ -103,24 +103,26 @@ storage. Do not commit or copy it into NeMo Fabric configuration or artifacts.
 
 ## Use Authentication with Relay
 
-NeMo Relay does not replace OpenAI authentication. A Relay-enabled invocation
-starts the Relay gateway as a supervised sidecar and directs the Codex SDK's
-built-in OpenAI provider through that gateway. The SDK still obtains credentials
-from the selected Codex authentication mode.
+NeMo Relay does not replace OpenAI authentication. A Relay-enabled NeMo Fabric
+runtime starts one gateway as a supervised sidecar and directs the Codex SDK's
+built-in OpenAI provider through that gateway. The runtime reuses the gateway
+and SDK client across ordered invocations. A one-shot `Fabric.run(...)` owns the
+gateway for one invocation. The SDK still obtains credentials from the selected
+Codex authentication mode.
 
 Relay-enabled Codex runs require `models.default.provider` to be `openai`.
 The custom `nvidia` provider uses its configured NVIDIA Responses endpoint and
 does not support the built-in provider redirect that Relay requires. Use the
 `nvidia` provider without Relay.
 
-NeMo Fabric supplies Relay configuration to the SDK for only the current request. It
-does not copy the Codex credential store into Relay configuration or persist
-credentials in Relay artifacts.
+NeMo Fabric supplies runtime-scoped Relay configuration to the SDK. It does not
+copy the Codex credential store into Relay configuration or persist credentials
+in Relay artifacts.
 
 NeMo Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
 including, `0.7.0`. The Python package named `nemo-relay` is a separate library
 dependency and does not install the CLI. NeMo Fabric owns sidecar supervision and
-request-scoped SDK configuration. Relay owns gateway transport behavior,
+runtime-scoped SDK configuration. Relay owns gateway transport behavior,
 including decoding `Content-Encoding` before it constructs managed LLM events.
 There is no NeMo Fabric compression setting.
 

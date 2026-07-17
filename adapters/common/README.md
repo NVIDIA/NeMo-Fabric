@@ -51,8 +51,8 @@ Fabric creates one factory instance per local host and serializes invocations
 through it. The host keeps one event loop alive for the complete lifecycle so
 SDK clients, compiled graphs, checkpointers, and harness databases can remain
 live safely. Adapter stdout is reserved for the protocol; diagnostics are
-redirected to stderr. A host crash is terminal for that runtime and never falls
-back to per-invocation execution.
+redirected to stderr. A host crash or protocol timeout is terminal for that
+runtime and never falls back to per-invocation execution.
 
 Refer to the [NeMo Fabric documentation](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric)
 for adapter and configuration guidance. Source code is available in the
