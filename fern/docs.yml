@@ -4,6 +4,7 @@
 instances:
   - url: nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric
     custom-domain: docs.nvidia.com/nemo/fabric
+    multi-source: true
 
 title: NVIDIA NeMo Fabric
 
