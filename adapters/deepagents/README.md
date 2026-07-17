@@ -93,20 +93,20 @@ normalized failure result rather than a raw traceback.
 
 ## Runtime Modes
 
-A one-shot `run` streams the agent with `astream` (buffering `updates` events and
-`values` snapshots) and returns the final agent message, buffered messages and
-per-step events, usage, and the LangGraph thread ID in the normalized Fabric
-result. Each one-shot run gets a fresh Fabric `runtime_id`, so `resumed` is
-`false`.
+A one-shot `run` starts a local adapter host, compiles one Deep Agents graph,
+opens its async LangGraph checkpointer, invokes the graph once with `astream`,
+and then closes the checkpointer and host. The result contains the final agent
+message, buffered messages and per-step events, usage, and the LangGraph thread
+ID. Each one-shot run gets a fresh Fabric `runtime_id`, so `resumed` is `false`.
 
 Multi-turn and resume are keyed by the Fabric `runtime_id`, which is stable
 across `invoke` calls in a started runtime (`start_runtime`) and fresh for each
-one-shot run. On the first turn the adapter generates a LangGraph thread ID and
-records it against the runtime; later turns of the same runtime reuse that thread
-ID and a persistent LangGraph SQLite checkpointer to resume (`resumed` is `true`).
-The checkpointer lives under `harness.settings.state_dir` (default the runtime
-artifacts directory). Fabric owns the runtime-to-thread correlation record;
-LangGraph owns the transcript.
+one-shot run. The host compiles the graph and opens the checkpointer once during
+runtime start. Every turn reuses both native objects and the same LangGraph
+thread ID; later turns report `resumed` as `true`. The checkpointer lives under
+`harness.settings.state_dir` (default the runtime artifacts directory) and is
+closed during runtime stop. Fabric owns the runtime-to-thread correlation
+record; LangGraph owns the transcript.
 
 The `deepagents_config()` builder in `examples/code_review_agent` is the SDK
 example. Run it from the CLI with

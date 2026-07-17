@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,15 +41,48 @@ def test_validate_hermes_telemetry_provider_accepts_relay(
 def test_validate_hermes_telemetry_provider_rejects_native():
     payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
         adapter.validate_hermes_telemetry_provider(payload)
 
 
 def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
-    payload = {"telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}}
+    payload = {
+        "telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}
+    }
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
         adapter.validate_hermes_telemetry_provider(payload)
+
+
+def test_finalize_relay_session_flushes_before_artifact_collection(monkeypatch):
+    calls: list[str] = []
+    invoke_hook = MagicMock(side_effect=lambda *args, **kwargs: calls.append("hook"))
+    runtime = adapter.HermesRuntime()
+    runtime._relay_plugin_config = {"components": []}
+    runtime._agent = SimpleNamespace(
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    runtime._invoke_hook = invoke_hook
+
+    from nemo_relay import subscribers
+
+    monkeypatch.setattr(subscribers, "flush", lambda: calls.append("flush"))
+
+    runtime._finalize_relay_session()
+
+    assert calls == ["hook", "flush"]
+    invoke_hook.assert_called_once_with(
+        "on_session_finalize",
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -134,7 +167,9 @@ def test_default_max_iterations_matches_hermes_library_default():
     # multi-step tasks while the trial still reports success.
     assert adapter.DEFAULT_MAX_ITERATIONS > 1
 
-    hermes_default = inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
+    hermes_default = (
+        inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
+    )
     assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
 
 
@@ -143,8 +178,10 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
     # absent so Hermes applies its own default rather than a starving override.
     payload = {
         "config": {
-                "harness": {"settings": {}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            "harness": {"settings": {}},
+            "models": {
+                "default": {"provider": "nvidia", "model": "nvidia/test-model"}
+            },
         }
     }
 
@@ -158,8 +195,10 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
     # omitted so Hermes applies its own default instead of a starving override.
     payload = {
         "config": {
-                "harness": {"settings": {"max_iterations": None}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            "harness": {"settings": {"max_iterations": None}},
+            "models": {
+                "default": {"provider": "nvidia", "model": "nvidia/test-model"}
+            },
         }
     }
 
@@ -258,8 +297,12 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     }
     assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
-    assert observability["atof"]["output_directory"] == str(tmp_path / "relay" / "atof" / "runtime-matrix")
-    assert observability["atif"]["output_directory"] == str(tmp_path / "relay" / "atif" / "runtime-matrix")
+    assert observability["atof"]["output_directory"] == str(
+        tmp_path / "relay" / "atof" / "runtime-matrix"
+    )
+    assert observability["atif"]["output_directory"] == str(
+        tmp_path / "relay" / "atif" / "runtime-matrix"
+    )
     assert observability["atif"]["agent_name"] == "matrix-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
@@ -267,8 +310,10 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
 def test_write_hermes_config_writes_file(tmp_path: Path):
     payload = {
         "config": {
-                "harness": {"settings": {}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            "harness": {"settings": {}},
+            "models": {
+                "default": {"provider": "nvidia", "model": "nvidia/test-model"}
+            },
         }
     }
 
@@ -343,11 +388,13 @@ def test_summarize_hermes_config():
 async def test_hermes_rejects_native_telemetry():
     payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
         await adapter.run_hermes(payload)
 
 
-async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
+async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,
 ):
@@ -363,13 +410,31 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
     mock_ai_agent.session_id = "runtime-fabric-123"
     mock_ai_agent.model = "test-model"
     mock_ai_agent.platform = "fabric"
-    mock_ai_agent.run_conversation.__signature__ = inspect.signature(AIAgent.run_conversation)
-    mock_ai_agent.run_conversation.return_value = {
-        "response": "ok",
-        "completed": True,
-        "failed": False,
-        "messages": [{"role": "assistant", "content": "ok"}],
-    }
+    mock_ai_agent.run_conversation.__signature__ = inspect.signature(
+        AIAgent.run_conversation
+    )
+    first_messages = [
+        *db_history,
+        {"role": "assistant", "content": "first response"},
+    ]
+    second_messages = [
+        *first_messages,
+        {"role": "assistant", "content": "second response"},
+    ]
+    mock_ai_agent.run_conversation.side_effect = [
+        {
+            "response": "first response",
+            "completed": True,
+            "failed": False,
+            "messages": first_messages,
+        },
+        {
+            "response": "second response",
+            "completed": True,
+            "failed": False,
+            "messages": second_messages,
+        },
+    ]
     mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
     monkeypatch.setattr(
         mock_ai_agent_type.__init__.__func__,
@@ -428,12 +493,25 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
         "capability_plan": {"native": {}},
     }
 
-    output = await adapter.run_hermes(payload)
+    start_payload = dict(payload)
+    start_payload.pop("request")
+    runtime = adapter.HermesRuntime()
+
+    await runtime.start(start_payload)
+    first = await runtime.invoke(payload)
+    payload["runtime_context"]["invocation_id"] = "invocation-2"
+    payload["request"]["input"] = "continue"
+    second = await runtime.invoke(payload)
+    await runtime.stop()
 
     mock_session_db_type.assert_called_once_with()
-    mock_session_db.resolve_resume_session_id.assert_called_once_with("runtime-fabric-123")
+    mock_session_db.resolve_resume_session_id.assert_called_once_with(
+        "runtime-fabric-123"
+    )
     mock_session_db.get_session.assert_called_once_with("runtime-resolved-456")
-    mock_session_db.get_messages_as_conversation.assert_called_once_with("runtime-resolved-456")
+    mock_session_db.get_messages_as_conversation.assert_called_once_with(
+        "runtime-resolved-456"
+    )
     mock_ai_agent_type.assert_called_once_with(
         base_url=None,
         api_key="secret",
@@ -452,12 +530,23 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
         session_id="runtime-fabric-123",
         session_db=mock_session_db,
     )
-    mock_ai_agent.run_conversation.assert_called_once_with(
-        "hello",
-        system_message="system",
-        conversation_history=db_history,
-    )
-    assert "session_id" not in output
-    assert Path(output["hermes_home"]) == (
+    assert mock_ai_agent.run_conversation.call_count == 2
+    first_call, second_call = mock_ai_agent.run_conversation.call_args_list
+    assert first_call.args == ("hello",)
+    assert first_call.kwargs == {
+        "system_message": "system",
+        "conversation_history": db_history,
+    }
+    assert second_call.args == ("continue",)
+    assert second_call.kwargs == {
+        "system_message": "system",
+        "conversation_history": first_messages,
+    }
+    mock_ai_agent.close.assert_called_once_with()
+    mock_session_db.close.assert_called_once_with()
+    assert first["response"] == "first response"
+    assert second["response"] == "second response"
+    assert "session_id" not in second
+    assert Path(second["hermes_home"]) == (
         tmp_path / "hermes-home" / "runtimes" / "runtime-fabric-123"
     )

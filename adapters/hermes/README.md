@@ -37,6 +37,19 @@ The adapter receives a normalized payload from Fabric and materializes Hermes-na
 `runtimes/<runtime_id>` so invocations in one Fabric runtime share Hermes state
 without sharing config or the session database with another runtime.
 
+## Execution Model
+
+Each Fabric runtime starts one local adapter host, constructs one Hermes
+`AIAgent`, and opens one `SessionDB`. Ordered `Runtime.invoke(...)` calls reuse
+those native objects and pass the prior turn's returned transcript back to
+`run_conversation(...)`. Runtime stop calls the agent's idempotent `close()`
+method, closes the session database, and releases the Relay plugin context when
+enabled.
+
+Hermes Relay telemetry is finalized after each Fabric invocation so its ATOF
+and ATIF artifacts are complete when that invocation returns. This telemetry
+boundary does not recreate the `AIAgent` or `SessionDB`.
+
 ## Maintaining The Adapter
 
 Keep `fabric-adapter.json` aligned with the Python implementation:

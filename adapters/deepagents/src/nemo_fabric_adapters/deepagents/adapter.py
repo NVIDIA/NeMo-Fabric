@@ -25,6 +25,7 @@ from typing import NamedTuple
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
+from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
@@ -46,7 +47,15 @@ VALID_MCP_TRANSPORTS = {"stdio", "sse", "streamable_http", "websocket"}
 # bypass the normalized model config, MCP tool resolution, workspace confinement,
 # or tool gating).
 FABRIC_OWNED_AGENT_KEYS = frozenset(
-    {"model", "tools", "backend", "skills", "system_prompt", "middleware", "checkpointer"}
+    {
+        "model",
+        "tools",
+        "backend",
+        "skills",
+        "system_prompt",
+        "middleware",
+        "checkpointer",
+    }
 )
 # Documented, JSON-serializable create_deep_agent options callers may forward
 # through harness.settings.deepagents. Executable objects (AgentMiddleware, BaseTool,
@@ -102,13 +111,18 @@ def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) 
     provider = (settings.get("provider") or model_config.get("provider") or "").lower()
     default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
     if default is None:
-        raise AdapterConfigError(f"models.default.api_key_env is required for provider '{provider}'.")
+        raise AdapterConfigError(
+            f"models.default.api_key_env is required for provider '{provider}'."
+        )
     return default
 
 
 def main() -> None:
     """Subprocess entrypoint used by the ``python -m`` process path."""
 
+    if lifecycle.is_lifecycle_host(os.environ):
+        lifecycle.serve(DeepAgentsRuntime)
+        return
     output = run(common_utils.load_payload())
     print(json.dumps(output, sort_keys=True))
     if output.get("failed"):
@@ -157,9 +171,13 @@ def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
     return models.get(settings.get("model", "default"), {}) or {}
 
 
-def resolve_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
+def resolve_base_url(
+    settings: dict[str, Any], model_config: dict[str, Any]
+) -> str | None:
     base_url = (
-        settings.get("base_url") or (model_config.get("settings") or {}).get("base_url") or model_config.get("base_url")
+        settings.get("base_url")
+        or (model_config.get("settings") or {}).get("base_url")
+        or model_config.get("base_url")
     )
     if base_url:
         return base_url
@@ -184,14 +202,18 @@ def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
     model_config = selected_model_config(payload)
     model_name = settings.get("model_name") or model_config.get("model")
     if not model_name:
-        raise RuntimeError("models.default.model is required for the Deep Agents adapter")
+        raise RuntimeError(
+            "models.default.model is required for the Deep Agents adapter"
+        )
 
     api_key_env = resolve_api_key_env(settings, model_config)
     api_key = os.environ.get(api_key_env)
     if not api_key:
         raise RuntimeError(f"{api_key_env} is required for the Deep Agents adapter")
 
-    provider = (settings.get("provider") or model_config.get("provider") or "nvidia").lower()
+    provider = (
+        settings.get("provider") or model_config.get("provider") or "nvidia"
+    ).lower()
     base_url = resolve_base_url(settings, model_config)
     temperature = settings.get("temperature", model_config.get("temperature"))
 
@@ -204,7 +226,11 @@ def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
             kwargs["temperature"] = temperature
         if base_url:
             kwargs["base_url"] = base_url
-        return init_chat_model(**_supported_kwargs(init_chat_model, kwargs)), model_name, base_url
+        return (
+            init_chat_model(**_supported_kwargs(init_chat_model, kwargs)),
+            model_name,
+            base_url,
+        )
 
     from langchain_openai import ChatOpenAI
 
@@ -220,7 +246,9 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
     """Root the Deep Agents filesystem backend at the Fabric workspace, if set."""
 
     environment = common_utils.environment_payload(payload)
-    workspace = environment.get("workspace") or common_utils.settings_payload(payload).get("workspace")
+    workspace = environment.get("workspace") or common_utils.settings_payload(
+        payload
+    ).get("workspace")
     if not workspace:
         return None
     root = Path(str(workspace))
@@ -287,7 +315,9 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
     # McpServerPlan carries the URL or command in ``url``; there is no ``command``.
     target = os.path.expandvars(str(spec.get("url") or "")).strip()
     if not target:
-        raise AdapterConfigError(f"MCP server '{name}' requires a url (or command in url).")
+        raise AdapterConfigError(
+            f"MCP server '{name}' requires a url (or command in url)."
+        )
     if transport in ("stdio", "command", "process"):
         parts = shlex.split(target)
         if not parts:
@@ -296,7 +326,9 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
     if transport in ("", "http", "streamable_http", "streamablehttp"):
         transport = "streamable_http"
     if transport not in VALID_MCP_TRANSPORTS:
-        raise AdapterConfigError(f"MCP server '{name}' has unsupported transport '{transport}'.")
+        raise AdapterConfigError(
+            f"MCP server '{name}' has unsupported transport '{transport}'."
+        )
     return {"transport": transport, "url": target}
 
 
@@ -333,7 +365,11 @@ def load_thread_id(payload: dict[str, Any], runtime_id: str) -> str | None:
     if not json_path.is_file():
         return None
     value = json.loads(json_path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("runtime_id") != runtime_id or not value.get("thread_id"):
+    if (
+        not isinstance(value, dict)
+        or value.get("runtime_id") != runtime_id
+        or not value.get("thread_id")
+    ):
         raise RuntimeError(f"invalid Deep Agents runtime state in {json_path}")
     return str(value["thread_id"])
 
@@ -341,9 +377,14 @@ def load_thread_id(payload: dict[str, Any], runtime_id: str) -> str | None:
 def save_thread_id(payload: dict[str, Any], runtime_id: str, thread_id: str) -> None:
     json_path, _ = runtime_state_paths(payload, runtime_id)
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    invocation_id = common_utils.runtime_context(payload).get("invocation_id") or "pending"
+    invocation_id = (
+        common_utils.runtime_context(payload).get("invocation_id") or "pending"
+    )
     tmp = json_path.with_suffix(f".{invocation_id}.tmp")
-    tmp.write_text(json.dumps({"runtime_id": runtime_id, "thread_id": thread_id}, indent=2), encoding="utf-8")
+    tmp.write_text(
+        json.dumps({"runtime_id": runtime_id, "thread_id": thread_id}, indent=2),
+        encoding="utf-8",
+    )
     os.replace(tmp, json_path)
 
 
@@ -373,7 +414,9 @@ async def close_checkpointer(checkpointer: Any) -> None:
 # --- invocation ------------------------------------------------------------
 
 
-async def build_agent_kwargs(payload: dict[str, Any], model: Any, settings: dict[str, Any]) -> dict[str, Any]:
+async def build_agent_kwargs(
+    payload: dict[str, Any], model: Any, settings: dict[str, Any]
+) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
         "tools": await resolve_tools(payload),
@@ -426,7 +469,10 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
 
 def _block_subagent(subagent: dict[str, Any], blocked: set[str]) -> dict[str, Any]:
     gated = dict(subagent)
-    gated["middleware"] = [*(gated.get("middleware") or []), blocked_tools_middleware(blocked)]
+    gated["middleware"] = [
+        *(gated.get("middleware") or []),
+        blocked_tools_middleware(blocked),
+    ]
     return gated
 
 
@@ -443,12 +489,18 @@ def _gated_subagents(subagents: Any, blocked: set[str]) -> list[dict[str, Any]]:
     gated: list[dict[str, Any]] = []
     for subagent in configured:
         if not isinstance(subagent, dict):
-            raise AdapterConfigError("Deep Agents subagents must be mappings when tools.blocked is configured.")
+            raise AdapterConfigError(
+                "Deep Agents subagents must be mappings when tools.blocked is configured."
+            )
         name = str(subagent.get("name") or "<unnamed>")
         if "graph_id" in subagent:
-            raise AdapterConfigError(f"tools.blocked cannot be enforced for remote Deep Agents subagent '{name}'.")
+            raise AdapterConfigError(
+                f"tools.blocked cannot be enforced for remote Deep Agents subagent '{name}'."
+            )
         if "runnable" in subagent:
-            raise AdapterConfigError(f"tools.blocked cannot be enforced for precompiled Deep Agents subagent '{name}'.")
+            raise AdapterConfigError(
+                f"tools.blocked cannot be enforced for precompiled Deep Agents subagent '{name}'."
+            )
         gated.append(_block_subagent(subagent, blocked))
 
     if not any(subagent.get("name") == "general-purpose" for subagent in gated):
@@ -458,118 +510,236 @@ def _gated_subagents(subagents: Any, blocked: set[str]) -> list[dict[str, Any]]:
     return gated
 
 
-async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = common_utils.settings_payload(payload)
-    request = payload.get("request") or {}
-    telemetry_providers = common_utils.telemetry_providers(payload)
-    relay_enabled = common_utils.relay_enabled(payload)
-    telemetry_provider = "relay" if relay_enabled else ("native" if "native" in telemetry_providers else "")
+class DeepAgentsRuntime:
+    """One compiled Deep Agents graph and checkpointer owned by a Fabric runtime."""
 
-    user_message = request.get("input") or ""
-    if not isinstance(user_message, str):
-        user_message = json.dumps(user_message, sort_keys=True)
+    def __init__(self) -> None:
+        self._started = False
+        self._runtime_id: str | None = None
+        self._model_name: str | None = None
+        self._base_url: str | None = None
+        self._prior_thread_id: str | None = None
+        self._thread_id: str | None = None
+        self._completed_invocations = 0
+        self._checkpointer: Any = None
+        self._agent: Any = None
+        self._observability: Observability | None = None
+        self._telemetry_provider = ""
+        self._relay_plugin: Any = None
+        self._relay_scope: Any = None
+        self._relay_scope_type: Any = None
+        self._relay_api_config: Any = None
+        self._callback_handler_type: Any = None
 
-    runtime_id = common_utils.runtime_context(payload).get("runtime_id")
-    model_name: str | None = None
-    base_url: str | None = None
-    prior_thread_id: str | None = None
-    thread_id: str | None = None
-    observability: Observability | None = None
-    result_state: Any = None
-    events: list[dict[str, Any]] = []
-    turn_messages: list[dict[str, Any]] = []
-    error: str | None = None
-    checkpointer = None
-    try:
-        # Preflight, model construction, and resume-state load run inside the guarded
-        # scope so a misconfiguration (e.g. a missing credential) returns a normalized
-        # failure result rather than raising a raw traceback.
-        preflight_check(payload)
-        model, model_name, base_url = build_chat_model(payload)
-        prior_thread_id = load_thread_id(payload, runtime_id) if runtime_id else None
-        thread_id = (prior_thread_id or uuid.uuid4().hex) if runtime_id else None
-        observability = resolve_observability(payload, telemetry_provider, relay_enabled)
+    async def start(self, payload: dict[str, Any]) -> None:
+        if self._started:
+            raise lifecycle.LifecycleError(
+                "deepagents_runtime_already_started",
+                "Deep Agents runtime is already started",
+            )
 
-        agent_kwargs = await build_agent_kwargs(payload, model, settings)
-        # Acquire the async checkpointer inside the guarded scope so a setup failure
-        # (tools, backend, observability) can never leak the SQLite connection.
-        if runtime_id:
-            _, state_sqlite = runtime_state_paths(payload, runtime_id)
-            checkpointer = await open_checkpointer(state_sqlite)
-            agent_kwargs["checkpointer"] = checkpointer
+        try:
+            preflight_check(payload)
+            settings = common_utils.settings_payload(payload)
+            runtime_id = common_utils.runtime_context(payload).get("runtime_id")
+            model, self._model_name, self._base_url = build_chat_model(payload)
+            self._runtime_id = runtime_id
+            self._prior_thread_id = (
+                load_thread_id(payload, runtime_id) if runtime_id else None
+            )
+            self._thread_id = (
+                (self._prior_thread_id or uuid.uuid4().hex) if runtime_id else None
+            )
 
-        if observability is not None:
-            # Both the relay and native telemetry providers run through nemo_relay's
-            # plugin, so nemo-relay is required for either. It is imported lazily only
-            # here (import-time dependency neutrality); fail with an actionable message
-            # when the optional Relay extra is not installed rather than a raw
-            # ModuleNotFoundError from the imports below.
-            import importlib.util
+            telemetry_providers = common_utils.telemetry_providers(payload)
+            relay_enabled = common_utils.relay_enabled(payload)
+            self._telemetry_provider = (
+                "relay"
+                if relay_enabled
+                else "native"
+                if "native" in telemetry_providers
+                else ""
+            )
+            self._observability = resolve_observability(
+                payload,
+                self._telemetry_provider,
+                relay_enabled,
+            )
 
-            if importlib.util.find_spec("nemo_relay") is None:
-                raise _relay_dependency_error()
-            try:
-                api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
-                from nemo_relay import ScopeType, plugin, scope
-                from nemo_relay.integrations.deepagents import (
-                    NemoRelayDeepAgentsCallbackHandler,
-                    add_nemo_relay_integration,
+            agent_kwargs = await build_agent_kwargs(payload, model, settings)
+            if runtime_id:
+                _, state_sqlite = runtime_state_paths(payload, runtime_id)
+                self._checkpointer = await open_checkpointer(state_sqlite)
+                agent_kwargs["checkpointer"] = self._checkpointer
+
+            if self._observability is not None:
+                agent_kwargs = self._configure_observability(agent_kwargs)
+
+            from deepagents import create_deep_agent
+
+            self._agent = create_deep_agent(
+                **_supported_kwargs(create_deep_agent, agent_kwargs)
+            )
+            self._started = True
+        except BaseException:
+            await self.stop()
+            raise
+
+    def _configure_observability(self, agent_kwargs: dict[str, Any]) -> dict[str, Any]:
+        import importlib.util
+
+        if importlib.util.find_spec("nemo_relay") is None:
+            raise _relay_dependency_error()
+        try:
+            from nemo_relay import ScopeType, plugin, scope
+            from nemo_relay.integrations.deepagents import (
+                NemoRelayDeepAgentsCallbackHandler,
+                add_nemo_relay_integration,
+            )
+        except (ImportError, AttributeError) as exc:
+            raise _relay_dependency_error() from exc
+
+        assert self._observability is not None
+        self._relay_api_config = common_utils.relay_api_plugin_config(
+            self._observability.plugin_config
+        )
+        self._relay_plugin = plugin
+        self._relay_scope = scope
+        self._relay_scope_type = ScopeType
+        self._callback_handler_type = NemoRelayDeepAgentsCallbackHandler
+        return add_nemo_relay_integration(agent_kwargs)
+
+    async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not self._started or self._agent is None:
+            raise lifecycle.LifecycleError(
+                "deepagents_runtime_not_started",
+                "Deep Agents runtime is not started",
+            )
+        runtime_id = common_utils.runtime_context(payload).get("runtime_id")
+        if runtime_id != self._runtime_id:
+            raise lifecycle.LifecycleError(
+                "deepagents_runtime_mismatch",
+                "Deep Agents invocation does not match the active runtime",
+            )
+
+        request = payload.get("request") or {}
+        user_message = request.get("input") or ""
+        if not isinstance(user_message, str):
+            user_message = json.dumps(user_message, sort_keys=True)
+
+        result_state: Any = None
+        events: list[dict[str, Any]] = []
+        turn_messages: list[dict[str, Any]] = []
+        error: str | None = None
+        resumed = bool(self._prior_thread_id) or self._completed_invocations > 0
+        try:
+            if self._observability is not None:
+                callback_handler = self._callback_handler_type()
+                async with self._relay_plugin.plugin(self._relay_api_config):
+                    with self._relay_scope.scope(
+                        "deepagents-request", self._relay_scope_type.Agent
+                    ):
+                        (
+                            result_state,
+                            events,
+                            turn_messages,
+                        ) = await invoke_compiled_agent(
+                            self._agent,
+                            user_message,
+                            self._thread_id,
+                            callbacks=[callback_handler],
+                        )
+            else:
+                result_state, events, turn_messages = await invoke_compiled_agent(
+                    self._agent,
+                    user_message,
+                    self._thread_id,
                 )
-            except (ImportError, AttributeError) as exc:
-                raise _relay_dependency_error() from exc
+        except Exception as exc:  # normalized adapter failure
+            error = f"{type(exc).__name__}: {exc}"
 
-            # add_nemo_relay_integration injects the Deep Agents middleware (model/tool
-            # calls, skill/subagent config marks) into create_deep_agent's kwargs and the
-            # same middleware into in-process dictionary-style subagents. The callback
-            # handler captures LangGraph scopes and human-in-the-loop interrupt/resume
-            # marks. The "deepagents-request" Agent scope contains the top-level Fabric
-            # invocation. All three apply uniformly to one-shot, multi-turn, resumed, and
-            # subagent-enabled runs because they share this single invocation path.
-            wrapped = add_nemo_relay_integration(agent_kwargs)
-            callback_handler = NemoRelayDeepAgentsCallbackHandler()
-            async with plugin.plugin(api_config):
-                with scope.scope("deepagents-request", ScopeType.Agent):
-                    result_state, events, turn_messages = await invoke_agent(
-                        wrapped, user_message, thread_id, callbacks=[callback_handler]
-                    )
-        else:
-            result_state, events, turn_messages = await invoke_agent(agent_kwargs, user_message, thread_id)
-    except Exception as exc:  # normalized adapter failure
-        error = f"{type(exc).__name__}: {exc}"
-    finally:
+        if error is None and self._runtime_id and self._thread_id:
+            save_thread_id(payload, self._runtime_id, self._thread_id)
+            self._completed_invocations += 1
+
+        telemetry_runtime, relay_artifacts = self._telemetry_output()
+        return normalize_output(
+            model_name=self._model_name,
+            base_url=self._base_url,
+            runtime_id=self._runtime_id,
+            thread_id=self._thread_id,
+            resumed=resumed,
+            result_state=result_state,
+            events=events,
+            turn_messages=turn_messages,
+            error=error,
+            telemetry_runtime=telemetry_runtime,
+            relay_artifacts=relay_artifacts,
+        )
+
+    def failure_output(
+        self, payload: dict[str, Any], error: BaseException
+    ) -> dict[str, Any]:
+        telemetry_runtime, relay_artifacts = self._telemetry_output()
+        return normalize_output(
+            model_name=self._model_name,
+            base_url=self._base_url,
+            runtime_id=self._runtime_id
+            or common_utils.runtime_context(payload).get("runtime_id"),
+            thread_id=self._thread_id,
+            resumed=bool(self._prior_thread_id),
+            result_state=None,
+            events=[],
+            turn_messages=[],
+            error=f"{type(error).__name__}: {error}",
+            telemetry_runtime=telemetry_runtime,
+            relay_artifacts=relay_artifacts,
+        )
+
+    def _telemetry_output(
+        self,
+    ) -> tuple[dict[str, Any] | None, list[dict[str, str]] | None]:
+        if self._observability is None:
+            return None, None
+        telemetry_runtime = {
+            "enabled": True,
+            "provider": self._telemetry_provider,
+            "emitter": self._observability.emitter,
+        }
+        relay_artifacts = (
+            common_utils.collect_relay_artifacts(self._observability.plugin_config)
+            if self._observability.collect_artifacts
+            else None
+        )
+        return telemetry_runtime, relay_artifacts
+
+    async def stop(self) -> None:
+        checkpointer = self._checkpointer
+        self._checkpointer = None
+        self._agent = None
+        self._started = False
         if checkpointer is not None:
             await close_checkpointer(checkpointer)
 
-    if error is None and runtime_id and thread_id:
-        save_thread_id(payload, runtime_id, thread_id)
 
-    telemetry_runtime: dict[str, Any] | None = None
-    relay_artifacts: list[dict[str, str]] | None = None
-    if observability is not None:
-        telemetry_runtime = {
-            "enabled": True,
-            "provider": telemetry_provider,
-            "emitter": observability.emitter,
-        }
-        if observability.collect_artifacts:
-            relay_artifacts = common_utils.collect_relay_artifacts(observability.plugin_config)
+async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
+    runtime = DeepAgentsRuntime()
+    try:
+        await runtime.start(payload)
+    except Exception as error:
+        output = runtime.failure_output(payload, error)
+        await runtime.stop()
+        return output
 
-    return normalize_output(
-        model_name=model_name,
-        base_url=base_url,
-        runtime_id=runtime_id,
-        thread_id=thread_id,
-        resumed=bool(prior_thread_id),
-        result_state=result_state,
-        events=events,
-        turn_messages=turn_messages,
-        error=error,
-        telemetry_runtime=telemetry_runtime,
-        relay_artifacts=relay_artifacts,
-    )
+    try:
+        return await runtime.invoke(payload)
+    finally:
+        await runtime.stop()
 
 
-def _apply_callbacks(config: dict[str, Any], callbacks: list[Any] | None) -> dict[str, Any]:
+def _apply_callbacks(
+    config: dict[str, Any], callbacks: list[Any] | None
+) -> dict[str, Any]:
     """Append ``callbacks`` to a LangGraph run config, preserving any already set.
 
     The Relay callback handler is added after any consumer-provided callbacks so
@@ -588,7 +758,26 @@ async def invoke_agent(
     thread_id: str | None,
     callbacks: list[Any] | None = None,
 ) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
-    """Run the agent; return the final state, per-step events, and this turn's messages.
+    """Create and run an agent for the per-invocation compatibility path."""
+
+    from deepagents import create_deep_agent
+
+    agent = create_deep_agent(**_supported_kwargs(create_deep_agent, agent_kwargs))
+    return await invoke_compiled_agent(
+        agent,
+        user_message,
+        thread_id,
+        callbacks=callbacks,
+    )
+
+
+async def invoke_compiled_agent(
+    agent: Any,
+    user_message: str,
+    thread_id: str | None,
+    callbacks: list[Any] | None = None,
+) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
+    """Run a compiled agent and return state, events, and current-turn messages.
 
     On a resumed run the final ``values`` state also replays prior-turn messages,
     so usage/cost must be aggregated from the messages emitted *this* turn — the
@@ -599,9 +788,6 @@ async def invoke_agent(
     dropped.
     """
 
-    from deepagents import create_deep_agent
-
-    agent = create_deep_agent(**_supported_kwargs(create_deep_agent, agent_kwargs))
     inputs = {"messages": [{"role": "user", "content": user_message}]}
     config: dict[str, Any] = {}
     if thread_id:
@@ -673,7 +859,9 @@ def resolve_observability(
     if telemetry_provider == "native":
         native_config = common_utils.native_telemetry_config(payload)
         if native_config.get("components"):
-            return Observability(native_config, "deepagents.observability/native", False)
+            return Observability(
+                native_config, "deepagents.observability/native", False
+            )
     return None
 
 
@@ -759,7 +947,9 @@ def _dedup_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _message_to_dict(message: Any) -> dict[str, Any]:
-    role = getattr(message, "type", None) or getattr(message, "role", None) or "assistant"
+    role = (
+        getattr(message, "type", None) or getattr(message, "role", None) or "assistant"
+    )
     content = getattr(message, "content", "")
     entry: dict[str, Any] = {"role": role, "content": content}
     message_id = getattr(message, "id", None)
@@ -801,7 +991,9 @@ def _aggregate_usage(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
                 totals[target] = int(totals.get(target, 0)) + value
         # Cost is not part of LangChain's UsageMetadata; surface it only when a
         # model/provider reports it on the usage or response metadata.
-        candidate = usage.get("total_cost") or usage.get("cost") or _metadata_cost(message)
+        candidate = (
+            usage.get("total_cost") or usage.get("cost") or _metadata_cost(message)
+        )
         if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
             cost += float(candidate)
             has_cost = True

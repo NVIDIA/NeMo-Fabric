@@ -16,12 +16,48 @@ import uuid
 import pytest
 
 
+@pytest.mark.usefixtures("mock_nvidia_api_key")
+async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path):
+    pytest.importorskip("deepagents")
+    from examples.code_review_agent import deepagents_config
+    from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
+
+    config = deepagents_config()
+    config.harness.settings["base_url"] = f"{api_server}/v1"
+    config.harness.settings["workspace"] = str(tmp_path)
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=tmp_path,
+        artifacts=tmp_path / "artifacts",
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+    )
+
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        first = await runtime.invoke(input="first")
+        second = await runtime.invoke(input="second")
+
+    results = (first.to_mapping(), second.to_mapping())
+    assert first["status"] == second["status"] == "succeeded", results
+    assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
+    assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
+    assert first["output"]["thread_id"] == second["output"]["thread_id"], results
+    assert first["output"]["resumed"] is False, results
+    assert second["output"]["resumed"] is True, results
+    assert "user_count=2" in second["output"]["response"], results
+
+
 @pytest.fixture(name="_require_integration")
 def _require_integration_fixture() -> None:
     if os.environ.get("RUN_FABRIC_DEEPAGENTS_INTEGRATION") != "1":
         pytest.skip("set RUN_FABRIC_DEEPAGENTS_INTEGRATION=1 to run")
     if importlib.util.find_spec("deepagents") is None:
-        pytest.fail("the deepagents package is required (pip install -e '.[deepagents]')")
+        pytest.fail(
+            "the deepagents package is required (pip install -e '.[deepagents]')"
+        )
     if importlib.util.find_spec("nemo_fabric._native") is None:
         pytest.fail("the nemo_fabric native extension is required (pip install -e .)")
     if not os.environ.get("NVIDIA_API_KEY"):
@@ -53,7 +89,9 @@ async def test_deepagents_multi_turn():
     client = Fabric()
     nonce = f"fabric-{uuid.uuid4().hex[:8]}"
 
-    async with await client.start_runtime(deepagents_config(), base_dir=BASE_DIR) as runtime:
+    async with await client.start_runtime(
+        deepagents_config(), base_dir=BASE_DIR
+    ) as runtime:
         first = await runtime.invoke(input=f"Remember this value: {nonce}")
         second = await runtime.invoke(
             input="Reply with only the value I asked you to remember."
@@ -63,6 +101,8 @@ async def test_deepagents_multi_turn():
     assert first["status"] == second["status"] == "succeeded", results
     # one started runtime keeps a stable LangGraph thread across turns
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results
+    assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
+    assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     # the first turn opens the runtime; the second resumes and recalls turn one
     assert first["output"]["resumed"] is False, results
     assert second["output"]["resumed"] is True, results

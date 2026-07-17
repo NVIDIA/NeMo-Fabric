@@ -224,7 +224,9 @@ def use_real_langgraph_fixture(fake_sdks, monkeypatch):
         monkeypatch.delitem(sys.modules, name, raising=False)
 
 
-async def test_oneshot_normalizes_response_usage_and_thread(tmp_path, make_payload, fake_sdks):
+async def test_oneshot_normalizes_response_usage_and_thread(
+    tmp_path, make_payload, fake_sdks
+):
     output = await adapter.run_deepagents(make_payload(tmp_path))
 
     assert output["harness"] == "deepagents"
@@ -232,7 +234,11 @@ async def test_oneshot_normalizes_response_usage_and_thread(tmp_path, make_paylo
     assert output["model"] == "nvidia/nemotron-3-nano-30b-a3b"
     assert output["response"] == "reply to hello"
     assert output["message_count"] == 2
-    assert output["usage"] == {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12}
+    assert output["usage"] == {
+        "prompt_tokens": 5,
+        "completion_tokens": 7,
+        "total_tokens": 12,
+    }
     # streamed events are buffered
     assert output["events"] == [{"nodes": ["agent"]}]
     assert output["event_count"] == 1
@@ -260,7 +266,9 @@ async def test_missing_api_key_is_normalized(tmp_path, make_payload, monkeypatch
     assert "NVIDIA_API_KEY" in output["error"]
 
 
-async def test_missing_deepagents_package_is_normalized(tmp_path, make_payload, monkeypatch):
+async def test_missing_deepagents_package_is_normalized(
+    tmp_path, make_payload, monkeypatch
+):
     # Preflight reports a clear, normalized error when the deepagents package is
     # absent. Force find_spec("deepagents") -> None so the test holds whether or
     # not the real package is installed in the environment.
@@ -301,9 +309,17 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
     artifacts = [{"kind": "atof", "path": str(tmp_path / "events.atof.jsonl")}]
-    monkeypatch.setattr(adapter.common_utils, "load_relay_plugin_config", lambda _p: {"version": 1, "components": []})
-    monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
-    monkeypatch.setattr(adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts)
+    monkeypatch.setattr(
+        adapter.common_utils,
+        "load_relay_plugin_config",
+        lambda _p: {"version": 1, "components": []},
+    )
+    monkeypatch.setattr(
+        adapter.common_utils, "relay_api_plugin_config", lambda _c: object()
+    )
+    monkeypatch.setattr(
+        adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts
+    )
     payload = make_payload(tmp_path)
     payload["telemetry_plan"] = {
         "providers": ["relay"],
@@ -332,11 +348,17 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     assert fake_relay["scopes"] == [("deepagents-request", "agent")]
     # the Deep Agents callback handler is added to the LangGraph run config so
     # LangGraph scopes and human-in-the-loop interrupt/resume marks are captured
-    assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get("callbacks", [])
+    assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
+        "callbacks", []
+    )
 
 
-async def test_native_telemetry_exports_without_artifacts(tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay):
-    monkeypatch.setattr(adapter.common_utils, "relay_api_plugin_config", lambda _c: object())
+async def test_native_telemetry_exports_without_artifacts(
+    tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
+):
+    monkeypatch.setattr(
+        adapter.common_utils, "relay_api_plugin_config", lambda _c: object()
+    )
 
     payload = make_payload(tmp_path)
     payload["telemetry_plan"] = {
@@ -378,10 +400,14 @@ async def test_native_telemetry_exports_without_artifacts(tmp_path, make_payload
     assert "relay-mw" in fake_sdks["create_kwargs"]["middleware"]
     # the scope + callback handler apply to any observability-enabled run, native included
     assert fake_relay["scopes"] == [("deepagents-request", "agent")]
-    assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get("callbacks", [])
+    assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
+        "callbacks", []
+    )
 
 
-async def test_relay_disabled_adds_no_scope_or_callbacks(tmp_path, make_payload, fake_sdks):
+async def test_relay_disabled_adds_no_scope_or_callbacks(
+    tmp_path, make_payload, fake_sdks
+):
     # With telemetry disabled the invocation runs without a Relay scope, callback
     # handler, or middleware, preserving the Relay-neutral default behavior.
     output = await adapter.run_deepagents(make_payload(tmp_path))
@@ -392,7 +418,9 @@ async def test_relay_disabled_adds_no_scope_or_callbacks(tmp_path, make_payload,
     assert "relay-mw" not in (fake_sdks["create_kwargs"].get("middleware") or [])
 
 
-async def test_missing_nemo_relay_with_native_telemetry_is_normalized(tmp_path, make_payload, monkeypatch):
+async def test_missing_nemo_relay_with_native_telemetry_is_normalized(
+    tmp_path, make_payload, monkeypatch
+):
     # Native telemetry also runs through the nemo_relay plugin, so a core-only
     # install configured with native telemetry must fail with the actionable
     # extra-install message rather than a raw ModuleNotFoundError -- even though
@@ -417,7 +445,9 @@ async def test_missing_nemo_relay_with_native_telemetry_is_normalized(tmp_path, 
         "relay_enabled": False,
         "native_config": {
             "version": 1,
-            "components": [{"kind": "observability", "enabled": True, "config": {"version": 1}}],
+            "components": [
+                {"kind": "observability", "enabled": True, "config": {"version": 1}}
+            ],
         },
         "adapter_outputs": [],
     }
@@ -465,13 +495,17 @@ def test_apply_callbacks_preserves_existing_ahead_of_new():
 
 def test_apply_callbacks_without_callbacks_leaves_config_untouched():
     config = {"configurable": {"thread_id": "t"}}
-    assert adapter._apply_callbacks(config, None) == {"configurable": {"thread_id": "t"}}
+    assert adapter._apply_callbacks(config, None) == {
+        "configurable": {"thread_id": "t"}
+    }
 
 
 async def test_invoke_agent_wires_callbacks_into_run_config(fake_sdks):
     # invoke_agent threads the supplied callbacks into the LangGraph run config.
     agent_kwargs = {"model": object()}
-    await adapter.invoke_agent(agent_kwargs, "hello", "thread-1", callbacks=["cb-a", "cb-b"])
+    await adapter.invoke_agent(
+        agent_kwargs, "hello", "thread-1", callbacks=["cb-a", "cb-b"]
+    )
 
     config = fake_sdks["config"]
     assert config["configurable"]["thread_id"] == "thread-1"
@@ -494,7 +528,9 @@ async def test_workspace_roots_filesystem_backend(tmp_path, make_payload, fake_s
     assert backend_kwargs["virtual_mode"] is True
 
 
-async def test_checkpointer_closed_on_success_and_failure(tmp_path, make_payload, monkeypatch, fake_sdks):
+async def test_checkpointer_closed_on_success_and_failure(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
     # The async checkpointer must be closed on both the success and error paths.
     await adapter.run_deepagents(make_payload(tmp_path))
     assert fake_sdks["saver_exits"] == 1
@@ -510,7 +546,9 @@ async def test_checkpointer_closed_on_success_and_failure(tmp_path, make_payload
     assert fake_sdks["saver_exits"] == 2
 
 
-async def test_mcp_servers_become_adapter_tools(tmp_path, make_payload, monkeypatch, fake_sdks):
+async def test_mcp_servers_become_adapter_tools(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
     tool_read = MagicMock()
     tool_read.name = "read_file"
     tool_write = MagicMock()
@@ -521,7 +559,11 @@ async def test_mcp_servers_become_adapter_tools(tmp_path, make_payload, monkeypa
 
     client_mod = types.ModuleType("langchain_mcp_adapters.client")
     client_mod.MultiServerMCPClient = mock_client_cls
-    monkeypatch.setitem(sys.modules, "langchain_mcp_adapters", types.ModuleType("langchain_mcp_adapters"))
+    monkeypatch.setitem(
+        sys.modules,
+        "langchain_mcp_adapters",
+        types.ModuleType("langchain_mcp_adapters"),
+    )
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
 
     payload = make_payload(tmp_path)
@@ -558,7 +600,9 @@ async def test_blocked_tools_middleware_blocks_configured_tools():
         return "executed"
 
     def request(name: str) -> types.SimpleNamespace:
-        return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
+        return types.SimpleNamespace(
+            tool_call={"name": name, "id": "call-1", "args": {}}
+        )
 
     blocked = await middleware.awrap_tool_call(request("write_file"), handler)
     assert isinstance(blocked, ToolMessage)
@@ -603,7 +647,9 @@ async def test_real_langgraph_async_checkpointer(tmp_path, make_payload, monkeyp
     assert output["thread_id"]
 
 
-async def test_openai_provider_keeps_openai_endpoint(tmp_path, make_payload, monkeypatch, fake_sdks):
+async def test_openai_provider_keeps_openai_endpoint(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     payload = make_payload(tmp_path)
     payload["config"]["models"]["default"] = {
@@ -628,7 +674,9 @@ async def test_skill_paths_map_to_skills(tmp_path, make_payload, fake_sdks):
     assert fake_sdks["create_kwargs"]["skills"] == ["/skills/a", "/skills/b"]
 
 
-async def test_cost_is_extracted_from_response_metadata(tmp_path, make_payload, monkeypatch):
+async def test_cost_is_extracted_from_response_metadata(
+    tmp_path, make_payload, monkeypatch
+):
     import deepagents
 
     message = {
@@ -650,7 +698,9 @@ async def test_cost_is_extracted_from_response_metadata(tmp_path, make_payload, 
     assert output["usage"]["cost"] == 0.0025
 
 
-async def test_resumed_usage_counts_current_turn_only(tmp_path, make_payload, monkeypatch):
+async def test_resumed_usage_counts_current_turn_only(
+    tmp_path, make_payload, monkeypatch
+):
     # On a resumed run the final state replays the prior turn's messages; usage and
     # cost must reflect only the message emitted this turn, not the replayed one.
     import deepagents
@@ -707,6 +757,35 @@ async def test_runtime_resume_reuses_thread_id(tmp_path, make_payload, fake_sdks
     assert second["thread_id"] == thread_id
 
 
+async def test_persistent_runtime_reuses_compiled_agent_and_checkpointer(
+    tmp_path, make_payload, fake_sdks
+):
+    import deepagents
+
+    payload = make_payload(tmp_path, runtime_id="run-persistent")
+    start_payload = dict(payload)
+    start_payload.pop("request")
+    runtime = adapter.DeepAgentsRuntime()
+
+    await runtime.start(start_payload)
+    first = await runtime.invoke(payload)
+    payload["runtime_context"]["invocation_id"] = "inv-2"
+    payload["request"]["input"] = "continue"
+    second = await runtime.invoke(payload)
+
+    assert first["resumed"] is False
+    assert second["resumed"] is True
+    assert first["thread_id"] == second["thread_id"]
+    assert deepagents.create_deep_agent.call_count == 1
+    assert fake_sdks["saver_exits"] == 0
+    checkpointer = fake_sdks["create_kwargs"]["checkpointer"]
+    assert checkpointer is fake_sdks["checkpointer"]
+
+    await runtime.stop()
+
+    assert fake_sdks["saver_exits"] == 1
+
+
 async def test_stream_requests_subgraphs(tmp_path, make_payload, fake_sdks):
     # Streaming must opt into subgraphs so delegated (subagent) steps are visible
     # for usage aggregation.
@@ -727,16 +806,23 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
 
     settings = payload["config"]["harness"]["settings"]
     create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
-    assert create_kwargs["middleware"], "main agent blocked-tools middleware not attached"
+    assert create_kwargs["middleware"], (
+        "main agent blocked-tools middleware not attached"
+    )
     subagents = create_kwargs["subagents"]
-    assert [subagent["name"] for subagent in subagents] == ["general-purpose", "researcher"]
+    assert [subagent["name"] for subagent in subagents] == [
+        "general-purpose",
+        "researcher",
+    ]
     assert all(subagent["middleware"] for subagent in subagents)
 
     async def handler(_request: types.SimpleNamespace) -> str:
         return "executed"
 
     def request(name: str) -> types.SimpleNamespace:
-        return types.SimpleNamespace(tool_call={"name": name, "id": "call-1", "args": {}})
+        return types.SimpleNamespace(
+            tool_call={"name": name, "id": "call-1", "args": {}}
+        )
 
     gates = [create_kwargs["middleware"][-1]]
     gates.extend(subagent["middleware"][-1] for subagent in subagents)
@@ -745,7 +831,10 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
         blocked = await middleware.awrap_tool_call(request("write_file"), handler)
         assert isinstance(blocked, ToolMessage)
         assert blocked.status == "error"
-        assert await middleware.awrap_tool_call(request("read_file"), handler) == "executed"
+        assert (
+            await middleware.awrap_tool_call(request("read_file"), handler)
+            == "executed"
+        )
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
@@ -756,12 +845,18 @@ async def test_default_subagent_is_gated_by_blocked_tools(tmp_path, make_payload
     settings = payload["config"]["harness"]["settings"]
     create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
 
-    assert [subagent["name"] for subagent in create_kwargs["subagents"]] == ["general-purpose"]
+    assert [subagent["name"] for subagent in create_kwargs["subagents"]] == [
+        "general-purpose"
+    ]
     assert create_kwargs["subagents"][0]["middleware"]
 
 
-@pytest.mark.parametrize("unsupported", [{"graph_id": "remote"}, {"runnable": "compiled"}])
-async def test_blocked_tools_reject_unenforceable_subagents(tmp_path, make_payload, unsupported):
+@pytest.mark.parametrize(
+    "unsupported", [{"graph_id": "remote"}, {"runnable": "compiled"}]
+)
+async def test_blocked_tools_reject_unenforceable_subagents(
+    tmp_path, make_payload, unsupported
+):
     payload = make_payload(tmp_path)
     payload["config"]["tools"] = {"blocked": ["write_file"]}
     payload["config"]["harness"]["settings"]["deepagents"] = {
@@ -793,21 +888,29 @@ def test_gated_subagents_reject_invalid_configuration(subagents, message):
     assert str(error.value) == message
 
 
-async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):
+async def test_deepagents_passthrough_forwards_supported_options(
+    tmp_path, make_payload, fake_sdks
+):
     # Documented JSON-serializable options reach create_deep_agent unchanged.
     payload = make_payload(tmp_path)
-    payload["config"]["harness"]["settings"]["deepagents"] = {"interrupt_on": {"write_file": True}}
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "interrupt_on": {"write_file": True}
+    }
 
     await adapter.run_deepagents(payload)
 
     assert fake_sdks["create_kwargs"]["interrupt_on"] == {"write_file": True}
 
 
-async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(tmp_path, make_payload):
+async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(
+    tmp_path, make_payload
+):
     # Overriding a Fabric-owned key (here backend) would defeat workspace confinement;
     # it must fail loudly rather than silently replacing the derived value.
     payload = make_payload(tmp_path)
-    payload["config"]["harness"]["settings"]["deepagents"] = {"backend": {"root_dir": "/etc"}}
+    payload["config"]["harness"]["settings"]["deepagents"] = {
+        "backend": {"root_dir": "/etc"}
+    }
 
     output = await adapter.run_deepagents(payload)
 
@@ -875,7 +978,11 @@ async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):
     # A misconfigured MCP server must fail loudly, not be silently dropped.
     payload = make_payload(tmp_path)
     payload["capability_plan"] = {
-        "native": {"mcp_servers": {"bad": {"transport": "carrier-pigeon", "url": "http://x/mcp"}}}
+        "native": {
+            "mcp_servers": {
+                "bad": {"transport": "carrier-pigeon", "url": "http://x/mcp"}
+            }
+        }
     }
 
     output = await adapter.run_deepagents(payload)
@@ -886,7 +993,9 @@ async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):
 
 async def test_empty_mcp_url_is_normalized_failure(tmp_path, make_payload):
     payload = make_payload(tmp_path)
-    payload["capability_plan"] = {"native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}}
+    payload["capability_plan"] = {
+        "native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}
+    }
 
     output = await adapter.run_deepagents(payload)
 
@@ -894,7 +1003,9 @@ async def test_empty_mcp_url_is_normalized_failure(tmp_path, make_payload):
     assert "url" in output["error"]
 
 
-async def test_unknown_provider_requires_api_key_env(tmp_path, make_payload, monkeypatch):
+async def test_unknown_provider_requires_api_key_env(
+    tmp_path, make_payload, monkeypatch
+):
     # An unknown provider with no explicit api_key_env must fail loudly rather than
     # defaulting to NVIDIA_API_KEY and sending the wrong key to the endpoint.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-x")
@@ -910,7 +1021,9 @@ async def test_unknown_provider_requires_api_key_env(tmp_path, make_payload, mon
     assert "api_key_env" in output["error"]
 
 
-async def test_openai_provider_defaults_to_openai_key(tmp_path, make_payload, monkeypatch, fake_sdks):
+async def test_openai_provider_defaults_to_openai_key(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
     # provider openai with no explicit api_key_env defaults to OPENAI_API_KEY, never
     # NVIDIA_API_KEY, and keeps ChatOpenAI's own endpoint.
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)

@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 
+
 async def test_hermes_runtime():
     if os.environ.get("RUN_FABRIC_HERMES_INTEGRATION") != "1":
         pytest.skip("set RUN_FABRIC_HERMES_INTEGRATION=1 to run")
@@ -67,7 +68,9 @@ async def _run() -> None:
     ) as runtime:
         assert runtime.status is RuntimeStatus.ACTIVE, runtime.status
 
-        r1 = await runtime.invoke(input="My name is Robin. Please remember it for later.")
+        r1 = await runtime.invoke(
+            input="My name is Robin. Please remember it for later."
+        )
         assert r1["status"] == "succeeded", r1
         after_turn1 = runtime.messages
         assert len(after_turn1) >= 2, after_turn1
@@ -75,6 +78,8 @@ async def _run() -> None:
         r2 = await runtime.invoke(input="What is my name? Reply with just the name.")
         assert r2["status"] == "succeeded", r2
         assert r2["runtime_id"] == r1["runtime_id"], (r1, r2)
+        assert r1["metadata"]["adapter_runner"] == "persistent_local_host", (r1, r2)
+        assert r1["metadata"]["host_pid"] == r2["metadata"]["host_pid"], (r1, r2)
         # Hermes should return a transcript that includes the prior turn.
         assert len(runtime.messages) > len(after_turn1), runtime.messages
         # And the model must recall the name supplied in turn 1.
