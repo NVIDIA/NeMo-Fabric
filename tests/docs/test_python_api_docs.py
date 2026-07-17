@@ -96,12 +96,12 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
     assert "      - section: APIs\n" not in navigation
 
     for heading in (
-        "## What NeMo Fabric gives you",
-        "## How NeMo Fabric fits",
-        "## Quick start",
-        "## Choose your interface",
+        "## What NeMo Fabric Gives You",
+        "## How NeMo Fabric Fits",
+        "## Quick Start",
+        "## Choose Your Interface",
         "## Core Workflow",
-        "## Next steps",
+        "## Next Steps",
     ):
         assert heading in landing
 
@@ -113,8 +113,8 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
     ):
         assert destination in landing
 
-    quick_start = landing.split("## Quick start", maxsplit=1)[1].split(
-        "## Choose your interface", maxsplit=1
+    quick_start = landing.split("## Quick Start", maxsplit=1)[1].split(
+        "## Choose Your Interface", maxsplit=1
     )[0]
     assert "client.plan(" not in quick_start
     assert "client.doctor(" not in quick_start
