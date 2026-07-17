@@ -95,17 +95,17 @@ Hermes | Codex SDK | custom harness
 RunResult + artifacts + events + telemetry references
 ```
 
-- **Configuration**: Use a versioned `agent.yaml` package or a typed
-  `FabricConfig` to describe the harness adapter, environment, models, tools,
-  skills, MCP, and telemetry. File-backed and typed configs converge on the same
-  resolved config and run-plan contracts.
-- **Plan and diagnostics**: Resolve the adapter and check capabilities and
-  requirements before spending work on a runtime.
-- **Runtime lifecycle**: Run a one-shot job or start a stateful runtime through
-  the shared start, invoke, and stop contract. Adapters own harness-specific
-  preparation and invocation; consumers own the request.
-- **Normalized evidence**: Consume `RunResult` for output, structured failure
-  details, artifacts, events, and telemetry references.
+1. **Configure** an agent package or typed `FabricConfig` with a harness adapter,
+   environment, models, tools, skills, MCP, and telemetry.
+2. **Create variants** from deep copies to vary harness, model, environment, or
+   observability settings without mutating the base config. File-backed packages
+   may instead apply ordered profiles.
+3. **Plan and diagnose** to resolve the adapter and check capabilities and
+   requirements before spending work on a runtime.
+4. **Run or start a runtime** through the shared start, invoke, and stop
+   lifecycle contract.
+5. **Consume evidence** from `RunResult`: output, structured failure details,
+   artifacts, events, and telemetry references.
 
 ## Learn More
 
