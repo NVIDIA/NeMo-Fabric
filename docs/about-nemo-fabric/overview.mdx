@@ -1,44 +1,84 @@
 ---
-title: "NVIDIA NeMo Fabric"
+title: "NVIDIA NeMo Fabric Documentation"
+sidebar-title: "Overview"
 slug: "/about-nemo-fabric/overview"
 description: "Configure, plan, run, and observe agent harnesses through one typed execution contract."
+template-library-version: "1.0.0"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NeMo Fabric is the harness-management layer that turns multiple agent runtimes
-into one configurable, observable execution surface. Applications use the same
-versioned config, lifecycle, result, artifact, and telemetry contracts whether
-the selected harness is Hermes, Codex SDK, or a custom adapter.
+[NVIDIA NeMo Fabric](https://github.com/NVIDIA/NeMo-Fabric) is the
+harness-management layer that turns multiple agent runtimes into one
+configurable, observable execution surface. Applications use the same versioned
+config, lifecycle, result, artifact, and telemetry contracts whether the
+selected harness is Hermes, Codex SDK, or a custom adapter.
 
 NeMo Fabric owns the seam between an application and its harness. It resolves
-configuration, selects an adapter, drives the runtime lifecycle,
-and returns normalized evidence without leaking harness-specific control code
-into the caller.
+configuration, selects an adapter, drives the runtime lifecycle, and returns
+normalized evidence without leaking harness-specific control code into the
+caller.
 
-## What NeMo Fabric gives you
+## Benefits
+
+NeMo Fabric gives applications one contract across every supported harness.
 
 <CardGroup cols={2}>
-  <Card title="Portable configuration">
+  <Card title="Portable Configuration">
     Use a versioned `agent.yaml` package or construct the same typed
     `FabricConfig` in Python. Applications create variants from typed copies;
     portable file packages can use ordered profiles.
   </Card>
-  <Card title="Harness-neutral execution">
+  <Card title="Harness-Neutral Execution">
     Plan and invoke different harnesses through one Rust core, CLI, and Python
     SDK instead of embedding harness launch logic in every consumer.
   </Card>
-  <Card title="Typed lifecycle contracts">
+  <Card title="Typed Lifecycle Contracts">
     Resolve configs, inspect capabilities, run one-shot jobs, and hold
     multi-turn runtimes with typed requests, plans, handles, and results.
   </Card>
-  <Card title="Normalized evidence">
+  <Card title="Normalized Evidence">
     Collect output, errors, lifecycle events, artifact manifests, and telemetry
     references in stable contracts suitable for platforms and evaluations.
   </Card>
 </CardGroup>
 
-## How NeMo Fabric fits
+## Use Cases
+
+Teams use NeMo Fabric to run agents through a single contract, hold multi-turn
+sessions over a live harness, and integrate agent execution into platforms and
+evaluation pipelines.
+
+| Use Case | Reader Goal | Result |
+| --- | --- | --- |
+| Application integration | Run one-shot agent jobs from an application that owns its own config. | A normalized `RunResult` with output, artifacts, events, and telemetry references. |
+| Multi-turn runtimes | Drive several ordered turns over one live harness runtime. | A stateful runtime handle you start, invoke, and stop through one lifecycle contract. |
+| Platform and evaluation harnesses | Plan and invoke many harnesses behind one typed surface. | Stable, harness-neutral evidence suitable for platforms and evaluations. |
+
+### Application Integration
+
+An application owns its job config and consumes returned evidence. Configure an
+agent package or typed `FabricConfig`, run it through the Python SDK, and read
+the normalized `RunResult`. Refer to the [Python SDK guide](/sdk/python) for
+typed requests and one-shot run examples.
+
+### Multi-Turn Runtimes
+
+When a workflow needs several ordered turns over one live harness, start a
+runtime and invoke it turn by turn before stopping it. Refer to the
+[Runtime reference](/reference/api/python-library-reference/runtime) for the
+start, invoke, and stop lifecycle.
+
+### Platform And Evaluation Harnesses
+
+Platforms and evaluation systems plan and invoke different harnesses behind one
+typed surface, then consume stable evidence contracts. Use the `fabric` CLI or
+committed JSON Schemas to validate packages and build language bindings.
+
+## Core Workflow
+
+NeMo Fabric is organized around one flow from configuration to normalized
+evidence:
 
 ```text
 Application or evaluation harness
@@ -56,125 +96,24 @@ Hermes | Codex SDK | custom harness
 RunResult + artifacts + events + telemetry references
 ```
 
-The CLI and Python SDK are separate interfaces over the same core. File-backed
-and typed configs converge on the same resolved config and run-plan contracts.
-Adapters own harness-specific preparation and invocation; consumers own the
-request and the use of returned evidence.
+- **Configuration**: Use a versioned `agent.yaml` package or a typed
+  `FabricConfig` to describe the harness adapter, environment, models, tools,
+  skills, MCP, and telemetry. File-backed and typed configs converge on the same
+  resolved config and run-plan contracts.
+- **Plan and diagnostics**: Resolve the adapter and check capabilities and
+  requirements before spending work on a runtime.
+- **Runtime lifecycle**: Run a one-shot job or start a stateful runtime through
+  the shared start, invoke, and stop contract. Adapters own harness-specific
+  preparation and invocation; consumers own the request.
+- **Normalized evidence**: Consume `RunResult` for output, structured failure
+  details, artifacts, events, and telemetry references.
 
-## Quick start
+## Learn More
 
-Install `just` 1.50.0+ if it is not already available.
+Continue exploring NeMo Fabric through these resources.
 
-```bash
-cargo install just --locked
-```
-
-Refer to the [official installation guide](https://just.systems/man/en/installation.html)
-for more details.
-
-Ensure that the Cargo bin directory is in your `PATH`:
-
-```bash
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
-
-```bash
-uv venv -p 3.13 --seed .venv
-source .venv/bin/activate
-```
-
-Install the Python SDK with its native binding and the CLI from a source
-checkout:
-
-```bash
-just build-all
-```
-
-Run the example through the Python SDK:
-
-```python
-import asyncio
-from examples.code_review_agent import BASE_DIR, hermes_config
-from nemo_fabric import Fabric
-
-
-async def main() -> None:
-    config = hermes_config()
-    client = Fabric()
-    result = await client.run(
-        config,
-        base_dir=BASE_DIR,
-        input="Reply with exactly: fabric works",
-    )
-
-    print(result.status)
-
-
-asyncio.run(main())
-```
-
-Harness installation and credential requirements differ by adapter. The
-[repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes)
-contains the complete Hermes environment recipe.
-
-Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
-diagnostics, typed requests, and multi-turn runtime examples.
-
-## Choose your interface
-
-| Interface | Use it when | Start with |
-| --- | --- | --- |
-| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
-| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
-| `fabric` CLI | You are validating packages, debugging profiles, or running reproducible local/CI jobs | `fabric validate`, `plan`, `doctor`, `run`, and `chat` |
-| JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
-
-Use `agent.yaml` when the agent package is the portable artifact. Use
-`FabricConfig` when a platform already owns a larger job or deployment object
-and wants to pass only its NeMo Fabric slice in memory.
-
-## Core workflow
-
-1. **Configure** an agent package or typed `FabricConfig` with a harness adapter,
-   environment, models, tools, skills, MCP, and telemetry.
-2. **Create variants** from deep copies to vary harness, model, environment, or
-   observability settings without mutating the base config. File-backed
-   packages may instead apply ordered profiles.
-3. **Plan and diagnose** to resolve the adapter and check capabilities and
-   requirements before spending work on a runtime.
-4. **Run or start a runtime** through the shared start, invoke, and stop
-   lifecycle contract.
-5. **Consume evidence** from `RunResult`: output, structured failure details,
-   artifacts, events, and telemetry references.
-
-## Next steps
-
-<CardGroup cols={2}>
-  <Card
-    title="Client API"
-    href="/reference/api/python-library-reference/client"
-  >
-    Resolve, plan, diagnose, run, and start stateful runtimes.
-  </Card>
-  <Card
-    title="Runtime"
-    href="/reference/api/python-library-reference/runtime"
-  >
-    Invoke multiple ordered turns and stop runtime handles safely.
-  </Card>
-  <Card
-    title="Types"
-    href="/reference/api/python-library-reference/types"
-  >
-    Explore all mutable config objects and immutable request, plan, result,
-    artifact, telemetry, and runtime models.
-  </Card>
-  <Card
-    title="Errors"
-    href="/reference/api/python-library-reference/errors"
-  >
-    Handle config, capability, lifecycle, state, and native-extension failures.
-  </Card>
-</CardGroup>
+- **Installation** — [Installation](/getting-started/install) to set up the runtime and adapters.
+- **Quickstart** — [Quickstart](/getting-started/quick-start) to build from source and run the SDK example.
+- **Beginner Tutorial** — [Beginner Tutorial](/getting-started/quickstart) to run a simple agent end to end.
+- **Python SDK** — [Python SDK](/sdk/python) for planning, diagnostics, typed requests, and multi-turn runtimes.
+- **API Reference** — [Client API](/reference/api/python-library-reference/client) to resolve, plan, diagnose, run, and start stateful runtimes.

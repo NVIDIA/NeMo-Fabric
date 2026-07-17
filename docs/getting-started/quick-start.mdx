@@ -1,0 +1,66 @@
+---
+title: "NVIDIA NeMo Fabric Quickstart"
+sidebar-title: "Quickstart"
+description: "Install NeMo Fabric from a source checkout and run a simple agent through the Python SDK."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+Install `just` 1.50.0+ if it is not already available.
+
+```bash
+cargo install just --locked
+```
+
+Refer to the [official installation guide](https://just.systems/man/en/installation.html)
+for more details.
+
+Ensure that the Cargo bin directory is in your `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+```
+
+Install the Python SDK with its native binding and the CLI from a source
+checkout:
+
+```bash
+just build-all
+```
+
+Run the example through the Python SDK:
+
+```python
+import asyncio
+from examples.code_review_agent import BASE_DIR, hermes_config
+from nemo_fabric import Fabric
+
+
+async def main() -> None:
+    config = hermes_config()
+    client = Fabric()
+    result = await client.run(
+        config,
+        base_dir=BASE_DIR,
+        input="Reply with exactly: fabric works",
+    )
+
+    print(result.status)
+
+
+asyncio.run(main())
+```
+
+Harness installation and credential requirements differ by adapter. The
+[repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes)
+contains the complete Hermes environment recipe.
+
+Refer to the [Python SDK guide](/sdk/python) for planning, diagnostics, typed
+requests, and multi-turn runtime examples.
