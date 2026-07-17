@@ -16,7 +16,19 @@ before editing.
 
 Use this skill when reviewing docs-only changes, example-heavy changes, or any
 public-facing text update that should be checked against NVIDIA style guidance
-and NeMo Fabric repo conventions.
+and NVIDIA NeMo Fabric repo conventions.
+
+## Generated API Reference
+
+- Treat all files under `docs/reference/api/` as generated output. Do not modify
+  them directly.
+- For Python API reference changes, update the source docstrings under
+  `python/src/nemo_fabric/` or the generator in `scripts/generate_api_docs.sh`.
+- For Rust API reference changes, update the Rust documentation comments under
+  `crates/fabric-core/` or the generator in
+  `scripts/docs/generate_rust_library_reference.py`.
+- Run `just docs` to regenerate and validate the API reference after changing a
+  source or generator.
 
 ## Review Priorities
 
@@ -24,6 +36,10 @@ and NeMo Fabric repo conventions.
 - Flag stale commands, package names, APIs, bindings, repo paths, or support claims before stylistic issues
 - Keep docs aligned with current NeMo Fabric behavior, repo layout, and entry points
 - Apply NVIDIA technical-writing guidance where it improves clarity and consistency without watering down technical precision
+- The full product name is "NVIDIA NeMo Fabric".
+  - The first usage of the name (typically in the title and H1 tag) should use the full product name.
+  - All other uses of the name can use the shortened form "NeMo Fabric".
+  - The only acceptable usage of "fabric" by itself is when referring to the CLI tool, and these references must be surrounded by back-ticks.
 
 ## Review Flow
 

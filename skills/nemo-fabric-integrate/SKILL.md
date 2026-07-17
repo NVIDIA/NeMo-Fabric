@@ -250,7 +250,7 @@ result-field and error inventory, and
 Link to these canonical sources instead of duplicating them:
 
 - [Python SDK guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx)
-- [Getting started](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/overview.mdx) and
+- [NeMo Fabric overview](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/about-nemo-fabric/overview.mdx) and
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx)
 - Generated API reference (public API index; the installed `nemo_fabric` type
   stubs are authoritative for exact signatures, fields, and defaults):
