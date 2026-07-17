@@ -162,12 +162,17 @@ def fake_relay_fixture(monkeypatch):
         merged = dict(kwargs)
         merged["middleware"] = [*(merged.get("middleware") or []), "relay-mw"]
         calls["wrapped"] = True
+        calls["integration_adds"] = calls.get("integration_adds", 0) + 1
         return merged
 
     @contextlib.asynccontextmanager
     async def plugin_ctx(_config):
         calls["plugin_open"] = True
-        yield
+        calls["plugin_enters"] = calls.get("plugin_enters", 0) + 1
+        try:
+            yield
+        finally:
+            calls["plugin_exits"] = calls.get("plugin_exits", 0) + 1
 
     class ScopeType:
         Agent = "agent"
@@ -783,6 +788,56 @@ async def test_persistent_runtime_reuses_compiled_agent_and_checkpointer(
 
     await runtime.stop()
 
+    assert fake_sdks["saver_exits"] == 1
+
+
+async def test_persistent_runtime_scopes_relay_per_invocation(
+    tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
+):
+    artifacts = [{"kind": "atif", "path": str(tmp_path / "trajectory.json")}]
+    monkeypatch.setattr(
+        adapter.common_utils,
+        "load_relay_plugin_config",
+        lambda _payload: {"version": 1, "components": []},
+    )
+    monkeypatch.setattr(
+        adapter.common_utils, "relay_api_plugin_config", lambda _config: object()
+    )
+    monkeypatch.setattr(
+        adapter.common_utils,
+        "collect_relay_artifacts",
+        lambda _config: artifacts,
+    )
+    payload = make_payload(tmp_path, runtime_id="run-relay-persistent")
+    payload["telemetry_plan"] = {
+        "providers": ["relay"],
+        "relay_enabled": True,
+        "relay_project": None,
+        "relay_output_dir": None,
+        "relay_config": {},
+        "native_config": None,
+        "adapter_outputs": ["atif"],
+    }
+    start_payload = dict(payload)
+    start_payload.pop("request")
+    runtime = adapter.DeepAgentsRuntime()
+
+    await runtime.start(start_payload)
+    first = await runtime.invoke(payload)
+    payload["runtime_context"]["invocation_id"] = "inv-2"
+    payload["request"]["input"] = "continue"
+    second = await runtime.invoke(payload)
+    await runtime.stop()
+
+    assert fake_relay["integration_adds"] == 1
+    assert fake_relay["plugin_enters"] == 2
+    assert fake_relay["plugin_exits"] == 2
+    assert fake_relay["scopes"] == [
+        ("deepagents-request", "agent"),
+        ("deepagents-request", "agent"),
+    ]
+    assert first["thread_id"] == second["thread_id"]
+    assert first["relay_artifacts"] == second["relay_artifacts"] == artifacts
     assert fake_sdks["saver_exits"] == 1
 
 

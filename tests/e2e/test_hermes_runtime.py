@@ -25,6 +25,18 @@ import pytest
 
 
 async def test_hermes_runtime():
+    _require_hermes_integration()
+    await _run(relay=False)
+
+
+async def test_hermes_runtime_with_relay():
+    _require_hermes_integration()
+    if importlib.util.find_spec("nemo_relay") is None:
+        pytest.fail("the nemo-relay Python package is required")
+    await _run(relay=True)
+
+
+def _require_hermes_integration() -> None:
     if os.environ.get("RUN_FABRIC_HERMES_INTEGRATION") != "1":
         pytest.skip("set RUN_FABRIC_HERMES_INTEGRATION=1 to run")
     if not os.environ.get("NVIDIA_API_KEY"):
@@ -55,15 +67,17 @@ async def test_hermes_runtime():
         )
     python_bin = Path(sys.executable).resolve().parent
     os.environ["PATH"] = f"{python_bin}{os.pathsep}{os.environ.get('PATH', '')}"
-    await _run()
 
 
-async def _run() -> None:
-    from examples.code_review_agent import BASE_DIR, hermes_config
+async def _run(*, relay: bool) -> None:
+    from examples.code_review_agent import BASE_DIR, hermes_config, with_relay
     from nemo_fabric import Fabric, RuntimeStatus
 
+    config = hermes_config()
+    if relay:
+        config = with_relay(config)
     async with await Fabric().start_runtime(
-        hermes_config(),
+        config,
         base_dir=BASE_DIR,
     ) as runtime:
         assert runtime.status is RuntimeStatus.ACTIVE, runtime.status
@@ -85,5 +99,12 @@ async def _run() -> None:
         # And the model must recall the name supplied in turn 1.
         response = (r2["output"].get("response") or "").lower()
         assert "robin" in response, response
+        if relay:
+            for result in (r1, r2):
+                assert result.telemetry[0].provider == "relay", result.to_mapping()
+                assert {
+                    artifact["kind"]
+                    for artifact in result["output"]["relay_artifacts"]
+                } >= {"atof", "atif"}, result.to_mapping()
 
     assert runtime.status is RuntimeStatus.STOPPED, runtime.status

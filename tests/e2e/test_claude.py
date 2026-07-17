@@ -273,3 +273,34 @@ async def test_live_claude_relay_one_shot(tmp_path):
         result.output,
         "FABRIC_CLAUDE_RELAY_OK",
     )
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_FABRIC_CLAUDE_RELAY_INTEGRATION") != "1",
+    reason="set RUN_FABRIC_CLAUDE_RELAY_INTEGRATION=1 to run Claude with NeMo Relay",
+)
+async def test_live_claude_relay_session(tmp_path):
+    relay_command = os.environ.get("FABRIC_TEST_NEMO_RELAY_COMMAND")
+    config = fabric_config(
+        tmp_path,
+        relay=True,
+        nemo_relay_command=relay_command,
+    )
+
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        first = await runtime.invoke(input="Remember token FABRIC-CLAUDE-RELAY-7")
+        second = await runtime.invoke(
+            input="Reply only with the token I asked you to remember"
+        )
+
+    results = (first.to_mapping(), second.to_mapping())
+    assert first.status == second.status == "succeeded", results
+    assert first.output["session_id"] == second.output["session_id"], results
+    assert first.metadata["host_pid"] == second.metadata["host_pid"], results
+    assert "FABRIC-CLAUDE-RELAY-7" in second.output["response"], results
+    for turn in (first, second):
+        assert turn.telemetry[0].provider == "relay", turn.to_mapping()
+        assert {artifact["kind"] for artifact in turn.output["relay_artifacts"]} == {
+            "atof",
+            "atif",
+        }, turn.to_mapping()

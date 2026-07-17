@@ -43,6 +43,43 @@ async def test_hermes_persistent_host_reuses_native_session(
     assert "user_count=2" in second["output"]["response"], results
 
 
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_hermes_persistent_host_with_relay(
+    code_review_agent_dir: Path,
+    api_server: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.harness.settings["base_url"] = f"{api_server}/v1"
+
+    async with await Fabric().start_runtime(
+        config, base_dir=code_review_agent_dir
+    ) as runtime:
+        first = await runtime.invoke(input="first")
+        second = await runtime.invoke(input="second")
+
+    results = (first.to_mapping(), second.to_mapping())
+    assert first["status"] == second["status"] == "succeeded", results
+    assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
+    assert "user_count=2" in second["output"]["response"], results
+    for turn in (first, second):
+        assert turn.telemetry[0].provider == "relay", turn.to_mapping()
+        assert {artifact["kind"] for artifact in turn["output"]["relay_artifacts"]} >= {
+            "atof",
+            "atif",
+        }, turn.to_mapping()
+
+    atof_path = next(
+        Path(artifact["path"])
+        for artifact in second["output"]["relay_artifacts"]
+        if artifact["kind"] == "atof"
+    )
+    atof_records = [
+        json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert sum(record["name"] == "hermes.session.end" for record in atof_records) == 2
+
+
 class TestHermesE2E:
     """End-to-end Hermes relay assertions."""
 
