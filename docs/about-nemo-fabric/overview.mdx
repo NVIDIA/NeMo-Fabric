@@ -69,11 +69,24 @@ runtime and invoke it turn by turn before stopping it. Refer to the
 [Runtime reference](/reference/api/python-library-reference/runtime) for the
 start, invoke, and stop lifecycle.
 
-### Platform And Evaluation Harnesses
+### Platform and Evaluation Harnesses
 
 Platforms and evaluation systems plan and invoke different harnesses behind one
 typed surface, then consume stable evidence contracts. Use the `fabric` CLI or
 committed JSON Schemas to validate packages and build language bindings.
+
+## Choose Your Interface
+
+| Interface | Use it when | Start with |
+| --- | --- | --- |
+| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
+| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
+| `fabric` CLI | You are validating packages, debugging profiles, or running reproducible local/CI jobs | `fabric validate`, `plan`, `doctor`, `run`, and `chat` |
+| JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
+
+Use `agent.yaml` when the agent package is the portable artifact. Use
+`FabricConfig` when a platform already owns a larger job or deployment object
+and wants to pass only its NeMo Fabric slice in memory.
 
 ## Core Workflow
 
