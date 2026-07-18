@@ -91,12 +91,14 @@ async def test_stop_does_not_refinalize_completed_relay_turn(monkeypatch):
     runtime = adapter.HermesRuntime()
     runtime._started = True
     runtime._relay_plugin_config = {"components": []}
-    runtime._agent = MagicMock(
+    agent = MagicMock(
         session_id="runtime-1",
         model="test-model",
         platform="fabric",
     )
-    runtime._session_db = MagicMock()
+    session_db = MagicMock()
+    runtime._agent = agent
+    runtime._session_db = session_db
     runtime._invoke_hook = invoke_hook
     runtime._relay_session_pending = True
 
@@ -115,6 +117,48 @@ async def test_stop_does_not_refinalize_completed_relay_turn(monkeypatch):
         platform="fabric",
     )
     flush.assert_called_once_with()
+    agent.close.assert_called_once_with()
+    session_db.close.assert_called_once_with()
+    assert runtime._started is False
+    assert runtime._relay_session_pending is False
+    assert runtime._relay_finalize_hook_invoked is False
+
+
+async def test_stop_retries_failed_relay_flush_without_refinalizing(monkeypatch):
+    invoke_hook = MagicMock()
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._relay_plugin_config = {"components": []}
+    runtime._agent = MagicMock(
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    runtime._session_db = MagicMock()
+    runtime._invoke_hook = invoke_hook
+    runtime._relay_session_pending = True
+
+    from nemo_relay import subscribers
+
+    flush = MagicMock(side_effect=[RuntimeError("flush failed"), None])
+    monkeypatch.setattr(subscribers, "flush", flush)
+
+    with pytest.raises(RuntimeError, match="flush failed"):
+        runtime._finalize_relay_session()
+
+    assert runtime._relay_session_pending is True
+    assert runtime._relay_finalize_hook_invoked is True
+    await runtime.stop()
+
+    invoke_hook.assert_called_once_with(
+        "on_session_finalize",
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    assert flush.call_count == 2
+    assert runtime._relay_session_pending is False
+    assert runtime._relay_finalize_hook_invoked is False
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
