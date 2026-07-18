@@ -10,6 +10,7 @@ import asyncio
 import json
 import math
 import os
+import shlex
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from hashlib import sha256
@@ -25,6 +26,7 @@ from openai_codex import (
     TransportClosedError,
     is_retryable_error,
 )
+from openai_codex.generated.v2_all import SkillsExtraRootsSetResponse
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
@@ -83,7 +85,9 @@ REMOVED_CLI_SETTINGS = {
 }
 NORMALIZED_SETTING_FIELDS = {
     "cwd": "FabricConfig.environment.workspace",
+    "mcp_servers": "FabricConfig.mcp",
     "model_name": "FabricConfig.models",
+    "skills": "FabricConfig.skills",
 }
 
 
@@ -171,6 +175,126 @@ def request_prompt(payload: dict[str, Any]) -> str:
     if not isinstance(value, str):
         raise AdapterInputError("codex_invalid_request", "Codex input must be text")
     return value
+
+
+def _native_capabilities(payload: dict[str, Any]) -> dict[str, Any]:
+    plan = _mapping(common_utils.capability_plan(payload), name="capability_plan")
+    return _mapping(plan.get("native"), name="capability_plan.native")
+
+
+def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    servers = _mapping(
+        _native_capabilities(payload).get("mcp_servers"),
+        name="native MCP servers",
+    )
+    result: dict[str, dict[str, Any]] = {}
+    for name, raw in sorted(servers.items()):
+        if not isinstance(name, str) or not name:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                "MCP server names must be non-empty strings",
+            )
+        server = _mapping(raw, name=f"MCP server {name}")
+        transport = server.get("transport")
+        if not isinstance(transport, str) or not transport:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"MCP server {name} transport is required",
+            )
+        target = server.get("url")
+        if not isinstance(target, str) or not target:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"MCP server {name} URL is required",
+            )
+        target = os.path.expandvars(target).strip()
+        if not target:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"MCP server {name} URL is required",
+            )
+        normalized_transport = transport.strip().lower().replace("_", "-")
+        if normalized_transport == "stdio":
+            try:
+                command = shlex.split(target)
+            except ValueError as error:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} command is invalid",
+                ) from error
+            if not command:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} command is required",
+                )
+            result[name] = {"command": command[0], "args": command[1:]}
+        elif normalized_transport in {"http", "streamable-http"}:
+            result[name] = {"url": target}
+        else:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"unsupported Codex MCP transport: {transport}",
+            )
+    return result
+
+
+def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
+    values = _native_capabilities(payload).get("skill_paths") or []
+    if not isinstance(values, list) or any(
+        not isinstance(value, (str, Path)) or not str(value) for value in values
+    ):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "native skill_paths must be a list of paths",
+        )
+
+    paths: list[Path] = []
+    names: set[str] = set()
+    config_root = Path(common_utils.config_root(payload))
+    for value in values:
+        skill_path = Path(value)
+        if not skill_path.is_absolute():
+            skill_path = config_root / skill_path
+        skill_path = skill_path.resolve()
+        skill_file = skill_path / "SKILL.md"
+        if not skill_path.is_dir() or not skill_file.is_file():
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                "Fabric skill path must be a directory containing SKILL.md: "
+                f"{skill_path}",
+            )
+        name = skill_path.name
+        if not name or name in names:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"Fabric skill names must be unique: {name}",
+            )
+        names.add(name)
+        paths.append(skill_path)
+    return paths
+
+
+async def _register_skill_roots(codex: AsyncCodex, skill_paths: list[Path]) -> None:
+    if not skill_paths:
+        return
+
+    # openai-codex 0.1.0b3 does not yet wrap the app-server's process-scoped
+    # skills/extraRoots/set request. Keep the pinned-SDK compatibility seam
+    # here so arbitrary Fabric skill paths become discoverable without
+    # modifying the consumer workspace.
+    await codex.models()
+    client = getattr(codex, "_client", None)
+    request = getattr(client, "request", None)
+    if not callable(request):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "Codex SDK does not expose the required skill registration request",
+        )
+    await request(
+        "skills/extraRoots/set",
+        {"extraRoots": [str(path) for path in skill_paths]},
+        response_model=SkillsExtraRootsSetResponse,
+    )
 
 
 def resolve_cwd(payload: dict[str, Any]) -> Path:
@@ -520,6 +644,9 @@ def thread_config(
     """Build request-scoped Codex config without writing a user profile."""
 
     config = native_codex_telemetry_config(payload)
+    mcp_servers = _native_mcp_servers(payload)
+    if mcp_servers:
+        config["mcp_servers"] = mcp_servers
     overrides = _mapping(
         _settings(payload).get("config_overrides"),
         name="harness.settings.config_overrides",
@@ -608,6 +735,7 @@ def validate_payload(payload: dict[str, Any]) -> str:
     settings = _settings(payload)
     _validate_settings_boundary(settings)
     request_prompt(payload)
+    _native_skill_paths(payload)
     fabric_runtime_id = runtime_id(payload)
     resolve_cwd(payload)
     selected_model(payload)
@@ -765,12 +893,15 @@ async def invoke_codex_sdk(
 
     settings = _settings(payload)
     config = thread_config(payload, relay)
+    skill_paths = _native_skill_paths(payload)
+    prompt = request_prompt(payload)
     codex = AsyncCodex(config=sdk_config(payload, relay))
     handle = None
     output: dict[str, Any]
     thread_id: str | None = None
     try:
         async with asyncio.timeout(timeout_seconds(payload)):
+            await _register_skill_roots(codex, skill_paths)
             common = {
                 "approval_mode": approval_mode(payload),
                 "base_instructions": _optional_string(settings, "base_instructions"),
@@ -799,7 +930,7 @@ async def invoke_codex_sdk(
                     )
             thread_id = thread.id
             handle = await thread.turn(
-                request_prompt(payload),
+                prompt,
                 effort=_reasoning_effort(payload),
                 output_schema=_output_schema(payload),
             )
