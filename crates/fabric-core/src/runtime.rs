@@ -1101,9 +1101,9 @@ fn run_local_host_adapter_with_timeout(
         })?;
 
     let exchange_result = {
-        let mut host = host.lock().unwrap_or_else(|error| error.into_inner());
-        let artifacts = host.artifacts.clone();
-        let relay_config = host.relay_config.clone();
+        let mut host_guard = host.lock().unwrap_or_else(|error| error.into_inner());
+        let artifacts = host_guard.artifacts.clone();
+        let relay_config = host_guard.relay_config.clone();
         let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
         let adapter_invocation = adapter_invocation(
             plan,
@@ -1119,25 +1119,33 @@ fn run_local_host_adapter_with_timeout(
         let lifecycle_request =
             AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Invoke(adapter_invocation));
         match exchange_lifecycle_message(
-            &mut host,
+            &mut host_guard,
             &runtime.runtime_id,
             &lifecycle_request,
             invoke_timeout,
         ) {
             Ok(output) => {
-                let stderr = take_local_host_stderr(&mut host);
+                let stderr = take_local_host_stderr(&mut host_guard);
                 Ok((
                     output,
                     stderr,
-                    host.command.clone(),
-                    host.child.id(),
+                    host_guard.command.clone(),
+                    host_guard.child.id(),
                     artifacts,
                     relay_config,
                     fabric_home,
                     fabric_invocation,
                 ))
             }
-            Err(error) => Err(error),
+            Err(error) => {
+                if matches!(
+                    &error,
+                    FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
+                ) {
+                    invalidate_timed_out_local_host(&runtime.runtime_id, &host, &mut host_guard);
+                }
+                Err(error)
+            }
         }
     };
     let (
@@ -1151,15 +1159,7 @@ fn run_local_host_adapter_with_timeout(
         fabric_invocation,
     ) = match exchange_result {
         Ok(result) => result,
-        Err(error) => {
-            if matches!(
-                &error,
-                FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
-            ) {
-                invalidate_timed_out_local_host(&runtime.runtime_id, &host);
-            }
-            return Err(error);
-        }
+        Err(error) => return Err(error),
     };
 
     let mut events = vec![event_with_metadata(
@@ -1273,7 +1273,11 @@ fn run_local_host_adapter_with_timeout(
     })
 }
 
-fn invalidate_timed_out_local_host(runtime_id: &str, expected_host: &Arc<Mutex<LocalAdapterHost>>) {
+fn invalidate_timed_out_local_host(
+    runtime_id: &str,
+    expected_host: &Arc<Mutex<LocalAdapterHost>>,
+    host: &mut LocalAdapterHost,
+) {
     {
         let mut hosts = local_hosts();
         if hosts
@@ -1284,11 +1288,8 @@ fn invalidate_timed_out_local_host(runtime_id: &str, expected_host: &Arc<Mutex<L
         }
     }
 
-    let mut host = expected_host
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let _ = terminate_local_host(&mut host);
-    let _ = remove_local_host_files(&host);
+    let _ = terminate_local_host(host);
+    let _ = remove_local_host_files(host);
 }
 
 fn adapter_output_status(output: &Value) -> (RunStatus, Option<ErrorInfo>) {
