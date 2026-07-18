@@ -79,7 +79,19 @@ Use normalized `FabricConfig` fields for portable configuration:
 - `models` selects the Codex model. The adapter requires and explicitly selects
   the built-in `openai` provider.
 - `environment.workspace` sets the working directory.
+- `mcp` maps stdio, HTTP, and streamable HTTP servers into request-scoped Codex
+  `mcp_servers` configuration. For stdio, Fabric parses `url` as a command plus
+  arguments.
+- `skills.paths` names skill directories that contain `SKILL.md`. The adapter
+  registers each directory as a process-scoped Codex skill root so Codex can
+  select matching skills through its normal discovery behavior.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
+
+The Codex adapter does not declare `tools.blocked` support. The current Codex
+runtime has per-MCP-server tool filters, but it does not provide one complete
+deny boundary for built-in, local, MCP, and hosted tools. Fabric therefore
+routes normalized blocked-tool policy as unsupported instead of applying a
+partial policy.
 
 Codex-specific controls belong in `harness.settings`:
 
@@ -89,7 +101,8 @@ Codex-specific controls belong in `harness.settings`:
 - `personality`, `reasoning_effort`, `service_name`, and `service_tier`
 - `output_schema` for SDK-native structured output
 - `codex_bin` for an explicit Codex app-server runtime override
-- `config_overrides` as dotted request-scoped Codex configuration keys
+- `config_overrides` as dotted request-scoped Codex configuration keys, such as
+  Codex-only MCP timeout or required-server options
 - `timeout_seconds`, defaulting to 1800
 - `env` for variables explicitly forwarded to the Codex runtime
 - `nemo_relay_command` for the optional external Relay gateway executable
@@ -157,4 +170,3 @@ For Phoenix, native Codex OpenTelemetry targets the OTLP collector at
 Relay OpenInference provides the semantic chain, LLM, and tool hierarchy with
 decoded prompt, response, and token attributes. Prefer Relay OpenInference for
 agent-turn inspection.
-

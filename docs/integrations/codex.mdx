@@ -1,6 +1,6 @@
 ---
-title: "Authenticate the Codex Adapter"
-description: "Configure ChatGPT or API key authentication for the NeMo Fabric Codex SDK adapter."
+title: "Use the Codex Adapter"
+description: "Configure capabilities, authentication, and telemetry for the NeMo Fabric Codex SDK adapter."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -8,6 +8,40 @@ SPDX-License-Identifier: Apache-2.0 */}
 The `nvidia.fabric.codex` adapter uses the Codex Python SDK and its pinned
 app-server runtime. NeMo Fabric does not execute `codex` for agent turns or fall back
 to the legacy Codex CLI adapter.
+
+## Configure MCP and Skills
+
+Use normalized NeMo Fabric fields so the same capability configuration can be
+planned before the adapter starts:
+
+```python
+config.add_skill_path("./skills/code-review")
+config.add_mcp_server(
+    "repo",
+    transport="stdio",
+    url="repo-mcp --root .",
+    exposure="harness_native",
+)
+config.add_mcp_server(
+    "docs",
+    transport="streamable-http",
+    url="https://mcp.example.com/mcp",
+    exposure="harness_native",
+)
+```
+
+The adapter maps stdio, HTTP, and streamable HTTP servers into the Codex
+thread's request-scoped `mcp_servers` configuration. It resolves each skill
+directory to its `SKILL.md` file, registers the directory as a process-scoped
+Codex skill root, and leaves skill selection to Codex's normal discovery
+behavior. Invalid skill directories and MCP transports fail before the SDK
+runtime starts.
+
+The Codex adapter does not declare `tools.blocked` support. Codex can filter
+individual MCP server tools, but the pinned runtime does not provide one deny
+mechanism that covers built-in, local, MCP, and hosted tools. NeMo Fabric
+reports normalized blocked-tool policy as unsupported instead of enforcing
+only part of the requested policy.
 
 ## Select a Codex Runtime
 
