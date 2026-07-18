@@ -146,14 +146,11 @@ jobs:
 
       - name: Comment preview URL on PR
         if: ${{ steps.preview.outputs.url != '' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          gh pr comment "https://github.com/${{ github.repository }}/pull/${{ steps.preview.outputs.pr_number }}" \
-            --edit-last \
-            --create-if-none \
-            --body "Fern docs preview: ${{ steps.preview.outputs.url }}"
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
+        with:
+          header: nemo-fabric-fern-preview
+          number: ${{ steps.preview.outputs.pr_number }}
+          message: 'Fern docs preview: ${{ steps.preview.outputs.url }}'
 
   cleanup-preview-docs:
     name: Clean up docs preview
