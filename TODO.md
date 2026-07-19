@@ -9,6 +9,30 @@ Track repository workarounds that must be removed after an upstream dependency
 ships. Each entry must identify an upstream reference, removal condition, and
 cleanup validation.
 
+## Installed Adapter Descriptor Metadata
+
+- **Status:** Waiting for adapter wheel metadata support
+- **Added:** July 19, 2026
+- **Affected implementation:** `crates/fabric-core/src/config.rs`,
+  `crates/fabric-cli/src/presets.rs`, and the Python binding
+- **Reason:** CLI presets currently embed adapter descriptors from repository
+  paths at compile time and stage them under a temporary `adapters/` directory.
+  Core also probes a compile-time repository path. Built wheels can run without
+  a checkout, but the build and resolution paths still assume the monorepo
+  layout.
+- **Upstream resolution:** NeMo Fabric adapter distributions advertise their
+  descriptors through installed wheel metadata (internal packaging milestone;
+  no external dependency).
+- **Removal condition:** Python can discover installed adapter descriptors from
+  wheel metadata and pass them to core through an explicit, typed adapter
+  registry.
+- **Cleanup:** Add adapter registrations to `ResolveContext`; remove implicit
+  repository and `base_dir/adapters` discovery from core; have the Python
+  binding register wheel-owned descriptors; have the CLI register embedded
+  descriptors directly; retain temporary staging only for descriptor-local
+  assets such as the scripted runner; and validate both installed-wheel and
+  standalone Rust CLI behavior before removing this entry.
+
 ## NeMo Relay 0.6.x Request Decoding Release
 
 - **Status:** Waiting for an upstream release
