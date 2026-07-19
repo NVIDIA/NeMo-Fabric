@@ -1,5 +1,5 @@
 ---
-title: "Experimentation CLI"
+title: "NVIDIA NeMo Fabric Experimentation CLI"
 description: "Use presets, maintained examples, and editable scaffolds to experiment with NeMo Fabric."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -16,36 +16,114 @@ The `nemo-fabric-runtime` Python package exposes that same implementation
 through a thin console-script bridge. Package and standalone installs do not
 maintain separate parsers, presets, or example catalogs.
 
-## Run a Preset
+## Experiment With Presets
 
-Use a preset for the shortest complete probe:
+List the complete configurations maintained by the CLI:
+
+```bash
+nemo-fabric preset list
+```
+
+Inspect a preset's purpose and required environment variables:
+
+```bash
+nemo-fabric preset show hermes
+```
+
+Resolve the preset to inspect its complete run plan, including its typed
+configuration and adapter descriptor:
+
+```bash
+nemo-fabric plan --preset hermes
+```
+
+To display only the authored `FabricConfig`, filter the plan with `jq`:
+
+```bash
+nemo-fabric plan --preset hermes | jq '.config'
+```
+
+Diagnose adapter availability, credentials, and other requirements before
+running the preset:
+
+```bash
+nemo-fabric doctor --preset hermes
+```
+
+Run the preset with an input:
 
 ```bash
 nemo-fabric run --preset hermes --input "Say hello"
 ```
 
-## Run a Maintained Example
+## Experiment With Examples
 
-Use an example to exercise a complete workflow and harness variant:
+List the maintained workflows and inspect an example's available variants:
+
+```bash
+nemo-fabric example list
+nemo-fabric example show code-review
+```
+
+Run an example with its default variant:
+
+```bash
+nemo-fabric run --example code-review --input "Review the workspace"
+```
+
+Select a different maintained harness variant when you want to compare its
+behavior:
 
 ```bash
 nemo-fabric run --example code-review --variant hermes \
   --input "Review the workspace"
 ```
 
-## Generate an Editable Application
+The `plan` and `doctor` commands accept the same `--example` and `--variant`
+selectors.
 
-Generate ordinary application code when you want to customize an example:
+## Scaffold Examples
+
+Generate ordinary application code when you want to customize an example. The
+default `scripted` variant is credential-free:
 
 ```bash
-nemo-fabric example init code-review my-agent --language python --variant hermes
-nemo-fabric example init code-review my-agent-rs --language rust --variant hermes
+nemo-fabric example init code-review my-agent --language python
+nemo-fabric example init code-review my-agent-rs --language rust
 ```
 
-The Python scaffold calls the Python SDK. The Rust scaffold calls
-`fabric-core`. Neither scaffold is loaded back into the CLI.
+Add a selector such as `--variant hermes` to scaffold a non-default variant. A
+non-default variant requires its adapter package and credentials.
 
-## Boundaries
+### Run a Python Scaffold
+
+Create and activate a virtual environment, install the generated application,
+and run its launcher:
+
+```bash
+cd my-agent
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python main.py "Review the workspace"
+```
+
+The Python scaffold constructs `FabricConfig` and calls the Python SDK
+directly.
+
+### Run a Rust Scaffold
+
+Build and run the generated Rust application:
+
+```bash
+cd my-agent-rs
+cargo run -- "Review the workspace"
+```
+
+The Rust scaffold constructs `FabricConfig` and calls `fabric-core` directly.
+Neither scaffold is loaded back into the central CLI.
+
+The CLI has the following boundaries:
 
 - Every preset and example variant constructs a complete typed `FabricConfig`.
 - Examples reuse preset constructors and one shared workspace and skill asset
