@@ -49,6 +49,12 @@ the SDK runtime. The current real-agent acceptance path validates an existing
 Codex login; it does not yet claim a raw environment variable as a complete
 login flow.
 
+When `models.default.provider` is `nvidia`, the adapter defines a request-scoped
+Codex model provider for the configured NVIDIA Responses endpoint. It reads the
+credential from `api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex
+state under the Fabric artifact root, so the invocation does not depend on or
+modify a user's Codex login.
+
 The dependency graph includes `openai-codex-cli-bin`. The Codex SDK owns this
 pinned app-server distribution; Fabric does not treat it as a user-installed
 command or an adapter descriptor requirement.
@@ -76,8 +82,9 @@ return codes, stdout, or stderr.
 
 Use normalized `FabricConfig` fields for portable configuration:
 
-- `models` selects the Codex model. The adapter requires and explicitly selects
-  the built-in `openai` provider.
+- `models` selects the Codex model. The adapter supports the built-in `openai`
+  provider and NVIDIA-hosted Responses-compatible models through the `nvidia`
+  provider.
 - `environment.workspace` sets the working directory.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
 

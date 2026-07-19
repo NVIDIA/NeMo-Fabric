@@ -293,12 +293,64 @@ def test_incomplete_sdk_turn_is_failed_without_persisting_thread(
 
 def test_selected_model_rejects_unsupported_provider(codex_payload, mock_codex):
     model = codex_payload["config"]["models"]["default"]
-    model["provider"] = "nvidia"
+    model["provider"] = "anthropic"
 
     output = adapter.run(codex_payload)
 
     assert output["error"]["code"] == "codex_invalid_configuration"
-    assert "provider must be openai" in output["error"]["message"]
+    assert "provider must be openai or nvidia" in output["error"]["message"]
+    mock_codex.assert_not_called()
+
+
+def test_nvidia_provider_uses_responses_api_and_nvidia_credential(
+    codex_payload, mock_codex
+):
+    model = codex_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "openai/gpt-oss-120b",
+            "api_key_env": "NVIDIA_API_KEY",
+            "settings": {"base_url": "https://nvidia.example/v1/"},
+        }
+    )
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+
+    output = adapter.run(codex_payload)
+
+    assert output["completed"] is True
+    client = mock_codex.instances[0]
+    assert client.config.env["NVIDIA_API_KEY"] == "nvidia-secret"
+    start = client.thread_start.await_args.kwargs
+    assert start["model"] == "openai/gpt-oss-120b"
+    assert start["model_provider"] == "nvidia"
+    assert client.config.env["CODEX_HOME"].endswith("/.fabric/codex/nvidia-home")
+    assert start["config"]["features"] == {"web_search": False}
+    assert start["config"]["model_providers"] == {
+        "nvidia": {
+            "name": "NVIDIA",
+            "base_url": "https://nvidia.example/v1",
+            "env_key": "NVIDIA_API_KEY",
+            "wire_api": "responses",
+        }
+    }
+
+
+def test_nvidia_provider_requires_credential(codex_payload, mock_codex):
+    model = codex_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "openai/gpt-oss-120b",
+            "api_key_env": "NVIDIA_API_KEY",
+        }
+    )
+    os.environ.pop("NVIDIA_API_KEY", None)
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert "NVIDIA_API_KEY is required" in output["error"]["message"]
     mock_codex.assert_not_called()
 
 

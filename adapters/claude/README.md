@@ -35,6 +35,11 @@ bearer credential, `ANTHROPIC_API_KEY` for a static API credential, or Anthropic
 Workload Identity Federation (WIF) for production and CI workloads that should
 not store a long-lived API key.
 
+When `models.default.provider` is `nvidia`, the adapter reads the selected
+model's credential from `api_key_env` (default: `NVIDIA_API_KEY`) and translates
+the configured NVIDIA `/v1` endpoint into the host URL expected by Claude Code.
+This request-scoped mapping does not change the parent environment.
+
 The adapter forwards the Anthropic profile and federation environment variables
 that Claude Code and the Claude Agent SDK consume. This includes
 `ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_PROFILE`, the direct federation identifiers,
@@ -74,9 +79,9 @@ stays resident.
 
 Configure portable capabilities through the normalized `FabricConfig` fields:
 
-- `models` selects the Claude model. A configured model must use
-  `provider="anthropic"`; normalized hosted/custom provider resolution is
-  tracked in [FABRIC-64](https://linear.app/nvidia/issue/FABRIC-64/add-normalized-model-provider-resolution-and-harness-compatibility).
+- `models` selects the Claude model. The adapter accepts the native `anthropic`
+  provider and NVIDIA-hosted Anthropic Messages-compatible models through the
+  `nvidia` provider.
 - `environment.workspace` sets the Claude working directory.
 - `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool
   names.

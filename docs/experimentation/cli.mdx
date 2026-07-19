@@ -25,6 +25,18 @@ Cargo:
 cargo install --path crates/fabric-cli --locked
 ```
 
+Set up the checkout's Python environment when you want to run presets backed
+by Python adapters:
+
+```bash
+uv sync --all-groups --all-extras
+export ADAPTER_PYTHON="$PWD/.venv/bin/python"
+```
+
+`ADAPTER_PYTHON` tells the Rust runtime which interpreter contains the selected
+adapter and harness. Use an absolute path if you run `nemo-fabric` outside the
+checkout.
+
 Verify that the executable is available:
 
 ```bash
@@ -48,6 +60,29 @@ credentials are also separate requirements for presets that launch an external
 harness. Use the credential-free `scripted` preset to verify the CLI by itself.
 
 ## Experiment With Presets
+
+Presets are complete, embedded `FabricConfig` values intended for quick
+experiments:
+
+| Preset | Harness | Default model | Credential |
+| --- | --- | --- | --- |
+| `scripted` | Deterministic test adapter | None | None |
+| `hermes` | Hermes Agent | `nvidia/nvidia/Nemotron-3-Nano-30B-A3B` | `NVIDIA_API_KEY` |
+| `claude` | Claude Code | `aws/anthropic/claude-opus-4-5` | `NVIDIA_API_KEY` |
+| `codex` | Codex | `azure/openai/gpt-5.4` | `NVIDIA_API_KEY` |
+| `deepagents` | LangChain Deep Agents | `nvidia/nvidia/Nemotron-3-Nano-30B-A3B` | `NVIDIA_API_KEY` |
+
+The `scripted` preset does not call a model. It returns a deterministic response
+through the same Fabric runtime and adapter contract, which makes it useful for
+checking CLI installation, request flow, and result formatting without network
+access or credentials.
+
+The four external-harness presets use the NVIDIA inference endpoint. Export one
+credential before running them:
+
+```bash
+export NVIDIA_API_KEY="..."
+```
 
 List the complete configurations maintained by the CLI:
 
@@ -91,14 +126,17 @@ Override the preset's default model and temperature for a quick experiment:
 
 ```bash
 nemo-fabric run --preset hermes \
-  --model meta/llama-3.3-70b-instruct \
+  --model nvidia/meta/llama-3.3-70b-instruct \
   --temperature 0.2 \
   --input "Say hello"
 ```
 
 These flags preserve the preset's provider, credential environment variable,
 endpoint, and harness settings. Use a model that is available from the preset's
-provider. The `plan` and `doctor` commands accept the same overrides.
+provider and compatible with the selected harness. For example, a Claude preset
+still requires an Anthropic Messages-compatible model, while a Codex preset
+requires a Responses-compatible model. The `plan` and `doctor` commands accept
+the same overrides.
 
 ## Experiment With Examples
 
@@ -166,6 +204,8 @@ cargo run -- "Review the workspace"
 
 The Rust scaffold constructs `FabricConfig` and calls `fabric-core` directly.
 Neither scaffold is loaded back into the central CLI.
+
+## CLI Boundaries
 
 The CLI has the following boundaries:
 

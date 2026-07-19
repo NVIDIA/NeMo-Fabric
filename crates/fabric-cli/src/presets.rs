@@ -20,6 +20,7 @@ const CLAUDE_DESCRIPTOR: &str = include_str!("../../../adapters/claude/fabric-ad
 const CODEX_DESCRIPTOR: &str = include_str!("../../../adapters/codex/fabric-adapter.json");
 const DEEPAGENTS_DESCRIPTOR: &str =
     include_str!("../../../adapters/deepagents/fabric-adapter.json");
+const NVIDIA_FRONTIER_BASE_URL: &str = "https://inference-api.nvidia.com/v1";
 
 const SCRIPTED_ASSETS: &[EmbeddedFile] = &[
     EmbeddedFile {
@@ -125,15 +126,15 @@ const PRESETS: [Preset; 5] = [
     },
     Preset {
         name: "claude",
-        description: "Claude Code with an Anthropic model.",
-        required_env: &["ANTHROPIC_API_KEY"],
+        description: "Claude Code with an NVIDIA-hosted Claude model.",
+        required_env: &["NVIDIA_API_KEY"],
         build: claude,
         assets: CLAUDE_ASSETS,
     },
     Preset {
         name: "codex",
-        description: "Codex with an OpenAI model.",
-        required_env: &["OPENAI_API_KEY"],
+        description: "Codex with an NVIDIA-hosted OpenAI model.",
+        required_env: &["NVIDIA_API_KEY"],
         build: codex,
         assets: CODEX_ASSETS,
     },
@@ -163,13 +164,11 @@ fn hermes() -> FabricConfig {
         "nvidia.fabric.hermes",
         Some(model(
             "nvidia",
-            "nvidia/nemotron-3-nano-30b-a3b",
+            "nvidia/nvidia/Nemotron-3-Nano-30B-A3B",
             Some("NVIDIA_API_KEY"),
+            Some(NVIDIA_FRONTIER_BASE_URL),
         )),
-        Map::from_iter([(
-            "base_url".to_string(),
-            json!("https://integrate.api.nvidia.com/v1"),
-        )]),
+        Map::new(),
     )
 }
 
@@ -179,9 +178,10 @@ fn claude() -> FabricConfig {
         "NeMo Fabric Claude CLI preset.",
         "nvidia.fabric.claude",
         Some(model(
-            "anthropic",
-            "anthropic/claude-sonnet-4-5",
-            Some("ANTHROPIC_API_KEY"),
+            "nvidia",
+            "aws/anthropic/claude-opus-4-5",
+            Some("NVIDIA_API_KEY"),
+            Some(NVIDIA_FRONTIER_BASE_URL),
         )),
         Map::from_iter([("permission_mode".to_string(), json!("dontAsk"))]),
     )
@@ -192,8 +192,24 @@ fn codex() -> FabricConfig {
         "codex-agent",
         "NeMo Fabric Codex CLI preset.",
         "nvidia.fabric.codex",
-        Some(model("openai", "openai/gpt-5.4", Some("OPENAI_API_KEY"))),
-        Map::from_iter([("sandbox".to_string(), json!("workspace-write"))]),
+        Some(model(
+            "nvidia",
+            "azure/openai/gpt-5.4",
+            Some("NVIDIA_API_KEY"),
+            Some(NVIDIA_FRONTIER_BASE_URL),
+        )),
+        Map::from_iter([
+            ("sandbox".to_string(), json!("workspace-write")),
+            (
+                "config_overrides".to_string(),
+                json!({
+                    "features.apps": false,
+                    "features.multi_agent": false,
+                    "features.plugins": false,
+                    "web_search": "disabled",
+                }),
+            ),
+        ]),
     )
 }
 
@@ -204,8 +220,9 @@ fn deepagents() -> FabricConfig {
         "nvidia.fabric.langchain.deepagents",
         Some(model(
             "nvidia",
-            "nvidia/nemotron-3-nano-30b-a3b",
+            "nvidia/nvidia/Nemotron-3-Nano-30B-A3B",
             Some("NVIDIA_API_KEY"),
+            Some(NVIDIA_FRONTIER_BASE_URL),
         )),
         Map::new(),
     )
@@ -260,13 +277,20 @@ fn config(
     }
 }
 
-fn model(provider: &str, name: &str, api_key_env: Option<&str>) -> ModelConfig {
+fn model(
+    provider: &str,
+    name: &str,
+    api_key_env: Option<&str>,
+    base_url: Option<&str>,
+) -> ModelConfig {
     ModelConfig {
         provider: provider.to_string(),
         model: name.to_string(),
         temperature: None,
         api_key_env: api_key_env.map(str::to_string),
-        settings: Map::new(),
+        settings: base_url
+            .map(|value| Map::from_iter([("base_url".to_string(), json!(value))]))
+            .unwrap_or_default(),
         extensions: BTreeMap::new(),
     }
 }
@@ -308,5 +332,22 @@ mod tests {
                 .adapter_id,
             "nvidia.fabric.scripted"
         );
+    }
+
+    #[test]
+    fn adapter_presets_use_nvidia_credentials() {
+        for name in ["hermes", "claude", "codex", "deepagents"] {
+            let preset = find(name).expect("adapter preset");
+            let config = preset.config();
+            let model = config.models.get("default").expect("default model");
+
+            assert_eq!(model.provider, "nvidia");
+            assert_eq!(model.api_key_env.as_deref(), Some("NVIDIA_API_KEY"));
+            assert_eq!(
+                model.settings.get("base_url").and_then(Value::as_str),
+                Some(NVIDIA_FRONTIER_BASE_URL)
+            );
+            assert!(preset.required_env.contains(&"NVIDIA_API_KEY"));
+        }
     }
 }

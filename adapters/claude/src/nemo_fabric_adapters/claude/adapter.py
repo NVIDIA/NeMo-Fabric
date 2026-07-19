@@ -36,7 +36,7 @@ from nemo_fabric_adapters.common import utils as common_utils
 
 LOGGER = logging.getLogger(__name__)
 
-NVIDIA_ANTHROPIC_BASE_URL = "https://integrate.api.nvidia.com"
+NVIDIA_FRONTIER_BASE_URL = "https://inference-api.nvidia.com/v1"
 
 PERMISSION_MODES = {
     "default",
@@ -265,18 +265,24 @@ def _nvidia_environment(payload: dict[str, Any]) -> dict[str, str]:
         )
     settings = _settings(payload)
     model_settings = _mapping(model.get("settings"), name="models.default.settings")
-    base_url = settings.get("base_url") or model_settings.get("base_url")
-    if base_url is None:
-        base_url = NVIDIA_ANTHROPIC_BASE_URL
+    base_url = (
+        settings.get("base_url")
+        or model_settings.get("base_url")
+        or os.environ.get("NVIDIA_FRONTIER_BASE_URL")
+        or NVIDIA_FRONTIER_BASE_URL
+    )
     if not isinstance(base_url, str) or not base_url:
         raise AdapterConfigError(
             "claude_invalid_configuration",
             "the NVIDIA model provider base URL must be a non-empty string",
         )
+    # Claude Code appends the Anthropic API version path itself, while Fabric's
+    # shared NVIDIA endpoint includes it for OpenAI-compatible clients.
+    claude_base_url = base_url.rstrip("/").removesuffix("/v1")
     return {
-        "ANTHROPIC_API_KEY": "",
-        "ANTHROPIC_AUTH_TOKEN": api_key,
-        "ANTHROPIC_BASE_URL": base_url.rstrip("/"),
+        "ANTHROPIC_API_KEY": api_key,
+        "ANTHROPIC_AUTH_TOKEN": "",
+        "ANTHROPIC_BASE_URL": claude_base_url,
     }
 
 

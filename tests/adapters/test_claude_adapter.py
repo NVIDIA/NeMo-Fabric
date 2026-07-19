@@ -379,7 +379,7 @@ def test_build_options_maps_nvidia_provider_to_claude_gateway_environment(
             "provider": "nvidia",
             "model": "aws/anthropic/claude-opus-4-5",
             "api_key_env": "NVIDIA_API_KEY",
-            "settings": {"base_url": "https://nvidia.example/"},
+            "settings": {"base_url": "https://nvidia.example/v1/"},
         }
     )
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
@@ -388,11 +388,11 @@ def test_build_options_maps_nvidia_provider_to_claude_gateway_environment(
 
     assert options.model == "aws/anthropic/claude-opus-4-5"
     assert options.env["ANTHROPIC_BASE_URL"] == "https://nvidia.example"
-    assert options.env["ANTHROPIC_AUTH_TOKEN"] == "nvidia-secret"
-    assert options.env["ANTHROPIC_API_KEY"] == ""
+    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
+    assert options.env["ANTHROPIC_AUTH_TOKEN"] == ""
 
 
-def test_build_options_defaults_nvidia_provider_endpoint_and_credential(
+def test_build_options_uses_nvidia_provider_endpoint_and_default_credential(
     claude_payload,
 ):
     model = claude_payload["config"]["models"]["default"]
@@ -408,8 +408,8 @@ def test_build_options_defaults_nvidia_provider_endpoint_and_credential(
 
     options = adapter.build_options(claude_payload, resume=None)
 
-    assert options.env["ANTHROPIC_BASE_URL"] == adapter.NVIDIA_ANTHROPIC_BASE_URL
-    assert options.env["ANTHROPIC_AUTH_TOKEN"] == "nvidia-secret"
+    assert options.env["ANTHROPIC_BASE_URL"] == "https://inference-api.nvidia.com"
+    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
 
 
 def test_build_options_requires_nvidia_provider_credential(claude_payload):

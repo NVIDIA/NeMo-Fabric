@@ -160,8 +160,9 @@ authentication, and execution details.
 ## Core Concepts
 
 - **Typed config:** callers construct a complete `FabricConfig` in Python.
-  Start with `examples/code_review_agent/config.py` for the application-facing
-  Pydantic pattern.
+  Start with the [Python SDK guide](docs/sdk/python.mdx), and refer to
+  [`examples/code_review_agent/config.py`](examples/code_review_agent/config.py)
+  for a complete application example.
 - **Variants:** ordinary Python functions copy and modify complete configs to
   vary the harness, model, MCP, tools, skills, telemetry, or environment.
 - **Experimentation CLI:** presets provide quick probes, examples provide

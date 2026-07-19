@@ -278,7 +278,7 @@ mod tests {
             };
             let source = fs::read_to_string(launcher).expect("read launcher");
             assert!(source.contains("nvidia.fabric.hermes"));
-            assert!(source.contains("nvidia/nemotron-3-nano-30b-a3b"));
+            assert!(source.contains("nvidia/nvidia/Nemotron-3-Nano-30B-A3B"));
             fs::remove_dir_all(destination).expect("remove scaffold");
         }
     }
