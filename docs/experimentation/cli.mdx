@@ -87,6 +87,19 @@ Run the preset with an input:
 nemo-fabric run --preset hermes --input "Say hello"
 ```
 
+Override the preset's default model and temperature for a quick experiment:
+
+```bash
+nemo-fabric run --preset hermes \
+  --model meta/llama-3.3-70b-instruct \
+  --temperature 0.2 \
+  --input "Say hello"
+```
+
+These flags preserve the preset's provider, credential environment variable,
+endpoint, and harness settings. Use a model that is available from the preset's
+provider. The `plan` and `doctor` commands accept the same overrides.
+
 ## Experiment With Examples
 
 List the maintained workflows and inspect an example's available variants:

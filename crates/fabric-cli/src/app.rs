@@ -108,6 +108,32 @@ struct Selector {
         conflicts_with = "preset"
     )]
     variant: Option<String>,
+    /// Override the preset's default model identifier.
+    #[arg(
+        long,
+        value_name = "MODEL",
+        conflicts_with = "example",
+        value_parser = clap::builder::NonEmptyStringValueParser::new()
+    )]
+    model: Option<String>,
+    /// Override the preset's default model temperature.
+    #[arg(
+        long,
+        value_name = "FLOAT",
+        conflicts_with = "example",
+        value_parser = parse_temperature
+    )]
+    temperature: Option<f64>,
+}
+
+fn parse_temperature(value: &str) -> Result<f64, String> {
+    let temperature = value
+        .parse::<f64>()
+        .map_err(|error| format!("invalid temperature: {error}"))?;
+    if !temperature.is_finite() {
+        return Err("temperature must be finite".to_string());
+    }
+    Ok(temperature)
 }
 
 enum SelectedSource {
@@ -238,7 +264,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
 fn select_source(selector: &Selector) -> Result<SelectedSource, Box<dyn std::error::Error>> {
     if let Some(name) = &selector.preset {
-        return Ok(SelectedSource::Preset(find_preset(name)?.stage()?));
+        let mut selected = find_preset(name)?.stage()?;
+        apply_model_overrides(&mut selected.config, selector)?;
+        return Ok(SelectedSource::Preset(selected));
     }
     if let Some(name) = &selector.example {
         return Ok(SelectedSource::Example(
@@ -246,6 +274,26 @@ fn select_source(selector: &Selector) -> Result<SelectedSource, Box<dyn std::err
         ));
     }
     unreachable!("Clap requires exactly one source selector")
+}
+
+fn apply_model_overrides(
+    config: &mut nemo_fabric_core::FabricConfig,
+    selector: &Selector,
+) -> Result<(), String> {
+    if selector.model.is_none() && selector.temperature.is_none() {
+        return Ok(());
+    }
+    let default_model = config
+        .models
+        .get_mut("default")
+        .ok_or_else(|| "the selected preset does not define a default model".to_string())?;
+    if let Some(model) = &selector.model {
+        default_model.model.clone_from(model);
+    }
+    if let Some(temperature) = selector.temperature {
+        default_model.temperature = Some(temperature);
+    }
+    Ok(())
 }
 
 fn find_preset(name: &str) -> Result<presets::Preset, String> {
@@ -285,6 +333,66 @@ mod tests {
         let cli = Cli::try_parse_from(["nemo-fabric", "plan", "--preset", "scripted"])
             .expect("parse plan");
         assert!(matches!(cli.command, Command::Plan(_)));
+    }
+
+    #[test]
+    fn preset_model_overrides_preserve_provider_settings() {
+        let selector = Selector {
+            preset: Some("hermes".to_string()),
+            example: None,
+            variant: None,
+            model: Some("meta/llama-3.3-70b-instruct".to_string()),
+            temperature: Some(0.2),
+        };
+        let selected = select_source(&selector).expect("select preset");
+        let model = selected.config().models.get("default").expect("model");
+
+        assert_eq!(model.provider, "nvidia");
+        assert_eq!(model.model, "meta/llama-3.3-70b-instruct");
+        assert_eq!(model.temperature, Some(0.2));
+        assert_eq!(model.api_key_env.as_deref(), Some("NVIDIA_API_KEY"));
+    }
+
+    #[test]
+    fn model_overrides_require_a_preset_with_a_default_model() {
+        assert!(
+            Cli::try_parse_from([
+                "nemo-fabric",
+                "plan",
+                "--example",
+                "code-review",
+                "--model",
+                "other-model",
+            ])
+            .is_err()
+        );
+
+        let selector = Selector {
+            preset: Some("scripted".to_string()),
+            example: None,
+            variant: None,
+            model: Some("other-model".to_string()),
+            temperature: None,
+        };
+        assert_eq!(
+            select_source(&selector)
+                .err()
+                .expect("scripted has no default model")
+                .to_string(),
+            "the selected preset does not define a default model"
+        );
+
+        assert!(
+            Cli::try_parse_from([
+                "nemo-fabric",
+                "plan",
+                "--preset",
+                "hermes",
+                "--temperature",
+                "NaN",
+            ])
+            .is_err()
+        );
     }
 
     #[test]
