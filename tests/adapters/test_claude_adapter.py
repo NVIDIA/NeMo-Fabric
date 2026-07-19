@@ -370,11 +370,70 @@ def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload)
         adapter.build_options(claude_payload, resume=None)
 
 
+def test_build_options_maps_nvidia_provider_to_claude_gateway_environment(
+    claude_payload,
+):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "aws/anthropic/claude-opus-4-5",
+            "api_key_env": "NVIDIA_API_KEY",
+            "settings": {"base_url": "https://nvidia.example/"},
+        }
+    )
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.model == "aws/anthropic/claude-opus-4-5"
+    assert options.env["ANTHROPIC_BASE_URL"] == "https://nvidia.example"
+    assert options.env["ANTHROPIC_AUTH_TOKEN"] == "nvidia-secret"
+    assert options.env["ANTHROPIC_API_KEY"] == ""
+
+
+def test_build_options_defaults_nvidia_provider_endpoint_and_credential(
+    claude_payload,
+):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "aws/anthropic/claude-opus-4-5",
+        }
+    )
+    model.pop("api_key_env")
+    claude_payload["config"]["harness"]["settings"].pop("env")
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.env["ANTHROPIC_BASE_URL"] == adapter.NVIDIA_ANTHROPIC_BASE_URL
+    assert options.env["ANTHROPIC_AUTH_TOKEN"] == "nvidia-secret"
+
+
+def test_build_options_requires_nvidia_provider_credential(claude_payload):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "aws/anthropic/claude-opus-4-5",
+            "api_key_env": "NVIDIA_API_KEY",
+        }
+    )
+    os.environ.pop("NVIDIA_API_KEY", None)
+
+    with pytest.raises(adapter.AdapterConfigError, match="NVIDIA_API_KEY is required"):
+        adapter.build_options(claude_payload, resume=None)
+
+
 def test_selected_model_rejects_unsupported_provider(claude_payload):
     model = claude_payload["config"]["models"]["default"]
-    model["provider"] = "nvidia"
+    model["provider"] = "openai"
 
-    with pytest.raises(adapter.AdapterConfigError, match="provider must be anthropic"):
+    with pytest.raises(
+        adapter.AdapterConfigError, match="provider must be anthropic or nvidia"
+    ):
         adapter.selected_model(claude_payload)
 
 

@@ -36,6 +36,8 @@ from nemo_fabric_adapters.common import utils as common_utils
 
 LOGGER = logging.getLogger(__name__)
 
+NVIDIA_ANTHROPIC_BASE_URL = "https://integrate.api.nvidia.com"
+
 PERMISSION_MODES = {
     "default",
     "acceptEdits",
@@ -232,16 +234,50 @@ def selected_model(payload: dict[str, Any]) -> str | None:
     value = model_config.get("model")
     if value is None:
         return None
-    if model_config.get("provider") != "anthropic":
+    provider = model_config.get("provider")
+    if provider not in {"anthropic", "nvidia"}:
         raise AdapterConfigError(
             "claude_invalid_configuration",
-            "models.default.provider must be anthropic for the Claude adapter",
+            "models.default.provider must be anthropic or nvidia for the Claude adapter",
         )
     if not isinstance(value, str) or not value:
         raise AdapterConfigError(
             "claude_invalid_configuration", "model must be a non-empty string"
         )
-    return value.removeprefix("anthropic/")
+    return value.removeprefix("anthropic/") if provider == "anthropic" else value
+
+
+def _nvidia_environment(payload: dict[str, Any]) -> dict[str, str]:
+    model = _selected_model_config(payload)
+    if model.get("provider") != "nvidia":
+        return {}
+    api_key_env = model.get("api_key_env") or "NVIDIA_API_KEY"
+    if not isinstance(api_key_env, str) or not api_key_env:
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "models.default.api_key_env must be a non-empty string",
+        )
+    api_key = os.environ.get(api_key_env)
+    if not api_key:
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            f"{api_key_env} is required for the NVIDIA model provider",
+        )
+    settings = _settings(payload)
+    model_settings = _mapping(model.get("settings"), name="models.default.settings")
+    base_url = settings.get("base_url") or model_settings.get("base_url")
+    if base_url is None:
+        base_url = NVIDIA_ANTHROPIC_BASE_URL
+    if not isinstance(base_url, str) or not base_url:
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "the NVIDIA model provider base URL must be a non-empty string",
+        )
+    return {
+        "ANTHROPIC_API_KEY": "",
+        "ANTHROPIC_AUTH_TOKEN": api_key,
+        "ANTHROPIC_BASE_URL": base_url.rstrip("/"),
+    }
 
 
 def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
@@ -705,6 +741,7 @@ def child_environment(
             "claude_invalid_configuration", "harness.settings.env must contain strings"
         )
     values.update(configured)
+    values.update(_nvidia_environment(payload))
     if relay_gateway_url is not None:
         values["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
         values["ANTHROPIC_BASE_URL"] = relay_gateway_url
