@@ -12,9 +12,40 @@ SPDX-License-Identifier: Apache-2.0 */}
 </Warning>
 
 The command implementation and catalogs live in the Rust `fabric-cli` crate.
-The `nemo-fabric-runtime` Python package exposes that same implementation
-through a thin console-script bridge. Package and standalone installs do not
-maintain separate parsers, presets, or example catalogs.
+The CLI is installed separately from the `nemo-fabric-runtime` Python SDK so
+each interface can evolve around its own audience without maintaining a bridge
+between them.
+
+## Install the CLI
+
+The CLI currently builds from a NeMo Fabric source checkout. Install it with
+Cargo:
+
+```bash
+cargo install --path crates/fabric-cli --locked
+```
+
+Verify that the executable is available:
+
+```bash
+nemo-fabric --version
+```
+
+If the command is not found, add Cargo's binary directory to your `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+When developing the CLI, run the workspace binary without installing it:
+
+```bash
+cargo run -p nemo-fabric-cli -- preset list
+```
+
+Installing the Python SDK does not install the CLI. Adapter packages and
+credentials are also separate requirements for presets that launch an external
+harness. Use the credential-free `scripted` preset to verify the CLI by itself.
 
 ## Experiment With Presets
 

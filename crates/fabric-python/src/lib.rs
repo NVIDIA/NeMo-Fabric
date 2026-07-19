@@ -18,13 +18,6 @@ fn version() -> PyResult<String> {
     Ok(nemo_fabric_core::version().to_string())
 }
 
-/// Execute the Rust experimentation CLI using arguments supplied by the console bridge.
-#[pyfunction]
-fn cli_main(args: Vec<String>) -> PyResult<()> {
-    nemo_fabric_cli::app::execute_from(std::iter::once("nemo-fabric".to_string()).chain(args))
-        .map_err(PyRuntimeError::new_err)
-}
-
 /// Resolve typed config JSON into a runnable plan and return JSON.
 #[pyfunction]
 #[pyo3(signature = (config_json, base_dir=None))]
@@ -133,7 +126,6 @@ fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyRe
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(version, m)?)?;
-    m.add_function(wrap_pyfunction!(cli_main, m)?)?;
     m.add_function(wrap_pyfunction!(plan_config, m)?)?;
     m.add_function(wrap_pyfunction!(doctor_config, m)?)?;
     m.add_function(wrap_pyfunction!(run_config, m)?)?;

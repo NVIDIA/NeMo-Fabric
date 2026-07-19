@@ -54,12 +54,11 @@ Hermes | Codex SDK | custom harness
 RunResult + artifacts + events + telemetry references
 ```
 
-The experimentation CLI and its catalogs are implemented once in the Rust
-`fabric-cli` crate. The Python package exposes the same implementation as a
-console command. Built-in presets and maintained examples produce a complete
-`FabricConfig` before using the same run-plan contract. Adapters own
-harness-specific preparation and invocation; consumers own the request and
-returned evidence.
+The experimentation CLI and its catalogs live in the Rust `fabric-cli` crate
+and are installed separately from the Python SDK. Built-in presets and
+maintained examples produce a complete `FabricConfig` before using the same
+run-plan contract. Adapters own harness-specific preparation and invocation;
+consumers own the request and returned evidence.
 
 ## Quick Start
 
@@ -85,8 +84,7 @@ uv venv -p 3.13 --seed .venv
 source .venv/bin/activate
 ```
 
-Install the Python SDK with its native binding and the CLI from a source
-checkout:
+Build the Python SDK and install the Rust CLI from a source checkout:
 
 ```bash
 just build-all

@@ -14,7 +14,7 @@ collect artifacts from agent harnesses. It provides:
 - a versioned, typed configuration contract;
 - ordinary Python composition for experiment variants;
 - adapter integrations for harness-specific launch and control;
-- a Python SDK, experimentation CLI, and Rust core;
+- a Python SDK backed by the Rust core;
 - normalized run results, artifact manifests, and telemetry references.
 
 ## Install
@@ -60,15 +60,14 @@ NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations
 
 - **Typed configuration:** Construct a complete `FabricConfig` in Python and
   use ordinary functions to create experiment variants.
-- **Experimentation CLI:** Run curated presets, copy editable examples, or
-  invoke a user-owned Python factory through the SDK-backed `nemo-fabric` CLI.
 - **Adapters:** Select harness-specific integrations with
   `harness.adapter_id`.
 - **Artifacts:** Receive normalized output, logs, patches, and telemetry
   references through an `ArtifactManifest`.
 
-The CLI selects complete typed configs from presets, examples, or Python
-factories. Applications that need a stable integration surface should use the
+The experimental `nemo-fabric` CLI is distributed separately from the Python
+package. It selects complete typed configs from built-in presets and maintained
+examples. Applications that need a stable integration surface should use the
 Python SDK.
 
 ## Learn More

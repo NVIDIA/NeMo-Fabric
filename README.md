@@ -22,7 +22,7 @@ Fabric provides:
 - a versioned, typed `FabricConfig` contract constructed through the SDK;
 - ordinary Python composition for harness and experiment variants;
 - adapter descriptors for harness-specific launch and control;
-- a Rust core, Python SDK, and SDK-backed experimentation CLI;
+- a Rust core, Python SDK, and standalone experimentation CLI;
 - JSON Schema snapshots for the public config and runtime contract;
 - normalized run results, artifact manifests, and telemetry references.
 
@@ -53,12 +53,12 @@ quick harness experiments, smoke tests, examples, planning, and diagnostics.
 Its command contract can evolve as experiments mature. The Python SDK remains
 the stable application-facing contract.
 
-Build and install the local wheels, then run the credential-free preset:
+Install the Rust CLI from this source checkout, verify it, and run the
+credential-free preset:
 
 ```bash
-just wheels
-python -m pip install --find-links dist nemo-fabric
-
+cargo install --path crates/fabric-cli --locked
+nemo-fabric --version
 nemo-fabric preset show scripted
 nemo-fabric run --preset scripted --input "fabric works"
 ```

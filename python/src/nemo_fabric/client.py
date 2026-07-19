@@ -45,8 +45,7 @@ class Fabric:
     Python before calling the SDK. All inspection and execution APIs return
     typed, read-only mapping models.
 
-    ``Fabric`` is native-only. The ``nemo-fabric`` CLI is backed by this public
-    SDK; SDK calls raise
+    ``Fabric`` uses the native Rust extension. SDK calls raise
     ``FabricNativeUnavailableError`` when the native extension is not
     installed.
 
