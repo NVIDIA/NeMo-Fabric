@@ -206,7 +206,7 @@ multiple independent runtimes.
 | --- | --- | --- | --- |
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
-| `Fabric.run(config, input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
+| `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
 | `Fabric.start_runtime(config, ...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |

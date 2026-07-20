@@ -816,7 +816,11 @@ async def invoke_codex_sdk(
     config = thread_config(payload, relay)
     client_config = sdk_config(payload, relay)
     if selected_model_provider(payload) == "nvidia":
-        Path(client_config.env["CODEX_HOME"]).mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(
+            Path(client_config.env["CODEX_HOME"]).mkdir,
+            parents=True,
+            exist_ok=True,
+        )
     codex = AsyncCodex(config=client_config)
     handle = None
     output: dict[str, Any]
