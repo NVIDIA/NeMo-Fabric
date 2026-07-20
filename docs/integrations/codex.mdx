@@ -44,11 +44,11 @@ only part of the requested policy.
 
 ## Select a Codex Runtime
 
-The adapter pins `openai-codex==0.1.0b3`. That SDK release installs
-`openai-codex-cli-bin==0.137.0a4` as its app-server runtime. A newer `codex`
-command on `PATH` does not replace the SDK-owned runtime.
+The Codex SDK installs and selects its matching app-server runtime. NeMo Fabric
+does not declare or select the runtime package separately. A `codex` command on
+`PATH` does not replace the SDK-owned runtime.
 
-To test a newer compatible app-server explicitly, set an absolute path in
+To override the SDK-selected app-server intentionally, set an absolute path in
 `harness.settings.codex_bin`:
 
 ```python

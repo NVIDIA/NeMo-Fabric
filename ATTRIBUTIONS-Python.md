@@ -5887,7 +5887,7 @@ Apache License
    limitations under the License.
 ```
 
-## openai-codex (0.1.0b3)
+## openai-codex (0.144.4)
 
 ### Licenses
 License: `Apache-2.0`
@@ -5897,7 +5897,7 @@ License: `Apache-2.0`
 (No license file found in locked artifact for openai-codex; see package metadata or PyPI.)
 ```
 
-## openai-codex-cli-bin (0.137.0a4)
+## openai-codex-cli-bin (0.144.4)
 
 ### Licenses
 License: `Apache-2.0`

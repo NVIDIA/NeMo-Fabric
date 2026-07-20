@@ -278,7 +278,7 @@ async def _register_skill_roots(codex: AsyncCodex, skill_paths: list[Path]) -> N
     if not skill_paths:
         return
 
-    # openai-codex 0.1.0b3 does not yet wrap the app-server's process-scoped
+    # The pinned SDK does not yet wrap the app-server's process-scoped
     # skills/extraRoots/set request. Keep the pinned-SDK compatibility seam
     # here so arbitrary Fabric skill paths become discoverable without
     # modifying the consumer workspace.

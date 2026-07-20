@@ -49,13 +49,12 @@ the SDK runtime. The current real-agent acceptance path validates an existing
 Codex login; it does not yet claim a raw environment variable as a complete
 login flow.
 
-The dependency graph includes `openai-codex-cli-bin`. The Codex SDK owns this
-pinned app-server distribution; Fabric does not treat it as a user-installed
-command or an adapter descriptor requirement.
+The adapter depends on the Codex SDK, which installs and selects its matching
+app-server runtime. Fabric does not declare the runtime package directly or
+treat it as a user-installed command or adapter descriptor requirement.
 
-This adapter pins `openai-codex==0.1.0b3`, which pins
-`openai-codex-cli-bin==0.137.0a4`. A newer `codex` command on `PATH` is not used
-implicitly. When testing a newer compatible runtime, set
+A `codex` command on `PATH` is not selected implicitly. To override the
+SDK-selected runtime intentionally, set
 `harness.settings.codex_bin` to an app-server path that is absolute or relative
 to the Fabric config root. Fabric passes the resolved path through
 `CodexConfig.codex_bin`; the SDK remains the execution driver.
