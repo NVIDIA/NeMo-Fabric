@@ -108,13 +108,14 @@ def mock_codex_fixture(monkeypatch):
     mock_codex.next_result = None
     mock_codex.next_thread = None
     mock_codex.resume_thread_id = None
+    mock_codex.skill_request = AsyncMock()
 
     def build_client(*, config):
         mock_client = MagicMock(spec=AsyncCodex)
         mock_client.config = config
         mock_client.closed = False
         mock_client.thread = None
-        mock_client._client = SimpleNamespace(request=AsyncMock())
+        mock_client._client = SimpleNamespace(request=mock_codex.skill_request)
 
         async def close():
             mock_client.closed = True
@@ -196,10 +197,8 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
     client._client.request.assert_not_awaited()
 
 
-def test_sdk_maps_native_mcp_servers_into_thread_config(
-    codex_payload, mock_codex, monkeypatch
-):
-    monkeypatch.setenv("FABRIC_TEST_MCP_URL", "https://mcp.example.test/mcp")
+def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_codex):
+    os.environ["FABRIC_TEST_MCP_URL"] = "https://mcp.example.test/mcp"
     codex_payload["capability_plan"] = {
         "native": {
             "mcp_servers": {
@@ -263,6 +262,28 @@ def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):
     )
 
 
+def test_sdk_closes_when_skill_registration_is_unavailable(
+    codex_payload, mock_codex, tmp_path
+):
+    skill = tmp_path / "skills" / "review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: review\ndescription: Test skill.\n---\n",
+        encoding="utf-8",
+    )
+    codex_payload["capability_plan"] = {
+        "native": {"skill_paths": ["skills/review"]}
+    }
+    mock_codex.skill_request = None
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    client = mock_codex.instances[0]
+    client.thread_start.assert_not_awaited()
+    assert client.closed is True
+
+
 @pytest.mark.parametrize("transport", ["sse", "carrier-pigeon"])
 def test_sdk_rejects_unsupported_mcp_transport(codex_payload, mock_codex, transport):
     codex_payload["capability_plan"] = {
@@ -288,6 +309,21 @@ def test_sdk_rejects_invalid_native_skill_path(codex_payload, mock_codex, tmp_pa
 
     assert output["error"]["code"] == "codex_invalid_configuration"
     assert "directory containing SKILL.md" in output["error"]["message"]
+    mock_codex.assert_not_called()
+
+
+@pytest.mark.parametrize("skill_paths", [None, "", {}, False])
+def test_sdk_rejects_falsy_non_list_skill_paths(
+    codex_payload, mock_codex, skill_paths
+):
+    codex_payload["capability_plan"] = {
+        "native": {"skill_paths": skill_paths}
+    }
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert output["error"]["message"] == "native skill_paths must be a list of paths"
     mock_codex.assert_not_called()
 
 

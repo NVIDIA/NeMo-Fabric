@@ -239,7 +239,7 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
-    values = _native_capabilities(payload).get("skill_paths") or []
+    values = _native_capabilities(payload).get("skill_paths", [])
     if not isinstance(values, list) or any(
         not isinstance(value, (str, Path)) or not str(value) for value in values
     ):

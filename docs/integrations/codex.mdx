@@ -32,10 +32,9 @@ config.add_mcp_server(
 
 The adapter maps stdio, HTTP, and streamable HTTP servers into the Codex
 thread's request-scoped `mcp_servers` configuration. It resolves each skill
-directory to its `SKILL.md` file, registers the directory as a process-scoped
-Codex skill root, and leaves skill selection to Codex's normal discovery
-behavior. Invalid skill directories and MCP transports fail before the SDK
-runtime starts.
+directory, verifies that it contains `SKILL.md`, and registers it as a
+process-scoped Codex skill root. Codex uses its normal skill discovery behavior.
+Invalid skill directories and MCP transports fail before the SDK runtime starts.
 
 The Codex adapter does not declare `tools.blocked` support. Codex can filter
 individual MCP server tools, but the pinned runtime does not provide one deny
