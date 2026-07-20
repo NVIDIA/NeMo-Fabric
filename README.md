@@ -122,6 +122,7 @@ config and clone-based variants live in
 `examples/code_review_agent/config.py`.
 
 ### Next Steps
+
 - Follow the [Example Notebooks](examples/notebooks/README.md) for a guided tour of the Python SDK.
 - Refer to the [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
