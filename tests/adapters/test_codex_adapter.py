@@ -404,6 +404,49 @@ async def test_persistent_runtime_reuses_one_client_and_thread(
     client.close.assert_awaited_once()
 
 
+async def test_persistent_runtime_registers_skills_once_and_maps_mcp(
+    codex_payload, mock_codex, tmp_path
+):
+    skill = tmp_path / "skills" / "review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: review\ndescription: Test skill.\n---\n",
+        encoding="utf-8",
+    )
+    codex_payload["capability_plan"] = {
+        "native": {
+            "skill_paths": ["skills/review"],
+            "mcp_servers": {
+                "review": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/review",
+                }
+            },
+        }
+    }
+    start_payload = dict(codex_payload)
+    start_payload.pop("request")
+    runtime = adapter.CodexRuntime()
+
+    await runtime.start(start_payload)
+    await runtime.invoke(codex_payload)
+    codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
+    await runtime.invoke(codex_payload)
+    await runtime.stop()
+
+    client = mock_codex.instances[0]
+    client.models.assert_awaited_once_with()
+    client._client.request.assert_awaited_once_with(
+        "skills/extraRoots/set",
+        {"extraRoots": [str(skill)]},
+        response_model=adapter.SkillsExtraRootsSetResponse,
+    )
+    assert client.thread_start.await_args.kwargs["config"]["mcp_servers"] == {
+        "review": {"url": "https://mcp.example.test/review"}
+    }
+    assert client.thread.turn.await_count == 2
+
+
 async def test_persistent_runtime_owns_one_relay_gateway(
     codex_payload, mock_codex, monkeypatch, tmp_path
 ):
