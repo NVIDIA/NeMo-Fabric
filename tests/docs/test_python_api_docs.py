@@ -143,4 +143,10 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
         "        path: ./getting-started/beginner-tutorial.mdx\n"
         "        slug: quickstart\n"
     ) in navigation
+    assert (
+        "- **Quickstart** — [Quickstart](/getting-started/quick-start)"
+    ) in landing
+    assert (
+        "- **Beginner Tutorial** — [Beginner Tutorial](/getting-started/quickstart)"
+    ) in landing
     assert "/nemo/fabric/sdk/python-sdk" in quick_start
