@@ -48,8 +48,8 @@ The Codex SDK installs and selects its matching app-server runtime. NeMo Fabric
 does not declare or select the runtime package separately. A `codex` command on
 `PATH` does not replace the SDK-owned runtime.
 
-To override the SDK-selected app-server intentionally, set an absolute path in
-`harness.settings.codex_bin`:
+To override the SDK-selected app-server intentionally, set an absolute path or
+a path relative to the Fabric config root in `harness.settings.codex_bin`:
 
 ```python
 config.harness.settings["codex_bin"] = "/path/to/codex"
