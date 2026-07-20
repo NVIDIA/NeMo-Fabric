@@ -107,7 +107,7 @@ def to_fabric_config(job) -> FabricConfig:
   so skills, workspaces, and artifacts anchor to the consumer's own layout.
 
 The repository [`code_review_agent` example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
-shows this pattern end to end with complete Hermes, Codex, Deep Agents,
+shows this pattern end to end with complete Hermes Agent, Codex, Deep Agents,
 environment, MCP, and telemetry variants. Reuse it rather than duplicating config
 construction.
 

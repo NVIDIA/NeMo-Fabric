@@ -20,9 +20,9 @@ into the project virtual environment:
 just build-all
 ```
 
-The default variant uses Hermes with an NVIDIA-hosted model. Follow the
-[Hermes quick start](../../README.md#quick-start-hermes) to install
-Hermes, then set `NVIDIA_API_KEY` and `ADAPTER_PYTHON` as described there.
+The default variant uses Hermes Agent with an NVIDIA-hosted model. Follow the
+[Hermes Agent quick start](../../README.md#quick-start-hermes-agent) to install
+Hermes Agent, then set `NVIDIA_API_KEY` and `ADAPTER_PYTHON` as described there.
 
 The config also demonstrates a harness-native GitHub MCP server. Set
 `GITHUB_MCP_URL` when you want to use that server; the review prompt below does
@@ -41,7 +41,7 @@ environment, and telemetry plan.
 
 ## Run the agent
 
-Run one request through the default Hermes variant:
+Run one request through the default Hermes Agent variant:
 
 ```bash
 .venv/bin/python -m examples.code_review_agent \
@@ -58,7 +58,7 @@ The entrypoint exposes complete harness configs defined in
 
 | Variant | Command option | Additional setup |
 | --- | --- | --- |
-| Hermes | `--variant hermes` | Installed [Hermes adapter requirements](../../adapters/hermes/README.md) and `NVIDIA_API_KEY`|
+| Hermes Agent | `--variant hermes` | Installed [Hermes Agent adapter requirements](../../adapters/hermes/README.md) and `NVIDIA_API_KEY`|
 | Codex SDK | `--variant codex` | Installed [Codex adapter](../../adapters/codex/README.md) and an existing ChatGPT or API key login |
 | Claude | `--variant claude` | Installed [Claude adapter requirements](../../adapters/claude/README.md) and `ANTHROPIC_API_KEY` |
 | Deep Agents | `--variant deepagents` | Installed [Deep Agents adapter requirements](../../adapters/deepagents/README.md) and `NVIDIA_API_KEY` |

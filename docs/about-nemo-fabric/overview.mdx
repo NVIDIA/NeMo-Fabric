@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 NeMo Fabric is the harness-management layer that turns multiple agent runtimes
 into one configurable, observable execution surface. Applications use the same
 versioned config, lifecycle, result, artifact, and telemetry contracts whether
-the selected harness is Hermes, Codex SDK, or a custom adapter.
+the selected harness is Hermes Agent, Codex, or a custom adapter.
 
 NeMo Fabric owns the seam between an application and its harness. It resolves
 configuration, selects an adapter, drives the runtime lifecycle,
@@ -50,7 +50,7 @@ NeMo Fabric Rust core
         |
         |  resolved adapter contract
         v
-Hermes | Codex SDK | custom harness
+Hermes Agent | Codex | custom harness
         |
         v
 RunResult + artifacts + events + telemetry references
@@ -116,8 +116,8 @@ asyncio.run(main())
 ```
 
 Harness installation and credential requirements differ by adapter. The
-[repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes)
-contains the complete Hermes environment recipe.
+[repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-agent)
+contains the complete Hermes Agent environment recipe.
 
 Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
 diagnostics, typed requests, and multi-turn runtime examples.

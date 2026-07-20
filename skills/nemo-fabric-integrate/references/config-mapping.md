@@ -77,7 +77,7 @@ package or job layout, so nothing depends on the process working directory.
 - Use normalized fields for portable behavior: models, runtime, environment,
   skills, MCP, telemetry, and request context.
 - Use `harness.settings` for adapter-owned configuration the selected adapter
-  understands (for example Hermes launch options or Codex settings). Adapter
+  understands (for example Hermes Agent launch options or Codex settings). Adapter
   settings are not portable, and `doctor(...)` does not validate their contents —
   an unknown or misspelled key still passes and is silently ignored unless the
   adapter reads it. Validate settings against the adapter's docs and your

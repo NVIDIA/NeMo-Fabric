@@ -9,13 +9,13 @@ This adapter runs Hermes Agent through its Python SDK.
 
 ## Install
 
-To install just the Hermes adapter by itself:
+To install just the Hermes Agent adapter by itself:
 
 ```bash
 pip install "nemo-fabric[adapters-hermes]"
 ```
 
-To install just the Hermes adapter along with the NeMo Fabric Runtime:
+To install just the Hermes Agent adapter along with the NeMo Fabric Runtime:
 
 ```bash
 pip install "nemo-fabric[adapters-hermes, runtime]"
@@ -23,18 +23,18 @@ pip install "nemo-fabric[adapters-hermes, runtime]"
 
 ## What It Maps
 
-The adapter receives a normalized payload from Fabric and materializes Hermes-native configuration for:
+The adapter receives a normalized payload from Fabric and materializes a native Hermes Agent configuration for:
 
 - model provider, model name, base URL, temperature, and token settings;
 - workspace and terminal settings;
-- Fabric skills as Hermes external skill directories;
-- Fabric MCP servers as Hermes MCP server config;
-- `tools.blocked` as Hermes disabled toolsets, unioned with
+- Fabric skills as external skill directories for Hermes Agent;
+- Fabric MCP servers as Hermes Agent MCP server config;
+- `tools.blocked` as disabled toolsets for Hermes Agent, unioned with
   `harness.settings.disabled_toolsets`;
 - optional NeMo Relay telemetry plugin configuration.
 
 `hermes_home` configures a base directory. The adapter creates a child under
-`runtimes/<runtime_id>` so invocations in one Fabric runtime share Hermes state
+`runtimes/<runtime_id>` so invocations in one Fabric runtime share Hermes Agent state
 without sharing config or the session database with another runtime.
 
 ## Maintaining The Adapter
@@ -48,7 +48,7 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
   `runner.callable` names the equivalent reusable Python function.
 - `requirements` powers `fabric doctor`; keep required env vars, binaries, or
   packages current.
-- `config.accepts` must match the Fabric sections this adapter maps into Hermes.
+- `config.accepts` must match the Fabric sections this adapter maps into Hermes Agent.
 - `telemetry.providers` declares provider-specific outputs and integration modes
   the adapter can produce or forward.
 

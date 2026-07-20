@@ -190,7 +190,7 @@ relay_config.enable_relay(
 
 The repository's
 [code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
-uses this pattern for complete Hermes, Codex SDK, Deep Agents,
+uses this pattern for complete Hermes Agent, Codex, Deep Agents,
 environment, MCP, and telemetry variants.
 
 When an in-memory caller needs the same ordered overlay behavior as file-backed
@@ -405,7 +405,7 @@ Use normalized NeMo Fabric fields for portable behavior: models, runtime,
 environment, skills, MCP, telemetry, tools, artifacts, and request context.
 
 Use `harness.settings` for adapter-owned configuration that the selected adapter
-understands. Examples include Hermes-specific launch options, Codex SDK controls,
+understands. Examples include launch options specific to Hermes Agent, Codex controls,
 or adapter-specific config file locations.
 
 Use `metadata` for caller-owned annotations that NeMo Fabric should preserve and echo

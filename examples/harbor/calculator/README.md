@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 This self-contained calculator task is the fastest way to check the complete
 Harbor → `FabricAgent` → Fabric → verifier path. Start with the deterministic,
-credential-free scripted run, then use the same task to try Hermes, Relay
+credential-free scripted run, then use the same task to try Hermes Agent, Relay
 telemetry, or Claude. `FabricAgent` translates Harbor options into a complete
 typed `FabricConfig`; Harbor owns the task, container, verifier, reward,
 concurrency, and run layout.
@@ -20,7 +20,7 @@ same shell. Commit the Fabric revision you want to run because the build context
 is created from `HEAD`.
 
 The credential-free smoke does not require an API key. Export `NVIDIA_API_KEY`
-for Hermes runs or `ANTHROPIC_API_KEY` for the Claude run before using that
+for Hermes Agent runs or `ANTHROPIC_API_KEY` for the Claude run before using that
 harness. The first image build can take several minutes.
 
 ## Prepare the Build Context
@@ -73,10 +73,10 @@ uv run --extra runtime --extra harbor harbor run \
 
 Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 
-## 2. Hermes
+## 2. Hermes Agent
 
 ```bash
-: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes}"
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \
@@ -97,10 +97,10 @@ uv run --extra runtime --extra harbor harbor run \
 The Harbor model and agent arguments become the model and harness fields in the
 typed config. The API key is passed separately as a task credential.
 
-## 3. Hermes with Relay Telemetry
+## 3. Hermes Agent with Relay Telemetry
 
 ```bash
-: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes}"
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
 uv run --extra runtime --extra harbor harbor run \
   --path "$TASK_DIR" \

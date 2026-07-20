@@ -11,7 +11,7 @@ learn how to configure, run, inspect, and vary an agent. It's possible to run th
 | Notebook | What it covers |
 | --- | --- |
 | [`01_quickstart.ipynb`](01_quickstart.ipynb) | **Fully self-contained.** The full lifecycle on one harness, every agent built inline: describe an agent as a typed `FabricConfig`, inspect it with `plan()`, diagnose the environment with `doctor()`, `run()` one request, read the normalized `RunResult`, and continue across turns with a stateful runtime. |
-| [`02_variations.ipynb`](02_variations.ipynb) | **Advanced composition on the maintained [code-review example](../code_review_agent/README.md).** Build on its `base_config()` to run the same agent across harnesses (Hermes, Deep Agents, Codex, Claude) and to vary configuration — skills, MCP servers, models, and NeMo Relay telemetry. |
+| [`02_variations.ipynb`](02_variations.ipynb) | **Advanced composition on the maintained [code-review example](../code_review_agent/README.md).** Build on its `base_config()` to run the same agent across harnesses (Hermes Agent, Deep Agents, Codex, Claude) and to vary configuration — skills, MCP servers, models, and NeMo Relay telemetry. |
 
 Read them in order. The quickstart teaches the mental model standalone; the
 variations notebook shows advanced composition against a real, maintained agent.
@@ -22,8 +22,8 @@ variations notebook shows advanced composition against a real, maintained agent.
   alone is enough to run both notebooks top to bottom.
 - To actually *run* a harness (rather than just inspect its config), that
   harness's adapter and credentials must be present:
-  - **Hermes** (both notebooks): install Hermes in its own environment (the repo
-    README's [Hermes quick start](../../README.md#quick-start-hermes-agent))
+  - **Hermes Agent** (both notebooks): install Hermes Agent in its own environment (the repo
+    README's [Hermes Agent quick start](../../README.md#quick-start-hermes-agent))
     and set `NVIDIA_API_KEY`. The setup cell auto-detects `.tmp/hermes-venv`.
   - **Deep Agents, Codex, Claude** (variations notebook): the matching adapter
     installed in the Fabric environment, plus that harness's credentials

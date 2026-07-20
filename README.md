@@ -83,15 +83,15 @@ just wheels
 
 ## Quick Start: Hermes Agent
 
-Install Hermes into its own environment (the nemo-fabric[hermes] extra will install Hermes Agent, and the Hermes Agent adapter but not Fabric itself):
+Install Hermes Agent into its own environment (the nemo-fabric[hermes] extra will install Hermes Agent, and the adapter but not Fabric itself):
 
 ```bash
-# Use any Python 3.11-3.13 interpreter for Hermes.
+# Use any Python 3.11-3.13 interpreter for Hermes Agent.
 python3 -m venv .tmp/hermes-venv
 .tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[hermes]"
 ```
 
-If you are working from a local Hermes checkout, replace the final install line
+If you are working from a local Hermes Agent checkout, replace the final install line
 with:
 
 ```bash
@@ -189,9 +189,9 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
   selection and the end-to-end Fabric workflow.
 - [Harbor examples](examples/harbor/README.md): validate the integration with a
   deterministic, credential-free calculator smoke, optionally run the same
-  task with Hermes or Claude, and evaluate real coding tasks with SWE-Bench.
-- Adapter guides: [Hermes](adapters/hermes/README.md),
-  [Codex SDK](adapters/codex/README.md), and
+  task with Hermes Agent or Claude, and evaluate real coding tasks with SWE-Bench.
+- Adapter guides: [Hermes Agent](adapters/hermes/README.md),
+  [Codex](adapters/codex/README.md), and
   [Deep Agents](adapters/deepagents/README.md).
 
 ## Tests

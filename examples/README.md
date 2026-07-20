@@ -27,7 +27,7 @@ application-facing Python SDK contract:
 - creating harness, environment, capability, and telemetry variants from deep
   copies;
 - resolving relative workspace and skill paths with `base_dir`;
-- running maintained Hermes, Codex, Claude, and Deep Agents adapters through the Python SDK.
+- running maintained Hermes Agent, Codex, Claude, and Deep Agents adapters through the Python SDK.
 
 Start with:
 
@@ -48,8 +48,8 @@ skills, MCP servers, tool policy, and telemetry—into the final `FabricConfig`.
 The walkthroughs include:
 
 - a calculator walkthrough with a deterministic, credential-free integration
-  smoke test and optional LLM-backed Hermes and Claude runs; and
-- a SWE-Bench workflow for running Hermes and Claude, comparing capability
+  smoke test and optional LLM-backed Hermes Agent and Claude runs; and
+- a SWE-Bench workflow for running Hermes Agent and Claude, comparing capability
   variations, inspecting Relay telemetry, and verifying real coding tasks.
 
 Start with the shared setup and execution model in the
