@@ -20,7 +20,6 @@ The following table lists the `Fabric` methods and when to use each.
 
 | Method | Async | Use When | Returns |
 | --- | --- | --- | --- |
-| `resolve(config, *, base_dir=...)` | No | You need the normalized effective config, without resolving an adapter. | `EffectiveConfig` |
 | `plan(config, *, base_dir=...)` | No | You need the selected adapter, capability routing, and runtime capabilities before running. | `RunPlan` |
 | `doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | `DoctorReport` |
 | `run(config, *, base_dir=..., input=... \| request=...)` | Yes | You need one complete start, invoke, result, and stop cycle. | `RunResult` |

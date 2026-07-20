@@ -16,7 +16,6 @@ def make_result(*artifacts: dict[str, str]) -> RunResult:
     return RunResult.from_mapping(
         {
             "agent_name": "harbor-demo",
-            "profiles": [],
             "harness": "hermes",
             "adapter_kind": "python",
             "adapter_id": "nvidia.fabric.hermes",

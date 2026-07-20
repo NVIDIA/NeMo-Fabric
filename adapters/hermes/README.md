@@ -53,7 +53,7 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
   the adapter can produce or forward.
 
 Do not put end-user agent settings in this directory. Users vary harness,
-model, skills, MCP, tools, telemetry, and runtime behavior through `agent.yaml`
-and profiles. The adapter descriptor describes adapter capabilities; it is not a
-profile. Add descriptor fields only when Fabric core or the SDK actually uses
-them.
+model, skills, MCP, tools, telemetry, and runtime behavior through complete
+typed `FabricConfig` values and ordinary Python composition. The adapter
+descriptor describes adapter capabilities; it is not an agent configuration.
+Add descriptor fields only when Fabric core or the SDK actually uses them.

@@ -24,13 +24,11 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.EnvironmentConfig`](./nemo_fabric.models.md#class-environmentconfig): Execution environment configuration supplied by the consumer.
 - [`models.FabricBaseModel`](./nemo_fabric.models.md#class-fabricbasemodel): Base class for SDK-facing Pydantic models.
 - [`models.FabricConfig`](./nemo_fabric.models.md#class-fabricconfig): SDK-facing typed Fabric agent configuration.
-- [`models.FabricProfileConfig`](./nemo_fabric.models.md#class-fabricprofileconfig): Typed profile overlay used when a Python caller wants file-style overlays.
 - [`models.HarnessConfig`](./nemo_fabric.models.md#class-harnessconfig): Harness adapter selection plus adapter-owned settings.
 - [`models.McpConfig`](./nemo_fabric.models.md#class-mcpconfig): MCP capability configuration.
 - [`models.McpServerConfig`](./nemo_fabric.models.md#class-mcpserverconfig): MCP server configuration.
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
 - [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Model alias configuration.
-- [`models.ProfileRegistryConfig`](./nemo_fabric.models.md#class-profileregistryconfig): Profile discovery config for portable file-backed agent packages.
 - [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
 - [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
 - [`models.RelayAtofEndpointConfig`](./nemo_fabric.models.md#class-relayatofendpointconfig): NeMo Relay ATOF remote endpoint configuration.
@@ -52,7 +50,6 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.ArtifactRef`](./nemo_fabric.types.md#class-artifactref): Reference to one artifact produced by a run.
 - [`types.DoctorCheck`](./nemo_fabric.types.md#class-doctorcheck): One diagnostic check in a ``DoctorReport``.
 - [`types.DoctorReport`](./nemo_fabric.types.md#class-doctorreport): Aggregate preflight diagnostics for a resolved run plan.
-- [`types.EffectiveConfig`](./nemo_fabric.types.md#class-effectiveconfig): Immutable result of config loading and ordered profile application.
 - [`types.ErrorInfo`](./nemo_fabric.types.md#class-errorinfo): Structured failure returned inside a normalized ``RunResult``.
 - [`types.FabricEvent`](./nemo_fabric.types.md#class-fabricevent): One normalized lifecycle or invocation event.
 - [`types.RunOutput`](./nemo_fabric.types.md#class-runoutput): Normalized adapter output.
@@ -62,7 +59,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`types.RuntimeHandle`](./nemo_fabric.types.md#class-runtimehandle): Opaque identity and binding for one started runtime.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.
 - [`errors.FabricCapabilityError`](./nemo_fabric.errors.md#class-fabriccapabilityerror): Operation rejected by resolved runtime capabilities or implementation status.
-- [`errors.FabricConfigError`](./nemo_fabric.errors.md#class-fabricconfigerror): Invalid SDK input, request shape, profile stack, or resolved config.
+- [`errors.FabricConfigError`](./nemo_fabric.errors.md#class-fabricconfigerror): Invalid SDK input, request shape, factory, or resolved config.
 - [`errors.FabricError`](./nemo_fabric.errors.md#class-fabricerror): Base class for structured SDK-level Fabric errors.
 - [`errors.FabricNativeUnavailableError`](./nemo_fabric.errors.md#class-fabricnativeunavailableerror): SDK call requires the PyO3 extension, but it is not installed or importable.
 - [`errors.FabricRuntimeError`](./nemo_fabric.errors.md#class-fabricruntimeerror): Failure while starting, invoking, stopping, or otherwise driving a runtime.

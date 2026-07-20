@@ -225,7 +225,7 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
         return None
     root = Path(str(workspace))
     if not root.is_absolute():
-        root = Path(common_utils.config_root(payload)) / root
+        root = Path(common_utils.base_dir(payload)) / root
     from deepagents.backends import FilesystemBackend
 
     # virtual_mode=True confines the agent to root_dir; absolute paths and ``..``
@@ -309,17 +309,17 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def state_dir(payload: dict[str, Any]) -> Path:
-    config_root = Path(common_utils.config_root(payload)).resolve()
+    base_dir = Path(common_utils.base_dir(payload)).resolve()
     settings = common_utils.settings_payload(payload)
     configured = settings.get("state_dir")
     if configured:
         path = Path(str(configured))
-        return path if path.is_absolute() else config_root / path
+        return path if path.is_absolute() else base_dir / path
     artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
     root = artifacts.get("root") or os.environ.get("FABRIC_ARTIFACTS")
     if root:
         return Path(str(root)).resolve() / ".fabric" / "deepagents"
-    return config_root / "artifacts" / "deepagents" / ".fabric"
+    return base_dir / "artifacts" / "deepagents" / ".fabric"
 
 
 def runtime_state_paths(payload: dict[str, Any], runtime_id: str) -> tuple[Path, Path]:
@@ -507,16 +507,16 @@ async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
             import importlib.util
 
             if importlib.util.find_spec("nemo_relay") is None:
-                raise RuntimeError(
-                    "telemetry is enabled but the 'nemo-relay' package is not installed; "
-                    "install the Relay extra (pip install 'nemo-fabric-adapters-deepagents[relay]')."
+                raise _relay_dependency_error()
+            try:
+                api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
+                from nemo_relay import ScopeType, plugin, scope
+                from nemo_relay.integrations.deepagents import (
+                    NemoRelayDeepAgentsCallbackHandler,
+                    add_nemo_relay_integration,
                 )
-            api_config = common_utils.relay_api_plugin_config(observability.plugin_config)
-            from nemo_relay import ScopeType, plugin, scope
-            from nemo_relay.integrations.deepagents import (
-                NemoRelayDeepAgentsCallbackHandler,
-                add_nemo_relay_integration,
-            )
+            except (ImportError, AttributeError) as exc:
+                raise _relay_dependency_error() from exc
 
             # add_nemo_relay_integration injects the Deep Agents middleware (model/tool
             # calls, skill/subagent config marks) into create_deep_agent's kwargs and the
@@ -643,6 +643,13 @@ class Observability(NamedTuple):
     plugin_config: dict[str, Any]
     emitter: str
     collect_artifacts: bool
+
+
+def _relay_dependency_error() -> RuntimeError:
+    return RuntimeError(
+        "telemetry is enabled but a compatible 'nemo-relay' package is not installed; "
+        "install the Relay extra (pip install 'nemo-fabric-adapters-deepagents[relay]')."
+    )
 
 
 def resolve_observability(

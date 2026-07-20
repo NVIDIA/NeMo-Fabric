@@ -75,6 +75,11 @@ starts the Relay gateway as a supervised sidecar and directs the Codex SDK's
 built-in OpenAI provider through that gateway. The SDK still obtains credentials
 from the selected Codex authentication mode.
 
+Relay-enabled Codex runs require `models.default.provider` to be `openai`.
+The custom `nvidia` provider uses its configured NVIDIA Responses endpoint and
+does not support the built-in provider redirect that Relay requires. Use the
+`nvidia` provider without Relay.
+
 NeMo Fabric supplies Relay configuration to the SDK for only the current request. It
 does not copy the Codex credential store into Relay configuration or persist
 credentials in Relay artifacts.

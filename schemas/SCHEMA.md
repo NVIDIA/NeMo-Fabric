@@ -15,17 +15,16 @@ schema-alignment tests in the same change.
 
 ## Exported Schemas
 
-`fabric schema` exports the current public typed contract.
+The core schema generator exports the current public typed contract.
 
-### Config And Planning
+### Config and Planning
 
-- `agent`: portable base `agent.yaml` config.
-- `profile`: profile config applied over an agent config.
+- `agent`: complete typed `FabricConfig`.
 - `adapter-descriptor`: minimal adapter descriptor consumed by Fabric. Each
   descriptor declares a `contract_version`; Fabric rejects descriptors for
   unsupported adapter contracts during planning.
-- `effective-config`: merged config after profile resolution.
-- `run-plan`: executable plan derived from effective config.
+- `run-plan`: executable plan containing the canonical typed config, absolute
+  base directory, selected adapter, and derived execution metadata.
 
 ### Adapter Invocation
 
@@ -57,16 +56,10 @@ and export them here.
 
 ## How To Maintain
 
-Use the Fabric CLI to regenerate them after intentional contract changes:
+Use the core generator to regenerate them after intentional contract changes:
 
 ```bash
-cargo run -p nemo-fabric-cli -- schema --output-dir schemas
-```
-
-Use the CLI to inspect one schema:
-
-```bash
-cargo run -p nemo-fabric-cli -- schema --name agent
+cargo run -p nemo-fabric-core --example generate-schemas -- schemas
 ```
 
 To add a new schema-backed typed model:
@@ -76,8 +69,7 @@ To add a new schema-backed typed model:
 3. Add a `SchemaName` variant in `crates/fabric-core/src/schema.rs`.
 4. Add the variant to `SchemaName::ALL`, `as_str()`, `parse()`, and
    `generate_schema()`.
-5. Regenerate schemas with `cargo run -p nemo-fabric-cli -- schema --output-dir
-   schemas`.
+5. Regenerate schemas with the command above.
 6. Add the new schema to the exported list above.
 
 Run `cargo test` after regenerating schemas. The snapshot tests compare the

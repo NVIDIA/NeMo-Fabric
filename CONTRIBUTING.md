@@ -20,7 +20,7 @@ build wheels from a source checkout:
 
 ```bash
 just wheels
-uv pip install --find-links dist "nemo-fabric[runtime]"
+uv pip install --find-links dist nemo-fabric
 ```
 
 Adapters are distributed as optional extras. For example, install the Hermes adapter with:
@@ -249,7 +249,7 @@ Valid types:
 Examples:
 
 ```text
-feat: add typed runtime configuration overlays
+feat: add typed runtime diagnostics
 fix: preserve adapter errors in run results
 docs: clarify Hermes adapter installation
 test: cover concurrent Python runtime invocations

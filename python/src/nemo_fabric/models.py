@@ -388,12 +388,6 @@ class TelemetryConfig(FabricBaseModel):
         return self
 
 
-class ProfileRegistryConfig(FabricBaseModel):
-    """Profile discovery config for portable file-backed agent packages."""
-
-    directories: list[str | Path] = Field(default_factory=list)
-
-
 class ToolsConfig(FabricBaseModel):
     """Harness-neutral tool capability configuration."""
 
@@ -413,7 +407,6 @@ class FabricConfig(FabricBaseModel):
     skills: SkillConfig | None = None
     telemetry: TelemetryConfig | None = None
     relay: RelayConfig | dict[str, Any] | None = None
-    profiles: ProfileRegistryConfig | dict[str, Any] | None = None
     tools: ToolsConfig | dict[str, Any] | None = None
 
     @classmethod
@@ -524,23 +517,6 @@ class FabricConfig(FabricBaseModel):
             relay.policy = policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
         self.relay = relay
         return self
-
-
-class FabricProfileConfig(FabricBaseModel):
-    """Typed profile overlay used when a Python caller wants file-style overlays."""
-
-    schema_version: str = "fabric.profile/v1alpha1"
-    name: str = Field(min_length=1)
-    description: str | None = None
-    harness: HarnessConfig | dict[str, Any] | None = None
-    runtime: RuntimeConfig | dict[str, Any] | None = None
-    environment: EnvironmentConfig | dict[str, Any] | None = None
-    models: dict[str, ModelConfig | dict[str, Any]] | None = None
-    mcp: McpConfig | dict[str, Any] | None = None
-    skills: SkillConfig | dict[str, Any] | None = None
-    telemetry: TelemetryConfig | dict[str, Any] | None = None
-    relay: RelayConfig | dict[str, Any] | None = None
-    tools: ToolsConfig | dict[str, Any] | None = None
 
 
 class RunRequest(FabricBaseModel):

@@ -40,15 +40,7 @@ def _plan() -> dict[str, Any]:
     }
     return {
         "agent_name": "demo",
-        "profiles": ["typed"],
-        "effective_config": {
-            "agent_name": "demo",
-            "profiles": ["typed"],
-            "agent_root": ".",
-            "config_path": "agent.yaml",
-            "config_root": ".",
-            "config": config,
-        },
+        "base_dir": ".",
         "config": config,
         "adapter_descriptor": {
             "descriptor": {
@@ -91,14 +83,19 @@ def _config() -> FabricConfig:
     )
 
 
+async def _wait_for(event: threading.Event, timeout: float = 2.0) -> bool:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not event.is_set() and loop.time() < deadline:
+        await asyncio.sleep(0.001)
+    return event.is_set()
+
+
 @pytest.fixture(name="mock_native")
 def mock_native_fixture() -> MagicMock:
     mock_native = MagicMock()
     mock_native.requests = []
-    mock_native.plan.side_effect = lambda path, profiles: json.dumps(_plan())
-    mock_native.plan_config.side_effect = (
-        lambda config_json, profiles_json, base_dir: json.dumps(_plan())
-    )
+    mock_native.plan_config.side_effect = lambda config_json, base_dir: json.dumps(_plan())
     mock_native.start_runtime.return_value = json.dumps(_runtime())
 
     def invoke(plan_json: str, runtime_json: str, request_json: str) -> str:
@@ -109,7 +106,6 @@ def mock_native_fixture() -> MagicMock:
         return json.dumps(
             {
                 "agent_name": "demo",
-                "profiles": ["typed"],
                 "harness": "hermes",
                 "adapter_kind": "python",
                 "adapter_id": "test.fabric.shim",
@@ -158,21 +154,17 @@ def _runtime_wrapper(
     )
 
 
-async def test_start_runtime_supports_path_and_typed_sources(
+async def test_start_runtime_supports_typed_source_and_base_dir(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    path_runtime = await native_client.start_runtime("agent", profiles=["typed"])
     typed_runtime = await native_client.start_runtime(
         _config(),
-        profiles=[],
         base_dir=".",
     )
 
-    assert path_runtime.runtime_id == "runtime-1"
     assert typed_runtime.runtime_id == "runtime-1"
-    assert mock_native.plan.call_args.args == ("agent", ["typed"])
-    assert mock_native.plan_config.called
+    assert mock_native.plan_config.call_args.args[1] == "."
 
 
 async def test_start_runtime_preserves_start_stage(
@@ -182,7 +174,7 @@ async def test_start_runtime_preserves_start_stage(
     mock_native.start_runtime.side_effect = RuntimeError("start failed")
 
     with pytest.raises(FabricRuntimeError, match="start failed") as caught:
-        await native_client.start_runtime("agent")
+        await native_client.start_runtime(_config())
 
     assert caught.value.stage == "start"
 
@@ -193,7 +185,7 @@ async def test_start_runtime_rejects_invalid_overrides_before_start(
 ):
     with pytest.raises(FabricConfigError, match="keys must be strings"):
         await native_client.start_runtime(
-            "agent",
+            _config(),
             overrides={"nested": {1: "invalid"}},  # type: ignore[dict-item]
         )
 
@@ -208,7 +200,7 @@ async def test_start_runtime_rejects_cyclic_overrides_before_start(
     overrides["cycle"] = overrides
 
     with pytest.raises(FabricConfigError, match="JSON-compatible"):
-        await native_client.start_runtime("agent", overrides=overrides)
+        await native_client.start_runtime(_config(), overrides=overrides)
 
     mock_native.start_runtime.assert_not_called()
 
@@ -333,7 +325,7 @@ async def test_stop_rejects_in_flight_turn(
     mock_native.invoke_runtime.side_effect = blocking_invoke
     runtime = _runtime_wrapper(mock_native)
     turn = asyncio.create_task(runtime.invoke(input="hello"))
-    assert await asyncio.to_thread(started.wait, 2)
+    assert await _wait_for(started)
 
     with pytest.raises(FabricStateError, match="in flight"):
         await runtime.stop()
@@ -357,7 +349,7 @@ async def test_concurrent_invokes_are_rejected(
     mock_native.invoke_runtime.side_effect = blocking_invoke
     runtime = _runtime_wrapper(mock_native)
     first = asyncio.create_task(runtime.invoke(input="one"))
-    assert await asyncio.to_thread(started.wait, 2)
+    assert await _wait_for(started)
 
     with pytest.raises(FabricStateError, match="already running"):
         await runtime.invoke(input="two")
@@ -390,7 +382,7 @@ async def test_independent_runtimes_can_invoke_concurrently(
 
     first = asyncio.create_task(first_runtime.invoke(input="one"))
     second = asyncio.create_task(second_runtime.invoke(input="two"))
-    assert await asyncio.to_thread(both_started.wait, 2)
+    assert await _wait_for(both_started)
 
     assert not first.done()
     assert not second.done()
@@ -425,7 +417,7 @@ async def test_cancelling_invoke_waits_for_native_work_and_stops_runtime(
     mock_native.invoke_runtime.side_effect = blocking_invoke
     runtime = _runtime_wrapper(mock_native)
     turn = asyncio.create_task(runtime.invoke(input="hello"))
-    assert await asyncio.to_thread(started.wait, 2)
+    assert await _wait_for(started)
 
     turn.cancel()
     await asyncio.sleep(0)
@@ -455,8 +447,8 @@ async def test_cancelling_start_stops_the_completed_native_runtime(
         return json.dumps(_runtime())
 
     mock_native.start_runtime.side_effect = blocking_start
-    start = asyncio.create_task(native_client.start_runtime("agent"))
-    assert await asyncio.to_thread(started.wait, 2)
+    start = asyncio.create_task(native_client.start_runtime(_config()))
+    assert await _wait_for(started)
 
     start.cancel()
     await asyncio.sleep(0)
@@ -483,8 +475,8 @@ async def test_cancelling_one_shot_run_waits_for_stop(
         return invoke(*args)
 
     mock_native.invoke_runtime.side_effect = blocking_invoke
-    run = asyncio.create_task(native_client.run("agent", input="hello"))
-    assert await asyncio.to_thread(started.wait, 2)
+    run = asyncio.create_task(native_client.run(_config(), input="hello"))
+    assert await _wait_for(started)
 
     run.cancel()
     await asyncio.sleep(0)
@@ -501,13 +493,13 @@ async def test_run_stops_runtime_after_success_and_failure(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    result = await native_client.run("agent", input="hello")
+    result = await native_client.run(_config(), input="hello")
     assert result.status == "succeeded"
     assert mock_native.stop_runtime.call_count == 1
 
     mock_native.invoke_runtime.side_effect = RuntimeError("invoke failed")
     with pytest.raises(FabricRuntimeError, match="invoke failed"):
-        await native_client.run("agent", input="hello")
+        await native_client.run(_config(), input="hello")
     assert mock_native.stop_runtime.call_count == 2
 
 
@@ -524,8 +516,8 @@ async def test_async_lifecycle_methods_resolve_plans(
 
     monkeypatch.setattr(native_client, "plan", record_plan)
 
-    await native_client.run("agent", input="hello")
-    runtime = await native_client.start_runtime("agent")
+    await native_client.run(_config(), input="hello")
+    runtime = await native_client.start_runtime(_config())
     await runtime.stop()
 
     assert len(planning_calls) == 2
@@ -538,7 +530,7 @@ async def test_run_surfaces_cleanup_failure_after_success(
     mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
 
     with pytest.raises(FabricRuntimeError, match="stop failed") as caught:
-        await native_client.run("agent", input="hello")
+        await native_client.run(_config(), input="hello")
 
     assert caught.value.stage == "run"
     assert mock_native.stop_runtime.call_count == 1
@@ -557,4 +549,4 @@ async def test_native_unavailable_uses_typed_error(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(client_mod, "_native", None)
 
     with pytest.raises(FabricNativeUnavailableError, match="native extension"):
-        Fabric().plan("agent")
+        Fabric().plan(_config())

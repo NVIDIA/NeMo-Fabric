@@ -7,11 +7,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Command-line interface for NeMo Fabric."
+description = "Experimentation CLI for NeMo Fabric."
 readme = "README.md"
 
 [[bin]]
-name = "fabric"
+name = "nemo-fabric"
 path = "src/main.rs"
 
 [lints]
@@ -19,6 +19,5 @@ workspace = true
 
 [dependencies]
 clap.workspace = true
-ctrlc.workspace = true
 nemo-fabric-core.workspace = true
 serde_json.workspace = true
