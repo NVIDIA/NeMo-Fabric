@@ -6,10 +6,10 @@ use std::path::PathBuf;
 
 use nemo_fabric_core::{
     ControlLocation, EnvironmentConfig, EnvironmentOwnership, FabricConfig, HarnessConfig,
-    MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext, RunRequest, RuntimeConfig,
-    SkillConfig, resolve_run_plan_from_config, run_plan,
+    MetadataConfig, ResolutionStrategy, ResolveContext, RunRequest, RuntimeConfig, SkillConfig,
+    resolve_run_plan_from_config, run_plan,
 };
-use serde_json::{Map, json};
+use serde_json::Map;
 
 fn build_config() -> FabricConfig {
     FabricConfig {

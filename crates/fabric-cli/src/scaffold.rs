@@ -222,7 +222,13 @@ fn rust_settings(settings: &serde_json::Map<String, Value>) -> String {
         "Map::from_iter([{}])",
         settings
             .iter()
-            .map(|(key, value)| format!("({}.to_string(), json!({}))", rust_string(key), value))
+            .map(|(key, value)| {
+                format!(
+                    "({}.to_string(), serde_json::json!({}))",
+                    rust_string(key),
+                    value
+                )
+            })
             .collect::<Vec<_>>()
             .join(", ")
     )
@@ -242,7 +248,7 @@ fn rust_models(model: Option<&ModelConfig>) -> String {
         .map(|value| format!("Some({value})"))
         .unwrap_or_else(|| "None".to_string());
     format!(
-        "BTreeMap::from_iter([(\"default\".to_string(), ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, api_key_env: {api_key}, settings: {}, extensions: BTreeMap::new() }})])",
+        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, api_key_env: {api_key}, settings: {}, extensions: BTreeMap::new() }})])",
         rust_string(&model.provider),
         rust_string(&model.model),
         rust_settings(&model.settings),
@@ -326,7 +332,7 @@ mod tests {
         let rust = render_rust(&config);
         assert!(rust.contains("temperature: Some(0.2)"));
         assert!(rust.contains(
-            "(\"base_url\".to_string(), json!(\"https://integrate.api.nvidia.com/v1\"))"
+            "(\"base_url\".to_string(), serde_json::json!(\"https://integrate.api.nvidia.com/v1\"))"
         ));
     }
 
