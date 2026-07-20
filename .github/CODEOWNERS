@@ -1,8 +1,0 @@
-# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-
-# Default ownership for repository files.
-* @nvidia/nat-developers
-
-# Attribution files require dependency approver review due to change in version(s)
-ATTRIBUTIONS-*.md @nvidia/nat-dep-approvers

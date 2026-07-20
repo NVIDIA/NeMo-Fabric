@@ -1,31 +1,25 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-/target/
-/.tmp/
-/.venv/
-/.env
-/.env.*
-!.env.example
+# The docs-website branch intentionally tracks only the Fern publish layout and
+# branch-local maintenance files.
+*
 
-__pycache__/
-*.py[cod]
-*.so
+!/.gitignore
+!/README.md
 
-*.egg-info/
-dist/
-build/
-/docs/node_modules/
+!/.github/
+!/.github/workflows/
+!/.github/workflows/publish-fern-docs.yml
 
-examples/*/artifacts/
-tests/fixtures/*/artifacts/
-integrations/harbor/demo/runs/
-integrations/harbor/demo/task/environment/vendor/
+!/fern/
+!/fern/**
 
-.DS_Store
-
-# vscode settings
-.vscode/
-
-# Jupyter notebook checkpoints
-.ipynb_checkpoints/
+# Keep local tooling outputs out of the Fern publish tree.
+**/.DS_Store
+**/.fern/
+**/.next/
+**/node_modules/
+**/dist/
+**/build/
+**/.cache/

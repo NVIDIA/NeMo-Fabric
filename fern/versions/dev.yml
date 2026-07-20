@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+navigation:
+- section: About NeMo Fabric
+  contents:
+  - page: Overview
+    path: ../pages-dev/about-nemo-fabric/overview.mdx
+  - page: Release Notes
+    path: ../pages-dev/about-nemo-fabric/release-notes.mdx
+- section: Getting Started
+  contents:
+  - page: Install
+    path: ../pages-dev/getting-started/install.mdx
+  - page: Quickstart
+    path: ../pages-dev/getting-started/quickstart.mdx
+- section: SDK
+  contents:
+  - page: Python SDK
+    path: ../pages-dev/sdk/python.mdx
+- section: Integrations
+  contents:
+  - page: Codex
+    path: ../pages-dev/integrations/codex.mdx
+  - page: Claude
+    path: ../pages-dev/integrations/claude.mdx
+  - page: Harbor
+    path: ../pages-dev/integrations/harbor.mdx
+- section: Reference
+  contents:
+  - section: API
+    contents:
+    - section: Python Library Reference
+      contents:
+      - page: Overview
+        path: ../pages-dev/reference/api/python-library-reference/index.md
+      - page: Client
+        path: ../pages-dev/reference/api/python-library-reference/nemo_fabric.client.md
+      - page: Runtime
+        path: ../pages-dev/reference/api/python-library-reference/nemo_fabric.runtime.md
+      - page: Models
+        path: ../pages-dev/reference/api/python-library-reference/nemo_fabric.models.md
+      - page: Types
+        path: ../pages-dev/reference/api/python-library-reference/nemo_fabric.types.md
+      - page: Errors
+        path: ../pages-dev/reference/api/python-library-reference/nemo_fabric.errors.md
+    - folder: ../pages-dev/reference/api/rust-library-reference
+      title: Rust Library Reference
+- section: Resources
+  contents:
+  - folder: ../pages-dev/resources/legal
+    title: Legal

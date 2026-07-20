@@ -2,19 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 instances:
-  - url: nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric
-    custom-domain: docs.nvidia.com/nemo/fabric
-    multi-source: true
-
+- url: nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric
+  custom-domain: docs.nvidia.com/nemo/fabric
+  multi-source: true
 title: NVIDIA NeMo Fabric
-
 navbar-links:
-  - type: github
-    value: https://github.com/NVIDIA/NeMo-Fabric
-
+- type: github
+  value: https://github.com/NVIDIA/NeMo-Fabric
 global-theme: nvidia
-
 products:
-  - display-name: "NeMo Fabric"
-    slug: /
-    path: ../docs/index.yml
+- display-name: NeMo Fabric
+  slug: /
+  path: ./versions/dev.yml
+  versions:
+  - display-name: dev
+    path: ./versions/dev.yml
+    slug: dev
+    availability: beta
