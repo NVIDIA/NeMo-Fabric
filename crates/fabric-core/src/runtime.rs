@@ -2992,3 +2992,486 @@ fn now_millis() -> u128 {
         .map(|duration| duration.as_millis())
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use crate::config::{ResolveContext, resolve_run_plan_from_config};
+
+    fn local_host_plan(mode: &str) -> (PathBuf, RunPlan) {
+        local_host_plan_with_relay(mode, false)
+    }
+
+    fn local_host_plan_with_relay(mode: &str, relay: bool) -> (PathBuf, RunPlan) {
+        let root = std::env::temp_dir().join(new_id("fabric-local-host-test"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("adapters/local-host")).expect("create adapters dir");
+        fs::write(
+            root.join("adapters/local-host/fabric-adapter.json"),
+            r#"{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "acme.fabric.local-host",
+  "harness": "local-host-test",
+  "adapter_kind": "python",
+  "runner": {"module": "fake_host"},
+  "telemetry": {
+    "providers": {
+      "relay": {"outputs": ["atif"]}
+    }
+  },
+  "runtime": {
+    "local_host": {
+      "contract_version": "fabric.adapter.lifecycle/v1alpha1"
+    }
+  }
+}"#,
+        )
+        .expect("write adapter descriptor");
+        fs::write(
+            root.join("fake_host.py"),
+            r#"import json
+import os
+import sys
+
+VERSION = "fabric.adapter.lifecycle/v1alpha1"
+MODE = os.environ.get("FABRIC_FAKE_HOST_MODE", "success")
+invocations = 0
+
+def response(operation, *, output=None, error=None):
+    outcome = (
+        {"status": "succeeded", "output": output}
+        if error is None
+        else {"status": "failed", "error": error}
+    )
+    print(json.dumps({
+        "contract_version": VERSION,
+        "operation": operation,
+        "outcome": outcome,
+    }), flush=True)
+
+def failure(stage, code, message):
+    return {
+        "stage": stage,
+        "code": code,
+        "message": message,
+        "retryable": False,
+    }
+
+for line in sys.stdin:
+    message = json.loads(line)
+    operation = message["operation"]
+    if operation == "start":
+        if MODE == "start_failure":
+            print("start diagnostic", file=sys.stderr, flush=True)
+            response("start", error=failure("start", "fake_start", "start rejected"))
+            sys.exit(16)
+        response("start")
+        if MODE == "crash_after_start":
+            print("host crashed intentionally", file=sys.stderr, flush=True)
+            sys.exit(17)
+    elif operation == "invoke":
+        invocations += 1
+        if MODE == "invoke_stderr":
+            print(f"diagnostic-{invocations}", file=sys.stderr, flush=True)
+        if MODE == "invoke_timeout":
+            print("invoke accepted without response", file=sys.stderr, flush=True)
+            continue
+        if MODE == "invoke_failure":
+            response("invoke", error=failure("invoke", "fake_invoke", "invoke rejected"))
+            continue
+        invocation = message["payload"]
+        output = {
+            "host_pid": os.getpid(),
+            "invocation_count": invocations,
+            "input": invocation["request"]["input"],
+            "runtime_id": invocation["runtime_context"]["runtime_id"],
+            "invocation_id": invocation["runtime_context"]["invocation_id"],
+            "request_id": invocation["runtime_context"]["request_id"],
+        }
+        if MODE == "adapter_reported_failure":
+            output.update({
+                "failed": True,
+                "error": {
+                    "code": "fake_adapter_failure",
+                    "message": "adapter rejected the invocation",
+                    "retryable": True,
+                    "metadata": {"source": "fake-host"},
+                },
+            })
+        response("invoke", output=output)
+    elif operation == "stop":
+        if MODE == "stop_failure":
+            response("stop", error=failure("stop", "fake_stop", "stop rejected"))
+            sys.exit(18)
+        response("stop")
+        break
+"#,
+        )
+        .expect("write fake host");
+
+        let mut config_value = serde_json::json!({
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "local-host-test-agent"},
+            "harness": {
+                "adapter_id": "acme.fabric.local-host",
+                "resolution": "preinstalled",
+                "settings": {
+                    "python": "python3",
+                    "cwd": ".",
+                    "env": {"FABRIC_FAKE_HOST_MODE": mode},
+                },
+            },
+            "models": {
+                "default": {
+                    "provider": "test",
+                    "model": "test-model",
+                },
+            },
+            "runtime": {
+                "input_schema": "text",
+                "output_schema": "text",
+                "artifacts": "./artifacts",
+            },
+        });
+        if relay {
+            config_value["telemetry"] = serde_json::json!({
+                "providers": {"relay": {}},
+            });
+            config_value["relay"] = serde_json::json!({
+                "observability": {"atif": {"enabled": true}},
+            });
+        }
+        let config: FabricConfig = serde_json::from_value(config_value).expect("typed config");
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(&root))
+            .expect("resolve local-host plan");
+        (root, plan)
+    }
+
+    fn stopped_agents() -> Vec<String> {
+        TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
+    }
+
+    #[test]
+    fn local_host_reuses_one_process_and_stops_idempotently() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let first =
+            invoke_runtime(&plan, &runtime, RunRequest::text("first")).expect("first invocation");
+        let second =
+            invoke_runtime(&plan, &runtime, RunRequest::text("second")).expect("second invocation");
+
+        assert_eq!(first.output["host_pid"], second.output["host_pid"]);
+        assert_eq!(first.output["invocation_count"], serde_json::json!(1));
+        assert_eq!(second.output["invocation_count"], serde_json::json!(2));
+        assert_eq!(first.output["input"], serde_json::json!("first"));
+        assert_eq!(second.output["input"], serde_json::json!("second"));
+        assert_eq!(first.metadata["host_pid"], second.metadata["host_pid"]);
+        assert_eq!(
+            first.metadata["adapter_runner"],
+            serde_json::json!("persistent_local_host")
+        );
+        let stdout = first
+            .artifacts
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "stdout")
+            .expect("stdout artifact");
+        let captured: Value =
+            serde_json::from_str(&fs::read_to_string(&stdout.path).expect("read stdout artifact"))
+                .expect("parse stdout artifact");
+        assert_eq!(captured, first.output);
+        assert!(
+            first
+                .artifacts
+                .artifacts
+                .iter()
+                .all(|artifact| artifact.name != "stderr")
+        );
+
+        let first_stop = stop_runtime(&plan, &runtime).expect("first stop");
+        let second_stop = stop_runtime(&plan, &runtime).expect("idempotent stop");
+        assert_eq!(first_stop[0].metadata["already_stopped"], false);
+        assert_eq!(second_stop[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_relay_config_is_runtime_scoped() {
+        let (root, plan) = local_host_plan_with_relay("success", true);
+        let runtime = start_runtime(&plan).expect("start local host");
+        let host = local_hosts()
+            .get(&runtime.runtime_id)
+            .cloned()
+            .expect("active local host");
+        let relay_config_path = host
+            .lock()
+            .expect("local host")
+            .relay_config
+            .as_ref()
+            .expect("Relay config")
+            .path
+            .clone();
+        let relay_config: Value = serde_json::from_str(
+            &fs::read_to_string(relay_config_path).expect("read Relay config"),
+        )
+        .expect("parse Relay config");
+
+        assert_eq!(
+            relay_config["fabric"]["runtime_id"],
+            serde_json::json!(runtime.runtime_id)
+        );
+        assert!(relay_config["fabric"].get("invocation_id").is_none());
+        assert!(relay_config["fabric"].get("request_id").is_none());
+
+        let result =
+            invoke_runtime(&plan, &runtime, RunRequest::text("first")).expect("invoke local host");
+        assert_eq!(result.output["runtime_id"], result.runtime_id);
+        assert_eq!(result.output["invocation_id"], result.invocation_id);
+        assert_eq!(result.output["request_id"], result.request_id);
+
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_start_failure_preserves_stage_and_diagnostics() {
+        let (root, plan) = local_host_plan("start_failure");
+
+        let error = start_runtime(&plan).expect_err("start must fail");
+        let message = error.to_string();
+        assert!(message.contains("lifecycle start"), "{message}");
+        assert!(message.contains("fake_start"), "{message}");
+        assert!(message.contains("start diagnostic"), "{message}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_invoke_timeout_evicts_and_terminates_host() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let host = local_hosts()
+            .get(&runtime.runtime_id)
+            .cloned()
+            .expect("active local host");
+        let runtime_dir = host.lock().expect("local host").runtime_dir.clone();
+
+        let error = run_local_host_adapter_with_timeout(
+            &plan,
+            &runtime,
+            RunRequest::text("hang"),
+            Duration::from_millis(100),
+        )
+        .expect_err("unresponsive host must time out");
+
+        assert!(matches!(
+            &error,
+            FabricError::AdapterLifecycleOperation {
+                code,
+                diagnostics,
+                ..
+            } if code == "host_timeout" && diagnostics.contains("invoke accepted without response")
+        ));
+        assert!(!local_hosts().contains_key(&runtime.runtime_id));
+        assert!(
+            host.lock()
+                .expect("local host")
+                .child
+                .try_wait()
+                .expect("inspect timed-out host")
+                .is_some(),
+            "timed-out host process must be terminated"
+        );
+        assert!(!runtime_dir.exists());
+
+        let retry = invoke_runtime(&plan, &runtime, RunRequest::text("retry"))
+            .expect_err("timed-out runtime must remain unavailable");
+        assert!(matches!(
+            retry,
+            FabricError::AdapterLifecycleOperation { code, .. } if code == "host_unavailable"
+        ));
+        let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
+        assert_eq!(stopped[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_timeout_prevents_waiting_invocation_from_reusing_host() {
+        let (root, plan) = local_host_plan("invoke_timeout");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let host = local_hosts()
+            .get(&runtime.runtime_id)
+            .cloned()
+            .expect("active local host");
+        let stderr_path = host.lock().expect("local host").stderr_path.clone();
+
+        let first_plan = plan.clone();
+        let first_runtime = runtime.clone();
+        let first = thread::spawn(move || {
+            run_local_host_adapter_with_timeout(
+                &first_plan,
+                &first_runtime,
+                RunRequest::text("first"),
+                Duration::from_millis(500),
+            )
+        });
+        let accepted_deadline = Instant::now() + Duration::from_secs(2);
+        while !fs::read_to_string(&stderr_path)
+            .expect("read host stderr")
+            .contains("invoke accepted without response")
+        {
+            assert!(
+                Instant::now() < accepted_deadline,
+                "first invocation was not accepted"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let second_plan = plan.clone();
+        let second_runtime = runtime.clone();
+        let second = thread::spawn(move || {
+            run_local_host_adapter_with_timeout(
+                &second_plan,
+                &second_runtime,
+                RunRequest::text("second"),
+                Duration::from_millis(100),
+            )
+        });
+        // The registry, this test, and the first invocation own three host
+        // references. A fourth proves that the second invocation passed the
+        // registry lookup and is waiting for the host mutex.
+        let waiting_deadline = Instant::now() + Duration::from_secs(1);
+        while Arc::strong_count(&host) < 4 {
+            assert!(
+                Instant::now() < waiting_deadline,
+                "second invocation did not acquire the host reference"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let first_error = first
+            .join()
+            .expect("first invocation thread")
+            .expect_err("first invocation must time out");
+        let second_error = second
+            .join()
+            .expect("second invocation thread")
+            .expect_err("waiting invocation must not reuse the timed-out host");
+
+        assert!(matches!(
+            first_error,
+            FabricError::AdapterLifecycleOperation { code, .. } if code == "host_timeout"
+        ));
+        assert!(matches!(
+            second_error,
+            FabricError::AdapterLifecycleOperation { code, .. } if code == "host_crashed"
+        ));
+        assert!(!local_hosts().contains_key(&runtime.runtime_id));
+        let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
+        assert_eq!(stopped[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_captures_each_stderr_delta_once() {
+        let (root, plan) = local_host_plan("invoke_stderr");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let first =
+            invoke_runtime(&plan, &runtime, RunRequest::text("first")).expect("first invocation");
+        let second =
+            invoke_runtime(&plan, &runtime, RunRequest::text("second")).expect("second invocation");
+        let read_stderr = |result: &RunResult| {
+            let artifact = result
+                .artifacts
+                .artifacts
+                .iter()
+                .find(|artifact| artifact.name == "stderr")
+                .expect("stderr artifact");
+            fs::read_to_string(&artifact.path).expect("read stderr artifact")
+        };
+
+        assert_eq!(read_stderr(&first), "diagnostic-1\n");
+        assert_eq!(read_stderr(&second), "diagnostic-2\n");
+        stop_runtime(&plan, &runtime).expect("stop local host");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn run_plan_stops_local_host_after_invoke_failure() {
+        let (root, mut plan) = local_host_plan("invoke_failure");
+        let agent_name = new_id("local-host-invoke-error-agent");
+        plan.agent_name = agent_name.clone();
+        plan.config.metadata.name = agent_name.clone();
+
+        let error = run_plan(&plan, RunRequest::text("fail")).expect_err("invoke must fail");
+        assert!(error.to_string().contains("fake_invoke"), "{error}");
+        assert!(
+            stopped_agents().contains(&agent_name),
+            "run_plan must stop the local host after invocation failure"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_preserves_normalized_adapter_failure() {
+        let (root, plan) = local_host_plan("adapter_reported_failure");
+
+        let result = run_plan(&plan, RunRequest::text("fail")).expect("normalized result");
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(result.output["failed"], true);
+        assert_eq!(
+            result.error,
+            Some(ErrorInfo {
+                stage: ErrorStage::Invoke,
+                code: "fake_adapter_failure".to_string(),
+                message: "adapter rejected the invocation".to_string(),
+                retryable: true,
+                metadata: BTreeMap::from([("source".to_string(), serde_json::json!("fake-host"))]),
+            })
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_crash_never_falls_back_to_per_invocation_execution() {
+        let (root, plan) = local_host_plan("crash_after_start");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let first = invoke_runtime(&plan, &runtime, RunRequest::text("first"))
+            .expect_err("crashed host must reject invocation");
+        let second = invoke_runtime(&plan, &runtime, RunRequest::text("second"))
+            .expect_err("dead runtime must remain unusable");
+        assert!(first.to_string().contains("host_crashed"), "{first}");
+        assert!(second.to_string().contains("host_crashed"), "{second}");
+
+        let stopped = stop_runtime(&plan, &runtime).expect("crashed host cleanup");
+        assert_eq!(stopped[0].metadata["host_crashed"], true);
+        stop_runtime(&plan, &runtime).expect("cleanup remains idempotent");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_stop_failure_still_releases_host() {
+        let (root, plan) = local_host_plan("stop_failure");
+        let runtime = start_runtime(&plan).expect("start local host");
+
+        let error = stop_runtime(&plan, &runtime).expect_err("stop must fail");
+        assert!(error.to_string().contains("fake_stop"), "{error}");
+        let retry = stop_runtime(&plan, &runtime).expect("cleanup retry is idempotent");
+        assert_eq!(retry[0].metadata["already_stopped"], true);
+
+        let _ = fs::remove_dir_all(root);
+    }
+}
