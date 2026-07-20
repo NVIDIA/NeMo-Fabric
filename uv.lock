@@ -2012,6 +2012,7 @@ dev = [
 docs = [
     { name = "beautifulsoup4" },
     { name = "lazydocs" },
+    { name = "pyyaml" },
 ]
 test = [
     { name = "fastapi" },
@@ -2062,6 +2063,7 @@ dev = [
 docs = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "lazydocs", specifier = ">=0.4" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 test = [
     { name = "fastapi", specifier = "~=0.138" },
