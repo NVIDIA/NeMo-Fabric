@@ -1946,6 +1946,9 @@ wheels = [
 name = "nemo-fabric"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "nemo-fabric-runtime" },
+]
 
 [package.optional-dependencies]
 adapters-claude = [
@@ -2006,6 +2009,7 @@ dev = [
 docs = [
     { name = "beautifulsoup4" },
     { name = "lazydocs" },
+    { name = "pyyaml" },
 ]
 test = [
     { name = "fastapi" },
@@ -2030,6 +2034,7 @@ requires-dist = [
     { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'adapters-hermes'", editable = "adapters/hermes" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-runtime", editable = "python" },
     { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.5.0,<0.7" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
@@ -2055,6 +2060,7 @@ dev = [
 docs = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "lazydocs", specifier = ">=0.4" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 test = [
     { name = "fastapi", specifier = "~=0.138" },
@@ -2982,7 +2988,7 @@ name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "six" },
+    { name = "six", marker = "python_full_version < '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
 wheels = [

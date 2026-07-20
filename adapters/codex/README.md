@@ -49,6 +49,14 @@ the SDK runtime. The current real-agent acceptance path validates an existing
 Codex login; it does not yet claim a raw environment variable as a complete
 login flow.
 
+When `models.default.provider` is `nvidia`, the adapter defines a request-scoped
+Codex model provider for the configured NVIDIA Responses endpoint. It reads the
+credential from `api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex
+state under the Fabric artifact root, so the invocation does not depend on or
+modify a user's Codex login. Set the endpoint in
+`models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`; the adapter
+does not assume a default frontier endpoint.
+
 The adapter depends on the Codex SDK, which installs and selects its matching
 app-server runtime. Fabric does not declare the runtime package directly or
 treat it as a user-installed command or adapter descriptor requirement.
@@ -56,7 +64,7 @@ treat it as a user-installed command or adapter descriptor requirement.
 A `codex` command on `PATH` is not selected implicitly. To override the
 SDK-selected runtime intentionally, set
 `harness.settings.codex_bin` to an app-server path that is absolute or relative
-to the Fabric config root. Fabric passes the resolved path through
+to the explicit `base_dir`. Fabric passes the resolved path through
 `CodexConfig.codex_bin`; the SDK remains the execution driver.
 
 ## Execution Model
@@ -75,8 +83,9 @@ return codes, stdout, or stderr.
 
 Use normalized `FabricConfig` fields for portable configuration:
 
-- `models` selects the Codex model. The adapter requires and explicitly selects
-  the built-in `openai` provider.
+- `models` selects the Codex model. The adapter supports the built-in `openai`
+  provider and NVIDIA-hosted Responses-compatible models through the `nvidia`
+  provider.
 - `environment.workspace` sets the working directory.
 - `mcp` maps stdio, HTTP, and streamable HTTP servers into request-scoped Codex
   `mcp_servers` configuration. For stdio, Fabric parses `url` as a command plus
@@ -106,9 +115,8 @@ Codex-specific controls belong in `harness.settings`:
 - `env` for variables explicitly forwarded to the Codex runtime
 - `nemo_relay_command` for the optional external Relay gateway executable
 
-The removed CLI settings `codex_command`, `codex_args`, `codex_profile`,
-`codex_state_dir`, and `skip_git_repo_check` are errors. `model_name` and `cwd`
-must use the normalized model and environment fields.
+Set model selection through `models` and the working directory through
+`environment.workspace`.
 
 The adapter filters the inherited environment. It retains portable OS and
 Codex state variables, the selected model's `api_key_env`, and explicit
@@ -138,6 +146,13 @@ the SDK's supported authentication and host metadata while allowing Relay to
 capture Responses traffic. Fabric does not spoof the Codex CLI identity or fall
 back to CLI execution. Relay routes and observes requests; it does not provide
 OpenAI credentials or change the selected Codex authentication mode.
+
+Relay-enabled Codex runs require `models.default.provider: openai`. The custom
+`nvidia` provider is not supported with Relay because its configured NVIDIA
+Responses base URL bypasses the built-in `openai_base_url` redirect. Run the
+`nvidia` provider without Relay and supply its credential through `api_key_env`
+(default: `NVIDIA_API_KEY`) and its endpoint through
+`models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`.
 
 Relay-enabled runs require the external `nemo-relay` CLI in addition to the
 Python package dependencies. Fabric accepts CLI versions `>=0.6.0,<0.7.0`.

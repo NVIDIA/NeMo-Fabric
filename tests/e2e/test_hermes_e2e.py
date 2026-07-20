@@ -118,7 +118,7 @@ class TestHermesE2E:
         relay_config = json.loads(relay_config_path.read_text(encoding="utf-8"))
         assert relay_config["schema_version"] == "fabric.relay/v1alpha1"
         assert relay_config["relay"]["enabled"] is True
-        assert relay_config["fabric"]["profiles"] == []
+        assert relay_config["fabric"]["agent_name"] == "code-review-agent"
         
     async def test_atof_artifacts(self):
         kinds = {artifact["kind"] for artifact in self.relay_artifacts}

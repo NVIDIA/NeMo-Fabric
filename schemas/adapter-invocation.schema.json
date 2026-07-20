@@ -95,7 +95,7 @@
           "description": "Capabilities mapped into the harness-native surface."
         },
         "routes": {
-          "description": "Routing decisions made while resolving the effective config.",
+          "description": "Routing decisions made while planning the configured capabilities.",
           "items": {
             "$ref": "#/$defs/CapabilityRoute"
           },
@@ -215,47 +215,6 @@
           "type": "string"
         }
       ]
-    },
-    "EffectiveConfig": {
-      "description": "Merged Fabric config after applying selected profiles.",
-      "properties": {
-        "agent_name": {
-          "description": "Stable agent name.",
-          "type": "string"
-        },
-        "agent_root": {
-          "description": "Root used to resolve agent package paths.",
-          "type": "string"
-        },
-        "config": {
-          "$ref": "#/$defs/FabricConfig",
-          "description": "Merged Fabric config with authoring-time profile discovery removed."
-        },
-        "config_path": {
-          "description": "Resolved Fabric config path.",
-          "type": "string"
-        },
-        "config_root": {
-          "description": "Root used to resolve config-local paths.",
-          "type": "string"
-        },
-        "profiles": {
-          "description": "Ordered selected profiles.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "agent_name",
-        "profiles",
-        "agent_root",
-        "config_path",
-        "config_root",
-        "config"
-      ],
-      "type": "object"
     },
     "EnvironmentConfig": {
       "additionalProperties": true,
@@ -417,10 +376,6 @@
           },
           "description": "Model aliases.",
           "type": "object"
-        },
-        "profiles": {
-          "$ref": "#/$defs/ProfileRegistryConfig",
-          "description": "Optional profile discovery config."
         },
         "relay": {
           "anyOf": [
@@ -647,20 +602,6 @@
         "provider",
         "model"
       ],
-      "type": "object"
-    },
-    "ProfileRegistryConfig": {
-      "additionalProperties": true,
-      "description": "Profile discovery config for curated package profiles.",
-      "properties": {
-        "directories": {
-          "description": "Directories searched when a caller selects a profile by name.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
       "type": "object"
     },
     "RelayAtifConfig": {
@@ -1287,7 +1228,7 @@
           "description": "Request payload for the harness."
         },
         "overrides": {
-          "description": "Per-invocation overrides allowed by the resolved profile."
+          "description": "Per-invocation overrides allowed by the resolved config."
         },
         "request_id": {
           "description": "Request id.",
@@ -1404,7 +1345,7 @@
       "description": "Skill capability configuration.",
       "properties": {
         "paths": {
-          "description": "Skill paths relative to the agent root.",
+          "description": "Skill paths resolved relative to the config base directory.",
           "items": {
             "type": "string"
           },
@@ -1531,6 +1472,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Adapter-facing invocation payload.",
   "properties": {
+    "agent_name": {
+      "description": "Stable agent name.",
+      "type": "string"
+    },
+    "base_dir": {
+      "description": "Absolute base directory used to resolve relative Fabric paths.",
+      "type": "string"
+    },
     "capability_plan": {
       "$ref": "#/$defs/CapabilityPlan",
       "default": {
@@ -1548,9 +1497,9 @@
       },
       "description": "Derived capability routing plan for the selected adapter."
     },
-    "effective_config": {
-      "$ref": "#/$defs/EffectiveConfig",
-      "description": "Merged agent config and provenance."
+    "config": {
+      "$ref": "#/$defs/FabricConfig",
+      "description": "Complete typed Fabric config."
     },
     "request": {
       "$ref": "#/$defs/RunRequest",
@@ -1573,7 +1522,9 @@
     }
   },
   "required": [
-    "effective_config",
+    "agent_name",
+    "base_dir",
+    "config",
     "runtime_context",
     "request"
   ],

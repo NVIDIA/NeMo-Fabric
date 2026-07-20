@@ -323,7 +323,8 @@ docs:
     npm ci --prefix docs --ignore-scripts
     PATH="{{ REPO_ROOT }}/.venv/bin:$PATH" bash scripts/generate_api_docs.sh
     uv run --no-sync python scripts/docs/generate_rust_library_reference.py
-    npx --prefix docs --no-install fern check
+    npx --prefix docs --no-install fern check --warnings
+    npx --prefix docs --no-install fern docs broken-links --strict
 
 # Launch Jupyter Lab for the onboarding notebooks under examples/notebooks/.
 # Jupyter is fetched on demand so it stays out of the project lockfile.

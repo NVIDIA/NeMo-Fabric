@@ -1,0 +1,49 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+"""Editable NeMo Fabric code-review application."""
+
+import argparse
+import asyncio
+import json
+from pathlib import Path
+
+from nemo_fabric import EnvironmentConfig
+from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
+from nemo_fabric import HarnessConfig
+from nemo_fabric import MetadataConfig
+from nemo_fabric import ModelConfig
+from nemo_fabric import RuntimeConfig
+
+BASE_DIR = Path(__file__).parent
+
+
+def build_config() -> FabricConfig:
+    """Build the complete editable configuration."""
+
+    config = FabricConfig(
+        metadata=MetadataConfig(name={{AGENT_NAME}}, description={{DESCRIPTION}}),
+        harness=HarnessConfig(
+            adapter_id={{ADAPTER_ID}},
+            resolution="preinstalled",
+            settings={{HARNESS_SETTINGS}},
+        ),
+        models={{MODELS}},
+        runtime=RuntimeConfig(input_schema="text", output_schema="message"),
+        environment=EnvironmentConfig(provider="local", workspace="repo"),
+    )
+    config.add_skill_path("skills/code-review.md")
+    return config
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input", nargs="?", default="Review the workspace")
+    args = parser.parse_args()
+    result = await Fabric().run(build_config(), base_dir=BASE_DIR, input=args.input)
+    print(json.dumps(result.to_mapping(), indent=2))
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

@@ -51,7 +51,7 @@ class FabricError(RuntimeError):
 
 
 class FabricConfigError(FabricError):
-    """Invalid SDK input, request shape, profile stack, or resolved config."""
+    """Invalid SDK input, request shape, factory, or resolved config."""
 
 
 class FabricRuntimeError(FabricError):

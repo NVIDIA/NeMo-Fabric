@@ -12,15 +12,14 @@ telemetry references.
 
 The SDK is config-first. Applications should construct a Pydantic
 `FabricConfig` from their own job, deployment, or evaluation config.
-Portable file formats such as `agent.yaml` remain useful for examples, CI, and
-reproducibility, but the SDK does not require callers to write intermediate
-files before invoking NeMo Fabric.
+Examples, CI jobs, and applications construct the typed config directly and
+can use ordinary Python functions to create variants.
 
 Generated API reference pages remain the source of truth for exact signatures.
 This guide explains how the pieces are intended to fit together.
 
 For installation and a package-backed example, start with the
-[NeMo Fabric overview](/about-nemo-fabric/overview).
+[NeMo Fabric overview](/nemo/fabric/about-nemo-fabric/overview).
 
 ## Start With One Run
 
@@ -97,7 +96,7 @@ Most application code works with four objects:
 | Concept | What It Represents | How Consumers Use It |
 | --- | --- | --- |
 | `FabricConfig` | Typed configuration for the harness, models, runtime, and capabilities. | Construct it from application config before planning or running. |
-| `RunPlan` | The resolved config, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
+| `RunPlan` | The canonical config and path context, selected adapter, and declared capabilities. | Inspect it before starting work when adapter selection or feature support matters. |
 | `Runtime` | The Python object for one logical, stateful harness execution. | Use it to send ordered invocations and stop the execution. Use it as an async context manager for cleanup. |
 | `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, events, artifacts, and correlation IDs. |
 
@@ -151,8 +150,7 @@ Telemetry is enabled by adding entries to `telemetry.providers`; Relay-specific
 settings live in the top-level `relay` block.
 
 For evaluation or deployment variations, use ordinary Python functions and
-copies of the typed config. Supply the final config to NeMo Fabric when the variation
-does not need file-profile merge semantics.
+copies of the typed config. Supply the complete final config to NeMo Fabric.
 
 ```python
 def review_agent_config(base, *, github_mcp: bool, relay: bool):
@@ -193,12 +191,8 @@ The repository's
 uses this pattern for complete Hermes, Codex SDK, Deep Agents,
 environment, MCP, and telemetry variants.
 
-When an in-memory caller needs the same ordered overlay behavior as file-backed
-profiles, construct `FabricProfileConfig` values and pass them through
-`profiles=[...]`. NeMo Fabric does not accept raw profile mappings.
-
-If a config contains relative paths, pass a `base_dir` to `resolve(...)`,
-`plan(...)`, `doctor(...)`, `run(...)`, or `start_runtime(...)`. The base
+If a config contains relative paths, pass a `base_dir` to `plan(...)`,
+`doctor(...)`, `run(...)`, or `start_runtime(...)`. The base
 directory anchors skills, workspaces, artifacts, and other relative paths to
 the caller's package or job layout.
 
@@ -210,10 +204,9 @@ multiple independent runtimes.
 
 | API | Async | Use When | Notes |
 | --- | --- | --- | --- |
-| `Fabric.resolve(config, base_dir=...)` | No | You need the normalized effective config without resolving an adapter. | Does not start a runtime. |
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
-| `Fabric.run(config, input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
+| `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
 | `Fabric.start_runtime(config, ...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
@@ -406,7 +399,7 @@ environment, skills, MCP, telemetry, tools, artifacts, and request context.
 
 Use `harness.settings` for adapter-owned configuration that the selected adapter
 understands. Examples include Hermes-specific launch options, Codex SDK controls,
-or adapter-specific config file locations.
+or adapter-specific launch paths.
 
 Use `metadata` for caller-owned annotations that NeMo Fabric should preserve and echo
 back, but not interpret.
@@ -442,9 +435,8 @@ around that contract.
 ### Schemas And Python Models
 
 The SDK's Pydantic models are maintained against the Rust-generated public
-schemas. Use the schemas for persisted field definitions and the generated API
-reference for exact Python signatures. New application code should prefer
-`FabricConfig` and `RunRequest` for validated SDK inputs.
+schemas. The schemas describe the typed cross-language contracts. Use the
+generated API reference for exact Python signatures.
 
 | Contract | Source |
 | --- | --- |
@@ -460,20 +452,20 @@ reference for exact Python signatures. New application code should prefer
 NeMo Fabric uses explicit contract versions where persisted or independently
 maintained artifacts cross package boundaries:
 
-- `schema_version` identifies portable config documents such as `agent.yaml`
-  and profile files.
+- `schema_version` identifies the typed Fabric config contract transported
+  across SDK and language boundaries.
 - `contract_version` identifies the adapter descriptor contract implemented by
   a `fabric-adapter.json` file.
 - Python and Rust package versions identify the installed SDK/core release.
 
-NeMo Fabric versions top-level persisted documents and independently maintained
-contracts. It does not version each config subsection independently. For
+NeMo Fabric versions top-level typed contracts and independently maintained adapter
+metadata. It does not version each config subsection independently. For
 example, MCP, skills, models, telemetry, and runtime fields evolve under the
 enclosing `schema_version`.
 
 NeMo Fabric validates adapter descriptor contract versions during planning. Package
 semver identifies the installed implementation, but it is not the compatibility
-contract for saved agent packages or independently maintained adapters.
+contract for independently maintained adapters.
 
 ### Config Extensibility
 

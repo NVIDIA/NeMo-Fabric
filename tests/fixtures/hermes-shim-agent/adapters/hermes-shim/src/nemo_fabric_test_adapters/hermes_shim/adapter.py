@@ -26,12 +26,8 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
     return run_selected_mode(payload)
 
 
-def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("effective_config") or {}
-
-
 def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return effective_config(payload).get("config") or {}
+    return payload.get("config") or {}
 
 
 def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:

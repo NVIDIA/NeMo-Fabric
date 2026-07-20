@@ -2,30 +2,22 @@
 title: "Struct Resolve Context"
 sidebar-title: "ResolveContext"
 description: "Source context used when resolving an in-memory Fabric config."
-position: 25
+position: 22
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct ResolveContext &#123;\n    pub agent_root: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_path: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config_root: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct ResolveContext &#123;\n    pub base_dir: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n&#125;"}} /></pre>
 
 Source context used when resolving an in-memory Fabric config.
 
 ## Fields
 
-### `agent_root: PathBuf`
+### `base_dir: PathBuf`
 
-Root used to resolve agent package paths.
-
-### `config_path: PathBuf`
-
-Path recorded as config provenance in the run plan.
-
-### `config_root: PathBuf`
-
-Root used to resolve config-local paths.
+Base directory used to resolve relative Fabric paths.
 
 ## Implementations
 
@@ -33,17 +25,11 @@ Root used to resolve config-local paths.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"struct-resolvecontext\">ResolveContext</a>"}} /></pre>
 
-#### `from_agent_root`
+#### `new`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn from_agent_root(root: impl <a href=\"https://doc.rust-lang.org/1.94.0/core/convert/trait.Into.html\">Into</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;) -&gt; Self"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn new(base_dir: impl <a href=\"https://doc.rust-lang.org/1.94.0/core/convert/trait.Into.html\">Into</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;) -&gt; Self"}} /></pre>
 
-Build a context for an agent package root.
-
-#### `from_config_path`
-
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub fn from_config_path(\n    path: impl <a href=\"https://doc.rust-lang.org/1.94.0/core/convert/trait.Into.html\">Into</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    root: impl <a href=\"https://doc.rust-lang.org/1.94.0/core/convert/trait.Into.html\">Into</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n) -&gt; Self"}} /></pre>
-
-Build a context for a config file and its config root.
+Build a context with an explicit base directory.
 
 ## Trait Implementations
 

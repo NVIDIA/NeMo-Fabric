@@ -81,10 +81,9 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
     skill_path.mkdir(parents=True)
     (skill_path / "SKILL.md").write_text("# Review\n", encoding="utf-8")
     return {
-        "effective_config": {
-            "agent_name": "claude-test",
-            "config_root": str(tmp_path),
-            "config": {
+        "agent_name": "claude-test",
+        "base_dir": str(tmp_path),
+        "config": {
                 "harness": {
                     "adapter_id": "nvidia.fabric.claude",
                     "settings": {
@@ -106,7 +105,6 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                     }
                 },
                 "tools": {"blocked": ["Bash"]},
-            },
         },
         "runtime_context": {
             "runtime_id": "runtime-claude-1",
@@ -332,7 +330,7 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
 
 
 def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
-    claude_payload["effective_config"]["config"]["tools"] = {
+    claude_payload["config"]["tools"] = {
         "blocked": ["Bash", "WebFetch"]
     }
 
@@ -356,7 +354,7 @@ def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
 def test_build_options_rejects_normalized_capabilities_in_harness_settings(
     claude_payload, name, normalized_field
 ):
-    claude_payload["effective_config"]["config"]["harness"]["settings"][name] = []
+    claude_payload["config"]["harness"]["settings"][name] = []
 
     with pytest.raises(
         adapter.AdapterConfigError, match=normalized_field.replace(".", r"\.")
@@ -372,11 +370,88 @@ def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload)
         adapter.build_options(claude_payload, resume=None)
 
 
-def test_selected_model_rejects_unsupported_provider(claude_payload):
-    model = claude_payload["effective_config"]["config"]["models"]["default"]
-    model["provider"] = "nvidia"
+def test_build_options_maps_nvidia_provider_to_claude_gateway_environment(
+    claude_payload,
+):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "aws/anthropic/claude-opus-4-5",
+            "api_key_env": "NVIDIA_API_KEY",
+            "settings": {"base_url": "https://nvidia.example/v1/"},
+        }
+    )
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
 
-    with pytest.raises(adapter.AdapterConfigError, match="provider must be anthropic"):
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.model == "aws/anthropic/claude-opus-4-5"
+    assert options.env["ANTHROPIC_BASE_URL"] == "https://nvidia.example"
+    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
+    assert options.env["ANTHROPIC_AUTH_TOKEN"] == ""
+
+
+def test_build_options_uses_nvidia_provider_endpoint_and_default_credential(
+    claude_payload,
+):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "aws/anthropic/claude-opus-4-5",
+        }
+    )
+    model.pop("api_key_env")
+    claude_payload["config"]["harness"]["settings"].pop("env")
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+    os.environ["NVIDIA_FRONTIER_BASE_URL"] = "https://frontier.example/v1"
+
+    options = adapter.build_options(claude_payload, resume=None)
+
+    assert options.env["ANTHROPIC_BASE_URL"] == "https://frontier.example"
+    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
+
+
+def test_build_options_requires_nvidia_provider_endpoint(claude_payload):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "aws/anthropic/claude-opus-4-5",
+            "api_key_env": "NVIDIA_API_KEY",
+        }
+    )
+    model.pop("settings", None)
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+    os.environ.pop("NVIDIA_FRONTIER_BASE_URL", None)
+
+    with pytest.raises(adapter.AdapterConfigError, match="NVIDIA_FRONTIER_BASE_URL"):
+        adapter.build_options(claude_payload, resume=None)
+
+
+def test_build_options_requires_nvidia_provider_credential(claude_payload):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "aws/anthropic/claude-opus-4-5",
+            "api_key_env": "NVIDIA_API_KEY",
+        }
+    )
+    os.environ.pop("NVIDIA_API_KEY", None)
+
+    with pytest.raises(adapter.AdapterConfigError, match="NVIDIA_API_KEY is required"):
+        adapter.build_options(claude_payload, resume=None)
+
+
+def test_selected_model_rejects_unsupported_provider(claude_payload):
+    model = claude_payload["config"]["models"]["default"]
+    model["provider"] = "openai"
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="provider must be anthropic or nvidia"
+    ):
         adapter.selected_model(claude_payload)
 
 
@@ -842,9 +917,9 @@ def test_run_reports_relay_start_failure_without_raw_diagnostic(
 def test_build_options_forwards_anthropic_auth_environment(
     claude_payload, auth_environment
 ):
-    model = claude_payload["effective_config"]["config"]["models"]["default"]
+    model = claude_payload["config"]["models"]["default"]
     model.pop("api_key_env")
-    settings = claude_payload["effective_config"]["config"]["harness"]["settings"]
+    settings = claude_payload["config"]["harness"]["settings"]
     settings.pop("env")
     for name in ANTHROPIC_AUTH_ENV_NAMES:
         os.environ.pop(name, None)

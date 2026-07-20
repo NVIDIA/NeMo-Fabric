@@ -250,7 +250,7 @@ def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
 
     paths: list[Path] = []
     names: set[str] = set()
-    config_root = Path(common_utils.config_root(payload))
+    config_root = Path(common_utils.base_dir(payload))
     for value in values:
         skill_path = Path(value)
         if not skill_path.is_absolute():
@@ -301,10 +301,10 @@ def resolve_cwd(payload: dict[str, Any]) -> Path:
     environment = _mapping(
         common_utils.environment_payload(payload), name="runtime environment"
     )
-    value = environment.get("workspace") or common_utils.config_root(payload)
+    value = environment.get("workspace") or common_utils.base_dir(payload)
     path = Path(str(value))
     if not path.is_absolute():
-        path = Path(common_utils.config_root(payload)) / path
+        path = Path(common_utils.base_dir(payload)) / path
     return path.resolve()
 
 
@@ -320,16 +320,61 @@ def selected_model(payload: dict[str, Any]) -> str | None:
     value = model_config.get("model")
     if value is None:
         return None
-    if model_config.get("provider") != "openai":
+    provider = model_config.get("provider")
+    if provider not in {"openai", "nvidia"}:
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            "selected model provider must be openai for the Codex adapter",
+            "selected model provider must be openai or nvidia for the Codex adapter",
         )
     if not isinstance(value, str) or not value:
         raise AdapterConfigError(
             "codex_invalid_configuration", "model must be a non-empty string"
         )
-    return value.removeprefix("openai/")
+    return value.removeprefix("openai/") if provider == "openai" else value
+
+
+def selected_model_provider(payload: dict[str, Any]) -> str:
+    return str(_selected_model_config(payload).get("provider") or "openai")
+
+
+def nvidia_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
+    model_config = _selected_model_config(payload)
+    if model_config.get("provider") != "nvidia":
+        return {}
+    api_key_env = model_config.get("api_key_env") or "NVIDIA_API_KEY"
+    if not isinstance(api_key_env, str) or not api_key_env:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "models.default.api_key_env must be a non-empty string",
+        )
+    if not os.environ.get(api_key_env):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            f"{api_key_env} is required for the NVIDIA model provider",
+        )
+    model_settings = _mapping(
+        model_config.get("settings"), name="selected model settings"
+    )
+    base_url = (
+        model_settings.get("base_url")
+        or os.environ.get("NVIDIA_FRONTIER_BASE_URL")
+    )
+    if not isinstance(base_url, str) or not base_url:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "models.default.settings.base_url or NVIDIA_FRONTIER_BASE_URL is required "
+            "for the NVIDIA model provider",
+        )
+    return {
+        "model_providers": {
+            "nvidia": {
+                "name": "NVIDIA",
+                "base_url": base_url.rstrip("/"),
+                "env_key": api_key_env,
+                "wire_api": "responses",
+            }
+        }
+    }
 
 
 def sandbox(payload: dict[str, Any]) -> Sandbox:
@@ -420,6 +465,9 @@ def child_environment(
             "harness.settings.env must contain strings",
         )
     values.update(configured)
+    if selected_model_provider(payload) == "nvidia":
+        codex_home = state_dir(payload) / "nvidia-home"
+        values["CODEX_HOME"] = str(codex_home)
     # The SDK overlays this mapping on the parent environment. An empty
     # originator is still treated as an override by Codex and produces invalid
     # initialize metadata ("/<version>"). Use the official SDK client identity
@@ -435,7 +483,7 @@ def _artifact_root(payload: dict[str, Any]) -> Path:
     root = artifacts.get("root") if isinstance(artifacts, dict) else None
     if root:
         return Path(str(root))
-    return Path(common_utils.config_root(payload)) / "artifacts" / "codex"
+    return Path(common_utils.base_dir(payload)) / "artifacts" / "codex"
 
 
 def state_dir(payload: dict[str, Any]) -> Path:
@@ -595,7 +643,7 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
         )
     try:
         executable = relay_gateway.resolve_relay_command(
-            Path(common_utils.config_root(payload)).resolve(), command
+            Path(common_utils.base_dir(payload)).resolve(), command
         )
     except FileNotFoundError as error:
         raise AdapterRelayError(
@@ -644,6 +692,7 @@ def thread_config(
     """Build request-scoped Codex config without writing a user profile."""
 
     config = native_codex_telemetry_config(payload)
+    _merge_config(config, nvidia_model_provider_config(payload))
     mcp_servers = _native_mcp_servers(payload)
     if mcp_servers:
         config["mcp_servers"] = mcp_servers
@@ -686,7 +735,7 @@ def sdk_config(
     if codex_bin is not None:
         path = Path(codex_bin)
         if not path.is_absolute():
-            path = (Path(common_utils.config_root(payload)) / path).resolve()
+            path = (Path(common_utils.base_dir(payload)) / path).resolve()
         codex_bin = str(path)
     return CodexConfig(
         codex_bin=codex_bin,
@@ -752,6 +801,14 @@ def validate_payload(payload: dict[str, Any]) -> str:
     _personality(payload)
     _reasoning_effort(payload)
     _output_schema(payload)
+    if (
+        common_utils.relay_enabled(payload)
+        and selected_model_provider(payload) != "openai"
+    ):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "NeMo Relay requires the built-in openai model provider",
+        )
     child_environment(payload)
     thread_config(payload, None)
     return fabric_runtime_id
@@ -895,11 +952,19 @@ async def invoke_codex_sdk(
     config = thread_config(payload, relay)
     skill_paths = _native_skill_paths(payload)
     prompt = request_prompt(payload)
-    codex = AsyncCodex(config=sdk_config(payload, relay))
+    client_config = sdk_config(payload, relay)
+    codex: AsyncCodex | None = None
     handle = None
     output: dict[str, Any]
     thread_id: str | None = None
     try:
+        if selected_model_provider(payload) == "nvidia":
+            await asyncio.to_thread(
+                Path(client_config.env["CODEX_HOME"]).mkdir,
+                parents=True,
+                exist_ok=True,
+            )
+        codex = AsyncCodex(config=client_config)
         async with asyncio.timeout(timeout_seconds(payload)):
             await _register_skill_roots(codex, skill_paths)
             common = {
@@ -911,7 +976,7 @@ async def invoke_codex_sdk(
                     settings, "developer_instructions"
                 ),
                 "model": selected_model(payload),
-                "model_provider": "openai",
+                "model_provider": selected_model_provider(payload),
                 "personality": _personality(payload),
                 "sandbox": sandbox(payload),
                 "service_tier": _optional_string(settings, "service_tier"),
@@ -944,12 +1009,13 @@ async def invoke_codex_sdk(
     except (CodexError, RuntimeError, OSError) as error:
         output = sdk_failure(error)
     finally:
-        try:
-            await codex.close()
-        except Exception:
-            output = _failure(
-                "codex_sdk_stop_failed", "Codex SDK runtime failed to stop"
-            )
+        if codex is not None:
+            try:
+                await codex.close()
+            except Exception:
+                output = _failure(
+                    "codex_sdk_stop_failed", "Codex SDK runtime failed to stop"
+                )
     return output, thread_id
 
 

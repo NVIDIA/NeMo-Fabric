@@ -23,13 +23,13 @@ Fabric itself, use the maintainer skills in `.agents/skills/` instead.
 Stay on the public, in-memory contract. These rules keep a consumer integration
 supported and upgrade-safe:
 
-- Import only from the public `nemo_fabric` package. Never import `_native`,
-  `_config_sources`, or any adapter-internal module.
+- Import only from the public `nemo_fabric` package. Never import `_native` or
+  any adapter-internal module.
 - Build configuration as a typed `FabricConfig` in memory and pass it directly to
   Fabric. Create every deployment or evaluation variant with ordinary Python
-  functions and `model_copy(deep=True)`. (A platform integration such as Harbor
-  may bake a config file into a task image at its deployment boundary — that is a
-  deployment mechanic, not the in-memory consumer pattern here.)
+  functions and `model_copy(deep=True)`. A platform integration can serialize
+  the typed config inside a private transient run specification when it crosses
+  a process boundary; that transport is not a public authoring format.
 - Let Fabric own harness control. Do not reimplement start, invoke, or stop
   logic, and do not manage adapter threads, sessions, or processes directly.
 - Treat `runtime_id`, `invocation_id`, and `request_id` as opaque correlation
@@ -47,7 +47,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
 - Fabric is not published on PyPI yet. From a source checkout, `just build-all`
   builds the native extension and installs the SDK. To install into another
   environment, build wheels with `just wheels`, then
-  `uv pip install --find-links <dist_dir> "nemo-fabric[runtime]"` (add the
+  `uv pip install --find-links <dist_dir> nemo-fabric` (add the
   `harbor` extra for the Harbor integration). See the
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx).
 - Select a harness adapter — the `adapter_id` set in `HarnessConfig`, for example
@@ -126,9 +126,9 @@ Pick the smallest lifecycle the consumer needs:
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
 
-The example below shows both lifecycles as a complete, runnable program; the
-shorter async snippets elsewhere in this skill are fragments that assume the same
-async context:
+The lifecycle fragment below shows both forms. It assumes the caller has already
+set `config = to_fabric_config(job)` and chosen `base`, as described in the
+configuration example above:
 
 ```python
 import asyncio
@@ -175,8 +175,6 @@ print(plan.adapter.adapter_id, report.status)
   contents of `harness.settings`: an unknown or misspelled adapter setting still
   passes and is silently ignored unless the adapter reads it, so validate
   settings against the adapter's own docs and your integration tests.
-- Use `resolve(...)` when only the normalized effective config is needed, with
-  no adapter resolution.
 
 ## Consume Results And Handle Errors
 
@@ -230,13 +228,14 @@ result-field and error inventory, and
 - Run the consumer project's own build and test commands. For a source checkout
   of Fabric, `just build-all` rebuilds the native extension and
   `just test-python` runs the Python suite.
-- Confirm no config files were written and no non-public imports were added.
+- Confirm the typed config is passed directly to Fabric and no non-public
+  imports were added.
 
 ## Checklist
 
 - [ ] The consumer config object is translated directly into an in-memory `FabricConfig`.
-- [ ] Only public `nemo_fabric` symbols are imported; no `_native`, `_config_sources`, or adapter internals.
-- [ ] The consumer config is built in memory and passed directly to Fabric, with no intermediate config file.
+- [ ] Only public `nemo_fabric` symbols are imported; no `_native` or adapter internals.
+- [ ] The consumer config is built in memory and passed directly to Fabric.
 - [ ] The right lifecycle is chosen: `run(...)` for one-shot, `start_runtime(...)` with `async with` for multi-turn.
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.
 - [ ] Installation, adapter dependencies, and credentials are owned by the environment, not consumer code.
@@ -250,7 +249,7 @@ result-field and error inventory, and
 Link to these canonical sources instead of duplicating them:
 
 - [Python SDK guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx)
-- [Getting started](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/overview.mdx) and
+- [NeMo Fabric overview](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/about-nemo-fabric/overview.mdx) and
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx)
 - Generated API reference (public API index; the installed `nemo_fabric` type
   stubs are authoritative for exact signatures, fields, and defaults):
@@ -264,9 +263,7 @@ Link to these canonical sources instead of duplicating them:
 - Platform and evaluation-harness integration:
   [examples/harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/harbor) and
   [nemo_fabric.integrations.harbor](https://github.com/NVIDIA/NeMo-Fabric/tree/main/python/src/nemo_fabric/integrations/harbor).
-  Note the difference: Harbor bakes a config into the task image and passes it as
-  a file-backed `fabric_config_path` (YAML) at the container boundary. That is a
-  Harbor deployment mechanic, not the in-memory `FabricConfig` pattern this skill
-  teaches — follow the code-review example for consumer integration code, and
-  treat Harbor as platform context where a config crosses into a task container
-  as a file.
+  Harbor constructs a typed config from explicit agent inputs and transports it
+  inside a private transient run specification at the task-process boundary.
+  Follow the code-review example for consumer integration code; Harbor's
+  transport representation is an internal process-boundary contract.

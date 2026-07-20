@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+docs:
+  - '.github/ci-path-filters.yml'
+  - '.github/workflows/fern-docs.yml'
+  - 'CONTRIBUTING.md'
+  - 'README.md'
+  - 'Cargo.lock'
+  - 'Cargo.toml'
+  - 'crates/fabric-core/**'
+  - 'docs/**'
+  - 'fern/**'
+  - 'justfile'
+  - 'pyproject.toml'
+  - 'python/src/nemo_fabric/**'
+  - 'scripts/generate_api_docs.sh'
+  - 'scripts/docs/**'
+  - 'uv.lock'

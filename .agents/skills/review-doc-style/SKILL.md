@@ -37,7 +37,7 @@ and NVIDIA NeMo Fabric repo conventions.
 - Keep docs aligned with current NeMo Fabric behavior, repo layout, and entry points
 - Apply NVIDIA technical-writing guidance where it improves clarity and consistency without watering down technical precision
 - The full product name is "NVIDIA NeMo Fabric".
-  - The first usage of the name (typically in the title and H1 tag) should use the full product name. 
+  - The first usage of the name (typically in the title and H1 tag) should use the full product name.
   - All other uses of the name can use the shortened form "NeMo Fabric".
   - The only acceptable usage of "fabric" by itself is when referring to the CLI tool, and these references must be surrounded by back-ticks.
 

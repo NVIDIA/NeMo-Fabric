@@ -92,22 +92,6 @@ def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
     )
 
 
-@pytest.fixture(name="file_config_agent_dir_src", scope="session")
-def file_config_agent_dir_src_fixture(repo_root: Path) -> Path:
-    """Return the test-only portable config package."""
-
-    return repo_root / "tests" / "fixtures" / "file-config-agent"
-
-
-@pytest.fixture(name="file_config_agent_dir")
-def file_config_agent_dir_fixture(
-    file_config_agent_dir_src: Path,
-    tmp_path: Path,
-) -> Path:
-    """Create a writable copy for CLI and file-profile tests."""
-
-    return _copy_agent_dir(file_config_agent_dir_src, tmp_path, "file-config-agent")
-
 @pytest.fixture(name="api_server")
 def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
     from _utils.mock_api_server import mock_api_server

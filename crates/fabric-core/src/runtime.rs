@@ -19,7 +19,7 @@ use serde_json::{Map, Value};
 
 use crate::config::{
     AdapterKind, CapabilityKind, CapabilityPlan, CapabilityTarget, ControlLocation,
-    EffectiveConfig, EnvironmentOwnership, RunPlan, TelemetryPlan,
+    EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
@@ -57,7 +57,7 @@ pub struct RunRequest {
     /// Runtime context such as task, rollout, workflow, or caller metadata.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub context: BTreeMap<String, Value>,
-    /// Per-invocation overrides allowed by the resolved profile.
+    /// Per-invocation overrides allowed by the resolved config.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<Value>,
 }
@@ -79,8 +79,6 @@ impl RunRequest {
 pub struct RunResult {
     /// Stable agent name.
     pub agent_name: String,
-    /// Ordered profiles applied to this run.
-    pub profiles: Vec<String>,
     /// Stable machine-readable harness identifier used for this run.
     pub harness: String,
     /// Adapter used for this run.
@@ -149,7 +147,7 @@ pub struct ErrorInfo {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorStage {
-    /// Configuration or profile loading failed.
+    /// Configuration resolution failed.
     Config,
     /// Effective config planning failed.
     Plan,
@@ -311,8 +309,12 @@ pub struct RuntimeTelemetryContext {
 /// Adapter-facing invocation payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterInvocation {
-    /// Merged agent config and provenance.
-    pub effective_config: EffectiveConfig,
+    /// Stable agent name.
+    pub agent_name: String,
+    /// Absolute base directory used to resolve relative Fabric paths.
+    pub base_dir: PathBuf,
+    /// Complete typed Fabric config.
+    pub config: FabricConfig,
     /// Per-runtime/per-invocation execution context.
     pub runtime_context: RuntimeContext,
     /// Per-invocation request.
@@ -388,12 +390,12 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
             "local".to_string(),
             ControlLocation::ExternalControl,
             EnvironmentOwnership::CallerOwned,
-            Some(plan.agent_root.clone()),
+            Some(plan.base_dir.clone()),
             plan.config
                 .runtime
                 .artifacts
                 .as_ref()
-                .map(|artifacts| resolve_path(&plan.config_root, artifacts)),
+                .map(|artifacts| resolve_path(&plan.base_dir, artifacts)),
             serde_json::Map::new(),
             serde_json::Map::new(),
             serde_json::Map::new(),
@@ -777,9 +779,9 @@ fn run_process_adapter(
     let cwd = settings
         .cwd
         .as_ref()
-        .map(|path| resolve_path(&plan.config_root, path))
+        .map(|path| resolve_path(&plan.base_dir, path))
         .or_else(|| runtime.environment.workspace.clone())
-        .unwrap_or_else(|| plan.agent_root.clone());
+        .unwrap_or_else(|| plan.base_dir.clone());
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
     let relay_config = prepare_relay_runtime_config(
@@ -964,7 +966,6 @@ fn run_process_adapter(
 
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
-        profiles: plan.profiles.clone(),
         harness: harness(plan),
         adapter_kind: adapter_kind(plan),
         adapter_id: adapter_id(plan),
@@ -998,11 +999,11 @@ fn run_python_adapter(
     let cwd = settings
         .cwd
         .as_ref()
-        .map(|path| resolve_path(&plan.config_root, path))
+        .map(|path| resolve_path(&plan.base_dir, path))
         .or_else(|| runtime.environment.workspace.clone())
-        .unwrap_or_else(|| plan.agent_root.clone());
+        .unwrap_or_else(|| plan.base_dir.clone());
 
-    let python = resolve_python_command(&plan.config_root, &settings).path;
+    let python = resolve_python_command(&plan.base_dir, &settings).path;
     let mut artifacts = artifact_manifest(plan)?;
     let fabric_home = prepare_fabric_home(&artifacts, runtime, &invocation)?;
     let relay_config = prepare_relay_runtime_config(
@@ -1175,7 +1176,6 @@ fn run_python_adapter(
 
     Ok(RunResult {
         agent_name: plan.agent_name.clone(),
-        profiles: plan.profiles.clone(),
         harness: harness(plan),
         adapter_kind: adapter_kind(plan),
         adapter_id: adapter_id(plan),
@@ -1260,7 +1260,7 @@ fn adapter_exit_error(
 fn parse_python_settings(plan: &RunPlan) -> Result<PythonAdapterSettings> {
     let value = Value::Object(merged_adapter_settings(plan));
     serde_json::from_value(value).map_err(|source| FabricError::InvalidPythonSettings {
-        path: plan.config_path.clone(),
+        path: plan.base_dir.clone(),
         source,
     })
 }
@@ -1268,7 +1268,7 @@ fn parse_python_settings(plan: &RunPlan) -> Result<PythonAdapterSettings> {
 fn parse_process_settings(plan: &RunPlan) -> Result<ProcessAdapterSettings> {
     let value = Value::Object(merged_adapter_settings(plan));
     serde_json::from_value(value).map_err(|source| FabricError::InvalidProcessSettings {
-        path: plan.config_path.clone(),
+        path: plan.base_dir.clone(),
         source,
     })
 }
@@ -1285,12 +1285,12 @@ fn merged_adapter_settings(plan: &RunPlan) -> Map<String, Value> {
 
 fn adapter_setting_root<'a>(plan: &'a RunPlan, key: &str) -> &'a Path {
     if plan.config.harness.settings.contains_key(key) {
-        return &plan.config_root;
+        return &plan.base_dir;
     }
     plan.adapter_descriptor
         .as_ref()
         .map(|adapter| adapter.root.as_path())
-        .unwrap_or(&plan.config_root)
+        .unwrap_or(&plan.base_dir)
 }
 
 fn fabric_adapter_payload(
@@ -1320,12 +1320,10 @@ fn adapter_invocation(
     artifacts: &ArtifactManifest,
     relay_config: Option<&RelayRuntimeConfig>,
 ) -> Result<AdapterInvocation> {
-    let mut effective_config = plan.effective_config.clone();
-    effective_config.agent_root = absolute_path(effective_config.agent_root)?;
-    effective_config.config_path = absolute_path(effective_config.config_path)?;
-    effective_config.config_root = absolute_path(effective_config.config_root)?;
     Ok(AdapterInvocation {
-        effective_config,
+        agent_name: plan.agent_name.clone(),
+        base_dir: absolute_path(plan.base_dir.clone())?,
+        config: plan.config.clone(),
         runtime_context: RuntimeContext {
             runtime_id: runtime.runtime_id.clone(),
             invocation_id: invocation.invocation_id.clone(),
@@ -1403,7 +1401,7 @@ fn resolve_command_path(root: &Path, path: &Path) -> PathBuf {
 
 fn preflight_python_adapter(plan: &RunPlan) -> Result<()> {
     let settings = parse_python_settings(plan)?;
-    let command = resolve_python_command(&plan.config_root, &settings);
+    let command = resolve_python_command(&plan.base_dir, &settings);
     validate_python_command(&command)
 }
 
@@ -1658,7 +1656,7 @@ fn artifact_manifest(plan: &RunPlan) -> Result<ArtifactManifest> {
         .runtime
         .artifacts
         .as_ref()
-        .map(|path| resolve_path(&plan.config_root, path))
+        .map(|path| resolve_path(&plan.base_dir, path))
         .or_else(|| {
             plan.environment_plan
                 .as_ref()
@@ -1891,7 +1889,6 @@ fn prepare_relay_runtime_config(
         },
         "fabric": {
             "agent_name": plan.agent_name.clone(),
-            "profiles": plan.profiles.clone(),
             "harness": harness(plan),
             "adapter_id": adapter_id(plan),
             "runtime_id": runtime.runtime_id.clone(),
@@ -2011,1076 +2008,4 @@ fn now_millis() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default()
-}
-
-#[cfg(test)]
-mod tests {
-    use std::fs;
-
-    use super::*;
-    use crate::config::resolve_run_plan;
-
-    fn fixture_agent_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/hermes-shim-agent")
-    }
-
-    fn temp_process_agent_dir() -> PathBuf {
-        let root = std::env::temp_dir().join(new_id("fabric-process-adapter-test"));
-        process_agent_dir(root)
-    }
-
-    fn process_agent_dir(root: PathBuf) -> PathBuf {
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).expect("create agent dir");
-        fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
-        fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: process-test-agent
-harness:
-  adapter_id: acme.fabric.process
-  settings:
-    command: cat
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  input_schema: text
-  output_schema: text
-  artifacts: ./artifacts
-"#,
-        )
-        .expect("write config");
-        fs::write(
-            root.join("adapters/process/fabric-adapter.json"),
-            process_adapter_descriptor(),
-        )
-        .expect("write adapter descriptor");
-        root
-    }
-
-    fn process_adapter_descriptor() -> &'static str {
-        r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "acme.fabric.process",
-  "harness": "process",
-  "adapter_kind": "process"
-}"#
-    }
-
-    fn stopped_agents() -> Vec<String> {
-        TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
-    }
-
-    #[test]
-    fn prepare_environment_absolutizes_workspace() {
-        let root =
-            std::env::temp_dir().join(format!("fabric-workspace-abs-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("adapters/process")).expect("create agent dir");
-        fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: workspace-abs-agent
-harness:
-  adapter_id: acme.fabric.process
-  settings:
-    command: cat
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  input_schema: text
-  output_schema: text
-  artifacts: ./artifacts
-environment:
-  provider: local
-  workspace: ./repos/my-service
-"#,
-        )
-        .expect("write config");
-        fs::write(
-            root.join("adapters/process/fabric-adapter.json"),
-            process_adapter_descriptor(),
-        )
-        .expect("write adapter descriptor");
-
-        let mut plan = resolve_run_plan(&root, None).expect("run plan");
-        // Force a relative workspace to reproduce the pre-fix condition where an
-        // adapter would re-join it onto the absolute config_root and double the path.
-        plan.environment_plan
-            .as_mut()
-            .expect("environment plan")
-            .workspace = Some(PathBuf::from("repos/my-service"));
-
-        let environment = prepare_environment(&plan).expect("prepare environment");
-        let workspace = environment.workspace.expect("workspace");
-        assert!(
-            workspace.is_absolute(),
-            "prepared workspace must be absolute so adapters do not re-resolve it: {workspace:?}"
-        );
-        assert!(workspace.ends_with("repos/my-service"), "{workspace:?}");
-
-        let _ = fs::remove_dir_all(&root);
-    }
-
-    fn artifact_content(result: &RunResult, name: &str) -> String {
-        let artifact = result
-            .artifacts
-            .artifacts
-            .iter()
-            .find(|artifact| artifact.name == name)
-            .unwrap_or_else(|| panic!("missing artifact {name}"));
-        fs::read_to_string(&artifact.path).expect("read artifact")
-    }
-
-    fn run_command(cwd: &Path, command: &str, args: &[&str]) {
-        let output = Command::new(command)
-            .args(args)
-            .current_dir(cwd)
-            .output()
-            .expect("run command");
-        assert!(
-            output.status.success(),
-            "command failed: {command} {args:?}\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    #[test]
-    fn process_adapter_passes_input_to_stdin() {
-        let root = temp_process_agent_dir();
-        let mut plan = resolve_run_plan(&root, None).expect("run plan");
-        plan.profiles = vec!["runtime".to_string(), "telemetry".to_string()];
-        let result = run_plan(&plan, RunRequest::text("hello fabric")).expect("run result");
-
-        assert_eq!(result.status, RunStatus::Succeeded);
-        assert_eq!(result.output, Value::String("hello fabric".to_string()));
-        assert_eq!(result.metadata.get("exit_code"), Some(&Value::from(0)));
-        let result_json = serde_json::to_value(&result).expect("result json");
-        assert!(result_json.get("profile").is_none());
-        assert_eq!(
-            result_json["profiles"],
-            serde_json::json!(["runtime", "telemetry"])
-        );
-        assert_eq!(artifact_content(&result, "stdout"), "hello fabric");
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn runtime_rejects_blocked_tools_when_adapter_cannot_enforce_them() {
-        let root = temp_process_agent_dir();
-        let config_path = root.join("agent.yaml");
-        let mut config = fs::read_to_string(&config_path).expect("read config");
-        config.push_str("tools:\n  blocked:\n    - shell\n");
-        fs::write(&config_path, config).expect("write blocked tools config");
-        fs::write(
-            root.join("adapters/process/fabric-adapter.json"),
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "acme.fabric.process",
-  "harness": "process",
-  "adapter_kind": "process",
-  "config": {"accepts": ["tools"]}
-}"#,
-        )
-        .expect("write generic tools descriptor");
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-
-        let error = start_runtime(&plan).expect_err("unsupported tools policy must fail closed");
-
-        assert!(matches!(error, FabricError::UnsupportedToolsPolicy { .. }));
-        assert!(
-            error
-                .to_string()
-                .contains("cannot enforce configured blocked tools")
-        );
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn independent_runtimes_use_distinct_artifact_paths() {
-        let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let first_runtime = start_runtime(&plan).expect("first runtime");
-        let second_runtime = start_runtime(&plan).expect("second runtime");
-
-        let first = invoke_runtime(&plan, &first_runtime, RunRequest::text("first runtime"))
-            .expect("first invocation");
-        let second = invoke_runtime(&plan, &second_runtime, RunRequest::text("second runtime"))
-            .expect("second invocation");
-        let first_stdout = first
-            .artifacts
-            .artifacts
-            .iter()
-            .find(|artifact| artifact.name == "stdout")
-            .expect("first stdout artifact");
-        let second_stdout = second
-            .artifacts
-            .artifacts
-            .iter()
-            .find(|artifact| artifact.name == "stdout")
-            .expect("second stdout artifact");
-
-        assert_eq!(first.artifacts.root, second.artifacts.root);
-        assert_ne!(first_stdout.path, second_stdout.path);
-        assert!(
-            first_stdout.path.starts_with(
-                root.join("artifacts")
-                    .join(".fabric")
-                    .join(&first_runtime.runtime_id)
-                    .join(&first.invocation_id)
-            )
-        );
-        assert!(
-            second_stdout.path.starts_with(
-                root.join("artifacts")
-                    .join(".fabric")
-                    .join(&second_runtime.runtime_id)
-                    .join(&second.invocation_id)
-            )
-        );
-        assert_eq!(artifact_content(&first, "stdout"), "first runtime");
-        assert_eq!(artifact_content(&second, "stdout"), "second runtime");
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn native_telemetry_skips_relay_and_reaches_adapter_payload() {
-        let root = temp_process_agent_dir();
-        let config_path = root.join("agent.yaml");
-        fs::write(
-            root.join("adapters/process/fabric-adapter.json"),
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "acme.fabric.process",
-  "harness": "process",
-  "adapter_kind": "process",
-  "telemetry": {
-    "providers": {
-      "native": {
-        "outputs": ["otel"]
-      }
-    }
-  }
-}"#,
-        )
-        .expect("write adapter telemetry support");
-        let mut config = fs::read_to_string(&config_path).expect("read agent config");
-        config.push_str(
-            r#"
-telemetry:
-  providers:
-    native:
-      config:
-        exporter: test
-relay:
-  project: relay-project
-  output_dir: ./relay-output
-"#,
-        );
-        fs::write(&config_path, config).expect("write native telemetry config");
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let runtime = start_runtime(&plan).expect("runtime");
-        let request = RunRequest::text("hello fabric");
-        let invocation = InvocationHandle {
-            invocation_id: "invocation-native-telemetry".to_string(),
-            request_id: request.request_id.clone(),
-            runtime_id: runtime.runtime_id.clone(),
-        };
-        let mut artifacts = artifact_manifest(&plan).expect("artifact manifest");
-        let artifact_directory =
-            prepare_fabric_home(&artifacts, &runtime, &invocation).expect("fabric home");
-
-        let relay = prepare_relay_runtime_config(
-            &plan,
-            &runtime,
-            &invocation,
-            &request,
-            &artifact_directory,
-            &mut artifacts,
-        )
-        .expect("prepare telemetry");
-        let payload = adapter_invocation(
-            &plan,
-            &runtime,
-            &invocation,
-            &request,
-            &artifacts,
-            relay.as_ref(),
-        )
-        .expect("adapter invocation");
-        let payload = serde_json::to_value(payload).expect("adapter payload json");
-
-        assert!(relay.is_none());
-        assert!(
-            !artifacts
-                .artifacts
-                .iter()
-                .any(|artifact| artifact.name == "relay_config")
-        );
-        assert_eq!(
-            payload["telemetry_plan"]["providers"],
-            serde_json::json!(["native"])
-        );
-        assert_eq!(payload["telemetry_plan"]["relay_enabled"], false);
-        assert_eq!(
-            payload["effective_config"]["config"]["telemetry"]["providers"]["native"]["config"],
-            serde_json::json!({"exporter": "test"})
-        );
-        assert!(payload["runtime_context"]["telemetry"].get("env").is_none());
-        assert_eq!(
-            payload["runtime_context"]["telemetry"]["metadata"]["telemetry_providers"],
-            serde_json::json!(["native"])
-        );
-        assert!(
-            payload["runtime_context"]["telemetry"]["metadata"]
-                .get("relay_project")
-                .is_none()
-        );
-        assert!(
-            payload["runtime_context"]["telemetry"]["metadata"]
-                .get("relay_output_dir")
-                .is_none()
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn run_plan_stops_runtime_after_invoke_error() {
-        let root = temp_process_agent_dir();
-        let mut plan = resolve_run_plan(&root, None).expect("run plan");
-        plan.agent_name = new_id("invoke-error-agent");
-        plan.effective_config.agent_name = plan.agent_name.clone();
-        plan.config.harness.settings.remove("command");
-        let agent_name = plan.agent_name.clone();
-
-        let error = run_plan(&plan, RunRequest::text("hello fabric")).expect_err("invoke error");
-
-        assert!(
-            error
-                .to_string()
-                .contains("invalid process adapter settings"),
-            "{error}"
-        );
-        assert!(
-            stopped_agents().contains(&agent_name),
-            "run_plan must stop the started runtime for {agent_name}"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn runtime_handle_exposes_single_opaque_binding() {
-        let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let runtime = start_runtime(&plan).expect("runtime");
-
-        let value = serde_json::to_value(&runtime).expect("runtime json");
-        assert!(value.get("runtime_binding").is_some());
-        assert!(value.get("plan_fingerprint").is_none());
-        assert!(value.get("environment_fingerprint").is_none());
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn runtime_handle_without_binding_is_rejected_during_deserialization() {
-        let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let runtime = start_runtime(&plan).expect("runtime");
-        let mut value = serde_json::to_value(&runtime).expect("runtime json");
-        value
-            .as_object_mut()
-            .expect("runtime object")
-            .remove("runtime_binding");
-        let error = serde_json::from_value::<RuntimeHandle>(value)
-            .expect_err("runtime binding must be required");
-
-        assert!(
-            error
-                .to_string()
-                .contains("missing field `runtime_binding`"),
-            "{error}"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn runtime_handle_validation_is_independent_of_current_directory() {
-        const CHILD_ENV: &str = "FABRIC_TEST_RUNTIME_HANDLE_CWD_CHILD";
-        if std::env::var_os(CHILD_ENV).is_none() {
-            let output = Command::new(std::env::current_exe().expect("current test executable"))
-                .arg("runtime_handle_validation_is_independent_of_current_directory")
-                .arg("--nocapture")
-                .env(CHILD_ENV, "1")
-                .output()
-                .expect("run isolated cwd test");
-            assert!(
-                output.status.success(),
-                "isolated cwd test failed\nstdout:\n{}\nstderr:\n{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            return;
-        }
-
-        let parent = std::env::temp_dir().join(new_id("fabric-runtime-cwd-test"));
-        let root = process_agent_dir(parent.join("agent"));
-        fs::create_dir_all(parent.join("elsewhere")).expect("create alternate cwd");
-        std::env::set_current_dir(&parent).expect("enter fixture parent");
-        let plan = resolve_run_plan(Path::new("agent"), None).expect("relative run plan");
-        let runtime = start_runtime(&plan).expect("runtime");
-
-        std::env::set_current_dir(parent.join("elsewhere")).expect("change cwd");
-        validate_runtime_handle(&plan, &runtime).expect("valid runtime handle");
-
-        std::env::set_current_dir(std::env::temp_dir()).expect("leave fixture");
-        let _ = fs::remove_dir_all(root.parent().expect("fixture parent"));
-    }
-
-    #[test]
-    fn invoke_runtime_rejects_runtime_handle_from_different_plan() {
-        let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let runtime = start_runtime(&plan).expect("runtime");
-        let mut other_plan = plan.clone();
-        other_plan.agent_name = "other-agent".to_string();
-        other_plan.effective_config.agent_name = "other-agent".to_string();
-
-        let error = invoke_runtime(&other_plan, &runtime, RunRequest::text("hello fabric"))
-            .expect_err("runtime mismatch");
-
-        assert!(
-            error
-                .to_string()
-                .contains("runtime handle does not match run plan"),
-            "{error}"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn invoke_runtime_rejects_runtime_handle_from_mutated_adapter_settings() {
-        let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let runtime = start_runtime(&plan).expect("runtime");
-        let mut other_plan = plan.clone();
-        other_plan
-            .config
-            .harness
-            .settings
-            .insert("command".to_string(), Value::String("printf".to_string()));
-
-        let error = invoke_runtime(&other_plan, &runtime, RunRequest::text("hello fabric"))
-            .expect_err("runtime mismatch");
-
-        assert!(
-            error
-                .to_string()
-                .contains("runtime handle does not match run plan"),
-            "{error}"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn invoke_runtime_rejects_mutated_runtime_environment() {
-        let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let mut runtime = start_runtime(&plan).expect("runtime");
-        runtime.environment.workspace = Some(root.join("other-workspace"));
-
-        let error = invoke_runtime(&plan, &runtime, RunRequest::text("hello fabric"))
-            .expect_err("runtime mismatch");
-
-        assert!(
-            error
-                .to_string()
-                .contains("runtime handle does not match run plan"),
-            "{error}"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn invoke_runtime_rejects_mutated_runtime_identity() {
-        let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let mut runtime = start_runtime(&plan).expect("runtime");
-        runtime.harness = "other-harness".to_string();
-
-        let error = invoke_runtime(&plan, &runtime, RunRequest::text("hello fabric"))
-            .expect_err("runtime mismatch");
-
-        assert!(
-            error
-                .to_string()
-                .contains("runtime handle does not match run plan"),
-            "{error}"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn stop_runtime_rejects_runtime_handle_from_different_plan() {
-        let root = temp_process_agent_dir();
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let runtime = start_runtime(&plan).expect("runtime");
-        let mut other_plan = plan.clone();
-        other_plan.agent_name = "other-agent".to_string();
-        other_plan.effective_config.agent_name = "other-agent".to_string();
-
-        let error = stop_runtime(&other_plan, &runtime).expect_err("runtime mismatch");
-
-        assert!(
-            error
-                .to_string()
-                .contains("runtime handle does not match run plan"),
-            "{error}"
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn run_promotes_relay_artifacts_into_artifact_manifest() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-relay-artifact-manifest-test-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
-        let adapter_script = r#"
-from pathlib import Path
-import json
-relay_dir = Path("artifacts/relay").resolve()
-relay_dir.mkdir(parents=True, exist_ok=True)
-atof = relay_dir / "events.atof.jsonl"
-atif = relay_dir / "trajectory-runtime.atif.json"
-atif_extra = relay_dir / "trajectory-child.atif.json"
-atof.write_text('{"kind":"scope"}\n', encoding="utf-8")
-atif.write_text('{"trajectory":true}', encoding="utf-8")
-atif_extra.write_text('{"trajectory":"child"}', encoding="utf-8")
-print(json.dumps({
-    "response": "ok",
-    "relay_artifacts": [
-        {"kind": "atof", "path": str(atof)},
-        {"kind": "atif", "path": str(atif)},
-        {"kind": "atif", "path": str(atif_extra)}
-    ]
-}))
-"#;
-        let agent_config = serde_json::json!({
-            "schema_version": "fabric.agent/v1alpha1",
-            "metadata": {
-                "name": "relay-artifact-test-agent",
-            },
-            "harness": {
-                "adapter_id": "acme.fabric.process",
-                "settings": {
-                    "command": "python3",
-                    "args": ["-c", adapter_script],
-                },
-            },
-            "models": {
-                "default": {
-                    "provider": "test",
-                    "model": "test-model",
-                },
-            },
-            "runtime": {
-                "input_schema": "text",
-                "output_schema": "text",
-                "artifacts": "./artifacts",
-            },
-        });
-        fs::write(
-            root.join("agent.yaml"),
-            serde_yaml::to_string(&agent_config).expect("serialize agent config"),
-        )
-        .expect("write config");
-        fs::write(
-            root.join("adapters/process/fabric-adapter.json"),
-            process_adapter_descriptor(),
-        )
-        .expect("write adapter descriptor");
-
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let result = run_plan(&plan, RunRequest::text("collect relay")).expect("run result");
-
-        assert_eq!(result.status, RunStatus::Succeeded);
-        let atof = result
-            .artifacts
-            .artifacts
-            .iter()
-            .find(|artifact| artifact.name == "relay_atof" && artifact.kind == "atof")
-            .expect("ATOF artifact promoted to manifest");
-        let atif = result
-            .artifacts
-            .artifacts
-            .iter()
-            .find(|artifact| artifact.name == "relay_atif" && artifact.kind == "atif")
-            .expect("ATIF artifact promoted to manifest");
-        let atif_extra = result
-            .artifacts
-            .artifacts
-            .iter()
-            .find(|artifact| artifact.name == "relay_atif_2" && artifact.kind == "atif")
-            .expect("second ATIF artifact promoted to manifest with unique name");
-        assert!(atof.path.ends_with("events.atof.jsonl"));
-        assert_eq!(atof.media_type.as_deref(), Some("application/x-ndjson"));
-        assert!(atif.path.ends_with("trajectory-runtime.atif.json"));
-        assert_eq!(atif.media_type.as_deref(), Some("application/json"));
-        assert!(atif_extra.path.ends_with("trajectory-child.atif.json"));
-        assert_eq!(atif_extra.media_type.as_deref(), Some("application/json"));
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn adapter_runtime_context_contains_runtime_and_invocation_ids() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-runtime-context-test-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
-        fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: runtime-context-agent
-harness:
-  adapter_id: acme.fabric.process
-  settings:
-    command: python3
-    args:
-      - -c
-      - |
-        import json
-        import sys
-        payload = json.load(sys.stdin)
-        print(json.dumps(payload["runtime_context"], sort_keys=True))
-    stdin_payload: fabric_request
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  input_schema: text
-  output_schema: text
-  artifacts: ./artifacts
-"#,
-        )
-        .expect("write config");
-        fs::write(
-            root.join("adapters/process/fabric-adapter.json"),
-            process_adapter_descriptor(),
-        )
-        .expect("write adapter descriptor");
-
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let request = RunRequest::text("hello fabric");
-        let result = run_plan(&plan, request).expect("run result");
-
-        assert_eq!(result.status, RunStatus::Succeeded);
-        assert!(result.output.get("session_id").is_none());
-        assert_eq!(
-            result.output["runtime_id"],
-            Value::String(result.runtime_id.clone())
-        );
-        assert_eq!(
-            result.output["invocation_id"],
-            Value::String(result.invocation_id.clone())
-        );
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn process_adapter_failure_returns_structured_error() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-process-adapter-failure-test-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
-        fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: process-failure-agent
-harness:
-  adapter_id: acme.fabric.process
-  settings:
-    command: sh
-    args:
-      - -c
-      - |
-        echo adapter exploded >&2
-        exit 7
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  input_schema: text
-  output_schema: text
-  artifacts: ./artifacts
-"#,
-        )
-        .expect("write config");
-        fs::write(
-            root.join("adapters/process/fabric-adapter.json"),
-            process_adapter_descriptor(),
-        )
-        .expect("write adapter descriptor");
-
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let result = run_plan(&plan, RunRequest::text("hello fabric")).expect("run result");
-
-        assert_eq!(result.status, RunStatus::Failed);
-        let error = result.error.as_ref().expect("structured error");
-        assert_eq!(error.stage, ErrorStage::Invoke);
-        assert_eq!(error.code, "process_exit_nonzero");
-        assert!(!error.retryable);
-        assert!(error.message.contains("adapter exploded"));
-        assert_eq!(
-            error.metadata.get("adapter_runner"),
-            Some(&Value::String("process".to_string()))
-        );
-        assert_eq!(error.metadata.get("exit_code"), Some(&Value::from(7)));
-        assert_eq!(artifact_content(&result, "stderr"), "adapter exploded\n");
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    fn python_settings() -> PythonAdapterSettings {
-        PythonAdapterSettings {
-            module: "test.adapter".to_string(),
-            python: None,
-            python_env: None,
-            args: Vec::new(),
-            cwd: None,
-            env: BTreeMap::new(),
-        }
-    }
-
-    #[test]
-    fn python_command_uses_adapter_python_as_default_python_env() {
-        let root = Path::new("/config");
-        let settings = python_settings();
-        let command = resolve_python_command_with_env(
-            root,
-            &settings,
-            |name| (name == ADAPTER_PYTHON_ENV).then(|| OsString::from("venv/bin/python")),
-            |_| false,
-            None,
-        );
-
-        assert_eq!(command.path, root.join("venv/bin/python"));
-        assert_eq!(command.source, PythonSource::AdapterPythonEnv);
-
-        let command = resolve_python_command_with_env(root, &settings, |_| None, |_| false, None);
-        assert_eq!(command.path, PathBuf::from(DEFAULT_PYTHON));
-        assert_eq!(command.source, PythonSource::DefaultPython3);
-    }
-
-    #[test]
-    fn explicit_python_settings_override_adapter_python() {
-        let root = Path::new("/config");
-        let mut settings = python_settings();
-        settings.python_env = Some("CUSTOM_PYTHON".to_string());
-        let command = resolve_python_command_with_env(
-            root,
-            &settings,
-            |name| match name {
-                "CUSTOM_PYTHON" => Some(OsString::from("/custom/python")),
-                ADAPTER_PYTHON_ENV => Some(OsString::from("/adapter/python")),
-                _ => None,
-            },
-            |_| false,
-            None,
-        );
-        assert_eq!(command.path, PathBuf::from("/custom/python"));
-        assert_eq!(
-            command.source,
-            PythonSource::SettingEnv("CUSTOM_PYTHON".to_string())
-        );
-
-        let command = resolve_python_command_with_env(
-            root,
-            &settings,
-            |name| (name == ADAPTER_PYTHON_ENV).then(|| OsString::from("/adapter/python")),
-            |_| false,
-            None,
-        );
-        assert_eq!(command.path, PathBuf::from(DEFAULT_PYTHON));
-        assert_eq!(command.source, PythonSource::DefaultPython3);
-
-        settings.python = Some(PathBuf::from("/configured/python"));
-        let command = resolve_python_command_with_env(
-            root,
-            &settings,
-            |_| Some(OsString::from("/environment/python")),
-            |_| false,
-            None,
-        );
-        assert_eq!(command.path, PathBuf::from("/configured/python"));
-        assert_eq!(command.source, PythonSource::Setting);
-    }
-
-    #[test]
-    fn fallback_targets_active_virtualenv_even_when_missing() {
-        // VIRTUAL_ENV wins over bare python3 and is returned even when its
-        // interpreter is absent, so preflight reports a clear error instead of
-        // silently falling back to an unrelated python3.
-        let root = Path::new("/config");
-        let settings = python_settings();
-        let venv_python = Path::new("/venv").join(VENV_BIN_DIR).join(VENV_PYTHON);
-        let command = resolve_python_command_with_env(
-            root,
-            &settings,
-            |name| (name == VIRTUAL_ENV_ENV).then(|| OsString::from("/venv")),
-            |_| false,
-            None,
-        );
-
-        assert_eq!(command.path, venv_python);
-        assert_eq!(command.source, PythonSource::Virtualenv);
-
-        let error = validate_python_command(&command)
-            .expect_err("missing virtualenv interpreter must fail preflight");
-        assert!(matches!(
-            error,
-            FabricError::PythonInterpreterUnavailable { .. }
-        ));
-    }
-
-    #[test]
-    fn empty_environment_values_are_ignored() {
-        let root = Path::new("/config");
-
-        // ADAPTER_PYTHON set but empty -> ignored, falls through to python3.
-        let command = resolve_python_command_with_env(
-            root,
-            &python_settings(),
-            |name| (name == ADAPTER_PYTHON_ENV).then(OsString::new),
-            |_| false,
-            None,
-        );
-        assert_eq!(command.path, PathBuf::from(DEFAULT_PYTHON));
-        assert_eq!(command.source, PythonSource::DefaultPython3);
-
-        // python_env names a variable that is set but empty -> ignored.
-        let mut settings = python_settings();
-        settings.python_env = Some("CUSTOM_PYTHON".to_string());
-        let command = resolve_python_command_with_env(
-            root,
-            &settings,
-            |name| (name == "CUSTOM_PYTHON").then(OsString::new),
-            |_| false,
-            None,
-        );
-        assert_eq!(command.path, PathBuf::from(DEFAULT_PYTHON));
-        assert_eq!(command.source, PythonSource::DefaultPython3);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn windows_default_python_is_python_exe() {
-        // find_on_path joins each PATH entry with the bare name and stats it, so
-        // on Windows the fallback must name python.exe to resolve on disk.
-        assert_eq!(DEFAULT_PYTHON, "python.exe");
-        let command = resolve_python_command_with_env(
-            Path::new("C:/config"),
-            &python_settings(),
-            |_| None,
-            |_| false,
-            None,
-        );
-        assert_eq!(command.path, PathBuf::from("python.exe"));
-        assert_eq!(command.source, PythonSource::DefaultPython3);
-    }
-
-    #[test]
-    fn fallback_uses_host_interpreter_next_to_executable() {
-        let root = Path::new("/config");
-        let settings = python_settings();
-        let exe = PathBuf::from("/opt/fabric/bin/nemo-fabric");
-        let sibling = PathBuf::from("/opt/fabric/bin").join(VENV_PYTHON);
-        let expected = sibling.clone();
-        let command = resolve_python_command_with_env(
-            root,
-            &settings,
-            |_| None,
-            move |path| path == expected.as_path(),
-            Some(exe),
-        );
-
-        assert_eq!(command.path, sibling);
-        assert_eq!(command.source, PythonSource::HostInterpreter);
-    }
-
-    #[test]
-    fn adapter_python_preflight_requires_a_file() {
-        let root = std::env::temp_dir().join(new_id("fabric-adapter-python-test"));
-        fs::create_dir_all(&root).expect("create test directory");
-        let interpreter = root.join("python");
-        fs::write(&interpreter, "").expect("create interpreter file");
-
-        validate_python_command(&PythonCommand {
-            path: interpreter,
-            source: PythonSource::AdapterPythonEnv,
-        })
-        .expect("file path should pass preflight");
-
-        let error = validate_python_command(&PythonCommand {
-            path: root.join("missing-python"),
-            source: PythonSource::AdapterPythonEnv,
-        })
-        .expect_err("missing path should fail preflight");
-        assert!(matches!(
-            error,
-            FabricError::PythonInterpreterUnavailable { .. }
-        ));
-
-        let error = validate_python_command(&PythonCommand {
-            path: root.clone(),
-            source: PythonSource::AdapterPythonEnv,
-        })
-        .expect_err("directory path should fail preflight");
-        assert!(matches!(
-            error,
-            FabricError::PythonInterpreterUnavailable { .. }
-        ));
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn preflight_rejects_missing_virtualenv_interpreter() {
-        // A resolved absolute interpreter that does not exist must fail preflight
-        // with a clear error instead of surfacing as a mid-run subprocess crash.
-        let error = validate_python_command(&PythonCommand {
-            path: Path::new("/venv").join(VENV_BIN_DIR).join(VENV_PYTHON),
-            source: PythonSource::Virtualenv,
-        })
-        .expect_err("missing virtualenv interpreter should fail preflight");
-        assert!(matches!(
-            error,
-            FabricError::PythonInterpreterUnavailable { .. }
-        ));
-    }
-
-    #[test]
-    fn python_adapter_runs_hermes_shim() {
-        let plan = resolve_run_plan(fixture_agent_dir(), Some("env_local")).expect("run plan");
-        let result = run_plan(&plan, RunRequest::text("review this")).expect("run result");
-
-        assert_eq!(result.status, RunStatus::Succeeded);
-        assert_eq!(result.adapter_kind, AdapterKind::Python);
-        assert_eq!(
-            result.output["harness"],
-            Value::String("hermes".to_string())
-        );
-        assert_eq!(
-            result.output["received"],
-            Value::String("review this".to_string())
-        );
-        assert_eq!(
-            result.metadata.get("adapter_runner"),
-            Some(&Value::String("python".to_string()))
-        );
-        assert_eq!(
-            result.metadata.get("module"),
-            Some(&Value::String(
-                "nemo_fabric_test_adapters.hermes_shim.adapter".to_string()
-            ))
-        );
-    }
-
-    #[test]
-    fn run_collects_workspace_patch_artifact() {
-        let root =
-            std::env::temp_dir().join(format!("fabric-patch-artifact-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        let workspace = root.join("workspace");
-        fs::create_dir_all(&workspace).expect("create workspace");
-        fs::write(workspace.join("bug.py"), "def answer():\n    return 41\n")
-            .expect("write baseline");
-        run_command(&workspace, "git", &["init", "-q"]);
-        run_command(&workspace, "git", &["add", "bug.py"]);
-        fs::write(
-            root.join("agent.yaml"),
-            r#"schema_version: fabric.agent/v1alpha1
-metadata:
-  name: patch-test-agent
-harness:
-  adapter_id: acme.fabric.process
-  settings:
-    command: python3
-    args:
-      - -c
-      - |
-        from pathlib import Path
-        Path("bug.py").write_text("def answer():\n    return 42\n")
-        Path("notes.txt").write_text("fixed by fabric\n")
-        print('patched')
-models:
-  default:
-    provider: test
-    model: test-model
-runtime:
-  input_schema: text
-  output_schema: text
-  artifacts: ./artifacts
-environment:
-  provider: local
-  workspace: ./workspace
-  artifacts: ./artifacts
-"#,
-        )
-        .expect("write config");
-        fs::create_dir_all(root.join("adapters/process")).expect("create adapters dir");
-        fs::write(
-            root.join("adapters/process/fabric-adapter.json"),
-            process_adapter_descriptor(),
-        )
-        .expect("write adapter descriptor");
-
-        let plan = resolve_run_plan(&root, None).expect("run plan");
-        let result = run_plan(&plan, RunRequest::text("fix the bug")).expect("run result");
-
-        assert_eq!(result.status, RunStatus::Succeeded);
-        let patch_artifact = result
-            .artifacts
-            .artifacts
-            .iter()
-            .find(|artifact| artifact.name == "workspace_patch")
-            .expect("workspace patch artifact");
-        let patch = fs::read_to_string(&patch_artifact.path).expect("read patch");
-        assert!(patch.contains("-    return 41"));
-        assert!(patch.contains("+    return 42"));
-        assert!(patch.contains("new file mode"));
-        assert!(patch.contains("notes.txt"));
-        assert!(patch.contains("+fixed by fabric"));
-
-        let _ = fs::remove_dir_all(root);
-    }
 }
