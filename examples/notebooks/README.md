@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Onboarding notebooks
 
 A guided, hands-on tour of the NeMo Fabric Python SDK -- the fastest way to
-learn how to configure, run, inspect, and vary an agent.
+learn how to configure, run, inspect, and vary an agent. It's possible to run these workflows in Google Colab with no setup. Click here to open the notebooks in Google Colab [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/NVIDIA/NeMo-Fabric/).
 
 | Notebook | What it covers |
 | --- | --- |

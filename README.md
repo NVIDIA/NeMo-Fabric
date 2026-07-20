@@ -47,7 +47,7 @@ flowchart TB
   Harness -. harness telemetry .-> Relay
 ```
 
-## Quick Start: Hermes Agent
+## Building and Installing
 
 This path installs Fabric, installs Hermes Agent in a separate Python environment,
 and runs one input through the Hermes Agent adapter.
@@ -80,6 +80,8 @@ Install Fabric from the source checkout:
 just build-all
 just wheels
 ```
+
+## Quick Start: Hermes Agent
 
 Install Hermes into its own environment (the nemo-fabric[hermes] extra will install Hermes Agent, and the Hermes Agent adapter but not Fabric itself):
 
@@ -118,6 +120,11 @@ The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
 under `examples/code_review_agent/artifacts/hermes/`. Its complete base
 config and clone-based variants live in
 `examples/code_review_agent/config.py`.
+
+### Next Steps
+- Follow the [Example Notebooks](examples/notebooks/README.md) for a guided tour of the Python SDK.
+- Refer to the [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
+  diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
 
 ## Claude Adapter
 
@@ -184,6 +191,7 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 
 ## More Workflows
 
+- [Example Notebooks](examples/notebooks/README.md) provide a guided tour of the Python SDK.
 - [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
 - [Consumer integration skills](skills/README.md): repository-local coding-agent
