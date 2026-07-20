@@ -57,7 +57,7 @@ This installs a version of [NeMo Relay](https://docs.nvidia.com/nemo/relay) Pyth
 Some adapters, such as Claude and Codex, require the
 [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli) tool instead of the
 NeMo Relay Python library. Refer to the
-[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install.mdx#nemo-relay-cli) install guide for instructions on installing the CLI tool.
+[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
 
 ### Python Versions
 
