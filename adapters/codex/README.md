@@ -102,59 +102,8 @@ The adapter filters the inherited environment. It retains portable OS and
 Codex state variables, the selected model's `api_key_env`, and explicit
 `settings.env` values while clearing unrelated parent-process secrets.
 
-## Relay Observability
+## Relay Integration
 
-Enable Relay through Fabric's normalized telemetry configuration. For each
-Relay-enabled invocation, Fabric:
-
-1. Resolves one external `nemo-relay` executable.
-2. Generates invocation-scoped gateway and plugin configuration.
-3. Starts and health-checks `nemo-relay --config ... --bind ...`.
-4. Redirects the built-in OpenAI provider with request-scoped
-   `openai_base_url` and passes Relay hooks through the Codex SDK's `config`
-   argument.
-5. Interrupts timed-out turns, closes the SDK runtime, and stops the gateway.
-
-The SDK remains the Codex execution driver. Relay is a supervised sidecar and
-hook forwarder; the adapter never invokes a `nemo-relay codex` wrapper. The
-result reports the gateway config, URL, log, and collected Relay artifacts.
-
-Fabric deliberately keeps Codex on its reserved built-in `openai` provider.
-Defining Relay as a custom model-provider alias breaks the Python SDK's
-ChatGPT-authenticated request path. Redirecting only `openai_base_url` preserves
-the SDK's supported authentication and host metadata while allowing Relay to
-capture Responses traffic. Fabric does not spoof the Codex CLI identity or fall
-back to CLI execution. Relay routes and observes requests; it does not provide
-OpenAI credentials or change the selected Codex authentication mode.
-
-Relay-enabled runs require the external `nemo-relay` CLI in addition to the
-Python package dependencies. Fabric accepts CLI versions `>=0.6.0,<0.7.0`.
-Until the request-decoding fix is released, install the tested PR revision:
-
-```bash
-git clone https://github.com/NVIDIA/NeMo-Relay.git nemo-relay
-git -C nemo-relay fetch origin pull/452/head
-git -C nemo-relay checkout --detach 0b02e01ac10d7d678da28830feba0ebf6743a7c0
-cargo install --locked --path nemo-relay/crates/cli
-```
-
-Removal of this temporary source installation is tracked in
-[TODO.md](https://github.com/NVIDIA/NeMo-Fabric/blob/main/TODO.md#nemo-relay-06x-request-decoding-release).
-
-The `nemo-relay` Python package does not install this executable. Refer to the
-[NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)
-for other supported installation methods.
-
-Relay owns HTTP content decoding at the gateway boundary; Fabric does not
-configure Codex request compression. The Relay `0.6.0-alpha.20260716` tag cannot
-recover semantic fields from zstd-compressed SDK requests. Until a later `0.6.x`
-release contains the fix, use the pinned
-[NeMo Relay PR #452](https://github.com/NVIDIA/NeMo-Relay/pull/452) revision
-above.
-
-For Phoenix, native Codex OpenTelemetry targets the OTLP collector at
-`http://localhost:4318/v1/traces` and provides low-level app-server spans.
-Relay OpenInference provides the semantic chain, LLM, and tool hierarchy with
-decoded prompt, response, and token attributes. Prefer Relay OpenInference for
-agent-turn inspection.
+Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the
+[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
 

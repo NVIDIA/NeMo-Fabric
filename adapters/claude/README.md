@@ -51,11 +51,7 @@ Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.do
 for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
 
-Relay-enabled runs also require the external `nemo-relay` CLI. Fabric accepts
-CLI versions `>=0.6.0,<0.7.0`. Install the CLI separately:
-
-```bash
-cargo install nemo-relay-cli
+Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the [NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
 ```
 
 The Python `nemo-relay` package does not install this executable. Refer to the
