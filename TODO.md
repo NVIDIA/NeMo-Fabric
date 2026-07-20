@@ -66,3 +66,22 @@ cleanup validation.
   PyPI in a version the skill can target.
 - **Cleanup:** Replace the source and wheel install steps in the skill with the
   published `pip install "nemo-fabric[...]"` instructions and remove this entry.
+
+# Planned Work
+
+## Example Authoring Skill
+
+- **Status:** Not started
+- **Purpose:** Add a guided workflow for users who need help designing a new
+  example, selecting the closest preset or maintained example, customizing the
+  generated code, and adding documentation and tests.
+- **Boundary:** Keep `nemo-fabric example init` as the deterministic operation
+  for users who already know which example and variant they want to customize.
+  The skill provides authoring judgment and validation around that operation.
+- **Implementation:** Have the skill invoke or reuse `example init` as its
+  starting point, then modify and validate the generated application. Do not
+  create a separate template collection or scaffolding implementation in the
+  skill.
+- **Completion condition:** The skill can guide a user from an example idea to
+  a runnable, documented, and tested Python or Rust example while keeping the
+  CLI scaffold as the single source for generated starter code.

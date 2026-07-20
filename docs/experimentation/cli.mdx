@@ -11,10 +11,10 @@ SPDX-License-Identifier: Apache-2.0 */}
   services should construct `FabricConfig` through a language API directly.
 </Warning>
 
-The command implementation and catalogs live in the Rust `fabric-cli` crate.
-The CLI is installed separately from the `nemo-fabric-runtime` Python SDK so
-each interface can evolve around its own audience without maintaining a bridge
-between them.
+The command implementation, built-in presets, and maintained example
+definitions live in the Rust `fabric-cli` crate.
+The `nemo-fabric` CLI is installed separately from the `nemo-fabric-runtime`
+Python SDK. Installing the Python SDK does not install the CLI.
 
 ## Install the CLI
 
@@ -212,13 +212,12 @@ The CLI has the following boundaries:
 - Every preset and example variant constructs a complete typed `FabricConfig`.
 - Examples reuse preset constructors and one shared workspace and skill asset
   tree; Python and Rust launchers do not duplicate those definitions.
-- Variants do not inherit, merge, or behave like profiles.
-- There is no `--config`, `--profile`, or `--factory` input.
 - Fabric does not discover or persist YAML, TOML, or JSON agent configuration.
-- JSON request payloads and harness-generated files remain valid; they are not
-  Fabric configuration sources.
+- JSON request payloads and harness-generated files are runtime inputs and
+  outputs, not Fabric configuration sources.
 - The CLI is not an application API, scheduler, evaluation framework, or
   production deployment interface.
 
-Current lifecycle commands are `plan`, `doctor`, and `run`. Catalog discovery
-is available through `preset list/show` and `example list/show`.
+Current lifecycle commands are `plan`, `doctor`, and `run`. Use `preset list`
+and `preset show` to discover presets. Use `example list` and `example show` to
+discover examples.
