@@ -135,6 +135,13 @@ capture Responses traffic. Fabric does not spoof the Codex CLI identity or fall
 back to CLI execution. Relay routes and observes requests; it does not provide
 OpenAI credentials or change the selected Codex authentication mode.
 
+Relay-enabled Codex runs require `models.default.provider: openai`. The custom
+`nvidia` provider is not supported with Relay because its configured NVIDIA
+Responses base URL bypasses the built-in `openai_base_url` redirect. Run the
+`nvidia` provider without Relay and supply its credential through `api_key_env`
+(default: `NVIDIA_API_KEY`) and its endpoint through
+`models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`.
+
 Relay-enabled runs require the external `nemo-relay` CLI in addition to the
 Python package dependencies. Fabric accepts CLI versions `>=0.6.0,<0.7.0`.
 Until the request-decoding fix is released, install the tested PR revision:

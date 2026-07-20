@@ -336,6 +336,31 @@ def test_nvidia_provider_uses_responses_api_and_nvidia_credential(
     }
 
 
+def test_nvidia_provider_normalizes_codex_home_creation_failure(
+    codex_payload, mock_codex, monkeypatch
+):
+    model = codex_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "openai/gpt-oss-120b",
+            "api_key_env": "NVIDIA_API_KEY",
+            "settings": {"base_url": "https://nvidia.example/v1"},
+        }
+    )
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+
+    async def fail_to_create_home(*_args, **_kwargs):
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(adapter.asyncio, "to_thread", fail_to_create_home)
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_runtime_unavailable"
+    mock_codex.assert_not_called()
+
+
 def test_nvidia_provider_requires_credential(codex_payload, mock_codex):
     model = codex_payload["config"]["models"]["default"]
     model.update(
@@ -450,6 +475,31 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
         cwd=Path(codex_payload["runtime_context"]["environment"]["workspace"]),
     )
     stop_gateway.assert_called_once_with(process)
+
+
+def test_relay_rejects_nvidia_provider(codex_payload, mock_codex):
+    model = codex_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "openai/gpt-oss-120b",
+            "api_key_env": "NVIDIA_API_KEY",
+            "settings": {"base_url": "https://nvidia.example/v1"},
+        }
+    )
+    codex_payload["telemetry_plan"] = {
+        "providers": ["relay"],
+        "relay_enabled": True,
+    }
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert output["error"]["message"] == (
+        "NeMo Relay requires the built-in openai model provider"
+    )
+    mock_codex.assert_not_called()
 
 
 def test_prepare_relay_reuses_one_resolved_executable(

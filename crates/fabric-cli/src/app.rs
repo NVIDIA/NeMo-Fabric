@@ -6,7 +6,7 @@
 use clap::error::ErrorKind;
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use nemo_fabric_core::{
-    ResolveContext, RunRequest, doctor_plan, resolve_run_plan_from_config, run_plan,
+    ResolveContext, RunRequest, RunStatus, doctor_plan, resolve_run_plan_from_config, run_plan,
 };
 
 use crate::examples;
@@ -250,14 +250,21 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 selected.config().clone(),
                 ResolveContext::new(selected.base_dir()),
             )?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&run_plan(&plan, RunRequest::text(input))?)?
-            );
+            let result = run_plan(&plan, RunRequest::text(input))?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+            require_successful_run(result.status)?;
         }
         Command::Version => println!("{}", nemo_fabric_core::version()),
     }
     Ok(())
+}
+
+fn require_successful_run(status: RunStatus) -> Result<(), String> {
+    match status {
+        RunStatus::Succeeded => Ok(()),
+        RunStatus::Failed => Err("run completed with status failed".to_string()),
+        RunStatus::Cancelled => Err("run completed with status cancelled".to_string()),
+    }
 }
 
 fn select_source(selector: &Selector) -> Result<SelectedSource, Box<dyn std::error::Error>> {
@@ -334,6 +341,13 @@ mod tests {
     #[test]
     fn explicit_help_is_successful() {
         assert!(execute_from(["nemo-fabric", "--help"]).is_ok());
+    }
+
+    #[test]
+    fn failed_and_cancelled_runs_are_errors() {
+        assert!(require_successful_run(RunStatus::Succeeded).is_ok());
+        assert!(require_successful_run(RunStatus::Failed).is_err());
+        assert!(require_successful_run(RunStatus::Cancelled).is_err());
     }
 
     #[test]

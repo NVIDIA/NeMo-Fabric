@@ -673,6 +673,14 @@ def validate_payload(payload: dict[str, Any]) -> str:
     _personality(payload)
     _reasoning_effort(payload)
     _output_schema(payload)
+    if (
+        common_utils.relay_enabled(payload)
+        and selected_model_provider(payload) != "openai"
+    ):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "NeMo Relay requires the built-in openai model provider",
+        )
     child_environment(payload)
     thread_config(payload, None)
     return fabric_runtime_id
@@ -815,17 +823,18 @@ async def invoke_codex_sdk(
     settings = _settings(payload)
     config = thread_config(payload, relay)
     client_config = sdk_config(payload, relay)
-    if selected_model_provider(payload) == "nvidia":
-        await asyncio.to_thread(
-            Path(client_config.env["CODEX_HOME"]).mkdir,
-            parents=True,
-            exist_ok=True,
-        )
-    codex = AsyncCodex(config=client_config)
+    codex: AsyncCodex | None = None
     handle = None
     output: dict[str, Any]
     thread_id: str | None = None
     try:
+        if selected_model_provider(payload) == "nvidia":
+            await asyncio.to_thread(
+                Path(client_config.env["CODEX_HOME"]).mkdir,
+                parents=True,
+                exist_ok=True,
+            )
+        codex = AsyncCodex(config=client_config)
         async with asyncio.timeout(timeout_seconds(payload)):
             common = {
                 "approval_mode": approval_mode(payload),
@@ -869,12 +878,13 @@ async def invoke_codex_sdk(
     except (CodexError, RuntimeError, OSError) as error:
         output = sdk_failure(error)
     finally:
-        try:
-            await codex.close()
-        except Exception:
-            output = _failure(
-                "codex_sdk_stop_failed", "Codex SDK runtime failed to stop"
-            )
+        if codex is not None:
+            try:
+                await codex.close()
+            except Exception:
+                output = _failure(
+                    "codex_sdk_stop_failed", "Codex SDK runtime failed to stop"
+                )
     return output, thread_id
 
 
