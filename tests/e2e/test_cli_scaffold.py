@@ -69,7 +69,6 @@ def test_generated_rust_scaffold_builds(tmp_path: Path):
         [
             "cargo",
             "build",
-            "--offline",
             "--manifest-path",
             str(destination / "Cargo.toml"),
         ],
