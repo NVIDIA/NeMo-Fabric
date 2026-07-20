@@ -141,34 +141,23 @@ authentication, and execution details.
 
 ## Core Concepts
 
-- **Agent source:** callers provide either an agent package path or a typed
-  `FabricConfig`. Start with `examples/code_review_agent/config.py` for the
-  application-facing Pydantic pattern.
-- **Typed config:** SDK consumers can construct configuration in memory without
-  materializing an agent directory. `agent.yaml` remains the portable
-  representation for CLI use, CI, and reproducible runs.
-- **Profiles:** named variations of the base config. Use profiles to vary the
-  harness, model, MCP, tools, skills, telemetry, or environment context without
-  editing `agent.yaml`.
-- **Tools policy:** use top-level `tools.blocked` for harness-neutral blocked
-  tool policy. Names are interpreted by the selected adapter:
+- **Agent source:** callers provide a typed `FabricConfig`. Start with `examples/code_review_agent/config.py` for the application-facing Pydantic pattern.
+- **Tools policy:** call `FabricConfig.block_tools()` to add harness-neutral
+  blocked tool names or toolsets to a typed configuration:
 
-  ```yaml
-  tools:
-    blocked:
-      - browser
-      - shell
+  ```python
+  config.block_tools("browser", "shell")
   ```
 
-  Hermes maps these names to disabled toolsets, Claude maps them to
-  `disallowed_tools`, Deep Agents enforces them with middleware, and adapters
-  without a native deny mechanism route the policy as unsupported.
+  The selected adapter interprets these names: Hermes Agent maps them to disabled
+  toolsets, Claude maps them to `disallowed_tools`, Deep Agents enforces them
+  with middleware, and adapters without a native deny mechanism route the
+  policy as unsupported.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
-  The Hermes adapter lives under `adapters/hermes/`; the Codex SDK
-  adapter lives under `adapters/codex/`; the
+  The Hermes Agent adapter lives under `adapters/hermes/`; the Codex adapter lives under `adapters/codex/`; the
   [Claude adapter](adapters/claude/README.md)
   lives under `adapters/claude/`; the LangChain Deep Agents adapter lives under
-  `adapters/deepagents/`. Harness-specific extensions belong under
+  `adapters/deepagents/`. Harness Agent-specific extensions belong under
   `harness.settings` so the normalized contract can remain stable.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
