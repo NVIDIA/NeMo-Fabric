@@ -15,10 +15,10 @@ navigation:
         slug: install
       - page: Quickstart
         path: ./getting-started/quickstart.mdx
-        slug: quick-start
+        slug: quickstart
       - page: Beginner Tutorial
         path: ./getting-started/beginner-tutorial.mdx
-        slug: quickstart
+        slug: beginner-tutorial
   - section: SDK
     contents:
       - page: Python SDK

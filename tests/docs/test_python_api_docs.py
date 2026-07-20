@@ -110,8 +110,8 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
 
     for destination in (
         "/getting-started/install",
-        "/getting-started/quick-start",
         "/getting-started/quickstart",
+        "/getting-started/beginner-tutorial",
         "/nemo/fabric/sdk/python-sdk",
         "/reference/api/python-library-reference/client",
         "/reference/api/python-library-reference/runtime",
@@ -136,17 +136,17 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
     assert (
         "      - page: Quickstart\n"
         "        path: ./getting-started/quickstart.mdx\n"
-        "        slug: quick-start\n"
+        "        slug: quickstart\n"
     ) in navigation
     assert (
         "      - page: Beginner Tutorial\n"
         "        path: ./getting-started/beginner-tutorial.mdx\n"
-        "        slug: quickstart\n"
+        "        slug: beginner-tutorial\n"
     ) in navigation
     assert (
-        "- **Quickstart** — [Quickstart](/getting-started/quick-start)"
+        "- **Quickstart** — [Quickstart](/getting-started/quickstart)"
     ) in landing
     assert (
-        "- **Beginner Tutorial** — [Beginner Tutorial](/getting-started/quickstart)"
+        "- **Beginner Tutorial** — [Beginner Tutorial](/getting-started/beginner-tutorial)"
     ) in landing
     assert "/nemo/fabric/sdk/python-sdk" in quick_start
