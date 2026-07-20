@@ -405,11 +405,29 @@ def test_build_options_uses_nvidia_provider_endpoint_and_default_credential(
     model.pop("api_key_env")
     claude_payload["config"]["harness"]["settings"].pop("env")
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+    os.environ["NVIDIA_FRONTIER_BASE_URL"] = "https://frontier.example/v1"
 
     options = adapter.build_options(claude_payload, resume=None)
 
-    assert options.env["ANTHROPIC_BASE_URL"] == "https://inference-api.nvidia.com"
+    assert options.env["ANTHROPIC_BASE_URL"] == "https://frontier.example"
     assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
+
+
+def test_build_options_requires_nvidia_provider_endpoint(claude_payload):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "aws/anthropic/claude-opus-4-5",
+            "api_key_env": "NVIDIA_API_KEY",
+        }
+    )
+    model.pop("settings", None)
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+    os.environ.pop("NVIDIA_FRONTIER_BASE_URL", None)
+
+    with pytest.raises(adapter.AdapterConfigError, match="NVIDIA_FRONTIER_BASE_URL"):
+        adapter.build_options(claude_payload, resume=None)
 
 
 def test_build_options_requires_nvidia_provider_credential(claude_payload):

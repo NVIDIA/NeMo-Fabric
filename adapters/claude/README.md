@@ -38,7 +38,9 @@ not store a long-lived API key.
 When `models.default.provider` is `nvidia`, the adapter reads the selected
 model's credential from `api_key_env` (default: `NVIDIA_API_KEY`) and translates
 the configured NVIDIA `/v1` endpoint into the host URL expected by Claude Code.
-This request-scoped mapping does not change the parent environment.
+Set the endpoint in `models.default.settings.base_url` or
+`NVIDIA_FRONTIER_BASE_URL`; the adapter does not assume a default frontier
+endpoint. This request-scoped mapping does not change the parent environment.
 
 The adapter forwards the Anthropic profile and federation environment variables
 that Claude Code and the Claude Agent SDK consume. This includes

@@ -234,12 +234,12 @@ def nvidia_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
     base_url = (
         model_settings.get("base_url")
         or os.environ.get("NVIDIA_FRONTIER_BASE_URL")
-        or "https://inference-api.nvidia.com/v1"
     )
     if not isinstance(base_url, str) or not base_url:
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            "the NVIDIA model provider base URL must be a non-empty string",
+            "models.default.settings.base_url or NVIDIA_FRONTIER_BASE_URL is required "
+            "for the NVIDIA model provider",
         )
     return {
         "model_providers": {
@@ -343,7 +343,6 @@ def child_environment(
     values.update(configured)
     if selected_model_provider(payload) == "nvidia":
         codex_home = state_dir(payload) / "nvidia-home"
-        codex_home.mkdir(parents=True, exist_ok=True)
         values["CODEX_HOME"] = str(codex_home)
     # The SDK overlays this mapping on the parent environment. An empty
     # originator is still treated as an override by Codex and produces invalid
@@ -815,7 +814,10 @@ async def invoke_codex_sdk(
 
     settings = _settings(payload)
     config = thread_config(payload, relay)
-    codex = AsyncCodex(config=sdk_config(payload, relay))
+    client_config = sdk_config(payload, relay)
+    if selected_model_provider(payload) == "nvidia":
+        Path(client_config.env["CODEX_HOME"]).mkdir(parents=True, exist_ok=True)
+    codex = AsyncCodex(config=client_config)
     handle = None
     output: dict[str, Any]
     thread_id: str | None = None

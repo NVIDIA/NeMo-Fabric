@@ -59,7 +59,12 @@ def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def base_dir(payload: dict[str, Any]) -> str:
-    return payload.get("base_dir") or "."
+    value = payload.get("base_dir")
+    if not isinstance(value, str) or not value:
+        raise ValueError("base_dir is required")
+    if not Path(value).is_absolute():
+        raise ValueError("base_dir must be an absolute path")
+    return value
 
 
 def agent_name(payload: dict[str, Any]) -> str:

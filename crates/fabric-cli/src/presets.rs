@@ -15,12 +15,12 @@ use crate::assets::{EmbeddedFile, StagedAssets};
 
 const SCRIPTED_DESCRIPTOR: &str = include_str!("../assets/adapters/scripted/fabric-adapter.json");
 const SCRIPTED_RUNNER: &str = include_str!("../assets/adapters/scripted/run.py");
-const HERMES_DESCRIPTOR: &str = include_str!("../../../adapters/hermes/fabric-adapter.json");
-const CLAUDE_DESCRIPTOR: &str = include_str!("../../../adapters/claude/fabric-adapter.json");
-const CODEX_DESCRIPTOR: &str = include_str!("../../../adapters/codex/fabric-adapter.json");
+const HERMES_DESCRIPTOR: &str = include_str!("../assets/adapters/hermes/fabric-adapter.json");
+const CLAUDE_DESCRIPTOR: &str = include_str!("../assets/adapters/claude/fabric-adapter.json");
+const CODEX_DESCRIPTOR: &str = include_str!("../assets/adapters/codex/fabric-adapter.json");
 const DEEPAGENTS_DESCRIPTOR: &str =
-    include_str!("../../../adapters/deepagents/fabric-adapter.json");
-const NVIDIA_FRONTIER_BASE_URL: &str = "https://inference-api.nvidia.com/v1";
+    include_str!("../assets/adapters/deepagents/fabric-adapter.json");
+const NVIDIA_API_CATALOG_BASE_URL: &str = "https://integrate.api.nvidia.com/v1";
 
 const SCRIPTED_ASSETS: &[EmbeddedFile] = &[
     EmbeddedFile {
@@ -127,14 +127,14 @@ const PRESETS: [Preset; 5] = [
     Preset {
         name: "claude",
         description: "Claude Code with an NVIDIA-hosted Claude model.",
-        required_env: &["NVIDIA_API_KEY"],
+        required_env: &["NVIDIA_API_KEY", "NVIDIA_FRONTIER_BASE_URL"],
         build: claude,
         assets: CLAUDE_ASSETS,
     },
     Preset {
         name: "codex",
         description: "Codex with an NVIDIA-hosted OpenAI model.",
-        required_env: &["NVIDIA_API_KEY"],
+        required_env: &["NVIDIA_API_KEY", "NVIDIA_FRONTIER_BASE_URL"],
         build: codex,
         assets: CODEX_ASSETS,
     },
@@ -164,9 +164,9 @@ fn hermes() -> FabricConfig {
         "nvidia.fabric.hermes",
         Some(model(
             "nvidia",
-            "nvidia/nvidia/Nemotron-3-Nano-30B-A3B",
+            "nvidia/nemotron-3-nano-30b-a3b",
             Some("NVIDIA_API_KEY"),
-            Some(NVIDIA_FRONTIER_BASE_URL),
+            Some(NVIDIA_API_CATALOG_BASE_URL),
         )),
         Map::new(),
     )
@@ -181,7 +181,7 @@ fn claude() -> FabricConfig {
             "nvidia",
             "aws/anthropic/claude-opus-4-5",
             Some("NVIDIA_API_KEY"),
-            Some(NVIDIA_FRONTIER_BASE_URL),
+            std::env::var("NVIDIA_FRONTIER_BASE_URL").ok().as_deref(),
         )),
         Map::from_iter([("permission_mode".to_string(), json!("dontAsk"))]),
     )
@@ -196,7 +196,7 @@ fn codex() -> FabricConfig {
             "nvidia",
             "azure/openai/gpt-5.4",
             Some("NVIDIA_API_KEY"),
-            Some(NVIDIA_FRONTIER_BASE_URL),
+            std::env::var("NVIDIA_FRONTIER_BASE_URL").ok().as_deref(),
         )),
         Map::from_iter([
             ("sandbox".to_string(), json!("workspace-write")),
@@ -220,9 +220,9 @@ fn deepagents() -> FabricConfig {
         "nvidia.fabric.langchain.deepagents",
         Some(model(
             "nvidia",
-            "nvidia/nvidia/Nemotron-3-Nano-30B-A3B",
+            "nvidia/nemotron-3-nano-30b-a3b",
             Some("NVIDIA_API_KEY"),
-            Some(NVIDIA_FRONTIER_BASE_URL),
+            Some(NVIDIA_API_CATALOG_BASE_URL),
         )),
         Map::new(),
     )
@@ -343,11 +343,46 @@ mod tests {
 
             assert_eq!(model.provider, "nvidia");
             assert_eq!(model.api_key_env.as_deref(), Some("NVIDIA_API_KEY"));
+            assert!(preset.required_env.contains(&"NVIDIA_API_KEY"));
+        }
+
+        for name in ["hermes", "deepagents"] {
+            let config = find(name).expect("catalog preset").config();
+            let model = config.models.get("default").expect("default model");
             assert_eq!(
                 model.settings.get("base_url").and_then(Value::as_str),
-                Some(NVIDIA_FRONTIER_BASE_URL)
+                Some(NVIDIA_API_CATALOG_BASE_URL)
             );
-            assert!(preset.required_env.contains(&"NVIDIA_API_KEY"));
+        }
+
+        for name in ["claude", "codex"] {
+            assert!(
+                find(name)
+                    .expect("frontier preset")
+                    .required_env
+                    .contains(&"NVIDIA_FRONTIER_BASE_URL")
+            );
+        }
+    }
+
+    #[test]
+    fn packaged_descriptors_match_repository_adapters() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repository_adapters = manifest_dir.join("../../adapters");
+        if !repository_adapters.is_dir() {
+            return;
+        }
+
+        for (name, embedded) in [
+            ("hermes", HERMES_DESCRIPTOR),
+            ("claude", CLAUDE_DESCRIPTOR),
+            ("codex", CODEX_DESCRIPTOR),
+            ("deepagents", DEEPAGENTS_DESCRIPTOR),
+        ] {
+            let canonical =
+                std::fs::read_to_string(repository_adapters.join(name).join("fabric-adapter.json"))
+                    .expect("read repository adapter descriptor");
+            assert_eq!(embedded, canonical, "{name} descriptor drifted");
         }
     }
 }

@@ -168,9 +168,7 @@ where
         Err(error)
             if matches!(
                 error.kind(),
-                ErrorKind::DisplayHelp
-                    | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
-                    | ErrorKind::DisplayVersion
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
             ) =>
         {
             error.print().map_err(|error| error.to_string())?;
@@ -327,6 +325,16 @@ mod tests {
     use clap::Parser;
 
     use super::*;
+
+    #[test]
+    fn missing_subcommand_is_an_error() {
+        assert!(execute_from(["nemo-fabric"]).is_err());
+    }
+
+    #[test]
+    fn explicit_help_is_successful() {
+        assert!(execute_from(["nemo-fabric", "--help"]).is_ok());
+    }
 
     #[test]
     fn parses_preset_plan() {

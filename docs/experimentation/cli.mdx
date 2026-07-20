@@ -64,25 +64,36 @@ harness. Use the credential-free `scripted` preset to verify the CLI by itself.
 Presets are complete, embedded `FabricConfig` values intended for quick
 experiments:
 
-| Preset | Harness | Default model | Credential |
+| Preset | Harness | Default model | Endpoint |
 | --- | --- | --- | --- |
 | `scripted` | Deterministic test adapter | None | None |
-| `hermes` | Hermes Agent | `nvidia/nvidia/Nemotron-3-Nano-30B-A3B` | `NVIDIA_API_KEY` |
-| `claude` | Claude Code | `aws/anthropic/claude-opus-4-5` | `NVIDIA_API_KEY` |
-| `codex` | Codex | `azure/openai/gpt-5.4` | `NVIDIA_API_KEY` |
-| `deepagents` | LangChain Deep Agents | `nvidia/nvidia/Nemotron-3-Nano-30B-A3B` | `NVIDIA_API_KEY` |
+| `hermes` | Hermes Agent | `nvidia/nemotron-3-nano-30b-a3b` | NVIDIA API Catalog |
+| `claude` | Claude Code | `aws/anthropic/claude-opus-4-5` | `NVIDIA_FRONTIER_BASE_URL` |
+| `codex` | Codex | `azure/openai/gpt-5.4` | `NVIDIA_FRONTIER_BASE_URL` |
+| `deepagents` | LangChain Deep Agents | `nvidia/nemotron-3-nano-30b-a3b` | NVIDIA API Catalog |
 
 The `scripted` preset does not call a model. It returns a deterministic response
 through the same Fabric runtime and adapter contract, which makes it useful for
 checking CLI installation, request flow, and result formatting without network
 access or credentials.
 
-The four external-harness presets use the NVIDIA inference endpoint. Export one
-credential before running them:
+The four external-harness presets use `NVIDIA_API_KEY`. Hermes and Deep Agents
+target the public NVIDIA API Catalog at `https://integrate.api.nvidia.com/v1`.
+Export the credential before running them:
 
 ```bash
 export NVIDIA_API_KEY="..."
 ```
+
+Claude and Codex require the base URL for an NVIDIA endpoint that serves the
+selected frontier model and supports the harness protocol. Set it explicitly:
+
+```bash
+export NVIDIA_FRONTIER_BASE_URL="https://your-frontier-endpoint.example/v1"
+```
+
+Fabric does not provide a default frontier URL because the correct endpoint
+depends on the model and the user's access.
 
 List the complete configurations maintained by the CLI:
 

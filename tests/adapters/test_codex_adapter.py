@@ -351,6 +351,28 @@ def test_nvidia_provider_requires_credential(codex_payload, mock_codex):
 
     assert output["error"]["code"] == "codex_invalid_configuration"
     assert "NVIDIA_API_KEY is required" in output["error"]["message"]
+    assert not (adapter.state_dir(codex_payload) / "nvidia-home").exists()
+    mock_codex.assert_not_called()
+
+
+def test_nvidia_provider_requires_endpoint(codex_payload, mock_codex):
+    model = codex_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "nvidia",
+            "model": "openai/gpt-oss-120b",
+            "api_key_env": "NVIDIA_API_KEY",
+        }
+    )
+    model.pop("settings", None)
+    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+    os.environ.pop("NVIDIA_FRONTIER_BASE_URL", None)
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert "NVIDIA_FRONTIER_BASE_URL" in output["error"]["message"]
+    assert not (adapter.state_dir(codex_payload) / "nvidia-home").exists()
     mock_codex.assert_not_called()
 
 

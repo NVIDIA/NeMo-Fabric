@@ -178,6 +178,12 @@ def test_payload_accessors_use_canonical_plan_fields():
     assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
 
 
+@pytest.mark.parametrize("value", [None, "", "relative/path"])
+def test_base_dir_requires_an_absolute_path(value):
+    with pytest.raises(ValueError, match="base_dir"):
+        common_utils.base_dir({"base_dir": value})
+
+
 def test_load_payload_reads_fabric_invocation(tmp_path: Path):
     invocation_path = tmp_path / "invocation.json"
     invocation_path.write_text(

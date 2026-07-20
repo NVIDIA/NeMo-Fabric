@@ -17,7 +17,7 @@ Native Python client for resolving and running NeMo Fabric agents.
 ## <kbd>class</kbd> `Fabric`
 Primary Python entrypoint for NeMo Fabric.
 
-Every lifecycle method accepts a complete, typed ``FabricConfig`` plus an optional ``base_dir`` used to resolve relative paths. Compose variants in Python before calling the SDK. All inspection and execution APIs return typed, read-only mapping models.
+Every lifecycle method accepts a complete, typed ``FabricConfig`` plus an optional ``base_dir`` used to resolve relative paths. Compose variants in Python before calling the SDK. The ``doctor()``, ``plan()``, and ``run()`` results are typed, read-only mapping models. ``start_runtime()`` returns an active ``Runtime`` handle.
 
 ``Fabric`` uses the native Rust extension. SDK calls raise ``FabricNativeUnavailableError`` when the native extension is not installed.
 

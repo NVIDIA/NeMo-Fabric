@@ -92,7 +92,9 @@ fn language_files(language: Language, config: &FabricConfig, example: &str) -> V
         ),
         Language::Rust => (
             "Cargo.toml",
-            RUST_PROJECT.replace("{{PACKAGE}}", &package_name(example)),
+            RUST_PROJECT
+                .replace("{{PACKAGE}}", &package_name(example))
+                .replace("{{NEMO_FABRIC_VERSION}}", env!("CARGO_PKG_VERSION")),
             "src/main.rs",
             render_rust(config),
         ),
@@ -147,15 +149,20 @@ fn python_models(model: Option<&ModelConfig>) -> String {
     let Some(model) = model else {
         return "{}".to_string();
     };
+    let temperature = model
+        .temperature
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "None".to_string());
     format!(
-        "{{\"default\": ModelConfig(provider={}, model={}, api_key_env={})}}",
+        "{{\"default\": ModelConfig(provider={}, model={}, temperature={temperature}, api_key_env={}, settings={})}}",
         python_string(&model.provider),
         python_string(&model.model),
         model
             .api_key_env
             .as_deref()
             .map(python_string)
-            .unwrap_or_else(|| "None".to_string())
+            .unwrap_or_else(|| "None".to_string()),
+        python_value(&Value::Object(model.settings.clone())),
     )
 }
 
@@ -226,10 +233,15 @@ fn rust_models(model: Option<&ModelConfig>) -> String {
         .as_deref()
         .map(|value| format!("Some({}.to_string())", rust_string(value)))
         .unwrap_or_else(|| "None".to_string());
+    let temperature = model
+        .temperature
+        .map(|value| format!("Some({value})"))
+        .unwrap_or_else(|| "None".to_string());
     format!(
-        "BTreeMap::from_iter([(\"default\".to_string(), ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: None, api_key_env: {api_key}, settings: Map::new(), extensions: BTreeMap::new() }})])",
+        "BTreeMap::from_iter([(\"default\".to_string(), ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, api_key_env: {api_key}, settings: {}, extensions: BTreeMap::new() }})])",
         rust_string(&model.provider),
         rust_string(&model.model),
+        rust_settings(&model.settings),
     )
 }
 
@@ -278,9 +290,40 @@ mod tests {
             };
             let source = fs::read_to_string(launcher).expect("read launcher");
             assert!(source.contains("nvidia.fabric.hermes"));
-            assert!(source.contains("nvidia/nvidia/Nemotron-3-Nano-30B-A3B"));
+            assert!(source.contains("nvidia/nemotron-3-nano-30b-a3b"));
+            assert!(source.contains("https://integrate.api.nvidia.com/v1"));
+            if language == Language::Rust {
+                let manifest =
+                    fs::read_to_string(destination.join("Cargo.toml")).expect("read manifest");
+                assert!(manifest.contains(&format!(
+                    "nemo-fabric-core = \"{}\"",
+                    env!("CARGO_PKG_VERSION")
+                )));
+            }
             fs::remove_dir_all(destination).expect("remove scaffold");
         }
+    }
+
+    #[test]
+    fn renderers_preserve_model_settings_and_temperature() {
+        let mut config = presets::find("hermes").expect("hermes preset").config();
+        config
+            .models
+            .get_mut("default")
+            .expect("default model")
+            .temperature = Some(0.2);
+
+        let python = render_python(&config);
+        assert!(python.contains("temperature=0.2"));
+        assert!(
+            python.contains("settings={\"base_url\": \"https://integrate.api.nvidia.com/v1\"}")
+        );
+
+        let rust = render_rust(&config);
+        assert!(rust.contains("temperature: Some(0.2)"));
+        assert!(rust.contains(
+            "(\"base_url\".to_string(), json!(\"https://integrate.api.nvidia.com/v1\"))"
+        ));
     }
 
     #[test]

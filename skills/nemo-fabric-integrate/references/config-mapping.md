@@ -68,7 +68,7 @@ ordinary Python.
 ## Relative Paths
 
 If the config uses relative paths for skills, workspaces, or artifacts, pass
-`base_dir=...` to `resolve(...)`, `plan(...)`, `doctor(...)`, `run(...)`, or
+`base_dir=...` to `plan(...)`, `doctor(...)`, `run(...)`, or
 `start_runtime(...)`. The base directory anchors those paths to the consumer's
 package or job layout, so nothing depends on the process working directory.
 
@@ -93,7 +93,9 @@ package or job layout, so nothing depends on the process working directory.
 Do not surface these mechanics in the consumer-facing integration:
 
 - Replacing direct SDK calls with a private serialized transport
-  (`to_mapping()` is for inspection, logging, and internal process boundaries).
+  (`to_mapping()` is for inspection and private process boundaries; redact
+  credentials, headers, metadata, and other sensitive or user-provided fields
+  before logging, and never emit an unredacted mapping to logs).
 - Importing `nemo_fabric._native` or adapter-internal modules.
 - Reimplementing harness start, invoke, or stop logic, or managing adapter
   threads, sessions, or processes.

@@ -53,7 +53,9 @@ When `models.default.provider` is `nvidia`, the adapter defines a request-scoped
 Codex model provider for the configured NVIDIA Responses endpoint. It reads the
 credential from `api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex
 state under the Fabric artifact root, so the invocation does not depend on or
-modify a user's Codex login.
+modify a user's Codex login. Set the endpoint in
+`models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`; the adapter
+does not assume a default frontier endpoint.
 
 The dependency graph includes `openai-codex-cli-bin`. The Codex SDK owns this
 pinned app-server distribution; Fabric does not treat it as a user-installed
