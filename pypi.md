@@ -40,17 +40,24 @@ The adapter must be installed into the virtual environment that the harness is i
 
 ### Integrations
 
-Harbor integration:
+#### Harbor integration
 
 ```bash
 pip install "nemo-fabric[harbor]"
 ```
 
-Relay integration:
+#### Relay integration
 
 ```bash
 pip install "nemo-fabric[relay]"
 ```
+
+This installs a version of [NeMo Relay](https://docs.nvidia.com/nemo/relay) Python library known to be compatible with the installed version of NeMo Fabric.
+
+Some adapters, such as Claude and Codex, require the
+[`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli) tool instead of the
+NeMo Relay Python library. Refer to the
+[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install.mdx#nemo-relay-cli) install guide for instructions on installing the CLI tool.
 
 ### Python Versions
 
