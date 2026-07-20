@@ -17,6 +17,7 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_DIR = ROOT / "docs" / "reference" / "api" / "python-library-reference"
 LANDING_PAGE = ROOT / "docs" / "about-nemo-fabric" / "overview.mdx"
+QUICK_START_PAGE = ROOT / "docs" / "getting-started" / "quick-start.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
@@ -90,32 +91,31 @@ def test_generated_reference_uses_valid_heading_order() -> None:
 
 def test_landing_page_routes_new_users_through_the_product() -> None:
     landing = LANDING_PAGE.read_text(encoding="utf-8")
+    quick_start = QUICK_START_PAGE.read_text(encoding="utf-8")
     navigation = NAVIGATION.read_text(encoding="utf-8")
 
     assert "      - section: API\n" in navigation
     assert "      - section: APIs\n" not in navigation
 
     for heading in (
-        "## What NeMo Fabric gives you",
-        "## How NeMo Fabric fits",
-        "## Quick start",
-        "## Choose your interface",
-        "## Core workflow",
-        "## Next steps",
+        "## Benefits",
+        "## Use Cases",
+        "## Choose Your Interface",
+        "## Core Workflow",
+        "## Learn More",
     ):
         assert heading in landing
 
     for destination in (
+        "/getting-started/install",
+        "/getting-started/quick-start",
+        "/getting-started/quickstart",
+        "/sdk/python",
         "/reference/api/python-library-reference/client",
         "/reference/api/python-library-reference/runtime",
-        "/reference/api/python-library-reference/types",
-        "/reference/api/python-library-reference/errors",
     ):
         assert destination in landing
 
-    quick_start = landing.split("## Quick start", maxsplit=1)[1].split(
-        "## Choose your interface", maxsplit=1
-    )[0]
     assert "client.plan(" not in quick_start
     assert "client.doctor(" not in quick_start
     assert "/sdk/python" in quick_start

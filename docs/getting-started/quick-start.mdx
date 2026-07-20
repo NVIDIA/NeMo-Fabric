@@ -6,6 +6,22 @@ description: "Install NeMo Fabric from a source checkout and run a simple agent 
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
+## Prerequisites
+
+Before you begin, complete the
+[source installation prerequisites](/getting-started/install#source-installation-method).
+You need the following tools and source checkout:
+
+- A local checkout of the NeMo Fabric repository.
+- Rust and Cargo.
+- Python 3.11–3.13.
+- `uv`.
+- An `NVIDIA_API_KEY` for NVIDIA-hosted model access.
+
+Run the commands in this quickstart from the root of the source checkout.
+
+## Build NeMo Fabric
+
 Install `just` 1.50.0+ if it is not already available.
 
 ```bash
@@ -28,12 +44,32 @@ uv venv -p 3.13 --seed .venv
 source .venv/bin/activate
 ```
 
-Install the Python SDK with its native binding and the CLI from a source
-checkout:
+From the root of the source checkout, build the Python SDK with its native
+binding, the CLI, and the local wheels:
 
 ```bash
 just build-all
+just wheels
 ```
+
+## Install Hermes Agent
+
+Create a separate environment for Hermes Agent and install the harness and its
+NeMo Fabric adapter from the local wheels:
+
+```bash
+python3 -m venv .tmp/hermes-venv
+.tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[hermes]"
+```
+
+Set the model API key and select the Hermes Agent environment:
+
+```bash
+export NVIDIA_API_KEY=...
+export ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
+```
+
+## Run the Example
 
 Run the example through the Python SDK:
 
@@ -58,9 +94,9 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Harness installation and credential requirements differ by adapter. The
-[repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes)
-contains the complete Hermes environment recipe.
+Harness installation and credential requirements differ by adapter. For more
+details about the Hermes Agent setup, refer to the
+[README Quick Start: Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-agent).
 
 Refer to the [Python SDK guide](/sdk/python) for planning, diagnostics, typed
 requests, and multi-turn runtime examples.

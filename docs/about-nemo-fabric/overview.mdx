@@ -12,7 +12,8 @@ SPDX-License-Identifier: Apache-2.0 */}
 harness-management layer that turns multiple agent runtimes into one
 configurable, observable execution surface. Applications use the same versioned
 config, lifecycle, result, artifact, and telemetry contracts whether the
-selected harness is [Hermes Agent](https://hermes-agent.nousresearch.com/docs/), [Codex](https://openai.com/codex/), or a custom adapter.
+selected harness is [Hermes Agent](https://hermes-agent.nousresearch.com/docs/),
+[Codex SDK](https://openai.com/codex/), or a custom adapter.
 
 NeMo Fabric owns the seam between an application and its harness. It resolves
 configuration, selects an adapter, drives the runtime lifecycle, and returns
@@ -80,7 +81,7 @@ committed JSON Schemas to validate packages and build language bindings.
 Use the following table to choose the NeMo Fabric interface that best fits how
 your application works with harnesses:
 
-| Interface | Use it when | Start with |
+| Interface | Use It When | Start With |
 | --- | --- | --- |
 | Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
 | Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
@@ -106,7 +107,7 @@ NeMo Fabric Rust core
         |
         |  resolved adapter contract
         v
-Hermes Agent | Codex | custom harness
+Hermes Agent | Codex SDK | custom harness
         |
         v
 RunResult + artifacts + events + telemetry references
@@ -116,7 +117,7 @@ RunResult + artifacts + events + telemetry references
    environment, models, tools, skills, MCP, and telemetry.
 2. **Create variants** from deep copies to vary harness, model, environment, or
    observability settings without mutating the base config. File-backed packages
-   may instead apply ordered profiles.
+   can instead apply ordered profiles.
 3. **Plan and diagnose** to resolve the adapter and check capabilities and
    requirements before spending work on a runtime.
 4. **Run or start a runtime** through the shared start, invoke, and stop
