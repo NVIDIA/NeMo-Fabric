@@ -155,77 +155,6 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
-## <kbd>class</kbd> `EffectiveConfig`
-Immutable result of config loading and ordered profile application.
-
-
-
-**Attributes:**
-
- - <b>`agent_name`</b>:  Resolved agent name.
- - <b>`profiles`</b>:  Applied profile names in caller order.
- - <b>`agent_root`</b>:  Root directory of the path-backed agent source.
- - <b>`config_path`</b>:  Source config path, or ``None`` for typed configs.
- - <b>`config_root`</b>:  Base directory used to resolve relative paths.
- - <b>`config`</b>:  Fully resolved typed ``FabricConfig``.
-
-
-### <kbd>method</kbd> `__init__`
-
-```python
-__init__(mapping: 'Mapping[str, Any]') → None
-```
-
-
-
-
-
-
----
-
-### <kbd>property</kbd> extra_fields
-
-Return an immutable view of preserved extension fields.
-
-
-
----
-
-
-### <kbd>classmethod</kbd> `from_mapping`
-
-```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
-```
-
-Validate and copy a mapping into the requested typed model.
-
----
-
-
-### <kbd>method</kbd> `to_dict`
-
-```python
-to_dict() → dict[str, Any]
-```
-
-Return the same detached representation as ``to_mapping()``.
-
----
-
-
-### <kbd>method</kbd> `to_mapping`
-
-```python
-to_mapping() → dict[str, Any]
-```
-
-Return a detached, JSON-compatible mapping for serialization.
-
-
----
-
-
 ## <kbd>class</kbd> `RunPlan`
 Immutable execution plan produced before a runtime is started.
 
@@ -233,9 +162,9 @@ Immutable execution plan produced before a runtime is started.
 
 **Attributes:**
 
- - <b>`effective_config`</b>:  Resolved configuration snapshot.
  - <b>`agent_name`</b>:  Resolved agent name.
- - <b>`profiles`</b>:  Applied profile names in caller order.
+ - <b>`base_dir`</b>:  Base directory used to resolve relative paths.
+ - <b>`config`</b>:  Typed configuration snapshot.
  - <b>`adapter`</b>:  Resolved adapter identity.
  - <b>`capabilities`</b>:  Operations declared by the resolved runtime.
 
@@ -373,7 +302,6 @@ Aggregate preflight diagnostics for a resolved run plan.
 **Attributes:**
 
  - <b>`agent_name`</b>:  Resolved agent name.
- - <b>`profiles`</b>:  Applied profile names in caller order.
  - <b>`status`</b>:  Aggregate outcome: ``pass``, ``warn``, or ``fail``.
  - <b>`checks`</b>:  Ordered ``DoctorCheck`` results.
 
@@ -933,7 +861,6 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
 **Attributes:**
 
  - <b>`agent_name`</b>:  Resolved agent name.
- - <b>`profiles`</b>:  Applied profile names.
  - <b>`harness`</b>:  Stable harness identifier.
  - <b>`adapter_kind`</b>:  Adapter execution mechanism.
  - <b>`adapter_id`</b>:  Fabric adapter identifier.

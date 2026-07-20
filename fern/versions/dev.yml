@@ -14,6 +14,10 @@ navigation:
     path: ../pages-dev/getting-started/install.mdx
   - page: Quickstart
     path: ../pages-dev/getting-started/quickstart.mdx
+- section: Experimentation
+  contents:
+  - page: CLI
+    path: ../pages-dev/experimentation/cli.mdx
 - section: SDK
   contents:
   - page: Python SDK
