@@ -109,10 +109,9 @@ artifacts directory). Fabric owns the runtime-to-thread correlation record;
 LangGraph owns the transcript.
 
 The `deepagents_config()` builder in `examples/code_review_agent` is the SDK
-example; the `deepagents` profile under
-`tests/fixtures/file-config-agent/profiles/` covers file-based resolution. Run it
-from the CLI with `python -m examples.code_review_agent --variant deepagents
---input "..."`, or drive the SDK directly:
+example. Run it from the CLI with
+`python -m examples.code_review_agent --variant deepagents --input "..."`, or
+drive the SDK directly:
 
 ```python
 from examples.code_review_agent import BASE_DIR, deepagents_config
@@ -162,8 +161,9 @@ pip install "nemo-fabric-adapters-deepagents[relay]"   # -> nemo-relay[deepagent
 
   Runs emit ATOF/ATIF artifacts to the configured output directory, referenced in
   the normalized result's `relay_artifacts` (and the `RunResult` `ArtifactManifest`).
-  OTel/OpenInference export is available through the relay plugin config (see the
-  `relay-otel` and `relay-openinference` profiles).
+  OTel/OpenInference export is available through the relay plugin config; the
+  example provides `with_relay_otel(...)` and
+  `with_relay_openinference(...)` variants.
 - **Native** (`telemetry.providers.native.config`): the provider config
   OpenTelemetry/OpenInference exporter is applied and spans export directly to
   the configured collector, without writing ATOF/ATIF relay artifacts.

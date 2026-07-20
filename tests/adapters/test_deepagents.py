@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.machinery
 import sys
 import types
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -126,9 +127,8 @@ def make_payload_fixture():
 
     def make(tmp_path: Path, *, runtime_id: str = "run-1") -> dict[str, Any]:
         return {
-            "effective_config": {
-                "config_root": str(tmp_path),
-                "config": {
+            "base_dir": str(tmp_path),
+            "config": {
                     "harness": {"settings": {"system_prompt": "be concise"}},
                     "models": {
                         "default": {
@@ -137,7 +137,6 @@ def make_payload_fixture():
                             "api_key_env": "NVIDIA_API_KEY",
                         }
                     },
-                },
             },
             "runtime_context": {
                 "runtime_id": runtime_id,
@@ -174,14 +173,14 @@ def fake_relay_fixture(monkeypatch):
         Agent = "agent"
 
     @contextlib.contextmanager
-    def scope_ctx(name, scope_type, **_):
+    def scope_ctx(name: str, scope_type: object, **_: object) -> Iterator[None]:
         # Record every scope entered so tests can assert the top-level
         # ``deepagents-request`` Agent scope wraps the invocation.
         calls.setdefault("scopes", []).append((name, scope_type))
         yield
 
     class NemoRelayDeepAgentsCallbackHandler:
-        def __init__(self, *_args, **_kwargs):
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
             calls["callback_handler"] = self
 
     relay_root = types.ModuleType("nemo_relay")
@@ -269,7 +268,9 @@ async def test_missing_deepagents_package_is_normalized(tmp_path, make_payload, 
 
     real_find_spec = importlib_util.find_spec
 
-    def fake_find_spec(name, *args, **kwargs):
+    def fake_find_spec(
+        name: str, *args: object, **kwargs: object
+    ) -> importlib.machinery.ModuleSpec | None:
         if name == "deepagents":
             return None
         return real_find_spec(name, *args, **kwargs)
@@ -401,7 +402,9 @@ async def test_missing_nemo_relay_with_native_telemetry_is_normalized(tmp_path, 
 
     real_find_spec = importlib_util.find_spec
 
-    def fake_find_spec(name, *args, **kwargs):
+    def fake_find_spec(
+        name: str, *args: object, **kwargs: object
+    ) -> importlib.machinery.ModuleSpec | None:
         if name == "nemo_relay":
             return None
         return real_find_spec(name, *args, **kwargs)
@@ -423,6 +426,30 @@ async def test_missing_nemo_relay_with_native_telemetry_is_normalized(tmp_path, 
 
     assert output["failed"] is True
     assert "nemo-relay" in output["error"]
+    assert "[relay]" in output["error"]
+
+
+async def test_incomplete_nemo_relay_install_is_normalized(
+    tmp_path, make_payload, monkeypatch, fake_relay
+):
+    monkeypatch.delitem(sys.modules, "nemo_relay.integrations.deepagents")
+    payload = make_payload(tmp_path)
+    payload["telemetry_plan"] = {
+        "providers": ["native"],
+        "relay_enabled": False,
+        "native_config": {
+            "version": 1,
+            "components": [
+                {"kind": "observability", "enabled": True, "config": {"version": 1}}
+            ],
+        },
+        "adapter_outputs": [],
+    }
+
+    output = await adapter.run_deepagents(payload)
+
+    assert output["failed"] is True
+    assert "compatible 'nemo-relay' package" in output["error"]
     assert "[relay]" in output["error"]
 
 
@@ -579,7 +606,7 @@ async def test_real_langgraph_async_checkpointer(tmp_path, make_payload, monkeyp
 async def test_openai_provider_keeps_openai_endpoint(tmp_path, make_payload, monkeypatch, fake_sdks):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["models"]["default"] = {
+    payload["config"]["models"]["default"] = {
         "provider": "openai",
         "model": "gpt-4o",
         "api_key_env": "OPENAI_API_KEY",
@@ -693,12 +720,12 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
     from langchain_core.messages import ToolMessage
 
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+    payload["config"]["tools"] = {"blocked": ["write_file"]}
+    payload["config"]["harness"]["settings"]["deepagents"] = {
         "subagents": [{"name": "researcher", "prompt": "research"}]
     }
 
-    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    settings = payload["config"]["harness"]["settings"]
     create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
     assert create_kwargs["middleware"], "main agent blocked-tools middleware not attached"
     subagents = create_kwargs["subagents"]
@@ -724,9 +751,9 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
 @pytest.mark.usefixtures("use_real_langgraph")
 async def test_default_subagent_is_gated_by_blocked_tools(tmp_path, make_payload):
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
+    payload["config"]["tools"] = {"blocked": ["write_file"]}
 
-    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    settings = payload["config"]["harness"]["settings"]
     create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
 
     assert [subagent["name"] for subagent in create_kwargs["subagents"]] == ["general-purpose"]
@@ -736,12 +763,12 @@ async def test_default_subagent_is_gated_by_blocked_tools(tmp_path, make_payload
 @pytest.mark.parametrize("unsupported", [{"graph_id": "remote"}, {"runnable": "compiled"}])
 async def test_blocked_tools_reject_unenforceable_subagents(tmp_path, make_payload, unsupported):
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["tools"] = {"blocked": ["write_file"]}
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+    payload["config"]["tools"] = {"blocked": ["write_file"]}
+    payload["config"]["harness"]["settings"]["deepagents"] = {
         "subagents": [{"name": "worker", **unsupported}]
     }
 
-    settings = payload["effective_config"]["config"]["harness"]["settings"]
+    settings = payload["config"]["harness"]["settings"]
     with pytest.raises(adapter.AdapterConfigError, match="cannot be enforced"):
         await adapter.build_agent_kwargs(payload, MagicMock(), settings)
 
@@ -769,7 +796,7 @@ def test_gated_subagents_reject_invalid_configuration(subagents, message):
 async def test_deepagents_passthrough_forwards_supported_options(tmp_path, make_payload, fake_sdks):
     # Documented JSON-serializable options reach create_deep_agent unchanged.
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {"interrupt_on": {"write_file": True}}
+    payload["config"]["harness"]["settings"]["deepagents"] = {"interrupt_on": {"write_file": True}}
 
     await adapter.run_deepagents(payload)
 
@@ -780,7 +807,7 @@ async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(tmp_path
     # Overriding a Fabric-owned key (here backend) would defeat workspace confinement;
     # it must fail loudly rather than silently replacing the derived value.
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {"backend": {"root_dir": "/etc"}}
+    payload["config"]["harness"]["settings"]["deepagents"] = {"backend": {"root_dir": "/etc"}}
 
     output = await adapter.run_deepagents(payload)
 
@@ -791,7 +818,7 @@ async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(tmp_path
 async def test_deepagents_passthrough_rejects_unknown_option(tmp_path, make_payload):
     # A typo or unsupported option must fail clearly instead of being silently dropped.
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["harness"]["settings"]["deepagents"] = {
+    payload["config"]["harness"]["settings"]["deepagents"] = {
         "interupt_on": {}  # note the typo
     }
 
@@ -872,7 +899,7 @@ async def test_unknown_provider_requires_api_key_env(tmp_path, make_payload, mon
     # defaulting to NVIDIA_API_KEY and sending the wrong key to the endpoint.
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-x")
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["models"]["default"] = {
+    payload["config"]["models"]["default"] = {
         "provider": "anthropic",
         "model": "claude-x",
     }
@@ -889,7 +916,7 @@ async def test_openai_provider_defaults_to_openai_key(tmp_path, make_payload, mo
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["models"]["default"] = {
+    payload["config"]["models"]["default"] = {
         "provider": "openai",
         "model": "gpt-4o",
     }
@@ -905,7 +932,7 @@ async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_pa
     # openai-compatible uses ChatOpenAI but has no default credential var, so it must
     # set api_key_env explicitly rather than silently falling back to NVIDIA_API_KEY.
     payload = make_payload(tmp_path)
-    payload["effective_config"]["config"]["models"]["default"] = {
+    payload["config"]["models"]["default"] = {
         "provider": "openai-compatible",
         "model": "some/model",
     }

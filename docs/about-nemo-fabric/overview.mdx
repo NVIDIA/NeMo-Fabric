@@ -16,13 +16,12 @@ configuration, selects an adapter, drives the runtime lifecycle,
 and returns normalized evidence without leaking harness-specific control code
 into the caller.
 
-## What NeMo Fabric gives you
+## What NeMo Fabric Gives You
 
 <CardGroup cols={2}>
-  <Card title="Portable configuration">
-    Use a versioned `agent.yaml` package or construct the same typed
-    `FabricConfig` in Python. Applications create variants from typed copies;
-    portable file packages can use ordered profiles.
+  <Card title="Typed configuration">
+    Construct a complete, versioned `FabricConfig` in Python. Applications
+    create variants with ordinary functions and typed copies.
   </Card>
   <Card title="Harness-neutral execution">
     Plan and invoke different harnesses through one Rust core, CLI, and Python
@@ -38,12 +37,12 @@ into the caller.
   </Card>
 </CardGroup>
 
-## How NeMo Fabric fits
+## How NeMo Fabric Fits
 
 ```text
 Application or evaluation harness
         |
-        |  Python SDK or `fabric` CLI
+        |  Python SDK or nemo-fabric experimentation CLI
         v
 NeMo Fabric Rust core
   config -> plan -> lifecycle
@@ -56,12 +55,13 @@ Hermes Agent | Codex | custom harness
 RunResult + artifacts + events + telemetry references
 ```
 
-The CLI and Python SDK are separate interfaces over the same core. File-backed
-and typed configs converge on the same resolved config and run-plan contracts.
-Adapters own harness-specific preparation and invocation; consumers own the
-request and the use of returned evidence.
+The experimentation CLI and its catalogs live in the Rust `fabric-cli` crate
+and are installed separately from the Python SDK. Built-in presets and
+maintained examples produce a complete `FabricConfig` before using the same
+run-plan contract. Adapters own harness-specific preparation and invocation;
+consumers own the request and returned evidence.
 
-## Quick start
+## Quick Start
 
 Install `just` 1.50.0+ if it is not already available.
 
@@ -85,8 +85,7 @@ uv venv -p 3.13 --seed .venv
 source .venv/bin/activate
 ```
 
-Install the Python SDK with its native binding and the CLI from a source
-checkout:
+Build the Python SDK and install the Rust CLI from a source checkout:
 
 ```bash
 just build-all
@@ -122,26 +121,24 @@ contains the complete Hermes Agent environment recipe.
 Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
 diagnostics, typed requests, and multi-turn runtime examples.
 
-## Choose your interface
+## Choose Your Interface
 
 | Interface | Use it when | Start with |
 | --- | --- | --- |
 | Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
 | Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
-| `fabric` CLI | You are validating packages, debugging profiles, or running reproducible local/CI jobs | `fabric validate`, `plan`, `doctor`, `run`, and `chat` |
+| `nemo-fabric` CLI | You are experimenting with harnesses, running maintained examples, or troubleshooting configs | [Experimentation CLI](/experimentation/cli) |
 | JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
 
-Use `agent.yaml` when the agent package is the portable artifact. Use
-`FabricConfig` when a platform already owns a larger job or deployment object
-and wants to pass only its NeMo Fabric slice in memory.
+Use `FabricConfig` as the canonical configuration contract. CLI selectors
+obtain complete typed configs from built-in presets or maintained examples.
 
-## Core workflow
+## Core Workflow
 
-1. **Configure** an agent package or typed `FabricConfig` with a harness adapter,
+1. **Configure** a typed `FabricConfig` with a harness adapter,
    environment, models, tools, skills, MCP, and telemetry.
 2. **Create variants** from deep copies to vary harness, model, environment, or
-   observability settings without mutating the base config. File-backed
-   packages may instead apply ordered profiles.
+   observability settings without mutating the base config.
 3. **Plan and diagnose** to resolve the adapter and check capabilities and
    requirements before spending work on a runtime.
 4. **Run or start a runtime** through the shared start, invoke, and stop
@@ -149,7 +146,7 @@ and wants to pass only its NeMo Fabric slice in memory.
 5. **Consume evidence** from `RunResult`: output, structured failure details,
    artifacts, events, and telemetry references.
 
-## Next steps
+## Next Steps
 
 <CardGroup cols={2}>
   <Card

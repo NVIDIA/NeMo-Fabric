@@ -19,18 +19,17 @@ artifacts from agent harnesses.
 
 Fabric provides:
 
-- a versioned typed config contract, with `agent.yaml` as the portable file
-  format;
-- profile-based config variation for evaluation and ablation runs;
+- a versioned, typed `FabricConfig` contract constructed through the SDK;
+- ordinary Python composition for harness and experiment variants;
 - adapter descriptors for harness-specific launch and control;
-- a Rust core with a CLI and Python bindings;
+- a Rust core, Python SDK, and standalone experimentation CLI;
 - JSON Schema snapshots for the public config and runtime contract;
 - normalized run results, artifact manifests, and telemetry references.
 
 ```mermaid
 flowchart TB
   Consumer["Consumer\nCLI | Python SDK | integrations"]
-  Config["Agent source\nagent.yaml or FabricConfig"]
+  Config["Typed source\nFabricConfig"]
   Core["Fabric Rust core\nresolve | plan | create | invoke | destroy"]
   Adapter["Selected Fabric adapter"]
   Harness["Agent harness runtime\nHermes | Codex | custom"]
@@ -47,7 +46,33 @@ flowchart TB
   Harness -. harness telemetry .-> Relay
 ```
 
-## Building and Installing
+## Quick Start: Experimentation CLI
+
+The `nemo-fabric` CLI is a maintained, experimental developer interface for
+quick harness experiments, smoke tests, examples, planning, and diagnostics.
+Its command contract can evolve as experiments mature. The Python SDK remains
+the stable application-facing contract.
+
+Install the Rust CLI from this source checkout, verify it, and run the
+credential-free preset:
+
+```bash
+cargo install --path crates/fabric-cli --locked
+nemo-fabric --version
+nemo-fabric preset show scripted
+nemo-fabric run --preset scripted --input "fabric works"
+```
+
+Copy an editable Python starting point with:
+
+```bash
+nemo-fabric example init code-review ./my-agent --language python
+```
+
+See the [experimentation CLI guide](docs/experimentation/cli.mdx) for the CLI's
+intent and boundaries.
+
+## Quick Start: Hermes Agent
 
 This path installs Fabric, installs Hermes Agent in a separate Python environment,
 and runs one input through the Hermes Agent adapter.
@@ -81,9 +106,7 @@ just build-all
 just wheels
 ```
 
-## Quick Start: Hermes Agent
-
-Install Hermes Agent into its own environment (the nemo-fabric[hermes] extra will install Hermes Agent, and the adapter but not Fabric itself):
+Install Fabric, Hermes Agent, and the Hermes Agent adapter into an environment:
 
 ```bash
 # Use any Python 3.11-3.13 interpreter for Hermes Agent.
@@ -142,9 +165,17 @@ authentication, and execution details.
 
 ## Core Concepts
 
-- **Agent source:** callers provide a typed `FabricConfig`. Start with `examples/code_review_agent/config.py` for the application-facing Pydantic pattern.
-- **Tools policy:** call `FabricConfig.block_tools()` to add harness-neutral
-  blocked tool names or toolsets to a typed configuration:
+- **Typed config:** callers construct a complete `FabricConfig` in Python.
+  Start with the [Python SDK guide](docs/sdk/python.mdx), and refer to
+  [`examples/code_review_agent/config.py`](examples/code_review_agent/config.py)
+  for a complete application example.
+- **Variants:** ordinary Python functions copy and modify complete configs to
+  vary the harness, model, MCP, tools, skills, telemetry, or environment.
+- **Experimentation CLI:** presets provide quick probes, examples provide
+  maintained runnable workflows, and `example init` generates editable Python
+  or Rust applications that call a language API directly.
+- **Tools policy:** use top-level `tools.blocked` for harness-neutral blocked
+  tool policy. Names are interpreted by the selected adapter:
 
   ```python
   config.block_tools("browser", "shell")
@@ -163,15 +194,9 @@ authentication, and execution details.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
 
-Fabric applies profiles in caller order and validates the final effective config
-before planning or running.
-
-Path sources select profiles by name. Typed `FabricConfig` sources usually
-compose the final config in Python; `FabricProfileConfig` values are available
-for callers that need ordered file-style overlays. The SDK rejects raw profile
-mappings and mixed profile stacks. See the
-[Python SDK guide](docs/sdk/python.mdx) for the complete public API,
-type definitions, lifecycle semantics, and error behavior.
+Fabric accepts complete typed configs. Compose variants in Python before
+calling the SDK. Refer to the [Python SDK guide](docs/sdk/python.mdx) for the
+complete public API, type definitions, lifecycle semantics, and error behavior.
 
 `run(...)` owns the complete start, invoke, and stop lifecycle. For typed
 in-memory configuration, planning and diagnostics, explicit requests,
@@ -184,6 +209,8 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 - [Example Notebooks](examples/notebooks/README.md) provide a guided tour of the Python SDK.
 - [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
+- [Experimentation CLI](docs/experimentation/cli.mdx): presets, maintained
+  examples, editable application scaffolds, and explicit non-goals.
 - [Consumer integration skills](skills/README.md): repository-local coding-agent
   skills for integrating Fabric into an application through the Python SDK.
 - [Getting Started overview](docs/about-nemo-fabric/overview.mdx): interface

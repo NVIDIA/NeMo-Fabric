@@ -14,9 +14,9 @@ Add the crate to a Rust project:
 cargo add nemo-fabric-core
 ```
 
-This crate provides typed agent configuration, profile resolution, validation,
-run planning, runtime lifecycle operations, normalized results and artifact
-manifests, telemetry references, diagnostics, and JSON Schema generation.
+This crate provides typed agent configuration, validation, run planning,
+runtime lifecycle operations, normalized results and artifact manifests,
+telemetry references, diagnostics, and JSON Schema generation.
 
 For architecture, configuration concepts, adapters, and examples, refer to the
 [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric).

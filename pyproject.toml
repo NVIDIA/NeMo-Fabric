@@ -24,7 +24,9 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+  "nemo-fabric-runtime == 0.1.0",
+]
 
 [project.urls]
 Repository = "https://github.com/NVIDIA/nemo-fabric/"
@@ -124,9 +126,6 @@ test = [
 
 [tool.uv]
 default-groups = ["adapters", "dev", "test"]
-# openai-codex beta 3 pins this prerelease app-server runtime. Keep the
-# exception narrow instead of enabling prereleases for the full environment.
-constraint-dependencies = ["openai-codex-cli-bin==0.137.0a4"]
 
 [tool.uv.sources]
 nemo-fabric-runtime = { path = "python", editable = true }

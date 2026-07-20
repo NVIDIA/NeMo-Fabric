@@ -54,20 +54,21 @@ def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("request") or {}
 
 
-def effective_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return payload.get("effective_config") or {}
-
-
 def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return effective_config(payload).get("config") or {}
+    return payload.get("config") or {}
 
 
-def config_root(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("config_root") or payload.get("config_root") or "."
+def base_dir(payload: dict[str, Any]) -> str:
+    value = payload.get("base_dir")
+    if not isinstance(value, str) or not value:
+        raise ValueError("base_dir is required")
+    if not Path(value).is_absolute():
+        raise ValueError("base_dir must be an absolute path")
+    return value
 
 
 def agent_name(payload: dict[str, Any]) -> str:
-    return effective_config(payload).get("agent_name") or payload.get("agent_name") or "fabric-agent"
+    return payload.get("agent_name") or "fabric-agent"
 
 
 def load_payload() -> dict[str, Any]:
@@ -234,7 +235,7 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
-    base = Path(config_root(payload)).resolve()
+    base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":

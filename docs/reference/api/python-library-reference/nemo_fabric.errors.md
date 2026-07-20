@@ -61,7 +61,7 @@ Initialize a structured Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricConfigError`
-Invalid SDK input, request shape, profile stack, or resolved config.
+Invalid SDK input, request shape, factory, or resolved config.
 
 
 ### <kbd>method</kbd> `__init__`

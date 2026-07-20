@@ -1,0 +1,67 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use nemo_fabric_core::{
+    ControlLocation, EnvironmentConfig, EnvironmentOwnership, FabricConfig, HarnessConfig,
+    MetadataConfig, ResolutionStrategy, ResolveContext, RunRequest, RuntimeConfig, SkillConfig,
+    resolve_run_plan_from_config, run_plan,
+};
+use serde_json::Map;
+
+fn build_config() -> FabricConfig {
+    FabricConfig {
+        schema_version: "fabric.agent/v1alpha1".to_string(),
+        metadata: MetadataConfig {
+            name: {{AGENT_NAME}}.to_string(),
+            description: Some({{DESCRIPTION}}.to_string()),
+            extensions: BTreeMap::new(),
+        },
+        harness: HarnessConfig {
+            adapter_id: {{ADAPTER_ID}}.to_string(),
+            resolution: Some(ResolutionStrategy::Preinstalled),
+            settings: {{HARNESS_SETTINGS}},
+            extensions: BTreeMap::new(),
+        },
+        models: {{MODELS}},
+        runtime: RuntimeConfig {
+            input_schema: "text".to_string(),
+            output_schema: "message".to_string(),
+            artifacts: None,
+            extensions: BTreeMap::new(),
+        },
+        environment: Some(EnvironmentConfig {
+            provider: "local".to_string(),
+            control_location: ControlLocation::InEnvControl,
+            ownership: EnvironmentOwnership::FabricOwned,
+            workspace: Some(PathBuf::from("repo")),
+            artifacts: None,
+            connection: Map::new(),
+            metadata: Map::new(),
+            settings: Map::new(),
+            extensions: BTreeMap::new(),
+        }),
+        skills: Some(SkillConfig {
+            paths: vec![PathBuf::from("skills/code-review.md")],
+            extensions: BTreeMap::new(),
+        }),
+        tools: None,
+        mcp: None,
+        telemetry: None,
+        relay: None,
+        extensions: BTreeMap::new(),
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let input = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "Review the workspace".to_string());
+    let plan = resolve_run_plan_from_config(build_config(), ResolveContext::new(base_dir))?;
+    let result = run_plan(&plan, RunRequest::text(input))?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}

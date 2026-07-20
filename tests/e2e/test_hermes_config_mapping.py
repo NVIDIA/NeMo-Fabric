@@ -51,7 +51,7 @@ def test_hermes_config_mapping(tmp_path: Path):
 def payload(tmpdir: str) -> dict:
     return {
         "agent_name": "code-review-agent",
-        "config_root": tmpdir,
+        "base_dir": tmpdir,
         "environment": {
             "workspace": f"{tmpdir}/workspace",
         },

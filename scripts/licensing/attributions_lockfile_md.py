@@ -27,6 +27,7 @@ SPDX-License-Identifier: Apache-2.0
 
 ROOT = Path(__file__).resolve().parents[2]
 MARKDOWN_CODE_FENCE = "```\n"
+MARKDOWN_TEXT_CODE_FENCE = "\n```text\n"
 MARKDOWN_CODE_BLOCK_END = "```\n\n"
 
 
@@ -362,20 +363,20 @@ def _render_rust_metadata_fallback_attribution(crate: dict[str, Any]) -> tuple[s
     license_name = _normalize_license_name(str(crate.get("license") or "UNKNOWN"))
 
     parts = [
-        f"## {name} - {version}\n",
+        f"## {name} - {version}\n\n",
         f"**Repository URL**: {repo}\n",
         f"**License Type(s)**: {license_name}\n",
-        f"### License: {spdx_url(license_name, fallback='https://spdx.org/licenses/')}\n",
+        f"\n### License: {spdx_url(license_name, fallback='https://spdx.org/licenses/')}\n\n",
     ]
     license_files = _rust_license_files(crate)
     if license_files:
         for label, text in license_files:
             parts.append(f"### License File: {label}\n")
-            parts.append(MARKDOWN_CODE_FENCE)
+            parts.append(MARKDOWN_TEXT_CODE_FENCE)
             parts.append(text if text.endswith("\n") else text + "\n")
             parts.append(MARKDOWN_CODE_BLOCK_END)
     else:
-        parts.append(MARKDOWN_CODE_FENCE)
+        parts.append(MARKDOWN_TEXT_CODE_FENCE)
         parts.append(f"License expression from Cargo metadata: {license_name}\n")
         parts.append("No package license file was found in the downloaded crate archive.\n")
         parts.append(MARKDOWN_CODE_BLOCK_END)
@@ -411,11 +412,11 @@ def _render_rust_crate_attribution(
 
     rendered = "".join(
         [
-            f"## {name} - {version}\n",
+            f"## {name} - {version}\n\n",
             f"**Repository URL**: {repo}\n",
             f"**License Type(s)**: {license_id}\n",
-            f"### License: https://spdx.org/licenses/{license_id}.html\n",
-            MARKDOWN_CODE_FENCE,
+            f"\n### License: https://spdx.org/licenses/{license_id}.html\n",
+            MARKDOWN_TEXT_CODE_FENCE,
             license_text,
             "\n",
             MARKDOWN_CODE_BLOCK_END,
@@ -898,4 +899,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

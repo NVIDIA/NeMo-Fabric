@@ -5,26 +5,25 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
 
-from _utils.utils import run_fabric_cli
+from _utils.configs import swebench_shim_config
+from nemo_fabric import Fabric
 
 
-def test_swebench_style(hermes_shim_agent_dir: Path):
+async def test_swebench_style(hermes_shim_agent_dir: Path):
     workspace = hermes_shim_agent_dir / "repos" / "my-service"
     run_command(workspace, "git", "init", "-q")
     run_command(workspace, "git", "add", "calculator.py")
 
-    result = call_json(
-        "run",
-        hermes_shim_agent_dir,
-        "--profile",
-        "swebench_shim",
-        "--input",
-        "Fix the bug so answer() returns 42.",
-    )
+    result = (
+        await Fabric().run(
+            swebench_shim_config(),
+            base_dir=hermes_shim_agent_dir,
+            input="Fix the bug so answer() returns 42.",
+        )
+    ).to_mapping()
 
     assert result["status"] == "succeeded", result
     assert result["adapter_kind"] == "python"
@@ -47,22 +46,6 @@ def test_swebench_style(hermes_shim_agent_dir: Path):
     ]
     assert len(status_artifacts) == 1
     assert "calculator.py" in Path(status_artifacts[0]["path"]).read_text()
-
-
-def call_json(*args: object) -> dict:
-    completed = run(*args)
-    return json.loads(completed.stdout)
-
-
-def run(*args: object) -> subprocess.CompletedProcess[str]:
-    completed = run_fabric_cli(*args)
-    if completed.returncode != 0:
-        raise AssertionError(
-            f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
-        )
-    return completed
-
-
 def run_command(cwd: Path, *command: str) -> None:
     completed = subprocess.run(
         command,

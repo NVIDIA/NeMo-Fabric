@@ -12,7 +12,7 @@
       "description": "Request payload for the harness."
     },
     "overrides": {
-      "description": "Per-invocation overrides allowed by the resolved profile."
+      "description": "Per-invocation overrides allowed by the resolved config."
     },
     "request_id": {
       "description": "Request id.",

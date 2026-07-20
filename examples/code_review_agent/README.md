@@ -9,7 +9,7 @@ This example reviews the repository under `repos/my-service`. It constructs a
 complete `FabricConfig` with the public Pydantic models and passes it directly
 to the Python SDK. Variants are independent deep copies of that config.
 
-The example does not serialize configs to YAML or use profiles.
+Each variant is an independent Python factory that returns a complete config.
 
 ## Set up
 

@@ -113,7 +113,7 @@
       "oneOf": [
         {
           "const": "config",
-          "description": "Configuration or profile loading failed.",
+          "description": "Configuration resolution failed.",
           "type": "string"
         },
         {
@@ -285,13 +285,6 @@
       "default": null,
       "description": "Primary output."
     },
-    "profiles": {
-      "description": "Ordered profiles applied to this run.",
-      "items": {
-        "type": "string"
-      },
-      "type": "array"
-    },
     "request_id": {
       "description": "Request id.",
       "type": "string"
@@ -318,7 +311,6 @@
   },
   "required": [
     "agent_name",
-    "profiles",
     "harness",
     "adapter_kind",
     "runtime_id",

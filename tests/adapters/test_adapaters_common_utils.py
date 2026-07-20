@@ -140,21 +140,19 @@ def test_selected_model_config(
     if selected_model is not None:
         settings["model"] = selected_model
     payload = {
-        "effective_config": {
-            "config": {
-                "harness": {"settings": settings},
-                "models": models,
-            }
+        "config": {
+            "harness": {"settings": settings},
+            "models": models,
         }
     }
 
     assert common_utils.selected_model_config(payload) == expected
 
 
-def test_payload_accessors_prefer_effective_config():
+def test_payload_accessors_use_canonical_plan_fields():
     payload = {
         "agent_name": "outer-agent",
-        "config_root": "/outer",
+        "base_dir": "/outer",
         "request": {"input": "hello"},
         "environment": {"workspace": "/outer-workspace"},
         "settings": {"outer": True},
@@ -163,26 +161,27 @@ def test_payload_accessors_prefer_effective_config():
         "runtime_context": {
             "environment": {"workspace": "/runtime-workspace"},
         },
-        "effective_config": {
-            "agent_name": "effective-agent",
-            "config_root": "/effective",
-            "config": {
-                "harness": {"settings": {"inner": True}},
-                "models": {"inner": {"model": "inner-model"}},
-            },
+        "config": {
+            "harness": {"settings": {"inner": True}},
+            "models": {"inner": {"model": "inner-model"}},
         },
         "capability_plan": {"native": {"skill_paths": ["skills"]}},
     }
 
-    assert common_utils.effective_config(payload) == payload["effective_config"]
-    assert common_utils.fabric_config(payload) == payload["effective_config"]["config"]
-    assert common_utils.agent_name(payload) == "effective-agent"
-    assert common_utils.config_root(payload) == "/effective"
+    assert common_utils.fabric_config(payload) == payload["config"]
+    assert common_utils.agent_name(payload) == "outer-agent"
+    assert common_utils.base_dir(payload) == "/outer"
     assert common_utils.runtime_context(payload) == payload["runtime_context"]
     assert common_utils.environment_payload(payload) == {"workspace": "/runtime-workspace"}
     assert common_utils.settings_payload(payload) == {"inner": True}
     assert common_utils.models_payload(payload) == {"inner": {"model": "inner-model"}}
     assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
+
+
+@pytest.mark.parametrize("value", [None, "", "relative/path"])
+def test_base_dir_requires_an_absolute_path(value):
+    with pytest.raises(ValueError, match="base_dir"):
+        common_utils.base_dir({"base_dir": value})
 
 
 def test_load_payload_reads_fabric_invocation(tmp_path: Path):
@@ -305,13 +304,11 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         "{}", encoding="utf-8"
     )
     payload = {
-        "effective_config": {
-            "agent_name": "review-agent",
-            "config_root": str(tmp_path),
-            "config": {
-                "harness": {"settings": {"model": "review"}},
-                "models": {"review": {"model": "nvidia/review-model"}},
-            },
+        "agent_name": "review-agent",
+        "base_dir": str(tmp_path),
+        "config": {
+            "harness": {"settings": {"model": "review"}},
+            "models": {"review": {"model": "nvidia/review-model"}},
         },
         "runtime_context": {"runtime_id": "runtime-current"},
     }
