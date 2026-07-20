@@ -131,8 +131,9 @@ Verify that Python can construct the typed configuration:
 .venv/bin/python .tmp/fabric-tutorial/tutorial_config.py
 ```
 
-The command should print `Configured: beginner-code-reviewer`. Typed
-configuration validation rejects invalid field names or values before a run.
+**✅ Success Check**: The command prints the configured name,
+`Configured: beginner-code-reviewer`. Typed configuration validation rejects
+invalid field names or values before a run.
 
 ### Run One Request
 
@@ -167,8 +168,9 @@ Run the one-shot example:
 .venv/bin/python .tmp/fabric-tutorial/run_once.py
 ```
 
-A successful result has no error and includes the review response. The runtime
-and invocation IDs correlate the result with logs, artifacts, and telemetry.
+**✅ Success Check**: The result has no error and includes the review response.
+The runtime and invocation IDs correlate the result with logs, artifacts, and
+telemetry.
 
 ### Keep State Across Turns
 
@@ -204,8 +206,9 @@ Run the stateful example:
 .venv/bin/python .tmp/fabric-tutorial/run_stateful.py
 ```
 
-The second response should rewrite the function based on the issue identified
-in the first response. Both invocations share one logical runtime.
+**✅ Success Check**: The second response rewrites the function based on the
+issue identified in the first response. Both invocations share one logical
+runtime.
 
 ### Inspect and Diagnose
 
@@ -245,9 +248,9 @@ Run the inspection example:
 .venv/bin/python .tmp/fabric-tutorial/inspect_agent.py
 ```
 
-The plan should select `nvidia.fabric.hermes`. The diagnostic report lists each
-preflight check and its status. Resolve any failed checks before using the same
-configuration in a new environment.
+**✅ Success Check**: The plan selects `nvidia.fabric.hermes`, and the
+diagnostic report lists each preflight check and its status. Resolve any failed
+checks before using the same configuration in a new environment.
 
 The maintained
 [`01_quickstart.ipynb` onboarding notebook](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb)
@@ -255,17 +258,24 @@ contains the same learning sequence in an interactive format.
 
 ## Summary
 
-You have now:
+You completed the tutorial and can now:
 
-- Described a code-review agent with a typed `FabricConfig`.
-- Run one request and inspected its normalized result.
-- Used one runtime to preserve context across two invocations.
-- Previewed adapter resolution and diagnosed the runtime environment.
+- ✅ Describe a code-review agent with a typed `FabricConfig`.
+- ✅ Run one request and inspect its normalized result.
+- ✅ Use one runtime to preserve context across two invocations.
+- ✅ Preview adapter resolution and diagnose the runtime environment.
 
 ## Next Steps
 
-- Continue to the
-  [`02_variations.ipynb` notebook](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb)
-  to vary harnesses, skills, MCP servers, models, and telemetry.
-- Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for exact API
-  behavior, typed requests, lifecycle details, and configuration patterns.
+Continue your learning with these resources.
+
+<CardGroup cols={2}>
+  <Card title="Advanced Variations" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb">
+    Vary harnesses, skills, MCP servers, models, and telemetry in an interactive
+    notebook.
+  </Card>
+  <Card title="Python SDK Guide" href="/nemo/fabric/sdk/python-sdk">
+    Review exact API behavior, typed requests, lifecycle details, and
+    configuration patterns.
+  </Card>
+</CardGroup>

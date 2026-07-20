@@ -8,8 +8,8 @@ template-library-version: "1.0.0"
 SPDX-License-Identifier: Apache-2.0 */}
 
 Use this quickstart to build NeMo Fabric from a source checkout and run the
-maintained code-review example with Hermes Agent. The time required depends on
-your local build speed.
+maintained code-review example with Hermes Agent. Plan for one local source
+build and one model request; elapsed time depends on your machine and network.
 
 ## Prerequisites
 
@@ -29,7 +29,7 @@ Run the commands in this quickstart from the root of the source checkout.
 
 Complete the following steps in order from the repository root.
 
-### Build NeMo Fabric
+### 1. Build NeMo Fabric
 
 Install `just` 1.50.0+ if it is not already available.
 
@@ -61,7 +61,7 @@ just build-all
 just wheels
 ```
 
-### Install Hermes Agent
+### 2. Install Hermes Agent
 
 Create a separate environment for Hermes Agent and install the harness and its
 NeMo Fabric adapter from the local wheels:
@@ -78,7 +78,7 @@ export NVIDIA_API_KEY=...
 export ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
 ```
 
-### Run the Example
+### 3. Run the Example
 
 Run the maintained code-review example through the Python SDK:
 
@@ -87,17 +87,23 @@ Run the maintained code-review example through the Python SDK:
   --input "Reply with exactly: fabric works"
 ```
 
-The quickstart is complete when the command finishes successfully and prints
-`fabric works` in the agent response.
+**✅ Success Check**: The command finishes successfully and prints the expected
+phrase, `fabric works`, in the agent response.
 
 ## Next Steps
 
-Harness installation and credential requirements differ by adapter. For more
-details about the Hermes Agent setup, refer to the
-[README Quick Start: Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-agent).
+Now that the example runs, continue with the resource that matches your goal.
 
-- Continue to the [Beginner Tutorial](/getting-started/quickstart) to build a
-  typed configuration, compare one-shot and stateful runs, and inspect the
-  configuration and environment.
-- Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
-  diagnostics, typed requests, and multi-turn runtime examples.
+<CardGroup cols={2}>
+  <Card title="Beginner Tutorial" href="/getting-started/quickstart">
+    Build a typed configuration, compare one-shot and stateful runs, and
+    inspect the configuration and environment.
+  </Card>
+  <Card title="Hermes Agent Setup" href="https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-agent">
+    Review adapter-specific installation and credential requirements.
+  </Card>
+  <Card title="Python SDK Guide" href="/nemo/fabric/sdk/python-sdk">
+    Explore planning, diagnostics, typed requests, and multi-turn runtime
+    examples.
+  </Card>
+</CardGroup>
