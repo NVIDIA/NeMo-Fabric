@@ -40,13 +40,13 @@ The adapter must be installed into the virtual environment that the harness is i
 
 ### Integrations
 
-#### Harbor integration
+#### Harbor Integration
 
 ```bash
 pip install "nemo-fabric[harbor]"
 ```
 
-#### Relay integration
+#### Relay Integration
 
 ```bash
 pip install "nemo-fabric[relay]"
