@@ -112,18 +112,6 @@ fn language_files(language: Language, config: &FabricConfig, example: &str) -> V
 }
 
 fn rust_core_dependency() -> String {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let workspace_core = manifest_dir
-        .parent()
-        .expect("CLI crate has a parent directory")
-        .join("fabric-core");
-    if workspace_core.join("Cargo.toml").is_file() {
-        return format!(
-            "{{ path = {}, version = {} }}",
-            rust_string(&workspace_core.display().to_string()),
-            rust_string(env!("CARGO_PKG_VERSION")),
-        );
-    }
     rust_string(env!("CARGO_PKG_VERSION"))
 }
 
@@ -311,8 +299,10 @@ mod tests {
             if language == Language::Rust {
                 let manifest =
                     fs::read_to_string(destination.join("Cargo.toml")).expect("read manifest");
-                assert!(manifest.contains("nemo-fabric-core = { path = "));
-                assert!(manifest.contains(&format!("version = \"{}\"", env!("CARGO_PKG_VERSION"))));
+                assert!(
+                    manifest.contains(&format!("nemo-fabric-core = {}", rust_core_dependency()))
+                );
+                assert!(!manifest.contains("path ="));
             }
             fs::remove_dir_all(destination).expect("remove scaffold");
         }

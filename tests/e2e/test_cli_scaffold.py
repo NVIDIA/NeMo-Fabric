@@ -62,13 +62,17 @@ def test_generated_python_scaffold_installs_editable(tmp_path: Path):
 def test_generated_rust_scaffold_builds(tmp_path: Path):
     destination = tmp_path / "rust-agent"
     generate_scaffold(destination, "rust")
+    assert "path =" not in (destination / "Cargo.toml").read_text()
     environment = os.environ.copy()
     environment["CARGO_TARGET_DIR"] = str(ROOT / "target")
+    core_path = json.dumps(str(ROOT / "crates/fabric-core"))
 
     subprocess.run(
         [
             "cargo",
             "build",
+            "--config",
+            f"patch.crates-io.nemo-fabric-core.path={core_path}",
             "--manifest-path",
             str(destination / "Cargo.toml"),
         ],
