@@ -122,7 +122,25 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
     assert "client.doctor(" not in quick_start
     assert "## Quickstart Steps" in quick_start
     assert "## Concepts Overview" in beginner_tutorial
+    for tutorial_api in (
+        "FabricConfig",
+        "RunResult",
+        "Fabric().run(",
+        "Fabric().start_runtime(",
+        "fabric.plan(",
+        "fabric.doctor(",
+        "01_quickstart.ipynb",
+    ):
+        assert tutorial_api in beginner_tutorial
     assert "## Summary" in beginner_tutorial
-    assert "path: ./getting-started/quickstart.mdx" in navigation
-    assert "path: ./getting-started/beginner-tutorial.mdx" in navigation
+    assert (
+        "      - page: Quickstart\n"
+        "        path: ./getting-started/quickstart.mdx\n"
+        "        slug: quick-start\n"
+    ) in navigation
+    assert (
+        "      - page: Beginner Tutorial\n"
+        "        path: ./getting-started/beginner-tutorial.mdx\n"
+        "        slug: quickstart\n"
+    ) in navigation
     assert "/nemo/fabric/sdk/python-sdk" in quick_start

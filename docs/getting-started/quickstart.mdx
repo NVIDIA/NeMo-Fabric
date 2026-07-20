@@ -7,9 +7,9 @@ template-library-version: "1.0.0"
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-Use this quickstart to build NeMo Fabric from a source checkout and confirm that
-the Python SDK can run a Hermes-backed agent. The time required depends on your
-local build speed.
+Use this quickstart to build NeMo Fabric from a source checkout and run the
+maintained code-review example with Hermes Agent. The time required depends on
+your local build speed.
 
 ## Prerequisites
 
@@ -53,8 +53,8 @@ uv venv -p 3.13 --seed .venv
 source .venv/bin/activate
 ```
 
-From the root of the source checkout, build the Python SDK with its native
-binding, the CLI, and the local wheels:
+From the root of the source checkout, build and install the Python SDK and its
+native binding in `.venv`, build the CLI, and create the local wheels:
 
 ```bash
 just build-all
@@ -80,30 +80,15 @@ export ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
 
 ### Run the Example
 
-Run the example through the Python SDK:
+Run the maintained code-review example through the Python SDK:
 
-```python
-import asyncio
-from examples.code_review_agent import BASE_DIR, hermes_config
-from nemo_fabric import Fabric
-
-
-async def main() -> None:
-    config = hermes_config()
-    client = Fabric()
-    result = await client.run(
-        config,
-        base_dir=BASE_DIR,
-        input="Reply with exactly: fabric works",
-    )
-
-    print(result.status)
-
-
-asyncio.run(main())
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --input "Reply with exactly: fabric works"
 ```
 
-The quickstart is complete when the command prints a successful run status.
+The quickstart is complete when the command finishes successfully and prints
+`fabric works` in the agent response.
 
 ## Next Steps
 
@@ -111,7 +96,8 @@ Harness installation and credential requirements differ by adapter. For more
 details about the Hermes Agent setup, refer to the
 [README Quick Start: Hermes Agent](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-agent).
 
-- Continue to the [Beginner Tutorial](/getting-started/quickstart) for a guided
-  explanation of Fabric configuration, harness selection, and model settings.
+- Continue to the [Beginner Tutorial](/getting-started/quickstart) to build a
+  typed configuration, compare one-shot and stateful runs, and inspect the
+  configuration and environment.
 - Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
   diagnostics, typed requests, and multi-turn runtime examples.
