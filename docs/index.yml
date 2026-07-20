@@ -14,10 +14,10 @@ navigation:
         path: ./getting-started/install.mdx
         slug: install
       - page: Quickstart
-        path: ./getting-started/quick-start.mdx
+        path: ./getting-started/quickstart.mdx
         slug: quick-start
       - page: Beginner Tutorial
-        path: ./getting-started/quickstart.mdx
+        path: ./getting-started/beginner-tutorial.mdx
         slug: quickstart
   - section: SDK
     contents:

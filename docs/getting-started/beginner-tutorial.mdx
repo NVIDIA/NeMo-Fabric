@@ -1,0 +1,136 @@
+---
+title: "NVIDIA NeMo Fabric Beginner Tutorial"
+sidebar-title: "Beginner Tutorial"
+description: "Learn how to configure and run a simple agent with NVIDIA NeMo Fabric."
+template-library-version: "1.0.0"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+This tutorial guides you through installing NeMo Fabric, configuring its core
+objects, and running a simple Hermes-backed agent.
+
+<Card>
+
+**Goal**: Understand how a Fabric configuration connects an agent harness to a
+model, and run your first agent.
+
+**In this tutorial, you will**:
+
+1. Install NeMo Fabric with Hermes Agent support.
+2. Configure a harness and model through typed Python objects.
+3. Run an agent and inspect its response.
+
+</Card>
+
+## Prerequisites
+
+Before you begin, ensure that you have:
+
+- Python 3.11–3.13. Hermes Agent does not currently support Python 3.14.
+- An NVIDIA API key from [`build.nvidia.com`](https://build.nvidia.com/).
+
+If you prefer the shortest path from a source checkout to a working result,
+complete the [Quickstart](/getting-started/quick-start) instead.
+
+## Concepts Overview
+
+The example uses four core objects:
+
+- `Fabric` runs the configured agent.
+- `FabricConfig` combines the metadata, harness, and model configuration.
+- `HarnessConfig` selects the agent harness and controls how NeMo Fabric
+  resolves it.
+- `ModelConfig` selects the model provider, model, and credentials.
+
+## Tutorial Steps
+
+Complete each step in order and verify the result before continuing.
+
+### Install NeMo Fabric
+
+Create a Python virtual environment and install NeMo Fabric with Hermes Agent and the Hermes Agent adapter.
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install "nemo-fabric[hermes, runtime]"
+```
+
+Refer to [the installation guide](https://github.com/NVIDIA/NeMo-Fabric#installation) for more details.
+
+### Configure the API Key
+
+Export your NVIDIA API key for the NVIDIA-hosted model used in this tutorial:
+
+```bash
+export NVIDIA_API_KEY=...
+```
+
+### Configure and Run a Simple Agent
+
+Create a file named `beginner_tutorial.py` with the following code. Read the
+configuration from the outside in: `FabricConfig` identifies the run, selects
+Hermes Agent as the harness, and assigns an NVIDIA-hosted model as the default.
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+)
+
+config = FabricConfig(
+    metadata=MetadataConfig(
+        name="quickstart-agent"
+    ),
+    harness=HarnessConfig(
+        adapter_id="nvidia.fabric.hermes",
+        resolution="preinstalled",
+        settings={
+            "base_url": "https://integrate.api.nvidia.com/v1",
+            "max_iterations": 1,
+        },
+    ),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+            temperature=0.0,
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+)
+
+fabric = Fabric()
+result = asyncio.run(fabric.run(config, input="Who are you?"))
+print(result.output.response)
+```
+
+Run the file:
+
+```bash
+python beginner_tutorial.py
+```
+
+The tutorial is successful when the command prints the agent's response.
+
+A more detailed version of this example is available as a [Jupyter Notebook](https://jupyter.org/)
+at [`examples/notebooks/01_quickstart.ipynb`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb).
+
+## Summary
+
+You have now:
+
+- Installed the NeMo Fabric runtime and Hermes Agent adapter.
+- Configured the harness and model through typed Python objects.
+- Run an agent and inspected its response.
+
+## Next Steps
+
+Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
+diagnostics, typed requests, and multi-turn runtime examples.

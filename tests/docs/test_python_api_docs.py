@@ -17,7 +17,8 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_DIR = ROOT / "docs" / "reference" / "api" / "python-library-reference"
 LANDING_PAGE = ROOT / "docs" / "about-nemo-fabric" / "overview.mdx"
-QUICK_START_PAGE = ROOT / "docs" / "getting-started" / "quick-start.mdx"
+QUICK_START_PAGE = ROOT / "docs" / "getting-started" / "quickstart.mdx"
+BEGINNER_TUTORIAL_PAGE = ROOT / "docs" / "getting-started" / "beginner-tutorial.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
@@ -92,6 +93,7 @@ def test_generated_reference_uses_valid_heading_order() -> None:
 def test_landing_page_routes_new_users_through_the_product() -> None:
     landing = LANDING_PAGE.read_text(encoding="utf-8")
     quick_start = QUICK_START_PAGE.read_text(encoding="utf-8")
+    beginner_tutorial = BEGINNER_TUTORIAL_PAGE.read_text(encoding="utf-8")
     navigation = NAVIGATION.read_text(encoding="utf-8")
 
     assert "      - section: API\n" in navigation
@@ -110,7 +112,7 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
         "/getting-started/install",
         "/getting-started/quick-start",
         "/getting-started/quickstart",
-        "/sdk/python",
+        "/nemo/fabric/sdk/python-sdk",
         "/reference/api/python-library-reference/client",
         "/reference/api/python-library-reference/runtime",
     ):
@@ -118,4 +120,9 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
 
     assert "client.plan(" not in quick_start
     assert "client.doctor(" not in quick_start
-    assert "/sdk/python" in quick_start
+    assert "## Quickstart Steps" in quick_start
+    assert "## Concepts Overview" in beginner_tutorial
+    assert "## Summary" in beginner_tutorial
+    assert "path: ./getting-started/quickstart.mdx" in navigation
+    assert "path: ./getting-started/beginner-tutorial.mdx" in navigation
+    assert "/nemo/fabric/sdk/python-sdk" in quick_start
