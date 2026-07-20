@@ -153,6 +153,8 @@ maintenance updates.
   ```bash
   $ git commit -s -m "Add cool feature."
   ```
+  A DCO sign-off is a commit-message trailer, not a cryptographic signature.
+  To add both, use `git commit -S -s`.
   This will append the following to your commit message:
   ```
   Signed-off-by: Your Name <your@email.com>
