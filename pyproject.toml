@@ -109,6 +109,7 @@ dev = [
 docs = [
   "lazydocs>=0.4",
   "beautifulsoup4>=4.12",
+  "pyyaml>=6.0",
 ]
 
 test = [
