@@ -57,13 +57,12 @@ modify a user's Codex login. Set the endpoint in
 `models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`; the adapter
 does not assume a default frontier endpoint.
 
-The dependency graph includes `openai-codex-cli-bin`. The Codex SDK owns this
-pinned app-server distribution; Fabric does not treat it as a user-installed
-command or an adapter descriptor requirement.
+The adapter depends on the Codex SDK, which installs and selects its matching
+app-server runtime. Fabric does not declare the runtime package directly or
+treat it as a user-installed command or adapter descriptor requirement.
 
-This adapter pins `openai-codex==0.1.0b3`, which pins
-`openai-codex-cli-bin==0.137.0a4`. A newer `codex` command on `PATH` is not used
-implicitly. When testing a newer compatible runtime, set
+A `codex` command on `PATH` is not selected implicitly. To override the
+SDK-selected runtime intentionally, set
 `harness.settings.codex_bin` to an app-server path that is absolute or relative
 to the explicit `base_dir`. Fabric passes the resolved path through
 `CodexConfig.codex_bin`; the SDK remains the execution driver.
@@ -88,7 +87,19 @@ Use normalized `FabricConfig` fields for portable configuration:
   provider and NVIDIA-hosted Responses-compatible models through the `nvidia`
   provider.
 - `environment.workspace` sets the working directory.
+- `mcp` maps stdio, HTTP, and streamable HTTP servers into request-scoped Codex
+  `mcp_servers` configuration. For stdio, Fabric parses `url` as a command plus
+  arguments.
+- `skills.paths` names skill directories that contain `SKILL.md`. The adapter
+  registers each directory as a process-scoped Codex skill root so Codex can
+  select matching skills through its normal discovery behavior.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
+
+The Codex adapter does not declare `tools.blocked` support. The current Codex
+runtime has per-MCP-server tool filters, but it does not provide one complete
+deny boundary for built-in, local, MCP, and hosted tools. Fabric therefore
+routes normalized blocked-tool policy as unsupported instead of applying a
+partial policy.
 
 Codex-specific controls belong in `harness.settings`:
 
@@ -98,7 +109,8 @@ Codex-specific controls belong in `harness.settings`:
 - `personality`, `reasoning_effort`, `service_name`, and `service_tier`
 - `output_schema` for SDK-native structured output
 - `codex_bin` for an explicit Codex app-server runtime override
-- `config_overrides` as dotted request-scoped Codex configuration keys
+- `config_overrides` as dotted request-scoped Codex configuration keys, such as
+  Codex-only MCP timeout or required-server options
 - `timeout_seconds`, defaulting to 1800
 - `env` for variables explicitly forwarded to the Codex runtime
 - `nemo_relay_command` for the optional external Relay gateway executable

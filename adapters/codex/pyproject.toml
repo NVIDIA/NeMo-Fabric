@@ -26,7 +26,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "nemo-fabric-adapters-common == 0.1.0",
-  "openai-codex==0.1.0b3",
+  "openai-codex==0.144.4",
   "tomli-w~=1.2",
 ]
 
@@ -43,8 +43,3 @@ include = ["nemo_fabric_adapters.codex*"]
 
 [tool.uv.sources]
 nemo-fabric-adapters-common = { path = "../common", editable = true }
-
-[tool.uv]
-# The SDK pins this prerelease runtime. Constraining that transitive package
-# lets uv resolve it without enabling prereleases for unrelated dependencies.
-constraint-dependencies = ["openai-codex-cli-bin==0.137.0a4"]

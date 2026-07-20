@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
@@ -105,12 +106,14 @@ def mock_codex_fixture(monkeypatch):
     mock_codex.next_result = None
     mock_codex.next_thread = None
     mock_codex.resume_thread_id = None
+    mock_codex.skill_request = AsyncMock()
 
     def build_client(*, config):
         mock_client = MagicMock(spec=AsyncCodex)
         mock_client.config = config
         mock_client.closed = False
         mock_client.thread = None
+        mock_client._client = SimpleNamespace(request=mock_codex.skill_request)
 
         async def close():
             mock_client.closed = True
@@ -188,6 +191,138 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
     client.thread.turn.assert_awaited_once_with(
         "Inspect the change.", effort=None, output_schema=None
     )
+    client.models.assert_not_awaited()
+    client._client.request.assert_not_awaited()
+
+
+def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_codex):
+    os.environ["FABRIC_TEST_MCP_URL"] = "https://mcp.example.test/mcp"
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "repo": {
+                    "transport": "stdio",
+                    "url": "python -m repo_mcp --root .",
+                },
+                "remote": {
+                    "transport": "streamable-http",
+                    "url": "${FABRIC_TEST_MCP_URL}",
+                },
+            }
+        }
+    }
+    codex_payload["config"]["harness"]["settings"][
+        "config_overrides"
+    ]["mcp_servers.remote.required"] = True
+
+    output = adapter.run(codex_payload)
+
+    assert output["completed"] is True
+    config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["mcp_servers"] == {
+        "remote": {
+            "url": "https://mcp.example.test/mcp",
+            "required": True,
+        },
+        "repo": {
+            "command": "python",
+            "args": ["-m", "repo_mcp", "--root", "."],
+        },
+    }
+
+
+def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):
+    review = tmp_path / "skills" / "review"
+    test = tmp_path / "skills" / "test"
+    for skill in (review, test):
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(
+            f"---\nname: {skill.name}\ndescription: Test skill.\n---\n",
+            encoding="utf-8",
+        )
+    codex_payload["capability_plan"] = {
+        "native": {"skill_paths": ["skills/review", "skills/test"]}
+    }
+
+    output = adapter.run(codex_payload)
+
+    assert output["completed"] is True
+    mock_codex.instances[0].thread.turn.assert_awaited_once_with(
+        "Inspect the change.",
+        effort=None,
+        output_schema=None,
+    )
+    mock_codex.instances[0].models.assert_awaited_once_with()
+    mock_codex.instances[0]._client.request.assert_awaited_once_with(
+        "skills/extraRoots/set",
+        {"extraRoots": [str(review), str(test)]},
+        response_model=adapter.SkillsExtraRootsSetResponse,
+    )
+
+
+def test_sdk_closes_when_skill_registration_is_unavailable(
+    codex_payload, mock_codex, tmp_path
+):
+    skill = tmp_path / "skills" / "review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: review\ndescription: Test skill.\n---\n",
+        encoding="utf-8",
+    )
+    codex_payload["capability_plan"] = {
+        "native": {"skill_paths": ["skills/review"]}
+    }
+    mock_codex.skill_request = None
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    client = mock_codex.instances[0]
+    client.thread_start.assert_not_awaited()
+    assert client.closed is True
+
+
+@pytest.mark.parametrize("transport", ["sse", "carrier-pigeon"])
+def test_sdk_rejects_unsupported_mcp_transport(codex_payload, mock_codex, transport):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "bad": {"transport": transport, "url": "https://mcp.example.test"}
+            }
+        }
+    }
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert f"unsupported Codex MCP transport: {transport}" in output["error"]["message"]
+    mock_codex.assert_not_called()
+
+
+def test_sdk_rejects_invalid_native_skill_path(codex_payload, mock_codex, tmp_path):
+    missing = tmp_path / "skills" / "missing"
+    codex_payload["capability_plan"] = {"native": {"skill_paths": [str(missing)]}}
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert "directory containing SKILL.md" in output["error"]["message"]
+    mock_codex.assert_not_called()
+
+
+@pytest.mark.parametrize("skill_paths", [None, "", {}, False])
+def test_sdk_rejects_falsy_non_list_skill_paths(
+    codex_payload, mock_codex, skill_paths
+):
+    codex_payload["capability_plan"] = {
+        "native": {"skill_paths": skill_paths}
+    }
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert output["error"]["message"] == "native skill_paths must be a list of paths"
+    mock_codex.assert_not_called()
 
 
 def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_path):
@@ -677,6 +812,22 @@ def test_cli_only_settings_are_rejected(codex_payload, setting):
     assert setting in output["error"]["message"]
 
 
+@pytest.mark.parametrize(
+    ("setting", "normalized_field"),
+    [("mcp_servers", "FabricConfig.mcp"), ("skills", "FabricConfig.skills")],
+)
+def test_normalized_capabilities_reject_harness_settings(
+    codex_payload, mock_codex, setting, normalized_field
+):
+    codex_payload["config"]["harness"]["settings"][setting] = {}
+
+    output = adapter.run(codex_payload)
+
+    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert normalized_field in output["error"]["message"]
+    mock_codex.assert_not_called()
+
+
 def test_adapter_rejects_structured_input(codex_payload):
     codex_payload["request"]["input"] = {
         "messages": [{"role": "user", "content": "Inspect the change."}]
@@ -699,18 +850,40 @@ def test_descriptor_has_no_codex_binary_requirement():
         "module": "nemo_fabric_adapters.codex.adapter",
         "callable": "run",
     }
+    assert descriptor["config"]["accepts"] == [
+        "models",
+        "mcp",
+        "skills",
+        "telemetry",
+    ]
     assert "requirements" not in descriptor
 
 
 def test_codex_config_resolves_sdk_adapter():
     from examples.code_review_agent import BASE_DIR, codex_config
 
-    plan = Fabric().plan(codex_config(), base_dir=BASE_DIR)
+    config = codex_config()
+    skill_path = Path(__file__).parents[2] / "skills" / "nemo-fabric-integrate"
+    config.add_skill_path(skill_path)
+    config.add_mcp_server(
+        "github",
+        transport="streamable-http",
+        url="https://mcp.example.test/mcp",
+        exposure="harness_native",
+    )
+    plan = Fabric().plan(config, base_dir=BASE_DIR)
 
     assert plan.adapter.adapter_id == "nvidia.fabric.codex"
     assert plan.adapter.harness == "codex"
     assert plan.config.runtime.input_schema == "text"
     assert plan.config.harness.settings["reasoning_effort"] == "high"
+    native = plan["capability_plan"]["native"]
+    assert native["skill_paths"] == [str(skill_path)]
+    assert native["mcp_servers"]["github"] == {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test/mcp",
+        "exposure": "harness_native",
+    }
     unsupported = plan["capability_plan"]["unsupported"]
     assert not unsupported.get("skill_paths")
     assert not unsupported.get("mcp_servers")
