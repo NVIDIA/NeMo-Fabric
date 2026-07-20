@@ -108,4 +108,7 @@ def test_failed_cli_run_returns_nonzero_status():
     )
 
     assert result.returncode != 0
-    assert json.loads(result.stdout)["status"] == "failed"
+    failure = json.loads(result.stdout)
+    assert failure["status"] == "failed"
+    assert failure["error"]["code"] == "runtime_error"
+    assert "adapter lifecycle start failed" in result.stderr

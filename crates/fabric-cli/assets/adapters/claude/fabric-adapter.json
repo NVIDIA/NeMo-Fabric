@@ -17,5 +17,10 @@
         "integration_modes": ["hooks", "gateway"]
       }
     }
+  },
+  "runtime": {
+    "local_host": {
+      "contract_version": "fabric.adapter.lifecycle/v1alpha1"
+    }
   }
 }
