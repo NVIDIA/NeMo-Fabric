@@ -153,7 +153,7 @@ the following capabilities:
 | Adapter | Models | Tools / Blocked Tools | MCP | Skills | Subagents | Telemetry | Persistent Local Host | Remote Service |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | [Claude](adapters/claude/README.md) | Anthropic / Claude | `allowed_tools` adapter setting / normalized block list | Normalized | Normalized | Not exposed | Relay: ATIF, OTel, and OpenInference through hooks and gateway | Yes: `ClaudeSDKClient`, session, and optional Relay gateway | Not implemented |
-| [Codex](adapters/codex/README.md) | OpenAI / Codex | Not normalized | Not normalized | Not normalized | Not exposed | Relay: ATIF, OTel, and OpenInference through hooks and gateway; native OTel | Yes: `AsyncCodex`, app server, thread, and optional Relay gateway | Not implemented |
+| [Codex](adapters/codex/README.md) | OpenAI and NVIDIA Responses providers / Codex-compatible models | Not normalized | Normalized | Normalized | Not exposed | Relay: ATIF, OTel, and OpenInference through hooks and gateway; native OTel | Yes: `AsyncCodex`, app server, thread, and optional Relay gateway | Not implemented |
 | [Deep Agents](adapters/deepagents/README.md) | LangChain providers | Built-ins and MCP / normalized middleware block list | Normalized | Normalized | Constrained local delegation | Relay SDK: ATIF, OTel, and OpenInference; native OTel and OpenInference | Yes: compiled graph and async checkpointer | Not implemented |
 | [Hermes](adapters/hermes/README.md) | Normalized provider and base URL | Toolsets / normalized disabled toolsets | Normalized | Normalized | Not exposed | Relay plugin: ATIF, OTel, and OpenInference | Yes: `AIAgent`, `SessionDB`, and Relay context | Not implemented |
 
