@@ -16,6 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from claude_agent_sdk import AssistantMessage
+from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk import ClaudeSDKError
 from claude_agent_sdk import CLIConnectionError
 from claude_agent_sdk import CLIJSONDecodeError
@@ -57,7 +58,7 @@ def install_fake_client(
     clients: list[MagicMock] = []
     client_type = adapter.ClaudeSDKClient
 
-    def build_client(options: Any) -> MagicMock:
+    def build_client(options: ClaudeAgentOptions) -> MagicMock:
         client = MagicMock(spec=client_type)
         client.options = options
         client.prompts = []
