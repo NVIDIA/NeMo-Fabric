@@ -2,7 +2,7 @@
 title: "Struct Adapter Runtime Support"
 sidebar-title: "AdapterRuntimeSupport"
 description: "Runtime hosting mechanisms implemented by an adapter."
-position: 9
+position: 8
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -17,7 +17,9 @@ Runtime hosting mechanisms implemented by an adapter.
 
 ### `local_host: Option<AdapterLocalHostSupport>`
 
-Versioned persistent local-host support, when implemented.
+Persistent local-host support, when implemented.
+
+This nesting is intentionally provisional until remote adapter hosting introduces a shared runtime protocol.
 
 ### `extensions: BTreeMap<String, Value>`
 
