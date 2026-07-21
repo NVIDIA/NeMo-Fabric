@@ -1125,12 +1125,22 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     if descriptor.harness.trim().is_empty() {
         return invalid_adapter_descriptor(path, "harness must not be empty");
     }
-    if descriptor.runtime.local_host.is_some() {
-        if descriptor.adapter_kind != AdapterKind::Python {
-            return invalid_adapter_descriptor(
-                path,
-                "runtime.local_host is currently supported only by python adapters",
-            );
+    match descriptor.adapter_kind {
+        AdapterKind::Process | AdapterKind::Python => {
+            if descriptor.runtime.local_host.is_none() {
+                return invalid_adapter_descriptor(
+                    path,
+                    "local process and python adapters must declare runtime.local_host",
+                );
+            }
+        }
+        AdapterKind::Http | AdapterKind::NativePlugin => {
+            if descriptor.runtime.local_host.is_some() {
+                return invalid_adapter_descriptor(
+                    path,
+                    "runtime.local_host is supported only by process and python adapters",
+                );
+            }
         }
     }
     Ok(())
@@ -1158,7 +1168,7 @@ fn resolve_runtime_capabilities(
         matches!(
             descriptor.adapter_kind,
             AdapterKind::Process | AdapterKind::Python
-        )
+        ) && descriptor.runtime.local_host.is_some()
     });
     let descriptor_capabilities = descriptor
         .map(|descriptor| descriptor.capabilities.clone())
@@ -1754,21 +1764,31 @@ mod tests {
 
     #[test]
     fn repository_adapters_declare_local_host() {
-        for harness in ["claude", "codex", "deepagents", "hermes"] {
-            let descriptor = load_adapter_descriptor(
-                repository_adapter_dir().join(format!("{harness}/fabric-adapter.json")),
-            )
-            .unwrap_or_else(|error| panic!("{harness} adapter descriptor: {error}"));
+        let repository_root = repository_root();
+        for relative_path in [
+            "adapters/claude/fabric-adapter.json",
+            "adapters/codex/fabric-adapter.json",
+            "adapters/deepagents/fabric-adapter.json",
+            "adapters/hermes/fabric-adapter.json",
+            "crates/fabric-cli/assets/adapters/claude/fabric-adapter.json",
+            "crates/fabric-cli/assets/adapters/codex/fabric-adapter.json",
+            "crates/fabric-cli/assets/adapters/deepagents/fabric-adapter.json",
+            "crates/fabric-cli/assets/adapters/hermes/fabric-adapter.json",
+            "crates/fabric-cli/assets/adapters/scripted/fabric-adapter.json",
+            "examples/harbor/calculator/task/environment/fabric/adapters/scripted/fabric-adapter.json",
+            "examples/harbor/swebench/adapters/claude/fabric-adapter.json",
+            "examples/harbor/swebench/adapters/hermes/fabric-adapter.json",
+            "tests/fixtures/hermes-shim-agent/adapters/hermes-shim/fabric-adapter.json",
+        ] {
+            let descriptor = load_adapter_descriptor(repository_root.join(relative_path))
+                .unwrap_or_else(|error| panic!("{relative_path}: {error}"));
 
-            assert!(
-                descriptor.runtime.local_host.is_some(),
-                "{harness} descriptor"
-            );
+            assert!(descriptor.runtime.local_host.is_some(), "{relative_path}");
         }
     }
 
     #[test]
-    fn rejects_local_host_on_non_python_adapter() {
+    fn accepts_local_host_on_process_adapter() {
         let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
             "contract_version": ADAPTER_CONTRACT_VERSION,
             "adapter_id": "acme.fabric.process-host",
@@ -1780,15 +1800,55 @@ mod tests {
         }))
         .expect("adapter descriptor");
 
-        let error = validate_adapter_descriptor_shape(
+        validate_adapter_descriptor_shape(
             &descriptor,
             Path::new("process-host/fabric-adapter.json"),
         )
-        .expect_err("process adapter must not declare a Python local host");
+        .expect("process adapter may implement the persistent local-host protocol");
+    }
+
+    #[test]
+    fn rejects_local_adapter_without_local_host() {
+        let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
+            "contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_id": "acme.fabric.python-host",
+            "harness": "python-host",
+            "adapter_kind": "python",
+        }))
+        .expect("adapter descriptor");
+
+        let error = validate_adapter_descriptor_shape(
+            &descriptor,
+            Path::new("python-host/fabric-adapter.json"),
+        )
+        .expect_err("python adapter must declare a persistent local host");
         assert!(matches!(
             error,
             FabricError::InvalidAdapterDescriptor { message, .. }
-                if message.contains("only by python adapters")
+                if message.contains("must declare runtime.local_host")
+        ));
+    }
+
+    #[test]
+    fn rejects_local_host_on_remote_adapter() {
+        let descriptor: AdapterDescriptor = serde_json::from_value(serde_json::json!({
+            "contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_id": "acme.fabric.http-host",
+            "harness": "http-host",
+            "adapter_kind": "http",
+            "runtime": {"local_host": {}},
+        }))
+        .expect("adapter descriptor");
+
+        let error = validate_adapter_descriptor_shape(
+            &descriptor,
+            Path::new("http-host/fabric-adapter.json"),
+        )
+        .expect_err("http adapter must not declare a local host");
+        assert!(matches!(
+            error,
+            FabricError::InvalidAdapterDescriptor { message, .. }
+                if message.contains("only by process and python adapters")
         ));
     }
 }

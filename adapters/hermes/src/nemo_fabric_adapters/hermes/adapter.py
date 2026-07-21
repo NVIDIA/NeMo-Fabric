@@ -15,7 +15,6 @@ import inspect
 import json
 import logging
 import os
-import sys
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -157,18 +156,13 @@ def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
-    if lifecycle.is_lifecycle_host(os.environ):
-        lifecycle.serve(HermesRuntime)
-        return
-    payload = json.load(sys.stdin)
-    output = run(payload)
-    print(json.dumps(output, sort_keys=True))
-    if output.get("failed"):
-        raise SystemExit(2)
+    """Serve the persistent local-host lifecycle protocol."""
+
+    lifecycle.serve(HermesRuntime)
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Fabric adapter entrypoint used by script and native SDK runtime calls."""
+    """Run one isolated adapter invocation for direct library tests."""
 
     return asyncio.run(run_hermes(payload))
 

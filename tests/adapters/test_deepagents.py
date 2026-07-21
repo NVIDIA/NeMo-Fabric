@@ -1110,3 +1110,12 @@ async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_pa
 
     assert output["failed"] is True
     assert "api_key_env" in output["error"]
+
+
+def test_main_serves_persistent_runtime(monkeypatch):
+    serve = MagicMock()
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
+
+    adapter.main()
+
+    serve.assert_called_once_with(adapter.DeepAgentsRuntime)

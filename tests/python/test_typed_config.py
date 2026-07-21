@@ -121,7 +121,7 @@ async def runs_with_typed_config_and_adapter_directory(client: Fabric) -> None:
     assert result["status"] == "succeeded", result.get("status")
     assert result.request_id == "typed-request-1"
     assert result["adapter_kind"] == "python"
-    assert result["metadata"]["adapter_runner"] == "python"
+    assert result["metadata"]["adapter_runner"] == "persistent_local_host"
     assert result["output"]["received"] == "hello typed"
 
 

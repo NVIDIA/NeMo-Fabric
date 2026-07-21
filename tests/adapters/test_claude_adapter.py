@@ -1170,16 +1170,10 @@ def test_run_normalizes_unexpected_exception(claude_payload, monkeypatch):
     assert "secret" not in json.dumps(output)
 
 
-def test_main_normalizes_payload_load_failure(monkeypatch, capsys):
-    monkeypatch.setattr(
-        adapter.common_utils,
-        "load_payload",
-        MagicMock(side_effect=ValueError("secret payload")),
-    )
+def test_main_serves_persistent_runtime(monkeypatch):
+    serve = MagicMock()
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
 
-    with pytest.raises(SystemExit, match="2"):
-        adapter.main()
+    adapter.main()
 
-    output = json.loads(capsys.readouterr().out)
-    assert output["error"]["code"] == "claude_adapter_internal_error"
-    assert "secret" not in json.dumps(output)
+    serve.assert_called_once_with(adapter.ClaudeRuntime)

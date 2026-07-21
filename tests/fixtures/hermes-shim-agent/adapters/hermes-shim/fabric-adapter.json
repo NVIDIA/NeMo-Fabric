@@ -11,6 +11,9 @@
       "PYTHONPATH": "adapters/hermes-shim/src"
     }
   },
+  "runtime": {
+    "local_host": {}
+  },
   "requirements": {
     "binaries": [
       "python3"

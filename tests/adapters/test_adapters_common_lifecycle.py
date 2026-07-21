@@ -25,11 +25,6 @@ def _streams(requests: list[dict[str, Any]]) -> tuple[io.StringIO, io.StringIO]:
     return input_stream, io.StringIO()
 
 
-def test_lifecycle_host_uses_unversioned_marker():
-    assert lifecycle.is_lifecycle_host({lifecycle.LOCAL_HOST_ENV: "1"})
-    assert not lifecycle.is_lifecycle_host({lifecycle.LOCAL_HOST_ENV: "0"})
-
-
 def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
     runtime_id = "runtime-1"
     input_stream, output_stream = _streams(
@@ -92,6 +87,57 @@ def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
     assert responses[2]["outcome"]["output"] == {"count": 2, "input": "second"}
     assert len(instances) == 1
     assert len(set(instances[0].loop_ids)) == 1
+
+
+def test_lifecycle_host_retains_start_config_outside_invoke_wire_payload():
+    runtime_id = "runtime-1"
+    start_payload = {
+        "agent_name": "agent",
+        "base_dir": "/workspace",
+        "config": {"harness": {"settings": {"mode": "retained"}}},
+        "runtime_context": {
+            "runtime_id": runtime_id,
+            "invocation_id": "runtime-start",
+        },
+        "capability_plan": {"native": ["tools"]},
+    }
+    invoke_payload = {
+        "runtime_context": {
+            "runtime_id": runtime_id,
+            "invocation_id": "invocation-1",
+        },
+        "request": {"input": "hello"},
+    }
+    input_stream, output_stream = _streams(
+        [
+            _request("start", start_payload),
+            _request("invoke", invoke_payload),
+            _request("stop", {"runtime_id": runtime_id}),
+        ]
+    )
+    invocations = []
+
+    class Runtime:
+        async def start(self, payload):
+            payload["config"]["harness"]["settings"]["mode"] = "mutated"
+
+        async def invoke(self, payload):
+            invocations.append(payload)
+            return {"input": payload["request"]["input"]}
+
+        async def stop(self):
+            pass
+
+    lifecycle.serve(Runtime, input_stream=input_stream, output_stream=output_stream)
+
+    assert invocations == [
+        {
+            **start_payload,
+            "runtime_context": invoke_payload["runtime_context"],
+            "request": invoke_payload["request"],
+        }
+    ]
+    assert invocations[0]["config"]["harness"]["settings"]["mode"] == "retained"
 
 
 def test_lifecycle_host_rejects_runtime_mismatch_without_poisoning_runtime():

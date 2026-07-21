@@ -5,7 +5,9 @@
   "adapter_kind": "process",
   "runner": {
     "command": "python3",
-    "script": "run.py",
-    "stdin_payload": "fabric_request"
+    "script": "run.py"
+  },
+  "runtime": {
+    "local_host": {}
   }
 }

@@ -25,7 +25,7 @@ pub enum SchemaName {
     AdapterDescriptor,
     /// Resolved run plan schema.
     RunPlan,
-    /// Adapter-facing invocation payload schema.
+    /// Initialized-runtime invocation payload schema.
     AdapterInvocation,
     /// Runtime context schema.
     RuntimeContext,

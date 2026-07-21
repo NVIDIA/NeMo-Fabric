@@ -5,9 +5,8 @@
 """LangChain Deep Agents adapter for Fabric.
 
 Maps Fabric's normalized invocation onto the ``deepagents`` SDK and returns a
-normalized Fabric result. Supports one-shot, multi-turn, and resumed execution
-via a persistent LangGraph checkpointer keyed by the Fabric session id, so
-conversation state survives across separate adapter invocations.
+normalized Fabric result. Supports single-run, multi-turn, and resumed execution
+via a persistent LangGraph checkpointer keyed by the Fabric session id.
 """
 
 from __future__ import annotations
@@ -118,19 +117,13 @@ def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) 
 
 
 def main() -> None:
-    """Subprocess entrypoint used by the ``python -m`` process path."""
+    """Serve the persistent local-host lifecycle protocol."""
 
-    if lifecycle.is_lifecycle_host(os.environ):
-        lifecycle.serve(DeepAgentsRuntime)
-        return
-    output = run(common_utils.load_payload())
-    print(json.dumps(output, sort_keys=True))
-    if output.get("failed"):
-        raise SystemExit(2)
+    lifecycle.serve(DeepAgentsRuntime)
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Fabric adapter entrypoint used by the ``python -m`` and native SDK paths."""
+    """Run one isolated adapter invocation for direct library tests."""
 
     import asyncio
 
@@ -758,7 +751,7 @@ async def invoke_agent(
     thread_id: str | None,
     callbacks: list[Any] | None = None,
 ) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
-    """Create and run an agent for the per-invocation compatibility path."""
+    """Create and run an isolated agent for direct library tests."""
 
     from deepagents import create_deep_agent
 

@@ -1322,7 +1322,7 @@ async def run_codex(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Run one Fabric invocation from the synchronous adapter boundary."""
+    """Run one isolated adapter invocation for direct library tests."""
 
     try:
         return asyncio.run(run_codex(payload))
@@ -1335,20 +1335,9 @@ def run(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
-    if lifecycle.is_lifecycle_host(os.environ):
-        lifecycle.serve(CodexRuntime)
-        return
-    try:
-        payload = common_utils.load_payload()
-    except Exception:
-        output = _failure(
-            "codex_adapter_internal_error", "Codex adapter failed unexpectedly"
-        )
-    else:
-        output = run(payload)
-    print(json.dumps(output, sort_keys=True))
-    if output.get("failed"):
-        raise SystemExit(2)
+    """Serve the persistent local-host lifecycle protocol."""
+
+    lifecycle.serve(CodexRuntime)
 
 
 if __name__ == "__main__":

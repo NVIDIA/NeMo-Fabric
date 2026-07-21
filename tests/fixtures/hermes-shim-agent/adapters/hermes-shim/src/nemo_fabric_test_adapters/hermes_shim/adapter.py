@@ -6,18 +6,25 @@
 
 from __future__ import annotations
 
-import json
-import sys
 from pathlib import Path
 from typing import Any
 
+from nemo_fabric_adapters.common import lifecycle
+
 
 def main() -> None:
-    payload = json.load(sys.stdin)
-    output = run(payload)
-    print(json.dumps(output, sort_keys=True))
-    if output.get("failed"):
-        raise SystemExit(2)
+    lifecycle.serve(ShimRuntime)
+
+
+class ShimRuntime:
+    async def start(self, _payload: dict[str, Any]) -> None:
+        pass
+
+    async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return run_selected_mode(payload)
+
+    async def stop(self) -> None:
+        pass
 
 
 def run(payload: dict[str, Any]) -> dict[str, Any]:

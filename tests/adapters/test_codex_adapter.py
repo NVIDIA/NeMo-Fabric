@@ -1089,3 +1089,12 @@ def test_environment_rejects_non_mapping_runtime_telemetry(codex_payload, teleme
         match=r"runtime_context\.telemetry must be a mapping",
     ):
         adapter.child_environment(codex_payload)
+
+
+def test_main_serves_persistent_runtime(monkeypatch):
+    serve = MagicMock()
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
+
+    adapter.main()
+
+    serve.assert_called_once_with(adapter.CodexRuntime)

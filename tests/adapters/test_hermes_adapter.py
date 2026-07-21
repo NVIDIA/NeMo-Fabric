@@ -626,3 +626,12 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert Path(second["hermes_home"]) == (
         tmp_path / "hermes-home" / "runtimes" / "runtime-fabric-123"
     )
+
+
+def test_main_serves_persistent_runtime(monkeypatch):
+    serve = MagicMock()
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
+
+    adapter.main()
+
+    serve.assert_called_once_with(adapter.HermesRuntime)
