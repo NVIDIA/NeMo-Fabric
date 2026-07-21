@@ -15,10 +15,16 @@ To install just the Hermes Agent adapter by itself:
 pip install "nemo-fabric[hermes]"
 ```
 
-To install just the Hermes Agent adapter along with the NeMo Fabric Runtime:
+To install the Hermes Agent adapter along with the NeMo Fabric Runtime:
 
 ```bash
 pip install "nemo-fabric[hermes, runtime]"
+```
+
+To install the Hermes Agent adapter along with a compatible version of Hermes Agent:
+
+```bash
+pip install "nemo-fabric[hermes, hermes-agent]"
 ```
 
 ## What It Maps
