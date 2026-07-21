@@ -27,7 +27,7 @@ configuration and telemetry support.
 | Agent Harness | Models | Tools / Blocked Tools | MCP | Skills | Subagents |
 | --- | --- | --- | --- | --- | --- |
 | [Claude](claude/README.md) | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | `allowed_tools` adapter setting / normalized `tools.blocked` | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
-| [Codex](codex/README.md) | OpenAI; NVIDIA Responses-compatible models without Relay | Codex-native tools / `tools.blocked` not normalized | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
+| [Codex](codex/README.md) | OpenAI; NVIDIA Responses-compatible models without Relay | Codex-native tools / configuring `tools.blocked` is unsupported and raises `UnsupportedToolsPolicy` | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
 | [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | Built-ins and MCP / normalized middleware block list | Normalized through `langchain-mcp-adapters` | Normalized | Constrained declarative local delegation |
 | [Hermes Agent](hermes/README.md) | Normalized provider, model, and base URL | Toolsets / normalized disabled toolsets | Normalized | Normalized | Not exposed |
 
