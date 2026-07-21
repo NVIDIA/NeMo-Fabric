@@ -16,6 +16,40 @@ from openai_codex import AsyncCodex, AsyncThread, AsyncTurnHandle
 from openai_codex.types import TurnStatus
 
 
+def lifecycle_start_payload(payload):
+    return {key: value for key, value in payload.items() if key != "request"}
+
+
+def lifecycle_invocation(payload):
+    return {
+        "runtime_context": payload["runtime_context"],
+        "request": payload["request"],
+    }
+
+
+async def invoke_once_async(payload):
+    runtime = adapter.CodexRuntime()
+    await runtime.start(lifecycle_start_payload(payload))
+    try:
+        return await runtime.invoke(lifecycle_invocation(payload))
+    finally:
+        await runtime.stop()
+
+
+def invoke_once(payload):
+    return asyncio.run(invoke_once_async(payload))
+
+
+def runtime_start_error(payload):
+    async def scenario():
+        runtime = adapter.CodexRuntime()
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(lifecycle_start_payload(payload))
+        return caught.value
+
+    return asyncio.run(scenario())
+
+
 @pytest.fixture(name="codex_payload")
 def codex_payload_fixture(tmp_path):
     workspace = tmp_path / "workspace"
@@ -24,23 +58,23 @@ def codex_payload_fixture(tmp_path):
         "agent_name": "codex-test",
         "base_dir": str(tmp_path),
         "config": {
-                "harness": {
-                    "adapter_id": "nvidia.fabric.codex",
-                    "settings": {
-                        "sandbox": "workspace-write",
-                        "config_overrides": {
-                            "features.web_search": False,
-                            "model_reasoning_effort": "high",
-                        },
+            "harness": {
+                "adapter_id": "nvidia.fabric.codex",
+                "settings": {
+                    "sandbox": "workspace-write",
+                    "config_overrides": {
+                        "features.web_search": False,
+                        "model_reasoning_effort": "high",
                     },
                 },
-                "models": {
-                    "default": {
-                        "provider": "openai",
-                        "model": "openai/gpt-5.4",
-                    }
-                },
-                "runtime": {},
+            },
+            "models": {
+                "default": {
+                    "provider": "openai",
+                    "model": "openai/gpt-5.4",
+                }
+            },
+            "runtime": {},
         },
         "runtime_context": {
             "runtime_id": "runtime-1",
@@ -105,7 +139,6 @@ def mock_codex_fixture(monkeypatch):
     mock_codex.next_thread_id = "thread-123"
     mock_codex.next_result = None
     mock_codex.next_thread = None
-    mock_codex.resume_thread_id = None
     mock_codex.skill_request = AsyncMock()
     mock_codex.close_error = None
 
@@ -129,14 +162,8 @@ def mock_codex_fixture(monkeypatch):
             )
             return mock_client.thread
 
-        async def thread_resume(thread_id, **_kwargs):
-            resumed_thread_id = mock_codex.resume_thread_id or thread_id
-            mock_client.thread = mock_thread(resumed_thread_id, mock_codex.next_result)
-            return mock_client.thread
-
         mock_client.close.side_effect = close
         mock_client.thread_start.side_effect = thread_start
-        mock_client.thread_resume.side_effect = thread_resume
         mock_codex.instances.append(mock_client)
         return mock_client
 
@@ -145,7 +172,7 @@ def mock_codex_fixture(monkeypatch):
     return mock_codex
 
 
-def test_sdk_oneshot_uses_native_thread_and_turn_contract(
+def test_single_invocation_uses_native_thread_and_turn_contract(
     codex_payload, mock_codex, tmp_path
 ):
     os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
@@ -155,7 +182,7 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
         "CODEX_EXPLICIT": "forward-me"
     }
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["completed"] is True
     assert output["adapter"] == "sdk"
@@ -193,29 +220,32 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
     client._client.request.assert_not_awaited()
 
 
-def test_sdk_close_failure_preserves_completed_turn_and_thread_state(
+def test_runtime_stop_reports_close_failure_after_completed_turn(
     codex_payload, mock_codex, caplog
 ):
     mock_codex.close_error = RuntimeError("close failed")
 
-    output = adapter.run(codex_payload)
+    async def scenario():
+        runtime = adapter.CodexRuntime()
+        await runtime.start(lifecycle_start_payload(codex_payload))
+        output = await runtime.invoke(lifecycle_invocation(codex_payload))
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.stop()
+        return output, caught.value
+
+    output, error = asyncio.run(scenario())
 
     assert output["completed"] is True
     assert output["failed"] is False
     assert output["thread_id"] == "thread-123"
     assert output["response"] == "done"
     assert output["error"] is None
-    assert output["cleanup_error"] == {
-        "code": "codex_sdk_stop_failed",
-        "message": "Codex SDK runtime failed to stop",
-        "retryable": False,
-    }
-    assert adapter.load_thread_id(codex_payload, "runtime-1") == "thread-123"
-    assert "Codex SDK client failed to close after invocation" in caplog.text
+    assert error.code == "codex_sdk_stop_failed"
+    assert "Codex SDK client failed to close" in caplog.text
     mock_codex.instances[0].close.assert_awaited_once_with()
 
 
-def test_sdk_close_failure_does_not_mask_adapter_error(
+def test_start_failure_is_not_masked_by_sdk_close_failure(
     codex_payload, mock_codex, monkeypatch, caplog
 ):
     mock_codex.close_error = RuntimeError("close failed")
@@ -227,13 +257,17 @@ def test_sdk_close_failure_does_not_mask_adapter_error(
     )
     monkeypatch.setattr(adapter, "_register_skill_roots", register_skills)
 
-    output = adapter.run(codex_payload)
+    async def scenario():
+        runtime = adapter.CodexRuntime()
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.start(lifecycle_start_payload(codex_payload))
+        return caught.value
 
-    assert output["failed"] is True
-    assert output["error"]["code"] == "codex_skill_registration_failed"
-    assert output["error"]["message"] == "Codex skill registration failed"
-    assert "cleanup_error" not in output
-    assert "Codex SDK client failed to close after invocation" in caplog.text
+    error = asyncio.run(scenario())
+
+    assert error.code == "codex_skill_registration_failed"
+    assert error.message == "Codex skill registration failed"
+    assert "Codex SDK cleanup after start failure also failed" in caplog.text
     register_skills.assert_awaited_once()
     mock_codex.instances[0].close.assert_awaited_once_with()
 
@@ -254,11 +288,11 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
             }
         }
     }
-    codex_payload["config"]["harness"]["settings"][
-        "config_overrides"
-    ]["mcp_servers.remote.required"] = True
+    codex_payload["config"]["harness"]["settings"]["config_overrides"][
+        "mcp_servers.remote.required"
+    ] = True
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["completed"] is True
     config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
@@ -287,7 +321,7 @@ def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):
         "native": {"skill_paths": ["skills/review", "skills/test"]}
     }
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["completed"] is True
     mock_codex.instances[0].thread.turn.assert_awaited_once_with(
@@ -312,14 +346,12 @@ def test_sdk_closes_when_skill_registration_is_unavailable(
         "---\nname: review\ndescription: Test skill.\n---\n",
         encoding="utf-8",
     )
-    codex_payload["capability_plan"] = {
-        "native": {"skill_paths": ["skills/review"]}
-    }
+    codex_payload["capability_plan"] = {"native": {"skill_paths": ["skills/review"]}}
     mock_codex.skill_request = None
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
+    assert error.code == "codex_invalid_configuration"
     client = mock_codex.instances[0]
     client.thread_start.assert_not_awaited()
     assert client.closed is True
@@ -335,10 +367,10 @@ def test_sdk_rejects_unsupported_mcp_transport(codex_payload, mock_codex, transp
         }
     }
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert f"unsupported Codex MCP transport: {transport}" in output["error"]["message"]
+    assert error.code == "codex_invalid_configuration"
+    assert f"unsupported Codex MCP transport: {transport}" in error.message
     mock_codex.assert_not_called()
 
 
@@ -346,25 +378,21 @@ def test_sdk_rejects_invalid_native_skill_path(codex_payload, mock_codex, tmp_pa
     missing = tmp_path / "skills" / "missing"
     codex_payload["capability_plan"] = {"native": {"skill_paths": [str(missing)]}}
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert "directory containing SKILL.md" in output["error"]["message"]
+    assert error.code == "codex_invalid_configuration"
+    assert "directory containing SKILL.md" in error.message
     mock_codex.assert_not_called()
 
 
 @pytest.mark.parametrize("skill_paths", [None, "", {}, False])
-def test_sdk_rejects_falsy_non_list_skill_paths(
-    codex_payload, mock_codex, skill_paths
-):
-    codex_payload["capability_plan"] = {
-        "native": {"skill_paths": skill_paths}
-    }
+def test_sdk_rejects_falsy_non_list_skill_paths(codex_payload, mock_codex, skill_paths):
+    codex_payload["capability_plan"] = {"native": {"skill_paths": skill_paths}}
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert output["error"]["message"] == "native skill_paths must be a list of paths"
+    assert error.code == "codex_invalid_configuration"
+    assert error.message == "native skill_paths must be a list of paths"
     mock_codex.assert_not_called()
 
 
@@ -372,23 +400,17 @@ def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_pa
     codex_bin = tmp_path / "bin" / "codex"
     codex_bin.parent.mkdir()
     codex_bin.touch()
-    codex_payload["config"]["harness"]["settings"][
-        "codex_bin"
-    ] = str(codex_bin)
+    codex_payload["config"]["harness"]["settings"]["codex_bin"] = str(codex_bin)
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["completed"] is True
     assert mock_codex.instances[0].config.codex_bin == str(codex_bin)
 
 
 @pytest.mark.parametrize("codex_bin", ["bin/codex", "~/bin/codex"])
-def test_sdk_resolves_relative_codex_runtime_from_base_dir(
-    codex_payload, codex_bin
-):
-    codex_payload["config"]["harness"]["settings"][
-        "codex_bin"
-    ] = codex_bin
+def test_sdk_resolves_relative_codex_runtime_from_base_dir(codex_payload, codex_bin):
+    codex_payload["config"]["harness"]["settings"]["codex_bin"] = codex_bin
 
     config = adapter.sdk_config(codex_payload, relay=None)
 
@@ -398,34 +420,11 @@ def test_sdk_resolves_relative_codex_runtime_from_base_dir(
 
 def test_sdk_keeps_absolute_codex_runtime_path(codex_payload, tmp_path):
     codex_bin = tmp_path / "bin" / ".." / "codex"
-    codex_payload["config"]["harness"]["settings"][
-        "codex_bin"
-    ] = str(codex_bin)
+    codex_payload["config"]["harness"]["settings"]["codex_bin"] = str(codex_bin)
 
     config = adapter.sdk_config(codex_payload, relay=None)
 
     assert config.codex_bin == str(codex_bin)
-
-
-def test_runtime_resumes_sdk_thread_across_invocations(codex_payload, mock_codex):
-    first = adapter.run(codex_payload)
-    codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
-    codex_payload["request"]["input"] = "Continue."
-    second = adapter.run(codex_payload)
-
-    assert first["thread_id"] == second["thread_id"] == "thread-123"
-    mock_codex.instances[0].thread_start.assert_awaited_once()
-    assert mock_codex.instances[1].thread_resume.await_args.args[0] == "thread-123"
-    assert mock_codex.instances[1].thread.turn.await_args.args[0] == "Continue."
-    state = json.loads(
-        adapter.runtime_state_path(codex_payload, "runtime-1").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert state == {
-        "runtime_id": "runtime-1",
-        "codex_thread_id": "thread-123",
-    }
 
 
 async def test_persistent_runtime_reuses_one_client_and_thread(
@@ -436,17 +435,16 @@ async def test_persistent_runtime_reuses_one_client_and_thread(
     runtime = adapter.CodexRuntime()
 
     await runtime.start(start_payload)
-    first = await runtime.invoke(codex_payload)
+    first = await runtime.invoke(lifecycle_invocation(codex_payload))
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
     codex_payload["request"]["input"] = "Continue."
-    second = await runtime.invoke(codex_payload)
+    second = await runtime.invoke(lifecycle_invocation(codex_payload))
     await runtime.stop()
 
     assert first["thread_id"] == second["thread_id"] == "thread-123"
     assert len(mock_codex.instances) == 1
     client = mock_codex.instances[0]
     client.thread_start.assert_awaited_once()
-    client.thread_resume.assert_not_awaited()
     assert client.thread.turn.await_count == 2
     assert client.thread.turn.await_args_list[1].args[0] == "Continue."
     client.close.assert_awaited_once()
@@ -477,9 +475,9 @@ async def test_persistent_runtime_registers_skills_once_and_maps_mcp(
     runtime = adapter.CodexRuntime()
 
     await runtime.start(start_payload)
-    await runtime.invoke(codex_payload)
+    await runtime.invoke(lifecycle_invocation(codex_payload))
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
-    await runtime.invoke(codex_payload)
+    await runtime.invoke(lifecycle_invocation(codex_payload))
     await runtime.stop()
 
     client = mock_codex.instances[0]
@@ -524,9 +522,9 @@ async def test_persistent_runtime_owns_one_relay_gateway(
     runtime = adapter.CodexRuntime()
 
     await runtime.start(start_payload)
-    await runtime.invoke(codex_payload)
+    await runtime.invoke(lifecycle_invocation(codex_payload))
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
-    await runtime.invoke(codex_payload)
+    await runtime.invoke(lifecycle_invocation(codex_payload))
     stop_gateway.assert_not_called()
     await runtime.stop()
 
@@ -538,22 +536,12 @@ async def test_persistent_runtime_owns_one_relay_gateway(
     stop_gateway.assert_called_once_with(process)
 
 
-def test_runtime_rejects_corrupt_thread_state(codex_payload):
-    state_path = adapter.runtime_state_path(codex_payload, "runtime-1")
-    state_path.parent.mkdir(parents=True)
-    state_path.write_text("{", encoding="utf-8")
-
-    output = adapter.run(codex_payload)
-
-    assert output["error"]["code"] == "codex_invalid_runtime_state"
-
-
 def test_failed_sdk_turn_is_normalized_and_transport_is_closed(
     codex_payload, mock_codex
 ):
     mock_codex.next_result = RuntimeError("model request failed")
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["error"] == {
         "code": "codex_turn_failed",
@@ -561,30 +549,26 @@ def test_failed_sdk_turn_is_normalized_and_transport_is_closed(
         "retryable": False,
     }
     assert mock_codex.instances[0].closed is True
-    assert not adapter.runtime_state_path(codex_payload, "runtime-1").exists()
 
 
-def test_incomplete_sdk_turn_is_failed_without_persisting_thread(
-    codex_payload, mock_codex
-):
+def test_incomplete_sdk_turn_is_failed(codex_payload, mock_codex):
     result = successful_result(response=None)
     mock_codex.next_result = result
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["error"]["code"] == "codex_turn_incomplete"
     assert output["turn_status"] == "completed"
-    assert not adapter.runtime_state_path(codex_payload, "runtime-1").exists()
 
 
 def test_selected_model_rejects_unsupported_provider(codex_payload, mock_codex):
     model = codex_payload["config"]["models"]["default"]
     model["provider"] = "anthropic"
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert "provider must be openai or nvidia" in output["error"]["message"]
+    assert error.code == "codex_invalid_configuration"
+    assert "provider must be openai or nvidia" in error.message
     mock_codex.assert_not_called()
 
 
@@ -602,7 +586,7 @@ def test_nvidia_provider_uses_responses_api_and_nvidia_credential(
     )
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["completed"] is True
     client = mock_codex.instances[0]
@@ -641,9 +625,9 @@ def test_nvidia_provider_normalizes_codex_home_creation_failure(
 
     monkeypatch.setattr(adapter.asyncio, "to_thread", fail_to_create_home)
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_runtime_unavailable"
+    assert error.code == "codex_runtime_unavailable"
     mock_codex.assert_not_called()
 
 
@@ -658,10 +642,10 @@ def test_nvidia_provider_requires_credential(codex_payload, mock_codex):
     )
     os.environ.pop("NVIDIA_API_KEY", None)
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert "NVIDIA_API_KEY is required" in output["error"]["message"]
+    assert error.code == "codex_invalid_configuration"
+    assert "NVIDIA_API_KEY is required" in error.message
     assert not (adapter.state_dir(codex_payload) / "nvidia-home").exists()
     mock_codex.assert_not_called()
 
@@ -679,22 +663,12 @@ def test_nvidia_provider_requires_endpoint(codex_payload, mock_codex):
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
     os.environ.pop("NVIDIA_FRONTIER_BASE_URL", None)
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert "NVIDIA_FRONTIER_BASE_URL" in output["error"]["message"]
+    assert error.code == "codex_invalid_configuration"
+    assert "NVIDIA_FRONTIER_BASE_URL" in error.message
     assert not (adapter.state_dir(codex_payload) / "nvidia-home").exists()
     mock_codex.assert_not_called()
-
-
-def test_resume_rejects_changed_sdk_thread_identity(codex_payload, mock_codex):
-    adapter.save_thread_id(codex_payload, "runtime-1", "thread-persisted")
-    mock_codex.resume_thread_id = "thread-replaced"
-
-    output = adapter.run(codex_payload)
-
-    assert output["error"]["code"] == "codex_thread_mismatch"
-    assert mock_codex.instances[0].closed is True
 
 
 def test_relay_uses_gateway_and_request_scoped_sdk_config(
@@ -725,7 +699,7 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", stop_gateway)
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     client = mock_codex.instances[0]
     start = client.thread_start.await_args.kwargs
@@ -775,12 +749,10 @@ def test_relay_rejects_nvidia_provider(codex_payload, mock_codex):
     }
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert output["error"]["message"] == (
-        "NeMo Relay requires the built-in openai model provider"
-    )
+    assert error.code == "codex_invalid_configuration"
+    assert error.message == ("NeMo Relay requires the built-in openai model provider")
     mock_codex.assert_not_called()
 
 
@@ -829,7 +801,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
 
 
 @pytest.mark.usefixtures("mock_codex")
-def test_relay_cleanup_failure_changes_success_to_failure(
+def test_relay_stop_failure_is_reported_by_runtime_stop(
     codex_payload, monkeypatch, tmp_path
 ):
     gateway = adapter.relay_gateway.RelayGatewayLaunch(
@@ -853,12 +825,18 @@ def test_relay_cleanup_failure_changes_success_to_failure(
         MagicMock(side_effect=adapter.relay_gateway.RelayGatewayError("stuck")),
     )
 
-    output = adapter.run(codex_payload)
+    async def scenario():
+        runtime = adapter.CodexRuntime()
+        await runtime.start(lifecycle_start_payload(codex_payload))
+        output = await runtime.invoke(lifecycle_invocation(codex_payload))
+        with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+            await runtime.stop()
+        return output, caught.value
 
-    assert output["failed"] is True
-    assert output["completed"] is False
-    assert output["error"]["code"] == "codex_relay_stop_failed"
-    assert output["relay_runtime"]["cleanup_error"] == output["error"]
+    output, error = asyncio.run(scenario())
+
+    assert output["completed"] is True
+    assert error.code == "codex_relay_stop_failed"
 
 
 def test_native_sdk_controls_and_telemetry_are_request_scoped(
@@ -898,7 +876,7 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
         },
     }
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["failed"] is False
     client = mock_codex.instances[0]
@@ -927,11 +905,9 @@ def test_timeout_interrupts_native_turn_and_closes_sdk(codex_payload, mock_codex
 
     mock_blocking_thread.handle.run.side_effect = block
     mock_codex.next_thread = mock_blocking_thread
-    codex_payload["config"]["harness"]["settings"][
-        "timeout_seconds"
-    ] = 0.01
+    codex_payload["config"]["harness"]["settings"]["timeout_seconds"] = 0.01
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     client = mock_codex.instances[0]
     assert output["error"]["code"] == "codex_timed_out"
@@ -943,14 +919,12 @@ def test_timeout_interrupts_native_turn_and_closes_sdk(codex_payload, mock_codex
     "setting", ["codex_command", "codex_args", "codex_profile", "skip_git_repo_check"]
 )
 def test_cli_only_settings_are_rejected(codex_payload, setting):
-    codex_payload["config"]["harness"]["settings"][setting] = (
-        "legacy"
-    )
+    codex_payload["config"]["harness"]["settings"][setting] = "legacy"
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert setting in output["error"]["message"]
+    assert error.code == "codex_invalid_configuration"
+    assert setting in error.message
 
 
 @pytest.mark.parametrize(
@@ -962,10 +936,10 @@ def test_normalized_capabilities_reject_harness_settings(
 ):
     codex_payload["config"]["harness"]["settings"][setting] = {}
 
-    output = adapter.run(codex_payload)
+    error = runtime_start_error(codex_payload)
 
-    assert output["error"]["code"] == "codex_invalid_configuration"
-    assert normalized_field in output["error"]["message"]
+    assert error.code == "codex_invalid_configuration"
+    assert normalized_field in error.message
     mock_codex.assert_not_called()
 
 
@@ -974,7 +948,7 @@ def test_adapter_rejects_structured_input(codex_payload):
         "messages": [{"role": "user", "content": "Inspect the change."}]
     }
 
-    output = adapter.run(codex_payload)
+    output = invoke_once(codex_payload)
 
     assert output["error"]["code"] == "codex_invalid_request"
 
@@ -989,7 +963,6 @@ def test_descriptor_has_no_codex_binary_requirement():
     assert descriptor["adapter_id"] == "nvidia.fabric.codex"
     assert descriptor["runner"] == {
         "module": "nemo_fabric_adapters.codex.adapter",
-        "callable": "run",
     }
     assert descriptor["config"]["accepts"] == [
         "models",
@@ -997,7 +970,6 @@ def test_descriptor_has_no_codex_binary_requirement():
         "skills",
         "telemetry",
     ]
-    assert descriptor["runtime"]["local_host"] == {}
     assert "requirements" not in descriptor
 
 

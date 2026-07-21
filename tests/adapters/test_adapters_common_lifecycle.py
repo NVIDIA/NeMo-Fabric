@@ -89,7 +89,7 @@ def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
     assert len(set(instances[0].loop_ids)) == 1
 
 
-def test_lifecycle_host_retains_start_config_outside_invoke_wire_payload():
+def test_lifecycle_host_passes_minimal_invoke_payload_unchanged():
     runtime_id = "runtime-1"
     start_payload = {
         "agent_name": "agent",
@@ -118,8 +118,8 @@ def test_lifecycle_host_retains_start_config_outside_invoke_wire_payload():
     invocations = []
 
     class Runtime:
-        async def start(self, payload):
-            payload["config"]["harness"]["settings"]["mode"] = "mutated"
+        async def start(self, _payload):
+            pass
 
         async def invoke(self, payload):
             invocations.append(payload)
@@ -130,14 +130,7 @@ def test_lifecycle_host_retains_start_config_outside_invoke_wire_payload():
 
     lifecycle.serve(Runtime, input_stream=input_stream, output_stream=output_stream)
 
-    assert invocations == [
-        {
-            **start_payload,
-            "runtime_context": invoke_payload["runtime_context"],
-            "request": invoke_payload["request"],
-        }
-    ]
-    assert invocations[0]["config"]["harness"]["settings"]["mode"] == "retained"
+    assert invocations == [invoke_payload]
 
 
 def test_lifecycle_host_rejects_runtime_mismatch_without_poisoning_runtime():
@@ -288,9 +281,7 @@ def test_lifecycle_host_stops_runtime_when_fabric_closes_stdin():
         ),
     ],
 )
-def test_lifecycle_host_rejects_invoke_after_adapter_failure(
-    failure, expected_code
-):
+def test_lifecycle_host_rejects_invoke_after_adapter_failure(failure, expected_code):
     runtime_id = "runtime-1"
     invoke_payload = {
         "runtime_context": {"runtime_id": runtime_id},

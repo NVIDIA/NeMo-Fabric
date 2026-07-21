@@ -6,8 +6,5 @@
   "runner": {
     "command": "python3",
     "script": "run.py"
-  },
-  "runtime": {
-    "local_host": {}
   }
 }

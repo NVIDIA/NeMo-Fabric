@@ -56,17 +56,17 @@ async def _run() -> None:
     config = _select_codex_runtime(codex_config())
     nonce = f"fabric-{uuid.uuid4().hex[:8]}"
     client = Fabric()
-    oneshot = await client.run(
+    single = await client.run(
         config,
         base_dir=BASE_DIR,
-        input="Reply with exactly: FABRIC_CODEX_ONESHOT_OK",
+        input="Reply with exactly: FABRIC_CODEX_SINGLE_INVOCATION_OK",
     )
-    assert oneshot["status"] == "succeeded", oneshot.to_mapping()
-    assert "fabric_codex_oneshot_ok" in oneshot["output"]["response"].lower(), (
-        oneshot.to_mapping()
-    )
-    assert oneshot["output"]["adapter"] == "sdk", oneshot.to_mapping()
-    assert "command" not in oneshot["output"], oneshot.to_mapping()
+    assert single["status"] == "succeeded", single.to_mapping()
+    assert (
+        "fabric_codex_single_invocation_ok" in single["output"]["response"].lower()
+    ), single.to_mapping()
+    assert single["output"]["adapter"] == "sdk", single.to_mapping()
+    assert "command" not in single["output"], single.to_mapping()
 
     async with await client.start_runtime(
         config,

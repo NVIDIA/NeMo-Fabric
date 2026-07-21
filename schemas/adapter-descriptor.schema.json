@@ -26,7 +26,7 @@
       "oneOf": [
         {
           "const": "process",
-          "description": "Launch and supervise a CLI process.",
+          "description": "Launch and supervise a persistent adapter process.",
           "type": "string"
         },
         {
@@ -36,7 +36,7 @@
         },
         {
           "const": "python",
-          "description": "Call a Python SDK/plugin adapter.",
+          "description": "Launch and supervise a persistent Python adapter host.",
           "type": "string"
         },
         {
@@ -45,11 +45,6 @@
           "type": "string"
         }
       ]
-    },
-    "AdapterLocalHostSupport": {
-      "additionalProperties": true,
-      "description": "Persistent local-host protocol implemented by an adapter.",
-      "type": "object"
     },
     "AdapterRequirements": {
       "additionalProperties": true,
@@ -89,24 +84,6 @@
             "type": "string"
           },
           "type": "array"
-        }
-      },
-      "type": "object"
-    },
-    "AdapterRuntimeSupport": {
-      "additionalProperties": true,
-      "description": "Runtime hosting mechanisms implemented by an adapter.",
-      "properties": {
-        "local_host": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AdapterLocalHostSupport"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Persistent local-host support, when implemented.\n\nThis nesting is intentionally provisional until remote adapter hosting\nintroduces a shared runtime protocol."
         }
       },
       "type": "object"
@@ -225,10 +202,6 @@
       "additionalProperties": true,
       "description": "Generic runner defaults consumed by the selected runtime adapter.",
       "type": "object"
-    },
-    "runtime": {
-      "$ref": "#/$defs/AdapterRuntimeSupport",
-      "description": "Adapter-owned runtime hosting support."
     },
     "telemetry": {
       "$ref": "#/$defs/AdapterTelemetrySupport",

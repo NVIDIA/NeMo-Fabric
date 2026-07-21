@@ -29,7 +29,6 @@ from claude_agent_sdk import CLINotFoundError
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
-from claude_agent_sdk import query
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import relay_gateway
@@ -128,10 +127,6 @@ class AdapterInputError(ClaudeAdapterError):
 
 class AdapterConfigError(ClaudeAdapterError):
     """Invalid Claude adapter configuration."""
-
-
-class AdapterStateError(ClaudeAdapterError):
-    """Invalid persisted runtime state."""
 
 
 class AdapterRelayError(ClaudeAdapterError):
@@ -495,7 +490,6 @@ def discard_stderr(_: str) -> None:
 def build_options(
     payload: dict[str, Any],
     *,
-    resume: str | None,
     relay: ClaudeRelaySettings | None = None,
 ) -> ClaudeAgentOptions:
     settings = _settings(payload)
@@ -538,7 +532,6 @@ def build_options(
         plugins.append({"type": "local", "path": str(relay.plugin_path)})
 
     return ClaudeAgentOptions(
-        resume=resume,
         cwd=resolve_cwd(payload),
         model=selected_model(payload),
         system_prompt=system_prompt,
@@ -573,58 +566,6 @@ def _artifact_root(payload: dict[str, Any]) -> Path:
     if root:
         return Path(root)
     return Path(common_utils.base_dir(payload)) / "artifacts" / "claude"
-
-
-def runtime_state_path(payload: dict[str, Any], fabric_runtime_id: str) -> Path:
-    digest = sha256(fabric_runtime_id.encode("utf-8")).hexdigest()
-    return (
-        _artifact_root(payload) / ".fabric" / "claude" / "runtimes" / f"{digest}.json"
-    )
-
-
-def load_claude_session_id(
-    payload: dict[str, Any], fabric_runtime_id: str
-) -> str | None:
-    path = runtime_state_path(payload, fabric_runtime_id)
-    if not path.exists():
-        return None
-    try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(state, dict):
-            raise ValueError("state must be an object")
-        if state.get("runtime_id") != fabric_runtime_id:
-            raise ValueError("runtime mismatch")
-        session_id = state.get("claude_session_id")
-        if not isinstance(session_id, str) or not session_id:
-            raise ValueError("missing Claude session")
-        return session_id
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        raise AdapterStateError(
-            "claude_invalid_runtime_state", "Claude runtime state is invalid"
-        ) from error
-
-
-def save_claude_session_id(
-    payload: dict[str, Any], fabric_runtime_id: str, claude_session_id: str
-) -> None:
-    if not claude_session_id:
-        raise AdapterStateError(
-            "claude_invalid_runtime_state", "Claude session ID is missing"
-        )
-    path = runtime_state_path(payload, fabric_runtime_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    invocation_id = (
-        common_utils.runtime_context(payload).get("invocation_id") or "invocation"
-    )
-    temporary = path.with_suffix(f".{invocation_id}.tmp")
-    temporary.write_text(
-        json.dumps(
-            {"runtime_id": fabric_runtime_id, "claude_session_id": claude_session_id},
-            sort_keys=True,
-        ),
-        encoding="utf-8",
-    )
-    os.replace(temporary, path)
 
 
 def _json_safe(value: Any) -> Any:
@@ -821,43 +762,14 @@ def _cleanup_relay(
     return cleanup_error
 
 
-def _merge_relay_output(
-    output: dict[str, Any],
-    relay: ClaudeRelaySettings | None,
-    cleanup_error: AdapterRelayError | None,
-) -> dict[str, Any]:
-    if relay is None:
-        return output
-    output = _relay_output(output, relay)
-    if cleanup_error is None:
-        return output
-    cleanup: dict[str, Any] = {
-        "code": cleanup_error.code,
-        "message": cleanup_error.message,
-        "retryable": False,
-    }
-    if cleanup_error.metadata:
-        cleanup["metadata"] = cleanup_error.metadata
-    output["relay_runtime"]["cleanup_error"] = cleanup
-    if not output["failed"]:
-        output["completed"] = False
-        output["failed"] = True
-        output["error"] = cleanup
-    return output
-
-
-def _persist_result_session(
-    payload: dict[str, Any],
-    fabric_runtime_id: str,
-    prior_session_id: str | None,
-    result: ResultMessage,
+def _validate_result_session(
+    current_session_id: str | None, result: ResultMessage
 ) -> dict[str, Any] | None:
-    if prior_session_id is not None and result.session_id != prior_session_id:
+    if current_session_id is not None and result.session_id != current_session_id:
         return _failure(
             "claude_session_mismatch",
-            "Claude session identity changed during resume",
+            "Claude session identity changed during the runtime",
         )
-    save_claude_session_id(payload, fabric_runtime_id, result.session_id)
     return None
 
 
@@ -884,6 +796,7 @@ class ClaudeRuntime:
     """One connected Claude SDK client owned by a Fabric runtime."""
 
     def __init__(self) -> None:
+        self._start_payload: dict[str, Any] | None = None
         self._fabric_runtime_id: str | None = None
         self._claude_session_id: str | None = None
         self._client: ClaudeSDKClient | None = None
@@ -899,11 +812,10 @@ class ClaudeRuntime:
             )
         try:
             fabric_runtime_id = runtime_id(payload)
-            claude_session_id = load_claude_session_id(payload, fabric_runtime_id)
             relay = prepare_claude_relay(payload)
             self._relay = relay
             self._gateway_process = _start_relay_gateway(payload, relay)
-            options = build_options(payload, resume=claude_session_id, relay=relay)
+            options = build_options(payload, relay=relay)
             client = ClaudeSDKClient(options)
             await client.connect()
         except ClaudeAdapterError as error:
@@ -916,23 +828,29 @@ class ClaudeRuntime:
             self._cleanup_failed_start()
             raise
 
+        self._start_payload = payload
         self._fabric_runtime_id = fabric_runtime_id
-        self._claude_session_id = claude_session_id
         self._client = client
 
-    async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def invoke(self, invocation: dict[str, Any]) -> dict[str, Any]:
         client = self._client
+        start_payload = self._start_payload
         fabric_runtime_id = self._fabric_runtime_id
-        if client is None or fabric_runtime_id is None:
+        if client is None or start_payload is None or fabric_runtime_id is None:
             raise lifecycle.LifecycleError(
                 "claude_runtime_not_started",
                 "Claude runtime is not started",
             )
-        if runtime_id(payload) != fabric_runtime_id:
+        if runtime_id(invocation) != fabric_runtime_id:
             raise lifecycle.LifecycleError(
                 "claude_runtime_mismatch",
                 "Claude invocation does not match the connected runtime",
             )
+        payload = {
+            **start_payload,
+            "runtime_context": invocation.get("runtime_context"),
+            "request": invocation.get("request"),
+        }
         if self._unusable:
             return _failure(
                 "claude_runtime_unavailable",
@@ -1006,15 +924,12 @@ class ClaudeRuntime:
         try:
             output = normalize_result(payload, messages, result)
             if not output["failed"]:
-                persisted = _persist_result_session(
-                    payload,
-                    runtime_id(payload),
-                    self._claude_session_id,
-                    result,
+                invalid_session = _validate_result_session(
+                    self._claude_session_id, result
                 )
-                if persisted is not None:
+                if invalid_session is not None:
                     self._unusable = True
-                    return persisted
+                    return invalid_session
                 self._claude_session_id = result.session_id
             return output
         except ClaudeAdapterError as error:
@@ -1024,6 +939,7 @@ class ClaudeRuntime:
     async def stop(self) -> None:
         client = self._client
         self._client = None
+        self._start_payload = None
         self._fabric_runtime_id = None
         self._claude_session_id = None
         self._unusable = True
@@ -1073,72 +989,6 @@ class ClaudeRuntime:
                 await self._client.interrupt()
         except Exception:
             LOGGER.exception("Claude SDK invocation could not be interrupted")
-
-
-async def run_claude(payload: dict[str, Any]) -> dict[str, Any]:
-    fabric_runtime_id = runtime_id(payload)
-    prior_session_id = load_claude_session_id(payload, fabric_runtime_id)
-    relay = prepare_claude_relay(payload)
-    gateway_process = None
-    cleanup_error: AdapterRelayError | None = None
-    messages: list[Message] = []
-    result: ResultMessage | None = None
-    try:
-        gateway_process = _start_relay_gateway(payload, relay)
-        options = build_options(payload, resume=prior_session_id, relay=relay)
-        try:
-            async with asyncio.timeout(timeout_seconds(payload)):
-                async for message in query(
-                    prompt=request_prompt(payload), options=options
-                ):
-                    if isinstance(message, ResultMessage):
-                        result = message
-                    else:
-                        messages.append(message)
-        except (TimeoutError, ClaudeSDKError) as error:
-            output = sdk_failure(error)
-        except Exception:
-            # Claude Agent SDK 0.2.120 can yield an error ResultMessage and then
-            # raise a plain Exception while closing the query stream. Preserve
-            # the typed terminal result, but do not hide unrelated exceptions.
-            if result is None or not _result_failed(result):
-                raise
-            LOGGER.exception("Claude SDK stream raised after a failed terminal result")
-            output = normalize_result(payload, messages, result)
-        else:
-            if result is None:
-                output = _failure(
-                    "claude_missing_result", "Claude returned no terminal result"
-                )
-            else:
-                output = normalize_result(payload, messages, result)
-                if not output["failed"]:
-                    output = (
-                        _persist_result_session(
-                            payload,
-                            fabric_runtime_id,
-                            prior_session_id,
-                            result,
-                        )
-                        or output
-                    )
-    finally:
-        cleanup_error = _cleanup_relay(relay, gateway_process)
-
-    return _merge_relay_output(output, relay, cleanup_error)
-
-
-def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Run one isolated adapter invocation for direct library tests."""
-
-    try:
-        return asyncio.run(run_claude(payload))
-    except ClaudeAdapterError as error:
-        return adapter_failure(error)
-    except Exception:  # Adapter boundary must always return normalized JSON.
-        return _failure(
-            "claude_adapter_internal_error", "Claude adapter failed unexpectedly"
-        )
 
 
 def main() -> None:

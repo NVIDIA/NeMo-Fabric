@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
 import os
 import sys
@@ -65,13 +64,11 @@ class _AdapterCallError(LifecycleError):
 class _HostState:
     runtime: AdapterRuntime | None = None
     runtime_id: str | None = None
-    start_payload: dict[str, Any] | None = None
     failed: bool = False
 
     def clear(self) -> None:
         self.runtime = None
         self.runtime_id = None
-        self.start_payload = None
         self.failed = False
 
 
@@ -230,7 +227,6 @@ async def _handle_start(
             "Lifecycle host already owns a runtime",
         )
     candidate = runtime_factory()
-    retained_payload = copy.deepcopy(payload)
     try:
         await _adapter_call("start", lambda: candidate.start(payload))
     except LifecycleError:
@@ -238,7 +234,6 @@ async def _handle_start(
         raise
     state.runtime = candidate
     state.runtime_id = message_runtime_id
-    state.start_payload = retained_payload
     state.failed = False
     return _response("start")
 
@@ -253,18 +248,8 @@ async def _handle_invoke(
             "lifecycle_runtime_failed",
             "Lifecycle runtime cannot accept another invocation",
         )
-    if state.start_payload is None:
-        raise LifecycleError(
-            "lifecycle_not_started",
-            "Lifecycle host has no retained start payload",
-        )
-    invocation_payload = copy.deepcopy(state.start_payload)
-    invocation_payload["runtime_context"] = payload.get("runtime_context")
-    invocation_payload["request"] = payload.get("request")
     with _invocation_environment(payload):
-        output = await _adapter_call(
-            "invoke", lambda: runtime.invoke(invocation_payload)
-        )
+        output = await _adapter_call("invoke", lambda: runtime.invoke(payload))
     return _response("invoke", output=output)
 
 

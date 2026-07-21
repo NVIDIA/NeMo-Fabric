@@ -161,12 +161,6 @@ def main() -> None:
     lifecycle.serve(HermesRuntime)
 
 
-def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Run one isolated adapter invocation for direct library tests."""
-
-    return asyncio.run(run_hermes(payload))
-
-
 def resolve_hermes_toolsets(
     settings: dict[str, Any], config: dict[str, Any]
 ) -> list[str] | None:
@@ -179,31 +173,12 @@ def resolve_hermes_toolsets(
     return sorted(_get_platform_tools(config, platform))
 
 
-def load_runtime_history(
-    session_db: Any, session_id: str | None
-) -> list[dict[str, Any]] | None:
-    if not session_id:
-        return None
-
-    resolved_id = session_id
-    resolve_session = getattr(session_db, "resolve_resume_session_id", None)
-    if resolve_session is not None:
-        resolved_id = resolve_session(session_id) or session_id
-    if session_db.get_session(resolved_id) is None:
-        return None
-
-    messages = session_db.get_messages_as_conversation(resolved_id)
-    messages = [
-        message for message in messages if message.get("role") != "session_meta"
-    ]
-    return messages or None
-
-
 class HermesRuntime:
     """One Hermes agent and session database owned by a Fabric runtime."""
 
     def __init__(self) -> None:
         self._started = False
+        self._start_payload: dict[str, Any] | None = None
         self._runtime_id: str | None = None
         self._settings: dict[str, Any] = {}
         self._model_config: dict[str, Any] = {}
@@ -303,9 +278,7 @@ class HermesRuntime:
                     self._settings, loaded_hermes_config
                 )
                 self._session_db = SessionDB()
-                self._conversation_history = load_runtime_history(
-                    self._session_db, self._runtime_id
-                )
+                self._conversation_history = None
                 max_iterations = self._settings.get("max_iterations")
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
@@ -344,23 +317,30 @@ class HermesRuntime:
                     )
                 )
             self._invoke_hook = invoke_hook
+            self._start_payload = payload
             self._started = True
         except BaseException:
             await self.stop()
             raise
 
-    async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self._started or self._agent is None:
+    async def invoke(self, invocation: dict[str, Any]) -> dict[str, Any]:
+        start_payload = self._start_payload
+        if not self._started or self._agent is None or start_payload is None:
             raise lifecycle.LifecycleError(
                 "hermes_runtime_not_started",
                 "Hermes runtime is not started",
             )
-        if common_utils.runtime_id(payload) != self._runtime_id:
+        if common_utils.runtime_id(invocation) != self._runtime_id:
             raise lifecycle.LifecycleError(
                 "hermes_runtime_mismatch",
                 "Hermes invocation does not match the active runtime",
             )
 
+        payload = {
+            **start_payload,
+            "runtime_context": invocation.get("runtime_context"),
+            "request": invocation.get("request"),
+        }
         request = common_utils.request_payload(payload)
         user_message = request.get("input") or ""
         if not isinstance(user_message, str):
@@ -452,12 +432,23 @@ class HermesRuntime:
                 errors.append(error)
         self._agent = None
         self._session_db = None
+        self._start_payload = None
+        self._runtime_id = None
+        self._settings = {}
+        self._model_config = {}
+        self._base_url = None
+        self._hermes_home = None
+        self._hermes_config_path = None
+        self._hermes_config = {}
+        self._enabled_toolsets = None
+        self._conversation_history = None
         self._relay_context = None
         self._relay_context_entered = False
         self._relay_session_pending = False
         self._relay_finalize_hook_invoked = False
         self._invoke_hook = None
         self._relay_plugin_config = None
+        self._relay_model_name = "unknown"
         self._started = False
 
         if agent is not None:
@@ -488,15 +479,6 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
-
-
-async def run_hermes(payload: dict[str, Any]) -> dict[str, Any]:
-    runtime = HermesRuntime()
-    await runtime.start(payload)
-    try:
-        return await runtime.invoke(payload)
-    finally:
-        await runtime.stop()
 
 
 def _invoke_hermes_turn(

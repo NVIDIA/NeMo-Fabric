@@ -179,26 +179,26 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             }
         },
         "config": {
-                "harness": {
-                    "settings": {
-                        "model": "review",
-                        "max_iterations": 4,
-                        "disabled_toolsets": ["browser"],
-                        "terminal_backend": "local",
-                        "terminal_timeout": 90,
-                        "enabled_toolsets": "git",
-                        "toolset_platform": "cli",
-                        "plugins_enabled": ["custom/plugin"],
-                    }
-                },
-                "tools": {"blocked": ["shell", "browser"]},
-                "models": {
-                    "review": {
-                        "provider": "nvidia",
-                        "model": "nvidia/review-model",
-                        "settings": {"base_url": "https://model.example/v1"},
-                    }
-                },
+            "harness": {
+                "settings": {
+                    "model": "review",
+                    "max_iterations": 4,
+                    "disabled_toolsets": ["browser"],
+                    "terminal_backend": "local",
+                    "terminal_timeout": 90,
+                    "enabled_toolsets": "git",
+                    "toolset_platform": "cli",
+                    "plugins_enabled": ["custom/plugin"],
+                }
+            },
+            "tools": {"blocked": ["shell", "browser"]},
+            "models": {
+                "review": {
+                    "provider": "nvidia",
+                    "model": "nvidia/review-model",
+                    "settings": {"base_url": "https://model.example/v1"},
+                }
+            },
         },
     }
 
@@ -255,9 +255,7 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
     payload = {
         "config": {
             "harness": {"settings": {}},
-            "models": {
-                "default": {"provider": "nvidia", "model": "nvidia/test-model"}
-            },
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
     }
 
@@ -272,9 +270,7 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
     payload = {
         "config": {
             "harness": {"settings": {"max_iterations": None}},
-            "models": {
-                "default": {"provider": "nvidia", "model": "nvidia/test-model"}
-            },
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
     }
 
@@ -331,20 +327,20 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         "agent_name": "matrix-agent",
         "base_dir": str(tmp_path),
         "config": {
-                "harness": {
-                    "settings": {
-                        "model": "review",
-                        "enabled_toolsets": ["git", "shell"],
-                        "toolset_platform": "cli",
-                        "terminal_backend": "local",
-                    }
-                },
-                "models": {
-                    "review": {
-                        "provider": "nvidia",
-                        "model": "nvidia/review-model",
-                    }
-                },
+            "harness": {
+                "settings": {
+                    "model": "review",
+                    "enabled_toolsets": ["git", "shell"],
+                    "toolset_platform": "cli",
+                    "terminal_backend": "local",
+                }
+            },
+            "models": {
+                "review": {
+                    "provider": "nvidia",
+                    "model": "nvidia/review-model",
+                }
+            },
         },
     }
 
@@ -387,9 +383,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     payload = {
         "config": {
             "harness": {"settings": {}},
-            "models": {
-                "default": {"provider": "nvidia", "model": "nvidia/test-model"}
-            },
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
     }
 
@@ -461,25 +455,20 @@ def test_summarize_hermes_config():
     }
 
 
-async def test_hermes_rejects_native_telemetry():
+async def test_runtime_start_rejects_native_telemetry():
     payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
 
     with pytest.raises(
         ValueError, match="only relay telemetry is supported for Hermes"
     ):
-        await adapter.run_hermes(payload)
+        await adapter.HermesRuntime().start(payload)
 
 
 async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,
 ):
-    db_history = [{"role": "user", "content": "from hermes db"}]
-
     mock_session_db = MagicMock(spec=SessionDB)
-    mock_session_db.get_session.return_value = {"id": "runtime-resolved-456"}
-    mock_session_db.resolve_resume_session_id.return_value = "runtime-resolved-456"
-    mock_session_db.get_messages_as_conversation.return_value = db_history
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
 
     mock_ai_agent = MagicMock(spec=AIAgent)
@@ -490,7 +479,6 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         AIAgent.run_conversation
     )
     first_messages = [
-        *db_history,
         {"role": "assistant", "content": "first response"},
     ]
     second_messages = [
@@ -541,22 +529,22 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         "agent_name": "demo",
         "base_dir": str(tmp_path),
         "config": {
-                "harness": {
-                    "settings": {
-                        "hermes_home": "./hermes-home",
-                        "enabled_toolsets": [],
-                        "system_prompt": "system",
-                        # Explicit null must resolve to DEFAULT_MAX_ITERATIONS (not int(None)).
-                        "max_iterations": None,
-                    }
-                },
-                "models": {
-                    "default": {
-                        "provider": "test-provider",
-                        "model": "test-model",
-                        "api_key_env": "TEST_API_KEY",
-                    }
-                },
+            "harness": {
+                "settings": {
+                    "hermes_home": "./hermes-home",
+                    "enabled_toolsets": [],
+                    "system_prompt": "system",
+                    # Explicit null must resolve to DEFAULT_MAX_ITERATIONS (not int(None)).
+                    "max_iterations": None,
+                }
+            },
+            "models": {
+                "default": {
+                    "provider": "test-provider",
+                    "model": "test-model",
+                    "api_key_env": "TEST_API_KEY",
+                }
+            },
         },
         "runtime_context": {
             "runtime_id": "runtime-fabric-123",
@@ -569,25 +557,27 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         "capability_plan": {"native": {}},
     }
 
-    start_payload = dict(payload)
-    start_payload.pop("request")
+    start_payload = {key: value for key, value in payload.items() if key != "request"}
     runtime = adapter.HermesRuntime()
 
     await runtime.start(start_payload)
-    first = await runtime.invoke(payload)
+    first = await runtime.invoke(
+        {
+            "runtime_context": payload["runtime_context"],
+            "request": payload["request"],
+        }
+    )
     payload["runtime_context"]["invocation_id"] = "invocation-2"
     payload["request"]["input"] = "continue"
-    second = await runtime.invoke(payload)
+    second = await runtime.invoke(
+        {
+            "runtime_context": payload["runtime_context"],
+            "request": payload["request"],
+        }
+    )
     await runtime.stop()
 
     mock_session_db_type.assert_called_once_with()
-    mock_session_db.resolve_resume_session_id.assert_called_once_with(
-        "runtime-fabric-123"
-    )
-    mock_session_db.get_session.assert_called_once_with("runtime-resolved-456")
-    mock_session_db.get_messages_as_conversation.assert_called_once_with(
-        "runtime-resolved-456"
-    )
     mock_ai_agent_type.assert_called_once_with(
         base_url=None,
         api_key="secret",
@@ -611,7 +601,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert first_call.args == ("hello",)
     assert first_call.kwargs == {
         "system_message": "system",
-        "conversation_history": db_history,
+        "conversation_history": None,
     }
     assert second_call.args == ("continue",)
     assert second_call.kwargs == {
@@ -620,6 +610,10 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     }
     mock_ai_agent.close.assert_called_once_with()
     mock_session_db.close.assert_called_once_with()
+    assert runtime._agent is None
+    assert runtime._session_db is None
+    assert runtime._start_payload is None
+    assert runtime._conversation_history is None
     assert first["response"] == "first response"
     assert second["response"] == "second response"
     assert "session_id" not in second

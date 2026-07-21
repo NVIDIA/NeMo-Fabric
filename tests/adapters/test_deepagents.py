@@ -5,7 +5,7 @@
 
 These tests stub the ``deepagents``/``langchain``/``langgraph`` SDKs so they run
 without the real harness installed; they assert the normalized Fabric result and
-the session/resume thread-id handling. The real SDK is exercised by the opt-in
+the live runtime's thread continuity. The real SDK is exercised by the opt-in
 integration test in ``tests/e2e/test_deepagents.py``.
 """
 
@@ -22,6 +22,26 @@ from unittest.mock import MagicMock
 
 import pytest
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
+
+
+def lifecycle_start_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key != "request"}
+
+
+def lifecycle_invocation(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "runtime_context": payload["runtime_context"],
+        "request": payload["request"],
+    }
+
+
+async def invoke_once(payload: dict[str, Any]) -> dict[str, Any]:
+    runtime = adapter.DeepAgentsRuntime()
+    await runtime.start(lifecycle_start_payload(payload))
+    try:
+        return await runtime.invoke(lifecycle_invocation(payload))
+    finally:
+        await runtime.stop()
 
 
 @pytest.fixture(name="fake_sdks", autouse=True)
@@ -55,7 +75,7 @@ def fake_sdks_fixture(monkeypatch):
             }
             # subgraphs=True yields 3-tuples ``(namespace, mode, chunk)``; the main
             # graph has an empty namespace. ``updates`` carries the message produced
-            # this turn; ``values`` is the full (on resume, replayed) state.
+            # this turn; ``values`` is the full replayed state.
             yield ((), "updates", {"agent": {"messages": [ai]}})
             yield ((), "values", {"messages": [{"role": "user", "content": user}, ai]})
 
@@ -129,14 +149,14 @@ def make_payload_fixture():
         return {
             "base_dir": str(tmp_path),
             "config": {
-                    "harness": {"settings": {"system_prompt": "be concise"}},
-                    "models": {
-                        "default": {
-                            "provider": "nvidia",
-                            "model": "nvidia/nemotron-3-nano-30b-a3b",
-                            "api_key_env": "NVIDIA_API_KEY",
-                        }
-                    },
+                "harness": {"settings": {"system_prompt": "be concise"}},
+                "models": {
+                    "default": {
+                        "provider": "nvidia",
+                        "model": "nvidia/nemotron-3-nano-30b-a3b",
+                        "api_key_env": "NVIDIA_API_KEY",
+                    }
+                },
             },
             "runtime_context": {
                 "runtime_id": runtime_id,
@@ -229,10 +249,10 @@ def use_real_langgraph_fixture(fake_sdks, monkeypatch):
         monkeypatch.delitem(sys.modules, name, raising=False)
 
 
-async def test_oneshot_normalizes_response_usage_and_thread(
+async def test_single_invocation_normalizes_response_usage_and_thread(
     tmp_path, make_payload, fake_sdks
 ):
-    output = await adapter.run_deepagents(make_payload(tmp_path))
+    output = await invoke_once(make_payload(tmp_path))
 
     assert output["harness"] == "deepagents"
     assert output["mode"] == "deepagents"
@@ -248,7 +268,7 @@ async def test_oneshot_normalizes_response_usage_and_thread(
     assert output["events"] == [{"nodes": ["agent"]}]
     assert output["event_count"] == 1
     assert output["runtime_id"] == "run-1"
-    # a LangGraph thread id is assigned and reported; a fresh runtime is not a resume
+    # The first invocation receives a newly assigned LangGraph thread id.
     assert output["thread_id"]
     assert output["resumed"] is False
     assert output["completed"] is True
@@ -259,24 +279,20 @@ async def test_oneshot_normalizes_response_usage_and_thread(
     assert "instructions" not in fake_sdks["create_kwargs"]
 
 
-async def test_missing_api_key_is_normalized(tmp_path, make_payload, monkeypatch):
-    # Missing model-provider auth is caught by the adapter preflight. Because the
-    # preflight runs inside the guarded scope, the failure is normalized into the
-    # Fabric result rather than raising a raw traceback.
+async def test_missing_api_key_fails_runtime_start(tmp_path, make_payload, monkeypatch):
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
-    output = await adapter.run_deepagents(make_payload(tmp_path))
 
-    assert output["failed"] is True
-    assert output["completed"] is False
-    assert "NVIDIA_API_KEY" in output["error"]
+    with pytest.raises(RuntimeError, match="NVIDIA_API_KEY"):
+        await adapter.DeepAgentsRuntime().start(
+            lifecycle_start_payload(make_payload(tmp_path))
+        )
 
 
-async def test_missing_deepagents_package_is_normalized(
+async def test_missing_deepagents_package_fails_runtime_start(
     tmp_path, make_payload, monkeypatch
 ):
-    # Preflight reports a clear, normalized error when the deepagents package is
-    # absent. Force find_spec("deepagents") -> None so the test holds whether or
-    # not the real package is installed in the environment.
+    # Force find_spec("deepagents") -> None so the test holds whether or not the
+    # real package is installed in the environment.
     import importlib.util as importlib_util
 
     real_find_spec = importlib_util.find_spec
@@ -289,25 +305,25 @@ async def test_missing_deepagents_package_is_normalized(
         return real_find_spec(name, *args, **kwargs)
 
     monkeypatch.setattr(importlib_util, "find_spec", fake_find_spec)
-    output = await adapter.run_deepagents(make_payload(tmp_path))
+    with pytest.raises(RuntimeError, match="deepagents"):
+        await adapter.DeepAgentsRuntime().start(
+            lifecycle_start_payload(make_payload(tmp_path))
+        )
 
-    assert output["failed"] is True
-    assert "deepagents" in output["error"]
 
-
-async def test_invocation_error_is_normalized(tmp_path, make_payload, monkeypatch):
-    # Errors raised during the agent run are normalized into the Fabric result.
+async def test_agent_creation_error_fails_runtime_start(
+    tmp_path, make_payload, monkeypatch
+):
     import deepagents
 
     def boom(**_kwargs):
         raise RuntimeError("agent exploded")
 
     monkeypatch.setattr(deepagents, "create_deep_agent", boom)
-    output = await adapter.run_deepagents(make_payload(tmp_path))
-
-    assert output["failed"] is True
-    assert output["completed"] is False
-    assert "agent exploded" in output["error"]
+    with pytest.raises(RuntimeError, match="agent exploded"):
+        await adapter.DeepAgentsRuntime().start(
+            lifecycle_start_payload(make_payload(tmp_path))
+        )
 
 
 async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
@@ -336,7 +352,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
         "adapter_outputs": [],
     }
 
-    output = await adapter.run_deepagents(payload)
+    output = await invoke_once(payload)
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
@@ -391,7 +407,7 @@ async def test_native_telemetry_exports_without_artifacts(
         "adapter_outputs": [],
     }
 
-    output = await adapter.run_deepagents(payload)
+    output = await invoke_once(payload)
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
@@ -415,7 +431,7 @@ async def test_relay_disabled_adds_no_scope_or_callbacks(
 ):
     # With telemetry disabled the invocation runs without a Relay scope, callback
     # handler, or middleware, preserving the Relay-neutral default behavior.
-    output = await adapter.run_deepagents(make_payload(tmp_path))
+    output = await invoke_once(make_payload(tmp_path))
 
     assert output["completed"] is True
     assert "telemetry" not in output
@@ -423,7 +439,7 @@ async def test_relay_disabled_adds_no_scope_or_callbacks(
     assert "relay-mw" not in (fake_sdks["create_kwargs"].get("middleware") or [])
 
 
-async def test_missing_nemo_relay_with_native_telemetry_is_normalized(
+async def test_missing_nemo_relay_with_native_telemetry_fails_runtime_start(
     tmp_path, make_payload, monkeypatch
 ):
     # Native telemetry also runs through the nemo_relay plugin, so a core-only
@@ -457,15 +473,12 @@ async def test_missing_nemo_relay_with_native_telemetry_is_normalized(
         "adapter_outputs": [],
     }
 
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "nemo-relay" in output["error"]
-    assert "[relay]" in output["error"]
+    with pytest.raises(RuntimeError, match="nemo-relay.*\\[relay\\]"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
 @pytest.mark.usefixtures("fake_relay")
-async def test_incomplete_nemo_relay_install_is_normalized(
+async def test_incomplete_nemo_relay_install_fails_runtime_start(
     tmp_path, make_payload, monkeypatch
 ):
     monkeypatch.delitem(sys.modules, "nemo_relay.integrations.deepagents")
@@ -482,11 +495,8 @@ async def test_incomplete_nemo_relay_install_is_normalized(
         "adapter_outputs": [],
     }
 
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "compatible 'nemo-relay' package" in output["error"]
-    assert "[relay]" in output["error"]
+    with pytest.raises(RuntimeError, match="compatible 'nemo-relay'.*\\[relay\\]"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
 def test_apply_callbacks_preserves_existing_ahead_of_new():
@@ -506,11 +516,12 @@ def test_apply_callbacks_without_callbacks_leaves_config_untouched():
     }
 
 
-async def test_invoke_agent_wires_callbacks_into_run_config(fake_sdks):
-    # invoke_agent threads the supplied callbacks into the LangGraph run config.
-    agent_kwargs = {"model": object()}
-    await adapter.invoke_agent(
-        agent_kwargs, "hello", "thread-1", callbacks=["cb-a", "cb-b"]
+async def test_invoke_compiled_agent_wires_callbacks_into_run_config(fake_sdks):
+    from deepagents import create_deep_agent
+
+    agent = create_deep_agent(model=object())
+    await adapter.invoke_compiled_agent(
+        agent, "hello", "thread-1", callbacks=["cb-a", "cb-b"]
     )
 
     config = fake_sdks["config"]
@@ -518,15 +529,18 @@ async def test_invoke_agent_wires_callbacks_into_run_config(fake_sdks):
     assert config["callbacks"] == ["cb-a", "cb-b"]
 
 
-async def test_invoke_agent_without_callbacks_sets_no_callbacks_key(fake_sdks):
-    await adapter.invoke_agent({"model": object()}, "hello", None, callbacks=None)
+async def test_invoke_compiled_agent_without_callbacks_sets_no_callbacks_key(fake_sdks):
+    from deepagents import create_deep_agent
+
+    agent = create_deep_agent(model=object())
+    await adapter.invoke_compiled_agent(agent, "hello", None, callbacks=None)
 
     # No thread and no callbacks means the agent is streamed without a config.
     assert fake_sdks["config"] is None
 
 
 async def test_workspace_roots_filesystem_backend(tmp_path, make_payload, fake_sdks):
-    await adapter.run_deepagents(make_payload(tmp_path))
+    await invoke_once(make_payload(tmp_path))
     backend_kwargs = fake_sdks["fs_backend"].call_args.kwargs
     assert backend_kwargs["root_dir"] == str(tmp_path)
     # virtual_mode=True confines the agent to root_dir: absolute paths and ``..``
@@ -538,7 +552,7 @@ async def test_checkpointer_closed_on_success_and_failure(
     tmp_path, make_payload, monkeypatch, fake_sdks
 ):
     # The async checkpointer must be closed on both the success and error paths.
-    await adapter.run_deepagents(make_payload(tmp_path))
+    await invoke_once(make_payload(tmp_path))
     assert fake_sdks["saver_exits"] == 1
 
     import deepagents
@@ -547,8 +561,10 @@ async def test_checkpointer_closed_on_success_and_failure(
         raise RuntimeError("boom")
 
     monkeypatch.setattr(deepagents, "create_deep_agent", boom)
-    output = await adapter.run_deepagents(make_payload(tmp_path))
-    assert output["failed"] is True
+    with pytest.raises(RuntimeError, match="boom"):
+        await adapter.DeepAgentsRuntime().start(
+            lifecycle_start_payload(make_payload(tmp_path))
+        )
     assert fake_sdks["saver_exits"] == 2
 
 
@@ -583,7 +599,7 @@ async def test_mcp_servers_become_adapter_tools(
         }
     }
 
-    output = await adapter.run_deepagents(payload)
+    output = await invoke_once(payload)
 
     assert output["failed"] is False
     # Fabric MCP transport is normalized; stdio command/args come from ``url``
@@ -646,7 +662,7 @@ async def test_real_langgraph_async_checkpointer(tmp_path, make_payload, monkeyp
 
     monkeypatch.setattr(deepagents, "create_deep_agent", build)
 
-    output = await adapter.run_deepagents(make_payload(tmp_path))
+    output = await invoke_once(make_payload(tmp_path))
 
     assert output["failed"] is False, output["error"]
     assert output["response"] == "ok"
@@ -664,7 +680,7 @@ async def test_openai_provider_keeps_openai_endpoint(
         "api_key_env": "OPENAI_API_KEY",
     }
 
-    output = await adapter.run_deepagents(payload)
+    output = await invoke_once(payload)
 
     # openai must NOT be redirected to NVIDIA's endpoint
     assert output["base_url"] is None
@@ -675,7 +691,7 @@ async def test_skill_paths_map_to_skills(tmp_path, make_payload, fake_sdks):
     payload = make_payload(tmp_path)
     payload["capability_plan"] = {"native": {"skill_paths": ["/skills/a", "/skills/b"]}}
 
-    await adapter.run_deepagents(payload)
+    await invoke_once(payload)
 
     assert fake_sdks["create_kwargs"]["skills"] == ["/skills/a", "/skills/b"]
 
@@ -699,15 +715,15 @@ async def test_cost_is_extracted_from_response_metadata(
     agent = MagicMock()
     agent.astream = astream
     monkeypatch.setattr(deepagents, "create_deep_agent", MagicMock(return_value=agent))
-    output = await adapter.run_deepagents(make_payload(tmp_path))
+    output = await invoke_once(make_payload(tmp_path))
 
     assert output["usage"]["cost"] == 0.0025
 
 
-async def test_resumed_usage_counts_current_turn_only(
+async def test_replayed_state_usage_counts_current_turn_only(
     tmp_path, make_payload, monkeypatch
 ):
-    # On a resumed run the final state replays the prior turn's messages; usage and
+    # On a later turn the final state replays prior messages; usage and
     # cost must reflect only the message emitted this turn, not the replayed one.
     import deepagents
 
@@ -727,14 +743,14 @@ async def test_resumed_usage_counts_current_turn_only(
     async def astream(inputs, config=None, *, stream_mode=None, subgraphs=False):
         # Only the current turn's message is emitted as an update...
         yield ((), "updates", {"agent": {"messages": [current]}})
-        # ...but the resumed final state also replays the prior turn.
+        # ...but the final state also replays the prior turn.
         yield ((), "values", {"messages": [prior, current]})
 
     agent = MagicMock()
     agent.astream = astream
     monkeypatch.setattr(deepagents, "create_deep_agent", MagicMock(return_value=agent))
 
-    output = await adapter.run_deepagents(make_payload(tmp_path))
+    output = await invoke_once(make_payload(tmp_path))
 
     assert output["usage"] == {
         "prompt_tokens": 2,
@@ -746,38 +762,19 @@ async def test_resumed_usage_counts_current_turn_only(
     assert output["message_count"] == 2
 
 
-async def test_runtime_resume_reuses_thread_id(tmp_path, make_payload, fake_sdks):
-    # Two invocations of the same runtime_id (a started runtime) resume the same
-    # LangGraph thread; a one-shot run gets a fresh runtime_id and never resumes.
-    payload = make_payload(tmp_path, runtime_id="run-42")
-
-    first = await adapter.run_deepagents(payload)
-    assert first["resumed"] is False
-    thread_id = first["thread_id"]
-    assert thread_id
-    # thread id was threaded into the LangGraph config on the invocation
-    assert fake_sdks["config"] == {"configurable": {"thread_id": thread_id}}
-
-    second = await adapter.run_deepagents(payload)
-    assert second["resumed"] is True
-    assert second["thread_id"] == thread_id
-
-
 async def test_persistent_runtime_reuses_compiled_agent_and_checkpointer(
     tmp_path, make_payload, fake_sdks
 ):
     import deepagents
 
     payload = make_payload(tmp_path, runtime_id="run-persistent")
-    start_payload = dict(payload)
-    start_payload.pop("request")
     runtime = adapter.DeepAgentsRuntime()
 
-    await runtime.start(start_payload)
-    first = await runtime.invoke(payload)
+    await runtime.start(lifecycle_start_payload(payload))
+    first = await runtime.invoke(lifecycle_invocation(payload))
     payload["runtime_context"]["invocation_id"] = "inv-2"
     payload["request"]["input"] = "continue"
-    second = await runtime.invoke(payload)
+    second = await runtime.invoke(lifecycle_invocation(payload))
 
     assert first["resumed"] is False
     assert second["resumed"] is True
@@ -819,15 +816,13 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
         "native_config": None,
         "adapter_outputs": ["atif"],
     }
-    start_payload = dict(payload)
-    start_payload.pop("request")
     runtime = adapter.DeepAgentsRuntime()
 
-    await runtime.start(start_payload)
-    first = await runtime.invoke(payload)
+    await runtime.start(lifecycle_start_payload(payload))
+    first = await runtime.invoke(lifecycle_invocation(payload))
     payload["runtime_context"]["invocation_id"] = "inv-2"
     payload["request"]["input"] = "continue"
-    second = await runtime.invoke(payload)
+    second = await runtime.invoke(lifecycle_invocation(payload))
     await runtime.stop()
 
     assert fake_relay["integration_adds"] == 1
@@ -845,7 +840,7 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
 async def test_stream_requests_subgraphs(tmp_path, make_payload, fake_sdks):
     # Streaming must opt into subgraphs so delegated (subagent) steps are visible
     # for usage aggregation.
-    await adapter.run_deepagents(make_payload(tmp_path))
+    await invoke_once(make_payload(tmp_path))
     assert fake_sdks["subgraphs"] is True
 
 
@@ -953,7 +948,7 @@ async def test_deepagents_passthrough_forwards_supported_options(
         "interrupt_on": {"write_file": True}
     }
 
-    await adapter.run_deepagents(payload)
+    await invoke_once(payload)
 
     assert fake_sdks["create_kwargs"]["interrupt_on"] == {"write_file": True}
 
@@ -968,10 +963,8 @@ async def test_deepagents_passthrough_cannot_override_fabric_owned_keys(
         "backend": {"root_dir": "/etc"}
     }
 
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "backend" in output["error"]
+    with pytest.raises(adapter.AdapterConfigError, match="backend"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
 async def test_deepagents_passthrough_rejects_unknown_option(tmp_path, make_payload):
@@ -981,10 +974,8 @@ async def test_deepagents_passthrough_rejects_unknown_option(tmp_path, make_payl
         "interupt_on": {}  # note the typo
     }
 
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "interupt_on" in output["error"]
+    with pytest.raises(adapter.AdapterConfigError, match="interupt_on"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
 async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monkeypatch):
@@ -1018,7 +1009,7 @@ async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monke
     agent.astream = astream
     monkeypatch.setattr(deepagents, "create_deep_agent", MagicMock(return_value=agent))
 
-    output = await adapter.run_deepagents(make_payload(tmp_path))
+    output = await invoke_once(make_payload(tmp_path))
 
     # subagent (10/20/30) + main (2/3/5), the duplicate subagent message counted once
     assert output["usage"] == {
@@ -1030,7 +1021,7 @@ async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monke
     assert any(evt.get("subgraph") == "task:researcher" for evt in output["events"])
 
 
-async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):
+async def test_bad_mcp_transport_fails_runtime_start(tmp_path, make_payload):
     # A misconfigured MCP server must fail loudly, not be silently dropped.
     payload = make_payload(tmp_path)
     payload["capability_plan"] = {
@@ -1041,22 +1032,18 @@ async def test_bad_mcp_transport_is_normalized_failure(tmp_path, make_payload):
         }
     }
 
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "transport" in output["error"]
+    with pytest.raises(adapter.AdapterConfigError, match="transport"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
-async def test_empty_mcp_url_is_normalized_failure(tmp_path, make_payload):
+async def test_empty_mcp_url_fails_runtime_start(tmp_path, make_payload):
     payload = make_payload(tmp_path)
     payload["capability_plan"] = {
         "native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}
     }
 
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "url" in output["error"]
+    with pytest.raises(adapter.AdapterConfigError, match="url"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
 async def test_unknown_provider_requires_api_key_env(
@@ -1071,10 +1058,8 @@ async def test_unknown_provider_requires_api_key_env(
         "model": "claude-x",
     }
 
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "api_key_env" in output["error"]
+    with pytest.raises(adapter.AdapterConfigError, match="api_key_env"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
 async def test_openai_provider_defaults_to_openai_key(
@@ -1090,7 +1075,7 @@ async def test_openai_provider_defaults_to_openai_key(
         "model": "gpt-4o",
     }
 
-    output = await adapter.run_deepagents(payload)
+    output = await invoke_once(payload)
 
     assert output["failed"] is False, output["error"]
     assert output["base_url"] is None
@@ -1106,10 +1091,8 @@ async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_pa
         "model": "some/model",
     }
 
-    output = await adapter.run_deepagents(payload)
-
-    assert output["failed"] is True
-    assert "api_key_env" in output["error"]
+    with pytest.raises(adapter.AdapterConfigError, match="api_key_env"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
 def test_main_serves_persistent_runtime(monkeypatch):

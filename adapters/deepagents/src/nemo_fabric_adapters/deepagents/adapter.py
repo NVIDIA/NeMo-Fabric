@@ -5,8 +5,8 @@
 """LangChain Deep Agents adapter for Fabric.
 
 Maps Fabric's normalized invocation onto the ``deepagents`` SDK and returns a
-normalized Fabric result. Supports single-run, multi-turn, and resumed execution
-via a persistent LangGraph checkpointer keyed by the Fabric session id.
+normalized Fabric result. A started runtime retains one compiled graph and
+LangGraph checkpointer across ordered invocations.
 """
 
 from __future__ import annotations
@@ -120,14 +120,6 @@ def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
     lifecycle.serve(DeepAgentsRuntime)
-
-
-def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Run one isolated adapter invocation for direct library tests."""
-
-    import asyncio
-
-    return asyncio.run(run_deepagents(payload))
 
 
 def preflight_check(payload: dict[str, Any]) -> None:
@@ -325,12 +317,7 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
     return {"transport": transport, "url": target}
 
 
-# --- runtime / resume state ------------------------------------------------
-#
-# Resume is keyed by the Fabric ``runtime_id`` (stable across ``invoke`` calls in
-# a started runtime, fresh for each one-shot ``run``), mirroring the Codex
-# adapter. LangGraph owns the transcript via a persistent SQLite checkpointer;
-# Fabric owns the runtime-to-LangGraph-thread correlation record.
+# --- runtime state ---------------------------------------------------------
 
 
 def state_dir(payload: dict[str, Any]) -> Path:
@@ -347,42 +334,14 @@ def state_dir(payload: dict[str, Any]) -> Path:
     return base_dir / "artifacts" / "deepagents" / ".fabric"
 
 
-def runtime_state_paths(payload: dict[str, Any], runtime_id: str) -> tuple[Path, Path]:
+def checkpointer_path(payload: dict[str, Any], runtime_id: str) -> Path:
     key = hashlib.sha256(runtime_id.encode("utf-8")).hexdigest()
     base = state_dir(payload) / "runtimes"
-    return base / f"{key}.json", base / f"{key}.sqlite"
-
-
-def load_thread_id(payload: dict[str, Any], runtime_id: str) -> str | None:
-    json_path, _ = runtime_state_paths(payload, runtime_id)
-    if not json_path.is_file():
-        return None
-    value = json.loads(json_path.read_text(encoding="utf-8"))
-    if (
-        not isinstance(value, dict)
-        or value.get("runtime_id") != runtime_id
-        or not value.get("thread_id")
-    ):
-        raise RuntimeError(f"invalid Deep Agents runtime state in {json_path}")
-    return str(value["thread_id"])
-
-
-def save_thread_id(payload: dict[str, Any], runtime_id: str, thread_id: str) -> None:
-    json_path, _ = runtime_state_paths(payload, runtime_id)
-    json_path.parent.mkdir(parents=True, exist_ok=True)
-    invocation_id = (
-        common_utils.runtime_context(payload).get("invocation_id") or "pending"
-    )
-    tmp = json_path.with_suffix(f".{invocation_id}.tmp")
-    tmp.write_text(
-        json.dumps({"runtime_id": runtime_id, "thread_id": thread_id}, indent=2),
-        encoding="utf-8",
-    )
-    os.replace(tmp, json_path)
+    return base / f"{key}.sqlite"
 
 
 async def open_checkpointer(state_sqlite: Path) -> Any:
-    """Open a persistent async LangGraph checkpointer so resume works across processes.
+    """Open the async LangGraph checkpointer owned by a started runtime.
 
     The agent is driven with ``astream``, so the checkpointer must be async: the
     synchronous ``SqliteSaver`` raises ``NotImplementedError`` from its async methods.
@@ -393,7 +352,7 @@ async def open_checkpointer(state_sqlite: Path) -> Any:
     state_sqlite.parent.mkdir(parents=True, exist_ok=True)
     saver_cm = AsyncSqliteSaver.from_conn_string(str(state_sqlite))
     saver = await saver_cm.__aenter__()
-    # Keep the context manager alive for the duration of the invocation.
+    # Keep the context manager alive for the duration of the runtime.
     saver._fabric_cm = saver_cm  # type: ignore[attr-defined]
     return saver
 
@@ -508,10 +467,10 @@ class DeepAgentsRuntime:
 
     def __init__(self) -> None:
         self._started = False
+        self._start_payload: dict[str, Any] | None = None
         self._runtime_id: str | None = None
         self._model_name: str | None = None
         self._base_url: str | None = None
-        self._prior_thread_id: str | None = None
         self._thread_id: str | None = None
         self._completed_invocations = 0
         self._checkpointer: Any = None
@@ -537,12 +496,7 @@ class DeepAgentsRuntime:
             runtime_id = common_utils.runtime_context(payload).get("runtime_id")
             model, self._model_name, self._base_url = build_chat_model(payload)
             self._runtime_id = runtime_id
-            self._prior_thread_id = (
-                load_thread_id(payload, runtime_id) if runtime_id else None
-            )
-            self._thread_id = (
-                (self._prior_thread_id or uuid.uuid4().hex) if runtime_id else None
-            )
+            self._thread_id = uuid.uuid4().hex if runtime_id else None
 
             telemetry_providers = common_utils.telemetry_providers(payload)
             relay_enabled = common_utils.relay_enabled(payload)
@@ -561,8 +515,9 @@ class DeepAgentsRuntime:
 
             agent_kwargs = await build_agent_kwargs(payload, model, settings)
             if runtime_id:
-                _, state_sqlite = runtime_state_paths(payload, runtime_id)
-                self._checkpointer = await open_checkpointer(state_sqlite)
+                self._checkpointer = await open_checkpointer(
+                    checkpointer_path(payload, runtime_id)
+                )
                 agent_kwargs["checkpointer"] = self._checkpointer
 
             if self._observability is not None:
@@ -573,6 +528,7 @@ class DeepAgentsRuntime:
             self._agent = create_deep_agent(
                 **_supported_kwargs(create_deep_agent, agent_kwargs)
             )
+            self._start_payload = payload
             self._started = True
         except BaseException:
             await self.stop()
@@ -602,19 +558,25 @@ class DeepAgentsRuntime:
         self._callback_handler_type = NemoRelayDeepAgentsCallbackHandler
         return add_nemo_relay_integration(agent_kwargs)
 
-    async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self._started or self._agent is None:
+    async def invoke(self, invocation: dict[str, Any]) -> dict[str, Any]:
+        start_payload = self._start_payload
+        if not self._started or self._agent is None or start_payload is None:
             raise lifecycle.LifecycleError(
                 "deepagents_runtime_not_started",
                 "Deep Agents runtime is not started",
             )
-        runtime_id = common_utils.runtime_context(payload).get("runtime_id")
+        runtime_id = common_utils.runtime_context(invocation).get("runtime_id")
         if runtime_id != self._runtime_id:
             raise lifecycle.LifecycleError(
                 "deepagents_runtime_mismatch",
                 "Deep Agents invocation does not match the active runtime",
             )
 
+        payload = {
+            **start_payload,
+            "runtime_context": invocation.get("runtime_context"),
+            "request": invocation.get("request"),
+        }
         request = payload.get("request") or {}
         user_message = request.get("input") or ""
         if not isinstance(user_message, str):
@@ -624,7 +586,7 @@ class DeepAgentsRuntime:
         events: list[dict[str, Any]] = []
         turn_messages: list[dict[str, Any]] = []
         error: str | None = None
-        resumed = bool(self._prior_thread_id) or self._completed_invocations > 0
+        resumed = self._completed_invocations > 0
         try:
             if self._observability is not None:
                 callback_handler = self._callback_handler_type()
@@ -651,8 +613,7 @@ class DeepAgentsRuntime:
         except Exception as exc:  # normalized adapter failure
             error = f"{type(exc).__name__}: {exc}"
 
-        if error is None and self._runtime_id and self._thread_id:
-            save_thread_id(payload, self._runtime_id, self._thread_id)
+        if error is None:
             self._completed_invocations += 1
 
         telemetry_runtime, relay_artifacts = self._telemetry_output()
@@ -666,25 +627,6 @@ class DeepAgentsRuntime:
             events=events,
             turn_messages=turn_messages,
             error=error,
-            telemetry_runtime=telemetry_runtime,
-            relay_artifacts=relay_artifacts,
-        )
-
-    def failure_output(
-        self, payload: dict[str, Any], error: BaseException
-    ) -> dict[str, Any]:
-        telemetry_runtime, relay_artifacts = self._telemetry_output()
-        return normalize_output(
-            model_name=self._model_name,
-            base_url=self._base_url,
-            runtime_id=self._runtime_id
-            or common_utils.runtime_context(payload).get("runtime_id"),
-            thread_id=self._thread_id,
-            resumed=bool(self._prior_thread_id),
-            result_state=None,
-            events=[],
-            turn_messages=[],
-            error=f"{type(error).__name__}: {error}",
             telemetry_runtime=telemetry_runtime,
             relay_artifacts=relay_artifacts,
         )
@@ -708,26 +650,24 @@ class DeepAgentsRuntime:
 
     async def stop(self) -> None:
         checkpointer = self._checkpointer
+        self._start_payload = None
+        self._runtime_id = None
+        self._model_name = None
+        self._base_url = None
+        self._thread_id = None
+        self._completed_invocations = 0
         self._checkpointer = None
         self._agent = None
+        self._observability = None
+        self._telemetry_provider = ""
+        self._relay_plugin = None
+        self._relay_scope = None
+        self._relay_scope_type = None
+        self._relay_api_config = None
+        self._callback_handler_type = None
         self._started = False
         if checkpointer is not None:
             await close_checkpointer(checkpointer)
-
-
-async def run_deepagents(payload: dict[str, Any]) -> dict[str, Any]:
-    runtime = DeepAgentsRuntime()
-    try:
-        await runtime.start(payload)
-    except Exception as error:
-        output = runtime.failure_output(payload, error)
-        await runtime.stop()
-        return output
-
-    try:
-        return await runtime.invoke(payload)
-    finally:
-        await runtime.stop()
 
 
 def _apply_callbacks(
@@ -745,25 +685,6 @@ def _apply_callbacks(
     return config
 
 
-async def invoke_agent(
-    agent_kwargs: dict[str, Any],
-    user_message: str,
-    thread_id: str | None,
-    callbacks: list[Any] | None = None,
-) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
-    """Create and run an isolated agent for direct library tests."""
-
-    from deepagents import create_deep_agent
-
-    agent = create_deep_agent(**_supported_kwargs(create_deep_agent, agent_kwargs))
-    return await invoke_compiled_agent(
-        agent,
-        user_message,
-        thread_id,
-        callbacks=callbacks,
-    )
-
-
 async def invoke_compiled_agent(
     agent: Any,
     user_message: str,
@@ -772,9 +693,10 @@ async def invoke_compiled_agent(
 ) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
     """Run a compiled agent and return state, events, and current-turn messages.
 
-    On a resumed run the final ``values`` state also replays prior-turn messages,
-    so usage/cost must be aggregated from the messages emitted *this* turn — the
-    ``updates`` deltas — rather than the full final state.
+    On a later runtime invocation the final ``values`` state also replays
+    prior-turn messages, so usage/cost must be aggregated from the messages
+    emitted *this* turn — the ``updates`` deltas — rather than the full final
+    state.
 
     ``callbacks`` (e.g. the NeMo Relay callback handler) are appended to the
     LangGraph run config; any callbacks already present are preserved rather than
@@ -877,7 +799,7 @@ def normalize_output(
 ) -> dict[str, Any]:
     messages = _extract_messages(result_state)
     response = _final_response(messages)
-    # Aggregate usage/cost from this turn's messages only; the resumed final state
+    # Aggregate usage/cost from this turn's messages only; the replayed final state
     # replays prior-turn messages that must not be re-counted.
     usage = _aggregate_usage(turn_messages)
 

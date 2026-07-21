@@ -5,14 +5,10 @@
   "adapter_kind": "python",
   "runner": {
     "module": "nemo_fabric_test_adapters.hermes_shim.adapter",
-    "callable": "run",
     "cwd": ".",
     "env": {
       "PYTHONPATH": "adapters/hermes-shim/src"
     }
-  },
-  "runtime": {
-    "local_host": {}
   },
   "requirements": {
     "binaries": [

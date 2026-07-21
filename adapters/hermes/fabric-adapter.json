@@ -4,8 +4,7 @@
   "harness": "hermes",
   "adapter_kind": "python",
   "runner": {
-    "module": "nemo_fabric_adapters.hermes.adapter",
-    "callable": "run"
+    "module": "nemo_fabric_adapters.hermes.adapter"
   },
   "requirements": {
     "env": [
@@ -32,8 +31,5 @@
         ]
       }
     }
-  },
-  "runtime": {
-    "local_host": {}
   }
 }

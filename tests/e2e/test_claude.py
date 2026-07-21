@@ -230,14 +230,14 @@ async def test_fabric_claude_accepts_real_relay_gateway_with_mock_claude(tmp_pat
     os.environ.get("RUN_FABRIC_CLAUDE_INTEGRATION") != "1",
     reason="set RUN_FABRIC_CLAUDE_INTEGRATION=1 to run Claude Agent SDK integration",
 )
-async def test_live_claude_one_shot_and_session(tmp_path):
+async def test_live_claude_single_invocation_and_runtime(tmp_path):
     fabric = Fabric()
-    one_shot = await fabric.run(
-        fabric_config(tmp_path / "oneshot"),
-        base_dir=tmp_path / "oneshot",
+    single = await fabric.run(
+        fabric_config(tmp_path / "single"),
+        base_dir=tmp_path / "single",
         input="Reply only with: FABRIC_CLAUDE_OK",
     )
-    assert one_shot.status == "succeeded"
+    assert single.status == "succeeded"
 
     session_root = tmp_path / "session"
     async with await fabric.start_runtime(
