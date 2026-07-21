@@ -18,6 +18,7 @@ build/
 /docs/node_modules/
 
 examples/*/artifacts/
+examples/harbor/*/runs/
 tests/fixtures/*/artifacts/
 integrations/harbor/demo/runs/
 integrations/harbor/demo/task/environment/vendor/
