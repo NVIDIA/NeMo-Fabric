@@ -464,8 +464,9 @@ async def test_missing_nemo_relay_with_native_telemetry_is_normalized(
     assert "[relay]" in output["error"]
 
 
+@pytest.mark.usefixtures("fake_relay")
 async def test_incomplete_nemo_relay_install_is_normalized(
-    tmp_path, make_payload, monkeypatch, fake_relay
+    tmp_path, make_payload, monkeypatch
 ):
     monkeypatch.delitem(sys.modules, "nemo_relay.integrations.deepagents")
     payload = make_payload(tmp_path)

@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from collections.abc import Awaitable
 from contextlib import contextmanager
 from contextlib import redirect_stdout
+from dataclasses import dataclass
 from typing import Any
 from typing import Protocol
 from typing import TextIO
@@ -57,6 +58,22 @@ class LifecycleError(Exception):
         self.message = message
         self.retryable = retryable
         self.metadata = dict(metadata or {})
+
+
+class _AdapterCallError(LifecycleError):
+    """Failure raised while executing an adapter runtime method."""
+
+
+@dataclass
+class _HostState:
+    runtime: AdapterRuntime | None = None
+    runtime_id: str | None = None
+    failed: bool = False
+
+    def clear(self) -> None:
+        self.runtime = None
+        self.runtime_id = None
+        self.failed = False
 
 
 def is_lifecycle_host(environ: Mapping[str, str] = os.environ) -> bool:
@@ -137,11 +154,16 @@ async def _adapter_call(operation: str, call: Callable[[], Awaitable[Any]]) -> A
         # Keep incidental adapter and library output as host diagnostics.
         with redirect_stdout(sys.stderr):
             return await call()
-    except LifecycleError:
-        raise
+    except LifecycleError as error:
+        raise _AdapterCallError(
+            error.code,
+            error.message,
+            retryable=error.retryable,
+            metadata=error.metadata,
+        ) from error
     except Exception as error:
         traceback.print_exc(file=sys.stderr)
-        raise LifecycleError(
+        raise _AdapterCallError(
             f"lifecycle_adapter_{operation}_failed",
             f"Adapter failed during lifecycle {operation}",
         ) from error
@@ -167,15 +189,148 @@ async def _stop_after_eof(runtime: AdapterRuntime) -> None:
         traceback.print_exc(file=sys.stderr)
 
 
+def _validated_request(
+    message: dict[str, Any], operation: str
+) -> tuple[dict[str, Any], str]:
+    if operation not in {"start", "invoke", "stop"}:
+        raise LifecycleError(
+            "lifecycle_invalid_operation",
+            "Unknown lifecycle operation",
+        )
+    if message.get("contract_version") != CONTRACT_VERSION:
+        raise LifecycleError(
+            "lifecycle_contract_mismatch",
+            f"Expected lifecycle contract {CONTRACT_VERSION}",
+        )
+    payload = message.get("payload")
+    if not isinstance(payload, dict):
+        raise LifecycleError(
+            "lifecycle_invalid_payload",
+            "Lifecycle payload must be a mapping",
+        )
+    message_runtime_id = _runtime_id(operation, payload)
+    if message_runtime_id is None:
+        raise LifecycleError(
+            "lifecycle_invalid_runtime",
+            "Lifecycle payload is missing a runtime ID",
+        )
+    return payload, message_runtime_id
+
+
+def _active_runtime(state: _HostState, message_runtime_id: str) -> AdapterRuntime:
+    if state.runtime is None or state.runtime_id is None:
+        raise LifecycleError(
+            "lifecycle_not_started",
+            "Lifecycle host has not started a runtime",
+        )
+    if message_runtime_id != state.runtime_id:
+        raise LifecycleError(
+            "lifecycle_runtime_mismatch",
+            "Lifecycle payload does not match the active runtime",
+        )
+    return state.runtime
+
+
+async def _handle_start(
+    state: _HostState,
+    runtime_factory: RuntimeFactory,
+    payload: dict[str, Any],
+    message_runtime_id: str,
+) -> dict[str, Any]:
+    if state.runtime is not None:
+        raise LifecycleError(
+            "lifecycle_already_started",
+            "Lifecycle host already owns a runtime",
+        )
+    candidate = runtime_factory()
+    try:
+        await _adapter_call("start", lambda: candidate.start(payload))
+    except LifecycleError:
+        await _stop_after_eof(candidate)
+        raise
+    state.runtime = candidate
+    state.runtime_id = message_runtime_id
+    state.failed = False
+    return _response("start")
+
+
+async def _handle_invoke(
+    state: _HostState,
+    runtime: AdapterRuntime,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    if state.failed:
+        raise LifecycleError(
+            "lifecycle_runtime_failed",
+            "Lifecycle runtime cannot accept another invocation",
+        )
+    with _invocation_environment(payload):
+        output = await _adapter_call("invoke", lambda: runtime.invoke(payload))
+    return _response("invoke", output=output)
+
+
+async def _handle_stop(
+    state: _HostState,
+    runtime: AdapterRuntime,
+) -> dict[str, Any]:
+    try:
+        await _adapter_call("stop", runtime.stop)
+    finally:
+        state.clear()
+    return _response("stop")
+
+
+async def _dispatch(
+    state: _HostState,
+    runtime_factory: RuntimeFactory,
+    operation: str,
+    payload: dict[str, Any],
+    message_runtime_id: str,
+) -> dict[str, Any]:
+    if operation == "start":
+        return await _handle_start(
+            state,
+            runtime_factory,
+            payload,
+            message_runtime_id,
+        )
+    runtime = _active_runtime(state, message_runtime_id)
+    if operation == "invoke":
+        return await _handle_invoke(state, runtime, payload)
+    return await _handle_stop(state, runtime)
+
+
+def _encode_response(
+    state: _HostState,
+    operation: str,
+    response: dict[str, Any],
+) -> str:
+    try:
+        return json.dumps(response, sort_keys=True)
+    except (TypeError, ValueError):
+        traceback.print_exc(file=sys.stderr)
+        if operation == "invoke" and state.runtime is not None:
+            state.failed = True
+        return json.dumps(
+            _response(
+                operation,
+                error=_error(
+                    operation,
+                    "lifecycle_invalid_response",
+                    "Adapter returned a non-JSON lifecycle response",
+                ),
+            ),
+            sort_keys=True,
+        )
+
+
 async def _serve(
     runtime_factory: RuntimeFactory,
     *,
     input_stream: TextIO,
     output_stream: TextIO,
 ) -> None:
-    runtime: AdapterRuntime | None = None
-    active_runtime_id: str | None = None
-    runtime_failed = False
+    state = _HostState()
     try:
         while True:
             # Keep this event loop alive while idle. Persistent SDK clients such
@@ -192,89 +347,28 @@ async def _serve(
                     raise TypeError("lifecycle request must be a mapping")
                 raw_operation = message.get("operation")
                 operation = raw_operation if isinstance(raw_operation, str) else "start"
-                if operation not in {"start", "invoke", "stop"}:
-                    raise LifecycleError(
-                        "lifecycle_invalid_operation",
-                        "Unknown lifecycle operation",
-                    )
-                if message.get("contract_version") != CONTRACT_VERSION:
-                    raise LifecycleError(
-                        "lifecycle_contract_mismatch",
-                        f"Expected lifecycle contract {CONTRACT_VERSION}",
-                    )
-                payload = message.get("payload")
-                if not isinstance(payload, dict):
-                    raise LifecycleError(
-                        "lifecycle_invalid_payload",
-                        "Lifecycle payload must be a mapping",
-                    )
-                message_runtime_id = _runtime_id(operation, payload)
-                if message_runtime_id is None:
-                    raise LifecycleError(
-                        "lifecycle_invalid_runtime",
-                        "Lifecycle payload is missing a runtime ID",
-                    )
-
-                if operation == "start":
-                    if runtime is not None:
-                        raise LifecycleError(
-                            "lifecycle_already_started",
-                            "Lifecycle host already owns a runtime",
-                        )
-                    candidate = runtime_factory()
-                    try:
-                        await _adapter_call("start", lambda: candidate.start(payload))
-                    except LifecycleError:
-                        await _stop_after_eof(candidate)
-                        raise
-                    runtime = candidate
-                    active_runtime_id = message_runtime_id
-                    runtime_failed = False
-                    response = _response(operation)
-                else:
-                    if runtime is None or active_runtime_id is None:
-                        raise LifecycleError(
-                            "lifecycle_not_started",
-                            "Lifecycle host has not started a runtime",
-                        )
-                    if message_runtime_id != active_runtime_id:
-                        raise LifecycleError(
-                            "lifecycle_runtime_mismatch",
-                            "Lifecycle payload does not match the active runtime",
-                        )
-                    if operation == "invoke":
-                        if runtime_failed:
-                            raise LifecycleError(
-                                "lifecycle_runtime_failed",
-                                "Lifecycle runtime cannot accept another invocation",
-                            )
-                        with _invocation_environment(payload):
-                            output = await _adapter_call(
-                                "invoke", lambda: runtime.invoke(payload)
-                            )
-                        response = _response(operation, output=output)
-                    else:
-                        try:
-                            await _adapter_call("stop", runtime.stop)
-                        finally:
-                            runtime = None
-                            active_runtime_id = None
-                            runtime_failed = False
-                            should_stop = True
-                        response = _response(operation)
+                payload, message_runtime_id = _validated_request(message, operation)
+                response = await _dispatch(
+                    state,
+                    runtime_factory,
+                    operation,
+                    payload,
+                    message_runtime_id,
+                )
+                should_stop = operation == "stop"
             except LifecycleError as error:
                 if (
                     operation == "invoke"
-                    and runtime is not None
-                    and error.code == "lifecycle_adapter_invoke_failed"
+                    and state.runtime is not None
+                    and isinstance(error, _AdapterCallError)
                 ):
-                    runtime_failed = True
+                    state.failed = True
                 response = _failure_response(operation, error)
                 should_stop = should_stop or operation in {"start", "stop"}
             except Exception as error:
                 traceback.print_exc(file=sys.stderr)
-                if operation == "invoke" and runtime is not None:
-                    runtime_failed = True
+                if operation == "invoke" and state.runtime is not None:
+                    state.failed = True
                 response = _response(
                     operation,
                     error=_error(
@@ -284,29 +378,13 @@ async def _serve(
                     ),
                 )
 
-            try:
-                encoded = json.dumps(response, sort_keys=True)
-            except (TypeError, ValueError):
-                traceback.print_exc(file=sys.stderr)
-                if operation == "invoke" and runtime is not None:
-                    runtime_failed = True
-                encoded = json.dumps(
-                    _response(
-                        operation,
-                        error=_error(
-                            operation,
-                            "lifecycle_invalid_response",
-                            "Adapter returned a non-JSON lifecycle response",
-                        ),
-                    ),
-                    sort_keys=True,
-                )
+            encoded = _encode_response(state, operation, response)
             print(encoded, file=output_stream, flush=True)
             if should_stop:
                 break
     finally:
-        if runtime is not None:
-            await _stop_after_eof(runtime)
+        if state.runtime is not None:
+            await _stop_after_eof(state.runtime)
 
 
 def serve(

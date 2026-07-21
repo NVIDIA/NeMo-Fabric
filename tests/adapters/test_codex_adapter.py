@@ -107,6 +107,7 @@ def mock_codex_fixture(monkeypatch):
     mock_codex.next_thread = None
     mock_codex.resume_thread_id = None
     mock_codex.skill_request = AsyncMock()
+    mock_codex.close_error = None
 
     def build_client(*, config):
         mock_client = MagicMock(spec=AsyncCodex)
@@ -116,6 +117,8 @@ def mock_codex_fixture(monkeypatch):
         mock_client._client = SimpleNamespace(request=mock_codex.skill_request)
 
         async def close():
+            if mock_codex.close_error is not None:
+                raise mock_codex.close_error
             mock_client.closed = True
 
         async def thread_start(**_kwargs):
@@ -188,6 +191,22 @@ def test_sdk_oneshot_uses_native_thread_and_turn_contract(
     )
     client.models.assert_not_awaited()
     client._client.request.assert_not_awaited()
+
+
+def test_sdk_close_failure_preserves_completed_turn_and_thread_state(
+    codex_payload, mock_codex, caplog
+):
+    mock_codex.close_error = RuntimeError("close failed")
+
+    output = adapter.run(codex_payload)
+
+    assert output["completed"] is True
+    assert output["failed"] is False
+    assert output["thread_id"] == "thread-123"
+    assert output["response"] == "done"
+    assert adapter.load_thread_id(codex_payload, "runtime-1") == "thread-123"
+    assert "Codex SDK client failed to close after invocation" in caplog.text
+    mock_codex.instances[0].close.assert_awaited_once_with()
 
 
 def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_codex):

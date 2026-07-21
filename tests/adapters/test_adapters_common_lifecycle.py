@@ -9,6 +9,7 @@ import json
 import os
 from typing import Any
 
+import pytest
 from nemo_fabric_adapters.common import lifecycle
 
 
@@ -226,7 +227,19 @@ def test_lifecycle_host_stops_runtime_when_fabric_closes_stdin():
     assert stopped == [True]
 
 
-def test_lifecycle_host_rejects_invoke_after_adapter_failure():
+@pytest.mark.parametrize(
+    ("failure", "expected_code"),
+    [
+        (RuntimeError("adapter failed"), "lifecycle_adapter_invoke_failed"),
+        (
+            lifecycle.LifecycleError("adapter_known_failure", "Adapter failed"),
+            "adapter_known_failure",
+        ),
+    ],
+)
+def test_lifecycle_host_rejects_invoke_after_adapter_failure(
+    failure, expected_code
+):
     runtime_id = "runtime-1"
     invoke_payload = {
         "runtime_context": {"runtime_id": runtime_id},
@@ -248,7 +261,7 @@ def test_lifecycle_host_rejects_invoke_after_adapter_failure():
 
         async def invoke(self, payload):
             invocations.append(payload)
-            raise RuntimeError("adapter failed")
+            raise failure
 
         async def stop(self):
             pass
@@ -256,9 +269,7 @@ def test_lifecycle_host_rejects_invoke_after_adapter_failure():
     lifecycle.serve(Runtime, input_stream=input_stream, output_stream=output_stream)
 
     responses = [json.loads(line) for line in output_stream.getvalue().splitlines()]
-    assert responses[1]["outcome"]["error"]["code"] == (
-        "lifecycle_adapter_invoke_failed"
-    )
+    assert responses[1]["outcome"]["error"]["code"] == expected_code
     assert responses[2]["outcome"]["error"]["code"] == "lifecycle_runtime_failed"
     assert len(invocations) == 1
 

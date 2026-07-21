@@ -47,8 +47,9 @@ if lifecycle.is_lifecycle_host():
     lifecycle.serve(AdapterRuntime)
 ```
 
-Fabric creates one factory instance per local host and serializes invocations
-through it. The host keeps one event loop alive for the complete lifecycle so
+Fabric calls the factory once per local host to create one runtime instance and
+serializes invocations through that instance. The host keeps one event loop
+alive for the complete lifecycle so
 SDK clients, compiled graphs, checkpointers, and harness databases can remain
 live safely. Adapter stdout is reserved for the protocol; diagnostics are
 redirected to stderr. A host crash or protocol timeout is terminal for that

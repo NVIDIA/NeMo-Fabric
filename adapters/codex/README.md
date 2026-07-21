@@ -49,11 +49,13 @@ the SDK runtime. The current real-agent acceptance path validates an existing
 Codex login; it does not yet claim a raw environment variable as a complete
 login flow.
 
-When `models.default.provider` is `nvidia`, the adapter defines a request-scoped
-Codex model provider for the configured NVIDIA Responses endpoint. It reads the
-credential from `api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex
-state under the Fabric artifact root, so the invocation does not depend on or
-modify a user's Codex login. Set the endpoint in
+When `models.default.provider` is `nvidia`, the adapter defines a Codex model
+provider for the configured NVIDIA Responses endpoint. `Fabric.run(...)` owns
+that provider for one invocation, while `Fabric.start_runtime(...)` fixes it for
+the lifetime of the persistent runtime. The adapter reads the credential from
+`api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex state under the
+Fabric artifact root, so execution does not depend on or modify a user's Codex
+login. Set the endpoint in
 `models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`; the adapter
 does not assume a default frontier endpoint.
 
@@ -90,7 +92,7 @@ Use normalized `FabricConfig` fields for portable configuration:
   provider and NVIDIA-hosted Responses-compatible models through the `nvidia`
   provider.
 - `environment.workspace` sets the working directory.
-- `mcp` maps stdio, HTTP, and streamable HTTP servers into request-scoped Codex
+- `mcp` maps stdio, HTTP, and streamable HTTP servers into the Codex thread's
   `mcp_servers` configuration. For stdio, Fabric parses `url` as a command plus
   arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
@@ -112,14 +114,20 @@ Codex-specific controls belong in `harness.settings`:
 - `personality`, `reasoning_effort`, `service_name`, and `service_tier`
 - `output_schema` for SDK-native structured output
 - `codex_bin` for an explicit Codex app-server runtime override
-- `config_overrides` as dotted request-scoped Codex configuration keys, such as
-  Codex-only MCP timeout or required-server options
+- `config_overrides` as dotted Codex configuration keys applied when the SDK
+  runtime starts, such as Codex-only MCP timeout or required-server options
 - `timeout_seconds`, defaulting to 1800
 - `env` for variables explicitly forwarded to the Codex runtime
 - `nemo_relay_command` for the optional external Relay gateway executable
 
 Set model selection through `models` and the working directory through
 `environment.workspace`.
+
+For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
+roots, and `config_overrides` are fixed when the runtime starts and cannot vary
+between `Runtime.invoke(...)` calls. Start a new runtime to change them.
+`Fabric.run(...)` creates a fresh one-shot runtime, so the same settings are
+scoped to that invocation.
 
 The adapter filters the inherited environment. It retains portable OS and
 Codex state variables, the selected model's `api_key_env`, and explicit

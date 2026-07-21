@@ -1054,9 +1054,7 @@ async def invoke_codex_sdk(
             try:
                 await codex.close()
             except Exception:
-                output = _failure(
-                    "codex_sdk_stop_failed", "Codex SDK runtime failed to stop"
-                )
+                LOGGER.exception("Codex SDK client failed to close after invocation")
     return output, thread_id
 
 

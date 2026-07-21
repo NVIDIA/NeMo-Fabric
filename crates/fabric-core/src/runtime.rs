@@ -1157,10 +1157,7 @@ fn run_local_host_adapter_with_timeout(
         relay_config,
         fabric_home,
         fabric_invocation,
-    ) = match exchange_result {
-        Ok(result) => result,
-        Err(error) => return Err(error),
-    };
+    ) = exchange_result?;
 
     let mut events = vec![event_with_metadata(
         "runtime_start",

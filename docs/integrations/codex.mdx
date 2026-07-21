@@ -31,10 +31,16 @@ config.add_mcp_server(
 ```
 
 The adapter maps stdio, HTTP, and streamable HTTP servers into the Codex
-thread's request-scoped `mcp_servers` configuration. It resolves each skill
-directory, verifies that it contains `SKILL.md`, and registers it as a
-process-scoped Codex skill root. Codex uses its normal skill discovery behavior.
-Invalid skill directories and MCP transports fail before the SDK runtime starts.
+thread's `mcp_servers` configuration. It resolves each skill directory, verifies
+that it contains `SKILL.md`, and registers it as a process-scoped Codex skill
+root. Codex uses its normal skill discovery behavior. Invalid skill directories
+and MCP transports fail before the SDK runtime starts.
+
+For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
+roots, and `harness.settings.config_overrides` are fixed when the runtime starts
+and cannot vary between `Runtime.invoke(...)` calls. Start a new runtime to
+change them. `Fabric.run(...)` creates a fresh one-shot runtime, so the same
+settings are scoped to that invocation.
 
 The Codex adapter does not declare `tools.blocked` support. Codex can filter
 individual MCP server tools, but the pinned runtime does not provide one deny

@@ -944,9 +944,26 @@ class ClaudeRuntime:
             invocation_timeout = timeout_seconds(payload)
         except ClaudeAdapterError as error:
             output = adapter_failure(error)
-            if self._relay is not None:
-                output = _relay_output(output, self._relay)
-            return output
+        else:
+            output = await self._run_query(
+                payload,
+                client,
+                prompt,
+                invocation_timeout,
+            )
+
+        if self._relay is not None:
+            output = _relay_output(output, self._relay)
+        return output
+
+    async def _run_query(
+        self,
+        payload: dict[str, Any],
+        client: ClaudeSDKClient,
+        prompt: str,
+        invocation_timeout: float,
+    ) -> dict[str, Any]:
+        """Run one SDK query and normalize its terminal result."""
 
         messages: list[Message] = []
         result: ResultMessage | None = None
@@ -978,9 +995,6 @@ class ClaudeRuntime:
                 )
             else:
                 output = self._normalize_invocation(payload, messages, result)
-
-        if self._relay is not None:
-            output = _relay_output(output, self._relay)
         return output
 
     def _normalize_invocation(
