@@ -12,7 +12,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric
 
-NVIDIA NeMo Fabric is a runtime execution layer for agents. It turns multiple
+NeMo Fabric is a runtime execution layer for agents. It turns multiple
 agent harnesses into one configurable, observable lifecycle surface.
 
 NeMo Fabric standardizes how applications configure, launch, invoke, and
