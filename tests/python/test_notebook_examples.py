@@ -60,3 +60,4 @@ def test_variations_notebook_harnesses_plan_with_current_adapters():
     assert "validated when the adapter starts" in codex["needs"]
     assert plans["Codex"].config.harness.settings["sandbox"] == "workspace-write"
     assert plans["Codex"].config.harness.settings["reasoning_effort"] == "high"
+    assert plans["Codex"].config.runtime.input_schema == "text"
