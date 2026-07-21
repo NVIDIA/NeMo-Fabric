@@ -1400,8 +1400,10 @@ fn exchange_lifecycle_message(
         .write_all(message.as_bytes())
         .and_then(|()| host.stdin.flush())
     {
-        let code = match host.child.try_wait() {
-            Ok(Some(_)) => "host_crashed",
+        let code = match (source.kind(), host.child.try_wait()) {
+            // A closed lifecycle pipe is terminal even when the child exit
+            // status is not observable yet.
+            (ErrorKind::BrokenPipe, _) | (_, Ok(Some(_))) => "host_crashed",
             _ => "host_io",
         };
         return Err(lifecycle_error(
@@ -2397,6 +2399,7 @@ mod tests {
             r#"import json
 import os
 import sys
+import time
 
 MODE = os.environ.get("FABRIC_FAKE_HOST_MODE", "success")
 invocations = 0
@@ -2430,7 +2433,9 @@ for line in sys.stdin:
             sys.exit(16)
         response("start")
         if MODE == "crash_after_start":
+            os.close(0)
             print("host crashed intentionally", file=sys.stderr, flush=True)
+            time.sleep(1)
             sys.exit(17)
     elif operation == "invoke":
         invocations += 1
@@ -2841,12 +2846,41 @@ for line in sys.stdin:
     fn local_host_crash_is_terminal_for_runtime() {
         let (root, plan) = local_host_plan("crash_after_start");
         let runtime = start_runtime(&plan).expect("start local host");
+        let host = local_hosts()
+            .get(&runtime.runtime_id)
+            .cloned()
+            .expect("active local host");
+        let stderr_path = host.lock().expect("local host").stderr_path.clone();
+        let closed_deadline = Instant::now() + Duration::from_secs(2);
+        while !fs::read_to_string(&stderr_path)
+            .expect("read host stderr")
+            .contains("host crashed intentionally")
+        {
+            assert!(
+                Instant::now() < closed_deadline,
+                "host did not close its lifecycle pipe"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            host.lock()
+                .expect("local host")
+                .child
+                .try_wait()
+                .expect("inspect crashed host")
+                .is_none(),
+            "host must still be alive while its lifecycle pipe is closed"
+        );
 
         let first = invoke_runtime(&plan, &runtime, RunRequest::text("first"))
             .expect_err("crashed host must reject invocation");
         let second = invoke_runtime(&plan, &runtime, RunRequest::text("second"))
             .expect_err("dead runtime must remain unusable");
         assert!(first.to_string().contains("host_crashed"), "{first}");
+        assert!(
+            first.to_string().contains("failed to send invoke"),
+            "{first}"
+        );
         assert!(second.to_string().contains("host_crashed"), "{second}");
 
         let stopped = stop_runtime(&plan, &runtime).expect("crashed host cleanup");
