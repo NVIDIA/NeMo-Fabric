@@ -1100,13 +1100,12 @@ wheels = [
 
 [[package]]
 name = "hermes-agent"
-version = "0.19.0"
+version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi", marker = "python_full_version < '3.14'" },
     { name = "concurrent-log-handler", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
     { name = "croniter", marker = "python_full_version < '3.14'" },
-    { name = "cryptography", version = "46.0.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "fastapi", marker = "python_full_version < '3.14'" },
     { name = "fire", marker = "python_full_version < '3.14'" },
     { name = "httpx", extra = ["socks"], marker = "python_full_version < '3.14'" },
@@ -1134,9 +1133,9 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"], marker = "python_full_version < '3.14'" },
     { name = "websockets", marker = "python_full_version < '3.14'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c1/2c/5eca471374c1b48555a8f0b988c06b19a93ae33a6c0e67845e47fc3a5628/hermes_agent-0.19.0.tar.gz", hash = "sha256:ac986bede64a2785436676c0ea084ec586574f8cb00a9d047e095b435d3e21c0", size = 14282599, upload-time = "2026-07-20T18:37:28.903Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/99/c2/6b65b1c1d093eff415304472709479a392ac1422e36d007e32f3bb848f58/hermes_agent-0.17.0.tar.gz", hash = "sha256:5ceda2a131627fecf5fd52b05d0162b48032023a5d814bb5d1894db4aa146120", size = 12156176, upload-time = "2026-06-19T19:40:16.589Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/30/c85be8290e9565dc3c7a9720e93f3e59e09b1b163487be4946c3aa848f80/hermes_agent-0.19.0-py3-none-any.whl", hash = "sha256:bd0bac012aee38a60894781f4597dc29ee7bedb3448540249921f10d3bef327f", size = 10144439, upload-time = "2026-07-20T18:37:26.417Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/e2/d18d5ec6735b412fde47ecac3b6a63874c824c83e9821e1c1f4a07bcff85/hermes_agent-0.17.0-py3-none-any.whl", hash = "sha256:f11dcc1b168d2db626ef8b2175301741a86b5247c5ffaff4b0f0e24018d1b190", size = 8642279, upload-time = "2026-06-19T19:40:14.014Z" },
 ]
 
 [[package]]
