@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Harbor Integration
 
-Use `nemo_fabric.integrations.harbor:FabricAgent` to run Fabric adapters in
+Use `nemo_fabric.integrations.harbor:FabricAgent` to run NeMo Fabric adapters in
 Harbor tasks. Harbor options select the model, harness, skills, MCP servers,
 tool policy, and telemetry; `FabricAgent` translates them into one typed
 `FabricConfig` for the task run.

@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # NVIDIA NeMo Fabric LangChain Deep Agents Adapter
 
 Runs a [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) agent
-through Fabric's inline Python adapter lifecycle. The same adapter supports
+through NeMo Fabric's inline Python adapter lifecycle. The same adapter supports
 one-shot, multi-turn, and resumed execution.
 
 To install just the Deep Agents adapter by itself:
@@ -23,7 +23,7 @@ pip install "nemo-fabric[deepagents, runtime]"
 
 ## Model and Authentication
 
-The adapter builds a LangChain chat model from Fabric's `models.default` config.
+The adapter builds a LangChain chat model from NeMo Fabric's `models.default` config.
 For `nvidia` (or an unspecified provider) it targets NVIDIA-hosted,
 OpenAI-compatible endpoints (`https://integrate.api.nvidia.com/v1`) via
 `ChatOpenAI`; `openai` and `openai-compatible` also use `ChatOpenAI` with the
@@ -43,7 +43,7 @@ static env requirement; a runtime **preflight** verifies that the `deepagents`
 package is importable and the configured credential is set, and returns a
 normalized failure otherwise. `fabric doctor` validates adapter resolution.
 
-Fabric maps the following into the harness:
+NeMo Fabric maps the following into the harness:
 
 - `models.default.model` / `harness.settings.model_name` selects the model.
 - `models.default.provider` selects the client (`nvidia`/`openai` → OpenAI-compatible).
@@ -65,7 +65,7 @@ Fabric maps the following into the harness:
   JSON-serializable** `create_deep_agent` options (currently `subagents` and
   `interrupt_on`). It is not a general Python-object escape hatch: the SDK config
   round-trips through JSON and Rust planning, so `AgentMiddleware`, `BaseTool`
-  instances, and Python callables cannot cross the boundary. Fabric-owned
+  instances, and Python callables cannot cross the boundary. NeMo Fabric-owned
   arguments (`model`, `tools`, `backend`, `skills`, `system_prompt`, `middleware`,
   `checkpointer`) cannot be overridden through this passthrough, and an unknown or
   unsupported key is a normalized configuration failure rather than a silently
@@ -75,12 +75,12 @@ Fabric maps the following into the harness:
 
 Deep Agents can delegate to subagents through its built-in `task` tool. Subagents
 **inherit** the parent run's model, tools, skills, workspace, telemetry, and
-permissions. When `tools.blocked` is configured, Fabric supplies an explicitly
+permissions. When `tools.blocked` is configured, NeMo Fabric supplies an explicitly
 gated `general-purpose` subagent and gates every declarative local subagent, so
 delegation cannot broaden capabilities beyond the parent. Remote and precompiled
 subagents are rejected in that case because their execution cannot be governed by
 the local middleware. Independently configured subagent tools, skills, models,
-MCP servers, middleware, or permissions are **not** exposed through the Fabric SDK
+MCP servers, middleware, or permissions are **not** exposed through the NeMo Fabric SDK
 yet; a `subagents` definition here only carries JSON-shaped fields.
 
 The normalized result includes the final response, buffered messages and
@@ -95,17 +95,17 @@ normalized failure result rather than a raw traceback.
 
 A one-shot `run` streams the agent with `astream` (buffering `updates` events and
 `values` snapshots) and returns the final agent message, buffered messages and
-per-step events, usage, and the LangGraph thread ID in the normalized Fabric
-result. Each one-shot run gets a fresh Fabric `runtime_id`, so `resumed` is
+per-step events, usage, and the LangGraph thread ID in the normalized NeMo Fabric
+result. Each one-shot run gets a fresh NeMo Fabric `runtime_id`, so `resumed` is
 `false`.
 
-Multi-turn and resume are keyed by the Fabric `runtime_id`, which is stable
+Multi-turn and resume are keyed by the NeMo Fabric `runtime_id`, which is stable
 across `invoke` calls in a started runtime (`start_runtime`) and fresh for each
 one-shot run. On the first turn the adapter generates a LangGraph thread ID and
 records it against the runtime; later turns of the same runtime reuse that thread
 ID and a persistent LangGraph SQLite checkpointer to resume (`resumed` is `true`).
 The checkpointer lives under `harness.settings.state_dir` (default the runtime
-artifacts directory). Fabric owns the runtime-to-thread correlation record;
+artifacts directory). NeMo Fabric owns the runtime-to-thread correlation record;
 LangGraph owns the transcript.
 
 The `deepagents_config()` builder in `examples/code_review_agent` is the SDK
@@ -154,7 +154,7 @@ pip install "nemo-fabric-adapters-deepagents[relay]"   # -> nemo-relay[deepagent
     Relay and emits skill/subagent configuration marks.
   - The top-level invocation runs inside a
     `nemo_relay.scope.scope("deepagents-request", nemo_relay.ScopeType.Agent)`
-    scope, so the whole Fabric turn is captured under one Agent scope.
+    scope, so the whole NeMo Fabric turn is captured under one Agent scope.
   - `NemoRelayDeepAgentsCallbackHandler()` is added to the LangGraph run config
     (without dropping consumer-provided callbacks) to capture LangGraph scopes
     and human-in-the-loop interrupt/resume marks.

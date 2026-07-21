@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # NVIDIA NeMo Fabric Codex Adapter
 
 The `nvidia.fabric.codex` adapter uses the official Codex Python SDK behind
-Fabric's normalized invocation contract. It does not resolve or execute a
+NeMo Fabric's normalized invocation contract. It does not resolve or execute a
 separately installed `codex` command. The SDK package owns its pinned
 app-server runtime and typed JSON-RPC protocol.
 
@@ -26,20 +26,20 @@ pip install "nemo-fabric[codex, runtime]"
 
 ## Authentication
 
-Fabric reuses the authentication state that Codex stores under `CODEX_HOME`
-(default: `~/.codex`). Fabric does not perform an interactive login, copy
+NeMo Fabric reuses the authentication state that Codex stores under `CODEX_HOME`
+(default: `~/.codex`). NeMo Fabric does not perform an interactive login, copy
 credentials, or mutate the user's Codex configuration.
 
 Codex supports two OpenAI authentication modes:
 
-- **ChatGPT login:** Sign in through Codex with a ChatGPT plan. Fabric can then
+- **ChatGPT login:** Sign in through Codex with a ChatGPT plan. NeMo Fabric can then
   run without `OPENAI_API_KEY` while that cached login remains valid.
 - **API key login:** Provision the same Codex credential store with an OpenAI
   API key. This mode uses OpenAI Platform billing rather than ChatGPT plan
   credits.
 
 For a nondefault credential store, set `CODEX_HOME` before both login and the
-Fabric invocation. Treat `CODEX_HOME/auth.json` as a secret when Codex uses
+NeMo Fabric invocation. Treat `CODEX_HOME/auth.json` as a secret when Codex uses
 file-based credential storage. Refer to the
 [Codex authentication documentation](https://developers.openai.com/codex/auth/)
 for login, headless setup, and credential-storage options.
@@ -52,27 +52,27 @@ login flow.
 When `models.default.provider` is `nvidia`, the adapter defines a request-scoped
 Codex model provider for the configured NVIDIA Responses endpoint. It reads the
 credential from `api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex
-state under the Fabric artifact root, so the invocation does not depend on or
+state under the NeMo Fabric artifact root, so the invocation does not depend on or
 modify a user's Codex login. Set the endpoint in
 `models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`; the adapter
 does not assume a default frontier endpoint.
 
 The adapter depends on the Codex SDK, which installs and selects its matching
-app-server runtime. Fabric does not declare the runtime package directly or
+app-server runtime. NeMo Fabric does not declare the runtime package directly or
 treat it as a user-installed command or adapter descriptor requirement.
 
 A `codex` command on `PATH` is not selected implicitly. To override the
 SDK-selected runtime intentionally, set
 `harness.settings.codex_bin` to an app-server path that is absolute or relative
-to the explicit `base_dir`. Fabric passes the resolved path through
+to the explicit `base_dir`. NeMo Fabric passes the resolved path through
 `CodexConfig.codex_bin`; the SDK remains the execution driver.
 
 ## Execution Model
 
-Each Fabric invocation starts a fresh SDK client and closes its app-server
+Each NeMo Fabric invocation starts a fresh SDK client and closes its app-server
 transport before returning. The first invocation creates a Codex thread and
-persists its ID under the Fabric artifact root. Later invocations for the same
-Fabric runtime resume that exact thread. Codex owns the transcript; Fabric owns
+persists its ID under the NeMo Fabric artifact root. Later invocations for the same
+NeMo Fabric runtime resume that exact thread. Codex owns the transcript; NeMo Fabric owns
 runtime-to-thread correlation, timeout, cancellation, and cleanup.
 
 The result includes the SDK's typed terminal response, turn status, token
@@ -88,7 +88,7 @@ Use normalized `FabricConfig` fields for portable configuration:
   provider.
 - `environment.workspace` sets the working directory.
 - `mcp` maps stdio, HTTP, and streamable HTTP servers into request-scoped Codex
-  `mcp_servers` configuration. For stdio, Fabric parses `url` as a command plus
+  `mcp_servers` configuration. For stdio, NeMo Fabric parses `url` as a command plus
   arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   registers each directory as a process-scoped Codex skill root so Codex can
@@ -97,7 +97,7 @@ Use normalized `FabricConfig` fields for portable configuration:
 
 The Codex adapter does not declare `tools.blocked` support. The current Codex
 runtime has per-MCP-server tool filters, but it does not provide one complete
-deny boundary for built-in, local, MCP, and hosted tools. Fabric therefore
+deny boundary for built-in, local, MCP, and hosted tools. NeMo Fabric therefore
 routes normalized blocked-tool policy as unsupported instead of applying a
 partial policy.
 
@@ -126,4 +126,3 @@ Codex state variables, the selected model's `api_key_env`, and explicit
 
 Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the
 [NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
-

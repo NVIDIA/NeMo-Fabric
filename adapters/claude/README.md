@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # NVIDIA NeMo Fabric Claude Adapter
 
 The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
-Python behind Fabric's normalized invocation contract. The SDK is an
+Python behind NeMo Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
 This adapter pins `claude-agent-sdk==0.2.120`. The SDK supplies its compatible
@@ -29,7 +29,7 @@ pip install "nemo-fabric[claude, runtime]"
 
 ## Authentication
 
-Fabric preserves Claude's native credential resolution. Use an existing Claude
+NeMo Fabric preserves Claude's native credential resolution. Use an existing Claude
 Code login for local development, `ANTHROPIC_AUTH_TOKEN` for a gateway or proxy
 bearer credential, `ANTHROPIC_API_KEY` for a static API credential, or Anthropic
 Workload Identity Federation (WIF) for production and CI workloads that should
@@ -45,7 +45,7 @@ endpoint. This request-scoped mapping does not change the parent environment.
 The adapter forwards the Anthropic profile and federation environment variables
 that Claude Code and the Claude Agent SDK consume. This includes
 `ANTHROPIC_CONFIG_DIR`, `ANTHROPIC_PROFILE`, the direct federation identifiers,
-and `ANTHROPIC_IDENTITY_TOKEN` or `ANTHROPIC_IDENTITY_TOKEN_FILE`. Fabric reads
+and `ANTHROPIC_IDENTITY_TOKEN` or `ANTHROPIC_IDENTITY_TOKEN_FILE`. NeMo Fabric reads
 selected environment values and forwards them to the Claude runtime, but it
 does not persist or log them in configuration or artifacts. Authentication is
 validated when Claude starts the invocation.
@@ -68,8 +68,8 @@ for other supported installation methods.
 ## Execution Model
 
 Each `invoke` starts a fresh adapter process. The adapter persists the terminal
-Claude session ID under the Fabric artifact root, keyed by `runtime_id`, and
-passes it as `ClaudeAgentOptions.resume` on the next invocation. One Fabric
+Claude session ID under the NeMo Fabric artifact root, keyed by `runtime_id`, and
+passes it as `ClaudeAgentOptions.resume` on the next invocation. One NeMo Fabric
 runtime therefore maps to one Claude session even though no adapter process
 stays resident.
 
@@ -84,7 +84,7 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 - `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool
   names.
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
-  Fabric parses `url` as a command plus arguments.
+  NeMo Fabric parses `url` as a command plus arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   stages these directories as a local Claude plugin for the invocation.
 
@@ -104,11 +104,11 @@ field so the same consumer configuration can compose with other adapters.
 The adapter filters the inherited environment before launching Claude Code.
 It retains portable OS/config variables, the selected model's `api_key_env`,
 and explicitly configured `settings.env` values. Raw Claude stderr is consumed
-by the SDK and is not persisted as a Fabric artifact.
+by the SDK and is not persisted as a NeMo Fabric artifact.
 
 ## Relay Observability
 
-Enable Relay through the normalized Fabric configuration:
+Enable Relay through the normalized NeMo Fabric configuration:
 
 ```python
 config.enable_relay(
@@ -117,14 +117,14 @@ config.enable_relay(
 )
 ```
 
-For each Relay-enabled invocation, Fabric starts one `nemo-relay` gateway,
+For each Relay-enabled invocation, NeMo Fabric starts one `nemo-relay` gateway,
 waits for its health endpoint, and stops it after Claude succeeds, fails, times
-out, or is canceled. Fabric passes the gateway URL to Claude Code through
+out, or is canceled. NeMo Fabric passes the gateway URL to Claude Code through
 `ANTHROPIC_BASE_URL` and `NEMO_RELAY_GATEWAY_URL`. It also stages an
 invocation-scoped Claude plugin that forwards lifecycle hooks with
 `nemo-relay hook-forward claude`.
 
-The Fabric result includes `relay_runtime.gateway_config_path`,
+The NeMo Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
 startup failures return a stable adapter error and retain the gateway log for
 diagnosis. The default Claude Agent SDK dependency bundles a compatible Claude
@@ -134,7 +134,7 @@ plugin's complete hook set, including `UserPromptExpansion`.
 ## Typed Configuration
 
 Build the agent configuration with the typed SDK models before invoking
-Fabric:
+NeMo Fabric:
 
 ```python
 from pathlib import Path
@@ -215,5 +215,5 @@ assert first.output["session_id"] == second.output["session_id"]
 ```
 
 Resume requires the same workspace and Claude state directory on the same host.
-The Fabric-to-Claude correlation record alone is insufficient if Claude's
+The NeMo Fabric-to-Claude correlation record alone is insufficient if Claude's
 underlying transcript store is removed.

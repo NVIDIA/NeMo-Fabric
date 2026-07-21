@@ -19,11 +19,11 @@ then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes Agent runs o
 
 ## Prepare the Task Bundle
 
-Build the Fabric wheels and Relay executable that will be uploaded into the
+Build the NeMo Fabric wheels and Relay executable that will be uploaded into the
 isolated task container:
 
-> **TEMP — remove when Fabric is released:** This source-checkout bootstrap is
-> needed only while Fabric wheels are unavailable from PyPI. At release, the
+> **TEMP — remove when NeMo Fabric is released:** This source-checkout bootstrap is
+> needed only while NeMo Fabric wheels are unavailable from PyPI. At release, the
 > docs writer should replace `FABRIC_PACKAGE` with a pinned PyPI requirement and
 > remove `prepare_swebench.sh`, `.fabric-package`, `.wheelhouse`,
 > `FABRIC_FIND_LINKS`, and every `PIP_FIND_LINKS` argument. If the Claude Relay
@@ -127,7 +127,7 @@ uv run --extra runtime --extra harbor harbor run \
 Claude uses unattended permissions only inside Harbor's ephemeral task
 container. Do not apply that permission mode to a normal host environment.
 
-## Vary One Fabric Capability
+## Vary One NeMo Fabric Capability
 
 Start from the Hermes Agent command, replace its `--job-name`, and add the option in
 the middle column. Relay is enabled for every capability variation so its ATIF
@@ -220,7 +220,7 @@ find "$RUNS_DIR/$JOB_NAME" \
   \( -name '*.atof.jsonl' -o -name '*.atif.json' \) -print
 ```
 
-Relay-enabled runs preserve the direct Relay ATOF and ATIF files. Fabric
+Relay-enabled runs preserve the direct Relay ATOF and ATIF files. NeMo Fabric
 promotes Relay's ATIF to `agent/trajectory.json`, Harbor's canonical ATIF path,
 and also publishes `agent/telemetry-validation.json` plus the normalized
 `agent/fabric-result-<id>.json`. Validate ATOF and ATIF independently.
@@ -264,7 +264,7 @@ find "$RUNS_DIR/$JOB_NAME" \
   -path '*/agent/telemetry-validation.json' -print | head
 ```
 
-Inspect every exception and reward plus at least one Fabric result and telemetry
+Inspect every exception and reward plus at least one NeMo Fabric result and telemetry
 summary. Resume an interrupted job from its recorded configuration:
 
 ```bash

@@ -13,7 +13,7 @@ Each variant is an independent Python factory that returns a complete config.
 
 ## Set up
 
-Run commands from the repository root. Build Fabric and install its Python SDK
+Run commands from the repository root. Build NeMo Fabric and install its Python SDK
 into the project virtual environment:
 
 ```bash

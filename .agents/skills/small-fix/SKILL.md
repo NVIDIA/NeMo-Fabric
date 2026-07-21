@@ -1,6 +1,6 @@
 ---
 name: small-fix
-description: Make a small, reviewable NeMo Fabric bug fix without widening scope unnecessarily. Use for narrowly scoped bug fixes or behavior corrections in Fabric.
+description: Make a small, reviewable NeMo Fabric bug fix without widening scope unnecessarily. Use for narrowly scoped bug fixes or behavior corrections in NeMo Fabric.
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---

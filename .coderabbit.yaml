@@ -70,7 +70,7 @@ reviews:
         Tests should cover the behavior promised by the changed API surface, including error paths, lifecycle cleanup, and SDK/native parity where relevant.
     - path: "{adapters/**,examples/**}"
       instructions: |
-        Review adapter and example changes for command correctness, config/schema consistency, artifact handling, and compatibility with the public Fabric contracts.
+        Review adapter and example changes for command correctness, config/schema consistency, artifact handling, and compatibility with the public NeMo Fabric contracts.
     - path: "{docs/**,README.md,AGENTS.md}"
       instructions: |
         Review documentation for technical accuracy against the current API, command correctness, and consistency with generated schemas.

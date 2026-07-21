@@ -3,9 +3,9 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Fabric JSON Schemas
+# NVIDIA NeMo Fabric JSON Schemas
 
-This directory contains committed JSON Schema snapshots for the public Fabric
+This directory contains committed JSON Schema snapshots for the public NeMo Fabric
 contract. The files are generated from the Rust core types, not edited by hand.
 
 The Python SDK exposes Pydantic authoring models for application callers. Those
@@ -20,8 +20,8 @@ The core schema generator exports the current public typed contract.
 ### Config and Planning
 
 - `agent`: complete typed `FabricConfig`.
-- `adapter-descriptor`: minimal adapter descriptor consumed by Fabric. Each
-  descriptor declares a `contract_version`; Fabric rejects descriptors for
+- `adapter-descriptor`: minimal adapter descriptor consumed by NeMo Fabric. Each
+  descriptor declares a `contract_version`; NeMo Fabric rejects descriptors for
   unsupported adapter contracts during planning.
 - `run-plan`: executable plan containing the canonical typed config, absolute
   base directory, selected adapter, and derived execution metadata.
@@ -45,13 +45,13 @@ The core schema generator exports the current public typed contract.
 - `run-result`: normalized invocation result.
 - `artifact-manifest`: normalized artifact references.
 - `error-info`: structured runtime or adapter error metadata.
-- `fabric-event`: Fabric lifecycle/progress event.
+- `fabric-event`: NeMo Fabric lifecycle/progress event.
 
 ### Deferred Core Objects
 
 The MVP core object pass intentionally defers normalized trajectory structures
-and policy hooks for auditability. They are not separate Fabric schemas yet.
-When Fabric owns those contracts directly, add them as first-class Rust types
+and policy hooks for auditability. They are not separate NeMo Fabric schemas yet.
+When NeMo Fabric owns those contracts directly, add them as first-class Rust types
 and export them here.
 
 ## How To Maintain

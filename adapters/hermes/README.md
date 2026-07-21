@@ -23,32 +23,32 @@ pip install "nemo-fabric[adapters-hermes, runtime]"
 
 ## What It Maps
 
-The adapter receives a normalized payload from Fabric and materializes a native Hermes Agent configuration for:
+The adapter receives a normalized payload from NeMo Fabric and materializes a native Hermes Agent configuration for:
 
 - model provider, model name, base URL, temperature, and token settings;
 - workspace and terminal settings;
-- Fabric skills as external skill directories for Hermes Agent;
-- Fabric MCP servers as Hermes Agent MCP server config;
+- NeMo Fabric skills as external skill directories for Hermes Agent;
+- NeMo Fabric MCP servers as Hermes Agent MCP server config;
 - `tools.blocked` as disabled toolsets for Hermes Agent, unioned with
   `harness.settings.disabled_toolsets`;
 - optional NeMo Relay telemetry plugin configuration.
 
 `hermes_home` configures a base directory. The adapter creates a child under
-`runtimes/<runtime_id>` so invocations in one Fabric runtime share Hermes Agent state
+`runtimes/<runtime_id>` so invocations in one NeMo Fabric runtime share Hermes Agent state
 without sharing config or the session database with another runtime.
 
 ## Maintaining The Adapter
 
 Keep `fabric-adapter.json` aligned with the Python implementation:
 
-- `contract_version` must match the adapter contract supported by Fabric core.
+- `contract_version` must match the adapter contract supported by NeMo Fabric core.
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
-- `adapter_kind` is `python` because Fabric can invoke it through Python.
-- `runner.module` names the module that Fabric invokes with `python -m`.
+- `adapter_kind` is `python` because NeMo Fabric can invoke it through Python.
+- `runner.module` names the module that NeMo Fabric invokes with `python -m`.
   `runner.callable` names the equivalent reusable Python function.
 - `requirements` powers `fabric doctor`; keep required env vars, binaries, or
   packages current.
-- `config.accepts` must match the Fabric sections this adapter maps into Hermes Agent.
+- `config.accepts` must match the NeMo Fabric sections this adapter maps into Hermes Agent.
 - `telemetry.providers` declares provider-specific outputs and integration modes
   the adapter can produce or forward.
 
@@ -56,4 +56,4 @@ Do not put end-user agent settings in this directory. Users vary harness,
 model, skills, MCP, tools, telemetry, and runtime behavior through complete
 typed `FabricConfig` values and ordinary Python composition. The adapter
 descriptor describes adapter capabilities; it is not an agent configuration.
-Add descriptor fields only when Fabric core or the SDK actually uses them.
+Add descriptor fields only when NeMo Fabric core or the SDK actually uses them.

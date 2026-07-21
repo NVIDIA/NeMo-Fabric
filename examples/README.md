@@ -5,9 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # Examples
 
-This directory holds runnable Fabric examples.
+This directory holds runnable NeMo Fabric examples.
 
-New to Fabric? Start with the [onboarding notebooks](notebooks/README.md) for a
+New to NeMo Fabric? Start with the [onboarding notebooks](notebooks/README.md) for a
 guided, human-facing tour of the Python SDK, then come back to the runnable
 examples below.
 
@@ -39,8 +39,8 @@ just build-all
 
 ## Harbor
 
-[`harbor`](harbor/README.md) demonstrates how to evaluate Fabric agents with
-Harbor while preserving Fabric's typed configuration workflow. Harbor manages
+[`harbor`](harbor/README.md) demonstrates how to evaluate NeMo Fabric agents with
+Harbor while preserving NeMo Fabric's typed configuration workflow. Harbor manages
 the task environment, retries, concurrency, verification, rewards, and result
 layout. `FabricAgent` translates Harbor inputs—including the harness, model,
 skills, MCP servers, tool policy, and telemetry—into the final `FabricConfig`.

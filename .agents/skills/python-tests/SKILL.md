@@ -1,6 +1,6 @@
 ---
 name: python-tests
-description: Python tests for Fabric; use this when writing tests
+description: Python tests for NeMo Fabric; use this when writing tests
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---

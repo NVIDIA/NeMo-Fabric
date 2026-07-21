@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # NVIDIA NeMo Fabric Adapter Utilities
 
 `nemo-fabric-adapters-common` provides shared Python helpers for NVIDIA NeMo
-Fabric adapter implementations. NeMo Fabric adapter packages normally install
+NeMo Fabric adapter implementations. NeMo Fabric adapter packages normally install
 this package as a dependency.
 
 Install the package directly when developing an adapter:

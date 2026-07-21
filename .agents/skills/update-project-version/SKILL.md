@@ -1,6 +1,6 @@
 ---
 name: update-project-version
-description: Update the NeMo Fabric release version across Cargo, setuptools package metadata, internal Python dependency pins, integration metadata, and lockfiles. Use when bumping, synchronizing, or auditing Fabric package versions for a release.
+description: Update the NeMo Fabric release version across Cargo, setuptools package metadata, internal Python dependency pins, integration metadata, and lockfiles. Use when bumping, synchronizing, or auditing NeMo Fabric package versions for a release.
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---

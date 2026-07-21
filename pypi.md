@@ -34,7 +34,7 @@ pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[hermes]"
 ```
 
-Fabric supports running an agent harness in a different virtual environment than the one used to run Fabric itself. This is useful for running agents that have conflicting dependencies with Fabric or other agents.
+NeMo Fabric supports running an agent harness in a different virtual environment than the one used to run NeMo Fabric itself. This is useful for running agents that have conflicting dependencies with NeMo Fabric or other agents.
 
 The adapter must be installed into the virtual environment that the harness is installed in. For this reason adapters intentionally have minimal dependencies.
 

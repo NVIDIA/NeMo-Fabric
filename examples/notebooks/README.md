@@ -26,7 +26,7 @@ variations notebook shows advanced composition against a real, maintained agent.
     README's [Hermes Agent quick start](../../README.md#quick-start-hermes-agent))
     and set `NVIDIA_API_KEY`. The setup cell auto-detects `.tmp/hermes-venv`.
   - **Deep Agents, Codex, Claude** (variations notebook): the matching adapter
-    installed in the Fabric environment, plus that harness's credentials
+    installed in the NeMo Fabric environment, plus that harness's credentials
     (`NVIDIA_API_KEY` for Deep Agents; an authenticated `codex` and
     `OPENAI_API_KEY` for Codex; `ANTHROPIC_API_KEY` for Claude).
 - `NVIDIA_API_KEY` is loaded from a gitignored `.env` at the repo root if present.

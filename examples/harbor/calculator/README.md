@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Harbor Calculator Smoke Test
 
 This self-contained calculator task is the fastest way to check the complete
-Harbor → `FabricAgent` → Fabric → verifier path. Start with the deterministic,
+Harbor → `FabricAgent` → NeMo Fabric → verifier path. Start with the deterministic,
 credential-free scripted run, then use the same task to try Hermes Agent, Relay
 telemetry, or Claude. `FabricAgent` translates Harbor options into a complete
 typed `FabricConfig`; Harbor owns the task, container, verifier, reward,
@@ -16,7 +16,7 @@ concurrency, and run layout.
 
 Complete the shared host setup in the
 [Harbor landing page](../README.md#shared-host-setup), then continue in the
-same shell. Commit the Fabric revision you want to run because the build context
+same shell. Commit the NeMo Fabric revision you want to run because the build context
 is created from `HEAD`.
 
 The credential-free smoke does not require an API key. Export `NVIDIA_API_KEY`
@@ -27,7 +27,7 @@ harness. The first image build can take several minutes.
 
 Harbor builds `task/environment/Dockerfile` with the environment directory as
 its Docker context. Export committed `HEAD` so the image installs the exact
-Fabric revision from your checkout:
+NeMo Fabric revision from your checkout:
 
 ```bash
 set -euo pipefail
@@ -135,7 +135,7 @@ find "$RUNS_DIR/fabric-hermes-relay" \
 ## 4. Claude
 
 The Claude Agent SDK supplies its compatible Claude Code executable. Harbor
-passes the API key into the task environment; Fabric forwards only the model's
+passes the API key into the task environment; NeMo Fabric forwards only the model's
 configured credential variable to Claude.
 
 ```bash
@@ -164,7 +164,7 @@ evaluation container.
 
 ## Inspect Results
 
-Fabric result files use unique names in each trial's agent logs:
+NeMo Fabric result files use unique names in each trial's agent logs:
 
 ```bash
 find "$RUNS_DIR/fabric-smoke" -path '*/agent/fabric-result-*.json' -print -exec cat {} \;
@@ -172,9 +172,9 @@ cat "$RUNS_DIR/fabric-smoke/result.json"
 uv run --extra runtime --extra harbor harbor view "$RUNS_DIR"
 ```
 
-Check Fabric status, harness and adapter identity, runtime and invocation IDs,
+Check NeMo Fabric status, harness and adapter identity, runtime and invocation IDs,
 artifacts, telemetry, Harbor exceptions, and reward. A successful smoke run has
-Fabric status `succeeded` and Harbor mean reward `1.0`.
+NeMo Fabric status `succeeded` and Harbor mean reward `1.0`.
 
 After the runs, remove the generated build-context copy:
 

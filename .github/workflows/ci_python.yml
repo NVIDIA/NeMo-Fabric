@@ -80,7 +80,7 @@ jobs:
           shared-key: fabric-rust
 
       # PyYAML is not a project dependency, but test_hermes_config_mapping
-      # imports it to read Hermes config fixtures, so install it for the tests.
+      # imports it to read Hermes Agent config fixtures, so install it for the tests.
       - name: Build SDK with native extension
         run: |
           uv venv --python ${{ matrix.python-version }} .venv

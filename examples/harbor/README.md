@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Run Fabric Agents with Harbor
+# Run NeMo Fabric Agents with Harbor
 
 These examples keep Harbor in control of tasks, containers, verification,
 rewards, retries, concurrency, and job layout while `FabricAgent` translates
@@ -39,7 +39,7 @@ flowchart LR
     subgraph Container["<b>Harbor task container</b>"]
         direction TB
         Prepare["Prepare task environment"]
-        Invoke["Invoke Fabric runner"]
+        Invoke["Invoke NeMo Fabric runner"]
         Resolve["Fabric.run(): resolve<br/>adapter and assets"]
         Execute["Run selected harness<br/>in task workspace"]
         Verify["Verify task"]
@@ -58,7 +58,7 @@ flowchart LR
 ```
 
 `FabricAgent` and `FabricConfig` construction run in the Harbor host process.
-The pinned Fabric package, adapter discovery, harness execution, workspace, and
+The pinned NeMo Fabric package, adapter discovery, harness execution, workspace, and
 verifier run inside the isolated task container. Constructing the config does
 not read task paths; adapter and asset resolution is deferred to
 `Fabric.run()` with the task-local `base_dir`.
@@ -66,7 +66,7 @@ not read task paths; adapter and asset resolution is deferred to
 ## How Harbor Inputs Become FabricConfig
 
 `FabricAgent` starts with the selected adapter and Harbor task workspace, then
-applies every run input through typed Fabric models before crossing the task
+applies every run input through typed NeMo Fabric models before crossing the task
 container boundary:
 
 | Harbor input | `FabricConfig` field |
