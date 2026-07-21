@@ -18,7 +18,77 @@ SPDX-License-Identifier: Apache-2.0
 
 NeMo Fabric is a runtime execution layer that connects deployment platforms, evaluation harnesses, and RL rollout harnesses to multiple agent runtimes through one configurable, observable lifecycle surface.
 
-You choose an agent harness-Hermes Agent, Codex, Claude Code, LangChain Deep Agents, or another harness integrated through a custom adapter-and call NeMo Fabric from your application or an evaluation harness such as Harbor; NeMo Fabric resolves the adapter, manages the harness lifecycle, and returns normalized results and artifacts.
+You choose an agent harness-Hermes Agent, Codex, Claude Code, LangChain Deep Agents, or another harness integrated through a custom adapter-and call NeMo Fabric from your application or an evaluation harness such as Harbor; NeMo Fabric manages the harness lifecycle, and returns normalized results and artifacts.
+
+## Installation
+
+NeMo Fabric is capable of running in a seperate environment than the one used to run the agent harness, this avoids any potential dependency conflicts between the two.
+
+Create an environment for NeMo Fabric, and install it.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install nemo-fabric[runtime]
+```
+
+In the environment used to run the agent harness, install the matching adapter for your agent harness. For example the Hermes Agent adapter:
+```bash
+pip install "nemo-fabric[hermes]"
+```
+
+**Supported Harnesses**
+
+| Agent harness | Package extra |
+| --- | --- |
+| Claude Code | `nemo-fabric[claude]` |
+| Codex | `nemo-fabric[codex]` |
+| Hermes Agent | `nemo-fabric[hermes]` |
+| LangChain Deep Agents | `nemo-fabric[deepagents]` |
+
+Refer to [the installation guide](docs/getting-started/install.mdx) for more details.
+
+## Quick Start
+
+### Obtain API Keys
+
+The following code example uses an NVIDIA-hosted model and requires an NVIDIA API key defined with the `NVIDIA_API_KEY`
+environment variable. An API key can be obtained by creating an account on [`build.nvidia.com`](https://build.nvidia.com/).
+
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+)
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="quickstart-agent"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+)
+
+result = asyncio.run(Fabric().run(config, input="Who are you?"))
+print(result.output.response)
+```
+
+In the above example, the choice of harness is set by the `adapter_id` in the `HarnessConfig`. The example uses the Hermes Agent adapter, but you can change it to any other supported harness by changing the `adapter_id` to the appropriate value. Any harness-specific settings can be made by passing a dictionary to the `settings` field of the `HarnessConfig`.
+
+### Next Steps
+
+- A more detailed version of this example is available as a [Jupyter Notebook](https://jupyter.org/) at [`examples/notebooks/01_quickstart.ipynb`](examples/notebooks/01_quickstart.ipynb). Refer to [`examples/notebooks/README.md`](examples/notebooks/README.md) for other example notebooks.
+- Refer to the [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning, diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
+
 
 ## Architecture
 
@@ -53,141 +123,6 @@ flowchart TB
   Core -. telemetry config .-> Relay
   Harness -. harness telemetry .-> Relay
 ```
-
-## Quick Start: Experimentation CLI
-
-The `nemo-fabric` CLI is a maintained, experimental developer interface for
-quick harness experiments, smoke tests, examples, planning, and diagnostics.
-Its command contract can evolve as experiments mature. The Python SDK remains
-the stable application-facing contract.
-
-Install the Rust CLI from this source checkout, verify it, and run the
-credential-free preset:
-
-```bash
-cargo install --path crates/fabric-cli --locked
-nemo-fabric --version
-nemo-fabric preset show scripted
-nemo-fabric run --preset scripted --input "fabric works"
-```
-
-Copy an editable Python starting point with:
-
-```bash
-nemo-fabric example init code-review ./my-agent --language python
-```
-
-See the [experimentation CLI guide](docs/experimentation/cli.mdx) for the CLI's
-intent and boundaries.
-
-## Quick Start: Hermes Agent
-
-This path installs NeMo Fabric, installs Hermes Agent in a separate Python environment,
-and runs one input through the Hermes Agent adapter.
-
-Prerequisites:
-
-- Rust and Cargo
-- Python 3.11+ for NeMo Fabric
-- Python 3.11-3.13 for Hermes Agent
-- [uv](https://docs.astral.sh/uv/getting-started/installation/)
-- `just` 1.50.0+
-- `NVIDIA_API_KEY` for NVIDIA-hosted model access
-
-Install `just` if not already installed.
-```bash
-cargo install just --locked
-```
-
-Ensure the local Cargo bin directory is in your `PATH`, if not set it with:
-
-```bash
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-Refer to the [official installation guide](https://just.systems/man/en/installation.html) for more details.
-
-Install NeMo Fabric from the source checkout:
-
-```bash
-just build-all
-just wheels
-```
-
-Install NeMo Fabric, Hermes Agent, and the Hermes Agent adapter into an environment:
-
-```bash
-# Use any Python 3.11-3.13 interpreter for Hermes Agent.
-python3 -m venv .tmp/hermes-venv
-.tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[hermes, hermes-agent]"
-```
-
-If you are working from a local Hermes Agent checkout, replace the final install line
-with:
-
-```bash
-.tmp/hermes-venv/bin/python -m pip install -e ../hermes-agent
-.tmp/hermes-venv/bin/python -m pip install --find-links <path-fabric-repo>/dist nemo-fabric-adapters-hermes
-```
-
-Run the code-review example:
-
-```bash
-export NVIDIA_API_KEY=...
-export ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
-
-.venv/bin/python -m examples.code_review_agent \
-  --input "Reply with exactly: fabric works"
-```
-
-`ADAPTER_PYTHON` selects the interpreter used to launch any Python adapter.
-An explicit `harness.settings.python` or `harness.settings.python_env` takes
-precedence. If none is configured and `ADAPTER_PYTHON` is unset, NeMo Fabric falls
-back to `python3`. 
-
-Use `ADAPTER_PYTHON` when the harness is installed in a separate environment from NeMo Fabric. The environment must have the adapter package installed. The adapters Python packages are designed to be small with minimal dependencies.
-
-The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
-under `examples/code_review_agent/artifacts/hermes/`. Its complete base
-config and clone-based variants live in
-`examples/code_review_agent/config.py`.
-
-### Next Steps
-
-- Follow the [Example Notebooks](examples/notebooks/README.md) for a guided tour of the Python SDK.
-- Refer to the [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
-  diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
-
-## Supported Agent Harnesses
-
-Choose a bundled agent harness based on your model ecosystem and application
-needs. Every harness supports persistent multi-turn local runtimes through the
-same NeMo Fabric lifecycle and returns normalized results, artifacts, and telemetry
-references.
-
-| Agent harness | Choose it for | Model ecosystem | Key capabilities | Observability |
-| --- | --- | --- | --- | --- |
-| Claude | Claude-native coding and tool-use workflows | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
-| Codex | Codex-native coding workflows | OpenAI and NVIDIA-hosted Responses-compatible models | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
-| LangChain Deep Agents | Composable LangChain and LangGraph agents | LangChain model providers | Built-in and MCP tools, guardrails, skills, and local subagents | NeMo Relay and native OpenTelemetry/OpenInference |
-| Hermes Agent | Hermes Agent workflows with custom model endpoints | Configurable provider, model, and base URL | Toolsets, guardrails, MCP, skills, and persistent conversation history | NeMo Relay |
-
-For package names, exact compatibility and limitations, runtime ownership, and
-individual harness guides, refer to the
-[adapter compatibility reference](adapters/README.md).
-
-## Claude Adapter
-
-Build the local wheels and install NeMo Fabric with the independent Claude adapter:
-
-```bash
-just wheels
-python -m pip install --find-links dist "nemo-fabric[claude]"
-```
-
-Refer to the [Claude adapter guide](adapters/claude/README.md) for
-typed configuration, normalized tools, MCP and skills, persistent multi-turn
-runtimes, authentication, and execution details.
 
 ## Core Concepts
 
@@ -246,43 +181,3 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 - [Adapter compatibility and guides](adapters/README.md): compare bundled
   harness support, runtime ownership, telemetry integration, and package guides.
 
-## Tests
-
-To run the full test suite, bootstrap a virtual environment with the optional dependencies.
-
-```bash
-uv venv --seed .venv --python 3.12
-source .venv/bin/activate
-uv sync --all-groups --all-extras
-```
-
-Build NeMo Fabric and the Python extension. Because the virtual environment is
-already bootstrapped, pass `no_uv=true` to avoid reinstalling dependencies.
-
-```bash
-just no_uv=true build-all
-```
-
-Run both Rust and Python tests:
-
-```bash
-just no_uv=true test-all
-```
-
-Run just the Rust tests:
-
-```bash
-just no_uv=true test-rust
-```
-
-Run just the Python tests:
-
-```bash
-just no_uv=true test-python
-```
-
-Running `pytest` directly:
-
-```bash
-pytest
-```
