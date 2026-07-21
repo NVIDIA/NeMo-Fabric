@@ -106,7 +106,7 @@ just build-all
 just wheels
 ```
 
-Install Fabric, Hermes Agent, and the Hermes Agent adapter into an environment:
+Install NeMo Fabric, Hermes Agent, and the Hermes Agent adapter into an environment:
 
 ```bash
 # Use any Python 3.11-3.13 interpreter for Hermes Agent.
