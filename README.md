@@ -12,12 +12,13 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric
 
-NeMo Fabric is a runtime execution layer for agents. It turns multiple agent
-harnesses into one configurable, observable lifecycle surface.
-
 <p align="center">
-  <img src="assets/fabric-hero.png" alt="NeMo Fabric connects deployment platforms, evaluation harnesses, and RL rollout harnesses to multiple agent runtimes through one observable execution surface." width="1000">
+  <img src="assets/fabric-hero.png" alt="Architecture diagram showing NeMo Fabric as a central harness-management layer connecting deployment, evaluation, and RL rollout systems to Hermes, Codex, Claude Code, and LangChain DeepAgent while producing artifacts, telemetry, and logs." width="1000">
 </p>
+
+NeMo Fabric is a runtime execution layer that connects deployment platforms, evaluation harnesses, and RL rollout harnesses to multiple agent runtimes through one configurable, observable lifecycle surface.
+
+You choose an agent harness-Hermes Agent, Codex, Claude Code, LangChain Deep Agents, or another harness integrated through a custom adapter-and call NeMo Fabric from your application or an evaluation harness such as Harbor; NeMo Fabric resolves the adapter, manages the harness lifecycle, and returns normalized results and artifacts.
 
 ## Architecture
 
