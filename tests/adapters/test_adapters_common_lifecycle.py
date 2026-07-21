@@ -118,14 +118,14 @@ def test_lifecycle_host_passes_minimal_invoke_payload_unchanged():
     invocations = []
 
     class Runtime:
-        async def start(self, _payload):
+        async def start(self, _payload) -> None:
             pass
 
-        async def invoke(self, payload):
+        async def invoke(self, payload) -> dict[str, str]:
             invocations.append(payload)
             return {"input": payload["request"]["input"]}
 
-        async def stop(self):
+        async def stop(self) -> None:
             pass
 
     lifecycle.serve(Runtime, input_stream=input_stream, output_stream=output_stream)
