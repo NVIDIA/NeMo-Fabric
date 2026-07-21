@@ -31,8 +31,9 @@ The core schema generator exports the current public typed contract.
 
 ### Adapter Invocation
 
-- `adapter-invocation`: adapter-facing payload sent to inline or process
-  adapters.
+- `adapter-invocation`: per-turn payload sent to an initialized persistent
+  local adapter host. It contains only `runtime_context` and `request`; Fabric
+  sends configuration and capability planning data during lifecycle start.
 - `runtime-context`: per-run/per-invocation context included in adapter
   invocations.
 - `run-request`: per-invocation request/input.

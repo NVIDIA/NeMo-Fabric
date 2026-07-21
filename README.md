@@ -166,7 +166,9 @@ subagents that inherit the parent agent's capabilities.
 
 Consumers use the same `Fabric.start_runtime(...)` contract for all four
 bundled adapters. Adapter hosting remains descriptor-owned; it is not selected
-through public `FabricConfig` settings.
+through public `FabricConfig` settings. Local Process and Python adapters must
+declare and implement `runtime.local_host`; Fabric does not provide a
+process-per-invocation fallback.
 
 ## Claude Adapter
 
