@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import tomllib
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -17,6 +18,7 @@ from claude_agent_sdk import ClaudeSDKError
 from claude_agent_sdk import CLIConnectionError
 from claude_agent_sdk import CLIJSONDecodeError
 from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import SystemMessage
@@ -50,24 +52,24 @@ def install_fake_client(monkeypatch, response_factory):
     clients = []
 
     class FakeClient:
-        def __init__(self, options):
+        def __init__(self, options) -> None:
             self.options = options
             self.prompts = []
             clients.append(self)
 
-        async def connect(self):
+        async def connect(self) -> None:
             pass
 
-        async def query(self, prompt):
+        async def query(self, prompt) -> None:
             self.prompts.append(prompt)
 
-        def receive_response(self):
+        def receive_response(self) -> AsyncIterator[Message]:
             return response_factory(self)
 
-        async def disconnect(self):
+        async def disconnect(self) -> None:
             pass
 
-        async def interrupt(self):
+        async def interrupt(self) -> None:
             pass
 
     monkeypatch.setattr(adapter, "ClaudeSDKClient", FakeClient)
@@ -704,7 +706,7 @@ async def test_runtime_reports_relay_artifacts(relay_payload, monkeypatch, tmp_p
     monkeypatch.setattr(adapter.relay_gateway, "start_relay_gateway", mock_start)
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
 
-    async def responses(client):
+    async def responses(client) -> AsyncIterator[ResultMessage]:
         assert client.options.env["ANTHROPIC_BASE_URL"] == relay.gateway.url
         assert Path(client.options.plugins[-1]["path"]) == relay.plugin_path
         yield ResultMessage(
@@ -774,7 +776,7 @@ async def test_runtime_stop_reports_relay_gateway_failure(
         ),
     )
 
-    async def responses(_client):
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
         yield ResultMessage(
             subtype="success",
             duration_ms=10,
@@ -832,7 +834,7 @@ async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
     monkeypatch.setattr(adapter.shutil, "rmtree", mock_rmtree)
 
-    async def responses(_client):
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
         yield ResultMessage(
             subtype="success",
             duration_ms=10,
@@ -892,7 +894,7 @@ async def test_runtime_stops_relay_after_sdk_failure_or_cancellation(
     )
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
 
-    async def responses(_client):
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
         raise failure
         yield
 
@@ -928,7 +930,7 @@ async def test_runtime_preserves_failed_result_when_sdk_stream_raises(
     subtype,
     is_error,
 ):
-    async def responses(_client):
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
         yield ResultMessage(
             subtype=subtype,
             duration_ms=10,

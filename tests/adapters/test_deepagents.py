@@ -12,6 +12,7 @@ integration test in ``tests/e2e/test_deepagents.py``.
 from __future__ import annotations
 
 import importlib.machinery
+import os
 import sys
 import types
 from collections.abc import Iterator
@@ -279,8 +280,8 @@ async def test_single_invocation_normalizes_response_usage_and_thread(
     assert "instructions" not in fake_sdks["create_kwargs"]
 
 
-async def test_missing_api_key_fails_runtime_start(tmp_path, make_payload, monkeypatch):
-    monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
+async def test_missing_api_key_fails_runtime_start(tmp_path, make_payload):
+    os.environ.pop("NVIDIA_API_KEY", None)
 
     with pytest.raises(RuntimeError, match="NVIDIA_API_KEY"):
         await adapter.DeepAgentsRuntime().start(

@@ -21,7 +21,8 @@ an explicit app-server override instead of the SDK-pinned runtime.
 The SDK test uses the current Codex authentication state and exercises both the
 single-invocation convenience API and multiple turns against one started
 runtime. The Relay test additionally requires an external gateway binary and
-verifies model responses, stable thread identity across turns, ATOF, and ATIF;
-gateway startup alone is not a passing result. The semantic regression also
-requires decoded LLM request content, a model, token usage, and the expected
-agent response in ATIF.
+verifies model responses, stable thread identity across turns, Agent Trajectory
+Observability Format (ATOF), and Agent Trajectory Interchange Format (ATIF);
+gateway startup alone is not a passing result. The semantic regression requires
+the LLM request content to be decoded. It also requires ATIF to contain the
+model, token usage, and expected agent response.

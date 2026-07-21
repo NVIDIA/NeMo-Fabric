@@ -25,7 +25,10 @@ class ShimRuntime:
 
     async def invoke(self, invocation: dict[str, Any]) -> dict[str, Any]:
         if self._start_payload is None:
-            raise RuntimeError("shim runtime is not started")
+            raise lifecycle.LifecycleError(
+                "hermes_runtime_not_started",
+                "shim runtime is not started",
+            )
         payload = {
             **self._start_payload,
             "runtime_context": invocation.get("runtime_context"),

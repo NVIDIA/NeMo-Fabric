@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -41,7 +42,7 @@ def invoke_once(payload):
 
 
 def runtime_start_error(payload):
-    async def scenario():
+    async def scenario() -> adapter.lifecycle.LifecycleError:
         runtime = adapter.CodexRuntime()
         with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
             await runtime.start(lifecycle_start_payload(payload))
@@ -225,7 +226,7 @@ def test_runtime_stop_reports_close_failure_after_completed_turn(
 ):
     mock_codex.close_error = RuntimeError("close failed")
 
-    async def scenario():
+    async def scenario() -> tuple[dict[str, Any], adapter.lifecycle.LifecycleError]:
         runtime = adapter.CodexRuntime()
         await runtime.start(lifecycle_start_payload(codex_payload))
         output = await runtime.invoke(lifecycle_invocation(codex_payload))
@@ -257,7 +258,7 @@ def test_start_failure_is_not_masked_by_sdk_close_failure(
     )
     monkeypatch.setattr(adapter, "_register_skill_roots", register_skills)
 
-    async def scenario():
+    async def scenario() -> adapter.lifecycle.LifecycleError:
         runtime = adapter.CodexRuntime()
         with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
             await runtime.start(lifecycle_start_payload(codex_payload))
@@ -825,7 +826,7 @@ def test_relay_stop_failure_is_reported_by_runtime_stop(
         MagicMock(side_effect=adapter.relay_gateway.RelayGatewayError("stuck")),
     )
 
-    async def scenario():
+    async def scenario() -> tuple[dict[str, Any], adapter.lifecycle.LifecycleError]:
         runtime = adapter.CodexRuntime()
         await runtime.start(lifecycle_start_payload(codex_payload))
         output = await runtime.invoke(lifecycle_invocation(codex_payload))
