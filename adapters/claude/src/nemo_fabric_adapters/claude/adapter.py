@@ -217,14 +217,14 @@ def _selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
 def _resolve_path(payload: dict[str, Any], value: str | Path) -> Path:
     path = Path(value)
     if not path.is_absolute():
-        path = Path(common_utils.config_root(payload)) / path
+        path = Path(common_utils.base_dir(payload)) / path
     return path
 
 
 def resolve_cwd(payload: dict[str, Any]) -> Path:
     environment = common_utils.environment_payload(payload)
     workspace = environment.get("workspace")
-    return _resolve_path(payload, workspace or common_utils.config_root(payload))
+    return _resolve_path(payload, workspace or common_utils.base_dir(payload))
 
 
 def selected_model(payload: dict[str, Any]) -> str | None:
@@ -232,16 +232,56 @@ def selected_model(payload: dict[str, Any]) -> str | None:
     value = model_config.get("model")
     if value is None:
         return None
-    if model_config.get("provider") != "anthropic":
+    provider = model_config.get("provider")
+    if provider not in {"anthropic", "nvidia"}:
         raise AdapterConfigError(
             "claude_invalid_configuration",
-            "models.default.provider must be anthropic for the Claude adapter",
+            "models.default.provider must be anthropic or nvidia for the Claude adapter",
         )
     if not isinstance(value, str) or not value:
         raise AdapterConfigError(
             "claude_invalid_configuration", "model must be a non-empty string"
         )
-    return value.removeprefix("anthropic/")
+    return value.removeprefix("anthropic/") if provider == "anthropic" else value
+
+
+def _nvidia_environment(payload: dict[str, Any]) -> dict[str, str]:
+    model = _selected_model_config(payload)
+    if model.get("provider") != "nvidia":
+        return {}
+    api_key_env = model.get("api_key_env") or "NVIDIA_API_KEY"
+    if not isinstance(api_key_env, str) or not api_key_env:
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "models.default.api_key_env must be a non-empty string",
+        )
+    api_key = os.environ.get(api_key_env)
+    if not api_key:
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            f"{api_key_env} is required for the NVIDIA model provider",
+        )
+    settings = _settings(payload)
+    model_settings = _mapping(model.get("settings"), name="models.default.settings")
+    base_url = (
+        settings.get("base_url")
+        or model_settings.get("base_url")
+        or os.environ.get("NVIDIA_FRONTIER_BASE_URL")
+    )
+    if not isinstance(base_url, str) or not base_url:
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "models.default.settings.base_url or NVIDIA_FRONTIER_BASE_URL is required "
+            "for the NVIDIA model provider",
+        )
+    # Claude Code appends the Anthropic API version path itself, while Fabric's
+    # shared NVIDIA endpoint includes it for OpenAI-compatible clients.
+    claude_base_url = base_url.rstrip("/").removesuffix("/v1")
+    return {
+        "ANTHROPIC_API_KEY": api_key,
+        "ANTHROPIC_AUTH_TOKEN": "",
+        "ANTHROPIC_BASE_URL": claude_base_url,
+    }
 
 
 def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
@@ -388,7 +428,7 @@ def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
         )
     try:
         executable = relay_gateway.resolve_relay_command(
-            Path(common_utils.config_root(payload)).resolve(),
+            Path(common_utils.base_dir(payload)).resolve(),
             command,
         )
     except FileNotFoundError as error:
@@ -530,7 +570,7 @@ def _artifact_root(payload: dict[str, Any]) -> Path:
     root = artifacts.get("root") if isinstance(artifacts, dict) else None
     if root:
         return Path(root)
-    return Path(common_utils.config_root(payload)) / "artifacts" / "claude"
+    return Path(common_utils.base_dir(payload)) / "artifacts" / "claude"
 
 
 def runtime_state_path(payload: dict[str, Any], fabric_runtime_id: str) -> Path:
@@ -705,6 +745,7 @@ def child_environment(
             "claude_invalid_configuration", "harness.settings.env must contain strings"
         )
     values.update(configured)
+    values.update(_nvidia_environment(payload))
     if relay_gateway_url is not None:
         values["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
         values["ANTHROPIC_BASE_URL"] = relay_gateway_url

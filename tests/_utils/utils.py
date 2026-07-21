@@ -2,16 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
-import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-
-import yaml
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-FABRIC_COMMAND = ("cargo", "run", "-q", "-p", "nemo-fabric-cli", "--")
-
 
 def _relay_event_total_tokens(event: dict) -> int:
     profile = event.get("category_profile") or {}
@@ -64,25 +57,6 @@ def assert_semantic_relay_artifacts(
     assert any(
         expected_response.lower() in message.lower() for message in agent_messages
     ), agent_messages
-
-
-def run_fabric_cli(
-    *args: object,
-    stdin: str | None = None,
-    timeout: float = 60.0,
-) -> subprocess.CompletedProcess[str]:
-    """Run the Fabric CLI from the repository root and capture its output."""
-    return subprocess.run(
-        [*FABRIC_COMMAND, *(str(arg) for arg in args)],
-        cwd=REPO_ROOT,
-        input=stdin,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=timeout,
-    )
-
-
 def assert_relay_disabled_native_observability(result: dict):
     """Assert telemetry-off runs still surface native harness evidence."""
 
@@ -111,18 +85,3 @@ def assert_process_adapter_native_observability(result: dict):
     assert_relay_disabled_native_observability(result)
     assert result["output"]["returncode"] == 0
     assert result["output"]["stderr"] == ""
-
-
-def update_base_url(profile_path: Path, api_server: str):
-    """
-    Update the base URL in a profile.
-
-    Since the api_server uses a random available TCP port, the base_url needs to be updated for each test.
-
-    Args:
-        profile_path (Path): The absolute path to the profile YAML file.
-        api_server (str): The API server URL.
-    """
-    profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
-    profile["harness"]["settings"]["base_url"] = f"{api_server}/v1"
-    profile_path.write_text(yaml.safe_dump(profile, sort_keys=False), encoding="utf-8")

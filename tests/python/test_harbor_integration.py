@@ -57,7 +57,6 @@ class FakeHarborEnvironment:
             self.files[result_path] = json.dumps(
                 {
                     "agent_name": "harbor-demo",
-                    "profiles": [],
                     "harness": "hermes",
                     "adapter_kind": "python",
                     "adapter_id": "nvidia.fabric.hermes",
@@ -172,7 +171,6 @@ async def test_harbor_integration(tmp_path: Path):
 
     assert context.metadata
     assert context.metadata["fabric"]["status"] == "succeeded"
-    assert "profiles" not in context.metadata["fabric"]
     assert context.metadata["fabric"]["adapter_id"] == "nvidia.fabric.hermes"
     artifacts = context.metadata["fabric"]["artifacts"]["artifacts"]
     assert {artifact["name"] for artifact in artifacts} == {"stdout", "workspace_patch"}

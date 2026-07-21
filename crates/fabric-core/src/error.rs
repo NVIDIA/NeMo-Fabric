@@ -13,33 +13,17 @@ pub type Result<T> = std::result::Result<T, FabricError>;
 /// Errors raised by Fabric config loading and validation.
 #[derive(Debug, thiserror::Error)]
 pub enum FabricError {
+    /// The base directory could not be resolved to an absolute path.
+    #[error("failed to resolve base directory {path}: {source}")]
+    ResolveBaseDirectory {
+        /// Base directory supplied by the caller.
+        path: PathBuf,
+        /// Underlying path-resolution error.
+        source: std::io::Error,
+    },
     /// The requested path does not exist.
     #[error("path does not exist: {0}")]
     PathNotFound(PathBuf),
-    /// A directory did not contain the expected Fabric entrypoint.
-    #[error("directory does not contain agent.yaml: {0}")]
-    MissingEntrypoint(PathBuf),
-    /// A file extension is not recognized for Fabric config loading.
-    #[error("unsupported config file extension for {0}")]
-    UnsupportedExtension(PathBuf),
-    /// A requested profile is not present in an agent manifest.
-    #[error("unknown profile `{profile}` for agent `{agent}`; available profiles: {available:?}")]
-    UnknownProfile {
-        /// Requested profile.
-        profile: String,
-        /// Agent name.
-        agent: String,
-        /// Available profile names.
-        available: Vec<String>,
-    },
-    /// A profile config failed validation.
-    #[error("profile error in {path}: {message}")]
-    ProfileError {
-        /// Profile path.
-        path: PathBuf,
-        /// Validation message.
-        message: String,
-    },
     /// A requested adapter id is not present in the agent config.
     #[error("unknown adapter `{adapter_id}`; available adapters: {available:?}")]
     UnknownAdapter {
@@ -88,17 +72,6 @@ pub enum FabricError {
         /// Available schema names.
         available: Vec<String>,
     },
-    /// A profile path resolved to an agent manifest instead of a profile config.
-    #[error("profile `{profile}` did not resolve to a Fabric config: {path}")]
-    ProfileTargetNotConfig {
-        /// Profile name.
-        profile: String,
-        /// Resolved path.
-        path: PathBuf,
-    },
-    /// A profile was requested for a single profile config.
-    #[error("profile selection is only supported for agent manifests: {0}")]
-    ProfileSelectionNotSupported(PathBuf),
     /// Runtime invocation is not supported for the selected adapter.
     #[error(
         "runtime invocation is not implemented for harness `{harness}` with adapter `{adapter_kind:?}`"
@@ -195,14 +168,6 @@ pub enum FabricError {
         path: PathBuf,
         /// Underlying IO error.
         source: std::io::Error,
-    },
-    /// YAML parse failed.
-    #[error("failed to parse YAML in {path}: {source}")]
-    ParseYaml {
-        /// File path.
-        path: PathBuf,
-        /// Underlying YAML error.
-        source: serde_yaml::Error,
     },
     /// JSON parse failed.
     #[error("failed to parse JSON in {path}: {source}")]

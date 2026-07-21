@@ -19,6 +19,10 @@ navigation:
       - page: Beginner Tutorial
         path: ./getting-started/beginner-tutorial.mdx
         slug: beginner-tutorial
+  - section: Experimentation
+    contents:
+      - page: CLI
+        path: ./experimentation/cli.mdx
   - section: SDK
     contents:
       - page: Python SDK

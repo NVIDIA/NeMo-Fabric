@@ -47,14 +47,14 @@ class RelayCliContract:
     observability_version: int
 
 
-def resolve_relay_command(config_root: Path, value: str | Path) -> Path:
+def resolve_relay_command(base_dir: Path, value: str | Path) -> Path:
     """Resolve the configured Relay CLI to one absolute executable path."""
 
     command = Path(value)
     if len(command.parts) == 1:
         resolved = shutil.which(str(command))
     else:
-        candidate = command if command.is_absolute() else config_root / command
+        candidate = command if command.is_absolute() else base_dir / command
         resolved = shutil.which(str(candidate.resolve()))
     if resolved is None:
         raise FileNotFoundError("NeMo Relay CLI executable was not found")

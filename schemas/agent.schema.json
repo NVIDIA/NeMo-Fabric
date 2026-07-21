@@ -226,20 +226,6 @@
       ],
       "type": "object"
     },
-    "ProfileRegistryConfig": {
-      "additionalProperties": true,
-      "description": "Profile discovery config for curated package profiles.",
-      "properties": {
-        "directories": {
-          "description": "Directories searched when a caller selects a profile by name.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
-    },
     "RelayAtifConfig": {
       "additionalProperties": true,
       "description": "Relay ATIF export configuration.",
@@ -880,7 +866,7 @@
       "description": "Skill capability configuration.",
       "properties": {
         "paths": {
-          "description": "Skill paths relative to the agent root.",
+          "description": "Skill paths resolved relative to the config base directory.",
           "items": {
             "type": "string"
           },
@@ -968,10 +954,6 @@
       },
       "description": "Model aliases.",
       "type": "object"
-    },
-    "profiles": {
-      "$ref": "#/$defs/ProfileRegistryConfig",
-      "description": "Optional profile discovery config."
     },
     "relay": {
       "anyOf": [

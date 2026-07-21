@@ -5,7 +5,7 @@
       "oneOf": [
         {
           "const": "config",
-          "description": "Configuration or profile loading failed.",
+          "description": "Configuration resolution failed.",
           "type": "string"
         },
         {

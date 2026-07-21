@@ -1,0 +1,234 @@
+---
+title: "NVIDIA NeMo Fabric Experimentation CLI"
+description: "Use presets, maintained examples, and editable scaffolds to experiment with NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+<Warning>
+  The `nemo-fabric` CLI is an experimentation surface. Use it for quick harness
+  probes, maintained examples, planning, and diagnostics. Applications and
+  services should construct `FabricConfig` through a language API directly.
+</Warning>
+
+The command implementation, built-in presets, and maintained example
+definitions live in the Rust `fabric-cli` crate.
+The `nemo-fabric` CLI is installed separately from the `nemo-fabric-runtime`
+Python SDK. Installing the Python SDK does not install the CLI.
+
+## Install the CLI
+
+The CLI currently builds from a NeMo Fabric source checkout. Install it with
+Cargo:
+
+```bash
+cargo install --path crates/fabric-cli --locked
+```
+
+Set up the checkout's Python environment when you want to run presets backed
+by Python adapters:
+
+```bash
+uv sync --all-groups --all-extras
+export ADAPTER_PYTHON="$PWD/.venv/bin/python"
+```
+
+`ADAPTER_PYTHON` tells the Rust runtime which interpreter contains the selected
+adapter and harness. Use an absolute path if you run `nemo-fabric` outside the
+checkout.
+
+Verify that the executable is available:
+
+```bash
+nemo-fabric --version
+```
+
+If the command is not found, add Cargo's binary directory to your `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+When developing the CLI, run the workspace binary without installing it:
+
+```bash
+cargo run -p nemo-fabric-cli -- preset list
+```
+
+Installing the Python SDK does not install the CLI. Adapter packages and
+credentials are also separate requirements for presets that launch an external
+harness. Use the credential-free `scripted` preset to verify the CLI by itself.
+
+## Experiment With Presets
+
+Presets are complete, embedded `FabricConfig` values intended for quick
+experiments:
+
+| Preset | Harness | Default model | Endpoint |
+| --- | --- | --- | --- |
+| `scripted` | Deterministic test adapter | None | None |
+| `hermes` | Hermes Agent | `nvidia/nemotron-3-nano-30b-a3b` | NVIDIA API Catalog |
+| `claude` | Claude Code | `aws/anthropic/claude-opus-4-5` | `NVIDIA_FRONTIER_BASE_URL` |
+| `codex` | Codex | `azure/openai/gpt-5.4` | `NVIDIA_FRONTIER_BASE_URL` |
+| `deepagents` | LangChain Deep Agents | `nvidia/nemotron-3-nano-30b-a3b` | NVIDIA API Catalog |
+
+The `scripted` preset does not call a model. It returns a deterministic response
+through the same Fabric runtime and adapter contract, which makes it useful for
+checking CLI installation, request flow, and result formatting without network
+access or credentials.
+
+The four external-harness presets use `NVIDIA_API_KEY`. Hermes and Deep Agents
+target the public NVIDIA API Catalog at `https://integrate.api.nvidia.com/v1`.
+Export the credential before running them:
+
+```bash
+export NVIDIA_API_KEY="..."
+```
+
+Claude and Codex require the base URL for an NVIDIA endpoint that serves the
+selected frontier model and supports the harness protocol. Set it explicitly:
+
+```bash
+export NVIDIA_FRONTIER_BASE_URL="https://your-frontier-endpoint.example/v1"
+```
+
+Fabric does not provide a default frontier URL because the correct endpoint
+depends on the model and the user's access.
+
+List the complete configurations maintained by the CLI:
+
+```bash
+nemo-fabric preset list
+```
+
+Inspect a preset's purpose and required environment variables:
+
+```bash
+nemo-fabric preset show hermes
+```
+
+Resolve the preset to inspect its complete run plan, including its typed
+configuration and adapter descriptor:
+
+```bash
+nemo-fabric plan --preset hermes
+```
+
+To display only the authored `FabricConfig`, filter the plan with `jq`:
+
+```bash
+nemo-fabric plan --preset hermes | jq '.config'
+```
+
+Diagnose adapter availability, credentials, and other requirements before
+running the preset:
+
+```bash
+nemo-fabric doctor --preset hermes
+```
+
+Run the preset with an input:
+
+```bash
+nemo-fabric run --preset hermes --input "Say hello"
+```
+
+Override the preset's default model and temperature for a quick experiment:
+
+```bash
+nemo-fabric run --preset hermes \
+  --model nvidia/meta/llama-3.3-70b-instruct \
+  --temperature 0.2 \
+  --input "Say hello"
+```
+
+These flags preserve the preset's provider, credential environment variable,
+endpoint, and harness settings. Use a model that is available from the preset's
+provider and compatible with the selected harness. For example, a Claude preset
+still requires an Anthropic Messages-compatible model, while a Codex preset
+requires a Responses-compatible model. The `plan` and `doctor` commands accept
+the same overrides.
+
+## Experiment With Examples
+
+List the maintained workflows and inspect an example's available variants:
+
+```bash
+nemo-fabric example list
+nemo-fabric example show code-review
+```
+
+Run an example with its default variant:
+
+```bash
+nemo-fabric run --example code-review --input "Review the workspace"
+```
+
+Select a different maintained harness variant when you want to compare its
+behavior:
+
+```bash
+nemo-fabric run --example code-review --variant hermes \
+  --input "Review the workspace"
+```
+
+The `plan` and `doctor` commands accept the same `--example` and `--variant`
+selectors.
+
+## Scaffold Examples
+
+Generate ordinary application code when you want to customize an example. The
+default `scripted` variant is credential-free:
+
+```bash
+nemo-fabric example init code-review my-agent --language python
+nemo-fabric example init code-review my-agent-rs --language rust
+```
+
+Add a selector such as `--variant hermes` to scaffold a non-default variant. A
+non-default variant requires its adapter package and credentials.
+
+### Run a Python Scaffold
+
+Create and activate a virtual environment, install the generated application,
+and run its launcher:
+
+```bash
+cd my-agent
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python main.py "Review the workspace"
+```
+
+The Python scaffold constructs `FabricConfig` and calls the Python SDK
+directly.
+
+### Run a Rust Scaffold
+
+Build and run the generated Rust application:
+
+```bash
+cd my-agent-rs
+cargo run -- "Review the workspace"
+```
+
+The Rust scaffold constructs `FabricConfig` and calls `fabric-core` directly.
+Neither scaffold is loaded back into the central CLI.
+
+## CLI Boundaries
+
+The CLI has the following boundaries:
+
+- Every preset and example variant constructs a complete typed `FabricConfig`.
+- Examples reuse preset constructors and one shared workspace and skill asset
+  tree; Python and Rust launchers do not duplicate those definitions.
+- Fabric does not discover or persist YAML, TOML, or JSON agent configuration.
+- JSON request payloads and harness-generated files are runtime inputs and
+  outputs, not Fabric configuration sources.
+- The CLI is not an application API, scheduler, evaluation framework, or
+  production deployment interface.
+
+Current lifecycle commands are `plan`, `doctor`, and `run`. Use `preset list`
+and `preset show` to discover presets. Use `example list` and `example show` to
+discover examples.

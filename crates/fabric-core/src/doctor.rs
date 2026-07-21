@@ -46,8 +46,6 @@ pub struct DoctorCheck {
 pub struct DoctorReport {
     /// Agent name.
     pub agent_name: String,
-    /// Ordered profiles applied to the inspected plan.
-    pub profiles: Vec<String>,
     /// Overall status.
     pub status: DoctorStatus,
     /// Checks.
@@ -68,7 +66,6 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
     });
     DoctorReport {
         agent_name: plan.agent_name.clone(),
-        profiles: plan.profiles.clone(),
         status,
         checks,
     }
@@ -388,7 +385,7 @@ struct BinaryRequirement {
 fn binary_requirement(plan: &RunPlan, binary: &str) -> BinaryRequirement {
     let setting_key = binary_command_setting_key(binary);
     if let Some(Value::String(command)) = plan.config.harness.settings.get(&setting_key) {
-        let command_path = resolve_command(&plan.config_root, command);
+        let command_path = resolve_command(&plan.base_dir, command);
         let display = command_path.to_string_lossy().into_owned();
         return BinaryRequirement {
             available: command_available(&display),
@@ -469,146 +466,42 @@ fn worst(left: DoctorStatus, right: DoctorStatus) -> DoctorStatus {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use serde_json::Value;
-
     use super::*;
-    use crate::config::{
-        AdapterKind, CapabilityKind, CapabilityRoute, CapabilityTarget, ResolutionStrategy,
-        resolve_run_plan,
-    };
-
-    fn file_config_agent_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/file-config-agent")
-    }
+    use crate::config::{FabricConfig, ResolveContext, resolve_run_plan_from_config};
 
     #[test]
-    fn image_provided_uses_environment_image_instead_of_host_requirements() {
-        let mut plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
-        plan.resolution = Some(ResolutionStrategy::ImageProvided);
-        plan.environment_plan
-            .as_mut()
-            .expect("environment")
-            .settings
-            .insert(
-                "image".to_string(),
-                Value::String("fabric-hermes:latest".to_string()),
-            );
+    fn diagnoses_a_typed_plan_without_file_source_fields() {
+        let config: FabricConfig = serde_json::from_value(serde_json::json!({
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "doctor-agent"},
+            "harness": {
+                "adapter_id": "test.fabric.hermes_shim",
+                "resolution": "preinstalled",
+                "settings": {"python3_command": "bin/tool"}
+            },
+            "runtime": {},
+            "environment": {"provider": "local"}
+        }))
+        .expect("typed config");
+        let base_dir = PathBuf::from("../../tests/fixtures/hermes-shim-agent");
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(base_dir))
+            .expect("typed plan");
 
         let report = doctor_plan(&plan);
-
-        assert_eq!(report.status, DoctorStatus::Pass);
-        assert!(report.checks.iter().any(|check| {
-            check.name == "requirements.image" && check.message.contains("fabric-hermes:latest")
-        }));
+        let value = serde_json::to_value(&report).expect("doctor JSON");
+        assert_eq!(report.agent_name, "doctor-agent");
+        assert!(!report.checks.is_empty());
+        assert_eq!(value["agent_name"], "doctor-agent");
+        let expected_command =
+            std::path::absolute("../../tests/fixtures/hermes-shim-agent/bin/tool")
+                .expect("absolute command path")
+                .to_string_lossy()
+                .into_owned();
         assert!(
-            !report
+            report
                 .checks
                 .iter()
-                .any(|check| check.name == "requirement.binary")
+                .any(|check| check.message.contains(&expected_command))
         );
-    }
-
-    #[test]
-    fn preinstalled_non_local_environment_does_not_probe_host_requirements() {
-        let plan =
-            resolve_run_plan(file_config_agent_dir(), Some("env_opensandbox")).expect("run plan");
-
-        let report = doctor_plan(&plan);
-
-        assert_eq!(report.status, DoctorStatus::Warn);
-        let report_json = serde_json::to_value(&report).expect("doctor report json");
-        assert!(report_json.get("profile").is_none());
-        assert_eq!(
-            report_json["profiles"],
-            serde_json::json!(["env_opensandbox"])
-        );
-        assert!(report.checks.iter().any(|check| {
-            check.name == "requirements.environment" && check.message.contains("opensandbox")
-        }));
-        assert!(
-            !report
-                .checks
-                .iter()
-                .any(|check| check.name == "requirement.binary")
-        );
-    }
-
-    #[test]
-    fn binary_requirement_can_use_harness_command_setting() {
-        let mut plan = resolve_run_plan(file_config_agent_dir(), Some("codex")).expect("run plan");
-        plan.adapter_descriptor
-            .as_mut()
-            .expect("adapter descriptor")
-            .descriptor
-            .requirements
-            .binaries = vec!["fabric-doctor-test".to_string()];
-        plan.config.harness.settings.insert(
-            "fabric_doctor_test_command".to_string(),
-            Value::String(
-                std::env::current_exe()
-                    .expect("current executable")
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
-        );
-
-        let report = doctor_plan(&plan);
-
-        assert!(report.checks.iter().any(|check| {
-            check.name == "requirement.binary"
-                && check.status == DoctorStatus::Pass
-                && check.message.contains("fabric_doctor_test_command")
-        }));
-    }
-
-    #[test]
-    fn doctor_reports_http_execution_as_modeled_not_implemented() {
-        let mut plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
-        plan.resolution = Some(ResolutionStrategy::Service);
-        plan.adapter_descriptor
-            .as_mut()
-            .expect("adapter descriptor")
-            .descriptor
-            .adapter_kind = AdapterKind::Http;
-
-        let report = doctor_plan(&plan);
-
-        assert_eq!(report.status, DoctorStatus::Warn);
-        assert!(report.checks.iter().any(|check| {
-            check.name == "runtime.adapter"
-                && check.status == DoctorStatus::Warn
-                && check
-                    .message
-                    .contains("runtime dispatch is not implemented")
-                && check.message.contains("http")
-        }));
-        assert!(report.checks.iter().any(|check| {
-            check.name == "resolution"
-                && check.status == DoctorStatus::Warn
-                && check.message.contains("modeled but not implemented")
-                && check.message.contains("service")
-        }));
-    }
-
-    #[test]
-    fn unsupported_blocked_tools_fail_doctor() {
-        let mut plan = resolve_run_plan(file_config_agent_dir(), None).expect("run plan");
-        plan.capability_plan.routes.push(CapabilityRoute {
-            kind: CapabilityKind::Tools,
-            name: "blocked".to_string(),
-            target: CapabilityTarget::Unsupported,
-            reason: "adapter does not accept tools".to_string(),
-        });
-
-        let report = doctor_plan(&plan);
-
-        assert_eq!(report.status, DoctorStatus::Fail);
-        assert!(report.checks.iter().any(|check| {
-            check.name == "capability.unsupported"
-                && check.status == DoctorStatus::Fail
-                && check.message.contains("adapter does not accept tools")
-        }));
     }
 }

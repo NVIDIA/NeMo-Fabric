@@ -192,7 +192,7 @@ async def run_hermes(payload: dict[str, Any]) -> dict[str, Any]:
     settings = common_utils.settings_payload(payload)
     request = common_utils.request_payload(payload)
     model_config = common_utils.selected_model_config(payload)
-    hermes_home_base = Path(common_utils.config_root(payload)).joinpath(
+    hermes_home_base = Path(common_utils.base_dir(payload)).joinpath(
         settings.get("hermes_home", "./artifacts/hermes-home")
     )
     hermes_home = common_utils.runtime_state_directory(hermes_home_base, payload)

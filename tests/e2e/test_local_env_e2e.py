@@ -5,32 +5,31 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from _utils.utils import run_fabric_cli
+from _utils.configs import hermes_shim_config
+from nemo_fabric import Fabric, RunRequest
 
 
-def test_local_env_e2e(hermes_shim_agent_dir: Path):
-    plan = call_json("plan", hermes_shim_agent_dir, "--profile", "env_local")
+async def test_local_env_e2e(hermes_shim_agent_dir: Path):
+    fabric = Fabric()
+    config = hermes_shim_config()
+    plan = fabric.plan(config, base_dir=hermes_shim_agent_dir).to_mapping()
     assert plan["environment_plan"]["provider"] == "local"
     assert plan["environment_plan"]["workspace"].endswith("repos/my-service")
     assert plan["adapter_descriptor"]["source"] == "local"
 
-    result = call_json(
-        "run",
-        hermes_shim_agent_dir,
-        "--profile",
-        "env_local",
-        "--request-json",
-        json.dumps(
-            {
-                "request_id": "local-env-e2e",
-                "input": "review local workspace",
-                "context": {"source": "local-e2e"},
-            }
-        ),
-    )
+    result = (
+        await fabric.run(
+            config,
+            base_dir=hermes_shim_agent_dir,
+            request=RunRequest(
+                request_id="local-env-e2e",
+                input="review local workspace",
+                context={"source": "local-e2e"},
+            ),
+        )
+    ).to_mapping()
 
     assert result["status"] == "succeeded"
     assert result["request_id"] == "local-env-e2e"
@@ -45,17 +44,6 @@ def test_local_env_e2e(hermes_shim_agent_dir: Path):
         and event["metadata"]["environment_provider"] == "local"
         for event in result["events"]
     )
-
-
-def call_json(*args: object) -> dict:
-    completed = run_fabric_cli(*args)
-    if completed.returncode != 0:
-        raise AssertionError(
-            f"command failed: {completed.args}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
-        )
-    return json.loads(completed.stdout)
-
-
 def read_artifact(result: dict, name: str) -> str:
     matches = [
         artifact

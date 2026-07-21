@@ -12,9 +12,9 @@ NeMo Fabric standardizes how applications configure, launch, invoke, and
 collect artifacts from agent harnesses. It provides:
 
 - a versioned, typed configuration contract;
-- profile-based configuration for evaluation and ablation runs;
+- ordinary Python composition for experiment variants;
 - adapter integrations for harness-specific launch and control;
-- a Python SDK backed by a Rust core;
+- a Python SDK backed by the Rust core;
 - normalized run results, artifact manifests, and telemetry references.
 
 ## Install
@@ -22,7 +22,7 @@ collect artifacts from agent harnesses. It provides:
 Install the core runtime and Python SDK:
 
 ```bash
-pip install "nemo-fabric[runtime]"
+pip install nemo-fabric
 ```
 
 To use a supported agent harness, install its adapter extra:
@@ -58,16 +58,17 @@ NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations
 
 ## Core Concepts
 
-- **Agent source:** Provide either an agent package path or a typed
-  `FabricConfig`.
-- **Typed configuration:** Construct configuration in memory with the Python
-  SDK, or use `agent.yaml` as a portable representation.
-- **Profiles:** Vary the harness, model, MCP servers, tools, skills, telemetry,
-  or environment without editing the base configuration.
+- **Typed configuration:** Construct a complete `FabricConfig` in Python and
+  use ordinary functions to create experiment variants.
 - **Adapters:** Select harness-specific integrations with
   `harness.adapter_id`.
 - **Artifacts:** Receive normalized output, logs, patches, and telemetry
   references through an `ArtifactManifest`.
+
+The experimental `nemo-fabric` CLI is distributed separately from the Python
+package. It selects complete typed configs from built-in presets and maintained
+examples. Applications that need a stable integration surface should use the
+Python SDK.
 
 ## Learn More
 

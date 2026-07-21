@@ -115,6 +115,7 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
         "/nemo/fabric/sdk/python-sdk",
         "/reference/api/python-library-reference/client",
         "/reference/api/python-library-reference/runtime",
+        "/experimentation/cli",
     ):
         assert destination in landing
 
