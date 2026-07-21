@@ -1026,7 +1026,7 @@ async def invoke_codex_sdk(
     skill_paths = _native_skill_paths(payload)
     client_config = sdk_config(payload, relay)
     codex: AsyncCodex | None = None
-    output: dict[str, Any]
+    output: dict[str, Any] | None = None
     thread_id: str | None = None
     try:
         if selected_model_provider(payload) == "nvidia":
@@ -1055,11 +1055,13 @@ async def invoke_codex_sdk(
                 await codex.close()
             except Exception:
                 LOGGER.exception("Codex SDK client failed to close after invocation")
-                output["cleanup_error"] = {
-                    "code": "codex_sdk_stop_failed",
-                    "message": "Codex SDK runtime failed to stop",
-                    "retryable": False,
-                }
+                if output is not None:
+                    output["cleanup_error"] = {
+                        "code": "codex_sdk_stop_failed",
+                        "message": "Codex SDK runtime failed to stop",
+                        "retryable": False,
+                    }
+    assert output is not None
     return output, thread_id
 
 

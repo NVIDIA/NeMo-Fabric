@@ -215,6 +215,29 @@ def test_sdk_close_failure_preserves_completed_turn_and_thread_state(
     mock_codex.instances[0].close.assert_awaited_once_with()
 
 
+def test_sdk_close_failure_does_not_mask_adapter_error(
+    codex_payload, mock_codex, monkeypatch, caplog
+):
+    mock_codex.close_error = RuntimeError("close failed")
+    register_skills = AsyncMock(
+        side_effect=adapter.AdapterConfigError(
+            "codex_skill_registration_failed",
+            "Codex skill registration failed",
+        )
+    )
+    monkeypatch.setattr(adapter, "_register_skill_roots", register_skills)
+
+    output = adapter.run(codex_payload)
+
+    assert output["failed"] is True
+    assert output["error"]["code"] == "codex_skill_registration_failed"
+    assert output["error"]["message"] == "Codex skill registration failed"
+    assert "cleanup_error" not in output
+    assert "Codex SDK client failed to close after invocation" in caplog.text
+    register_skills.assert_awaited_once()
+    mock_codex.instances[0].close.assert_awaited_once_with()
+
+
 def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_codex):
     os.environ["FABRIC_TEST_MCP_URL"] = "https://mcp.example.test/mcp"
     codex_payload["capability_plan"] = {
