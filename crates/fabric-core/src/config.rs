@@ -15,8 +15,6 @@ use crate::error::{FabricError, Result};
 
 /// Adapter descriptor contract version supported by this core.
 pub const ADAPTER_CONTRACT_VERSION: &str = "fabric.adapter/v1alpha1";
-/// Persistent local-host lifecycle contract version supported by this core.
-pub const ADAPTER_LIFECYCLE_CONTRACT_VERSION: &str = "fabric.adapter.lifecycle/v1alpha1";
 
 /// Versioned Fabric agent config.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -135,7 +133,10 @@ pub struct AdapterDescriptor {
 /// Runtime hosting mechanisms implemented by an adapter.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterRuntimeSupport {
-    /// Versioned persistent local-host support, when implemented.
+    /// Persistent local-host support, when implemented.
+    ///
+    /// This nesting is intentionally provisional until remote adapter hosting
+    /// introduces a shared runtime protocol.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_host: Option<AdapterLocalHostSupport>,
     /// Additive adapter runtime-hosting fields.
@@ -152,9 +153,6 @@ impl AdapterRuntimeSupport {
 /// Persistent local-host protocol implemented by an adapter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterLocalHostSupport {
-    /// Adapter lifecycle protocol version spoken over the host transport.
-    #[schemars(length(min = 1))]
-    pub contract_version: String,
     /// Additive persistent local-host fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
@@ -1127,20 +1125,7 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     if descriptor.harness.trim().is_empty() {
         return invalid_adapter_descriptor(path, "harness must not be empty");
     }
-    if let Some(local_host) = descriptor.runtime.local_host.as_ref() {
-        if local_host.contract_version.trim().is_empty() {
-            return invalid_adapter_descriptor(
-                path,
-                "runtime.local_host.contract_version must not be empty",
-            );
-        }
-        if local_host.contract_version != ADAPTER_LIFECYCLE_CONTRACT_VERSION {
-            return Err(FabricError::AdapterDescriptorUnsupported {
-                adapter_id: descriptor.adapter_id.clone(),
-                field: "runtime.local_host.contract_version",
-                value: local_host.contract_version.clone(),
-            });
-        }
+    if descriptor.runtime.local_host.is_some() {
         if descriptor.adapter_kind != AdapterKind::Python {
             return invalid_adapter_descriptor(
                 path,
@@ -1768,60 +1753,18 @@ mod tests {
     }
 
     #[test]
-    fn repository_adapters_declare_versioned_local_host() {
+    fn repository_adapters_declare_local_host() {
         for harness in ["claude", "codex", "deepagents", "hermes"] {
             let descriptor = load_adapter_descriptor(
                 repository_adapter_dir().join(format!("{harness}/fabric-adapter.json")),
             )
             .unwrap_or_else(|error| panic!("{harness} adapter descriptor: {error}"));
 
-            assert_eq!(
-                descriptor
-                    .runtime
-                    .local_host
-                    .as_ref()
-                    .map(|host| host.contract_version.as_str()),
-                Some(ADAPTER_LIFECYCLE_CONTRACT_VERSION),
-                "{harness} descriptor",
+            assert!(
+                descriptor.runtime.local_host.is_some(),
+                "{harness} descriptor"
             );
         }
-    }
-
-    #[test]
-    fn rejects_unsupported_local_host_contract_version() {
-        let root = std::env::temp_dir().join(format!(
-            "fabric-invalid-local-host-contract-test-{}",
-            std::process::id()
-        ));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).expect("create temp root");
-        let descriptor_path = root.join("fabric-adapter.json");
-        std::fs::write(
-            &descriptor_path,
-            r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
-  "adapter_id": "acme.fabric.future-host",
-  "harness": "future-host",
-  "adapter_kind": "python",
-  "runtime": {
-    "local_host": {"contract_version": "fabric.adapter.lifecycle/v9"}
-  }
-}"#,
-        )
-        .expect("write adapter descriptor");
-
-        let error = load_adapter_descriptor(&descriptor_path).expect_err("invalid descriptor");
-        assert!(matches!(
-            error,
-            FabricError::AdapterDescriptorUnsupported {
-                field,
-                value,
-                ..
-            } if field == "runtime.local_host.contract_version"
-                && value == "fabric.adapter.lifecycle/v9"
-        ));
-
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -1832,9 +1775,7 @@ mod tests {
             "harness": "process-host",
             "adapter_kind": "process",
             "runtime": {
-                "local_host": {
-                    "contract_version": ADAPTER_LIFECYCLE_CONTRACT_VERSION,
-                }
+                "local_host": {}
             },
         }))
         .expect("adapter descriptor");

@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::config::{
-    ADAPTER_LIFECYCLE_CONTRACT_VERSION, AdapterKind, CapabilityKind, CapabilityPlan,
-    CapabilityTarget, ControlLocation, EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
+    AdapterKind, CapabilityKind, CapabilityPlan, CapabilityTarget, ControlLocation,
+    EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
@@ -400,17 +400,13 @@ impl AdapterLifecycleRequestKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct AdapterLifecycleRequest {
-    contract_version: String,
     #[serde(flatten)]
     request: AdapterLifecycleRequestKind,
 }
 
 impl AdapterLifecycleRequest {
     fn new(request: AdapterLifecycleRequestKind) -> Self {
-        Self {
-            contract_version: ADAPTER_LIFECYCLE_CONTRACT_VERSION.to_string(),
-            request,
-        }
+        Self { request }
     }
 
     fn operation(&self) -> AdapterLifecycleOperation {
@@ -432,7 +428,6 @@ enum AdapterLifecycleOutcome {
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 struct AdapterLifecycleResponse {
-    contract_version: String,
     operation: AdapterLifecycleOperation,
     outcome: AdapterLifecycleOutcome,
 }
@@ -624,21 +619,11 @@ pub fn stop_runtime(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<Vec<Fabri
 }
 
 fn uses_local_host(plan: &RunPlan) -> Result<bool> {
-    let local_host = plan
+    Ok(plan
         .adapter_descriptor
         .as_ref()
-        .and_then(|adapter| adapter.descriptor.runtime.local_host.as_ref());
-    let Some(local_host) = local_host else {
-        return Ok(false);
-    };
-    if local_host.contract_version != ADAPTER_LIFECYCLE_CONTRACT_VERSION {
-        return Err(FabricError::AdapterDescriptorUnsupported {
-            adapter_id: adapter_id(plan).unwrap_or_else(|| harness(plan)),
-            field: "runtime.local_host.contract_version",
-            value: local_host.contract_version.clone(),
-        });
-    }
-    Ok(true)
+        .and_then(|adapter| adapter.descriptor.runtime.local_host.as_ref())
+        .is_some())
 }
 
 fn validate_runtime_handle(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<()> {
@@ -1391,10 +1376,7 @@ fn spawn_local_host(
         }
     };
     command
-        .env(
-            "FABRIC_ADAPTER_LIFECYCLE_CONTRACT",
-            ADAPTER_LIFECYCLE_CONTRACT_VERSION,
-        )
+        .env("FABRIC_ADAPTER_LOCAL_HOST", "1")
         .env("FABRIC_RUNTIME_ID", &runtime.runtime_id)
         .env("FABRIC_HOME", &runtime_dir)
         .envs(relay_env(&relay_config))
@@ -1602,18 +1584,6 @@ fn exchange_lifecycle_message(
             local_host_diagnostics(host),
         )
     })?;
-    if response.contract_version != ADAPTER_LIFECYCLE_CONTRACT_VERSION {
-        return Err(lifecycle_error(
-            operation,
-            runtime_id,
-            "protocol_version_mismatch",
-            format!(
-                "expected lifecycle contract `{ADAPTER_LIFECYCLE_CONTRACT_VERSION}` but host returned `{}`",
-                response.contract_version
-            ),
-            local_host_diagnostics(host),
-        ));
-    }
     if response.operation != operation {
         return Err(lifecycle_error(
             operation,
@@ -2997,6 +2967,19 @@ mod tests {
     use super::*;
     use crate::config::{ResolveContext, resolve_run_plan_from_config};
 
+    #[test]
+    fn local_host_lifecycle_messages_are_unversioned() {
+        let request =
+            AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Stop(AdapterLifecycleStop {
+                runtime_id: "runtime-1".to_string(),
+            }));
+        let value = serde_json::to_value(request).expect("serialize lifecycle request");
+
+        assert_eq!(value["operation"], "stop");
+        assert!(value.get("contract_version").is_none());
+        assert!(value.get("protocol_version").is_none());
+    }
+
     fn local_host_plan(mode: &str) -> (PathBuf, RunPlan) {
         local_host_plan_with_relay(mode, false)
     }
@@ -3019,9 +3002,7 @@ mod tests {
     }
   },
   "runtime": {
-    "local_host": {
-      "contract_version": "fabric.adapter.lifecycle/v1alpha1"
-    }
+    "local_host": {}
   }
 }"#,
         )
@@ -3032,7 +3013,6 @@ mod tests {
 import os
 import sys
 
-VERSION = "fabric.adapter.lifecycle/v1alpha1"
 MODE = os.environ.get("FABRIC_FAKE_HOST_MODE", "success")
 invocations = 0
 
@@ -3043,7 +3023,6 @@ def response(operation, *, output=None, error=None):
         else {"status": "failed", "error": error}
     )
     print(json.dumps({
-        "contract_version": VERSION,
         "operation": operation,
         "outcome": outcome,
     }), flush=True)

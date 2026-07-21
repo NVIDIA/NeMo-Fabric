@@ -49,16 +49,6 @@
     "AdapterLocalHostSupport": {
       "additionalProperties": true,
       "description": "Persistent local-host protocol implemented by an adapter.",
-      "properties": {
-        "contract_version": {
-          "description": "Adapter lifecycle protocol version spoken over the host transport.",
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "contract_version"
-      ],
       "type": "object"
     },
     "AdapterRequirements": {
@@ -116,7 +106,7 @@
               "type": "null"
             }
           ],
-          "description": "Versioned persistent local-host support, when implemented."
+          "description": "Persistent local-host support, when implemented.\n\nThis nesting is intentionally provisional until remote adapter hosting\nintroduces a shared runtime protocol."
         }
       },
       "type": "object"

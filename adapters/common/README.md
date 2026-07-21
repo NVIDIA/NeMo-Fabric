@@ -24,9 +24,14 @@ pip install "nemo-fabric[adapters-common]"
 ## Persistent Local Hosts
 
 Adapters that declare `runtime.local_host` in `fabric-adapter.json` implement
-the versioned lifecycle contract with
+the local-host wire protocol with
 `nemo_fabric_adapters.common.lifecycle`. Supply a factory that creates one
 adapter-owned runtime with asynchronous `start`, `invoke`, and `stop` methods:
+
+`runtime.local_host` is an unversioned capability marker, not a separate
+adapter contract. The nesting is intentionally provisional while local hosting
+is the only supported mode; a shared runtime protocol can replace it when
+remote adapter hosting is introduced.
 
 ```python
 from nemo_fabric_adapters.common import lifecycle

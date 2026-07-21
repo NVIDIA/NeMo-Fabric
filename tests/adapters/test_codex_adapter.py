@@ -997,9 +997,7 @@ def test_descriptor_has_no_codex_binary_requirement():
         "skills",
         "telemetry",
     ]
-    assert descriptor["runtime"]["local_host"] == {
-        "contract_version": "fabric.adapter.lifecycle/v1alpha1"
-    }
+    assert descriptor["runtime"]["local_host"] == {}
     assert "requirements" not in descriptor
 
 

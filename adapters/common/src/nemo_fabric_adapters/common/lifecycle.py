@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Versioned host protocol for persistent local adapter runtimes."""
+"""Wire protocol for persistent local adapter hosts."""
 
 from __future__ import annotations
 
@@ -22,8 +22,7 @@ from typing import Protocol
 from typing import TextIO
 
 
-CONTRACT_VERSION = "fabric.adapter.lifecycle/v1alpha1"
-CONTRACT_ENV = "FABRIC_ADAPTER_LIFECYCLE_CONTRACT"
+LOCAL_HOST_ENV = "FABRIC_ADAPTER_LOCAL_HOST"
 
 
 class AdapterRuntime(Protocol):
@@ -79,7 +78,7 @@ class _HostState:
 def is_lifecycle_host(environ: Mapping[str, str] = os.environ) -> bool:
     """Return whether Fabric requested the persistent local-host protocol."""
 
-    return environ.get(CONTRACT_ENV) == CONTRACT_VERSION
+    return environ.get(LOCAL_HOST_ENV) == "1"
 
 
 def _error(
@@ -113,7 +112,6 @@ def _response(
         else {"status": "failed", "error": error}
     )
     return {
-        "contract_version": CONTRACT_VERSION,
         "operation": operation,
         "outcome": outcome,
     }
@@ -196,11 +194,6 @@ def _validated_request(
         raise LifecycleError(
             "lifecycle_invalid_operation",
             "Unknown lifecycle operation",
-        )
-    if message.get("contract_version") != CONTRACT_VERSION:
-        raise LifecycleError(
-            "lifecycle_contract_mismatch",
-            f"Expected lifecycle contract {CONTRACT_VERSION}",
         )
     payload = message.get("payload")
     if not isinstance(payload, dict):

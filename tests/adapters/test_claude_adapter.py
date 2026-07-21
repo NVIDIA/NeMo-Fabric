@@ -71,9 +71,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
             }
         },
         "runtime": {
-            "local_host": {
-                "contract_version": adapter.lifecycle.CONTRACT_VERSION,
-            }
+            "local_host": {}
         },
     }
 

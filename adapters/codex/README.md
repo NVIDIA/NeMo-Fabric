@@ -71,14 +71,16 @@ to the explicit `base_dir`. Fabric passes the resolved path through
 
 ## Execution Model
 
-Each Fabric runtime starts one local adapter host, one `AsyncCodex` app-server
-client, and one Codex thread. Ordered `Runtime.invoke(...)` calls reuse that
-client and thread directly; the adapter closes the app-server transport during
-`Runtime.stop()`. The first successful invocation also persists the thread ID
-under the Fabric artifact root for the adapter's direct per-invocation
-compatibility path. The persistent host does not resume the thread between
-turns. Codex owns the transcript; Fabric owns runtime-to-thread correlation,
-timeout, cancellation, and cleanup.
+Each Fabric runtime currently starts one local adapter host and retains one
+`AsyncCodex` client and one Codex thread. The Codex SDK starts and controls its
+pinned local `codex app-server` subprocess over JSON-RPC. Ordered
+`Runtime.invoke(...)` calls reuse that client and thread directly; the adapter
+closes the SDK client and app-server transport during `Runtime.stop()`. The
+first successful invocation also persists the thread ID under the Fabric
+artifact root for the adapter's direct per-invocation compatibility path. The
+persistent host does not resume the thread between turns. Codex owns the
+transcript; Fabric owns runtime-to-thread correlation, timeout, cancellation,
+and cleanup.
 
 The result includes the SDK's typed terminal response, turn status, token
 usage, timing, and completed thread items. It does not expose CLI commands,

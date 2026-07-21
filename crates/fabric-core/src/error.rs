@@ -82,7 +82,7 @@ pub enum FabricError {
         /// Adapter kind.
         adapter_kind: AdapterKind,
     },
-    /// A versioned persistent local-host lifecycle operation failed.
+    /// A persistent local-host lifecycle operation failed.
     #[error(
         "adapter lifecycle {operation} failed for runtime `{runtime_id}` ({code}): {message}{diagnostics_suffix}",
         diagnostics_suffix = if diagnostics.is_empty() {

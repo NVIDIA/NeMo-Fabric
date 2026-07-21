@@ -71,7 +71,7 @@ for other supported installation methods.
 
 ## Execution Model
 
-The Claude adapter declares Fabric's versioned persistent local-host contract.
+The Claude adapter declares Fabric's persistent local-host wire protocol.
 `Fabric.start_runtime(...)` launches one adapter host, creates one
 `ClaudeSDKClient`, and connects it once. Every `Runtime.invoke(...)` reuses that
 client and its event loop; `Runtime.stop()` disconnects the client and exits the

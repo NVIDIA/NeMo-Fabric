@@ -15,7 +15,6 @@ from nemo_fabric_adapters.common import lifecycle
 
 def _request(operation: str, payload: dict[str, Any]) -> dict[str, Any]:
     return {
-        "contract_version": lifecycle.CONTRACT_VERSION,
         "operation": operation,
         "payload": payload,
     }
@@ -24,6 +23,11 @@ def _request(operation: str, payload: dict[str, Any]) -> dict[str, Any]:
 def _streams(requests: list[dict[str, Any]]) -> tuple[io.StringIO, io.StringIO]:
     input_stream = io.StringIO("".join(f"{json.dumps(item)}\n" for item in requests))
     return input_stream, io.StringIO()
+
+
+def test_lifecycle_host_uses_unversioned_marker():
+    assert lifecycle.is_lifecycle_host({lifecycle.LOCAL_HOST_ENV: "1"})
+    assert not lifecycle.is_lifecycle_host({lifecycle.LOCAL_HOST_ENV: "0"})
 
 
 def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
@@ -83,6 +87,7 @@ def test_lifecycle_host_reuses_one_runtime_and_one_event_loop():
         "stop",
     ]
     assert all(item["outcome"]["status"] == "succeeded" for item in responses)
+    assert all(set(item) == {"operation", "outcome"} for item in responses)
     assert responses[1]["outcome"]["output"] == {"count": 1, "input": "first"}
     assert responses[2]["outcome"]["output"] == {"count": 2, "input": "second"}
     assert len(instances) == 1

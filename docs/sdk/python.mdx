@@ -116,10 +116,12 @@ process. An adapter may use an in-process SDK, a process, or shared service
 infrastructure while preserving isolated state for each NeMo Fabric runtime.
 
 Runtime hosting is selected by the adapter descriptor, not by a public
-`FabricConfig` setting. An adapter that declares the versioned persistent local
-host contract starts one local host during `start_runtime(...)`, reuses its
+`FabricConfig` setting. An adapter that declares the persistent local-host wire
+protocol starts one local host during `start_runtime(...)`, reuses its
 adapter-owned native resources across ordered invocations, and attempts to
-release them during `stop()`.
+release them during `stop()`. `runtime.local_host` is an unversioned capability
+marker whose nesting is intentionally provisional until remote hosting
+requires a shared runtime protocol.
 
 ### Bundled Adapter Capability Matrix
 
