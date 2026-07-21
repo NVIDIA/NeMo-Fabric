@@ -33,7 +33,8 @@ def _variation_harness_definitions():
         "INSTRUCTION": "Test instruction.",
         "WORKSPACE": "./repos/my-service",
     }
-    exec(compile(source, str(VARIATIONS_NOTEBOOK), "exec"), namespace)
+    # Execute only the checked-in notebook source controlled by this repository.
+    exec(compile(source, str(VARIATIONS_NOTEBOOK), "exec"), namespace)  # noqa: S102
     return namespace["HARNESSES"], namespace["for_harness"]
 
 
@@ -56,3 +57,6 @@ def test_variations_notebook_harnesses_plan_with_current_adapters():
     assert "binary" not in codex
     assert "key" not in codex
     assert "skip_git_repo_check" not in codex["settings"]
+    assert "validated when the adapter starts" in codex["needs"]
+    assert plans["Codex"].config.harness.settings["sandbox"] == "workspace-write"
+    assert plans["Codex"].config.harness.settings["reasoning_effort"] == "high"
