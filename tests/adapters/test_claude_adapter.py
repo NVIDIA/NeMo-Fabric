@@ -8,8 +8,10 @@ import json
 import os
 import tomllib
 from collections.abc import AsyncIterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
@@ -48,31 +50,26 @@ def lifecycle_invocation(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def install_fake_client(monkeypatch, response_factory):
-    clients = []
+def install_fake_client(
+    monkeypatch: pytest.MonkeyPatch,
+    response_factory: Callable[[MagicMock], AsyncIterator[Message]],
+) -> list[MagicMock]:
+    clients: list[MagicMock] = []
+    client_type = adapter.ClaudeSDKClient
 
-    class FakeClient:
-        def __init__(self, options) -> None:
-            self.options = options
-            self.prompts = []
-            clients.append(self)
+    def build_client(options: Any) -> MagicMock:
+        client = MagicMock(spec=client_type)
+        client.options = options
+        client.prompts = []
+        client.connect = AsyncMock()
+        client.query = AsyncMock(side_effect=client.prompts.append)
+        client.receive_response.side_effect = lambda: response_factory(client)
+        client.disconnect = AsyncMock()
+        client.interrupt = AsyncMock()
+        clients.append(client)
+        return client
 
-        async def connect(self) -> None:
-            pass
-
-        async def query(self, prompt) -> None:
-            self.prompts.append(prompt)
-
-        def receive_response(self) -> AsyncIterator[Message]:
-            return response_factory(self)
-
-        async def disconnect(self) -> None:
-            pass
-
-        async def interrupt(self) -> None:
-            pass
-
-    monkeypatch.setattr(adapter, "ClaudeSDKClient", FakeClient)
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", build_client)
     return clients
 
 
