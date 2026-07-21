@@ -1,0 +1,281 @@
+---
+title: "NVIDIA NeMo Fabric Beginner Tutorial"
+sidebar-title: "Beginner Tutorial"
+description: "Learn the NVIDIA NeMo Fabric Python SDK by configuring, running, and inspecting a code-review agent."
+template-library-version: "1.0.0"
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+This tutorial guides you through the NVIDIA NeMo Fabric Python SDK by building,
+running, and inspecting a Hermes-backed code-review agent. It adapts the
+maintained onboarding notebook into a command-line workflow.
+
+<Info title="Tutorial Goal">
+Build one typed configuration for a Hermes-backed code-review agent, use it for
+one-shot and stateful runs, and inspect its plan and runtime environment.
+</Info>
+
+In this tutorial, you will complete the following tasks:
+
+1. Describe a code-review agent with a typed `FabricConfig`.
+2. Run one request and inspect the normalized `RunResult`.
+3. Keep conversation state across two invocations.
+4. Preview the resolved plan and diagnose the runtime environment.
+
+## Prerequisites
+
+Complete the [Quickstart](/getting-started/quickstart) before you begin. Use the
+same terminal so the following resources remain available:
+
+- The NeMo Fabric SDK and native binding in `.venv`.
+- Hermes Agent and its adapter in `.tmp/hermes-venv`.
+- The `NVIDIA_API_KEY` and `ADAPTER_PYTHON` environment variables.
+
+Run all commands in this tutorial from the root of the source checkout.
+
+## Concepts Overview
+
+The tutorial uses one configuration for both execution and inspection:
+
+| Concept | Purpose |
+| --- | --- |
+| `FabricConfig` | Describes the agent, harness, model, runtime contract, and artifact location. |
+| `run()` and `start_runtime()` | Execute one request or keep harness state across multiple invocations. |
+| `RunResult` | Normalizes status, output, errors, artifacts, and correlation IDs across harnesses. |
+| `plan()` and `doctor()` | Inspect the resolved configuration and diagnose the environment without running an agent. |
+
+## Tutorial Steps
+
+Complete each step in order. The examples use separate scripts so you can rerun
+and modify each SDK operation independently.
+
+Create a working directory for the tutorial:
+
+```bash
+mkdir -p .tmp/fabric-tutorial
+```
+
+### Describe the Agent
+
+Create `.tmp/fabric-tutorial/tutorial_config.py` with the following code. Read
+the configuration from the outside in: `FabricConfig` identifies the agent,
+selects Hermes Agent as the harness, assigns an NVIDIA-hosted model, and defines
+the runtime contract.
+
+```python
+from pathlib import Path
+
+from nemo_fabric import (
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+    RuntimeConfig,
+)
+
+REPO_ROOT = Path.cwd().resolve()
+WORKSPACE = REPO_ROOT / "examples" / "code_review_agent" / "repos" / "my-service"
+ARTIFACTS = REPO_ROOT / "examples" / "notebooks" / "artifacts" / "tutorial"
+
+config = FabricConfig(
+    metadata=MetadataConfig(
+        name="beginner-code-reviewer",
+        description="Reviews Python code for correctness issues.",
+    ),
+    harness=HarnessConfig(
+        adapter_id="nvidia.fabric.hermes",
+        resolution="preinstalled",
+        settings={
+            "workspace": str(WORKSPACE),
+            "hermes_home": str(ARTIFACTS / "hermes-home"),
+            "base_url": "https://integrate.api.nvidia.com/v1",
+            "system_prompt": (
+                "You are a code reviewer. Point out correctness bugs and risks, "
+                "concisely."
+            ),
+            "max_iterations": 1,
+            "max_tokens": 1024,
+            "reasoning_config": {"effort": "none"},
+            "enabled_toolsets": [],
+        },
+    ),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+            temperature=0.0,
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+    runtime=RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=str(ARTIFACTS),
+    ),
+)
+
+REVIEW_INPUT = """Review this Python function for correctness issues:
+
+def average(values):
+    return sum(values) / len(values)
+"""
+
+if __name__ == "__main__":
+    print("Configured:", config.metadata.name)
+```
+
+Verify that Python can construct the typed configuration:
+
+```bash
+.venv/bin/python .tmp/fabric-tutorial/tutorial_config.py
+```
+
+**✅ Success Check**: The command prints the configured name,
+`Configured: beginner-code-reviewer`. Typed configuration validation rejects
+invalid field names or values before a run.
+
+### Run One Request
+
+Use `Fabric.run()` for one-shot work. It starts a runtime, sends the input,
+collects a normalized result, and stops the runtime.
+
+Create `.tmp/fabric-tutorial/run_once.py` with the following code:
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric
+from tutorial_config import REVIEW_INPUT, config
+
+
+async def main() -> None:
+    result = await Fabric().run(config, input=REVIEW_INPUT)
+
+    print("status:", result.status)
+    print("error:", result.error)
+    print("runtime_id:", result.runtime_id)
+    print("invocation_id:", result.invocation_id)
+    print("response:", result.output.response)
+
+
+asyncio.run(main())
+```
+
+Run the one-shot example:
+
+```bash
+.venv/bin/python .tmp/fabric-tutorial/run_once.py
+```
+
+**✅ Success Check**: The result has no error and includes the review response.
+The runtime and invocation IDs correlate the result with logs, artifacts, and
+telemetry.
+
+### Keep State Across Turns
+
+Use `Fabric.start_runtime()` when a later request depends on an earlier one.
+The async context manager stops the runtime after the final invocation.
+
+Create `.tmp/fabric-tutorial/run_stateful.py` with the following code:
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric
+from tutorial_config import REVIEW_INPUT, config
+
+
+async def main() -> None:
+    async with await Fabric().start_runtime(config) as runtime:
+        review = await runtime.invoke(input=REVIEW_INPUT)
+        fix = await runtime.invoke(
+            input="Rewrite the function to fix the issue you just found."
+        )
+
+    print("review:", review.output.response)
+    print("fix:", fix.output.response)
+
+
+asyncio.run(main())
+```
+
+Run the stateful example:
+
+```bash
+.venv/bin/python .tmp/fabric-tutorial/run_stateful.py
+```
+
+**✅ Success Check**: The second response rewrites the function based on the
+issue identified in the first response. Both invocations share one logical
+runtime.
+
+### Inspect and Diagnose
+
+Use `plan()` to preview adapter resolution and runtime capabilities without
+calling the model. Use `doctor()` to check the resolved adapter, required
+settings, credentials, and environment.
+
+Create `.tmp/fabric-tutorial/inspect_agent.py` with the following code:
+
+```python
+import asyncio
+
+from nemo_fabric import Fabric
+from tutorial_config import config
+
+
+async def main() -> None:
+    fabric = Fabric()
+    plan = fabric.plan(config)
+
+    print("adapter:", plan.adapter.adapter_id)
+    print("harness:", plan.adapter.harness)
+    print("streaming:", plan.capabilities.streaming)
+
+    report = await fabric.doctor(config)
+    print("doctor:", report.status)
+    for check in report.checks:
+        print(f"[{check.status}] {check.name}: {check.message}")
+
+
+asyncio.run(main())
+```
+
+Run the inspection example:
+
+```bash
+.venv/bin/python .tmp/fabric-tutorial/inspect_agent.py
+```
+
+**✅ Success Check**: The plan selects `nvidia.fabric.hermes`, and the
+diagnostic report lists each preflight check and its status. Resolve any failed
+checks before using the same configuration in a new environment.
+
+The maintained
+[`01_quickstart.ipynb` onboarding notebook](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb)
+contains the same learning sequence in an interactive format.
+
+## Summary
+
+You completed the tutorial and can now:
+
+- ✅ Describe a code-review agent with a typed `FabricConfig`.
+- ✅ Run one request and inspect its normalized result.
+- ✅ Use one runtime to preserve context across two invocations.
+- ✅ Preview adapter resolution and diagnose the runtime environment.
+
+## Next Steps
+
+Continue your learning with these resources.
+
+<CardGroup cols={2}>
+  <Card title="Advanced Variations" href="https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/02_variations.ipynb">
+    Vary harnesses, skills, MCP servers, models, and telemetry in an interactive
+    notebook.
+  </Card>
+  <Card title="Python SDK Guide" href="/nemo/fabric/sdk/python-sdk">
+    Review exact API behavior, typed requests, lifecycle details, and
+    configuration patterns.
+  </Card>
+</CardGroup>

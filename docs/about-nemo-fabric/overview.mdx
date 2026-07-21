@@ -1,43 +1,99 @@
 ---
-title: "NVIDIA NeMo Fabric"
+title: "NVIDIA NeMo Fabric Documentation"
+sidebar-title: "Overview"
 slug: "/about-nemo-fabric/overview"
 description: "Configure, plan, run, and observe agent harnesses through one typed execution contract."
+template-library-version: "1.0.0"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-NeMo Fabric is the harness-management layer that turns multiple agent runtimes
-into one configurable, observable execution surface. Applications use the same
-versioned config, lifecycle, result, artifact, and telemetry contracts whether
-the selected harness is Hermes, Codex SDK, or a custom adapter.
+NVIDIA NeMo Fabric is the harness-management layer that turns multiple agent
+runtimes into one configurable, observable execution surface. Applications use
+the same versioned config, lifecycle, result, artifact, and telemetry contracts
+whether the selected harness is
+[Hermes Agent](https://hermes-agent.nousresearch.com/docs/),
+[Codex SDK](https://openai.com/codex/), or a custom adapter.
 
 NeMo Fabric owns the seam between an application and its harness. It resolves
-configuration, selects an adapter, drives the runtime lifecycle,
-and returns normalized evidence without leaking harness-specific control code
-into the caller.
+configuration, selects an adapter, drives the runtime lifecycle, and returns
+normalized evidence without leaking harness-specific control code into the
+caller.
 
-## What NeMo Fabric Gives You
+## Benefits
+
+NeMo Fabric gives applications one contract across every supported harness.
 
 <CardGroup cols={2}>
-  <Card title="Typed configuration">
+  <Card title="Portable Configuration">
     Construct a complete, versioned `FabricConfig` in Python. Applications
     create variants with ordinary functions and typed copies.
   </Card>
-  <Card title="Harness-neutral execution">
+  <Card title="Harness-Neutral Execution">
     Plan and invoke different harnesses through one Rust core, CLI, and Python
     SDK instead of embedding harness launch logic in every consumer.
   </Card>
-  <Card title="Typed lifecycle contracts">
+  <Card title="Typed Lifecycle Contracts">
     Resolve configs, inspect capabilities, run one-shot jobs, and hold
     multi-turn runtimes with typed requests, plans, handles, and results.
   </Card>
-  <Card title="Normalized evidence">
+  <Card title="Normalized Evidence">
     Collect output, errors, lifecycle events, artifact manifests, and telemetry
     references in stable contracts suitable for platforms and evaluations.
   </Card>
 </CardGroup>
 
-## How NeMo Fabric Fits
+## Use Cases
+
+Teams use NeMo Fabric in the following ways:
+
+| Use Case | Reader Goal | Result |
+| --- | --- | --- |
+| Application integration | Run one-shot agent jobs from an application that owns its own config. | A normalized `RunResult` with output, artifacts, events, and telemetry references. |
+| Multi-turn runtimes | Drive several ordered turns over one live harness runtime. | A stateful runtime handle you start, invoke, and stop through one lifecycle contract. |
+| Platform and evaluation harnesses | Plan and invoke many harnesses behind one typed surface. | Stable, harness-neutral evidence suitable for platforms and evaluations. |
+
+### Application Integration
+
+An application owns its job config and consumes returned evidence. Configure a
+typed `FabricConfig`, run it through the Python SDK, and read the normalized
+`RunResult`. Refer to the
+[Python SDK guide](/nemo/fabric/sdk/python-sdk) for typed requests and one-shot
+run examples.
+
+### Multi-Turn Runtimes
+
+When a workflow needs several ordered turns over one live harness, start a
+runtime and invoke it turn by turn before stopping it. Refer to the
+[Runtime reference](/reference/api/python-library-reference/runtime) for the
+start, invoke, and stop lifecycle.
+
+### Platform and Evaluation Harnesses
+
+Platforms and evaluation systems plan and invoke different harnesses behind one
+typed surface, then consume stable evidence contracts. Use the `nemo-fabric`
+experimentation CLI or committed JSON Schemas to inspect configurations and
+build language bindings.
+
+## Choose Your Interface
+
+Use the following table to choose the NeMo Fabric interface that best fits how
+your application works with harnesses:
+
+| Interface | Use It When | Start With |
+| --- | --- | --- |
+| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
+| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
+| `nemo-fabric` CLI | You are experimenting with harnesses, running maintained examples, or troubleshooting configs | [Experimentation CLI](/experimentation/cli) |
+| JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
+
+Use `FabricConfig` as the canonical configuration contract. CLI selectors
+obtain complete typed configs from built-in presets or maintained examples.
+
+## Core Workflow
+
+NeMo Fabric is organized around one flow from configuration to normalized
+evidence:
 
 ```text
 Application or evaluation harness
@@ -49,91 +105,11 @@ NeMo Fabric Rust core
         |
         |  resolved adapter contract
         v
-Hermes | Codex SDK | custom harness
+Hermes Agent | Codex SDK | custom harness
         |
         v
 RunResult + artifacts + events + telemetry references
 ```
-
-The experimentation CLI and its catalogs live in the Rust `fabric-cli` crate
-and are installed separately from the Python SDK. Built-in presets and
-maintained examples produce a complete `FabricConfig` before using the same
-run-plan contract. Adapters own harness-specific preparation and invocation;
-consumers own the request and returned evidence.
-
-## Quick Start
-
-Install `just` 1.50.0+ if it is not already available.
-
-```bash
-cargo install just --locked
-```
-
-Refer to the [official installation guide](https://just.systems/man/en/installation.html)
-for more details.
-
-Ensure that the Cargo bin directory is in your `PATH`:
-
-```bash
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
-
-```bash
-uv venv -p 3.13 --seed .venv
-source .venv/bin/activate
-```
-
-Build the Python SDK and install the Rust CLI from a source checkout:
-
-```bash
-just build-all
-```
-
-Run the example through the Python SDK:
-
-```python
-import asyncio
-from examples.code_review_agent import BASE_DIR, hermes_config
-from nemo_fabric import Fabric
-
-
-async def main() -> None:
-    config = hermes_config()
-    client = Fabric()
-    result = await client.run(
-        config,
-        base_dir=BASE_DIR,
-        input="Reply with exactly: fabric works",
-    )
-
-    print(result.status)
-
-
-asyncio.run(main())
-```
-
-Harness installation and credential requirements differ by adapter. The
-[repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes)
-contains the complete Hermes environment recipe.
-
-Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
-diagnostics, typed requests, and multi-turn runtime examples.
-
-## Choose Your Interface
-
-| Interface | Use it when | Start with |
-| --- | --- | --- |
-| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
-| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
-| `nemo-fabric` CLI | You are experimenting with harnesses, running maintained examples, or troubleshooting configs | [Experimentation CLI](/experimentation/cli) |
-| JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
-
-Use `FabricConfig` as the canonical configuration contract. CLI selectors
-obtain complete typed configs from built-in presets or maintained examples.
-
-## Core Workflow
 
 1. **Configure** a typed `FabricConfig` with a harness adapter,
    environment, models, tools, skills, MCP, and telemetry.
@@ -146,32 +122,17 @@ obtain complete typed configs from built-in presets or maintained examples.
 5. **Consume evidence** from `RunResult`: output, structured failure details,
    artifacts, events, and telemetry references.
 
-## Next Steps
+## Learn More
 
-<CardGroup cols={2}>
-  <Card
-    title="Client API"
-    href="/reference/api/python-library-reference/client"
-  >
-    Resolve, plan, diagnose, run, and start stateful runtimes.
-  </Card>
-  <Card
-    title="Runtime"
-    href="/reference/api/python-library-reference/runtime"
-  >
-    Invoke multiple ordered turns and stop runtime handles safely.
-  </Card>
-  <Card
-    title="Types"
-    href="/reference/api/python-library-reference/types"
-  >
-    Explore all mutable config objects and immutable request, plan, result,
-    artifact, telemetry, and runtime models.
-  </Card>
-  <Card
-    title="Errors"
-    href="/reference/api/python-library-reference/errors"
-  >
-    Handle config, capability, lifecycle, state, and native-extension failures.
-  </Card>
-</CardGroup>
+Continue exploring NeMo Fabric through these resources.
+
+- **Installation** — [Installation](/getting-started/install) to set up the runtime and adapters.
+- **Quickstart** — [Quickstart](/getting-started/quickstart) to build from
+  source and run the maintained SDK example.
+- **Beginner Tutorial** — [Beginner Tutorial](/getting-started/beginner-tutorial) to
+  configure an agent, compare run modes, and inspect the runtime environment.
+- **Experimentation CLI** — [Experimentation CLI](/experimentation/cli) to try
+  harness presets, maintained examples, planning, and diagnostics.
+- **Python SDK** — [Python SDK](/nemo/fabric/sdk/python-sdk) for planning,
+  diagnostics, typed requests, and multi-turn runtimes.
+- **API Reference** — [Client API](/reference/api/python-library-reference/client) to resolve, plan, diagnose, run, and start stateful runtimes.

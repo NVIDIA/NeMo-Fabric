@@ -10,10 +10,15 @@ navigation:
         path: ./about-nemo-fabric/release-notes.mdx
   - section: Getting Started
     contents:
-      - page: Install
+      - page: Installation
         path: ./getting-started/install.mdx
+        slug: install
       - page: Quickstart
         path: ./getting-started/quickstart.mdx
+        slug: quickstart
+      - page: Beginner Tutorial
+        path: ./getting-started/beginner-tutorial.mdx
+        slug: beginner-tutorial
   - section: Experimentation
     contents:
       - page: CLI

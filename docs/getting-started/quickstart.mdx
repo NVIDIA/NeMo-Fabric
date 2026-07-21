@@ -1,70 +1,109 @@
 ---
 title: "NVIDIA NeMo Fabric Quickstart"
-description: "Get started with NVIDIA NeMo Fabric."
+sidebar-title: "Quickstart"
+description: "Install NeMo Fabric from a source checkout and run a simple agent through the Python SDK."
+template-library-version: "1.0.0"
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-This guide demonstrates how to install and run a simple agent using NeMo Fabric.
+Use this quickstart to build NeMo Fabric from a source checkout and run the
+maintained code-review example with Hermes Agent. Plan for one local source
+build and one model request; elapsed time depends on your machine and network.
 
-## Install NeMo Fabric
+## Prerequisites
 
-Create a Python virtual environment and install NeMo Fabric with Hermes Agent and the Hermes Agent adapter.
+Before you begin, complete the
+[source installation prerequisites](/getting-started/install#source-installation-method).
+You need the following tools and source checkout:
+
+- A local checkout of the NeMo Fabric repository.
+- Rust and Cargo.
+- Python 3.11–3.13.
+- `uv`.
+- An `NVIDIA_API_KEY` for NVIDIA-hosted model access.
+
+Run the commands in this quickstart from the root of the source checkout.
+
+## Quickstart Steps
+
+Complete the following steps in order from the repository root.
+
+### 1. Build NeMo Fabric
+
+Install `just` 1.50.0+ if it is not already available.
+
 ```bash
-python -m venv .venv
+cargo install just --locked
+```
+
+Refer to the [official installation guide](https://just.systems/man/en/installation.html)
+for more details.
+
+Ensure that the Cargo bin directory is in your `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+```
+
+Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
 source .venv/bin/activate
-pip install "nemo-fabric[adapters-hermes]"
 ```
 
-Refer to [the installation guide](https://github.com/NVIDIA/NeMo-Fabric#installation) for more details.
+From the root of the source checkout, build and install the Python SDK and its
+native binding in `.venv`, build the CLI, and create the local wheels:
 
-## Obtaining API Keys
-
-The following code example uses an NVIDIA-hosted model and requires an NVIDIA API key defined with the `NVIDIA_API_KEY`
-environment variable. An API key can be obtained by creating an account on [`build.nvidia.com`](https://build.nvidia.com/).
-
-## Run a Simple Agent
-
-```python
-import asyncio
-
-from nemo_fabric import (
-    Fabric,
-    FabricConfig,
-    HarnessConfig,
-    MetadataConfig,
-    ModelConfig,
-)
-
-config = FabricConfig(
-    metadata=MetadataConfig(
-        name="quickstart-agent"
-    ),
-    harness=HarnessConfig(
-        adapter_id="nvidia.fabric.hermes",
-        resolution="preinstalled",
-        settings={
-            "base_url": "https://integrate.api.nvidia.com/v1",
-            "max_iterations": 1,
-        },
-    ),
-    models={
-        "default": ModelConfig(
-            provider="nvidia",
-            model="nvidia/nemotron-3-nano-30b-a3b",
-            temperature=0.0,
-            api_key_env="NVIDIA_API_KEY",
-        )
-    },
-)
-
-fabric = Fabric()
-result = asyncio.run(fabric.run(config, input="Who are you?"))
-print(result.output.response)
+```bash
+just build-all
+just wheels
 ```
 
-A more detailed version of this example is available as a [Jupyter Notebook](https://jupyter.org/)
-at [`examples/notebooks/01_quickstart.ipynb`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/examples/notebooks/01_quickstart.ipynb).
+### 2. Install Hermes Agent
+
+Create a separate environment for Hermes Agent and install the harness and its
+NeMo Fabric adapter from the local wheels:
+
+```bash
+python3 -m venv .tmp/hermes-venv
+.tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[hermes]"
+```
+
+Set the model API key and select the Hermes Agent environment:
+
+```bash
+export NVIDIA_API_KEY=...
+export ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
+```
+
+### 3. Run the Example
+
+Run the maintained code-review example through the Python SDK:
+
+```bash
+.venv/bin/python -m examples.code_review_agent \
+  --input "Reply with exactly: fabric works"
+```
+
+**✅ Success Check**: The command finishes successfully and prints the expected
+phrase, `fabric works`, in the agent response.
 
 ## Next Steps
-- [Python SDK](../sdk/python.mdx)
+
+Now that the example runs, continue with the resource that matches your goal.
+
+<CardGroup cols={2}>
+  <Card title="Beginner Tutorial" href="/getting-started/beginner-tutorial">
+    Build a typed configuration, compare one-shot and stateful runs, and
+    inspect the configuration and environment.
+  </Card>
+  <Card title="Hermes Agent Setup" href="https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-agent">
+    Review adapter-specific installation and credential requirements.
+  </Card>
+  <Card title="Python SDK Guide" href="/nemo/fabric/sdk/python-sdk">
+    Explore planning, diagnostics, typed requests, and multi-turn runtime
+    examples.
+  </Card>
+</CardGroup>
