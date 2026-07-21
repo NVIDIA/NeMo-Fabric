@@ -204,6 +204,12 @@ def test_sdk_close_failure_preserves_completed_turn_and_thread_state(
     assert output["failed"] is False
     assert output["thread_id"] == "thread-123"
     assert output["response"] == "done"
+    assert output["error"] is None
+    assert output["cleanup_error"] == {
+        "code": "codex_sdk_stop_failed",
+        "message": "Codex SDK runtime failed to stop",
+        "retryable": False,
+    }
     assert adapter.load_thread_id(codex_payload, "runtime-1") == "thread-123"
     assert "Codex SDK client failed to close after invocation" in caplog.text
     mock_codex.instances[0].close.assert_awaited_once_with()

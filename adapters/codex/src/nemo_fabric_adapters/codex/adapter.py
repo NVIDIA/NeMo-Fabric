@@ -1055,6 +1055,11 @@ async def invoke_codex_sdk(
                 await codex.close()
             except Exception:
                 LOGGER.exception("Codex SDK client failed to close after invocation")
+                output["cleanup_error"] = {
+                    "code": "codex_sdk_stop_failed",
+                    "message": "Codex SDK runtime failed to stop",
+                    "retryable": False,
+                }
     return output, thread_id
 
 

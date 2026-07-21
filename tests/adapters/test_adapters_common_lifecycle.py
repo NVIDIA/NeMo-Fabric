@@ -263,7 +263,7 @@ def test_lifecycle_host_rejects_invoke_after_adapter_failure(
             invocations.append(payload)
             raise failure
 
-        async def stop(self):
+        async def stop(self) -> None:
             pass
 
     lifecycle.serve(Runtime, input_stream=input_stream, output_stream=output_stream)
