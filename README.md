@@ -144,30 +144,23 @@ under `examples/code_review_agent/artifacts/hermes/`. Its complete base
 config and clone-based variants live in
 `examples/code_review_agent/config.py`.
 
-## Bundled Adapter Capability Matrix
+## Supported Agent Harnesses
 
-The adapter descriptors are the source of truth for normalized configuration,
-telemetry, and runtime-hosting support. The bundled adapters currently expose
-the following capabilities:
+Choose a bundled agent harness based on your model ecosystem and application
+needs. Every harness supports persistent multi-turn local runtimes through the
+same Fabric lifecycle and returns normalized results, artifacts, and telemetry
+references.
 
-| Adapter | Models | Tools / Blocked Tools | MCP | Skills | Subagents | Telemetry | Persistent Local Host | Remote Service |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| [Claude](adapters/claude/README.md) | Anthropic / Claude | `allowed_tools` adapter setting / normalized block list | Normalized | Normalized | Not exposed | Relay: ATIF, OTel, and OpenInference through hooks and gateway | Yes: `ClaudeSDKClient`, session, and optional Relay gateway | Not implemented |
-| [Codex](adapters/codex/README.md) | OpenAI and NVIDIA Responses providers / Codex-compatible models | Not normalized | Normalized: stdio, HTTP, and streamable HTTP | Normalized: `SKILL.md` directories | Not exposed | Relay: ATIF, OTel, and OpenInference through hooks and gateway; native OTel | Yes: `AsyncCodex`, app server, thread, and optional Relay gateway | Not implemented |
-| [Deep Agents](adapters/deepagents/README.md) | LangChain providers | Built-ins and MCP / normalized middleware block list | Normalized | Normalized | Constrained local delegation | Relay SDK: ATIF, OTel, and OpenInference; native OTel and OpenInference | Yes: compiled graph and async checkpointer | Not implemented |
-| [Hermes](adapters/hermes/README.md) | Normalized provider and base URL | Toolsets / normalized disabled toolsets | Normalized | Normalized | Not exposed | Relay plugin: ATIF, OTel, and OpenInference | Yes: `AIAgent`, `SessionDB`, and Relay context | Not implemented |
+| Agent harness | Choose it for | Model ecosystem | Key capabilities | Observability |
+| --- | --- | --- | --- | --- |
+| Claude | Claude-native coding and tool-use workflows | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
+| Codex | Codex-native coding workflows | OpenAI and NVIDIA-hosted Responses-compatible models | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
+| LangChain Deep Agents | Composable LangChain and LangGraph agents | LangChain model providers | Built-in and MCP tools, guardrails, skills, and local subagents | NeMo Relay and native OpenTelemetry/OpenInference |
+| Hermes Agent | Hermes workflows with custom model endpoints | Configurable provider, model, and base URL | Toolsets, guardrails, MCP, skills, and persistent conversation history | NeMo Relay |
 
-"Normalized" means the adapter accepts the corresponding `FabricConfig`
-field. "Not normalized" does not mean that the underlying harness lacks the
-feature; it means that Fabric does not expose a portable configuration surface
-for it. Fabric currently normalizes a blocked-tool list, not a portable tool
-definition catalog. Deep Agents subagents are limited to declarative local
-subagents that inherit the parent agent's capabilities.
-
-Consumers use the same `Fabric.start_runtime(...)` contract for all four
-bundled adapters. Adapter hosting remains descriptor-owned; it is not selected
-through public `FabricConfig` settings. The `process` and `python` adapter kinds
-run as persistent local hosts for the complete runtime lifecycle.
+For package names, exact compatibility and limitations, runtime ownership, and
+individual harness guides, refer to the
+[adapter compatibility reference](adapters/README.md).
 
 ## Claude Adapter
 
@@ -204,12 +197,10 @@ runtimes, authentication, and execution details.
   `disallowed_tools`, Deep Agents enforces them with middleware, and adapters
   without a native deny mechanism route the policy as unsupported.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
-  The Hermes adapter lives under `adapters/hermes/`; the Codex SDK
-  adapter lives under `adapters/codex/`; the
-  [Claude adapter](adapters/claude/README.md)
-  lives under `adapters/claude/`; the LangChain Deep Agents adapter lives under
-  `adapters/deepagents/`. Harness-specific extensions belong under
-  `harness.settings` so the normalized contract can remain stable.
+  Harness-specific extensions belong under `harness.settings` so the normalized
+  contract can remain stable. Refer to the
+  [adapter compatibility reference](adapters/README.md) for bundled package and
+  implementation details.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
 
@@ -236,9 +227,8 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 - [Harbor examples](examples/harbor/README.md): validate the integration with a
   deterministic, credential-free calculator smoke, optionally run the same
   task with Hermes or Claude, and evaluate real coding tasks with SWE-Bench.
-- Adapter guides: [Hermes](adapters/hermes/README.md),
-  [Codex SDK](adapters/codex/README.md), and
-  [Deep Agents](adapters/deepagents/README.md).
+- [Adapter compatibility and guides](adapters/README.md): compare bundled
+  harness support, runtime ownership, telemetry integration, and package guides.
 
 ## Tests
 
