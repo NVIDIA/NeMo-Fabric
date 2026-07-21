@@ -59,6 +59,7 @@ hermes = [
 ]
 
 hermes-agent = [
+    "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
     "hermes-agent>=0.17.0; python_version < '3.14'",
 ]
 

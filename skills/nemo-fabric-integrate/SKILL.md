@@ -52,9 +52,9 @@ runtime assumptions but never installs harnesses or credentials at run time.
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx).
 - Select a harness adapter — the `adapter_id` set in `HarnessConfig`, for example
   `nvidia.fabric.hermes` — and install its extra the same way, for example
-  `uv pip install --find-links <dist_dir> "nemo-fabric[adapters-hermes]"`
-  (available extras: `adapters-hermes`, `adapters-codex`,
-  `adapters-deepagents`, `adapters-claude`), plus the adapter's own harness
+  `uv pip install --find-links <dist_dir> "nemo-fabric[hermes]"`
+  (available extras: `hermes`, `codex`, `deepagents`, `claude`), plus the
+  adapter's own harness
   binaries and dependencies.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.

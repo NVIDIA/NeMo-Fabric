@@ -23,10 +23,10 @@ just wheels
 uv pip install --find-links dist nemo-fabric
 ```
 
-Adapters are distributed as optional extras. For example, install the Hermes adapter with:
+Adapters are distributed as optional extras. For example, install the Hermes Agent adapter with:
 
 ```bash
-uv pip install --find-links dist "nemo-fabric[adapters-hermes]"
+uv pip install --find-links dist "nemo-fabric[hermes]"
 ```
 
 Refer to the [installation guide](docs/getting-started/install.mdx) for the
