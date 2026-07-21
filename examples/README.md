@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Examples
+# NVIDIA NeMo Fabric Examples
 
 This directory holds runnable NeMo Fabric examples.
 
