@@ -39,8 +39,8 @@ and MCP transports fail before the SDK runtime starts.
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
 roots, and `harness.settings.config_overrides` are fixed when the runtime starts
 and cannot vary between `Runtime.invoke(...)` calls. Start a new runtime to
-change them. `Fabric.run(...)` creates a fresh one-shot runtime, so the same
-settings are scoped to that invocation.
+change them. `Fabric.run(...)` starts the same runtime, invokes it once, and
+stops it, so the same settings are scoped to that single invocation.
 
 The Codex adapter does not declare `tools.blocked` support. Codex can filter
 individual MCP server tools, but the pinned runtime does not provide one deny
@@ -112,9 +112,10 @@ storage. Do not commit or copy it into NeMo Fabric configuration or artifacts.
 NeMo Relay does not replace OpenAI authentication. A Relay-enabled NeMo Fabric
 runtime starts one gateway as a supervised sidecar and directs the Codex SDK's
 built-in OpenAI provider through that gateway. The runtime reuses the gateway
-and SDK client across ordered invocations. A one-shot `Fabric.run(...)` owns the
-gateway for one invocation. The SDK still obtains credentials from the selected
-Codex authentication mode.
+and SDK client across ordered invocations. `Fabric.run(...)` starts the same
+runtime, invokes it once, and stops it, so the gateway is scoped to that single
+invocation. The SDK still obtains credentials from the selected Codex
+authentication mode.
 
 Relay-enabled Codex runs require `models.default.provider` to be `openai`.
 The custom `nvidia` provider uses its configured NVIDIA Responses endpoint and

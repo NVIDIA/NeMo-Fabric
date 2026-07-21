@@ -18,9 +18,10 @@ RUN_FABRIC_CODEX_RELAY_INTEGRATION=1 \
 Set `FABRIC_TEST_CODEX_BIN=/path/to/codex` on either opt-in command to validate
 an explicit app-server override instead of the SDK-pinned runtime.
 
-The SDK test uses the current Codex authentication state and exercises both a
-one-shot invocation and multi-turn thread resume. The Relay test additionally
-requires an external gateway binary and verifies one-shot and resumed model
-responses, stable thread identity, ATOF, and ATIF; gateway startup alone is not
-a passing result. The semantic regression also requires decoded LLM request
-content, a model, token usage, and the expected agent response in ATIF.
+The SDK test uses the current Codex authentication state and exercises both the
+single-invocation convenience API and multiple turns against one started
+runtime. The Relay test additionally requires an external gateway binary and
+verifies model responses, stable thread identity across turns, ATOF, and ATIF;
+gateway startup alone is not a passing result. The semantic regression also
+requires decoded LLM request content, a model, token usage, and the expected
+agent response in ATIF.

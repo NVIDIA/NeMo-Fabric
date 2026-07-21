@@ -125,8 +125,8 @@ Set model selection through `models` and the working directory through
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
 roots, and `config_overrides` are fixed when the runtime starts and cannot vary
 between `Runtime.invoke(...)` calls. Start a new runtime to change them.
-`Fabric.run(...)` creates a fresh one-shot runtime, so the same settings are
-scoped to that invocation.
+`Fabric.run(...)` starts the same runtime, invokes it once, and stops it, so the
+same settings are scoped to that single invocation.
 
 The adapter filters the inherited environment. It retains portable OS and
 Codex state variables, the selected model's `api_key_env`, and explicit

@@ -57,8 +57,8 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
 - `contract_version` must match the adapter contract supported by Fabric core.
 - `adapter_id` is the stable id selected by `harness.adapter_id`.
 - `adapter_kind` is `python` because Fabric can invoke it through Python.
-- `runner.module` names the module that Fabric invokes with `python -m`.
-  `runner.callable` names the equivalent reusable Python function.
+- `runner.module` names the persistent host module that Fabric invokes with
+  `python -m`.
 - `requirements` powers `fabric doctor`; keep required env vars, binaries, or
   packages current.
 - `config.accepts` must match the Fabric sections this adapter maps into Hermes.

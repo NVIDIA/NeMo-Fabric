@@ -101,10 +101,10 @@ Most application code works with four objects:
 | `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, events, artifacts, and correlation IDs. |
 
 `Fabric` is a lightweight, reusable SDK facade. It resolves configuration,
-creates plans and runtimes, and runs one-shot requests, but it does not
-represent a started execution and does not require cleanup. A `Runtime` owns
-stateful execution and shutdown, so it is the object used as an async context
-manager.
+creates plans and runtimes, and provides a single-invocation convenience API,
+but it does not represent a started execution and does not require cleanup. A
+`Runtime` owns stateful execution and shutdown, so it is the object used as an
+async context manager.
 
 `RuntimeHandle` and `InvocationHandle` carry lifecycle identity across the
 native boundary. Most Python callers use their `runtime_id` and
@@ -115,16 +115,13 @@ A runtime is a logical execution boundary, not necessarily an operating-system
 process. An adapter may use an in-process SDK, a process, or shared service
 infrastructure while preserving isolated state for each NeMo Fabric runtime.
 
-Runtime hosting is selected by the adapter descriptor, not by a public
-`FabricConfig` setting. Every local Process or Python adapter declares the
-persistent local-host wire protocol. Fabric starts one host during
+Runtime hosting is selected by the adapter kind, not by a public `FabricConfig`
+setting. Every local Process or Python adapter implements the persistent
+local-host wire protocol. Fabric starts one host during
 `start_runtime(...)`, reuses its adapter-owned native resources across ordered
 invocations, and attempts to release them during `stop()`. The lifecycle start
 operation carries the resolved configuration and capability plan. Each
 subsequent `AdapterInvocation` carries only `runtime_context` and `request`.
-`runtime.local_host` is an unversioned capability marker whose nesting is
-intentionally provisional until remote hosting requires a shared runtime
-protocol.
 
 ### Bundled Adapter Capability Matrix
 
@@ -250,7 +247,7 @@ multiple independent runtimes.
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
 
-## One-Shot Runs
+## Single-Invocation Runs
 
 Use `run(...)` when the application has one input and does not need to preserve
 runtime state after the result is collected.
@@ -460,12 +457,12 @@ All public SDK errors inherit from `FabricError`.
 | `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
-Consumers own job-level retries and rollout-level failure policy. One-shot runs
-attempt to stop the runtime before returning. A `Runtime` used with `async with`
-also attempts cleanup after an invocation error; if cleanup fails, that failure
-is attached to the original exception rather than replacing it. NeMo Fabric records
-structured error metadata when possible and returns enough detail for the
-consumer to decide what to do next.
+Consumers own job-level retries and rollout-level failure policy.
+Single-invocation runs attempt to stop the runtime before returning. A `Runtime`
+used with `async with` also attempts cleanup after an invocation error; if cleanup
+fails, that failure is attached to the original exception rather than replacing
+it. NeMo Fabric records structured error metadata when possible and returns enough
+detail for the consumer to decide what to do next.
 
 ## SDK Contract Boundaries
 

@@ -71,7 +71,7 @@ for other supported installation methods.
 
 ## Execution Model
 
-The Claude adapter declares Fabric's persistent local-host wire protocol.
+The Claude adapter implements Fabric's persistent local-host wire protocol.
 `Fabric.start_runtime(...)` launches one adapter host, creates one
 `ClaudeSDKClient`, and connects it once. Every `Runtime.invoke(...)` reuses that
 client and its event loop; `Runtime.stop()` disconnects the client and exits the
@@ -132,8 +132,9 @@ For each Relay-enabled Claude runtime, Fabric starts one `nemo-relay` gateway,
 waits for its health endpoint, and stops it with the runtime. Fabric passes the
 gateway URL to the connected Claude Code process through `ANTHROPIC_BASE_URL`
 and `NEMO_RELAY_GATEWAY_URL`. It also stages a runtime-scoped Claude plugin that
-forwards lifecycle hooks with `nemo-relay hook-forward claude`. A one-shot
-`Fabric.run(...)` naturally owns the gateway for only one invocation.
+forwards lifecycle hooks with `nemo-relay hook-forward claude`.
+`Fabric.run(...)` starts the same runtime, invokes it once, and stops it, so the
+gateway has the same lifecycle as that single invocation.
 
 The Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
@@ -201,7 +202,7 @@ config = FabricConfig(
 fabric = Fabric()
 ```
 
-## One-Shot Run
+## Single Invocation
 
 ```python
 result = await fabric.run(
