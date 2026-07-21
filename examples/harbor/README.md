@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Run NeMo Fabric Agents with Harbor
+# Run NVIDIA NeMo Fabric Agents with Harbor
 
 These examples keep Harbor in control of tasks, containers, verification,
 rewards, retries, concurrency, and job layout while `FabricAgent` translates
