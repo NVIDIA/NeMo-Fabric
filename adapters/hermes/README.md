@@ -39,14 +39,14 @@ without sharing config or the session database with another runtime.
 
 ## Execution Model
 
-Each NeMo Fabric runtime starts one local adapter host, constructs one Hermes
+Each NeMo Fabric runtime starts one local adapter host, constructs one Hermes Agent
 `AIAgent`, and opens one `SessionDB`. Ordered `Runtime.invoke(...)` calls reuse
 those native objects and pass the prior turn's returned transcript back to
 `run_conversation(...)`. Runtime stop calls the agent's idempotent `close()`
 method, closes the session database, and releases the Relay plugin context when
 enabled.
 
-Hermes Relay telemetry is finalized after each NeMo Fabric invocation so its ATOF
+Hermes Agent Relay telemetry is finalized after each NeMo Fabric invocation so its ATOF
 and ATIF artifacts are complete when that invocation returns. This telemetry
 boundary does not recreate the `AIAgent` or `SessionDB`.
 

@@ -74,9 +74,9 @@ client and its event loop; `Runtime.stop()` disconnects the client and exits the
 host. `Fabric.run(...)` uses the same lifecycle around one invocation.
 
 One NeMo Fabric runtime maps to one live Claude session. The adapter records the
-terminal Claude session ID under the Fabric artifact root for correlation, but
+terminal Claude session ID under the NeMo Fabric artifact root for correlation, but
 does not silently recreate a crashed host or replay an invocation. Start a new
-Fabric runtime when the host or SDK connection becomes unusable. Runtime
+NeMo Fabric runtime when the host or SDK connection becomes unusable. Runtime
 hosting is adapter-declared; consumers do not configure a runtime strategy in
 `FabricConfig` or `harness.settings`.
 
@@ -124,8 +124,8 @@ config.enable_relay(
 )
 ```
 
-For each Relay-enabled Claude runtime, Fabric starts one `nemo-relay` gateway,
-waits for its health endpoint, and stops it with the runtime. Fabric passes the
+For each Relay-enabled Claude runtime, NeMo Fabric starts one `nemo-relay` gateway,
+waits for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
 gateway URL to the connected Claude Code process through `ANTHROPIC_BASE_URL`
 and `NEMO_RELAY_GATEWAY_URL`. It also stages a runtime-scoped Claude plugin that
 forwards lifecycle hooks with `nemo-relay hook-forward claude`.
@@ -223,5 +223,5 @@ assert first.output["session_id"] == second.output["session_id"]
 ```
 
 The runtime must remain on the same local host for its lifetime. A persisted
-Fabric-to-Claude correlation record is not an attach token and cannot recover a
+NeMo Fabric-to-Claude correlation record is not an attach token and cannot recover a
 stopped or crashed local host.

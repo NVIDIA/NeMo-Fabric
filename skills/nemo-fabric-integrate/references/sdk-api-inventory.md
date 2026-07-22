@@ -67,7 +67,7 @@ FabricConfig -> plan() -> RunPlan -> start_runtime() -> Runtime -> invoke() -> R
   process. Harness-native threads, sessions, and conversations remain
   adapter-owned state associated with the runtime.
 - Runtime hosting is adapter-declared, not consumer-configured. The bundled
-  Claude, Codex, Deep Agents, and Hermes adapters retain their native runtime
+  Claude, Codex, Deep Agents, and Hermes Agent adapters retain their native runtime
   resources in one local host. Local `process` and `python` adapters use the
   same host lifecycle. A host crash or protocol timeout terminates the runtime;
   the application may explicitly start a new runtime according to its policy.

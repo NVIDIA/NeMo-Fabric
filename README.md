@@ -154,7 +154,7 @@ config and clone-based variants live in
 
 Choose a bundled agent harness based on your model ecosystem and application
 needs. Every harness supports persistent multi-turn local runtimes through the
-same Fabric lifecycle and returns normalized results, artifacts, and telemetry
+same NeMo Fabric lifecycle and returns normalized results, artifacts, and telemetry
 references.
 
 | Agent harness | Choose it for | Model ecosystem | Key capabilities | Observability |
@@ -162,7 +162,7 @@ references.
 | Claude | Claude-native coding and tool-use workflows | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
 | Codex | Codex-native coding workflows | OpenAI and NVIDIA-hosted Responses-compatible models | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
 | LangChain Deep Agents | Composable LangChain and LangGraph agents | LangChain model providers | Built-in and MCP tools, guardrails, skills, and local subagents | NeMo Relay and native OpenTelemetry/OpenInference |
-| Hermes Agent | Hermes workflows with custom model endpoints | Configurable provider, model, and base URL | Toolsets, guardrails, MCP, skills, and persistent conversation history | NeMo Relay |
+| Hermes Agent | Hermes Agent workflows with custom model endpoints | Configurable provider, model, and base URL | Toolsets, guardrails, MCP, skills, and persistent conversation history | NeMo Relay |
 
 For package names, exact compatibility and limitations, runtime ownership, and
 individual harness guides, refer to the

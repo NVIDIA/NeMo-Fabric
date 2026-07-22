@@ -117,7 +117,7 @@ infrastructure while preserving isolated state for each NeMo Fabric runtime.
 
 Runtime hosting is selected by the adapter kind, not by a public `FabricConfig`
 setting. Every local Process or Python adapter implements the persistent
-local-host wire protocol. Fabric starts one host during
+local-host wire protocol. NeMo Fabric starts one host during
 `start_runtime(...)`, reuses its adapter-owned native resources across ordered
 invocations, and attempts to release them during `stop()`. The lifecycle start
 operation carries the resolved configuration and capability plan. Each
@@ -138,8 +138,8 @@ use the descriptor contract values.
 
 "Normalized" means the adapter accepts the corresponding `FabricConfig`
 field and maps it to the harness. "Not normalized" does not mean that the
-underlying harness lacks the feature; it means that Fabric does not expose a
-portable configuration surface for it. Fabric currently normalizes
+underlying harness lacks the feature; it means that NeMo Fabric does not expose a
+portable configuration surface for it. NeMo Fabric currently normalizes
 `tools.blocked`, not a portable tool definition catalog. Deep Agents supports
 only JSON-shaped, in-process subagent definitions through
 `harness.settings.deepagents.subagents`; independently configured or remote
@@ -304,7 +304,7 @@ print(first.status, second.status)
 
 The adapter reuses its native state between calls. Codex maps the calls to turns
 on one live thread, Deep Agents invokes one compiled graph and checkpointer,
-Hermes reuses one agent and session database, and Claude keeps one connected SDK
+Hermes Agent reuses one agent and session database, and Claude keeps one connected SDK
 client. Harness-native identifiers remain adapter-internal.
 
 ## Application-Owned Parallelism

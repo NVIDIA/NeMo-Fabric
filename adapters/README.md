@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Agent Harness Adapters
 
-NeMo Fabric adapters translate the normalized Fabric contract into
+NeMo Fabric adapters translate the normalized NeMo Fabric contract into
 harness-native models, tools, sessions, and telemetry. Use this reference to
 compare the bundled adapters and then open the linked package guide for
 installation, authentication, and configuration details.
@@ -33,8 +33,8 @@ configuration and telemetry support.
 
 "Normalized" means that the adapter accepts the corresponding `FabricConfig`
 field. "Not exposed" does not mean that the underlying harness lacks the
-feature; it means that Fabric does not provide a portable configuration surface
-for it. Fabric normalizes a blocked-tool list, not a portable tool-definition
+feature; it means that NeMo Fabric does not provide a portable configuration surface
+for it. NeMo Fabric normalizes a blocked-tool list, not a portable tool-definition
 catalog. Deep Agents subagents are limited to declarative local subagents that
 inherit the parent agent's capabilities.
 
@@ -52,10 +52,10 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [Claude](claude/README.md) | `ClaudeSDKClient` and Claude session ID | Runtime-owned Relay CLI gateway and generated Claude hooks | Calls `client.query()`, validates the session ID, and collects ATOF and ATIF | Disconnects the client, stops the gateway, and removes the generated plugin | Not implemented |
 | [Codex](codex/README.md) | `AsyncCodex` app-server client and SDK thread | Runtime-owned Relay CLI gateway and Codex SDK hooks | Reuses the SDK thread and persists its thread ID | Closes the SDK client and app server, then stops the gateway | Not implemented |
 | [LangChain Deep Agents](deepagents/README.md) | Compiled LangGraph agent, checkpointer, and thread ID | NeMo Relay Python SDK integration added when the agent is compiled | Creates a fresh Relay request scope and callback for each invocation | Closes the checkpointer; no gateway process | Not implemented |
-| [Hermes Agent](hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
+| [Hermes Agent](hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
 
 Telemetry output names use the descriptor contract values. Claude, Codex, and
-Hermes can emit NeMo Relay ATIF, OpenTelemetry, and OpenInference output. Deep
+Hermes Agent can emit NeMo Relay ATIF, OpenTelemetry, and OpenInference output. Deep
 Agents supports the same Relay outputs plus native OpenTelemetry and
 OpenInference; Codex also supports native OpenTelemetry.
 

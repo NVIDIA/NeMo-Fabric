@@ -128,7 +128,7 @@ Pick the smallest lifecycle the consumer needs:
   raise `FabricStateError`.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
-Deep Agents, and Hermes adapters retain their native client, graph/checkpointer,
+Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
 or agent/database inside one local host for the full runtime. Local `process`
 and `python` adapters use this host lifecycle; consumers do not select another
 local execution mechanism in `FabricConfig`. Do not replay an invocation after

@@ -54,7 +54,7 @@ provider for the configured NVIDIA Responses endpoint. `Fabric.run(...)` owns
 that provider for one invocation, while `Fabric.start_runtime(...)` fixes it for
 the lifetime of the persistent runtime. The adapter reads the credential from
 `api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex state under the
-Fabric artifact root, so execution does not depend on or modify a user's Codex
+NeMo Fabric artifact root, so execution does not depend on or modify a user's Codex
 login. Set the endpoint in
 `models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`; the adapter
 does not assume a default frontier endpoint.
@@ -76,7 +76,7 @@ Each NeMo Fabric runtime currently starts one local adapter host and retains one
 pinned local `codex app-server` subprocess over JSON-RPC. Ordered
 `Runtime.invoke(...)` calls reuse that client and thread directly; the adapter
 closes the SDK client and app-server transport during `Runtime.stop()`. Codex
-owns the transcript; Fabric owns runtime-to-thread correlation, timeout,
+owns the transcript; NeMo Fabric owns runtime-to-thread correlation, timeout,
 cancellation, and cleanup.
 
 The result includes the SDK's typed terminal response, turn status, token
@@ -92,7 +92,7 @@ Use normalized `FabricConfig` fields for portable configuration:
   provider.
 - `environment.workspace` sets the working directory.
 - `mcp` maps stdio, HTTP, and streamable HTTP servers into the Codex thread's
-  `mcp_servers` configuration. For stdio, Fabric parses `url` as a command plus
+  `mcp_servers` configuration. For stdio, NeMo Fabric parses `url` as a command plus
   arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   registers each directory as a process-scoped Codex skill root so Codex can
