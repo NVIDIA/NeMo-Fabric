@@ -9,6 +9,8 @@ export REPO_ROOT := justfile_directory()
 no_uv := "false"
 # When set, versioning and packaging targets use this exact release version.
 ref_name := ""
+# Linux wheel artifacts target this minimum glibc version for compatibility.
+linux_glibc_version := "2.17"
 
 python_projects := ". python adapters/common adapters/claude adapters/codex adapters/deepagents adapters/hermes"
 
@@ -20,6 +22,62 @@ uv_python_executable() {
         cd "$REPO_ROOT"
         uv python find
     )
+}
+
+activate_project_venv() {
+    local venv_bin=""
+    if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
+        venv_bin="$REPO_ROOT/.venv/bin"
+    elif [[ -x "$REPO_ROOT/.venv/Scripts/python.exe" ]]; then
+        venv_bin="$REPO_ROOT/.venv/Scripts"
+    else
+        echo "ERROR: expected project virtualenv Python executable under .venv" >&2
+        exit 1
+    fi
+    export PATH="$venv_bin:$PATH"
+}
+
+prepend_ziglang_to_path() {
+    local python_executable="$1"
+    local zig_dir=""
+    zig_dir="$("$python_executable" - <<'PY'
+from pathlib import Path
+import importlib.util
+
+spec = importlib.util.find_spec("ziglang")
+if spec is None or spec.origin is None:
+    raise SystemExit("ERROR: expected ziglang from the locked uv environment")
+
+zig = Path(spec.origin).resolve().parent / "zig"
+if not zig.exists():
+    raise SystemExit(f"ERROR: expected zig binary at {zig}")
+
+print(zig.parent)
+PY
+    )"
+    export PATH="$zig_dir:$PATH"
+}
+
+linux_manylinux_compatibility() {
+    local glibc_version="${linux_glibc_version:-2.17}"
+    printf 'manylinux_%s\n' "${glibc_version//./_}"
+}
+
+python_wheel_build_args() {
+    local os_name=""
+    os_name="$(uname -s)"
+    case "$os_name" in
+        Linux)
+            printf '%s\0' --compatibility "$(linux_manylinux_compatibility)" --zig
+            ;;
+        Darwin|CYGWIN*|MINGW*|MSYS*)
+            printf '%s\0' --compatibility pypi
+            ;;
+        *)
+            echo "ERROR: unsupported OS for wheels: $os_name" >&2
+            exit 1
+            ;;
+    esac
 }
 
 semver_to_pep440() {
@@ -351,7 +409,13 @@ test-all: test-rust test-python
 # Build wheels for every Python project into the repository dist directory.
 wheels:
     #!/usr/bin/env bash
-    set -euo pipefail
+    {{ bash_helpers }}
+    linux_glibc_version="{{ linux_glibc_version }}"
+    uv sync --inexact --only-group package
+    activate_project_venv
+    if [[ "$(uname -s)" == "Linux" ]]; then
+        prepend_ziglang_to_path "$(uv_python_executable)"
+    fi
     projects=({{ python_projects }})
     uv build --wheel --clear --out-dir dist .
     for project in "${projects[@]}"; do
@@ -363,11 +427,15 @@ wheels:
         uv build --wheel --out-dir dist "$project"
     done
     # uv build forces Maturin compatibility off, producing non-portable linux_* tags.
+    build_args=()
+    while IFS= read -r -d '' arg; do
+        build_args+=("$arg")
+    done < <(python_wheel_build_args)
     (
         cd python
-        uvx --from 'maturin>=1.9.3,<2.0' maturin build \
+        maturin build \
             --release \
             --locked \
-            --compatibility pypi \
+            "${build_args[@]}" \
             --out ../dist
     )
