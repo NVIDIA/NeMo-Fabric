@@ -9,6 +9,7 @@ import sys
 
 
 ROOT = Path(__file__).parents[2]
+SUBPROCESS_TIMEOUT_SECONDS = 120
 
 
 def generate_scaffold(destination: Path, language: str) -> None:
@@ -31,6 +32,7 @@ def generate_scaffold(destination: Path, language: str) -> None:
         check=True,
         capture_output=True,
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
     )
 
 
@@ -43,6 +45,7 @@ def test_generated_python_scaffold_installs_editable(tmp_path: Path):
         check=True,
         capture_output=True,
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     environment = os.environ.copy()
@@ -56,6 +59,7 @@ def test_generated_python_scaffold_installs_editable(tmp_path: Path):
         check=True,
         capture_output=True,
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
     )
 
 
@@ -80,6 +84,7 @@ def test_generated_rust_scaffold_builds(tmp_path: Path):
         check=True,
         capture_output=True,
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
     )
 
 
@@ -105,7 +110,11 @@ def test_failed_cli_run_returns_nonzero_status():
         check=False,
         capture_output=True,
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_SECONDS,
     )
 
     assert result.returncode != 0
-    assert json.loads(result.stdout)["status"] == "failed"
+    failure = json.loads(result.stdout)
+    assert failure["status"] == "failed"
+    assert failure["error"]["code"] == "runtime_error"
+    assert "adapter lifecycle start failed" in result.stderr

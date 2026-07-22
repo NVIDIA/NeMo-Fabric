@@ -50,8 +50,8 @@ class Fabric:
     ``FabricNativeUnavailableError`` when the native extension is not
     installed.
 
-    See the Getting Started overview for runnable one-shot, typed-config, and
-    multi-turn examples.
+    See the Getting Started overview for runnable single-invocation,
+    typed-config, and multi-turn examples.
     """
 
     def plan(

@@ -82,6 +82,27 @@ pub enum FabricError {
         /// Adapter kind.
         adapter_kind: AdapterKind,
     },
+    /// A persistent local-host lifecycle operation failed.
+    #[error(
+        "adapter lifecycle {operation} failed for runtime `{runtime_id}` ({code}): {message}{diagnostics_suffix}",
+        diagnostics_suffix = if diagnostics.is_empty() {
+            String::new()
+        } else {
+            format!("; diagnostics: {diagnostics}")
+        }
+    )]
+    AdapterLifecycleOperation {
+        /// Lifecycle operation that failed.
+        operation: &'static str,
+        /// Runtime whose host failed.
+        runtime_id: String,
+        /// Stable failure code.
+        code: String,
+        /// Human-readable failure message.
+        message: String,
+        /// Bounded adapter-host diagnostics.
+        diagnostics: String,
+    },
     /// The selected harness cannot enforce the configured blocked-tools policy.
     #[error("harness `{harness}` cannot enforce configured blocked tools: {reason}")]
     UnsupportedToolsPolicy {

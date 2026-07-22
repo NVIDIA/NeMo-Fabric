@@ -22,14 +22,16 @@ The core schema generator exports the current public typed contract.
 - `agent`: complete typed `FabricConfig`.
 - `adapter-descriptor`: minimal adapter descriptor consumed by Fabric. Each
   descriptor declares a `contract_version`; Fabric rejects descriptors for
-  unsupported adapter contracts during planning.
+  unsupported adapter contracts during planning. The `process` and `python`
+  adapter kinds use Fabric's persistent local-host wire protocol.
 - `run-plan`: executable plan containing the canonical typed config, absolute
   base directory, selected adapter, and derived execution metadata.
 
 ### Adapter Invocation
 
-- `adapter-invocation`: adapter-facing payload sent to inline or process
-  adapters.
+- `adapter-invocation`: per-turn payload sent to an initialized persistent
+  local adapter host. It contains only `runtime_context` and `request`; Fabric
+  sends configuration and capability planning data during lifecycle start.
 - `runtime-context`: per-run/per-invocation context included in adapter
   invocations.
 - `run-request`: per-invocation request/input.
