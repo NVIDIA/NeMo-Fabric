@@ -1,7 +1,7 @@
 ---
 title: "Struct Runtime Context"
 sidebar-title: "RuntimeContext"
-description: "Per-run/per-invocation context passed to harness adapters."
+description: "Context generated for one invocation of a started runtime."
 position: 10
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -11,7 +11,7 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RuntimeContext &#123;\n    pub runtime_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub invocation_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub request_id: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub environment: <a href=\"struct-environmenthandle\">EnvironmentHandle</a>,\n    pub artifacts: <a href=\"struct-artifactmanifest\">ArtifactManifest</a>,\n    pub telemetry: <a href=\"https://doc.rust-lang.org/1.97.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-runtimetelemetrycontext\">RuntimeTelemetryContext</a>&gt;,\n&#125;"}} /></pre>
 
-Per-run/per-invocation context passed to harness adapters.
+Context generated for one invocation of a started runtime.
 
 ## Fields
 
