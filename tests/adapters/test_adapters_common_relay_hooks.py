@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
+from sys import platform
 from typing import cast
 
 import pytest
@@ -48,6 +49,7 @@ CODEX_EXPECTED_EVENTS = (
 )
 def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events):
     executable = Path("/opt/nvidia relay/bin/nemo-relay")
+    quoted_executable = f'"{executable}"' if platform == "win32" else f"'{executable}'"
 
     hooks = relay_hooks.render_relay_hooks(agent, executable)["hooks"]
 
@@ -57,7 +59,7 @@ def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events)
             "hooks": [
                 {
                     "type": "command",
-                    "command": f"'{executable}' hook-forward {agent}",
+                    "command": f"{quoted_executable} hook-forward {agent}",
                     "timeout": 30,
                 }
             ]

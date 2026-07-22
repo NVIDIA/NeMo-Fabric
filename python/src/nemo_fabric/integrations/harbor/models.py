@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Literal
 from typing import Self
@@ -47,5 +46,5 @@ class FabricRunPayload(BaseModel):
 
     config: FabricConfig
     config_base_dir: PurePosixPath
-    logs_dir: Path = Path("/logs/agent")
+    logs_dir: PurePosixPath = PurePosixPath("/logs/agent")
     request: RunRequest
