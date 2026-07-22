@@ -49,6 +49,23 @@ Claude: rendering deltas **and** the terminal response/`RunResult.output` double
 
 ---
 
+## Bypassing OpenAI billing via NVIDIA inference (attempt)
+To avoid OpenAI quota, the gateway can point its upstream at NVIDIA
+(`--openai-base-url` / `NEMO_RELAY_OPENAI_BASE_URL`; the CLI help lists "NVIDIA
+inference" explicitly). Set the env via `harness.settings.env` (the gateway's
+env is an allowlist), send `NV_INFERENCE_API_KEY` as the OpenAI key, and use a
+Responses-capable model (`nvcf/openai/gpt-oss-120b`).
+
+**Routing works — but Codex specifically is blocked at tool validation.** Replaying
+Codex's exact captured request to `inference-api.nvidia.com/v1/responses` returns
+`400`: the endpoint is **litellm-backed** and rejects Codex's tools 12–23, which are
+`type=namespace` (`multi_agent_v1`, `mcp__codex_apps__*`) and `type=web_search` —
+**OpenAI-proprietary tool types** that litellm's standard Responses schema doesn't
+implement (real OpenAI accepts them). NVIDIA supports streaming Responses and
+standard `function` tools, so the block is the proprietary tool types, not the
+transport. **Codex needs a funded OpenAI account (or a fully Codex-compatible
+Responses endpoint); the NVIDIA upstream works for standard-tool clients only.**
+
 ## Combined comparison: Codex vs. Claude (the FABRIC-103 ask)
 Codex behavior is **not** inferable from Claude — different SDK event models:
 
