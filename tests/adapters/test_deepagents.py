@@ -22,8 +22,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
-
-adapter = pytest.importorskip("nemo_fabric_adapters.deepagents.adapter")
+from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
 
 def lifecycle_start_payload(payload: dict[str, Any]) -> dict[str, Any]:
