@@ -71,3 +71,30 @@ the pre/post hook granularity — while faithfully keeping the IDs, tool args, a
 session/turn/tool/llm structure a streaming UI needs. The loss is small and
 Hermes-specific with no cross-harness peer, so normalizing isn't worth it for
 v0.1; ship raw ATOF.
+
+## Reproduce this experiment
+Prereqs: a native extension matching the Python SDK (`just build-python`, or
+`PYO3_PYTHON=$PWD/.venv/bin/python cargo build -p fabric-python --release` then copy
+`target/release/lib_native.dylib` → `python/src/nemo_fabric/_native.abi3.so`), and
+`NVIDIA_API_KEY` in the environment.
+
+1. **Apply the POC native tee** (temporary — revert after capture) in
+   `adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py`, immediately after
+   `discover_plugins(force=True)`: patch `hermes_cli.plugins.PluginManager.invoke_hook`
+   to record each hook then delegate. Exact snippet:
+   [`../common/native_recorder.py`](../common/native_recorder.py).
+2. **Run with both recorders active** — this writes both fixtures in this folder:
+   ```bash
+   export POC_RECORDER_DIR="$PWD/streaming-poc/common"
+   export POC_NATIVE_RECORD="$PWD/streaming-poc/hermes/native-events.jsonl"; rm -f "$POC_NATIVE_RECORD"
+   python streaming-poc/common/run_harness.py nvidia.fabric.hermes \
+     streaming-poc/hermes/events.atof.jsonl \
+     "Write and run a short Python snippet that prints the sum of 1 to 10, then tell me the result."
+   ```
+   `run_harness` streams the Relay ATOF via `invoke_stream` → `events.atof.jsonl`;
+   the tee writes the native hooks → `native-events.jsonl`.
+3. **Revert** the adapter patch:
+   `git checkout -- adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py`.
+
+(Oversized full-request records in `events.atof.jsonl` have their `data` truncated
+for size; IDs and deltas are preserved.)

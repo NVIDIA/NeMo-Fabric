@@ -67,3 +67,30 @@ the subagent namespaces, `usage_metadata`, and `tool_calls` — omitting only th
 LangGraph `values`/`updates` mode and full-state snapshots. That thin, comparison
 -verified loss justifies shipping the ATOF projection for v0.1 rather than a lossy
 normalized schema.
+
+## Reproduce this experiment
+Prereqs: a native extension matching the Python SDK (`just build-python`, or
+`PYO3_PYTHON=$PWD/.venv/bin/python cargo build -p fabric-python --release` then copy
+`target/release/lib_native.dylib` → `python/src/nemo_fabric/_native.abi3.so`), and
+`NVIDIA_API_KEY` in the environment.
+
+1. **Apply the POC native tee** (temporary — revert after capture) in
+   `adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py`, inside the
+   `async for namespace, mode, chunk in stream:` loop (before the projection):
+   `record("langgraph", str(mode), {"namespace": list(namespace), "chunk": chunk})`.
+   Exact snippet: [`../common/native_recorder.py`](../common/native_recorder.py).
+2. **Run with both recorders active** — this writes both fixtures in this folder:
+   ```bash
+   export POC_RECORDER_DIR="$PWD/streaming-poc/common"
+   export POC_NATIVE_RECORD="$PWD/streaming-poc/deepagents/native-events.jsonl"; rm -f "$POC_NATIVE_RECORD"
+   python streaming-poc/common/run_harness.py nvidia.fabric.langchain.deepagents \
+     streaming-poc/deepagents/events.atof.jsonl \
+     "Delegate two independent subtasks to two separate subagents in parallel: subagent A computes 15*23; subagent B writes a one-line haiku about mountains. Launch both, then combine their results."
+   ```
+   `run_harness` streams the Relay ATOF via `invoke_stream` → `events.atof.jsonl`;
+   the tee writes the native `(namespace, mode, chunk)` tuples → `native-events.jsonl`.
+3. **Revert** the adapter patch:
+   `git checkout -- adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py`.
+
+(Delegation is model-dependent; the two subagents may run sequentially — the native
+`namespace` distinguishes them regardless of interleaving.)
