@@ -19,7 +19,8 @@ variables:
   NEMO_FABRIC_CI_RUST_VERSION: "1.93.0"
   NEMO_FABRIC_CI_UV_VERSION: "0.9.28"
   NEMO_FABRIC_CI_GITHUB_REPOSITORY: "NVIDIA/nemo-fabric"
-  NEMO_FABRIC_CI_GITHUB_WORKFLOW_FILE: "nightly-alpha-tag.yml"
+  NEMO_FABRIC_CI_NIGHTLY_WORKFLOW_FILE: "nightly-alpha-tag.yml"
+  NEMO_FABRIC_CI_RELEASE_WORKFLOW_FILE: "ci_python.yml"
   NEMO_FABRIC_CI_GITHUB_RUN_WAIT_SECONDS: "7200"
   NEMO_FABRIC_CI_GITHUB_RUN_POLL_SECONDS: "60"
 
@@ -69,23 +70,45 @@ collect:github-artifacts:
           --jq '.sha'
       )"
 
-      echo "Waiting for ${NEMO_FABRIC_CI_GITHUB_WORKFLOW_FILE} run for tag ${tag}"
+      if printf '%s\n' "$tag" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]{8}$'; then
+        trigger_type="nightly"
+        matched_workflow="$NEMO_FABRIC_CI_NIGHTLY_WORKFLOW_FILE"
+      else
+        trigger_type="release"
+        matched_workflow="$NEMO_FABRIC_CI_RELEASE_WORKFLOW_FILE"
+      fi
+
+      echo "Waiting for ${trigger_type} GitHub Actions run for tag ${tag}"
       run_id=""
       while [ -z "$run_id" ]; do
-        run_id="$(
-          gh run list \
-            --repo "$NEMO_FABRIC_CI_GITHUB_REPOSITORY" \
-            --workflow "$NEMO_FABRIC_CI_GITHUB_WORKFLOW_FILE" \
-            --commit "$tag_sha" \
-            --limit 1 \
-            --json databaseId \
-            --jq '.[0].databaseId // ""'
-        )"
+        if [ "$trigger_type" = "nightly" ]; then
+          run_id="$(
+            gh run list \
+              --repo "$NEMO_FABRIC_CI_GITHUB_REPOSITORY" \
+              --workflow "$matched_workflow" \
+              --commit "$tag_sha" \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // ""'
+          )"
+        else
+          run_id="$(
+            gh run list \
+              --repo "$NEMO_FABRIC_CI_GITHUB_REPOSITORY" \
+              --workflow "$matched_workflow" \
+              --branch "$tag" \
+              --commit "$tag_sha" \
+              --event push \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // ""'
+          )"
+        fi
         if [ -n "$run_id" ]; then
           break
         fi
         if [ "$(date -u +%s)" -ge "$deadline" ]; then
-          echo "Error: no GitHub Actions run found for tag ${tag} within ${NEMO_FABRIC_CI_GITHUB_RUN_WAIT_SECONDS} seconds." >&2
+          echo "Error: no ${trigger_type} GitHub Actions run found for tag ${tag} within ${NEMO_FABRIC_CI_GITHUB_RUN_WAIT_SECONDS} seconds." >&2
           exit 1
         fi
         sleep "$NEMO_FABRIC_CI_GITHUB_RUN_POLL_SECONDS"
@@ -126,7 +149,8 @@ collect:github-artifacts:
         printf '{\n'
         printf '  "run_id": "%s",\n' "$run_id"
         printf '  "run_url": "%s",\n' "$run_html_url"
-        printf '  "workflow": "%s",\n' "$NEMO_FABRIC_CI_GITHUB_WORKFLOW_FILE"
+        printf '  "workflow": "%s",\n' "$matched_workflow"
+        printf '  "trigger_type": "%s",\n' "$trigger_type"
         printf '  "tag": "%s"\n' "$tag"
         printf '}\n'
       } > collected/github-run.json
