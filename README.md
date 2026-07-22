@@ -137,7 +137,7 @@ An explicit `harness.settings.python` or `harness.settings.python_env` takes
 precedence. If none is configured and `ADAPTER_PYTHON` is unset, NeMo Fabric falls
 back to `python3`. 
 
-Use `ADAPTER_PYTHON` when the harness is installed in a separate environment from NeMo Fabric. The environment must have the adapter package installed. The adapters Python packages are designedto be small with minimal dependencies.
+Use `ADAPTER_PYTHON` when the harness is installed in a separate environment from NeMo Fabric. The environment must have the adapter package installed. The adapters Python packages are designed to be small with minimal dependencies.
 
 The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
 under `examples/code_review_agent/artifacts/hermes/`. Its complete base
