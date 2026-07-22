@@ -21,6 +21,7 @@ normalization in v0.1); `RunResult` out of band. Why normalization is deferred:
 ## Layout
 ```
 streaming-poc/
+├── implementation-spec.md   architecture + end-to-end flow (mermaid diagram)
 ├── common/          the experimental prototype: loopback listener, invoke_stream,
 │                    run_harness, native_recorder
 ├── hermes/          in-process · native-events.jsonl · events.atof.jsonl · findings.md
