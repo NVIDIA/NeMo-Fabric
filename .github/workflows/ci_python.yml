@@ -37,7 +37,6 @@ defaults:
 jobs:
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.platform }})
-    continue-on-error: ${{ startsWith(matrix.platform, 'windows') }}
     strategy:
       fail-fast: false
       matrix:
