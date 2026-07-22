@@ -95,6 +95,7 @@ jobs:
 
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
+    needs: [test]
     strategy:
       fail-fast: false
       matrix:
