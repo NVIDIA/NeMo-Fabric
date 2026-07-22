@@ -16,7 +16,7 @@ NeMo Fabric is separated into two distinct parts:
 - Python version 3.11 - 3.14
 
 NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations and adapters may have
-additional requirements. Specifically the Hermes adapter doesn't support Python 3.14 yet, and the Harbor
+additional requirements. Specifically the Hermes Agent adapter doesn't support Python 3.14 yet, and the Harbor
 integration requires Python 3.12 or later.
 
 ### Installing NeMo Fabric Runtime
@@ -51,6 +51,45 @@ For example, to install the Hermes Agent adapter:
 pip install "nemo-fabric[adapters-hermes]"
 ```
 
+### Install NeMo Relay
+
+[NeMo Relay](https://docs.nvidia.com/nemo/relay) integration occurs in two
+ways:
+
+- [Python library](https://pypi.org/project/nemo-relay/)
+- [NeMo Relay CLI](https://crates.io/crates/nemo-relay-cli)
+
+The required integration depends on the agent harness chosen. Relay-enabled runs with
+the Claude and Codex adapters require the [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli).
+
+#### NeMo Relay Python Library
+
+The `relay` dependency extra installs a version of the NeMo Relay Python library known to be compatible with the
+installed version of NeMo Fabric.
+
+```bash
+pip install "nemo-fabric[relay]"
+```
+
+#### NeMo Relay CLI
+
+**Shell installation method (Linux and macOS):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh | sh
+```
+
+**Windows PowerShell installation method:**
+
+```powershell
+irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
+```
+
+**Cargo installation method (requires `cargo-binstall`):**
+
+```bash
+cargo binstall nemo-relay-cli
+```
 
 ## Source Installation Method
 
