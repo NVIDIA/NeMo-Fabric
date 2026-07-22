@@ -1,6 +1,0 @@
-{"kind": "mark", "name": "session.start", "category": null, "scope_category": null, "data": null}
-{"kind": "scope", "name": "codex-turn", "category": "custom", "scope_category": "start", "data": {"cwd": "/Users/yuchenz/Desktop/Work/Project/NeMo-Fabric/streaming-poc/.work/codex/workspace", "hook_event_name": "UserPromptSubmit", "model": "gpt-4o-mini", "permission_mode": "default", "prompt": "Reply with a one-sentence greeting.", "session_id": "019f8b92-ca5f-7700-9e98-b2e2797fdae4", "transcript_path": "/Users/yuchenz/.codex/sessions/2026/07/22/rollout-2026-07-22T13-44-40-019f8b92-ca5f-7700-9e98-b2e2797fdae4.jsonl", "turn_id": "019f8b92-ccff-7043-a6e1-8b7318784488"}}
-{"chunk_index": 0, "event_type": "response.created", "provider": "openai_responses", "status": "in_progress"}
-{"chunk_index": 1, "event_type": "response.in_progress", "provider": "openai_responses", "status": "in_progress"}
-{"chunk_index": 2, "provider": "unknown"}
-{"chunk_index": 3, "event_type": "response.failed", "provider": "openai_responses", "status": "failed"}

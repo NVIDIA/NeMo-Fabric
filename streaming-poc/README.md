@@ -1,9 +1,10 @@
 # NeMo Fabric streaming POC
 
 Proof-of-concept for a Fabric streaming API built on **NeMo Relay-generated ATOF**.
-Each harness was run for real, its raw native events + ATOF captured, and the same
-`invoke_stream` prototype exercised across all four. The conclusion and the
-production plan are in [`synthesis/`](synthesis/README.md).
+Hermes and Deep Agents were run for real — their raw native events (teed before
+Relay) and ATOF captured, and the same `invoke_stream` prototype exercised.
+Codex and Claude are stubs pending a usable API key. Conclusion + production plan:
+[`synthesis/`](synthesis/README.md).
 
 ## The v0.1 contract (recommended)
 ```python
@@ -14,57 +15,45 @@ async for atof_record in stream:   # RAW canonical ATOF record (dict), one per R
 result = await stream.result()     # RunResult, out of band
 ```
 Relay-only; available only when Relay is enabled; raw ATOF pass-through (no
-normalization in v0.1); `RunResult` out of band. Rationale + why normalization is
-deferred: [`synthesis/README.md`](synthesis/README.md).
+normalization in v0.1); `RunResult` out of band. Why normalization is deferred:
+[`synthesis/README.md`](synthesis/README.md).
 
 ## Layout
 ```
 streaming-poc/
-├── common/          prototype: listener, invoke_stream, run_harness, fixture deriver
-├── hermes/          in-process · callback scopes · scope-level (no token deltas)
-├── claude/          gateway · Anthropic Messages SSE · token-level deltas
-├── codex/           gateway · OpenAI Responses SSE · token-level deltas
-├── deepagents/      in-process · nested/delegated sub-agents · scope tree
-└── synthesis/       cross-harness conclusion + production work breakdown
+├── common/          the experimental prototype: loopback listener, invoke_stream,
+│                    run_harness, native_recorder
+├── hermes/          FABRIC-102 — native-events.jsonl · events.atof.jsonl · findings.md
+├── deepagents/      FABRIC-104 — native-events.jsonl · events.atof.jsonl · findings.md
+├── claude/          FABRIC-103 — findings.md (stub: pending ANTHROPIC_API_KEY)
+├── codex/           FABRIC-103 — findings.md (stub: pending a funded OpenAI key)
+└── synthesis/       FABRIC-101 cross-harness conclusion + FABRIC-122 work breakdown
 ```
-Each harness folder has `events.atof.jsonl` (Relay ATOF) and `findings.md`. For
-**native evidence** — the SDK stream teed *before* Relay (via
-`common/native_recorder.py`) — **Hermes** and **Deep Agents** carry a real
-`native-events.jsonl`. **Claude** and **Codex** are credential/billing-blocked
-this session, so they carry `relay-payloads.jsonl` (payloads extracted from ATOF,
-honestly *not* native evidence) with the native seam identified for later.
+Each completed harness folder carries `native-events.jsonl` (the SDK stream teed
+*before* Relay via `common/native_recorder.py`), `events.atof.jsonl` (the Relay
+ATOF that crossed the Fabric boundary), and `findings.md` (native→ATOF mapping,
+loss analysis, deltas-vs-terminal, duplicate-rendering risks, recommendation).
 
-## Evidence status
-| Harness | live run here | fixture | token deltas |
-|---|---|---|---|
-| Hermes | ✅ real (`execute_code`) | real | scope-level |
-| Deep Agents | ✅ real (delegation/nesting) | real | scope-level |
-| Codex | ✅ real (turn errored on OpenAI quota; stream captured) | real | ✅ token-level |
-| Claude | ⛔ live-blocked (no `ANTHROPIC_API_KEY`) | genuine prior Relay capture | ✅ token-level |
+| Harness | ticket | status |
+|---|---|---|
+| Hermes | FABRIC-102 | ✅ complete — real run, native + ATOF captured |
+| Deep Agents | FABRIC-104 | ✅ complete — real run w/ delegated subagents |
+| Codex / Claude | FABRIC-103 | ⏸ stub — pending a usable API key (native seam identified) |
 
-## Reproduce
-Prereqs:
-- **Built native extension matching the Python SDK.** A stale `nemo_fabric/_native.abi3.so`
-  breaks `plan()/run()`; build with the venv interpreter:
-  `PYO3_PYTHON=$PWD/.venv/bin/python cargo build -p fabric-python --release && cp
-  target/release/lib_native.dylib python/src/nemo_fabric/_native.abi3.so` (or
-  `just build-python`).
-- Provider creds: `NVIDIA_API_KEY` (in-process), `OPENAI_API_KEY` (Codex),
-  `ANTHROPIC_API_KEY` (Claude).
-- Gateway CLI for Claude/Codex: `nemo-relay` **≥0.6.0**
-  (`cargo install nemo-relay-cli --version 0.6.0`).
+## Reproduce (Hermes / Deep Agents)
+Prereqs: a native extension matching the Python SDK (`just build-python`, or
+`PYO3_PYTHON=$PWD/.venv/bin/python cargo build -p fabric-python --release` then copy
+`target/release/lib_native.dylib` → `python/src/nemo_fabric/_native.abi3.so`), and
+`NVIDIA_API_KEY`.
 
-Run one harness:
 ```bash
-# in-process
 python streaming-poc/common/run_harness.py nvidia.fabric.hermes out.atof.jsonl "your prompt"
-# gateway (needs the >=0.6.0 CLI)
-FABRIC_RELAY_CLI="$(command -v nemo-relay)" \
-  python streaming-poc/common/run_harness.py nvidia.fabric.codex out.atof.jsonl "your prompt"
 ```
+To also tee native events, set `POC_NATIVE_RECORD=<path>` and
+`POC_RECORDER_DIR=streaming-poc/common` and apply the seam patch documented in
+`common/native_recorder.py` (POC-only; revert after capture). Gateway harnesses
+(Claude/Codex) additionally need `nemo-relay` ≥0.6.0 and the respective key.
 
-## Fixture notes
-- Oversized full-request snapshot records (>20 KB/line) are elided from the
-  committed fixtures for size; the streaming deltas are preserved.
-- The Claude fixture is a representative subset of a genuine prior Relay capture
-  (`examples/harbor/swebench/.../claude-relay`).
+## Fixture note
+Oversized full-request snapshot records (>20 KB/line) have their `data` truncated
+in the committed fixtures; the streaming deltas and IDs are preserved.

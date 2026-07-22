@@ -50,14 +50,9 @@ WORK = Path(__file__).resolve().parent.parent / ".work" / ADAPTER.split(".")[-1]
 
 
 def _model() -> ModelConfig:
-    override = os.environ.get("FABRIC_MODEL")  # optional model-id override
-    if "codex" in ADAPTER:  # Relay gateway requires the built-in openai provider.
-        # Point the gateway upstream elsewhere (e.g. NVIDIA inference) with
-        # NEMO_RELAY_OPENAI_BASE_URL + a matching OPENAI_API_KEY value.
+    if "codex" in ADAPTER:  # Relay gateway requires the built-in openai provider
         return ModelConfig(
-            provider="openai",
-            model=override or "gpt-4o-mini",
-            api_key_env="OPENAI_API_KEY",
+            provider="openai", model="gpt-4o-mini", api_key_env="OPENAI_API_KEY"
         )
     if "claude" in ADAPTER:
         return ModelConfig(
@@ -74,18 +69,11 @@ def build_config() -> FabricConfig:
     settings: dict = {}
     if ADAPTER.endswith("hermes"):
         settings = {"hermes_home": str(WORK / "home"), "terminal_timeout": 120}
-    relay_cli = os.environ.get("FABRIC_RELAY_CLI")
+    relay_cli = os.environ.get(
+        "FABRIC_RELAY_CLI"
+    )  # gateway CLI >=0.6.0 for Claude/Codex
     if relay_cli and ("codex" in ADAPTER or "claude" in ADAPTER):
         settings["nemo_relay_command"] = relay_cli
-        # The gateway subprocess env is an allowlist, so forward upstream overrides
-        # (e.g. point OpenAI/Anthropic at NVIDIA inference) via harness.settings.env.
-        gw_env = {
-            k: os.environ[k]
-            for k in ("NEMO_RELAY_OPENAI_BASE_URL", "NEMO_RELAY_ANTHROPIC_BASE_URL")
-            if os.environ.get(k)
-        }
-        if gw_env:
-            settings["env"] = gw_env
     cfg = FabricConfig(
         metadata=MetadataConfig(name="stream-poc"),
         harness=HarnessConfig(
