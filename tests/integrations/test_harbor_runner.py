@@ -117,6 +117,7 @@ def test_harbor_transport_models_validate_mcp_targets():
         "logs_dir",
         "request",
     }
+    assert payload_properties["logs_dir"]["default"] == "/logs/agent"
     with pytest.raises(ValidationError, match="require url"):
         HarborMcpServer(name="missing", transport="sse")
     with pytest.raises(ValidationError, match="require command"):
@@ -178,7 +179,7 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
             config=build_harbor_config(
                 adapter_id="demo.fabric.smoke", workspace="/testbed"
             ),
-            config_base_dir=tmp_path,
+            config_base_dir="/workspace",
             request={
                 "input": f"job {job_id}",
                 "context": {"job_id": job_id},
@@ -273,7 +274,10 @@ def test_harbor_smoke_config_resolves_its_local_adapter():
 
     assert plan.adapter.adapter_id == "demo.fabric.scripted"
     assert plan["adapter_descriptor"]["source"] == "local"
-    assert plan["adapter_descriptor"]["root"].endswith("adapters/scripted")
+    assert Path(plan["adapter_descriptor"]["root"]).parts[-2:] == (
+        "adapters",
+        "scripted",
+    )
 
 
 def test_harbor_calculator_documents_explicit_cli_commands():

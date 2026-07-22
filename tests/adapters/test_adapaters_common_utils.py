@@ -149,10 +149,11 @@ def test_selected_model_config(
     assert common_utils.selected_model_config(payload) == expected
 
 
-def test_payload_accessors_use_canonical_plan_fields():
+def test_payload_accessors_use_canonical_plan_fields(tmp_path):
+    base_dir = str(tmp_path / "outer")
     payload = {
         "agent_name": "outer-agent",
-        "base_dir": "/outer",
+        "base_dir": base_dir,
         "request": {"input": "hello"},
         "environment": {"workspace": "/outer-workspace"},
         "settings": {"outer": True},
@@ -170,7 +171,7 @@ def test_payload_accessors_use_canonical_plan_fields():
 
     assert common_utils.fabric_config(payload) == payload["config"]
     assert common_utils.agent_name(payload) == "outer-agent"
-    assert common_utils.base_dir(payload) == "/outer"
+    assert common_utils.base_dir(payload) == base_dir
     assert common_utils.runtime_context(payload) == payload["runtime_context"]
     assert common_utils.environment_payload(payload) == {"workspace": "/runtime-workspace"}
     assert common_utils.settings_payload(payload) == {"inner": True}

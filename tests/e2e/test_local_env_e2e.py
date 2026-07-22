@@ -16,7 +16,10 @@ async def test_local_env_e2e(hermes_shim_agent_dir: Path):
     config = hermes_shim_config()
     plan = fabric.plan(config, base_dir=hermes_shim_agent_dir).to_mapping()
     assert plan["environment_plan"]["provider"] == "local"
-    assert plan["environment_plan"]["workspace"].endswith("repos/my-service")
+    assert Path(plan["environment_plan"]["workspace"]).parts[-2:] == (
+        "repos",
+        "my-service",
+    )
     assert plan["adapter_descriptor"]["source"] == "local"
 
     result = (
@@ -34,7 +37,10 @@ async def test_local_env_e2e(hermes_shim_agent_dir: Path):
     assert result["status"] == "succeeded"
     assert result["request_id"] == "local-env-e2e"
     assert result["output"]["received"] == "review local workspace"
-    assert result["output"]["workspace"].endswith("repos/my-service")
+    assert Path(result["output"]["workspace"]).parts[-2:] == (
+        "repos",
+        "my-service",
+    )
     assert result["artifacts"]["root"].endswith("artifacts")
 
     stdout = read_artifact(result, "stdout")

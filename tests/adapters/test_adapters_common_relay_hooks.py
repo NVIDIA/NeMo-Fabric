@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from pathlib import Path
+from sys import platform
 from typing import cast
 
 import pytest
@@ -48,6 +49,7 @@ CODEX_EXPECTED_EVENTS = (
 )
 def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events):
     executable = Path("/opt/nvidia relay/bin/nemo-relay")
+    quoted_executable = f'"{executable}"' if platform == "win32" else f"'{executable}'"
 
     hooks = relay_hooks.render_relay_hooks(agent, executable)["hooks"]
 
@@ -57,7 +59,7 @@ def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events)
             "hooks": [
                 {
                     "type": "command",
-                    "command": f"'{executable}' hook-forward {agent}",
+                    "command": f"{quoted_executable} hook-forward {agent}",
                     "timeout": 30,
                 }
             ]
@@ -79,3 +81,13 @@ def test_render_relay_hooks_rejects_unsupported_agent():
             cast(relay_hooks.RelayHookAgent, "other"),
             Path("nemo-relay"),
         )
+
+
+def test_render_relay_hooks_uses_windows_command_quoting(monkeypatch):
+    executable = Path(r"C:\Program Files\NVIDIA\nemo-relay.exe")
+    monkeypatch.setattr(relay_hooks, "platform", "win32")
+
+    hooks = relay_hooks.render_relay_hooks("claude", executable)["hooks"]
+
+    command = hooks["SessionStart"][0]["hooks"][0]["command"]
+    assert command == f'"{executable}" hook-forward claude'
