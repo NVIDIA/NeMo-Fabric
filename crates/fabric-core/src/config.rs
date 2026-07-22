@@ -377,11 +377,11 @@ impl ResolveContext {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AdapterKind {
-    /// Launch and supervise a CLI process.
+    /// Launch and supervise a persistent adapter process.
     Process,
     /// Connect to a service or HTTP-backed harness.
     Http,
-    /// Call a Python SDK/plugin adapter.
+    /// Launch and supervise a persistent Python adapter host.
     Python,
     /// Delegate to a harness-native plugin package.
     NativePlugin,

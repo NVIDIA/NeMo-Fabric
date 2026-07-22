@@ -166,7 +166,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Per-run/per-invocation context passed to harness adapters.",
+  "description": "Context generated for one invocation of a started runtime.",
   "properties": {
     "artifacts": {
       "$ref": "#/$defs/ArtifactManifest",

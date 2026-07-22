@@ -48,7 +48,7 @@ that Claude Code and the Claude Agent SDK consume. This includes
 and `ANTHROPIC_IDENTITY_TOKEN` or `ANTHROPIC_IDENTITY_TOKEN_FILE`. NeMo Fabric reads
 selected environment values and forwards them to the Claude runtime, but it
 does not persist or log them in configuration or artifacts. Authentication is
-validated when Claude starts the invocation.
+validated when the Claude runtime starts.
 
 Unset unused `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` variables before
 using WIF. Anthropic credential resolution treats an empty variable as selected,
@@ -67,11 +67,18 @@ for other supported installation methods.
 
 ## Execution Model
 
-Each `invoke` starts a fresh adapter process. The adapter persists the terminal
-Claude session ID under the NeMo Fabric artifact root, keyed by `runtime_id`, and
-passes it as `ClaudeAgentOptions.resume` on the next invocation. One NeMo Fabric
-runtime therefore maps to one Claude session even though no adapter process
-stays resident.
+The Claude adapter implements NeMo Fabric's persistent local-host wire protocol.
+`Fabric.start_runtime(...)` launches one adapter host, creates one
+`ClaudeSDKClient`, and connects it once. Every `Runtime.invoke(...)` reuses that
+client and its event loop; `Runtime.stop()` disconnects the client and exits the
+host. `Fabric.run(...)` uses the same lifecycle around one invocation.
+
+One NeMo Fabric runtime maps to one live Claude session. The adapter records the
+terminal Claude session ID under the Fabric artifact root for correlation, but
+does not silently recreate a crashed host or replay an invocation. Start a new
+Fabric runtime when the host or SDK connection becomes unusable. Runtime
+hosting is adapter-declared; consumers do not configure a runtime strategy in
+`FabricConfig` or `harness.settings`.
 
 ## Configuration
 
@@ -86,7 +93,7 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
   NeMo Fabric parses `url` as a command plus arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
-  stages these directories as a local Claude plugin for the invocation.
+  stages these directories as a local Claude plugin for the runtime.
 
 Only Claude-specific controls belong in `harness.settings`:
 
@@ -117,12 +124,13 @@ config.enable_relay(
 )
 ```
 
-For each Relay-enabled invocation, NeMo Fabric starts one `nemo-relay` gateway,
-waits for its health endpoint, and stops it after Claude succeeds, fails, times
-out, or is canceled. NeMo Fabric passes the gateway URL to Claude Code through
-`ANTHROPIC_BASE_URL` and `NEMO_RELAY_GATEWAY_URL`. It also stages an
-invocation-scoped Claude plugin that forwards lifecycle hooks with
-`nemo-relay hook-forward claude`.
+For each Relay-enabled Claude runtime, Fabric starts one `nemo-relay` gateway,
+waits for its health endpoint, and stops it with the runtime. Fabric passes the
+gateway URL to the connected Claude Code process through `ANTHROPIC_BASE_URL`
+and `NEMO_RELAY_GATEWAY_URL`. It also stages a runtime-scoped Claude plugin that
+forwards lifecycle hooks with `nemo-relay hook-forward claude`.
+`Fabric.run(...)` starts the same runtime, invokes it once, and stops it, so the
+gateway has the same lifecycle as that single invocation.
 
 The NeMo Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
@@ -190,7 +198,7 @@ config = FabricConfig(
 fabric = Fabric()
 ```
 
-## One-Shot Run
+## Single Invocation
 
 ```python
 result = await fabric.run(
@@ -214,6 +222,6 @@ assert first.runtime_id == second.runtime_id
 assert first.output["session_id"] == second.output["session_id"]
 ```
 
-Resume requires the same workspace and Claude state directory on the same host.
-The NeMo Fabric-to-Claude correlation record alone is insufficient if Claude's
-underlying transcript store is removed.
+The runtime must remain on the same local host for its lifetime. A persisted
+Fabric-to-Claude correlation record is not an attach token and cannot recover a
+stopped or crashed local host.

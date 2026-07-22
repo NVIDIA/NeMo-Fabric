@@ -150,6 +150,24 @@ config and clone-based variants live in
 - Refer to the [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
 
+## Supported Agent Harnesses
+
+Choose a bundled agent harness based on your model ecosystem and application
+needs. Every harness supports persistent multi-turn local runtimes through the
+same Fabric lifecycle and returns normalized results, artifacts, and telemetry
+references.
+
+| Agent harness | Choose it for | Model ecosystem | Key capabilities | Observability |
+| --- | --- | --- | --- | --- |
+| Claude | Claude-native coding and tool-use workflows | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
+| Codex | Codex-native coding workflows | OpenAI and NVIDIA-hosted Responses-compatible models | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
+| LangChain Deep Agents | Composable LangChain and LangGraph agents | LangChain model providers | Built-in and MCP tools, guardrails, skills, and local subagents | NeMo Relay and native OpenTelemetry/OpenInference |
+| Hermes Agent | Hermes workflows with custom model endpoints | Configurable provider, model, and base URL | Toolsets, guardrails, MCP, skills, and persistent conversation history | NeMo Relay |
+
+For package names, exact compatibility and limitations, runtime ownership, and
+individual harness guides, refer to the
+[adapter compatibility reference](adapters/README.md).
+
 ## Claude Adapter
 
 Build the local wheels and install NeMo Fabric with the independent Claude adapter:
@@ -160,8 +178,8 @@ python -m pip install --find-links dist "nemo-fabric[claude]"
 ```
 
 Refer to the [Claude adapter guide](adapters/claude/README.md) for
-typed configuration, normalized tools, MCP and skills, multi-turn resume,
-authentication, and execution details.
+typed configuration, normalized tools, MCP and skills, persistent multi-turn
+runtimes, authentication, and execution details.
 
 ## Core Concepts
 
@@ -186,11 +204,10 @@ authentication, and execution details.
   with middleware, and adapters without a native deny mechanism route the
   policy as unsupported.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
-  The Hermes Agent adapter lives under `adapters/hermes/`; the Codex adapter lives under `adapters/codex/`; the
-  [Claude adapter](adapters/claude/README.md)
-  lives under `adapters/claude/`; the LangChain Deep Agents adapter lives under
-  `adapters/deepagents/`. Harness Agent-specific extensions belong under
-  `harness.settings` so the normalized contract can remain stable.
+  Harness-specific extensions belong under `harness.settings` so the normalized
+  contract can remain stable. Refer to the
+  [adapter compatibility reference](adapters/README.md) for bundled package and
+  implementation details.
 - **Artifacts:** normalized output, logs, patches, and telemetry references
   returned through an `ArtifactManifest`.
 
@@ -218,9 +235,8 @@ the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
 - [Harbor examples](examples/harbor/README.md): validate the integration with a
   deterministic, credential-free calculator smoke, optionally run the same
   task with Hermes Agent or Claude, and evaluate real coding tasks with SWE-Bench.
-- Adapter guides: [Hermes Agent](adapters/hermes/README.md),
-  [Codex](adapters/codex/README.md), and
-  [Deep Agents](adapters/deepagents/README.md).
+- [Adapter compatibility and guides](adapters/README.md): compare bundled
+  harness support, runtime ownership, telemetry integration, and package guides.
 
 ## Tests
 

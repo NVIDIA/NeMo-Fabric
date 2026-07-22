@@ -49,7 +49,7 @@ symlink or `.agents/skills/` set); those serve NeMo Fabric's own contributors.
 
 | Skill | Use it when |
 |---|---|
-| [`nemo-fabric-integrate`](nemo-fabric-integrate/SKILL.md) | You are adding NeMo Fabric to a consumer application, service, evaluation harness, or platform through the typed Python SDK — building an in-memory `FabricConfig`, choosing one-shot versus stateful-runtime execution, validating with `plan`/`doctor`, and consuming normalized results. |
+| [`nemo-fabric-integrate`](nemo-fabric-integrate/SKILL.md) | You are adding NeMo Fabric to a consumer application, service, evaluation harness, or platform through the typed Python SDK — building an in-memory `FabricConfig`, choosing the single-invocation convenience API or an explicitly started runtime, validating with `plan`/`doctor`, and consuming normalized results. |
 
 ## Conventions
 

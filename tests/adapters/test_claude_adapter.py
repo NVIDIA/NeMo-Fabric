@@ -7,16 +7,21 @@ import asyncio
 import json
 import os
 import tomllib
+from collections.abc import AsyncIterator
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
 from claude_agent_sdk import AssistantMessage
+from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk import ClaudeSDKError
 from claude_agent_sdk import CLIConnectionError
 from claude_agent_sdk import CLIJSONDecodeError
 from claude_agent_sdk import CLINotFoundError
+from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import SystemMessage
@@ -39,6 +44,36 @@ ANTHROPIC_AUTH_ENV_NAMES = {
 }
 
 
+def lifecycle_invocation(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "runtime_context": payload["runtime_context"],
+        "request": payload["request"],
+    }
+
+
+def install_fake_client(
+    monkeypatch: pytest.MonkeyPatch,
+    response_factory: Callable[[MagicMock], AsyncIterator[Message]],
+) -> list[MagicMock]:
+    clients: list[MagicMock] = []
+    client_type = adapter.ClaudeSDKClient
+
+    def build_client(options: ClaudeAgentOptions) -> MagicMock:
+        client = MagicMock(spec=client_type)
+        client.options = options
+        client.prompts = []
+        client.connect = AsyncMock()
+        client.query = AsyncMock(side_effect=client.prompts.append)
+        client.receive_response.side_effect = lambda: response_factory(client)
+        client.disconnect = AsyncMock()
+        client.interrupt = AsyncMock()
+        clients.append(client)
+        return client
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", build_client)
+    return clients
+
+
 def test_claude_descriptor_is_narrow_and_versioned():
     descriptor_path = ROOT / "adapters" / "claude" / "fabric-adapter.json"
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
@@ -50,7 +85,6 @@ def test_claude_descriptor_is_narrow_and_versioned():
         "adapter_kind": "python",
         "runner": {
             "module": "nemo_fabric_adapters.claude.adapter",
-            "callable": "run",
         },
         "config": {
             "accepts": [
@@ -84,27 +118,27 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
         "agent_name": "claude-test",
         "base_dir": str(tmp_path),
         "config": {
-                "harness": {
-                    "adapter_id": "nvidia.fabric.claude",
-                    "settings": {
-                        "system_prompt": "Review carefully.",
-                        "allowed_tools": ["Read"],
-                        "permission_mode": "dontAsk",
-                        "max_turns": 4,
-                        "max_budget_usd": 1.5,
-                        "setting_sources": [],
-                        "timeout_seconds": 30,
-                        "env": {"ANTHROPIC_API_KEY": "configured-secret"},
-                    },
+            "harness": {
+                "adapter_id": "nvidia.fabric.claude",
+                "settings": {
+                    "system_prompt": "Review carefully.",
+                    "allowed_tools": ["Read"],
+                    "permission_mode": "dontAsk",
+                    "max_turns": 4,
+                    "max_budget_usd": 1.5,
+                    "setting_sources": [],
+                    "timeout_seconds": 30,
+                    "env": {"ANTHROPIC_API_KEY": "configured-secret"},
                 },
-                "models": {
-                    "default": {
-                        "provider": "anthropic",
-                        "model": "anthropic/claude-test-model",
-                        "api_key_env": "ANTHROPIC_API_KEY",
-                    }
-                },
-                "tools": {"blocked": ["Bash"]},
+            },
+            "models": {
+                "default": {
+                    "provider": "anthropic",
+                    "model": "anthropic/claude-test-model",
+                    "api_key_env": "ANTHROPIC_API_KEY",
+                }
+            },
+            "tools": {"blocked": ["Bash"]},
         },
         "runtime_context": {
             "runtime_id": "runtime-claude-1",
@@ -135,9 +169,7 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
 
 
 def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_payload):
-    options = adapter.build_options(claude_payload, resume="claude-session")
-
-    assert options.resume == "claude-session"
+    options = adapter.build_options(claude_payload)
     assert options.cwd == Path(
         claude_payload["runtime_context"]["environment"]["workspace"]
     )
@@ -295,7 +327,7 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
     )
     relay = adapter.prepare_claude_relay(relay_payload)
 
-    options = adapter.build_options(relay_payload, resume=None, relay=relay)
+    options = adapter.build_options(relay_payload, relay=relay)
 
     assert options.env["NEMO_RELAY_GATEWAY_URL"] == relay.gateway.url
     assert options.env["ANTHROPIC_BASE_URL"] == relay.gateway.url
@@ -322,7 +354,7 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
         plugin_path=tmp_path / "relay-plugin",
     )
 
-    options = adapter.build_options(relay_payload, resume=None, relay=relay)
+    options = adapter.build_options(relay_payload, relay=relay)
 
     assert options.tools is None
     assert options.skills is None
@@ -330,11 +362,9 @@ def test_build_options_does_not_enable_skills_for_relay_plugin_alone(
 
 
 def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
-    claude_payload["config"]["tools"] = {
-        "blocked": ["Bash", "WebFetch"]
-    }
+    claude_payload["config"]["tools"] = {"blocked": ["Bash", "WebFetch"]}
 
-    options = adapter.build_options(claude_payload, resume=None)
+    options = adapter.build_options(claude_payload)
 
     assert options.tools is None
     assert options.disallowed_tools == ["Bash", "WebFetch"]
@@ -359,7 +389,7 @@ def test_build_options_rejects_normalized_capabilities_in_harness_settings(
     with pytest.raises(
         adapter.AdapterConfigError, match=normalized_field.replace(".", r"\.")
     ):
-        adapter.build_options(claude_payload, resume=None)
+        adapter.build_options(claude_payload)
 
 
 def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload):
@@ -367,7 +397,7 @@ def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload)
     (skill_path / "SKILL.md").unlink()
 
     with pytest.raises(adapter.AdapterConfigError, match="SKILL.md"):
-        adapter.build_options(claude_payload, resume=None)
+        adapter.build_options(claude_payload)
 
 
 def test_build_options_maps_nvidia_provider_to_claude_gateway_environment(
@@ -384,7 +414,7 @@ def test_build_options_maps_nvidia_provider_to_claude_gateway_environment(
     )
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
 
-    options = adapter.build_options(claude_payload, resume=None)
+    options = adapter.build_options(claude_payload)
 
     assert options.model == "aws/anthropic/claude-opus-4-5"
     assert options.env["ANTHROPIC_BASE_URL"] == "https://nvidia.example"
@@ -407,7 +437,7 @@ def test_build_options_uses_nvidia_provider_endpoint_and_default_credential(
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
     os.environ["NVIDIA_FRONTIER_BASE_URL"] = "https://frontier.example/v1"
 
-    options = adapter.build_options(claude_payload, resume=None)
+    options = adapter.build_options(claude_payload)
 
     assert options.env["ANTHROPIC_BASE_URL"] == "https://frontier.example"
     assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
@@ -427,7 +457,7 @@ def test_build_options_requires_nvidia_provider_endpoint(claude_payload):
     os.environ.pop("NVIDIA_FRONTIER_BASE_URL", None)
 
     with pytest.raises(adapter.AdapterConfigError, match="NVIDIA_FRONTIER_BASE_URL"):
-        adapter.build_options(claude_payload, resume=None)
+        adapter.build_options(claude_payload)
 
 
 def test_build_options_requires_nvidia_provider_credential(claude_payload):
@@ -442,7 +472,7 @@ def test_build_options_requires_nvidia_provider_credential(claude_payload):
     os.environ.pop("NVIDIA_API_KEY", None)
 
     with pytest.raises(adapter.AdapterConfigError, match="NVIDIA_API_KEY is required"):
-        adapter.build_options(claude_payload, resume=None)
+        adapter.build_options(claude_payload)
 
 
 def test_selected_model_rejects_unsupported_provider(claude_payload):
@@ -453,28 +483,6 @@ def test_selected_model_rejects_unsupported_provider(claude_payload):
         adapter.AdapterConfigError, match="provider must be anthropic or nvidia"
     ):
         adapter.selected_model(claude_payload)
-
-
-def test_state_round_trip_is_keyed_by_fabric_runtime(claude_payload):
-    runtime_id = adapter.runtime_id(claude_payload)
-    adapter.save_claude_session_id(claude_payload, runtime_id, "claude-session")
-
-    assert (
-        adapter.load_claude_session_id(claude_payload, runtime_id) == "claude-session"
-    )
-    state_path = adapter.runtime_state_path(claude_payload, runtime_id)
-    assert state_path.parent.name == "runtimes"
-    assert runtime_id not in state_path.name
-
-
-def test_state_loader_rejects_non_object_json(claude_payload):
-    runtime_id = adapter.runtime_id(claude_payload)
-    state_path = adapter.runtime_state_path(claude_payload, runtime_id)
-    state_path.parent.mkdir(parents=True)
-    state_path.write_text("[]", encoding="utf-8")
-
-    with pytest.raises(adapter.AdapterStateError, match="runtime state is invalid"):
-        adapter.load_claude_session_id(claude_payload, runtime_id)
 
 
 def test_normalize_result_exposes_session_usage_cost_and_buffered_events(
@@ -514,54 +522,148 @@ def test_normalize_result_exposes_session_usage_cost_and_buffered_events(
     ]
 
 
-async def test_run_claude_resumes_and_persists_session(claude_payload, monkeypatch):
-    captured = []
+async def test_claude_runtime_reuses_one_connected_sdk_client(
+    claude_payload, monkeypatch
+):
+    clients = []
 
-    async def query_result(*, prompt, options):
-        captured.append((prompt, options.resume, dict(options.env), dict(os.environ)))
-        yield AssistantMessage(
-            content=[TextBlock(text="done")], model="claude-test-model"
-        )
-        yield ResultMessage(
-            subtype="success",
-            duration_ms=100,
-            duration_api_ms=80,
-            is_error=False,
-            num_turns=1,
-            session_id="claude-session",
-            total_cost_usd=0.02,
-            usage={"input_tokens": 1, "output_tokens": 1},
-            result="done",
-        )
+    class FakeClient:
+        def __init__(self, options):
+            self.options = options
+            self.connect_count = 0
+            self.disconnect_count = 0
+            self.prompts = []
+            clients.append(self)
 
-    mock_query = MagicMock(side_effect=query_result)
-    monkeypatch.setattr(adapter, "query", mock_query)
-    monkeypatch.setenv("FABRIC_UNRELATED_SECRET", "do-not-forward")
+        async def connect(self):
+            self.connect_count += 1
 
-    first = await adapter.run_claude(claude_payload)
+        async def query(self, prompt):
+            self.prompts.append(prompt)
+
+        async def receive_response(self):
+            yield AssistantMessage(
+                content=[TextBlock(text="done")], model="claude-test-model"
+            )
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=100,
+                duration_api_ms=80,
+                is_error=False,
+                num_turns=1,
+                session_id="claude-session",
+                total_cost_usd=0.02,
+                usage={"input_tokens": 1, "output_tokens": 1},
+                result=f"done-{len(self.prompts)}",
+            )
+
+        async def disconnect(self):
+            self.disconnect_count += 1
+
+        async def interrupt(self):
+            raise AssertionError("successful invocation must not be interrupted")
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", FakeClient)
+
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(start_payload)
+    first = await runtime.invoke(lifecycle_invocation(claude_payload))
     claude_payload["runtime_context"]["invocation_id"] = "invocation-2"
-    second = await adapter.run_claude(claude_payload)
+    claude_payload["request"]["input"] = {"not": "text"}
+    invalid = await runtime.invoke(lifecycle_invocation(claude_payload))
+    claude_payload["runtime_context"]["invocation_id"] = "invocation-3"
+    claude_payload["request"]["input"] = "Inspect the tests"
+    second = await runtime.invoke(lifecycle_invocation(claude_payload))
+    await runtime.stop()
 
-    assert first["failed"] is False
-    assert second["failed"] is False
-    assert [entry[0] for entry in captured] == [
-        "Inspect the patch",
-        "Inspect the patch",
-    ]
-    assert [entry[1] for entry in captured] == [None, "claude-session"]
-    assert all(entry[2]["FABRIC_UNRELATED_SECRET"] == "" for entry in captured)
-    assert all(
-        entry[2]["ANTHROPIC_API_KEY"] == "configured-secret" for entry in captured
-    )
-    assert all(
-        entry[3]["FABRIC_UNRELATED_SECRET"] == "do-not-forward" for entry in captured
-    )
-    assert os.environ["FABRIC_UNRELATED_SECRET"] == "do-not-forward"
+    assert len(clients) == 1
+    assert clients[0].connect_count == 1
+    assert clients[0].disconnect_count == 1
+    assert clients[0].prompts == ["Inspect the patch", "Inspect the tests"]
+    assert first["response"] == "done-1"
+    assert second["response"] == "done-2"
+    assert invalid["error"]["code"] == "claude_invalid_request"
+    assert first["session_id"] == second["session_id"] == "claude-session"
 
 
-async def test_run_claude_supervises_relay_and_reports_artifacts(
+async def test_claude_runtime_owns_one_relay_gateway_until_stop(
     relay_payload, monkeypatch, tmp_path
 ):
+    relay = adapter.ClaudeRelaySettings(
+        gateway=adapter.relay_gateway.RelayGatewayLaunch(
+            executable=tmp_path / "nemo-relay",
+            config_path=tmp_path / "relay-config" / "config.toml",
+            bind="127.0.0.1:43210",
+            url="http://127.0.0.1:43210",
+            log_path=tmp_path / "relay-config" / "gateway.log",
+        ),
+        plugin_config={"version": 1, "components": []},
+        plugin_path=tmp_path / "relay-plugin",
+    )
+    relay.plugin_path.mkdir()
+    process = MagicMock()
+    mock_start = MagicMock(return_value=process)
+    mock_stop = MagicMock()
+
+    class FakeClient:
+        def __init__(self, options):
+            self.options = options
+
+        async def connect(self):
+            pass
+
+        async def query(self, _prompt):
+            pass
+
+        async def receive_response(self):
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=10,
+                duration_api_ms=8,
+                is_error=False,
+                num_turns=1,
+                session_id="claude-session",
+                total_cost_usd=0.01,
+                usage={"input_tokens": 1, "output_tokens": 1},
+                result="done",
+            )
+
+        async def disconnect(self):
+            pass
+
+        async def interrupt(self):
+            raise AssertionError("successful invocation must not be interrupted")
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", FakeClient)
+    monkeypatch.setattr(adapter, "prepare_claude_relay", MagicMock(return_value=relay))
+    monkeypatch.setattr(adapter.relay_gateway, "start_relay_gateway", mock_start)
+    monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
+
+    start_payload = dict(relay_payload)
+    start_payload.pop("request")
+    runtime = adapter.ClaudeRuntime()
+    await runtime.start(start_payload)
+    first = await runtime.invoke(lifecycle_invocation(relay_payload))
+    relay_payload["runtime_context"]["invocation_id"] = "invocation-2"
+    second = await runtime.invoke(lifecycle_invocation(relay_payload))
+
+    mock_start.assert_called_once_with(
+        launch=relay.gateway,
+        cwd=Path(relay_payload["runtime_context"]["environment"]["workspace"]),
+    )
+    mock_stop.assert_not_called()
+    assert first["relay_runtime"]["gateway_url"] == relay.gateway.url
+    assert second["relay_runtime"]["gateway_url"] == relay.gateway.url
+
+    await runtime.stop()
+
+    mock_stop.assert_called_once_with(process)
+    assert not relay.plugin_path.exists()
+
+
+async def test_runtime_reports_relay_artifacts(relay_payload, monkeypatch, tmp_path):
     executable = tmp_path / "nemo-relay"
     executable.touch()
     relay = adapter.ClaudeRelaySettings(
@@ -602,9 +704,9 @@ async def test_run_claude_supervises_relay_and_reports_artifacts(
     monkeypatch.setattr(adapter.relay_gateway, "start_relay_gateway", mock_start)
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
 
-    async def query_result(*, prompt, options):
-        assert options.env["ANTHROPIC_BASE_URL"] == relay.gateway.url
-        assert Path(options.plugins[-1]["path"]) == relay.plugin_path
+    async def responses(client) -> AsyncIterator[ResultMessage]:
+        assert client.options.env["ANTHROPIC_BASE_URL"] == relay.gateway.url
+        assert Path(client.options.plugins[-1]["path"]) == relay.plugin_path
         yield ResultMessage(
             subtype="success",
             duration_ms=10,
@@ -617,9 +719,14 @@ async def test_run_claude_supervises_relay_and_reports_artifacts(
             result="done",
         )
 
-    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_result))
-
-    output = await adapter.run_claude(relay_payload)
+    install_fake_client(monkeypatch, responses)
+    runtime = adapter.ClaudeRuntime()
+    start_payload = {
+        key: value for key, value in relay_payload.items() if key != "request"
+    }
+    await runtime.start(start_payload)
+    output = await runtime.invoke(lifecycle_invocation(relay_payload))
+    await runtime.stop()
 
     assert output["relay_runtime"] == {
         "enabled": True,
@@ -638,7 +745,7 @@ async def test_run_claude_supervises_relay_and_reports_artifacts(
     assert not relay.plugin_path.exists()
 
 
-async def test_run_claude_preserves_result_when_relay_stop_fails(
+async def test_runtime_stop_reports_relay_gateway_failure(
     relay_payload, monkeypatch, tmp_path
 ):
     relay = adapter.ClaudeRelaySettings(
@@ -667,7 +774,7 @@ async def test_run_claude_preserves_result_when_relay_stop_fails(
         ),
     )
 
-    async def query_result(*, prompt, options):
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
         yield ResultMessage(
             subtype="success",
             duration_ms=10,
@@ -680,25 +787,25 @@ async def test_run_claude_preserves_result_when_relay_stop_fails(
             result="done",
         )
 
-    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_result))
-
-    output = await adapter.run_claude(relay_payload)
+    install_fake_client(monkeypatch, responses)
+    runtime = adapter.ClaudeRuntime()
+    start_payload = {
+        key: value for key, value in relay_payload.items() if key != "request"
+    }
+    await runtime.start(start_payload)
+    output = await runtime.invoke(lifecycle_invocation(relay_payload))
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.stop()
 
     assert output["response"] == "done"
-    assert output["completed"] is False
-    assert output["failed"] is True
-    assert output["error"] == {
-        "code": "claude_relay_stop_failed",
-        "message": "NeMo Relay gateway failed to stop",
-        "retryable": False,
-        "metadata": {"gateway_log_path": str(relay.gateway.log_path)},
-    }
-    assert output["relay_runtime"]["cleanup_error"] == output["error"]
-    assert "raw stop failure" not in json.dumps(output)
+    assert output["completed"] is True
+    assert caught.value.code == "claude_relay_stop_failed"
+    assert caught.value.metadata == {"gateway_log_path": str(relay.gateway.log_path)}
+    assert "raw stop failure" not in str(caught.value)
     assert not relay.plugin_path.exists()
 
 
-async def test_run_claude_preserves_result_when_relay_plugin_cleanup_fails(
+async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
     relay_payload, monkeypatch, tmp_path
 ):
     relay = adapter.ClaudeRelaySettings(
@@ -725,7 +832,7 @@ async def test_run_claude_preserves_result_when_relay_plugin_cleanup_fails(
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
     monkeypatch.setattr(adapter.shutil, "rmtree", mock_rmtree)
 
-    async def query_result(**_):
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
         yield ResultMessage(
             subtype="success",
             duration_ms=10,
@@ -738,20 +845,20 @@ async def test_run_claude_preserves_result_when_relay_plugin_cleanup_fails(
             result="done",
         )
 
-    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_result))
-
-    output = await adapter.run_claude(relay_payload)
+    install_fake_client(monkeypatch, responses)
+    runtime = adapter.ClaudeRuntime()
+    start_payload = {
+        key: value for key, value in relay_payload.items() if key != "request"
+    }
+    await runtime.start(start_payload)
+    output = await runtime.invoke(lifecycle_invocation(relay_payload))
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.stop()
 
     assert output["response"] == "done"
-    assert output["completed"] is False
-    assert output["failed"] is True
-    assert output["error"] == {
-        "code": "claude_relay_cleanup_failed",
-        "message": "Claude Relay hook configuration could not be removed",
-        "retryable": False,
-    }
-    assert output["relay_runtime"]["cleanup_error"] == output["error"]
-    assert "raw plugin cleanup failure" not in json.dumps(output)
+    assert output["completed"] is True
+    assert caught.value.code == "claude_relay_cleanup_failed"
+    assert "raw plugin cleanup failure" not in str(caught.value)
     mock_stop.assert_called_once_with(process)
     mock_rmtree.assert_called_once_with(relay.plugin_path)
     assert relay.plugin_path.exists()
@@ -760,7 +867,7 @@ async def test_run_claude_preserves_result_when_relay_plugin_cleanup_fails(
 @pytest.mark.parametrize(
     "failure", [ClaudeSDKError("sdk failed"), asyncio.CancelledError()]
 )
-async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
+async def test_runtime_stops_relay_after_sdk_failure_or_cancellation(
     relay_payload, monkeypatch, tmp_path, failure
 ):
     relay = adapter.ClaudeRelaySettings(
@@ -785,19 +892,26 @@ async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
     )
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
 
-    async def query_failure(*, prompt, options):
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
         raise failure
         yield
 
-    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_failure))
-
-    if isinstance(failure, asyncio.CancelledError):
-        with pytest.raises(asyncio.CancelledError):
-            await adapter.run_claude(relay_payload)
-    else:
-        output = await adapter.run_claude(relay_payload)
-        assert output["error"]["code"] == "claude_failed"
-        assert output["relay_runtime"]["enabled"] is True
+    install_fake_client(monkeypatch, responses)
+    runtime = adapter.ClaudeRuntime()
+    start_payload = {
+        key: value for key, value in relay_payload.items() if key != "request"
+    }
+    await runtime.start(start_payload)
+    try:
+        if isinstance(failure, asyncio.CancelledError):
+            with pytest.raises(asyncio.CancelledError):
+                await runtime.invoke(lifecycle_invocation(relay_payload))
+        else:
+            output = await runtime.invoke(lifecycle_invocation(relay_payload))
+            assert output["error"]["code"] == "claude_failed"
+            assert output["relay_runtime"]["enabled"] is True
+    finally:
+        await runtime.stop()
 
     mock_stop.assert_called_once_with(process)
     assert not relay.plugin_path.exists()
@@ -807,14 +921,14 @@ async def test_run_claude_stops_relay_on_sdk_failure_or_cancellation(
     ("subtype", "is_error"),
     [("success", True), ("error_max_budget_usd", False)],
 )
-async def test_run_claude_preserves_failed_result_when_sdk_stream_raises(
+async def test_runtime_preserves_failed_result_when_sdk_stream_raises(
     claude_payload,
     monkeypatch,
     caplog,
     subtype,
     is_error,
 ):
-    async def query_error_result(**_):
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
         yield ResultMessage(
             subtype=subtype,
             duration_ms=10,
@@ -826,9 +940,14 @@ async def test_run_claude_preserves_failed_result_when_sdk_stream_raises(
         )
         raise RuntimeError("raw SDK stream error")
 
-    monkeypatch.setattr(adapter, "query", MagicMock(side_effect=query_error_result))
-
-    output = await adapter.run_claude(claude_payload)
+    install_fake_client(monkeypatch, responses)
+    runtime = adapter.ClaudeRuntime()
+    start_payload = {
+        key: value for key, value in claude_payload.items() if key != "request"
+    }
+    await runtime.start(start_payload)
+    output = await runtime.invoke(lifecycle_invocation(claude_payload))
+    await runtime.stop()
 
     assert output["response"] == "Not logged in"
     assert output["error"] == {
@@ -841,7 +960,7 @@ async def test_run_claude_preserves_failed_result_when_sdk_stream_raises(
     assert "raw SDK stream error" in caplog.text
 
 
-def test_run_reports_relay_start_failure_without_raw_diagnostic(
+async def test_runtime_start_reports_relay_failure_without_raw_diagnostic(
     relay_payload, monkeypatch, tmp_path
 ):
     executable = tmp_path / "nemo-relay"
@@ -869,15 +988,17 @@ def test_run_reports_relay_start_failure_without_raw_diagnostic(
         ),
     )
 
-    output = adapter.run(relay_payload)
-
-    assert output["error"] == {
-        "code": "claude_relay_start_failed",
-        "message": "NeMo Relay gateway failed to start",
-        "retryable": False,
-        "metadata": {"gateway_log_path": str(relay.gateway.log_path)},
+    runtime = adapter.ClaudeRuntime()
+    start_payload = {
+        key: value for key, value in relay_payload.items() if key != "request"
     }
-    assert "secret" not in json.dumps(output)
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.start(start_payload)
+
+    assert caught.value.code == "claude_relay_start_failed"
+    assert caught.value.message == "NeMo Relay gateway failed to start"
+    assert caught.value.metadata == {"gateway_log_path": str(relay.gateway.log_path)}
+    assert "secret" not in str(caught.value)
     assert not relay.plugin_path.exists()
 
 
@@ -926,7 +1047,7 @@ def test_build_options_forwards_anthropic_auth_environment(
     os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
     os.environ.update(auth_environment)
 
-    options = adapter.build_options(claude_payload, resume=None)
+    options = adapter.build_options(claude_payload)
 
     forwarded_auth_environment = {
         name: options.env[name]
@@ -942,7 +1063,7 @@ def test_build_options_preserves_unix_user_for_cached_login(
 ):
     os.environ["USER"] = "fabric-user"
 
-    options = adapter.build_options(claude_payload, resume=None)
+    options = adapter.build_options(claude_payload)
 
     assert options.env["USER"] == "fabric-user"
 
@@ -1012,29 +1133,10 @@ def test_error_subtype_is_failure_when_sdk_flag_is_false(claude_payload):
     assert output["error"]["metadata"] == {"subtype": "error_max_budget_usd"}
 
 
-def test_run_normalizes_unexpected_exception(claude_payload, monkeypatch):
-    monkeypatch.setattr(
-        adapter,
-        "run_claude",
-        MagicMock(side_effect=RuntimeError("secret")),
-    )
+def test_main_serves_persistent_runtime(monkeypatch):
+    serve = MagicMock()
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
 
-    output = adapter.run(claude_payload)
+    adapter.main()
 
-    assert output["error"]["code"] == "claude_adapter_internal_error"
-    assert "secret" not in json.dumps(output)
-
-
-def test_main_normalizes_payload_load_failure(monkeypatch, capsys):
-    monkeypatch.setattr(
-        adapter.common_utils,
-        "load_payload",
-        MagicMock(side_effect=ValueError("secret payload")),
-    )
-
-    with pytest.raises(SystemExit, match="2"):
-        adapter.main()
-
-    output = json.loads(capsys.readouterr().out)
-    assert output["error"]["code"] == "claude_adapter_internal_error"
-    assert "secret" not in json.dumps(output)
+    serve.assert_called_once_with(adapter.ClaudeRuntime)
