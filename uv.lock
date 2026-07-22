@@ -2061,7 +2061,7 @@ codex = [
     { name = "nemo-fabric-adapters-codex" },
 ]
 deepagents = [
-    { name = "nemo-fabric-adapters-deepagents", marker = "platform_machine != 'ARM64' or sys_platform != 'win32'" },
+    { name = "nemo-fabric-adapters-deepagents" },
 ]
 harbor = [
     { name = "harbor", marker = "python_full_version >= '3.12'" },
@@ -2087,7 +2087,7 @@ adapters = [
     { name = "nemo-fabric-adapters-claude" },
     { name = "nemo-fabric-adapters-codex" },
     { name = "nemo-fabric-adapters-common" },
-    { name = "nemo-fabric-adapters-deepagents", extra = ["relay"], marker = "platform_machine != 'ARM64' or sys_platform != 'win32'" },
+    { name = "nemo-fabric-adapters-deepagents", extra = ["relay"] },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
 ]
 dev = [
@@ -2122,7 +2122,7 @@ requires-dist = [
     { name = "hermes-agent", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", specifier = ">=0.17.0" },
     { name = "nemo-fabric-adapters-claude", marker = "extra == 'claude'", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", marker = "extra == 'codex'", editable = "adapters/codex" },
-    { name = "nemo-fabric-adapters-deepagents", marker = "(platform_machine != 'ARM64' and extra == 'deepagents') or (sys_platform != 'win32' and extra == 'deepagents')", editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes'", editable = "adapters/hermes" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "adapters/hermes" },
     { name = "nemo-fabric-runtime", editable = "python" },
@@ -2138,7 +2138,7 @@ adapters = [
     { name = "nemo-fabric-adapters-claude", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-fabric-adapters-deepagents", extras = ["relay"], marker = "platform_machine != 'ARM64' or sys_platform != 'win32'", editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-deepagents", extras = ["relay"], editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
 ]
 dev = [

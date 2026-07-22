@@ -46,8 +46,7 @@ claude = [
 ]
 
 deepagents = [
-  # Its transitive sqlite-vec dependency does not publish Windows ARM64 artifacts.
-  "nemo-fabric-adapters-deepagents == 0.1.0; sys_platform != 'win32' or platform_machine != 'ARM64'",
+  "nemo-fabric-adapters-deepagents == 0.1.0",
 ]
 
 harbor = [
@@ -80,9 +79,7 @@ adapters = [
   "nemo-fabric-adapters-common",
   "nemo-fabric-adapters-claude",
   "nemo-fabric-adapters-codex",
-  # Install the Deep Agents adapter with Relay except on Windows ARM64, where
-  # its transitive sqlite-vec dependency does not publish compatible artifacts.
-  "nemo-fabric-adapters-deepagents[relay]; sys_platform != 'win32' or platform_machine != 'ARM64'",
+  "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
 ]
 
