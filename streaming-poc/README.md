@@ -23,22 +23,22 @@ normalization in v0.1); `RunResult` out of band. Why normalization is deferred:
 streaming-poc/
 ├── common/          the experimental prototype: loopback listener, invoke_stream,
 │                    run_harness, native_recorder
-├── hermes/          FABRIC-102 — native-events.jsonl · events.atof.jsonl · findings.md
-├── deepagents/      FABRIC-104 — native-events.jsonl · events.atof.jsonl · findings.md
-├── claude/          FABRIC-103 — findings.md (stub: pending ANTHROPIC_API_KEY)
-├── codex/           FABRIC-103 — findings.md (stub: pending a funded OpenAI key)
-└── synthesis/       FABRIC-101 cross-harness conclusion + FABRIC-122 work breakdown
+├── hermes/          in-process · native-events.jsonl · events.atof.jsonl · findings.md
+├── deepagents/      in-process · native-events.jsonl · events.atof.jsonl · findings.md
+├── claude/          gateway · findings.md (stub: pending ANTHROPIC_API_KEY)
+├── codex/           gateway · findings.md (stub: pending a funded OpenAI key)
+└── synthesis/       cross-harness conclusion + production work breakdown
 ```
 Each completed harness folder carries `native-events.jsonl` (the SDK stream teed
 *before* Relay via `common/native_recorder.py`), `events.atof.jsonl` (the Relay
 ATOF that crossed the Fabric boundary), and `findings.md` (native→ATOF mapping,
 loss analysis, deltas-vs-terminal, duplicate-rendering risks, recommendation).
 
-| Harness | ticket | status |
+| Harness | mode | status |
 |---|---|---|
-| Hermes | FABRIC-102 | ✅ complete — real run, native + ATOF captured |
-| Deep Agents | FABRIC-104 | ✅ complete — real run w/ delegated subagents |
-| Codex / Claude | FABRIC-103 | ⏸ stub — pending a usable API key (native seam identified) |
+| Hermes | in-process | ✅ complete — real run, native + ATOF captured |
+| Deep Agents | in-process | ✅ complete — real run w/ delegated subagents |
+| Codex / Claude | gateway | ⏸ stub — pending a usable API key (native seam identified) |
 
 ## Reproduce (Hermes / Deep Agents)
 Prereqs: a native extension matching the Python SDK (`just build-python`, or

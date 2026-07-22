@@ -1,8 +1,8 @@
 # Streaming POC — cross-harness synthesis & recommendation
 
-Synthesis of the child POCs. **Hermes** ([FABRIC-102](../hermes/findings.md)) and
-**Deep Agents** ([FABRIC-104](../deepagents/findings.md)) were run for real with
-native + ATOF capture. **Codex / Claude** ([FABRIC-103](../codex/findings.md)) are
+Synthesis of the child POCs. **Hermes** ([findings](../hermes/findings.md)) and
+**Deep Agents** ([findings](../deepagents/findings.md)) were run for real with
+native + ATOF capture. **Codex / Claude** ([findings](../codex/findings.md)) are
 stubs pending a usable API key — their rows below are **preliminary**, drawn from a
 prior real Claude Relay capture, a partial Codex run, and the two SDK event models;
 they will be confirmed when keys are available. The `invoke_stream` prototype is
