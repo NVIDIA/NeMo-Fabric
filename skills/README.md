@@ -24,9 +24,7 @@ documentation URLs, never on repository-internal paths.
   GitHub, not to files inside this checkout. Skill-specific material is bundled
   under each skill's own `references/`.
 - Skills do not depend on repository internals — their links are absolute or
-  bundled, so they resolve when copied out. A skill may still mention NeMo Fabric
-  build commands (`just …`, needed while NeMo Fabric is unpublished) or the maintainer
-  tier as guidance for contributors.
+  bundled, so they resolve when copied out.
 
 ## Using A Consumer Skill In Your Project
 
