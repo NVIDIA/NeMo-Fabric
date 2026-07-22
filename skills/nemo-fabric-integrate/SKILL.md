@@ -44,18 +44,15 @@ that stay hidden behind this boundary.
 The consumer or its execution environment owns installation; NeMo Fabric validates
 runtime assumptions but never installs harnesses or credentials at run time.
 
-- NeMo Fabric is not published on PyPI yet. From a source checkout, `just build-all`
-  builds the native extension and installs the SDK. To install into another
-  environment, build wheels with `just wheels`, then
+- From a source checkout, `just build-all` builds the native extension and installs the SDK. To install into another environment, build wheels with `just wheels`, then
   `uv pip install --find-links <dist_dir> nemo-fabric` (add the
-  `harbor` extra for the Harbor integration). See the
+  `harbor` extra for the Harbor integration). Refer to the
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx).
 - Select a harness adapter — the `adapter_id` set in `HarnessConfig`, for example
   `nvidia.fabric.hermes` — and install its extra the same way, for example
   `uv pip install --find-links <dist_dir> "nemo-fabric[hermes]"`
   (available extras: `hermes`, `codex`, `deepagents`, `claude`), plus the
-  adapter's own harness
-  binaries and dependencies.
+  adapter's own harness binaries and dependencies.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
