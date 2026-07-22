@@ -114,6 +114,11 @@ docs = [
   "pyyaml>=6.0",
 ]
 
+package = [
+  "maturin[zig]>=1.9.3,<2.0; sys_platform == 'linux'",
+  "maturin>=1.9.3,<2.0; sys_platform != 'linux'",
+]
+
 test = [
     "fastapi~=0.138",
     "pytest>=8",
