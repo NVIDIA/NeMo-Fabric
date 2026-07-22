@@ -27,11 +27,24 @@ full LangChain messages: `{content, tool_calls, usage_metadata, response_metadat
 id, additional_kwargs, invalid_tool_calls, type, name}`.
 
 ## Nesting / parallelism / delegation
-- **Nesting/delegation:** the empty-namespace `tools` node spawns a subagent whose
-  entire sub-stream is tagged `namespace=tools:<tool_call_id>`.
-- **Parallelism:** concurrent subagents would **interleave** in stream order,
-  distinguishable *only* by `namespace` — so the native namespace (not position) is
-  the parallel-safe key.
+- **Nesting + delegation (observed):** the empty-namespace `tools` node spawns a
+  subagent whose entire sub-stream is tagged `namespace=tools:<tool_call_id>`; two
+  distinct subagents (`tools:e55b5b5f-…`, `tools:e898cde5-…`), each with its own
+  nested `before_agent → model → after_model` sub-stream.
+- **Parallelism (NOT observed — still required):** in this fixture the two
+  subagents ran **sequentially**, not concurrently:
+  ```
+  subagent 1: 21:28:10.350 → 21:28:10.974
+  subagent 2: 21:28:12.244 → 21:28:17.348   (1.3 s gap, no scope overlap)
+  ```
+  Forcing two `task` calls in one turn was attempted with a stronger model
+  (`meta/llama-3.3-70b-instruct`), but the fast model **serializes** the
+  delegations and the larger model exceeded the time budget before two subagents
+  completed. So the claim that "concurrent subagents interleave, distinguished only
+  by `namespace`" is a **design property of the astream namespace, not observed
+  evidence** here. **Open item:** genuine parallel evidence — overlapping sibling
+  subagent scopes and interleaved namespaces in one run — is still pending; treat
+  the parallel behavior as unproven until such a run is captured.
 
 ## Native → ATOF paired examples (same run)
 | native event | ATOF record | preserved | dropped / changed |
@@ -56,8 +69,9 @@ Verified by diffing the two fixtures from the same run:
 ## Streamed events vs. terminal · duplicate-rendering risks
 1. **Sub-agent → parent echo:** a subagent result re-appears in the parent's next
    `model` input and again in the terminal — dedup by scope `uuid`.
-2. **Tree vs. stream order:** under parallel subagents, naive concatenation
-   mis-nests — group by `parent_uuid` (ATOF) / `namespace` (native).
+2. **Tree vs. stream order:** *if* subagents run in parallel (not observed here —
+   see Parallelism), naive concatenation mis-nests — group by `parent_uuid` (ATOF)
+   / `namespace` (native). The keys exist in the fixtures; the interleaving does not.
 3. **Delta vs terminal:** final `model` scope == `RunResult.output` — render once.
 
 ## Recommendation
@@ -92,5 +106,13 @@ Prereqs: a native extension matching the Python SDK (`just build-python`, or
 3. **Revert** the adapter patch:
    `git checkout -- adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py`.
 
-(Delegation is model-dependent; the two subagents may run sequentially — the native
-`namespace` distinguishes them regardless of interleaving.)
+Delegation is model-dependent: this run's two subagents ran **sequentially**. To
+attempt genuine parallelism (overlapping scopes), set `FABRIC_MODEL` to a stronger
+tool-caller and prompt for two `task` calls in one turn, e.g.:
+```bash
+FABRIC_MODEL="meta/llama-3.3-70b-instruct" python streaming-poc/common/run_harness.py \
+  nvidia.fabric.langchain.deepagents out.atof.jsonl \
+  "Make exactly two task tool calls in the same turn: task 'reply apple'; task 'reply banana'. Delegate both at once."
+```
+Not yet captured here — the fast model serialized and the 70B model exceeded the
+run budget before two subagents completed (see the Parallelism note).

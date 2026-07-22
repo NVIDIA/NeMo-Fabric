@@ -16,7 +16,7 @@ harness-agnostic and validated on both Relay modes.
 | **stream unit** | callback scope/mark | scope tree (nested) | message → content_block → delta | response → item → delta |
 | **token deltas** | ❌ (scope-level) | ❌ (scope-level) | ✅ `content_block_delta` | ✅ `response.output_text.delta` |
 | **nesting** | session>turn>tool/llm | deep (delegated sub-agents) | message>block | response>item |
-| **ordering** | temporal | temporal; parallel⇒`parent_uuid` | temporal | temporal |
+| **ordering** | temporal | temporal (sequential in POC; `parent_uuid` would key any parallel) | temporal | temporal |
 | **terminal** | `session end` scope + metadata | `request end` scope (`status OK`) | `message_delta`(stop,usage)+`message_stop` | `response.completed`/`failed`(+usage) |
 | duplicate risk | delta↔terminal | subagent-echo + delta↔terminal + tree | HIGH (delta↔terminal) | HIGH (delta↔terminal) |
 
@@ -27,7 +27,9 @@ harness-agnostic and validated on both Relay modes.
 - **Granularity splits by Relay mode:** gateway (Claude/Codex) = token-level;
   in-process (Hermes/Deep Agents) = scope-level (no token deltas).
 - **Nesting/ordering:** Deep Agents needs `parent_uuid` tree reconstruction
-  (parallel sub-agents interleave); the others are largely linear.
+  (parallel sub-agents *would* interleave, keyed by `parent_uuid` — but parallel
+  execution was **not observed** in the POC; both subagents ran sequentially). The
+  others are largely linear.
 - **Terminal semantics differ** — scope-end + metadata vs. `message_stop` vs.
   `response.completed/failed`.
 

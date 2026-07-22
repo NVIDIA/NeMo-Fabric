@@ -60,7 +60,8 @@ def _model() -> ModelConfig:
             model="claude-3-5-haiku-latest",
             api_key_env="ANTHROPIC_API_KEY",
         )
-    return ModelConfig(provider="nvidia", model="nvidia/nemotron-3-nano-30b-a3b")
+    model = os.environ.get("FABRIC_MODEL", "nvidia/nemotron-3-nano-30b-a3b")
+    return ModelConfig(provider="nvidia", model=model)
 
 
 def build_config() -> FabricConfig:
