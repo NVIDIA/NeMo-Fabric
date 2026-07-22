@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -323,7 +324,10 @@ def test_publish_telemetry_rejects_invalid_atof_fields(
     atof = logs / "events.atof.jsonl"
     atof.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
-    with pytest.raises(TelemetryValidationError, match=rf"ATOF record .*{field}.*{atof}:1"):
+    with pytest.raises(
+        TelemetryValidationError,
+        match=rf"ATOF record .*{re.escape(field)}.*{re.escape(str(atof))}:1",
+    ):
         publish_telemetry_evidence(
             make_result(task_artifact("atof", "atof", atof, logs)),
             logs,

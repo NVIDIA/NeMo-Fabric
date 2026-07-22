@@ -595,7 +595,11 @@ def test_nvidia_provider_uses_responses_api_and_nvidia_credential(
     start = client.thread_start.await_args.kwargs
     assert start["model"] == "openai/gpt-oss-120b"
     assert start["model_provider"] == "nvidia"
-    assert client.config.env["CODEX_HOME"].endswith("/.fabric/codex/nvidia-home")
+    assert Path(client.config.env["CODEX_HOME"]).parts[-3:] == (
+        ".fabric",
+        "codex",
+        "nvidia-home",
+    )
     assert start["config"]["features"] == {"web_search": False}
     assert start["config"]["model_providers"] == {
         "nvidia": {

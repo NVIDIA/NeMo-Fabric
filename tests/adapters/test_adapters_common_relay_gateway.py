@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 import subprocess
 from unittest.mock import MagicMock, call
 
@@ -164,7 +165,10 @@ def test_start_relay_gateway_stops_failed_process_and_preserves_log(
         log_path=log_path,
     )
 
-    with pytest.raises(relay_gateway.RelayGatewayError, match=str(log_path)):
+    with pytest.raises(
+        relay_gateway.RelayGatewayError,
+        match=re.escape(str(log_path)),
+    ):
         relay_gateway.start_relay_gateway(
             launch=launch,
             cwd=tmp_path,

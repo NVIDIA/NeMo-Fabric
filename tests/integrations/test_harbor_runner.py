@@ -273,7 +273,10 @@ def test_harbor_smoke_config_resolves_its_local_adapter():
 
     assert plan.adapter.adapter_id == "demo.fabric.scripted"
     assert plan["adapter_descriptor"]["source"] == "local"
-    assert plan["adapter_descriptor"]["root"].endswith("adapters/scripted")
+    assert Path(plan["adapter_descriptor"]["root"]).parts[-2:] == (
+        "adapters",
+        "scripted",
+    )
 
 
 def test_harbor_calculator_documents_explicit_cli_commands():

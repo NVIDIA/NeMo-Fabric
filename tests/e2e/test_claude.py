@@ -130,6 +130,10 @@ def fabric_config(
     return config
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="the mock Claude CLI is not yet a Windows executable",
+)
 async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
     config = fabric_config(tmp_path, cli_path=MOCK_CLAUDE_CLI)
 
@@ -162,8 +166,8 @@ async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
 
 
 @pytest.mark.skipif(
-    sys.platform == "darwin",
-    reason="mock Relay gateway cannot pass its loopback health check on macOS",
+    sys.platform in {"darwin", "win32"},
+    reason="the mock Relay gateway is not supported on macOS or Windows",
 )
 async def test_fabric_claude_relay_supervises_gateway_and_injects_plugin(tmp_path):
     mock_relay = tmp_path / "nemo-relay"
