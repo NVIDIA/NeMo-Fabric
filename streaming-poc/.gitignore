@@ -1,0 +1,5 @@
+# Runtime artifacts from run_harness.py
+.work/
+*.out.jsonl
+out.atof.jsonl
+__pycache__/
