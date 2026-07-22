@@ -84,35 +84,19 @@ print(result.output.response)
 
 In the above example, the choice of harness is set by the `adapter_id` in the `HarnessConfig`. The example uses the Hermes Agent adapter, but you can change it to any other supported harness by changing the `adapter_id` to the appropriate value. Any harness-specific settings can be made by passing a dictionary to the `settings` field of the `HarnessConfig`.
 
-### Next Steps
-
-- A more detailed version of this example is available as a [Jupyter Notebook](https://jupyter.org/) at [`examples/notebooks/01_quickstart.ipynb`](examples/notebooks/01_quickstart.ipynb). Refer to [`examples/notebooks/README.md`](examples/notebooks/README.md) for other example notebooks.
-- Refer to the [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning, diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
-
+A more detailed version of this example is available as a [Jupyter Notebook](https://jupyter.org/) at [`examples/notebooks/01_quickstart.ipynb`](examples/notebooks/01_quickstart.ipynb). Refer to [`examples/notebooks/README.md`](examples/notebooks/README.md) for other example notebooks.
 
 ## Architecture
 
-NeMo Fabric standardizes how applications configure, launch, invoke, and collect
-artifacts from agent harnesses.
-
-NeMo Fabric provides:
-
-- a versioned, typed `FabricConfig` contract constructed through the SDK;
-- ordinary Python composition for harness and experiment variants;
-- adapter descriptors for harness-specific launch and control;
-- a Rust core, Python SDK, and standalone experimentation CLI;
-- JSON Schema snapshots for the public config and runtime contract;
-- normalized run results, artifact manifests, and telemetry references.
-
 ```mermaid
 flowchart TB
-  Consumer["Consumer\nCLI | Python SDK | integrations"]
+  Consumer["Consumer\nDeployment Platform | Evaluation Harnesses"]
   Config["Typed source\nFabricConfig"]
   Core["NeMo Fabric Rust core\nresolve | plan | create | invoke | destroy"]
   Adapter["Selected NeMo Fabric adapter"]
-  Harness["Agent harness runtime\nHermes | Codex | custom"]
+  Harness["Agent harness runtime\nHermes Agent | Codex | Claude Code | LangChain Deep Agents | custom"]
   Artifacts["Artifact manifest\noutput | logs | patches | telemetry refs"]
-  Relay["NeMo Relay\nATOF / ATIF when enabled"]
+  Relay["NeMo Relay\nATOF | ATIF | OTel | OpenInference when enabled"]
 
   Consumer --> Core
   Config --> Core
@@ -124,47 +108,8 @@ flowchart TB
   Harness -. harness telemetry .-> Relay
 ```
 
-## Core Concepts
 
-- **Typed config:** callers construct a complete `FabricConfig` in Python.
-  Start with the [Python SDK guide](docs/sdk/python.mdx), and refer to
-  [`examples/code_review_agent/config.py`](examples/code_review_agent/config.py)
-  for a complete application example.
-- **Variants:** ordinary Python functions copy and modify complete configs to
-  vary the harness, model, MCP, tools, skills, telemetry, or environment.
-- **Experimentation CLI:** presets provide quick probes, examples provide
-  maintained runnable workflows, and `example init` generates editable Python
-  or Rust applications that call a language API directly.
-- **Tools policy:** use top-level `tools.blocked` for harness-neutral blocked
-  tool policy. Names are interpreted by the selected adapter:
-
-  ```python
-  config.block_tools("browser", "shell")
-  ```
-
-  The selected adapter interprets these names: Hermes Agent maps them to disabled
-  toolsets, Claude maps them to `disallowed_tools`, Deep Agents enforces them
-  with middleware, and adapters without a native deny mechanism route the
-  policy as unsupported.
-- **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
-  Harness-specific extensions belong under `harness.settings` so the normalized
-  contract can remain stable. Refer to the
-  [adapter compatibility reference](adapters/README.md) for bundled package and
-  implementation details.
-- **Artifacts:** normalized output, logs, patches, and telemetry references
-  returned through an `ArtifactManifest`.
-
-NeMo Fabric accepts complete typed configs. Compose variants in Python before
-calling the SDK. Refer to the [Python SDK guide](docs/sdk/python.mdx) for the
-complete public API, type definitions, lifecycle semantics, and error behavior.
-
-`run(...)` owns the complete start, invoke, and stop lifecycle. For typed
-in-memory configuration, planning and diagnostics, explicit requests,
-multi-turn runtimes, application-owned parallelism, results, and errors, see
-the [Python SDK guide](docs/sdk/python.mdx). Exact signatures are in the
-[generated Python API reference](docs/reference/api/python-library-reference/index.md).
-
-## More Workflows
+## Next Steps
 
 - [Example Notebooks](examples/notebooks/README.md) provide a guided tour of the Python SDK.
 - [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
