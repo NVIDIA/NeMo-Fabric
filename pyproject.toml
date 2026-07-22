@@ -79,6 +79,8 @@ adapters = [
   "nemo-fabric-adapters-common",
   "nemo-fabric-adapters-claude",
   "nemo-fabric-adapters-codex",
+  # Install the deepagents adapter with its optional [relay] extra so the dev
+  # and test environments exercise the SDK-native NeMo Relay integration.
   "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
 ]
