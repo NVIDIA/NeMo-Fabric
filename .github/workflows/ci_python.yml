@@ -37,10 +37,11 @@ defaults:
 jobs:
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.platform }})
+    continue-on-error: ${{ startsWith(matrix.platform, 'windows') }}
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux-amd64, linux-arm64, macos-arm64]
+        platform: [linux-amd64, linux-arm64, macos-arm64, windows-amd64, windows-arm64]
         python-version: ['3.11', '3.12', '3.13', '3.14']
         include:
           - platform: linux-amd64
@@ -49,6 +50,10 @@ jobs:
             runner: ubuntu-24.04-arm
           - platform: macos-arm64
             runner: macos-15
+          - platform: windows-amd64
+            runner: windows-2022
+          - platform: windows-arm64
+            runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -76,6 +81,21 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
 
+      - name: Set up Windows ARM Python
+        if: ${{ matrix.platform == 'windows-arm64' }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: arm64
+
+      - name: Select setup-python interpreter for uv
+        if: ${{ matrix.platform == 'windows-arm64' }}
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import sys
+          print(f"UV_PYTHON={sys.executable}")
+          PY
+
       - name: Cache cargo build
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
@@ -85,7 +105,7 @@ jobs:
       # imports it to read Hermes Agent config fixtures, so install it for the tests.
       - name: Build SDK with native extension
         run: |
-          uv venv --python ${{ matrix.python-version }} .venv
+          uv venv --python "${UV_PYTHON:-${{ matrix.python-version }}}" .venv
           uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes' || '' }} --extra relay --extra runtime
 
       - name: Run pytest
@@ -106,6 +126,10 @@ jobs:
             runner: ubuntu-24.04-arm
           - platform: macos-arm64
             runner: macos-15
+          - platform: windows-amd64
+            runner: windows-2022
+          - platform: windows-arm64
+            runner: windows-11-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -134,6 +158,21 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+
+      - name: Set up Windows ARM Python
+        if: ${{ matrix.platform == 'windows-arm64' }}
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: '3.11'
+          architecture: arm64
+
+      - name: Select setup-python interpreter for uv
+        if: ${{ matrix.platform == 'windows-arm64' }}
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import sys
+          print(f"UV_PYTHON={sys.executable}")
+          PY
 
       - name: Set version from tag
         if: ${{ (inputs.ref_type || github.ref_type) == 'tag' }}

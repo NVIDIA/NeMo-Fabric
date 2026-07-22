@@ -25,6 +25,7 @@ uv_python_executable() {
 }
 
 activate_project_venv() {
+    local venv_dir="$REPO_ROOT/.venv"
     local venv_bin=""
     if [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
         venv_bin="$REPO_ROOT/.venv/bin"
@@ -34,7 +35,12 @@ activate_project_venv() {
         echo "ERROR: expected project virtualenv Python executable under .venv" >&2
         exit 1
     fi
+    if command -v cygpath >/dev/null 2>&1; then
+        venv_bin="$(cygpath -u "$venv_bin")"
+    fi
+    export VIRTUAL_ENV="$venv_dir"
     export PATH="$venv_bin:$PATH"
+    unset PYTHONHOME
 }
 
 prepend_ziglang_to_path() {
