@@ -157,6 +157,10 @@ async def test_fabric_session_launches_fresh_processes_and_resumes(tmp_path):
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
 
 
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="mock Relay gateway cannot pass its loopback health check on macOS",
+)
 async def test_fabric_claude_relay_supervises_gateway_and_injects_plugin(tmp_path):
     mock_relay = tmp_path / "nemo-relay"
     relay_args_path = tmp_path / "relay-args.json"
