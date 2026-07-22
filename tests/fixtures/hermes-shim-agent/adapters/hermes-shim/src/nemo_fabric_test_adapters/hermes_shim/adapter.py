@@ -6,24 +6,38 @@
 
 from __future__ import annotations
 
-import json
-import sys
 from pathlib import Path
 from typing import Any
 
+from nemo_fabric_adapters.common import lifecycle
+
 
 def main() -> None:
-    payload = json.load(sys.stdin)
-    output = run(payload)
-    print(json.dumps(output, sort_keys=True))
-    if output.get("failed"):
-        raise SystemExit(2)
+    lifecycle.serve(ShimRuntime)
 
 
-def run(payload: dict[str, Any]) -> dict[str, Any]:
-    """Test adapter entrypoint used by SDK smoke tests."""
+class ShimRuntime:
+    def __init__(self) -> None:
+        self._start_payload: dict[str, Any] | None = None
 
-    return run_selected_mode(payload)
+    async def start(self, payload: dict[str, Any]) -> None:
+        self._start_payload = payload
+
+    async def invoke(self, invocation: dict[str, Any]) -> dict[str, Any]:
+        if self._start_payload is None:
+            raise lifecycle.LifecycleError(
+                "hermes_runtime_not_started",
+                "shim runtime is not started",
+            )
+        payload = {
+            **self._start_payload,
+            "runtime_context": invocation.get("runtime_context"),
+            "request": invocation.get("request"),
+        }
+        return run_selected_mode(payload)
+
+    async def stop(self) -> None:
+        self._start_payload = None
 
 
 def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -39,11 +53,13 @@ def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return runtime_context(payload).get("environment") or payload.get("environment") or {}
+    return (
+        runtime_context(payload).get("environment") or payload.get("environment") or {}
+    )
 
 
 def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    harness = (fabric_config(payload).get("harness") or {})
+    harness = fabric_config(payload).get("harness") or {}
     return harness.get("settings") or payload.get("settings") or {}
 
 
@@ -73,9 +89,15 @@ def run_shim(payload: dict[str, Any]) -> dict[str, Any]:
         "runtime_id": context.get("runtime_id"),
         "workspace": environment.get("workspace") or settings.get("workspace"),
         "native_skill_paths": (capabilities.get("native") or {}).get("skill_paths", []),
-        "native_mcp_servers": sorted((capabilities.get("native") or {}).get("mcp_servers", {}).keys()),
-        "managed_skill_paths": (capabilities.get("managed") or {}).get("skill_paths", []),
-        "managed_mcp_servers": sorted((capabilities.get("managed") or {}).get("mcp_servers", {}).keys()),
+        "native_mcp_servers": sorted(
+            (capabilities.get("native") or {}).get("mcp_servers", {}).keys()
+        ),
+        "managed_skill_paths": (capabilities.get("managed") or {}).get(
+            "skill_paths", []
+        ),
+        "managed_mcp_servers": sorted(
+            (capabilities.get("managed") or {}).get("mcp_servers", {}).keys()
+        ),
         "capability_routes": capabilities.get("routes", []),
         "telemetry": payload.get("telemetry"),
     }

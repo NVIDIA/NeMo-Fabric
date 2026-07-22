@@ -77,4 +77,3 @@ for line in sys.stdin:
         ),
         flush=True,
     )
-    break

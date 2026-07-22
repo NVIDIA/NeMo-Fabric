@@ -250,7 +250,22 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 selected.config().clone(),
                 ResolveContext::new(selected.base_dir()),
             )?;
-            let result = run_plan(&plan, RunRequest::text(input))?;
+            let result = match run_plan(&plan, RunRequest::text(input)) {
+                Ok(result) => result,
+                Err(error) => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "status": "failed",
+                            "error": {
+                                "code": "runtime_error",
+                                "message": "run failed before a normalized result was available",
+                            },
+                        }))?
+                    );
+                    return Err(error.into());
+                }
+            };
             println!("{}", serde_json::to_string_pretty(&result)?);
             require_successful_run(result.status)?;
         }

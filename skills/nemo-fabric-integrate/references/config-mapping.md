@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 Translate the consumer's own application, job, or deployment object into a typed
 `FabricConfig` in memory. The consumer keeps owning its configuration model;
-Fabric only receives the validated slice it needs.
+NeMo Fabric only receives the validated slice it needs.
 
 ## Public Config Models
 
@@ -77,12 +77,12 @@ package or job layout, so nothing depends on the process working directory.
 - Use normalized fields for portable behavior: models, runtime, environment,
   skills, MCP, telemetry, and request context.
 - Use `harness.settings` for adapter-owned configuration the selected adapter
-  understands (for example Hermes launch options or Codex settings). Adapter
+  understands (for example Hermes Agent launch options or Codex settings). Adapter
   settings are not portable, and `doctor(...)` does not validate their contents —
   an unknown or misspelled key still passes and is silently ignored unless the
   adapter reads it. Validate settings against the adapter's docs and your
   integration tests.
-- Use `metadata` and extension fields for caller-owned annotations Fabric carries
+- Use `metadata` and extension fields for caller-owned annotations NeMo Fabric carries
   but does not interpret. Config `metadata` is not echoed into
   `RunResult.metadata`: the name surfaces as `RunResult.agent_name`, and for
   caller-owned correlation on a specific invocation set `RunRequest.request_id`,

@@ -56,17 +56,17 @@ async def _run() -> None:
     config = _select_codex_runtime(codex_config())
     nonce = f"fabric-{uuid.uuid4().hex[:8]}"
     client = Fabric()
-    oneshot = await client.run(
+    single = await client.run(
         config,
         base_dir=BASE_DIR,
-        input="Reply with exactly: FABRIC_CODEX_ONESHOT_OK",
+        input="Reply with exactly: FABRIC_CODEX_SINGLE_INVOCATION_OK",
     )
-    assert oneshot["status"] == "succeeded", oneshot.to_mapping()
-    assert "fabric_codex_oneshot_ok" in oneshot["output"]["response"].lower(), (
-        oneshot.to_mapping()
-    )
-    assert oneshot["output"]["adapter"] == "sdk", oneshot.to_mapping()
-    assert "command" not in oneshot["output"], oneshot.to_mapping()
+    assert single["status"] == "succeeded", single.to_mapping()
+    assert (
+        "fabric_codex_single_invocation_ok" in single["output"]["response"].lower()
+    ), single.to_mapping()
+    assert single["output"]["adapter"] == "sdk", single.to_mapping()
+    assert "command" not in single["output"], single.to_mapping()
 
     async with await client.start_runtime(
         config,
@@ -81,6 +81,8 @@ async def _run() -> None:
     assert first["status"] == second["status"] == "succeeded", results
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results
     assert nonce in second["output"]["response"], second.to_mapping()
+    assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
+    assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     assert first["output"]["events"], first.to_mapping()
     assert second["output"]["usage"] is not None, second.to_mapping()
 
@@ -120,6 +122,8 @@ async def _run_relay(relay_command: str) -> None:
     assert first["status"] == second["status"] == "succeeded", results
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results
     assert nonce in second["output"]["response"], second.to_mapping()
+    assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
+    assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     for turn in (first, second):
         assert turn["output"]["relay_runtime"]["enabled"] is True, turn.to_mapping()
         assert {item["kind"] for item in turn["output"]["relay_artifacts"]} >= {

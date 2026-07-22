@@ -101,10 +101,10 @@ Most application code works with four objects:
 | `RunResult` | The normalized outcome of one invocation. | Read its status, output, error, events, artifacts, and correlation IDs. |
 
 `Fabric` is a lightweight, reusable SDK facade. It resolves configuration,
-creates plans and runtimes, and runs one-shot requests, but it does not
-represent a started execution and does not require cleanup. A `Runtime` owns
-stateful execution and shutdown, so it is the object used as an async context
-manager.
+creates plans and runtimes, and provides a single-invocation convenience API,
+but it does not represent a started execution and does not require cleanup. A
+`Runtime` owns stateful execution and shutdown, so it is the object used as an
+async context manager.
 
 `RuntimeHandle` and `InvocationHandle` carry lifecycle identity across the
 native boundary. Most Python callers use their `runtime_id` and
@@ -114,6 +114,42 @@ handles directly.
 A runtime is a logical execution boundary, not necessarily an operating-system
 process. An adapter may use an in-process SDK, a process, or shared service
 infrastructure while preserving isolated state for each NeMo Fabric runtime.
+
+Runtime hosting is selected by the adapter kind, not by a public `FabricConfig`
+setting. Every local Process or Python adapter implements the persistent
+local-host wire protocol. NeMo Fabric starts one host during
+`start_runtime(...)`, reuses its adapter-owned native resources across ordered
+invocations, and attempts to release them during `stop()`. The lifecycle start
+operation carries the resolved configuration and capability plan. Each
+subsequent `AdapterInvocation` carries only `runtime_context` and `request`.
+
+### Bundled Adapter Capability Matrix
+
+The following matrix summarizes the current bundled adapter descriptors. The
+descriptor selected in `RunPlan` remains authoritative. Telemetry output names
+use the descriptor contract values.
+
+| Adapter ID | Models | Tools / Blocked Tools | MCP | Skills | Subagents | Telemetry | Persistent Local Host | Remote Service |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `nvidia.fabric.claude` | Anthropic provider and Claude models | `allowed_tools` adapter setting / normalized `tools.blocked` | Normalized | Normalized | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway | Yes: connected `ClaudeSDKClient`, session, and optional Relay gateway | Not implemented |
+| `nvidia.fabric.codex` | Built-in OpenAI and custom NVIDIA Responses providers with Codex-compatible models | Not normalized | Normalized: stdio, HTTP, and streamable HTTP | Normalized: `SKILL.md` directories | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway; native `otel` | Yes: `AsyncCodex` app-server client, thread, and optional Relay gateway | Not implemented |
+| `nvidia.fabric.langchain.deepagents` | NVIDIA, OpenAI, OpenAI-compatible, and other LangChain providers | Built-ins and MCP / normalized middleware block list | Normalized | Normalized | Constrained: declarative local subagents inherit parent capabilities | Relay SDK: `atif`, `otel`, and `openinference`; native `otel` and `openinference` | Yes: compiled graph and async LangGraph checkpointer | Not implemented |
+| `nvidia.fabric.hermes` | Normalized provider, model, and base URL | Toolsets / normalized disabled toolsets | Normalized | Normalized | Not exposed | Relay plugin: `atif`, `otel`, and `openinference` | Yes: `AIAgent`, `SessionDB`, and Relay plugin context | Not implemented |
+
+"Normalized" means the adapter accepts the corresponding `FabricConfig`
+field and maps it to the harness. "Not normalized" does not mean that the
+underlying harness lacks the feature; it means that NeMo Fabric does not expose a
+portable configuration surface for it. NeMo Fabric currently normalizes
+`tools.blocked`, not a portable tool definition catalog. Deep Agents supports
+only JSON-shaped, in-process subagent definitions through
+`harness.settings.deepagents.subagents`; independently configured or remote
+subagent capabilities are not exposed.
+
+Third-party local adapters must implement the persistent local-host contract.
+NeMo Fabric does not currently define a remote-service adapter contract. A
+crashed persistent host is terminal for that runtime. The same applies when the
+host exceeds the protocol response timeout. NeMo Fabric does not silently
+respawn the host or replay a request.
 
 Harness-native threads, sessions, and conversations remain adapter-owned state
 associated with the NeMo Fabric runtime. They are not additional NeMo Fabric lifecycle
@@ -188,7 +224,7 @@ relay_config.enable_relay(
 
 The repository's
 [code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
-uses this pattern for complete Hermes, Codex SDK, Deep Agents,
+uses this pattern for complete Hermes Agent, Codex, Deep Agents,
 environment, MCP, and telemetry variants.
 
 If a config contains relative paths, pass a `base_dir` to `plan(...)`,
@@ -211,7 +247,7 @@ multiple independent runtimes.
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
 
-## One-Shot Runs
+## Single-Invocation Runs
 
 Use `run(...)` when the application has one input and does not need to preserve
 runtime state after the result is collected.
@@ -266,9 +302,10 @@ async with await fabric.start_runtime(
 print(first.status, second.status)
 ```
 
-The adapter reuses its native state between calls. For example, the Codex
-adapter uses one Codex thread for the runtime and maps each invocation to one
-turn. That thread ID remains adapter-internal.
+The adapter reuses its native state between calls. Codex maps the calls to turns
+on one live thread, Deep Agents invokes one compiled graph and checkpointer,
+Hermes Agent reuses one agent and session database, and Claude keeps one connected SDK
+client. Harness-native identifiers remain adapter-internal.
 
 ## Application-Owned Parallelism
 
@@ -398,7 +435,7 @@ Use normalized NeMo Fabric fields for portable behavior: models, runtime,
 environment, skills, MCP, telemetry, tools, artifacts, and request context.
 
 Use `harness.settings` for adapter-owned configuration that the selected adapter
-understands. Examples include Hermes-specific launch options, Codex SDK controls,
+understands. Examples include Hermes Agent-specific launch options, Codex controls,
 or adapter-specific launch paths.
 
 Use `metadata` for caller-owned annotations that NeMo Fabric should preserve and echo
@@ -420,12 +457,12 @@ All public SDK errors inherit from `FabricError`.
 | `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
-Consumers own job-level retries and rollout-level failure policy. One-shot runs
-attempt to stop the runtime before returning. A `Runtime` used with `async with`
-also attempts cleanup after an invocation error; if cleanup fails, that failure
-is attached to the original exception rather than replacing it. NeMo Fabric records
-structured error metadata when possible and returns enough detail for the
-consumer to decide what to do next.
+Consumers own job-level retries and rollout-level failure policy.
+Single-invocation runs attempt to stop the runtime before returning. A `Runtime`
+used with `async with` also attempts cleanup after an invocation error; if cleanup
+fails, that failure is attached to the original exception rather than replacing
+it. NeMo Fabric records structured error metadata when possible and returns enough
+detail for the consumer to decide what to do next.
 
 ## SDK Contract Boundaries
 
@@ -452,7 +489,7 @@ generated API reference for exact Python signatures.
 NeMo Fabric uses explicit contract versions where persisted or independently
 maintained artifacts cross package boundaries:
 
-- `schema_version` identifies the typed Fabric config contract transported
+- `schema_version` identifies the typed NeMo Fabric config contract transported
   across SDK and language boundaries.
 - `contract_version` identifies the adapter descriptor contract implemented by
   a `fabric-adapter.json` file.
@@ -499,3 +536,6 @@ the request, start a replacement runtime, fail the job, or escalate to a user.
 If a harness reports capacity pressure, an adapter should surface it as a
 structured error or event such as busy, rate limited, capacity exceeded, or
 backpressure. The consumer decides whether to wait, retry, scale out, or fail.
+
+## Next Steps
+- Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples).

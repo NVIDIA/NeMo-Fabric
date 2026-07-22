@@ -70,10 +70,13 @@ reviews:
         Tests should cover the behavior promised by the changed API surface, including error paths, lifecycle cleanup, and SDK/native parity where relevant.
     - path: "{adapters/**,examples/**}"
       instructions: |
-        Review adapter and example changes for command correctness, config/schema consistency, artifact handling, and compatibility with the public Fabric contracts.
+        Review adapter and example changes for command correctness, config/schema consistency, artifact handling, and compatibility with the public NeMo Fabric contracts.
     - path: "{docs/**,README.md,AGENTS.md}"
       instructions: |
         Review documentation for technical accuracy against the current API, command correctness, and consistency with generated schemas.
+    - path: "{*.md,**/*.md,**/*.mdx,**/*.ipynb}"
+      instructions: |
+        Enforce the product name in user-facing prose: use "NVIDIA NeMo Fabric" on first use and "NeMo Fabric" thereafter. Flag standalone capitalized "Fabric" when it refers to the product. Do not flag the lowercase `fabric` CLI command, package/import/crate names, code identifiers, API symbols, configuration keys, file paths, or unrelated generic uses of the word.
     - path: "**/SKILL.md"
       instructions: |
         Do not flag SKILL.md files for missing SPDX headers. Skill entrypoints intentionally start with YAML frontmatter instead.

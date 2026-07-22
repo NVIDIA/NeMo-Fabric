@@ -23,7 +23,20 @@ from pathlib import Path
 
 import pytest
 
+
 async def test_hermes_runtime():
+    _require_hermes_integration()
+    await _run(relay=False)
+
+
+async def test_hermes_runtime_with_relay():
+    _require_hermes_integration()
+    if importlib.util.find_spec("nemo_relay") is None:
+        pytest.fail("the nemo-relay Python package is required")
+    await _run(relay=True)
+
+
+def _require_hermes_integration() -> None:
     if os.environ.get("RUN_FABRIC_HERMES_INTEGRATION") != "1":
         pytest.skip("set RUN_FABRIC_HERMES_INTEGRATION=1 to run")
     if not os.environ.get("NVIDIA_API_KEY"):
@@ -54,20 +67,24 @@ async def test_hermes_runtime():
         )
     python_bin = Path(sys.executable).resolve().parent
     os.environ["PATH"] = f"{python_bin}{os.pathsep}{os.environ.get('PATH', '')}"
-    await _run()
 
 
-async def _run() -> None:
-    from examples.code_review_agent import BASE_DIR, hermes_config
+async def _run(*, relay: bool) -> None:
+    from examples.code_review_agent import BASE_DIR, hermes_config, with_relay
     from nemo_fabric import Fabric, RuntimeStatus
 
+    config = hermes_config()
+    if relay:
+        config = with_relay(config)
     async with await Fabric().start_runtime(
-        hermes_config(),
+        config,
         base_dir=BASE_DIR,
     ) as runtime:
         assert runtime.status is RuntimeStatus.ACTIVE, runtime.status
 
-        r1 = await runtime.invoke(input="My name is Robin. Please remember it for later.")
+        r1 = await runtime.invoke(
+            input="My name is Robin. Please remember it for later."
+        )
         assert r1["status"] == "succeeded", r1
         after_turn1 = runtime.messages
         assert len(after_turn1) >= 2, after_turn1
@@ -75,10 +92,19 @@ async def _run() -> None:
         r2 = await runtime.invoke(input="What is my name? Reply with just the name.")
         assert r2["status"] == "succeeded", r2
         assert r2["runtime_id"] == r1["runtime_id"], (r1, r2)
+        assert r1["metadata"]["adapter_runner"] == "persistent_local_host", (r1, r2)
+        assert r1["metadata"]["host_pid"] == r2["metadata"]["host_pid"], (r1, r2)
         # Hermes should return a transcript that includes the prior turn.
         assert len(runtime.messages) > len(after_turn1), runtime.messages
         # And the model must recall the name supplied in turn 1.
         response = (r2["output"].get("response") or "").lower()
         assert "robin" in response, response
+        if relay:
+            for result in (r1, r2):
+                assert result.telemetry[0].provider == "relay", result.to_mapping()
+                assert {
+                    artifact["kind"]
+                    for artifact in result["output"]["relay_artifacts"]
+                } >= {"atof", "atif"}, result.to_mapping()
 
     assert runtime.status is RuntimeStatus.STOPPED, runtime.status

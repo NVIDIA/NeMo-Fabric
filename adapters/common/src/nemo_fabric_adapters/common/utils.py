@@ -85,7 +85,7 @@ def runtime_context(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def runtime_id(payload: dict[str, Any]) -> str:
-    """Return the Fabric runtime id used to key adapter-owned state."""
+    """Return the NeMo Fabric runtime id used to key adapter-owned state."""
 
     value = runtime_context(payload).get("runtime_id")
     if not value:
@@ -94,7 +94,7 @@ def runtime_id(payload: dict[str, Any]) -> str:
 
 
 def runtime_state_directory(base: str | Path, payload: dict[str, Any]) -> Path:
-    """Return a harness-owned state directory isolated to one Fabric runtime."""
+    """Return a harness-owned state directory isolated to one NeMo Fabric runtime."""
 
     return Path(base).joinpath("runtimes", runtime_id(payload))
 

@@ -33,7 +33,7 @@ This table lists the maintainer skills in this set and what each covers.
 | [`contribute-docs`](contribute-docs/SKILL.md) | Change documentation or examples in step with public behavior. |
 | [`review-doc-style`](review-doc-style/SKILL.md) | Review documentation and public text for NVIDIA technical-writing style. |
 | [`validate-change`](validate-change/SKILL.md) | Choose and run the right validation matrix for a change. |
-| [`python-tests`](python-tests/SKILL.md) | Write Python tests for Fabric. |
+| [`python-tests`](python-tests/SKILL.md) | Write Python tests for NeMo Fabric. |
 | [`maintain-ci`](maintain-ci/SKILL.md) | Maintain GitHub Actions workflows with pinned actions and local validation. |
 | [`maintain-packaging`](maintain-packaging/SKILL.md) | Maintain package metadata, native artifacts, lockfiles, and release surfaces. |
 | [`update-project-version`](update-project-version/SKILL.md) | Bump and synchronize release versions across packaging. |

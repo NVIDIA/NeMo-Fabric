@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -41,15 +41,124 @@ def test_validate_hermes_telemetry_provider_accepts_relay(
 def test_validate_hermes_telemetry_provider_rejects_native():
     payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
         adapter.validate_hermes_telemetry_provider(payload)
 
 
 def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
-    payload = {"telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}}
+    payload = {
+        "telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}
+    }
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
         adapter.validate_hermes_telemetry_provider(payload)
+
+
+def test_finalize_relay_session_flushes_before_artifact_collection(monkeypatch):
+    calls: list[str] = []
+    invoke_hook = MagicMock(side_effect=lambda *args, **kwargs: calls.append("hook"))
+    runtime = adapter.HermesRuntime()
+    runtime._relay_plugin_config = {"components": []}
+    runtime._agent = SimpleNamespace(
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    runtime._invoke_hook = invoke_hook
+    runtime._relay_session_pending = True
+
+    from nemo_relay import subscribers
+
+    monkeypatch.setattr(subscribers, "flush", lambda: calls.append("flush"))
+
+    runtime._finalize_relay_session()
+
+    assert calls == ["hook", "flush"]
+    invoke_hook.assert_called_once_with(
+        "on_session_finalize",
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+
+
+async def test_stop_does_not_refinalize_completed_relay_turn(monkeypatch):
+    invoke_hook = MagicMock()
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._relay_plugin_config = {"components": []}
+    agent = MagicMock(
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    session_db = MagicMock()
+    runtime._agent = agent
+    runtime._session_db = session_db
+    runtime._invoke_hook = invoke_hook
+    runtime._relay_session_pending = True
+
+    from nemo_relay import subscribers
+
+    flush = MagicMock()
+    monkeypatch.setattr(subscribers, "flush", flush)
+
+    runtime._finalize_relay_session()
+    await runtime.stop()
+
+    invoke_hook.assert_called_once_with(
+        "on_session_finalize",
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    flush.assert_called_once_with()
+    agent.close.assert_called_once_with()
+    session_db.close.assert_called_once_with()
+    assert runtime._started is False
+    assert runtime._relay_session_pending is False
+    assert runtime._relay_finalize_hook_invoked is False
+
+
+async def test_stop_retries_failed_relay_flush_without_refinalizing(monkeypatch):
+    invoke_hook = MagicMock()
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._relay_plugin_config = {"components": []}
+    runtime._agent = MagicMock(
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    runtime._session_db = MagicMock()
+    runtime._invoke_hook = invoke_hook
+    runtime._relay_session_pending = True
+
+    from nemo_relay import subscribers
+
+    flush = MagicMock(side_effect=[RuntimeError("flush failed"), None])
+    monkeypatch.setattr(subscribers, "flush", flush)
+
+    with pytest.raises(RuntimeError, match="flush failed"):
+        runtime._finalize_relay_session()
+
+    assert runtime._relay_session_pending is True
+    assert runtime._relay_finalize_hook_invoked is True
+    await runtime.stop()
+
+    invoke_hook.assert_called_once_with(
+        "on_session_finalize",
+        session_id="runtime-1",
+        model="test-model",
+        platform="fabric",
+    )
+    assert flush.call_count == 2
+    assert runtime._relay_session_pending is False
+    assert runtime._relay_finalize_hook_invoked is False
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -70,26 +179,26 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             }
         },
         "config": {
-                "harness": {
-                    "settings": {
-                        "model": "review",
-                        "max_iterations": 4,
-                        "disabled_toolsets": ["browser"],
-                        "terminal_backend": "local",
-                        "terminal_timeout": 90,
-                        "enabled_toolsets": "git",
-                        "toolset_platform": "cli",
-                        "plugins_enabled": ["custom/plugin"],
-                    }
-                },
-                "tools": {"blocked": ["shell", "browser"]},
-                "models": {
-                    "review": {
-                        "provider": "nvidia",
-                        "model": "nvidia/review-model",
-                        "settings": {"base_url": "https://model.example/v1"},
-                    }
-                },
+            "harness": {
+                "settings": {
+                    "model": "review",
+                    "max_iterations": 4,
+                    "disabled_toolsets": ["browser"],
+                    "terminal_backend": "local",
+                    "terminal_timeout": 90,
+                    "enabled_toolsets": "git",
+                    "toolset_platform": "cli",
+                    "plugins_enabled": ["custom/plugin"],
+                }
+            },
+            "tools": {"blocked": ["shell", "browser"]},
+            "models": {
+                "review": {
+                    "provider": "nvidia",
+                    "model": "nvidia/review-model",
+                    "settings": {"base_url": "https://model.example/v1"},
+                }
+            },
         },
     }
 
@@ -134,7 +243,9 @@ def test_default_max_iterations_matches_hermes_library_default():
     # multi-step tasks while the trial still reports success.
     assert adapter.DEFAULT_MAX_ITERATIONS > 1
 
-    hermes_default = inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
+    hermes_default = (
+        inspect.signature(AIAgent.__init__).parameters["max_iterations"].default
+    )
     assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
 
 
@@ -143,8 +254,8 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
     # absent so Hermes applies its own default rather than a starving override.
     payload = {
         "config": {
-                "harness": {"settings": {}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            "harness": {"settings": {}},
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
     }
 
@@ -158,8 +269,8 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
     # omitted so Hermes applies its own default instead of a starving override.
     payload = {
         "config": {
-                "harness": {"settings": {"max_iterations": None}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            "harness": {"settings": {"max_iterations": None}},
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
     }
 
@@ -216,20 +327,20 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         "agent_name": "matrix-agent",
         "base_dir": str(tmp_path),
         "config": {
-                "harness": {
-                    "settings": {
-                        "model": "review",
-                        "enabled_toolsets": ["git", "shell"],
-                        "toolset_platform": "cli",
-                        "terminal_backend": "local",
-                    }
-                },
-                "models": {
-                    "review": {
-                        "provider": "nvidia",
-                        "model": "nvidia/review-model",
-                    }
-                },
+            "harness": {
+                "settings": {
+                    "model": "review",
+                    "enabled_toolsets": ["git", "shell"],
+                    "toolset_platform": "cli",
+                    "terminal_backend": "local",
+                }
+            },
+            "models": {
+                "review": {
+                    "provider": "nvidia",
+                    "model": "nvidia/review-model",
+                }
+            },
         },
     }
 
@@ -258,8 +369,12 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     }
     assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
-    assert observability["atof"]["output_directory"] == str(tmp_path / "relay" / "atof" / "runtime-matrix")
-    assert observability["atif"]["output_directory"] == str(tmp_path / "relay" / "atif" / "runtime-matrix")
+    assert observability["atof"]["output_directory"] == str(
+        tmp_path / "relay" / "atof" / "runtime-matrix"
+    )
+    assert observability["atif"]["output_directory"] == str(
+        tmp_path / "relay" / "atif" / "runtime-matrix"
+    )
     assert observability["atif"]["agent_name"] == "matrix-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
@@ -267,8 +382,8 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
 def test_write_hermes_config_writes_file(tmp_path: Path):
     payload = {
         "config": {
-                "harness": {"settings": {}},
-                "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+            "harness": {"settings": {}},
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
     }
 
@@ -340,36 +455,50 @@ def test_summarize_hermes_config():
     }
 
 
-async def test_hermes_rejects_native_telemetry():
+async def test_runtime_start_rejects_native_telemetry():
     payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
 
-    with pytest.raises(ValueError, match="only relay telemetry is supported for Hermes"):
-        await adapter.run_hermes(payload)
+    with pytest.raises(
+        ValueError, match="only relay telemetry is supported for Hermes"
+    ):
+        await adapter.HermesRuntime().start(payload)
 
 
-async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
+async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,
 ):
-    db_history = [{"role": "user", "content": "from hermes db"}]
-
     mock_session_db = MagicMock(spec=SessionDB)
-    mock_session_db.get_session.return_value = {"id": "runtime-resolved-456"}
-    mock_session_db.resolve_resume_session_id.return_value = "runtime-resolved-456"
-    mock_session_db.get_messages_as_conversation.return_value = db_history
     mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
 
     mock_ai_agent = MagicMock(spec=AIAgent)
     mock_ai_agent.session_id = "runtime-fabric-123"
     mock_ai_agent.model = "test-model"
     mock_ai_agent.platform = "fabric"
-    mock_ai_agent.run_conversation.__signature__ = inspect.signature(AIAgent.run_conversation)
-    mock_ai_agent.run_conversation.return_value = {
-        "response": "ok",
-        "completed": True,
-        "failed": False,
-        "messages": [{"role": "assistant", "content": "ok"}],
-    }
+    mock_ai_agent.run_conversation.__signature__ = inspect.signature(
+        AIAgent.run_conversation
+    )
+    first_messages = [
+        {"role": "assistant", "content": "first response"},
+    ]
+    second_messages = [
+        *first_messages,
+        {"role": "assistant", "content": "second response"},
+    ]
+    mock_ai_agent.run_conversation.side_effect = [
+        {
+            "response": "first response",
+            "completed": True,
+            "failed": False,
+            "messages": first_messages,
+        },
+        {
+            "response": "second response",
+            "completed": True,
+            "failed": False,
+            "messages": second_messages,
+        },
+    ]
     mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
     monkeypatch.setattr(
         mock_ai_agent_type.__init__.__func__,
@@ -400,22 +529,22 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
         "agent_name": "demo",
         "base_dir": str(tmp_path),
         "config": {
-                "harness": {
-                    "settings": {
-                        "hermes_home": "./hermes-home",
-                        "enabled_toolsets": [],
-                        "system_prompt": "system",
-                        # Explicit null must resolve to DEFAULT_MAX_ITERATIONS (not int(None)).
-                        "max_iterations": None,
-                    }
-                },
-                "models": {
-                    "default": {
-                        "provider": "test-provider",
-                        "model": "test-model",
-                        "api_key_env": "TEST_API_KEY",
-                    }
-                },
+            "harness": {
+                "settings": {
+                    "hermes_home": "./hermes-home",
+                    "enabled_toolsets": [],
+                    "system_prompt": "system",
+                    # Explicit null must resolve to DEFAULT_MAX_ITERATIONS (not int(None)).
+                    "max_iterations": None,
+                }
+            },
+            "models": {
+                "default": {
+                    "provider": "test-provider",
+                    "model": "test-model",
+                    "api_key_env": "TEST_API_KEY",
+                }
+            },
         },
         "runtime_context": {
             "runtime_id": "runtime-fabric-123",
@@ -428,12 +557,27 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
         "capability_plan": {"native": {}},
     }
 
-    output = await adapter.run_hermes(payload)
+    start_payload = {key: value for key, value in payload.items() if key != "request"}
+    runtime = adapter.HermesRuntime()
+
+    await runtime.start(start_payload)
+    first = await runtime.invoke(
+        {
+            "runtime_context": payload["runtime_context"],
+            "request": payload["request"],
+        }
+    )
+    payload["runtime_context"]["invocation_id"] = "invocation-2"
+    payload["request"]["input"] = "continue"
+    second = await runtime.invoke(
+        {
+            "runtime_context": payload["runtime_context"],
+            "request": payload["request"],
+        }
+    )
+    await runtime.stop()
 
     mock_session_db_type.assert_called_once_with()
-    mock_session_db.resolve_resume_session_id.assert_called_once_with("runtime-fabric-123")
-    mock_session_db.get_session.assert_called_once_with("runtime-resolved-456")
-    mock_session_db.get_messages_as_conversation.assert_called_once_with("runtime-resolved-456")
     mock_ai_agent_type.assert_called_once_with(
         base_url=None,
         api_key="secret",
@@ -452,12 +596,36 @@ async def test_fabric_runtime_id_drives_hermes_session_id_and_db_history(
         session_id="runtime-fabric-123",
         session_db=mock_session_db,
     )
-    mock_ai_agent.run_conversation.assert_called_once_with(
-        "hello",
-        system_message="system",
-        conversation_history=db_history,
-    )
-    assert "session_id" not in output
-    assert Path(output["hermes_home"]) == (
+    assert mock_ai_agent.run_conversation.call_count == 2
+    first_call, second_call = mock_ai_agent.run_conversation.call_args_list
+    assert first_call.args == ("hello",)
+    assert first_call.kwargs == {
+        "system_message": "system",
+        "conversation_history": None,
+    }
+    assert second_call.args == ("continue",)
+    assert second_call.kwargs == {
+        "system_message": "system",
+        "conversation_history": first_messages,
+    }
+    mock_ai_agent.close.assert_called_once_with()
+    mock_session_db.close.assert_called_once_with()
+    assert runtime._agent is None
+    assert runtime._session_db is None
+    assert runtime._start_payload is None
+    assert runtime._conversation_history is None
+    assert first["response"] == "first response"
+    assert second["response"] == "second response"
+    assert "session_id" not in second
+    assert Path(second["hermes_home"]) == (
         tmp_path / "hermes-home" / "runtimes" / "runtime-fabric-123"
     )
+
+
+def test_main_serves_persistent_runtime(monkeypatch):
+    serve = MagicMock()
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
+
+    adapter.main()
+
+    serve.assert_called_once_with(adapter.HermesRuntime)

@@ -251,7 +251,7 @@ Examples:
 ```text
 feat: add typed runtime diagnostics
 fix: preserve adapter errors in run results
-docs: clarify Hermes adapter installation
+docs: clarify Hermes Agent adapter installation
 test: cover concurrent Python runtime invocations
 ```
 

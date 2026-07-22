@@ -34,27 +34,34 @@ pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[hermes]"
 ```
 
-Fabric supports running an agent harness in a different virtual environment than the one used to run Fabric itself. This is useful for running agents that have conflicting dependencies with Fabric or other agents.
+NeMo Fabric supports running an agent harness in a different virtual environment than the one used to run NeMo Fabric itself. This is useful for running agents that have conflicting dependencies with NeMo Fabric or other agents.
 
 The adapter must be installed into the virtual environment that the harness is installed in. For this reason adapters intentionally have minimal dependencies.
 
 ### Integrations
 
-Harbor integration:
+#### Harbor Integration
 
 ```bash
 pip install "nemo-fabric[harbor]"
 ```
 
-Relay integration:
+#### Relay Integration
 
 ```bash
 pip install "nemo-fabric[relay]"
 ```
 
+This installs a version of [NeMo Relay](https://docs.nvidia.com/nemo/relay) Python library known to be compatible with the installed version of NeMo Fabric.
+
+Some adapters, such as Claude and Codex, require the
+[`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli) tool instead of the
+NeMo Relay Python library. Refer to the
+[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
+
 ### Python Versions
 
-NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations and adapters may have additional requirements. Specifically the Hermes adapter doesn't support Python 3.14 yet, and the Harbor integration requires Python 3.12 or later.
+NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations and adapters may have additional requirements. Specifically Hermes Agent doesn't support Python 3.14 yet, and the Harbor integration requires Python 3.12 or later.
 
 ## Core Concepts
 

@@ -1,6 +1,6 @@
 ---
 title: "Use the Codex Adapter"
-description: "Configure capabilities, authentication, and telemetry for the NeMo Fabric Codex SDK adapter."
+description: "Configure capabilities, authentication, and telemetry for the NeMo Fabric Codex adapter."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -31,10 +31,16 @@ config.add_mcp_server(
 ```
 
 The adapter maps stdio, HTTP, and streamable HTTP servers into the Codex
-thread's request-scoped `mcp_servers` configuration. It resolves each skill
-directory, verifies that it contains `SKILL.md`, and registers it as a
-process-scoped Codex skill root. Codex uses its normal skill discovery behavior.
-Invalid skill directories and MCP transports fail before the SDK runtime starts.
+thread's `mcp_servers` configuration. It resolves each skill directory, verifies
+that it contains `SKILL.md`, and registers it as a process-scoped Codex skill
+root. Codex uses its normal skill discovery behavior. Invalid skill directories
+and MCP transports fail before the SDK runtime starts.
+
+For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
+roots, and `harness.settings.config_overrides` are fixed when the runtime starts
+and cannot vary between `Runtime.invoke(...)` calls. Start a new runtime to
+change them. `Fabric.run(...)` starts the same runtime, invokes it once, and
+stops it, so the same settings are scoped to that single invocation.
 
 The Codex adapter does not declare `tools.blocked` support. Codex can filter
 individual MCP server tools, but the pinned runtime does not provide one deny
@@ -49,7 +55,7 @@ does not declare or select the runtime package separately. A `codex` command on
 `PATH` does not replace the SDK-owned runtime.
 
 To override the SDK-selected app-server intentionally, set an absolute path or
-a path relative to the Fabric config root in `harness.settings.codex_bin`:
+a path relative to the NeMo Fabric config root in `harness.settings.codex_bin`:
 
 ```python
 config.harness.settings["codex_bin"] = "/path/to/codex"
@@ -103,24 +109,27 @@ storage. Do not commit or copy it into NeMo Fabric configuration or artifacts.
 
 ## Use Authentication with Relay
 
-NeMo Relay does not replace OpenAI authentication. A Relay-enabled invocation
-starts the Relay gateway as a supervised sidecar and directs the Codex SDK's
-built-in OpenAI provider through that gateway. The SDK still obtains credentials
-from the selected Codex authentication mode.
+NeMo Relay does not replace OpenAI authentication. A Relay-enabled NeMo Fabric
+runtime starts one gateway as a supervised sidecar and directs the Codex SDK's
+built-in OpenAI provider through that gateway. The runtime reuses the gateway
+and SDK client across ordered invocations. `Fabric.run(...)` starts the same
+runtime, invokes it once, and stops it, so the gateway is scoped to that single
+invocation. The SDK still obtains credentials from the selected Codex
+authentication mode.
 
 Relay-enabled Codex runs require `models.default.provider` to be `openai`.
 The custom `nvidia` provider uses its configured NVIDIA Responses endpoint and
 does not support the built-in provider redirect that Relay requires. Use the
 `nvidia` provider without Relay.
 
-NeMo Fabric supplies Relay configuration to the SDK for only the current request. It
-does not copy the Codex credential store into Relay configuration or persist
-credentials in Relay artifacts.
+NeMo Fabric supplies runtime-scoped Relay configuration to the SDK. It does not
+copy the Codex credential store into Relay configuration or persist credentials
+in Relay artifacts.
 
 NeMo Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
 including, `0.7.0`. The Python package named `nemo-relay` is a separate library
 dependency and does not install the CLI. NeMo Fabric owns sidecar supervision and
-request-scoped SDK configuration. Relay owns gateway transport behavior,
+runtime-scoped SDK configuration. Relay owns gateway transport behavior,
 including decoding `Content-Encoding` before it constructs managed LLM events.
 There is no NeMo Fabric compression setting.
 

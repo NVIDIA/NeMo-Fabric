@@ -73,11 +73,11 @@ experiments:
 | `deepagents` | LangChain Deep Agents | `nvidia/nemotron-3-nano-30b-a3b` | NVIDIA API Catalog |
 
 The `scripted` preset does not call a model. It returns a deterministic response
-through the same Fabric runtime and adapter contract, which makes it useful for
+through the same NeMo Fabric runtime and adapter contract, which makes it useful for
 checking CLI installation, request flow, and result formatting without network
 access or credentials.
 
-The four external-harness presets use `NVIDIA_API_KEY`. Hermes and Deep Agents
+The four external-harness presets use `NVIDIA_API_KEY`. Hermes Agent and Deep Agents
 target the public NVIDIA API Catalog at `https://integrate.api.nvidia.com/v1`.
 Export the credential before running them:
 
@@ -92,7 +92,7 @@ selected frontier model and supports the harness protocol. Set it explicitly:
 export NVIDIA_FRONTIER_BASE_URL="https://your-frontier-endpoint.example/v1"
 ```
 
-Fabric does not provide a default frontier URL because the correct endpoint
+NeMo Fabric does not provide a default frontier URL because the correct endpoint
 depends on the model and the user's access.
 
 List the complete configurations maintained by the CLI:
@@ -223,9 +223,9 @@ The CLI has the following boundaries:
 - Every preset and example variant constructs a complete typed `FabricConfig`.
 - Examples reuse preset constructors and one shared workspace and skill asset
   tree; Python and Rust launchers do not duplicate those definitions.
-- Fabric does not discover or persist YAML, TOML, or JSON agent configuration.
+- NeMo Fabric does not discover or persist YAML, TOML, or JSON agent configuration.
 - JSON request payloads and harness-generated files are runtime inputs and
-  outputs, not Fabric configuration sources.
+  outputs, not NeMo Fabric configuration sources.
 - The CLI is not an application API, scheduler, evaluation framework, or
   production deployment interface.
 

@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nemo-fabric-adapters-codex"
 version = "0.1.0"
-description = "Codex SDK adapter for NeMo Fabric"
+description = "Codex adapter for NeMo Fabric"
 authors = [
   { name = "NVIDIA Corporation" },
 ]

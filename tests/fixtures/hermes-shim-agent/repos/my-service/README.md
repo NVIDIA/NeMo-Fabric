@@ -5,4 +5,4 @@ SPDX-License-Identifier: Apache-2.0
 
 # Test Service
 
-Fixture workspace used by Fabric smoke tests.
+Fixture workspace used by NeMo Fabric smoke tests.

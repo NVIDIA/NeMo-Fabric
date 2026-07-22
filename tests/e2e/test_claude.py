@@ -130,7 +130,7 @@ def fabric_config(
     return config
 
 
-async def test_fabric_session_launches_fresh_processes_and_resumes(tmp_path):
+async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
     config = fabric_config(tmp_path, cli_path=MOCK_CLAUDE_CLI)
 
     async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
@@ -146,17 +146,25 @@ async def test_fabric_session_launches_fresh_processes_and_resumes(tmp_path):
     assert first.output["usage"] == {"input_tokens": 1, "output_tokens": 2}
     assert first.output["cost_usd"] == 0.001
     assert [event["type"] for event in first.output["events"]] == ["AssistantMessage"]
-    arguments = [json.loads(line) for line in (tmp_path / "claude-args.jsonl").read_text().splitlines()]
-    assert len(arguments) == 2
+    assert first.metadata["adapter_runner"] == "persistent_local_host"
+    assert first.metadata["host_pid"] == second.metadata["host_pid"]
+    arguments = [
+        json.loads(line)
+        for line in (tmp_path / "claude-args.jsonl").read_text().splitlines()
+    ]
+    assert len(arguments) == 1
     assert "--resume" not in arguments[0]
-    assert arguments[1][arguments[1].index("--resume") + 1] == SESSION_ID
     assert all("--mcp-config" in args for args in arguments)
     assert all("--plugin-dir" in args for args in arguments)
     plugin_paths = [args[args.index("--plugin-dir") + 1] for args in arguments]
-    assert plugin_paths[0] == plugin_paths[1]
+    assert len(plugin_paths) == 1
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
 
 
+@pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="mock Relay gateway cannot pass its loopback health check on macOS",
+)
 async def test_fabric_claude_relay_supervises_gateway_and_injects_plugin(tmp_path):
     mock_relay = tmp_path / "nemo-relay"
     relay_args_path = tmp_path / "relay-args.json"
@@ -226,17 +234,19 @@ async def test_fabric_claude_accepts_real_relay_gateway_with_mock_claude(tmp_pat
     os.environ.get("RUN_FABRIC_CLAUDE_INTEGRATION") != "1",
     reason="set RUN_FABRIC_CLAUDE_INTEGRATION=1 to run Claude Agent SDK integration",
 )
-async def test_live_claude_one_shot_and_session(tmp_path):
+async def test_live_claude_single_invocation_and_runtime(tmp_path):
     fabric = Fabric()
-    one_shot = await fabric.run(
-        fabric_config(tmp_path / "oneshot"),
-        base_dir=tmp_path / "oneshot",
+    single = await fabric.run(
+        fabric_config(tmp_path / "single"),
+        base_dir=tmp_path / "single",
         input="Reply only with: FABRIC_CLAUDE_OK",
     )
-    assert one_shot.status == "succeeded"
+    assert single.status == "succeeded"
 
     session_root = tmp_path / "session"
-    async with await fabric.start_runtime(fabric_config(session_root), base_dir=session_root) as session:
+    async with await fabric.start_runtime(
+        fabric_config(session_root), base_dir=session_root
+    ) as session:
         first = await session.invoke(input="Remember token FABRIC-CONTINUITY-7")
         second = await session.invoke(
             input="Reply only with the token I asked you to remember"
@@ -267,3 +277,34 @@ async def test_live_claude_relay_one_shot(tmp_path):
         result.output,
         "FABRIC_CLAUDE_RELAY_OK",
     )
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_FABRIC_CLAUDE_RELAY_INTEGRATION") != "1",
+    reason="set RUN_FABRIC_CLAUDE_RELAY_INTEGRATION=1 to run Claude with NeMo Relay",
+)
+async def test_live_claude_relay_session(tmp_path):
+    relay_command = os.environ.get("FABRIC_TEST_NEMO_RELAY_COMMAND")
+    config = fabric_config(
+        tmp_path,
+        relay=True,
+        nemo_relay_command=relay_command,
+    )
+
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        first = await runtime.invoke(input="Remember token FABRIC-CLAUDE-RELAY-7")
+        second = await runtime.invoke(
+            input="Reply only with the token I asked you to remember"
+        )
+
+    results = (first.to_mapping(), second.to_mapping())
+    assert first.status == second.status == "succeeded", results
+    assert first.output["session_id"] == second.output["session_id"], results
+    assert first.metadata["host_pid"] == second.metadata["host_pid"], results
+    assert "FABRIC-CLAUDE-RELAY-7" in second.output["response"], results
+    for turn in (first, second):
+        assert turn.telemetry[0].provider == "relay", turn.to_mapping()
+        assert {artifact["kind"] for artifact in turn.output["relay_artifacts"]} == {
+            "atof",
+            "atif",
+        }, turn.to_mapping()

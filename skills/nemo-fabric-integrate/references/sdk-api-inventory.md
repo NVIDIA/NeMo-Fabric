@@ -14,7 +14,7 @@ document the public methods, but they omit `async` and keyword-only markers —
 this inventory records those, and the installed `nemo_fabric` package ships type
 information (`py.typed`) for exact signatures.
 
-## Fabric Methods
+## `Fabric` Methods
 
 The following table lists the `Fabric` methods and when to use each.
 
@@ -52,7 +52,7 @@ async with await fabric.start_runtime(config, base_dir=base) as runtime:
 
 ## Execution Model
 
-Fabric separates configuration, planning, runtime lifecycle, and individual
+NeMo Fabric separates configuration, planning, runtime lifecycle, and individual
 invocations:
 
 ```text
@@ -66,5 +66,10 @@ FabricConfig -> plan() -> RunPlan -> start_runtime() -> Runtime -> invoke() -> R
 - A runtime is a logical execution boundary, not necessarily an operating-system
   process. Harness-native threads, sessions, and conversations remain
   adapter-owned state associated with the runtime.
+- Runtime hosting is adapter-declared, not consumer-configured. The bundled
+  Claude, Codex, Deep Agents, and Hermes Agent adapters retain their native runtime
+  resources in one local host. Local `process` and `python` adapters use the
+  same host lifecycle. A host crash or protocol timeout terminates the runtime;
+  the application may explicitly start a new runtime according to its policy.
 - The application owns scheduling, queues, retries, and how many runtimes to
-  run. Fabric provides only the runtime contract.
+  run. NeMo Fabric provides only the runtime contract.
