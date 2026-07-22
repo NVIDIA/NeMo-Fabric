@@ -56,8 +56,11 @@ Decide the following before implementation:
   fits; do not add a runner or abstraction for one adapter.
 - Create only the package surfaces that adapter needs: license link, README,
   descriptor, package metadata, `src/nemo_fabric_adapters/<name>` module entry
-  point, lockfile, and focused tests under `tests/adapters`. Keep the package
-  independent, small, and self-contained.
+  point, lockfile, and focused tests under `tests/adapters`. Keep it independent
+  and small.
+- Declare only adapter-owned runtime dependencies. Do not add the wrapped harness
+  or packages supplied by its agent package. Put local-test-only packages in a
+  dependency group.
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.
@@ -154,5 +157,5 @@ Before handoff, confirm:
 
 - [ ] Descriptor claims match implementation and positive, negative, and lifecycle evidence.
 - [ ] Precedence, actionable rejection, forwarding, isolation, results, telemetry, and artifacts are tested.
-- [ ] Package, installation, resolution, docs, SDK/YAML examples, fixtures, and generated artifacts agree.
+- [ ] Package, runtime/test dependencies, installation, resolution, docs, SDK/YAML examples, fixtures, and generated artifacts agree.
 - [ ] Generated files came from repository commands, applicable CI catalogs enumerate the adapter, and the diff has no contract drift or unrelated changes.
