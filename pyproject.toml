@@ -36,25 +36,6 @@ Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
 packages = []
 
 [project.optional-dependencies]
-adapters-common = [
-  "nemo-fabric-adapters-common == 0.1.0",
-]
-
-adapters-codex = [
-  "nemo-fabric-adapters-codex == 0.1.0",
-]
-
-adapters-claude = [
-  "nemo-fabric-adapters-claude == 0.1.0",
-]
-
-adapters-deepagents = [
-  "nemo-fabric-adapters-deepagents == 0.1.0",
-]
-
-adapters-hermes = [
-  "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
-]
 
 codex = [
   "nemo-fabric-adapters-codex == 0.1.0",
@@ -75,7 +56,11 @@ harbor = [
 
 hermes = [
   "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
-  "hermes-agent>=0.17.0; python_version < '3.14'",
+]
+
+hermes-agent = [
+    "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
+    "hermes-agent>=0.17.0; python_version < '3.14'",
 ]
 
 relay = [

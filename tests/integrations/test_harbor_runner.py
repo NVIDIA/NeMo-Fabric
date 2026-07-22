@@ -252,7 +252,7 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     assert "-e /opt/nemo-fabric/adapters/claude" in dockerfile
     assert "-e /opt/nemo-fabric/adapters/hermes" in dockerfile
-    assert "nemo-fabric[harbor,hermes,relay,runtime]" in dockerfile
+    assert "nemo-fabric[harbor,hermes,hermes-agent,relay,runtime]" in dockerfile
     assert "@openai/codex" not in dockerfile
 
 

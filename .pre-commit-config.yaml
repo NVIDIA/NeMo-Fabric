@@ -66,4 +66,4 @@ repos:
         language: system
         files: '(^|/)(Cargo\.toml|Cargo\.lock|pyproject\.toml|uv\.lock)$'
         pass_filenames: false
-        verbose: true
+        verbose: false

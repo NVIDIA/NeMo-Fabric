@@ -111,7 +111,7 @@ Install NeMo Fabric, Hermes Agent, and the Hermes Agent adapter into an environm
 ```bash
 # Use any Python 3.11-3.13 interpreter for Hermes Agent.
 python3 -m venv .tmp/hermes-venv
-.tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[hermes]"
+.tmp/hermes-venv/bin/python -m pip install --find-links dist "nemo-fabric[hermes, hermes-agent]"
 ```
 
 If you are working from a local Hermes Agent checkout, replace the final install line

@@ -12,13 +12,19 @@ This adapter runs Hermes Agent through its Python SDK.
 To install just the Hermes Agent adapter by itself:
 
 ```bash
-pip install "nemo-fabric[adapters-hermes]"
+pip install "nemo-fabric[hermes]"
 ```
 
-To install just the Hermes Agent adapter along with the NeMo Fabric Runtime:
+To install the Hermes Agent adapter along with the NeMo Fabric Runtime:
 
 ```bash
-pip install "nemo-fabric[adapters-hermes, runtime]"
+pip install "nemo-fabric[hermes, runtime]"
+```
+
+To install the Hermes Agent adapter along with a compatible version of Hermes Agent:
+
+```bash
+pip install "nemo-fabric[hermes, hermes-agent]"
 ```
 
 ## What It Maps
