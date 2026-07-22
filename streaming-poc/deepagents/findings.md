@@ -4,68 +4,66 @@
 (`relay_api_plugin_config` + callback handler) · **Model:**
 `nvidia/nemotron-3-nano-30b-a3b`
 
-## Scenario (real run with nesting + delegation)
-Prompt: *"Complete two independent subtasks: (1) compute 12*8; (2) write a one-line
-haiku about the sea. Use subagents if helpful, then combine."* — chosen to induce
-delegation. Captured live via `invoke_stream`; 33 ATOF records. Fixtures:
-[`native-events.jsonl`](native-events.jsonl), [`events.atof.jsonl`](events.atof.jsonl).
+## Scenario (real run, nested + delegated subagents)
+Prompt: *"Delegate two independent subtasks to two separate subagents … subagent A
+computes 15*23; subagent B writes a one-line haiku … Launch both, then combine."*
+Captured live via `invoke_stream` with **both** recorders active. Two delegated
+subagents resulted (this model ran them sequentially, not concurrently).
 
-## Nesting / parallelism / delegation (real, via `parent_uuid`)
-The scope tree reconstructed from `parent_uuid`:
-```
-deepagents-request [agent]
-  LangGraph [agent]
-    PatchToolCallsMiddleware.before_agent [agent]
-    NemoRelayDeepAgentsMiddleware.before_agent [agent]
-    model [agent] → nvidia/nemotron-3-nano-30b-a3b [llm]
-    TodoListMiddleware.after_model [agent]
-    tools [agent]
-      task [tool]                     ← DELEGATION tool call
-      general-purpose [agent]         ← SUB-AGENT (delegated), own subtree:
-        PatchToolCallsMiddleware.before_agent [agent]
-        model [agent]
-        TodoListMiddleware.after_model [agent]
-    model [agent] → nvidia/nemotron-3-nano-30b-a3b [llm]
-    TodoListMiddleware.after_model [agent]
-```
-- **Nesting:** request → graph → middleware/model/tools spans.
-- **Delegation:** the `task` tool spawns a `general-purpose` sub-agent with its
-  **own** nested middleware/model scopes.
-- **Parallelism:** here sub-agents ran sequentially, but Deep Agents can fan out;
-  concurrent sub-agents appear as **sibling subtrees interleaved in stream order**,
-  distinguished only by `parent_uuid` (not by position).
+## Fixtures & how they were captured
+- [`native-events.jsonl`](native-events.jsonl) — **genuine native evidence**, teed
+  *before* Relay at the `agent.astream(..., stream_mode=["updates","values"],
+  subgraphs=True)` loop (via POC-only `common/native_recorder.py`). 26 raw
+  `(namespace, mode, chunk)` tuples.
+- [`events.atof.jsonl`](events.atof.jsonl) — Relay's ATOF from the *same* run
+  (51 records).
 
-## Prototype crossing the Fabric boundary
-Same in-process path as Hermes (`relay_api_plugin_config`), proven live:
-`invoke_stream` yields the 33 raw ATOF records as they were emitted.
+## Native event units (real LangGraph astream tuples)
+`(namespace, mode, chunk)` where `mode ∈ {values, updates}` and `namespace` is the
+subgraph path. Two delegated subagents have distinct namespaces:
+`tools:e55b5b5f-…` and `tools:e898cde5-…` — each with its own nested
+`before_agent → model → after_model` sub-stream. An `updates/model` chunk carries
+full LangChain messages: `{content, tool_calls, usage_metadata, response_metadata,
+id, additional_kwargs, invalid_tool_calls, type, name}`.
 
-## Native → ATOF / Fabric mapping (structure is the point)
-| Deep Agents concept | ATOF representation | candidate Fabric event (v0.1 = raw ATOF) |
-|---|---|---|
-| nesting | `scope` with `parent_uuid` chain | `{kind:scope, uuid, parent_uuid, category}` |
-| delegation | `scope task [tool]` + child `scope <subagent> [agent]` | raw ATOF records (linked by `parent_uuid`) |
-| parallelism | interleaved sibling subtrees, same `parent_uuid` | raw ATOF; **reconstruct tree via `parent_uuid`, not stream order** |
-| model call | `scope model [agent]` → `scope <model> [llm]` | raw ATOF record (no token deltas) |
-Like Hermes (in-process): **no `llm.chunk`** — model calls are whole-call `llm`
-scopes, not token deltas.
+## Nesting / parallelism / delegation
+- **Nesting/delegation:** the empty-namespace `tools` node spawns a subagent whose
+  entire sub-stream is tagged `namespace=tools:<tool_call_id>`.
+- **Parallelism:** concurrent subagents would **interleave** in stream order,
+  distinguishable *only* by `namespace` — so the native namespace (not position) is
+  the parallel-safe key.
 
-## Streamed events vs. terminal response
-Streamed scopes give the live execution tree; the terminal response
-(`RunResult.output`) is the combined final answer, emitted as the last `model`
-scope closes and `deepagents-request end` (`otel.status_code: OK`) fires.
+## Native → ATOF paired examples (same run)
+| native event | ATOF record | preserved | dropped / changed |
+|---|---|---|---|
+| #7–#11 `ns=tools:e55b5b5f…` (subagent A sub-stream) | `scope general-purpose [agent]` (1st) under `scope task` | subagent ran, nested via `parent_uuid`; the **`tools:<tool_call_id>` namespace appears in ATOF too** | — (structure + namespace both preserved) |
+| `mode=values` snapshots (#1,#5,#10,…) | — (**no ATOF record**) | — | LangGraph **`values` full-state snapshots** and the `values`/`updates` **mode** have no ATOF equivalent |
+| #4 `updates/model` (messages w/ `tool_calls`, `usage_metadata`) | `scope model → nvidia/nemotron [llm]` | model call + **`usage_metadata`/`tool_calls` preserved in ATOF** | the raw LangChain message *envelope* (`additional_kwargs`, `invalid_tool_calls`, `response_metadata`) is reshaped |
 
-## Duplicate-rendering risks
-1. **Sub-agent → parent echo:** a sub-agent's result is returned to the parent and
-   re-appears in the parent's next `model` input, and again in the terminal —
-   render each logical unit once, keyed by scope `uuid`.
-2. **Delta-vs-terminal:** the final `model` scope's output equals the terminal
-   `RunResult.output` — don't render both.
-3. **Tree vs. stream order:** naively concatenating stream events double-nests or
-   mis-orders parallel subtrees — a correct renderer groups by `parent_uuid`.
+Pairing key: native `sequence` + `namespace`; two subagents ↔ the two ATOF
+`general-purpose` scopes in order; `parent_uuid` reconstructs the ATOF tree.
+
+## What cannot be normalized without loss (comparison-based)
+Verified by diffing the two fixtures from the same run:
+- **Absent from ATOF:** the `values`/`updates` **mode** distinction and the
+  `values` full-state snapshots — you cannot recreate the native stream_mode view
+  from ATOF.
+- **Faithfully preserved:** the delegation **tree** (`uuid`/`parent_uuid`), the
+  subagent **`tools:<id>` namespaces**, `usage_metadata`, and `tool_calls` all
+  survive into ATOF — a more faithful projection than assumed.
+- ATOF's loss here is thin (mode/snapshots), which *supports* raw pass-through.
+
+## Streamed events vs. terminal · duplicate-rendering risks
+1. **Sub-agent → parent echo:** a subagent result re-appears in the parent's next
+   `model` input and again in the terminal — dedup by scope `uuid`.
+2. **Tree vs. stream order:** under parallel subagents, naive concatenation
+   mis-nests — group by `parent_uuid` (ATOF) / `namespace` (native).
+3. **Delta vs terminal:** final `model` scope == `RunResult.output` — render once.
 
 ## Recommendation
-**Raw ATOF pass-through (v0.1).** Deep Agents' nesting/parallelism/delegation is
-already fully represented by ATOF's `uuid`/`parent_uuid` scope tree — a flat
-"normalized delta" model would **lose the tree**. Ship raw ATOF and document that
-consumers must reconstruct hierarchy from `parent_uuid` (stream order alone is
-insufficient under parallelism).
+**Raw ATOF pass-through (v0.1).** ATOF's `uuid`/`parent_uuid` tree already carries
+the nesting/delegation a UI needs, and the native recorder confirms it also keeps
+the subagent namespaces, `usage_metadata`, and `tool_calls` — omitting only the
+LangGraph `values`/`updates` mode and full-state snapshots. That thin, comparison
+-verified loss justifies shipping the ATOF projection for v0.1 rather than a lossy
+normalized schema.

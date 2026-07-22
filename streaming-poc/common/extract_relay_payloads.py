@@ -1,16 +1,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Derive a `native-events.jsonl` fixture from a captured `events.atof.jsonl`.
+"""Extract the payloads embedded in a captured `events.atof.jsonl`.
 
-The raw *native* harness events are surfaced two ways in the Relay ATOF capture:
-  * Gateway harnesses (Claude/Codex): the native provider streaming event is
-    embedded in each ``llm.chunk`` record's ``data`` (Anthropic message/content
-    -block events; OpenAI Responses turn/item events) — we emit that ``data``.
-  * In-process harnesses (Hermes/Deep Agents): the ATOF scope/mark IS a thin
-    envelope over the native callback — we project the native-relevant fields.
+This is an ATOF *inspection* helper, **not** native evidence: it only surfaces
+what Relay already put into ATOF (each ``llm.chunk``'s ``data`` for gateway
+harnesses; the scope/mark projection for in-process harnesses). It cannot recover
+native fields Relay dropped. For genuine native evidence — teed from the SDK
+stream *before* Relay — use ``native_recorder.py`` and see each harness's
+``native-events.jsonl``.
 
-Usage: derive_native_events.py <events.atof.jsonl> <native-events.jsonl> [max_bytes_per_line]
+Usage: extract_relay_payloads.py <events.atof.jsonl> <relay-payloads.jsonl> [max_bytes_per_line]
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def main() -> int:
                 }
             o.write(json.dumps(native) + "\n")
             n += 1
-    print(f"{n} native events -> {outp}")
+    print(f"{n} relay payloads -> {outp}")
     return 0
 
 

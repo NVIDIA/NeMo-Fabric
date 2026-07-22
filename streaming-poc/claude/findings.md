@@ -13,8 +13,16 @@
 > is credential-blocked. See [`../synthesis/`](../synthesis/README.md).
 
 ## Native event units (Anthropic Messages SSE)
-From [`native-events.jsonl`](native-events.jsonl), the raw provider event
-histogram:
+> **Not yet natively teed.** [`relay-payloads.jsonl`](relay-payloads.jsonl) below
+> is *extracted from ATOF* (`extract_relay_payloads.py`), not independently
+> recorded — the Anthropic events are real but they come through Relay. Genuine
+> native capture (like Hermes/Deep Agents) is pending `ANTHROPIC_API_KEY`; the seam
+> is `ClaudeSDKClient.receive_response()` with `include_partial_messages=True`,
+> recording every `Message`/`StreamEvent.event` before normalization
+> ([adapter.py:889](../../adapters/claude/src/nemo_fabric_adapters/claude/adapter.py#L889)).
+
+From [`relay-payloads.jsonl`](relay-payloads.jsonl), the provider event histogram
+(as embedded by Relay in ATOF):
 
 ```
 99  content_block_delta     ← token/text deltas (delta.text | delta.partial_json)

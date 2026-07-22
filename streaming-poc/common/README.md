@@ -8,6 +8,7 @@ per-harness streaming code).
 | `atof_stream.py` | `AtofStreamListener` — loopback ndjson sink; async queue of raw ATOF; bounded-queue backpressure; handles >512 KB gateway records |
 | `fabric_stream.py` | `Runtime.invoke_stream()` prototype — `StreamingRuntime` / `InvokeStream`; endpoint injection at `start_runtime`; raw ATOF + out-of-band `result()`; honest early-exit |
 | `run_harness.py` | run one real harness through `invoke_stream` and save its raw ATOF stream |
-| `derive_native_events.py` | derive a `native-events.jsonl` fixture from a captured `events.atof.jsonl` |
+| `native_recorder.py` | **POC-only** recorder that tees a harness's native SDK stream *before* Relay (produces `native-events.jsonl`); documents the per-harness capture seams. Not a Fabric API. |
+| `extract_relay_payloads.py` | ATOF *inspection* helper — extracts the payloads Relay embedded in `events.atof.jsonl` (→ `relay-payloads.jsonl`); **not** native evidence |
 
 Requires a built native extension and provider creds — see [`../README.md`](../README.md).

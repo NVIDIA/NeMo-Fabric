@@ -27,8 +27,12 @@ streaming-poc/
 ├── deepagents/      in-process · nested/delegated sub-agents · scope tree
 └── synthesis/       cross-harness conclusion + production work breakdown
 ```
-Each harness folder has `native-events.jsonl` (raw native SDK events),
-`events.atof.jsonl` (Relay ATOF), and `findings.md` (mapping + recommendation).
+Each harness folder has `events.atof.jsonl` (Relay ATOF) and `findings.md`. For
+**native evidence** — the SDK stream teed *before* Relay (via
+`common/native_recorder.py`) — **Hermes** and **Deep Agents** carry a real
+`native-events.jsonl`. **Claude** and **Codex** are credential/billing-blocked
+this session, so they carry `relay-payloads.jsonl` (payloads extracted from ATOF,
+honestly *not* native evidence) with the native seam identified for later.
 
 ## Evidence status
 | Harness | live run here | fixture | token deltas |

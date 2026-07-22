@@ -8,12 +8,16 @@ Real Codex run via `invoke_stream` through the gateway (built `nemo-relay-cli`
 0.6.0). It streamed live ATOF; the *turn* then errored `Quota exceeded` (the
 `OPENAI_API_KEY` account is out of quota) — the **streaming path is fully proven**;
 only the completion failed on billing. Fixtures:
-[`native-events.jsonl`](native-events.jsonl), [`events.atof.jsonl`](events.atof.jsonl)
+[`relay-payloads.jsonl`](relay-payloads.jsonl), [`events.atof.jsonl`](events.atof.jsonl)
 (2 oversized full-request records elided; the final `response.failed` shows the
 quota error propagating through the stream).
 
 ## Native event units (OpenAI Responses SSE)
-From [`native-events.jsonl`](native-events.jsonl):
+From [`relay-payloads.jsonl`](relay-payloads.jsonl) (extracted from ATOF, **not**
+independently teed — genuine native capture is pending a funded OpenAI account; the
+seam is `AsyncTurnHandle.stream()`, recording every notification's method+payload
+before the terminal-result collector,
+[adapter.py:927](../../adapters/codex/src/nemo_fabric_adapters/codex/adapter.py#L927)):
 ```
 mark  session.start
 scope codex-turn start
