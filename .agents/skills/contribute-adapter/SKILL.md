@@ -18,8 +18,8 @@ adapter. Use the consumer `nemo-fabric-integrate` skill for that work.
 
 ## Define The Contract
 
-Read the authoritative surfaces and the closest existing adapter before
-editing:
+Read the authoritative surfaces before editing. Use the closest existing
+adapter only for harness-specific patterns, not to infer the core contract:
 
 - `schemas/adapter-descriptor.schema.json` and the descriptor types in
   `crates/fabric-core/src/config.rs`.
@@ -34,22 +34,30 @@ editing:
 
 Decide the following before implementation:
 
-1. Choose `python` for a Python-owned module or CLI and `process` for a
-   language-neutral executable. Core runtime dispatch does not yet implement
-   `http` or `native_plugin`.
-2. Decide whether invocations are independent or resume harness state for the
-   same `runtime_context.runtime_id`.
-3. List the normalized fields the adapter supports, partially supports, or
+1. Choose the harness boundary: Python SDK or module, CLI/process, or service.
+   Use `python` for Python-owned execution and `process` for an executable. Core
+   runtime dispatch does not yet implement `http` service or `native_plugin`
+   execution.
+2. Place a repository adapter under `adapters/<name>`. Define its install extra
+   and packaged descriptor. Choose the matching `harness.resolution` strategy,
+   and document repository or `base_dir` descriptor discovery; wheel package
+   data alone does not add a descriptor to core discovery.
+3. Decide whether invocations are one-shot and independent or stateful and
+   resume harness state for the same `runtime_context.runtime_id`.
+4. List the normalized fields the adapter supports, partially supports, or
    rejects.
-4. Identify fixed requirements, dynamic credentials, telemetry, workspace,
+5. Identify fixed requirements, dynamic credentials, telemetry, workspace,
    state, and artifact needs.
 
 ## Implement The Narrowest Adapter
 
-- Follow the closest adapter package layout. Reuse `adapters/common/` only when
-  its contract fits; do not add an abstraction for one adapter.
+- Use the existing Fabric `python` or `process` runner and normalized
+  request/result contracts. Reuse `adapters/common/` only when its contract
+  fits; do not add a runner or abstraction for one adapter.
 - Create only the package surfaces that adapter needs: license link, README,
-  descriptor, package metadata, module entry point, and lockfile.
+  descriptor, package metadata, `src/nemo_fabric_adapters/<name>` module entry
+  point, lockfile, and focused tests under `tests/adapters`. Keep the package
+  independent, small, and self-contained.
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.
@@ -57,23 +65,33 @@ Decide the following before implementation:
   config or runtime context. Treat `config`, `capability_plan`,
   `telemetry_plan`, and `runtime_context` as authoritative. Reserve
   `harness.settings` for harness-specific behavior.
-- Reject configured values or policies the adapter cannot honor. Never ignore
-  them, silently weaken policy, or substitute another provider.
-- Validate fixed dependencies through descriptor requirements and validate
-  selected versions, hooks, and credentials before invoking the harness. Never
-  expose credential values in output, errors, events, logs, or fixtures.
+- Apply precedence in this order: normalized `config`; Fabric-resolved plans and
+  runtime context; harness-specific settings; descriptor and adapter defaults.
+  Reject duplicates or unsupported behavior with an actionable error that
+  names the field and supported alternatives. Never silently drop configuration.
+- Run dependency and authentication preflight: declare fixed dependencies in
+  descriptor requirements, then validate selected versions, hooks, and
+  credentials before invoking the harness. Never expose credential values in
+  output, errors, events, logs, or fixtures.
+- Forward only required system variables, selected credential variables,
+  telemetry variables, and documented harness-specific environment. Never
+  forward or log unrelated environment values.
 - Emit one JSON object on stdout and diagnostics on stderr. Return a nonzero
   exit code for failures so core result normalization remains accurate.
 - Scope workspace, generated config, state, sessions, and artifacts to the
   resolved runtime context. Stateful adapters must isolate Fabric runtime IDs.
+- Implement only the harness lifecycle hooks needed for start, invoke, resume,
+  and cleanup; do not claim unsupported service, streaming, update, or
+  cancellation behavior.
 - Keep adapter output stable across harness versions. Normalize the primary
   response, structured errors, measured usage, harness events, session IDs, and
   artifact paths without duplicating Fabric lifecycle events.
 
-Wire a new package into the same root extras, sources, `justfile` recipes,
-descriptor packaging, catalogs, and CI enumerations as comparable adapters.
-Use `maintain-packaging` to select the applicable surfaces and regenerate
-lockfiles or package artifacts.
+Wire a public Python package into root optional extras, the adapter dependency
+group, `[tool.uv.sources]`, `python_projects` in `justfile`, and applicable
+catalogs and CI enumerations. Ship its descriptor under
+`share/nemo-fabric/adapters/<name>`. Use `maintain-packaging` to regenerate
+lockfiles and package artifacts.
 
 ## Map Capabilities And Policy
 
@@ -113,8 +131,28 @@ metadata changes.
 
 Document installation, supported configuration, harness-only settings,
 credentials, lifecycle, telemetry, artifacts, limitations, and focused test
-commands in the adapter README. Update docs and examples only when they expose
-the changed behavior.
+commands in the adapter README. Provide a canonical typed SDK example and, when
+the harness requires YAML, a canonical harness-native YAML fixture. Update docs
+and examples together when they expose the changed behavior.
 
-Finish with `validate-change`, then confirm that package, docs, fixtures, and
-generated artifacts agree.
+## Validate And Review
+
+Run `validate-change` and the applicable adapter commands:
+
+```bash
+uv run --no-sync pytest tests/adapters/test_<name>_adapter.py
+just test-python
+just lock-python && just wheels  # Package or dependency changes.
+cargo run -p nemo-fabric-core --example generate-schemas -- schemas  # Schema changes.
+cargo fmt --all -- --check && just test-rust  # Rust changes.
+just docs  # Docs-site or generated-reference changes.
+uv run pre-commit run --all-files --show-diff-on-failure
+git diff --check
+```
+
+Before handoff, confirm:
+
+- [ ] Descriptor claims match implementation and positive, negative, and lifecycle evidence.
+- [ ] Precedence, actionable rejection, forwarding, isolation, results, telemetry, and artifacts are tested.
+- [ ] Package, installation, resolution, docs, SDK/YAML examples, fixtures, and generated artifacts agree.
+- [ ] Generated files came from repository commands, applicable CI catalogs enumerate the adapter, and the diff has no contract drift or unrelated changes.
