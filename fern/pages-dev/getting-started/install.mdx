@@ -34,12 +34,12 @@ intentionally have minimal dependencies and belong in the same environment as
 the agent harness. That environment can differ from the NeMo Fabric runtime
 environment.
 
-The following adapter packages are available:
+The following adapter extras are available:
 
-- `adapters-claude`
-- `adapters-codex`
-- `adapters-deepagents`
-- `adapters-hermes`
+- `claude`
+- `codex`
+- `deepagents`
+- `hermes`
 
 ```bash
 pip install "nemo-fabric[<adapter_name>]"
@@ -48,7 +48,7 @@ pip install "nemo-fabric[<adapter_name>]"
 For example, to install the Hermes Agent adapter:
 
 ```bash
-pip install "nemo-fabric[adapters-hermes]"
+pip install "nemo-fabric[hermes]"
 ```
 
 ### Install NeMo Relay
