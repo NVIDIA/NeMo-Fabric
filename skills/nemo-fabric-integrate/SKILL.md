@@ -52,7 +52,7 @@ runtime assumptions but never installs harnesses or credentials at run time.
   `nvidia.fabric.hermes` — and install its extra the same way, for example
   `uv pip install --find-links <dist_dir> "nemo-fabric[hermes]"`
   (available extras: `hermes`, `codex`, `deepagents`, `claude`), plus the
-  adapter's own harness binaries and dependencies.
+  corresponding harness binaries and dependencies.
 - Provide model credentials through environment variables named by the config
   (`ModelConfig.api_key_env`), never as literals in code.
 - Confirm the native extension is importable; SDK calls raise
