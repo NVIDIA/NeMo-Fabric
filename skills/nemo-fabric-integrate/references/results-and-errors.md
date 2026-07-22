@@ -35,14 +35,14 @@ else:
 
 `runtime_id` identifies the runtime lifecycle, `invocation_id` identifies one
 invocation within it, and `request_id` correlates the caller's request.
-Fabric-generated values use type-specific prefixes such as `runtime-`,
+NeMo Fabric-generated values use type-specific prefixes such as `runtime-`,
 `invocation-`, and `request-`; a caller may supply its own `request_id`. Store
 and log each field separately and treat every value as opaque — do not parse or
 reuse the encoding.
 
 ## Error Hierarchy
 
-All public SDK errors inherit from `FabricError`. Fabric raises these when it
+All public SDK errors inherit from `FabricError`. NeMo Fabric raises these when it
 cannot return a normalized result; it does not return a partial `RunResult`. See
 the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.errors.md).
 
@@ -61,7 +61,7 @@ the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/refe
   automatic call at `async with` exit, can raise `FabricRuntimeError`. On a
   normal block exit that error propagates; when an invocation already failed, the
   cleanup failure is attached to the original exception rather than replacing it.
-- The consumer owns job-level retries and rollout failure policy. Fabric marks a
+- The consumer owns job-level retries and rollout failure policy. NeMo Fabric marks a
   runtime or invocation failed and returns structured error metadata when
   possible, but does not retry by default.
 - Transient failures may carry retryable error metadata. Capacity pressure

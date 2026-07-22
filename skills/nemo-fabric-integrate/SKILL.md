@@ -11,12 +11,12 @@ metadata:
 Use this skill when a consumer codebase — an application, service, evaluation
 harness, or platform — needs to run agent harnesses through NeMo Fabric's typed
 Python SDK. The consumer owns its own configuration object and translates it
-into an in-memory `FabricConfig`; Fabric owns adapter selection, the runtime
+into an in-memory `FabricConfig`; NeMo Fabric owns adapter selection, the runtime
 lifecycle, and normalized results.
 
-Do not use this skill to author or modify Fabric adapters, change Fabric core or
+Do not use this skill to author or modify NeMo Fabric adapters, change NeMo Fabric core or
 its bindings, or maintain repository infrastructure. If you are contributing to
-Fabric itself, use the maintainer skills in `.agents/skills/` instead.
+NeMo Fabric itself, use the maintainer skills in `.agents/skills/` instead.
 
 ## Integration Boundary
 
@@ -26,11 +26,11 @@ supported and upgrade-safe:
 - Import only from the public `nemo_fabric` package. Never import `_native` or
   any adapter-internal module.
 - Build configuration as a typed `FabricConfig` in memory and pass it directly to
-  Fabric. Create every deployment or evaluation variant with ordinary Python
+  NeMo Fabric. Create every deployment or evaluation variant with ordinary Python
   functions and `model_copy(deep=True)`. A platform integration can serialize
   the typed config inside a private transient run specification when it crosses
   a process boundary; that transport is not a public authoring format.
-- Let Fabric own harness control. Do not reimplement start, invoke, or stop
+- Let NeMo Fabric own harness control. Do not reimplement start, invoke, or stop
   logic, and do not manage adapter threads, sessions, or processes directly.
 - Treat `runtime_id`, `invocation_id`, and `request_id` as opaque correlation
   strings, not parsable or reusable state.
@@ -41,10 +41,10 @@ that stay hidden behind this boundary.
 
 ## Install And Set Up The Environment
 
-The consumer or its execution environment owns installation; Fabric validates
+The consumer or its execution environment owns installation; NeMo Fabric validates
 runtime assumptions but never installs harnesses or credentials at run time.
 
-- Fabric is not published on PyPI yet. From a source checkout, `just build-all`
+- NeMo Fabric is not published on PyPI yet. From a source checkout, `just build-all`
   builds the native extension and installs the SDK. To install into another
   environment, build wheels with `just wheels`, then
   `uv pip install --find-links <dist_dir> nemo-fabric` (add the
@@ -107,7 +107,7 @@ def to_fabric_config(job) -> FabricConfig:
   so skills, workspaces, and artifacts anchor to the consumer's own layout.
 
 The repository [`code_review_agent` example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
-shows this pattern end to end with complete Hermes, Codex, Deep Agents,
+shows this pattern end to end with complete Hermes Agent, Codex, Deep Agents,
 environment, MCP, and telemetry variants. Reuse it rather than duplicating config
 construction.
 
@@ -128,7 +128,7 @@ Pick the smallest lifecycle the consumer needs:
   raise `FabricStateError`.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
-Deep Agents, and Hermes adapters retain their native client, graph/checkpointer,
+Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
 or agent/database inside one local host for the full runtime. Local `process`
 and `python` adapters use this host lifecycle; consumers do not select another
 local execution mechanism in `FabricConfig`. Do not replay an invocation after
@@ -160,7 +160,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Fabric owns no queue, worker pool, retry policy, or concurrency limit. For
+NeMo Fabric owns no queue, worker pool, retry policy, or concurrency limit. For
 parallel work, start independent runtimes and let the consumer decide how many.
 
 ## Validate Before Running
@@ -210,7 +210,7 @@ else:
 - Catch `FabricError` subclasses for lifecycle failures that prevent a
   normalized result: `FabricConfigError`, `FabricCapabilityError`,
   `FabricRuntimeError`, `FabricStateError`, and `FabricNativeUnavailableError`.
-- The consumer owns retries and failure policy; Fabric does not retry by
+- The consumer owns retries and failure policy; NeMo Fabric does not retry by
   default. `run(...)` and `async with` runtimes attempt cleanup automatically,
   so prefer them over manual `stop()` — but shutdown is not guaranteed: `stop()`,
   including the automatic call when an `async with` block exits, can raise
@@ -235,23 +235,23 @@ result-field and error inventory, and
   (such as required API-key variables) and returns `fail` when they are unset, so
   run it where the environment is provisioned and read its per-check results.
 - Run the consumer project's own build and test commands. For a source checkout
-  of Fabric, `just build-all` rebuilds the native extension and
+  of NeMo Fabric, `just build-all` rebuilds the native extension and
   `just test-python` runs the Python suite.
-- Confirm the typed config is passed directly to Fabric and no non-public
+- Confirm the typed config is passed directly to NeMo Fabric and no non-public
   imports were added.
 
 ## Checklist
 
 - [ ] The consumer config object is translated directly into an in-memory `FabricConfig`.
 - [ ] Only public `nemo_fabric` symbols are imported; no `_native` or adapter internals.
-- [ ] The consumer config is built in memory and passed directly to Fabric.
+- [ ] The consumer config is built in memory and passed directly to NeMo Fabric.
 - [ ] The right lifecycle is chosen: `run(...)` for a single invocation, `start_runtime(...)` with `async with` for multi-turn.
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.
 - [ ] Installation, adapter dependencies, and credentials are owned by the environment, not consumer code.
 - [ ] `RunResult` status, error, and events are inspected before output; artifacts and telemetry are captured.
 - [ ] `FabricError` subclasses are handled, including a `FabricRuntimeError` raised by shutdown; cleanup is delegated to `run(...)` or `async with` (attempted, not guaranteed).
 - [ ] Correlation IDs are stored and logged as opaque strings.
-- [ ] Focused integration tests pass and Fabric validation (`plan`/`doctor`, tests) succeeds.
+- [ ] Focused integration tests pass and NeMo Fabric validation (`plan`/`doctor`, tests) succeeds.
 
 ## Related Documentation
 

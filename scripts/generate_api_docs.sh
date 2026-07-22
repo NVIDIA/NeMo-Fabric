@@ -67,7 +67,7 @@ add_frontmatter \
 add_frontmatter \
   "$out/nemo_fabric.client.md" \
   "Client" \
-  "Resolve, plan, diagnose, and run agents with Fabric." \
+  "Resolve, plan, diagnose, and run agents with NeMo Fabric." \
   "/reference/api/python-library-reference/client"
 add_frontmatter \
   "$out/nemo_fabric.runtime.md" \
@@ -77,7 +77,7 @@ add_frontmatter \
 add_frontmatter \
   "$out/nemo_fabric.models.md" \
   "Models" \
-  "Pydantic authoring models for Fabric config and request inputs." \
+  "Pydantic authoring models for NeMo Fabric config and request inputs." \
   "/reference/api/python-library-reference/models"
 add_frontmatter \
   "$out/nemo_fabric.types.md" \

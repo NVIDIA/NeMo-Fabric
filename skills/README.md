@@ -24,8 +24,8 @@ documentation URLs, never on repository-internal paths.
   GitHub, not to files inside this checkout. Skill-specific material is bundled
   under each skill's own `references/`.
 - Skills do not depend on repository internals — their links are absolute or
-  bundled, so they resolve when copied out. A skill may still mention Fabric
-  build commands (`just …`, needed while Fabric is unpublished) or the maintainer
+  bundled, so they resolve when copied out. A skill may still mention NeMo Fabric
+  build commands (`just …`, needed while NeMo Fabric is unpublished) or the maintainer
   tier as guidance for contributors.
 
 ## Using A Consumer Skill In Your Project
@@ -33,7 +33,7 @@ documentation URLs, never on repository-internal paths.
 Copy the skill directory — for example `nemo-fabric-integrate/`, including its
 `references/` — into the place your coding agent discovers skills **in your own
 project**. Do not rely on this repository's maintainer wiring (its `.claude/skills`
-symlink or `.agents/skills/` set); those serve Fabric's own contributors.
+symlink or `.agents/skills/` set); those serve NeMo Fabric's own contributors.
 
 - **Claude Code:** place it at `.claude/skills/nemo-fabric-integrate/` in your
   project, or `~/.claude/skills/nemo-fabric-integrate/` to use it across

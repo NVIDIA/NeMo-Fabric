@@ -14,16 +14,16 @@ multi-task run.
 ## Before You Start
 
 Complete the shared host setup in the [Harbor landing page](../README.md#shared-host-setup),
-then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes runs or
+then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes Agent runs or
 `ANTHROPIC_API_KEY` for Claude runs before using that harness.
 
 ## Prepare the Task Bundle
 
-Build the Fabric wheels and Relay executable that will be uploaded into the
+Build the NeMo Fabric wheels and Relay executable that will be uploaded into the
 isolated task container:
 
-> **TEMP — remove when Fabric is released:** This source-checkout bootstrap is
-> needed only while Fabric wheels are unavailable from PyPI. At release, the
+> **TEMP — remove when NeMo Fabric is released:** This source-checkout bootstrap is
+> needed only while NeMo Fabric wheels are unavailable from PyPI. At release, the
 > docs writer should replace `FABRIC_PACKAGE` with a pinned PyPI requirement and
 > remove `prepare_swebench.sh`, `.fabric-package`, `.wheelhouse`,
 > `FABRIC_FIND_LINKS`, and every `PIP_FIND_LINKS` argument. If the Claude Relay
@@ -70,12 +70,12 @@ uv run --extra runtime --extra harbor harbor run \
 
 The job must complete with one trial and no exception.
 
-## Run One Task with Hermes
+## Run One Task with Hermes Agent
 
-The default Hermes command uses NVIDIA's hosted API:
+The default Hermes Agent command uses NVIDIA's hosted API:
 
 ```bash
-: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes}"
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
 uv run --extra runtime --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
@@ -127,13 +127,13 @@ uv run --extra runtime --extra harbor harbor run \
 Claude uses unattended permissions only inside Harbor's ephemeral task
 container. Do not apply that permission mode to a normal host environment.
 
-## Vary One Fabric Capability
+## Vary One NeMo Fabric Capability
 
-Start from the Hermes command, replace its `--job-name`, and add the option in
+Start from the Hermes Agent command, replace its `--job-name`, and add the option in
 the middle column. Relay is enabled for every capability variation so its ATIF
 can confirm that the input reached the harness.
 
-| Experiment | Add to the Hermes command | Replacement job name |
+| Experiment | Add to the Hermes Agent command | Replacement job name |
 | --- | --- | --- |
 | Skill | `--skill "$PWD/examples/harbor/swebench/skills/swebench-debugging" --ak fabric_telemetry=relay` | `django-13741-hermes-skill` |
 | MCP | `--mcp-config "$FABRIC_BUNDLE/mcp/repo-inspector.mcp.json" --ak fabric_telemetry=relay` | `django-13741-hermes-mcp` |
@@ -143,7 +143,7 @@ can confirm that the input reached the harness.
 For example, the complete skill variation is:
 
 ```bash
-: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes}"
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
 uv run --extra runtime --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
@@ -167,7 +167,7 @@ The MCP definition starts the dependency-free
 [`repo_inspector.py`](mcp/repo_inspector.py) inside the task container. The MCP
 definition itself enters through Harbor's `--mcp-config` option.
 
-For a pure telemetry comparison, run the Hermes baseline once without
+For a pure telemetry comparison, run the Hermes Agent baseline once without
 `fabric_telemetry`, then repeat it with `--ak fabric_telemetry=relay`. No other
 model, harness, capability, task, or verifier input changes.
 
@@ -220,21 +220,21 @@ find "$RUNS_DIR/$JOB_NAME" \
   \( -name '*.atof.jsonl' -o -name '*.atif.json' \) -print
 ```
 
-Relay-enabled runs preserve the direct Relay ATOF and ATIF files. Fabric
+Relay-enabled runs preserve the direct Relay ATOF and ATIF files. NeMo Fabric
 promotes Relay's ATIF to `agent/trajectory.json`, Harbor's canonical ATIF path,
 and also publishes `agent/telemetry-validation.json` plus the normalized
 `agent/fabric-result-<id>.json`. Validate ATOF and ATIF independently.
 
-Sample output from successful Relay-enabled Hermes and Claude runs is checked
+Sample output from successful Relay-enabled Hermes Agent and Claude runs is checked
 in under [`sample-artifacts/`](sample-artifacts/).
 
 ## Progress to a Full Run
 
 Complete the install gate and the single-task experiments first. Then run a
-five-task Hermes shard with Relay enabled:
+five-task Hermes Agent shard with Relay enabled:
 
 ```bash
-: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes}"
+: "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
 uv run --extra runtime --extra harbor harbor run \
   --dataset swe-bench/swe-bench-verified \
@@ -264,7 +264,7 @@ find "$RUNS_DIR/$JOB_NAME" \
   -path '*/agent/telemetry-validation.json' -print | head
 ```
 
-Inspect every exception and reward plus at least one Fabric result and telemetry
+Inspect every exception and reward plus at least one NeMo Fabric result and telemetry
 summary. Resume an interrupted job from its recorded configuration:
 
 ```bash

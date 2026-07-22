@@ -3,11 +3,11 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Examples
+# NVIDIA NeMo Fabric Examples
 
-This directory holds runnable Fabric examples.
+This directory holds runnable NeMo Fabric examples.
 
-New to Fabric? Start with the [onboarding notebooks](notebooks/README.md) for a
+New to NeMo Fabric? Start with the [onboarding notebooks](notebooks/README.md) for a
 guided, human-facing tour of the Python SDK, then come back to the runnable
 examples below.
 
@@ -27,7 +27,7 @@ application-facing Python SDK contract:
 - creating harness, environment, capability, and telemetry variants from deep
   copies;
 - resolving relative workspace and skill paths with `base_dir`;
-- running maintained Hermes, Codex, Claude, and Deep Agents adapters through the Python SDK.
+- running maintained Hermes Agent, Codex, Claude, and Deep Agents adapters through the Python SDK.
 
 Start with:
 
@@ -39,8 +39,8 @@ just build-all
 
 ## Harbor
 
-[`harbor`](harbor/README.md) demonstrates how to evaluate Fabric agents with
-Harbor while preserving Fabric's typed configuration workflow. Harbor manages
+[`harbor`](harbor/README.md) demonstrates how to evaluate NeMo Fabric agents with
+Harbor while preserving NeMo Fabric's typed configuration workflow. Harbor manages
 the task environment, retries, concurrency, verification, rewards, and result
 layout. `FabricAgent` translates Harbor inputs—including the harness, model,
 skills, MCP servers, tool policy, and telemetry—into the final `FabricConfig`.
@@ -48,8 +48,8 @@ skills, MCP servers, tool policy, and telemetry—into the final `FabricConfig`.
 The walkthroughs include:
 
 - a calculator walkthrough with a deterministic, credential-free integration
-  smoke test and optional LLM-backed Hermes and Claude runs; and
-- a SWE-Bench workflow for running Hermes and Claude, comparing capability
+  smoke test and optional LLM-backed Hermes Agent and Claude runs; and
+- a SWE-Bench workflow for running Hermes Agent and Claude, comparing capability
   variations, inspecting Relay telemetry, and verifying real coding tasks.
 
 Start with the shared setup and execution model in the

@@ -5,8 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Adapter Utilities
 
-`nemo-fabric-adapters-common` provides shared Python helpers for NVIDIA NeMo
-Fabric adapter implementations. NeMo Fabric adapter packages normally install
+`nemo-fabric-adapters-common` provides shared Python helpers for NeMo
+NeMo Fabric adapter implementations. Adapter packages normally install
 this package as a dependency.
 
 Install the package directly when developing an adapter:
@@ -15,11 +15,9 @@ Install the package directly when developing an adapter:
 pip install nemo-fabric-adapters-common
 ```
 
-Alternately through the NeMo Fabric metapackage:
-
-```bash
-pip install "nemo-fabric[adapters-common]"
-```
+Refer to the [NeMo Fabric documentation](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric)
+for adapter and configuration guidance. Source code is available in the
+[NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).
 
 ## Persistent Local Hosts
 
@@ -46,17 +44,13 @@ class AdapterRuntime:
 lifecycle.serve(AdapterRuntime)
 ```
 
-Fabric calls the factory once per local host to create one runtime instance and
+NeMo Fabric calls the factory once per local host to create one runtime instance and
 serializes invocations through that instance. The host keeps one event loop
 alive for the complete lifecycle so SDK clients, compiled graphs,
-checkpointers, and harness databases can remain live safely. Fabric sends the
+checkpointers, and harness databases can remain live safely. NeMo Fabric sends the
 resolved configuration and capability plan during `start`. Each subsequent
 `invoke` wire payload contains only `runtime_context` and `request`, and the
 helper passes that payload to `AdapterRuntime.invoke` unchanged. An adapter that
 needs configuration during invocation retains it as runtime-owned state during
 `start`. Adapter stdout is reserved for the protocol; diagnostics are redirected
 to stderr. A host crash or protocol timeout terminates that runtime.
-
-Refer to the [NeMo Fabric documentation](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric)
-for adapter and configuration guidance. Source code is available in the
-[NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).
