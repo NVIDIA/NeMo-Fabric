@@ -1,0 +1,33 @@
+---
+title: "Integrations"
+description: "Understand consumer integrations and harness integrations in NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric connects applications and evaluation systems to agent harnesses
+through two types of integrations:
+
+- **Consumer integrations** are northbound: they connect applications,
+  services, evaluation harnesses, and platforms to NeMo Fabric through its
+  public interfaces. Harbor is a consumer integration because it uses NeMo
+  Fabric to select and run an agent harness while Harbor owns the evaluation
+  lifecycle.
+- **Harness integrations** are southbound: they connect NeMo Fabric to agent
+  harnesses through adapters that translate the normalized NeMo Fabric contract
+  into harness-native models, tools, sessions, and telemetry. NeMo Fabric
+  includes harness integrations for Claude Code, Codex, Hermes Agent, and
+  LangChain Deep Agents.
+
+## Integration Types
+
+The following table summarizes how each integration type connects to NeMo
+Fabric:
+
+| Integration Type | Use It When | Guides |
+| --- | --- | --- |
+| Consumer integration | Your application, evaluation harness, or platform needs to invoke NeMo Fabric. | [Harbor](./harbor.mdx) |
+| Harness integration | NeMo Fabric needs to configure and run a specific agent harness. | [Claude Code](./claude.mdx), [Codex](./codex.mdx), [Hermes Agent](./hermes.mdx), and [LangChain Deep Agents](./deepagents.mdx) |
+
+For a compatibility comparison of the bundled harness integrations, refer to
+the [agent harness adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters).

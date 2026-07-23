@@ -3,12 +3,17 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NeMo Fabric Consumer Skills
+# NVIDIA NeMo Fabric Consumer Integration Skills
 
-These are user-facing skills for integrating NeMo Fabric into your own
+These consumer integration skills help you integrate NeMo Fabric into your own
 application, service, evaluation harness, or platform through the public Python
 SDK. They are intended for external application developers and integrators — not
 for developing NeMo Fabric itself.
+
+Harness integrations are separate adapters that connect NeMo Fabric to agent
+harnesses such as Claude Code, Codex, Hermes Agent, and LangChain Deep Agents.
+Refer to the [harness integration guides](../adapters/README.md) when you need to
+configure or compare those adapters.
 
 If you are contributing to NeMo Fabric — changing core, bindings, adapters,
 documentation, CI, or packaging — use the
@@ -43,7 +48,7 @@ symlink or `.agents/skills/` set); those serve NeMo Fabric's own contributors.
   your agent loads skills, or reference its `SKILL.md` directly from your agent
   instructions. Confirm discovery with a prompt that should trigger the skill.
 
-## Start Here
+## Consumer Integrations
 
 | Skill | Use it when |
 |---|---|
