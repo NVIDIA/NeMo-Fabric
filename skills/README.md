@@ -8,8 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 These skills help external developers integrate with NeMo Fabric through its
 public contracts. Consumer integration skills connect an application, service,
 evaluation harness, or platform to NeMo Fabric through the public Python SDK.
-Harness integration skills will help harness authors build adapters that make
-their harnesses Fabric-ready.
+Harness integration skills will help harness authors build adapters that are
+compatible with NeMo Fabric.
 
 Harness integrations are separate adapters that connect NeMo Fabric to agent
 harnesses such as Claude Code, Codex, Hermes Agent, and LangChain Deep Agents.
