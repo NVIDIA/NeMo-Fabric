@@ -179,6 +179,8 @@ flowchart TB
 
 ### Learn and Experiment
 
+Use the following resources to learn about NeMo Fabric:
+
 - [Example Notebooks](examples/notebooks/README.md) provide a guided tour of the Python SDK.
 - [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
   diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
@@ -190,19 +192,21 @@ flowchart TB
 ### Consumer Integrations
 
 Consumer integrations are northbound: they connect applications, evaluation
-systems, and platforms to NeMo Fabric through its public interfaces.
+systems, and platforms to NeMo Fabric through its public interfaces. Use the
+following resources to build or validate a consumer integration:
 
-- [Consumer integration skills](skills/README.md): repository-local coding-agent
-  skills for integrating NeMo Fabric into an application through the Python SDK.
-- [Harbor integration](docs/integrations/consumer/harbor.mdx): validate the
-  integration with a deterministic, credential-free calculator smoke,
-  optionally run the same task with Hermes Agent or Claude, and evaluate real
-  coding tasks with SWE-Bench.
+- [Consumer integration skills](skills/README.md) provide repository-local
+  coding-agent workflows for integrating NeMo Fabric into an application
+  through the Python SDK.
+- The [Harbor integration](docs/integrations/consumer/harbor.mdx) explains
+  how to validate the integration with a deterministic, credential-free
+  calculator verification test. You can also run the same task with Hermes
+  Agent or Claude and evaluate coding tasks with SWE-Bench.
 
 ### Harness Integrations
 
 Harness integrations are southbound: they connect NeMo Fabric to agent harnesses
-through adapters.
+through adapters. Use the following reference to compare the integrations:
 
 - [Adapter compatibility and guides](adapters/README.md): compare bundled
   harness support, runtime ownership, telemetry integration, and package guides.
@@ -210,10 +214,10 @@ through adapters.
 ## Roadmap
 
 - **Custom harnesses:** Publish the NeMo Fabric adapter contract so third-party
-  developers can build Fabric-ready harness integrations. NeMo Fabric will
-  support both Fabric-maintained first-party integrations and Fabric-ready
-  third-party integrations.
-- **Custom agents:** Support custom agents built on Fabric-maintained or
-  Fabric-ready harnesses without requiring an additional, agent-specific
-  adapter, while preserving the normalized NeMo Fabric lifecycle, results,
-  artifacts, and telemetry.
+  developers can build integrations that are compatible with NeMo Fabric.
+  Support integrations maintained by NeMo Fabric and compatible third-party
+  integrations.
+- **Custom agents:** Support custom agents built on maintained or third-party
+  harness integrations without requiring an additional, agent-specific adapter.
+  Preserve the normalized NeMo Fabric lifecycle, results, artifacts, and
+  telemetry.
