@@ -49,6 +49,7 @@ just wheels
 
 The resulting wheel files are placed in the `dist/` directory. Install the
 packages into a virtual environment with:
+
 ```bash
 uv pip install --find-links <path to fabric repo>/dist "nemo-fabric[runtime]"
 ```
