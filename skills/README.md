@@ -32,10 +32,10 @@ documentation URLs, never on repository-internal paths.
 - Skills do not depend on repository internals — their links are absolute or
   bundled, so they resolve when copied out.
 
-## Using An Integration Skill In Your Project
+## Using an Integration Skill in Your Project
 
-Copy the individual skill directory — for example
-`integrations/consumer/nemo-fabric-integrate/`, including its `references/` —
+For example, copy the individual skill directory
+`integrations/consumer/nemo-fabric-integrate/`, including its `references/`,
 into the place your coding agent discovers skills **in your own project**. Copy
 the skill bundle itself, not its `consumer/` or `harness/` category directory.
 Do not rely on this repository's maintainer wiring (its `.claude/skills` symlink
