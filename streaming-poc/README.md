@@ -13,7 +13,7 @@ on a subscription/SSO session — **no API key**. Conclusion + production plan:
 
 ## The v0.1 Contract (Proposed API)
 > **Proposed v0.1 API — not implemented in the SDK.** The POC models this surface
-> with [`common/fabric_stream.py`](common/README.md) (runnable equivalent:
+> with [`common/fabric_stream.py`](common/fabric_stream.py) (runnable equivalent:
 > `start_streaming_runtime()` / `StreamingRuntime`).
 
 ```python

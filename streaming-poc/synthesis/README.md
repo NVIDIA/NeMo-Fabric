@@ -56,7 +56,7 @@ terminal semantics, and duplicate-rendering risk for each harness:
 ## Final Recommendation — v0.1
 **Ship raw, Relay-generated ATOF pass-through**, surfaced as sugar over
 `Runtime.invoke()`. This is the **proposed** surface — not implemented in the SDK;
-the POC models it in [`../common/fabric_stream.py`](../common/README.md)
+the POC models it in [`../common/fabric_stream.py`](../common/fabric_stream.py)
 (`start_streaming_runtime()` / `StreamingRuntime`):
 
 ```python
