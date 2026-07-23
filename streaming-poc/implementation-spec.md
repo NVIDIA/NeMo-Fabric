@@ -124,11 +124,15 @@ Both honor the *same* injected endpoint — no per-harness streaming code.
 - **Relay-only**: available only when Relay is enabled; else `FabricCapabilityError`.
 - **Raw ATOF pass-through**; no Fabric-specific normalization in v0.1.
 - **`RunResult` out of band** via `await stream.result()`.
-- **Honest early-exit**: `aclose()` (or breaking the `async for`) detaches the
-  consumer — iteration stops, buffered records are discarded — but does **not**
-  interrupt the turn; the blocking native call on a worker thread runs to completion
-  and `stream.result()` stays awaitable. **There is no in-flight cancellation in
-  v0.1:** `runtime.stop()` raises `FabricStateError` while a turn is active (it only
-  tears down an idle runtime), so a turn can be torn down only after it finishes. A
-  real cancellation path is a production follow-up (see the work breakdown).
+- **Honest early-exit**: to stop early, break the `async for` **and then**
+  `await stream.aclose()`. Breaking alone only stops iteration — it does **not**
+  clean up; `aclose()` is what finalizes: it **waits for the turn to complete** (the
+  blocking native call on a worker thread runs to completion — it is not
+  interrupted), then drains and discards the unread records so none leak into the
+  next turn. `stream.result()` stays awaitable throughout. Until the stream is
+  finalized (fully consumed or `aclose()`d), the next `invoke_stream` raises
+  `FabricStateError`. **There is no in-flight cancellation in v0.1:**
+  `runtime.stop()` also raises while a turn is active (idle-only teardown), so a turn
+  is torn down only after it finishes. A real cancellation path is a production
+  follow-up (see the work breakdown).
 - **No Rust/core change**: streaming rides the existing relay-config path.

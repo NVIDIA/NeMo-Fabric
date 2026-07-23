@@ -52,9 +52,13 @@ scoped from real POC findings; effort is relative (S/M/L).
   record `uuid`s (overlap 0), no sentinel leakage.
 
 ## 7. Early-exit / cancellation contract (S)
-- Document + implement: `aclose()`/break **detaches** the consumer but does **not**
-  interrupt the turn (blocking native call on a worker thread runs to completion);
-  unread buffered events discarded.
+- Document + implement: to stop early, break the `async for` **then**
+  `await stream.aclose()`. Breaking alone stops iteration but does **not** finalize;
+  `aclose()` **waits for the turn to complete** (the blocking native call runs to
+  completion — not interrupted), then drains/discards the unread records. The stream
+  must be finalized (fully consumed or `aclose()`d) before the next `invoke_stream`,
+  which otherwise raises. `aclose()` must be cancellation-safe: shield the invoke
+  task and propagate `CancelledError` so `result()` stays valid.
 - **Gap to close: there is no in-flight cancellation today.** `runtime.stop()` raises
   `FabricStateError` while a turn is active (idle-only teardown), so a running turn
   cannot be aborted from the SDK. A production cancellation path (cooperative

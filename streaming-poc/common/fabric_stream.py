@@ -135,11 +135,18 @@ class InvokeStream:
     async def _finalize(self) -> None:
         if self._finalized:
             return
-        # The turn cannot be interrupted; wait for it to finish so no more records
-        # can arrive, then drain everything still queued for this turn and discard.
+        # Wait for the turn to finish so no more records can arrive, then drain and
+        # discard everything still queued for it. shield() keeps the invoke task
+        # running if *this* coroutine is cancelled, and we re-raise CancelledError
+        # rather than swallow it — so a cancelled aclose() propagates and
+        # ``result()`` stays valid instead of silently becoming cancelled. Only the
+        # invoke's *own* error is suppressed here (it remains retrievable via
+        # ``result()``).
         try:
-            await self._task
-        except BaseException:
+            await asyncio.shield(self._task)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
             pass
         q = self._listener.records
         while True:
