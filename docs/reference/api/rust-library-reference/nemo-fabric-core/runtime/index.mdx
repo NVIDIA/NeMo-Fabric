@@ -13,29 +13,29 @@ Runtime invocation helpers.
 
 ## Structs
 
-- [AdapterInvocation](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-adapterinvocation): One invocation against an initialized adapter runtime.
-- [ArtifactManifest](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-artifactmanifest): Manifest of run artifacts.
-- [ArtifactRef](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-artifactref): Reference to one artifact.
-- [EnvironmentHandle](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-environmenthandle): Resolved execution environment context.
-- [ErrorInfo](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-errorinfo): Normalized error metadata.
-- [FabricEvent](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-fabricevent): Fabric lifecycle or progress event.
-- [InvocationHandle](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-invocationhandle): One request sent to a runtime.
-- [RunRequest](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-runrequest): A request passed to a Fabric-managed harness runtime.
-- [RunResult](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-runresult): Result from a Fabric-managed harness invocation.
-- [RuntimeContext](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-runtimecontext): Context generated for one invocation of a started runtime.
-- [RuntimeHandle](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-runtimehandle): Active or resumable harness runtime.
-- [RuntimeTelemetryContext](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-runtimetelemetrycontext): Runtime telemetry config passed to adapters.
-- [TelemetryRef](/reference/api/rust-library-reference/nemo-fabric-core/runtime/struct-telemetryref): Reference to telemetry emitted by Relay or another configured telemetry path.
+- [AdapterInvocation](struct-adapterinvocation.mdx): One invocation against an initialized adapter runtime.
+- [ArtifactManifest](struct-artifactmanifest.mdx): Manifest of run artifacts.
+- [ArtifactRef](struct-artifactref.mdx): Reference to one artifact.
+- [EnvironmentHandle](struct-environmenthandle.mdx): Resolved execution environment context.
+- [ErrorInfo](struct-errorinfo.mdx): Normalized error metadata.
+- [FabricEvent](struct-fabricevent.mdx): Fabric lifecycle or progress event.
+- [InvocationHandle](struct-invocationhandle.mdx): One request sent to a runtime.
+- [RunRequest](struct-runrequest.mdx): A request passed to a Fabric-managed harness runtime.
+- [RunResult](struct-runresult.mdx): Result from a Fabric-managed harness invocation.
+- [RuntimeContext](struct-runtimecontext.mdx): Context generated for one invocation of a started runtime.
+- [RuntimeHandle](struct-runtimehandle.mdx): Active or resumable harness runtime.
+- [RuntimeTelemetryContext](struct-runtimetelemetrycontext.mdx): Runtime telemetry config passed to adapters.
+- [TelemetryRef](struct-telemetryref.mdx): Reference to telemetry emitted by Relay or another configured telemetry path.
 
 ## Enums
 
-- [ErrorStage](/reference/api/rust-library-reference/nemo-fabric-core/runtime/enum-errorstage): Fabric lifecycle stage associated with an error.
-- [RunStatus](/reference/api/rust-library-reference/nemo-fabric-core/runtime/enum-runstatus): Runtime completion status.
+- [ErrorStage](enum-errorstage.mdx): Fabric lifecycle stage associated with an error.
+- [RunStatus](enum-runstatus.mdx): Runtime completion status.
 
 ## Functions
 
-- [invoke_runtime](/reference/api/rust-library-reference/nemo-fabric-core/runtime/fn-invoke-runtime): Invoke a started harness runtime.
-- [prepare_environment](/reference/api/rust-library-reference/nemo-fabric-core/runtime/fn-prepare-environment): Resolve or attach to the execution environment context for a run plan.
-- [run_plan](/reference/api/rust-library-reference/nemo-fabric-core/runtime/fn-run-plan): Invoke a Fabric run plan.
-- [start_runtime](/reference/api/rust-library-reference/nemo-fabric-core/runtime/fn-start-runtime): Start or connect to a harness runtime.
-- [stop_runtime](/reference/api/rust-library-reference/nemo-fabric-core/runtime/fn-stop-runtime): Stop or detach from a harness runtime.
+- [invoke_runtime](fn-invoke-runtime.mdx): Invoke a started harness runtime.
+- [prepare_environment](fn-prepare-environment.mdx): Resolve or attach to the execution environment context for a run plan.
+- [run_plan](fn-run-plan.mdx): Invoke a Fabric run plan.
+- [start_runtime](fn-start-runtime.mdx): Start or connect to a harness runtime.
+- [stop_runtime](fn-stop-runtime.mdx): Stop or detach from a harness runtime.
