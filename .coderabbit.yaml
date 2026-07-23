@@ -74,9 +74,9 @@ reviews:
     - path: "{docs/**,README.md,AGENTS.md}"
       instructions: |
         Review documentation for technical accuracy against the current API, command correctness, and consistency with generated schemas.
-    - path: "{*.md,**/*.md,**/*.mdx,**/*.ipynb}"
+    - path: "{**/*,**/.*,.*/**/*,.*/**/.*}"
       instructions: |
-        Enforce the product name in user-facing prose: use "NVIDIA NeMo Fabric" on first use and "NeMo Fabric" thereafter. Flag standalone capitalized "Fabric" when it refers to the product. Do not flag the lowercase `fabric` CLI command, package/import/crate names, code identifiers, API symbols, configuration keys, file paths, or unrelated generic uses of the word.
+        Enforce the product name in user-facing prose: use "NVIDIA NeMo Fabric" on first use and "NeMo Fabric" thereafter. Flag standalone capitalized "Fabric" when it refers to the product. Do not flag package/import/crate/command names, code identifiers, API symbols, configuration keys, file paths, or unrelated generic uses of the word.
     - path: "**/SKILL.md"
       instructions: |
         Do not flag SKILL.md files for missing SPDX headers. Skill entrypoints intentionally start with YAML frontmatter instead.
