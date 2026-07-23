@@ -23,6 +23,7 @@ PYTHONPATH="python/src" lazydocs \
   --overview-file "index.md" \
   "nemo_fabric.client" \
   "nemo_fabric.runtime" \
+  "nemo_fabric.streaming" \
   "nemo_fabric.models" \
   "nemo_fabric.types" \
   "nemo_fabric.errors"
@@ -74,6 +75,11 @@ add_frontmatter \
   "Runtime" \
   "Drive stateful multi-turn execution through the Runtime API." \
   "/reference/api/python-library-reference/runtime"
+add_frontmatter \
+  "$out/nemo_fabric.streaming.md" \
+  "Streaming" \
+  "Consume Relay-backed raw ATOF records and terminal invocation results." \
+  "/reference/api/python-library-reference/streaming"
 add_frontmatter \
   "$out/nemo_fabric.models.md" \
   "Models" \

@@ -25,6 +25,11 @@ from nemo_fabric.runtime import (
     _run_native_lifecycle,
     _run_request_payload,
 )
+from nemo_fabric.streaming import (
+    _AtofStreamListener,
+    _relay_enabled,
+    _with_stream_endpoint,
+)
 from nemo_fabric.types import (
     DoctorReport,
     RunPlan,
@@ -188,7 +193,9 @@ class Fabric:
         """Start a stateful runtime for one or more ordered invocations.
 
         Each call starts a new logical runtime. Runtime-scoped overrides are
-        recursively merged below invocation-scoped overrides.
+        recursively merged below invocation-scoped overrides. When Relay is
+        enabled, startup also provisions the SDK-owned loopback ATOF endpoint
+        used by ``Runtime.invoke_stream()``.
 
         Args:
             config: Complete typed ``FabricConfig``.
@@ -208,8 +215,30 @@ class Fabric:
         """
 
         runtime_overrides = _json_mapping(overrides, "runtime overrides")
-        plan = await _call_blocking(lambda: self.plan(config, base_dir=base_dir))
-        native = self._require_native_module("start_runtime")
+        stream_listener: _AtofStreamListener | None = None
+        runtime_config = config
+        if _relay_enabled(config):
+            try:
+                stream_listener = await _AtofStreamListener().start()
+                runtime_config = _with_stream_endpoint(config, stream_listener.url)
+            except Exception as error:
+                if stream_listener is not None:
+                    await stream_listener.close()
+                raise FabricRuntimeError(
+                    str(error),
+                    stage="start",
+                    code="stream_listener_start_failed",
+                ) from error
+
+        try:
+            plan = await _call_blocking(
+                lambda: self.plan(runtime_config, base_dir=base_dir)
+            )
+            native = self._require_native_module("start_runtime")
+        except BaseException:
+            if stream_listener is not None:
+                await stream_listener.close()
+            raise
         started_runtime: dict[str, Any] | None = None
 
         def start() -> dict[str, Any]:
@@ -232,16 +261,23 @@ class Fabric:
                     )
                 except Exception:
                     pass
+            if stream_listener is not None:
+                await stream_listener.close()
             raise
         except FabricError:
+            if stream_listener is not None:
+                await stream_listener.close()
             raise
         except Exception as error:
+            if stream_listener is not None:
+                await stream_listener.close()
             raise FabricRuntimeError(str(error), stage="start") from error
         return Runtime(
             client=self,
             plan=plan,
             runtime=runtime,
             overrides=runtime_overrides,
+            stream_listener=stream_listener,
         )
 
     def _native_module(self) -> Any | None:

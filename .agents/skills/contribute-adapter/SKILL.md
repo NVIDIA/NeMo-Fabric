@@ -83,8 +83,11 @@ Decide the following before implementation:
   `failed: true`, and structured `error` (`code`, `message`, `retryable`, and
   optional `metadata`); Fabric normalizes it into a failed `RunResult`.
 
-> **TODO:** Revisit this output contract when Fabric adds streaming support;
-> update this guidance and affected adapter evidence then.
+- Relay-backed `Runtime.invoke_stream()` does not change the adapter lifecycle
+  stdout contract. Fabric injects an SDK-owned NDJSON ATOF endpoint before the
+  adapter starts, Relay sends raw records out of band, and the adapter still
+  returns exactly one terminal lifecycle response. Do not emit stream records
+  on adapter stdout.
 
 - Scope workspace, generated config, state, sessions, and artifacts to the
   resolved runtime context. Stateful adapters must isolate Fabric runtime IDs.

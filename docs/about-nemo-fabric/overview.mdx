@@ -119,7 +119,7 @@ Harness installation and credential requirements differ by adapter. The
 contains the complete Hermes Agent environment recipe.
 
 Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
-diagnostics, typed requests, and multi-turn runtime examples.
+diagnostics, typed requests, multi-turn runtimes, and Relay-backed streaming.
 
 ## Choose Your Interface
 
@@ -127,6 +127,7 @@ diagnostics, typed requests, and multi-turn runtime examples.
 | --- | --- | --- |
 | Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
 | Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
+| Streaming API | You need live Relay-generated ATOF records during a runtime turn | [Streaming](/reference/api/python-library-reference/streaming) |
 | `nemo-fabric` CLI | You are experimenting with harnesses, running maintained examples, or troubleshooting configs | [Experimentation CLI](/experimentation/cli) |
 | JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
 
@@ -141,8 +142,7 @@ obtain complete typed configs from built-in presets or maintained examples.
    observability settings without mutating the base config.
 3. **Plan and diagnose** to resolve the adapter and check capabilities and
    requirements before spending work on a runtime.
-4. **Run or start a runtime** through the shared start, invoke, and stop
-   lifecycle contract.
+4. **Run, start, or stream a runtime** through the shared lifecycle contract.
 5. **Consume evidence** from `RunResult`: output, structured failure details,
    artifacts, events, and telemetry references.
 
@@ -160,6 +160,12 @@ obtain complete typed configs from built-in presets or maintained examples.
     href="/reference/api/python-library-reference/runtime"
   >
     Invoke multiple ordered turns and stop runtime handles safely.
+  </Card>
+  <Card
+    title="Streaming"
+    href="/reference/api/python-library-reference/streaming"
+  >
+    Consume live, raw Relay ATOF records and retrieve the terminal run result.
   </Card>
   <Card
     title="Types"

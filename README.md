@@ -148,7 +148,8 @@ config and clone-based variants live in
 
 - Follow the [Example Notebooks](examples/notebooks/README.md) for a guided tour of the Python SDK.
 - Refer to the [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
-  diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
+  diagnostics, requests, multi-turn runtimes, Relay-backed streaming,
+  parallelism, results, and errors.
 
 ## Supported Agent Harnesses
 
