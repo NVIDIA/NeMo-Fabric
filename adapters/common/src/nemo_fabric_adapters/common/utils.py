@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from nemo_relay import plugin
     from nemo_relay.observability import AtifConfig
     from nemo_relay.observability import AtofConfig
+    from nemo_relay.observability import AtofFileSinkConfig
+    from nemo_relay.observability import AtofStreamSinkConfig
     from nemo_relay.observability import HttpStorageConfig
     from nemo_relay.observability import OtlpConfig
     from nemo_relay.observability import S3StorageConfig
@@ -283,7 +285,10 @@ def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfi
             components.append(
                 ComponentSpec(
                     ObservabilityConfig(
-                        version=int(config.get("version", 1)),
+                        # Relay 0.6 only accepts the v2 observability API model.
+                        # Fabric still accepts its existing flat/v1 configuration
+                        # below and translates it at this API boundary.
+                        version=2,
                         atof=_relay_api_atof_config(config.get("atof")),
                         atif=_relay_api_atif_config(
                             config.get("atif"),
@@ -330,27 +335,56 @@ def _relay_api_atof_config(value: Any) -> AtofConfig | None:
     if not isinstance(value, dict):
         return None
     from nemo_relay.observability import AtofConfig
-    from nemo_relay.observability import AtofEndpointConfig
+    from nemo_relay.observability import AtofFileSinkConfig
+    from nemo_relay.observability import AtofStreamSinkConfig
 
-    endpoint_configs = value.get("endpoints")
-    endpoints = None
-    if isinstance(endpoint_configs, list):
-        endpoints = [
-            AtofEndpointConfig(
-                url=str(endpoint.get("url", "")),
-                transport=endpoint.get("transport", "http_post"),
-                headers=endpoint.get("headers", {}),
-                timeout_millis=int(endpoint.get("timeout_millis", 3000)),
-            )
-            for endpoint in endpoint_configs
-            if isinstance(endpoint, dict)
-        ]
+    sinks: list[AtofFileSinkConfig | AtofStreamSinkConfig] = []
+    has_explicit_file_sink = False
+    for sink in value.get("sinks") or []:
+        if not isinstance(sink, dict):
+            continue
+        if sink.get("type") == "file":
+            has_explicit_file_sink = True
+            sinks.append(_relay_api_atof_file_sink_config(sink))
+        elif sink.get("type") == "stream":
+            sinks.append(_relay_api_atof_stream_sink_config(sink))
+
+    if not has_explicit_file_sink and any(
+        key in value for key in ("output_directory", "filename", "mode")
+    ):
+        sinks.append(_relay_api_atof_file_sink_config(value))
+
+    for endpoint in value.get("endpoints") or []:
+        if isinstance(endpoint, dict):
+            sinks.append(_relay_api_atof_stream_sink_config(endpoint))
+
     return AtofConfig(
         enabled=bool(value.get("enabled", False)),
+        sinks=sinks,
+    )
+
+
+def _relay_api_atof_file_sink_config(value: dict[str, Any]) -> AtofFileSinkConfig:
+    from nemo_relay.observability import AtofFileSinkConfig
+
+    return AtofFileSinkConfig(
         output_directory=value.get("output_directory"),
         filename=value.get("filename"),
         mode=value.get("mode", "append"),
-        endpoints=endpoints,
+    )
+
+
+def _relay_api_atof_stream_sink_config(value: dict[str, Any]) -> AtofStreamSinkConfig:
+    from nemo_relay.observability import AtofStreamSinkConfig
+
+    return AtofStreamSinkConfig(
+        url=str(value.get("url", "")),
+        transport=value.get("transport", "http_post"),
+        headers=value.get("headers", {}),
+        header_env=value.get("header_env", {}),
+        timeout_millis=int(value.get("timeout_millis", 3000)),
+        field_name_policy=value.get("field_name_policy", "preserve"),
+        name=value.get("name"),
     )
 
 

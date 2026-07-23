@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import builtins
+import dataclasses
 import json
 import os
 import sys
@@ -374,6 +375,64 @@ def test_collect_relay_artifacts(tmp_path: Path):
         {"kind": "atof", "path": str(atof_file)},
         {"kind": "atif", "path": str(atif_file)},
     ]
+
+
+def test_relay_api_plugin_config_translates_flat_atof_to_relay_v06_sinks(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("TOKEN", "test-token")
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 1,
+                    "atof": {
+                        "enabled": True,
+                        "output_directory": "/tmp/atof",
+                        "filename": "events.jsonl",
+                        "mode": "overwrite",
+                        "endpoints": [
+                            {
+                                "url": "https://example.test/events",
+                                "headers": {"x-test": "value"},
+                                "header_env": {"authorization": "TOKEN"},
+                                "timeout_millis": 1000,
+                                "field_name_policy": "replace_dots",
+                                "name": "phoenix",
+                            }
+                        ],
+                    },
+                },
+            }
+        ],
+    }
+
+    rendered = common_utils.relay_api_plugin_config(plugin_config)
+    observability = rendered.components[0].config
+
+    assert observability.version == 2
+    assert dataclasses.asdict(observability.atof) == {
+        "enabled": True,
+        "sinks": [
+            {
+                "output_directory": "/tmp/atof",
+                "filename": "events.jsonl",
+                "mode": "overwrite",
+            },
+            {
+                "url": "https://example.test/events",
+                "transport": "http_post",
+                "headers": {"x-test": "value"},
+                "header_env": {"authorization": "TOKEN"},
+                "timeout_millis": 1000,
+                "field_name_policy": "replace_dots",
+                "name": "phoenix",
+            },
+        ],
+    }
 
 
 @pytest.mark.parametrize(
