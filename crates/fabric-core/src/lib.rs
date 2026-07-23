@@ -17,7 +17,7 @@ pub use config::{
     ModelConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, RunPlan,
     RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
     TelemetryProvider, TelemetryProviderConfig, load_adapter_descriptor,
-    resolve_run_plan_from_config,
+    resolve_run_plan_from_config, resolve_run_plan_from_config_with_adapter_directories,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};

@@ -164,9 +164,16 @@ struct AdapterRegistry {
 }
 
 impl AdapterRegistry {
-    fn from_config(_config: &FabricConfig, base_dir: &Path) -> Result<Self> {
+    fn from_config(
+        _config: &FabricConfig,
+        base_dir: &Path,
+        additional_directories: &[PathBuf],
+    ) -> Result<Self> {
         let mut registry = Self::default();
         registry.register_repository_directory(&repository_adapter_dir())?;
+        for directory in additional_directories {
+            registry.register_local_directory(directory)?;
+        }
         registry.register_local_directory(&base_dir.join("adapters"))?;
         Ok(registry)
     }
@@ -990,6 +997,20 @@ pub fn resolve_run_plan_from_config(
     config: FabricConfig,
     context: ResolveContext,
 ) -> Result<RunPlan> {
+    resolve_run_plan_from_config_with_adapter_directories(config, context, &[])
+}
+
+/// Resolve a typed Fabric config with additional adapter descriptor directories.
+///
+/// This is an internal integration surface for hosts that know about
+/// environment-specific package data directories. Callers should otherwise use
+/// [`resolve_run_plan_from_config`].
+#[doc(hidden)]
+pub fn resolve_run_plan_from_config_with_adapter_directories(
+    config: FabricConfig,
+    context: ResolveContext,
+    adapter_directories: &[PathBuf],
+) -> Result<RunPlan> {
     validate_config(&config)?;
     let supplied_base_dir = context.base_dir;
     let base_dir = std::path::absolute(&supplied_base_dir)
@@ -998,7 +1019,7 @@ pub fn resolve_run_plan_from_config(
             path: supplied_base_dir,
             source,
         })?;
-    resolve_run_plan(config, base_dir)
+    resolve_run_plan(config, base_dir, adapter_directories)
 }
 
 fn read_json<T>(path: &Path) -> Result<T>
@@ -1015,8 +1036,12 @@ where
     })
 }
 
-fn resolve_run_plan(config: FabricConfig, base_dir: PathBuf) -> Result<RunPlan> {
-    let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir)?;
+fn resolve_run_plan(
+    config: FabricConfig,
+    base_dir: PathBuf,
+    adapter_directories: &[PathBuf],
+) -> Result<RunPlan> {
+    let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_directories)?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
@@ -1042,9 +1067,10 @@ fn resolve_run_plan(config: FabricConfig, base_dir: PathBuf) -> Result<RunPlan> 
 fn resolve_adapter_descriptor(
     config: &FabricConfig,
     base_dir: &Path,
+    adapter_directories: &[PathBuf],
 ) -> Result<Option<ResolvedAdapterDescriptor>> {
     let adapter_id = &config.harness.adapter_id;
-    let registry = AdapterRegistry::from_config(config, base_dir)?;
+    let registry = AdapterRegistry::from_config(config, base_dir, adapter_directories)?;
     let Some(entry) = registry.get(adapter_id) else {
         return Err(FabricError::UnknownAdapter {
             adapter_id: adapter_id.clone(),
@@ -1711,5 +1737,86 @@ mod tests {
 
         assert_eq!(descriptor.contract_version, ADAPTER_CONTRACT_VERSION);
         assert_eq!(descriptor.adapter_kind, AdapterKind::Python);
+    }
+
+    #[test]
+    fn resolves_additional_adapter_directory_before_agent_local_override() {
+        struct RemoveDirOnDrop(PathBuf);
+
+        impl Drop for RemoveDirOnDrop {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let root = std::env::temp_dir().join(format!(
+            "nemo-fabric-adapter-discovery-{}",
+            std::process::id()
+        ));
+        let _cleanup = RemoveDirOnDrop(root.clone());
+        let installed_directory = root.join("installed");
+        let base_dir = root.join("agent");
+        let installed_descriptor = installed_directory.join("stopgap/fabric-adapter.json");
+        let local_descriptor = base_dir.join("adapters/stopgap/fabric-adapter.json");
+        let descriptor = |module: &str| {
+            serde_json::json!({
+                "contract_version": ADAPTER_CONTRACT_VERSION,
+                "adapter_id": "test.fabric.installed",
+                "harness": "installed-test",
+                "adapter_kind": "python",
+                "runner": {"module": module},
+                "config": {"accepts": ["skills"]}
+            })
+        };
+
+        std::fs::create_dir_all(installed_descriptor.parent().expect("installed parent"))
+            .expect("create installed adapter directory");
+        std::fs::write(
+            &installed_descriptor,
+            serde_json::to_vec_pretty(&descriptor("installed.adapter")).expect("descriptor JSON"),
+        )
+        .expect("write installed descriptor");
+
+        let plan = resolve_run_plan_from_config_with_adapter_directories(
+            typed_config("test.fabric.installed"),
+            ResolveContext::new(&base_dir),
+            std::slice::from_ref(&installed_directory),
+        )
+        .expect("installed adapter plan");
+        let expected_installed_descriptor = installed_descriptor
+            .canonicalize()
+            .expect("canonical installed descriptor");
+        assert_eq!(
+            plan.adapter_descriptor
+                .as_ref()
+                .map(|adapter| adapter.path.as_path()),
+            Some(expected_installed_descriptor.as_path())
+        );
+
+        std::fs::create_dir_all(local_descriptor.parent().expect("local parent"))
+            .expect("create local adapter directory");
+        std::fs::write(
+            &local_descriptor,
+            serde_json::to_vec_pretty(&descriptor("local.adapter")).expect("descriptor JSON"),
+        )
+        .expect("write local descriptor");
+
+        let plan = resolve_run_plan_from_config_with_adapter_directories(
+            typed_config("test.fabric.installed"),
+            ResolveContext::new(&base_dir),
+            &[installed_directory],
+        )
+        .expect("agent-local adapter plan");
+        let resolved = plan.adapter_descriptor.expect("resolved adapter");
+        assert_eq!(
+            resolved.path,
+            local_descriptor
+                .canonicalize()
+                .expect("canonical local descriptor")
+        );
+        assert_eq!(
+            resolved.descriptor.runner["module"],
+            serde_json::json!("local.adapter")
+        );
     }
 }
