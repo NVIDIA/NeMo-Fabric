@@ -56,7 +56,7 @@ Create and activate a virtual environment, then install the required packages:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install "nemo-fabric[hermes,hermes-agent]"
+pip install "nemo-fabric[runtime, hermes-agent]"
 ```
 
 ### Set the API Key
@@ -135,8 +135,11 @@ the Hermes Agent integration:
 ```bash
 python -m venv .venv-hermes
 source .venv-hermes/bin/activate
-pip install "nemo-fabric[hermes,hermes-agent]"
+pip install "nemo-fabric[hermes-agent]"
 ```
+
+**Note:** The `nemo-fabric[hermes-agent]` package extra installs the Hermes Agent adapter and Hermes Agent itself, to install just the adapter, use `nemo-fabric[hermes]`.
+
 
 Run NeMo Fabric from its environment and set `ADAPTER_PYTHON` to the interpreter
 that contains the adapter and harness:
