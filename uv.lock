@@ -723,7 +723,7 @@ wheels = [
 
 [[package]]
 name = "deepagents"
-version = "0.5.9"
+version = "0.6.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain" },
@@ -733,9 +733,9 @@ dependencies = [
     { name = "langsmith" },
     { name = "wcmatch" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/06/74/776e606f0508a4d7d4c9d061c797dcde43eed2452fea546ae29047aeaaa6/deepagents-0.5.9.tar.gz", hash = "sha256:74fe0f998641b20bda8adac662a018051c623a3c8e5ed4b6ff9ad53fc493a783", size = 165651, upload-time = "2026-05-10T22:31:17.095Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/db/a6acdc72a9e90c3f07ed10de35c951734a02d4facb693bb59684ad368801/deepagents-0.6.12.tar.gz", hash = "sha256:1f281c0bc5a63132f62e2ee345c1dc593b23188da6e23016401f6879fbe54b5f", size = 211364, upload-time = "2026-06-25T17:26:52.775Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/f6/9698f98da72dfa8dc8e1d0f0542f2407a40a50cfdccf522fdb5cb43e39e2/deepagents-0.5.9-py3-none-any.whl", hash = "sha256:ce24a41763b2793bd21217411e9fb9f187a9128da6789f5a81654da1de9e4c7c", size = 188118, upload-time = "2026-05-10T22:31:15.974Z" },
+    { url = "https://files.pythonhosted.org/packages/98/49/af7219b3c13520fee047bb807cfaefba17f8e4584c551d946773589a4f08/deepagents-0.6.12-py3-none-any.whl", hash = "sha256:28b8fa0119ca0a689e3e18e288c4634e4046062acfc87a1cb34289d3af3a1c88", size = 236120, upload-time = "2026-06-25T17:26:51.736Z" },
 ]
 
 [[package]]
@@ -1527,16 +1527,16 @@ wheels = [
 
 [[package]]
 name = "langchain"
-version = "1.3.12"
+version = "1.3.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "langchain-core" },
     { name = "langgraph" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/68/c0/8481c93a3899d7e05ac27f21a4e984dab613b72631f39fe01fe0100e3be0/langchain-1.3.12.tar.gz", hash = "sha256:3321f86824a0c0720004d28797d729a58b9bb8a0ac73c6ea2b856cac38117879", size = 642308, upload-time = "2026-07-08T22:38:12.466Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/68/a6dbad9c22df4087a0f9e79ddd46226c442b30128bfeee538d5889492a73/langchain-1.3.14.tar.gz", hash = "sha256:1b6696c72ba3bbbce54d745e0180742c9f6ece8bbc59ed5a46c3e20b9a435929", size = 645181, upload-time = "2026-07-16T13:28:18.29Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b1/31/33ba60f3aaa88dc7b97f9c7680f431237466804bf6826efb75400dfd2e6c/langchain-1.3.12-py3-none-any.whl", hash = "sha256:19685eb9dce01ebd71b11281d5489453e7ab3d2caf61eacb2a76d15574246535", size = 136863, upload-time = "2026-07-08T22:38:11.003Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/ec/0f942e78a621f8e3162ff1ed24284f469aaf51fb4607ee5831c626f2b2bc/langchain-1.3.14-py3-none-any.whl", hash = "sha256:4d10dbe91005952cddd56d0dc77aa108964da6bae90ab20063653957e901f782", size = 139560, upload-time = "2026-07-16T13:28:16.498Z" },
 ]
 
 [[package]]
@@ -2127,7 +2127,7 @@ requires-dist = [
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "adapters/hermes" },
     { name = "nemo-fabric-runtime", editable = "python" },
     { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
-    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.5.0,<0.7" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
     { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
 ]
@@ -2227,14 +2227,14 @@ relay = [
 
 [package.metadata]
 requires-dist = [
-    { name = "deepagents", specifier = ">=0.5.3,<0.6.0" },
+    { name = "deepagents", specifier = ">=0.6.12,<0.7.0" },
     { name = "langchain", specifier = ">=1.3,<2.0" },
     { name = "langchain-mcp-adapters", specifier = ">=0.1,<0.3.0" },
     { name = "langchain-openai", specifier = ">=0.3" },
     { name = "langgraph", specifier = ">=1.2,<2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0,<4.0" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-relay", extras = ["deepagents"], marker = "extra == 'relay'", specifier = ">=0.5.0,<0.7" },
+    { name = "nemo-relay", extras = ["deepagents"], marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
 ]
 provides-extras = ["relay"]
 
@@ -2269,14 +2269,14 @@ requires-dist = [
 
 [[package]]
 name = "nemo-relay"
-version = "0.5.0"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/fc/6892859ffbfb60f8cc09a4181c8d407b574d49490e35cd563e7f0a61bf54/nemo_relay-0.5.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:203409e0f392fc4f40f52277347ed75ba9969b2af28ddb3b6ae53f789185a0ed", size = 7769721, upload-time = "2026-07-08T18:43:57.745Z" },
-    { url = "https://files.pythonhosted.org/packages/dd/13/25c4fcf6fb979af07c9562238819183588a910c2ae09767603500d6948c2/nemo_relay-0.5.0-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:de61ad0644c5e8c300de814f6884c5de7ae51db14694f5057f938b4da54bfaaf", size = 7037083, upload-time = "2026-07-08T18:44:00.135Z" },
-    { url = "https://files.pythonhosted.org/packages/49/97/bd4c77e975d50f7d09f8bfcb74d7e704e05a8b2205f555bf557f84edc5fe/nemo_relay-0.5.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cb323569f104506f4f1a0e2104b22d74c9a0bbf3280ec4d58ad3d768de76fb15", size = 7430817, upload-time = "2026-07-08T18:44:02.165Z" },
-    { url = "https://files.pythonhosted.org/packages/da/8b/5681f3430e6d25bf7419dbe576da14599e1cfadc083edb74e691a0c3a980/nemo_relay-0.5.0-cp311-abi3-win_amd64.whl", hash = "sha256:da1bd1e1dec79b7bda3984dd8c59b32ba97abf96c37e85cd1f38d208a29f42b9", size = 7359048, upload-time = "2026-07-08T18:44:04.169Z" },
-    { url = "https://files.pythonhosted.org/packages/4e/f2/65c3ef0435e671c829063d4872897f9054f369f0aeacab12c5aefe486705/nemo_relay-0.5.0-cp311-abi3-win_arm64.whl", hash = "sha256:87462585f17b40ce82c54347acef5ace96ee11de3015f234e0b902f23b3793fb", size = 6934235, upload-time = "2026-07-08T18:44:06.078Z" },
+    { url = "https://files.pythonhosted.org/packages/25/65/d320016505457cc30971f575e8dadffb923b7cfc780ab8bb25a4ce9d305c/nemo_relay-0.6.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:ad5dae6febf6532d7b113abc2a404679c8feffc499df3034b93d9a078185d2bb", size = 9917779, upload-time = "2026-07-22T20:07:48.961Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/c0/f33250e71c4206da1b339072893f9a1e39295fe1aceb9a2fef4b8620a0f2/nemo_relay-0.6.0-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c0cd9570f64c6956fe3bfb82af1cdb3ee70cb50b51098cdb0de831c3f9b4e904", size = 8888375, upload-time = "2026-07-22T20:07:51.049Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/f4/d1dfaed022da0f6f14765a122867f976a69cc520fe1faaf99757f5719d1f/nemo_relay-0.6.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:849daa9e45158ac581e54506e0fcc7a24f557d1ed06dbdc074f5de7a00393cbc", size = 9336372, upload-time = "2026-07-22T20:07:53.224Z" },
+    { url = "https://files.pythonhosted.org/packages/3a/b0/908d77f75b9054e1e403da78f7d9430249a45939070d4298abbb41a04b5b/nemo_relay-0.6.0-cp311-abi3-win_amd64.whl", hash = "sha256:bfbbedfd130fa95c9b8c04643c30910df850e0ed3500beeab82b00ca2d94e7ea", size = 9613425, upload-time = "2026-07-22T20:07:55.175Z" },
+    { url = "https://files.pythonhosted.org/packages/cd/71/c438b9d746303ff7f270d99f13b250bf947cdac3e52de2a83fd132cbca0b/nemo_relay-0.6.0-cp311-abi3-win_arm64.whl", hash = "sha256:82fe132943399d89e6ec34dc28df0be7bbe41b84f6698c545928b8816b6010f6", size = 9034810, upload-time = "2026-07-22T20:07:57.467Z" },
 ]
 
 [package.optional-dependencies]

@@ -1801,7 +1801,7 @@ USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 ```
 
-## deepagents (0.5.9)
+## deepagents (0.6.12)
 
 ### Licenses
 License: `MIT`
@@ -4760,7 +4760,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## langchain (1.3.12)
+## langchain (1.3.14)
 
 ### Licenses
 License: `MIT`
@@ -5460,7 +5460,7 @@ Copyright 2016 Andrew Svetlov and aio-libs contributors
    limitations under the License.
 ```
 
-## nemo-relay (0.5.0)
+## nemo-relay (0.6.0)
 
 ### Licenses
 License: `Apache-2.0`
