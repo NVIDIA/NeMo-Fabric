@@ -36,6 +36,12 @@ NeMo Fabric provides the following harness integrations:
 | [Hermes Agent](docs/integrations/harness/hermes.mdx) | `nemo-fabric[hermes]` |
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` |
 
+## Supported Platforms
+
+* Linux (x86_64, arm64)
+* macOS (arm64)
+* Windows (x86_64)
+
 ## Quick Start
 
 The following example runs NeMo Fabric, the Hermes Agent adapter, and Hermes
