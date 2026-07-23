@@ -49,13 +49,39 @@ Decide the following before implementation:
   point, and focused tests. For Python, use `pyproject.toml`, `uv.lock`,
   `src/nemo_fabric_adapters/<name>/adapter.py`, and
   `tests/adapters/test_<name>*.py`. Keep the package independent and small.
-- Keep published runtime dependencies (`[project].dependencies` for Python)
-  razor-thin and adapter-owned. For an SDK/module boundary, declare every runtime
-  library the adapter host directly imports, including SDK/client libraries. For
-  an external process or separately managed harness environment, do not install
-  or upgrade the harness or consumer agent environment; keep test-only
-  dependencies in a non-published, language-native group
-  (`[dependency-groups]` for UV/Python).
+- Keep each published leaf adapter's runtime dependencies
+  (`[project].dependencies` for Python) razor-thin and adapter-owned. Do not
+  declare the wrapped harness/SDK or dependencies directly declared by its
+  supported package. Do not treat incidental transitive dependencies as
+  harness-owned. Declare other libraries required by adapter behavior. When a
+  library is optional, provide and test the dependency-free fallback. A
+  separately managed harness means that the environment owner installs and
+  versions its SDK/module or provides its external executable or service; the
+  adapter must not install or upgrade it.
+- Keep `nemo-fabric-runtime` as an exact-version unconditional dependency of the
+  root `nemo-fabric` metapackage. Do not provide a redundant `runtime` extra.
+  Give every installable Python harness adapter one canonical root extra
+  `<extra>` that depends on the matching version of
+  `nemo-fabric-adapters-<adapter>[harness]`; the extra name does not need to
+  match the adapter directory.
+- Keep a leaf adapter's base installation limited to adapter-owned dependencies.
+  Give every leaf a `harness` extra for its supported harness packages and a
+  `full` extra for every package-installable optional integration. If the
+  adapter imports NeMo Relay Python APIs, also provide a `relay` extra and
+  include it in `full`. If Relay is an external executable, do not provide a
+  leaf `relay` extra, and make `full` equivalent to `harness`. Document external
+  executable or service prerequisites separately. Do not add directory-name or
+  legacy aliases unless compatibility explicitly requires them.
+- Put wrapped-harness packages required by repository tests in the root
+  `adapter-tests` dependency group and other test-only packages in an
+  appropriate non-published group. For packaged harnesses, "compatible" means
+  satisfying the same constraint used by the leaf `harness` extra and
+  `adapter-tests`; document that constraint for leaf-only installations. Derive
+  exact pins or bounded ranges from the supported upstream contract and test
+  evidence; do not claim a broader range than the evidence supports. Verify the
+  unconditional root runtime dependency, the absence of `runtime` and `-min`
+  extras, root-to-leaf harness delegation, and leaf `harness`, `relay`, and
+  `full` metadata. Inspect the built root and leaf wheel metadata.
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.
@@ -151,6 +177,7 @@ and examples together when they expose the changed behavior.
 Run `validate-change` and the applicable adapter commands:
 
 ```bash
+uv sync --group adapter-tests
 uv run --no-sync pytest tests/adapters/test_<name>*.py
 just test-python
 just lock-python && just wheels  # Package or dependency changes.

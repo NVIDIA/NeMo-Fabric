@@ -29,7 +29,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
 export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
-export FABRIC_PACKAGE='nemo-fabric[claude,harbor,hermes-agent,relay,runtime]==0.1.0a20260724'
+export FABRIC_PACKAGE='nemo-fabric[claude,harbor,hermes-agent,relay]==0.1.0a20260724'
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 
 curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
@@ -51,7 +51,7 @@ Keep this shell open for the commands below.
 Run the credential-free installation gate before spending model tokens:
 
 ```bash
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
   --agent "$FABRIC_AGENT" \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
@@ -72,7 +72,7 @@ The default Hermes Agent command uses NVIDIA's hosted API:
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
   --agent "$FABRIC_AGENT" \
   --model nvidia/nemotron-3-nano-30b-a3b \
@@ -100,7 +100,7 @@ harness switch reached Claude.
 ```bash
 : "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
   --agent "$FABRIC_AGENT" \
   --model anthropic/claude-sonnet-4-5 \
@@ -138,7 +138,7 @@ For example, the complete skill variation is:
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra harbor harbor run \
   --task swe-bench/django__django-13741 \
   --agent "$FABRIC_AGENT" \
   --model nvidia/nemotron-3-nano-30b-a3b \
@@ -176,7 +176,7 @@ means the proposed patch did not pass the task tests.
 export JOB_NAME=django-13741-hermes
 export RESULT_PATH="$RUNS_DIR/$JOB_NAME/result.json"
 
-uv run --extra runtime --extra harbor python - "$RESULT_PATH" <<'PY'
+uv run --extra harbor python - "$RESULT_PATH" <<'PY'
 import json
 import sys
 
@@ -194,7 +194,7 @@ assert rewards, "Harbor did not record a verifier reward"
 print("verifier reward:", ", ".join(sorted(rewards)))
 PY
 
-uv run --extra runtime --extra harbor harbor view "$RUNS_DIR/$JOB_NAME"
+uv run --extra harbor harbor view "$RUNS_DIR/$JOB_NAME"
 ```
 
 For a Relay-enabled job, select its job name and inspect the published evidence:
@@ -204,10 +204,10 @@ export JOB_NAME=django-13741-hermes-relay
 
 find "$RUNS_DIR/$JOB_NAME" \
   -path '*/agent/telemetry-validation.json' \
-  -exec uv run --extra runtime --extra harbor python -m json.tool {} \;
+  -exec uv run --extra harbor python -m json.tool {} \;
 find "$RUNS_DIR/$JOB_NAME" \
   -path '*/agent/trajectory.json' \
-  -exec uv run --extra runtime --extra harbor python -m json.tool {} \;
+  -exec uv run --extra harbor python -m json.tool {} \;
 find "$RUNS_DIR/$JOB_NAME" \
   \( -name '*.atof.jsonl' -o -name '*.atif.json' \) -print
 ```
@@ -228,7 +228,7 @@ five-task Hermes Agent shard with Relay enabled:
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra harbor harbor run \
   --dataset swe-bench/swe-bench-verified \
   --n-tasks 5 \
   --agent "$FABRIC_AGENT" \
@@ -249,7 +249,7 @@ Spot-check progress and evidence without changing the running job:
 
 ```bash
 export JOB_NAME=swebench-verified-hermes-5
-uv run --extra runtime --extra harbor harbor view "$RUNS_DIR/$JOB_NAME"
+uv run --extra harbor harbor view "$RUNS_DIR/$JOB_NAME"
 find "$RUNS_DIR/$JOB_NAME" -name result.json -print | head
 find "$RUNS_DIR/$JOB_NAME" \
   -path '*/agent/telemetry-validation.json' -print | head
@@ -260,7 +260,7 @@ summary. Resume an interrupted job from its recorded configuration:
 
 ```bash
 export JOB_NAME=swebench-verified-hermes-5
-uv run --extra runtime --extra harbor harbor job resume \
+uv run --extra harbor harbor job resume \
   --job-path "$RUNS_DIR/$JOB_NAME"
 ```
 

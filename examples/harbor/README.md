@@ -99,9 +99,9 @@ and verify the relevant entry points:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-uv sync --python 3.12 --extra runtime --extra harbor
-uv run --extra runtime --extra harbor harbor --version
-uv run --extra runtime --extra harbor python -c \
+uv sync --python 3.12 --extra harbor
+uv run --extra harbor harbor --version
+uv run --extra harbor python -c \
   'from nemo_fabric.integrations.harbor import FabricAgent; print(FabricAgent.import_path())'
 docker version
 docker compose version
@@ -119,7 +119,7 @@ prints `/snap/bin/docker`, run this in every shell used for Harbor:
 ```bash
 mkdir -p "$HOME/harbor-tmp"
 export TMPDIR="$HOME/harbor-tmp"
-uv run --extra runtime --extra harbor python -c \
+uv run --extra harbor python -c \
   'import tempfile; print(tempfile.gettempdir())'
 ```
 

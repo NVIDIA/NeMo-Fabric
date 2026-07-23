@@ -129,7 +129,7 @@ def preflight_check(payload: dict[str, Any]) -> None:
     if importlib.util.find_spec("deepagents") is None:
         raise RuntimeError(
             "the 'deepagents' package is required for the Deep Agents adapter; install "
-            "it with the 'deepagents' extra (pip install nemo-fabric-adapters-deepagents)."
+            "a compatible Deep Agents harness in the adapter environment."
         )
 
     model_config = selected_model_config(payload)

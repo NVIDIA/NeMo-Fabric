@@ -255,7 +255,7 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     assert "-e /opt/nemo-fabric/adapters/claude" in dockerfile
     assert "-e /opt/nemo-fabric/adapters/hermes" in dockerfile
-    assert "nemo-fabric[harbor,hermes,hermes-agent,relay,runtime]" in dockerfile
+    assert "nemo-fabric[claude,harbor,hermes-agent,relay]" in dockerfile
     assert "@openai/codex" not in dockerfile
 
 
@@ -289,8 +289,8 @@ def test_harbor_calculator_documents_explicit_cli_commands():
 
     assert "run.sh" not in calculator
     assert calculator.count(" harbor run \\") == 4
-    assert landing.count("uv run --extra runtime --extra harbor harbor run") == 0
-    assert swebench.count("uv run --extra runtime --extra harbor harbor run") == 5
+    assert landing.count("uv run --extra harbor harbor run") == 0
+    assert swebench.count("uv run --extra harbor harbor run") == 5
     assert "--agent-import-path" not in landing + calculator + swebench
     assert "fabric_config_path" not in calculator
     assert "fabric_config_path" not in landing
@@ -309,7 +309,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh" in swebench
     assert (
         "FABRIC_PACKAGE="
-        "'nemo-fabric[claude,harbor,hermes-agent,relay,runtime]==0.1.0a20260724'"
+        "'nemo-fabric[claude,harbor,hermes-agent,relay]==0.1.0a20260724'"
         in swebench
     )
     assert "PIP_FIND_LINKS" not in swebench

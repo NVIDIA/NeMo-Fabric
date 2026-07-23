@@ -12,17 +12,45 @@ app-server runtime and typed JSON-RPC protocol.
 
 ## Install
 
-To install just the Codex adapter by itself:
+For the complete supported composition, install NeMo Fabric with the Codex adapter
+and Codex SDK dependencies:
 
 ```bash
 pip install "nemo-fabric[codex]"
 ```
 
-To install just the Codex adapter along with the NeMo Fabric Runtime:
+To install the adapter and supported Codex SDK without the NeMo Fabric runtime,
+use the adapter package's `harness` extra:
 
 ```bash
-pip install "nemo-fabric[codex, runtime]"
+pip install "nemo-fabric-adapters-codex[harness]"
 ```
+
+The adapter package's `full` extra installs the same dependencies as `harness`.
+Codex Relay support requires an external `nemo-relay` CLI, so the package does
+not provide a `relay` extra.
+
+If the environment already manages a compatible Codex SDK, install only the
+adapter:
+
+```bash
+pip install nemo-fabric-adapters-codex
+```
+
+The bare adapter distribution installs only adapter-owned dependencies. It does
+not install the NeMo Fabric runtime or Codex SDK. For a host-managed install,
+use `openai-codex==0.144.4`, the constraint supported by this release.
+
+If the host-managed Codex SDK and NeMo Fabric runtime share an environment,
+install the runtime and bare adapter together:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-codex
+```
+
+For separate environments, use matching NeMo Fabric release versions for the
+runtime and adapter package unless a different pairing has been explicitly
+validated.
 
 ## Authentication
 
@@ -58,7 +86,7 @@ NeMo Fabric artifact root, so execution does not depend on or modify a user's
 Codex login. Provider names identify configuration; the adapter does not
 maintain a provider allowlist.
 
-The adapter depends on the Codex SDK, which installs and selects its matching
+The adapter uses the Codex SDK, which installs and selects its matching
 app-server runtime. NeMo Fabric does not declare the runtime package directly or
 treat it as a user-installed command or adapter descriptor requirement.
 

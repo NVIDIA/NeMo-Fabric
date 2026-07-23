@@ -14,17 +14,46 @@ compatible Claude Code runtime.
 
 ## Install
 
-To install just the Claude adapter by itself:
+For the complete supported composition, install NeMo Fabric with the Claude
+adapter and Claude Agent SDK dependencies:
 
 ```bash
 pip install "nemo-fabric[claude]"
 ```
 
-To install just the Claude adapter along with the NeMo Fabric Runtime:
+To install the adapter and supported Claude Agent SDK without the NeMo Fabric
+runtime, use the adapter package's `harness` extra:
 
 ```bash
-pip install "nemo-fabric[claude, runtime]"
+pip install "nemo-fabric-adapters-claude[harness]"
 ```
+
+The adapter package's `full` extra installs the same dependencies as `harness`.
+Claude Relay support requires an external `nemo-relay` CLI, so the package does
+not provide a `relay` extra.
+
+If the environment already manages a compatible Claude Agent SDK, install only
+the adapter:
+
+```bash
+pip install nemo-fabric-adapters-claude
+```
+
+The bare adapter distribution installs only adapter-owned dependencies. It does
+not install the NeMo Fabric runtime or Claude Agent SDK. For a host-managed
+install, use `claude-agent-sdk==0.2.120`, the constraint supported by this
+release.
+
+If the host-managed Claude Agent SDK and NeMo Fabric runtime share an
+environment, install the runtime and bare adapter together:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-claude
+```
+
+For separate environments, use matching NeMo Fabric release versions for the
+runtime and adapter package unless a different pairing has been explicitly
+validated.
 
 ## Authentication
 
@@ -58,7 +87,9 @@ Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.do
 for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
 
-Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the [NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
+Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the
+[NeMo Relay CLI install guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli)
+for installation instructions.
 
 The Python `nemo-relay` package does not install this executable. Refer to the
 [NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)

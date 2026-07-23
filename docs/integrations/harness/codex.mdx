@@ -11,12 +11,44 @@ to the legacy Codex CLI adapter.
 
 ## Install the Adapter
 
-Install the adapter and its Codex Python SDK dependencies in the environment
-that runs the agent harness:
+For the complete supported composition, install NeMo Fabric with the Codex adapter
+and Codex Python SDK dependencies:
 
 ```bash
 pip install "nemo-fabric[codex]"
 ```
+
+To install the adapter and supported Codex SDK without the NeMo Fabric runtime,
+use the adapter package's `harness` extra:
+
+```bash
+pip install "nemo-fabric-adapters-codex[harness]"
+```
+
+The adapter package's `full` extra installs the same dependencies as `harness`.
+Codex Relay integration requires an external `nemo-relay` CLI, so the adapter
+package does not provide a `relay` extra.
+
+If the environment already manages a compatible Codex SDK, install only the
+adapter:
+
+```bash
+pip install nemo-fabric-adapters-codex
+```
+
+The bare adapter package does not install the NeMo Fabric runtime or SDK. Use
+`openai-codex==0.144.4`, the constraint supported by this release.
+
+If the host-managed Codex SDK and NeMo Fabric runtime share an environment,
+install the runtime and bare adapter together:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-codex
+```
+
+For separate environments, use matching NeMo Fabric release versions for the
+runtime and adapter package unless a different pairing has been explicitly
+validated.
 
 ## Configure the Adapter
 

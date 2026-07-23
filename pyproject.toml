@@ -37,16 +37,16 @@ packages = []
 
 [project.optional-dependencies]
 
-codex = [
-  "nemo-fabric-adapters-codex == 0.1.0",
+claude = [
+  "nemo-fabric-adapters-claude[harness] == 0.1.0",
 ]
 
-claude = [
-  "nemo-fabric-adapters-claude == 0.1.0",
+codex = [
+  "nemo-fabric-adapters-codex[harness] == 0.1.0",
 ]
 
 deepagents = [
-  "nemo-fabric-adapters-deepagents == 0.1.0",
+  "nemo-fabric-adapters-deepagents[harness] == 0.1.0",
 ]
 
 harbor = [
@@ -54,22 +54,12 @@ harbor = [
   "pyyaml>=6.0",
 ]
 
-hermes = [
-  "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
-]
-
 hermes-agent = [
-    "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
-    "hermes-agent>=0.17.0; python_version < '3.14'",
+  "nemo-fabric-adapters-hermes[harness] == 0.1.0; python_version < '3.14'",
 ]
 
 relay = [
   "nemo-relay>=0.6.0,<0.7",
-  "tomli-w~=1.2", # Needed by adapters to write relay config files
-]
-
-runtime = [
-  "nemo-fabric-runtime == 0.1.0",
 ]
 
 [dependency-groups]
@@ -81,6 +71,15 @@ adapters = [
   # and test environments exercise the SDK-native NeMo Relay integration.
   "nemo-fabric-adapters-deepagents[relay]",
   "nemo-fabric-adapters-hermes; python_version < '3.14'",
+]
+
+adapter-tests = [
+  "claude-agent-sdk==0.2.120",
+  "deepagents>=0.6.12,<0.7.0",
+  "langchain>=1.3,<2.0",
+  "langgraph>=1.2,<2.0",
+  "hermes-agent>=0.17.0; python_version < '3.14'",
+  "openai-codex==0.144.4",
 ]
 
 dev = [
