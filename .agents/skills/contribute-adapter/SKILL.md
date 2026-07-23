@@ -23,10 +23,10 @@ existing adapter only for harness-specific patterns, not the core contract.
 
 Decide the following before implementation:
 
-1. Choose the harness boundary: SDK/module, CLI/process, or service. Use
-   `python` for Python-owned execution and `process` for any executable,
-   including TypeScript/Node SDK or CLI wrappers. Core runtime dispatch does not
-   yet implement `http` service or `native_plugin` execution.
+1. Choose the harness boundary: SDK/module, CLI/process, or service. Map it to a
+   core runner: `process` accepts any executable regardless of implementation
+   language, while `python` accepts its callable contract. Core runtime dispatch
+   does not yet implement `http` service or `native_plugin` execution.
 2. Place a repository adapter under `adapters/<name>`. Define its install extra
    and packaged descriptor. Choose the matching `harness.resolution` strategy,
    and document repository or `base_dir` descriptor discovery; wheel package
@@ -73,6 +73,10 @@ Decide the following before implementation:
   forward or log unrelated environment values.
 - For current non-streaming runners, emit one terminal JSON object on stdout;
   use stderr for diagnostics and a nonzero exit status for failures.
+
+> **TODO:** Revisit this output contract when Fabric adds streaming support;
+> update this guidance and affected adapter evidence then.
+
 - Scope workspace, generated config, state, sessions, and artifacts to the
   resolved runtime context. Stateful adapters must isolate Fabric runtime IDs.
 - Claim only lifecycle operations supported end to end by the core runner and
@@ -152,7 +156,6 @@ git diff --check
 - [ ] Precedence, actionable rejection, forwarding, isolation, results, telemetry, and artifacts are tested.
 - [ ] Package, runtime/test dependencies, installation, resolution, docs, SDK/YAML examples, fixtures, and generated artifacts agree.
 - [ ] Generated files came from repository commands, applicable CI catalogs enumerate the adapter, and the diff has no contract drift or unrelated changes.
-- [ ] Update this skill and affected adapter evidence when core changes adapter kinds, output framing, or lifecycle capabilities.
 
 ## References
 
