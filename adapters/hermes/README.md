@@ -9,22 +9,31 @@ This adapter runs Hermes Agent through its Python SDK.
 
 ## Install
 
-To install just the Hermes Agent adapter by itself:
+To install only the Hermes Agent adapter distribution:
+
+```bash
+pip install nemo-fabric-adapters-hermes
+```
+
+The adapter-only installation does not install the Hermes Agent harness. In the
+adapter environment, install a compatible harness separately:
+
+```bash
+pip install "hermes-agent>=0.17.0"
+```
+
+To install the NeMo Fabric Runtime and Hermes Agent adapter in the same
+environment:
 
 ```bash
 pip install "nemo-fabric[hermes]"
 ```
 
-To install the Hermes Agent adapter along with the NeMo Fabric Runtime:
+To install a complete co-located environment with a compatible version of
+Hermes Agent:
 
 ```bash
-pip install "nemo-fabric[hermes, runtime]"
-```
-
-To install the Hermes Agent adapter along with a compatible version of Hermes Agent:
-
-```bash
-pip install "nemo-fabric[hermes, hermes-agent]"
+pip install "nemo-fabric[hermes-agent]"
 ```
 
 ## What It Maps
@@ -65,7 +74,7 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
 - `adapter_kind` is `python` because NeMo Fabric can invoke it through Python.
 - `runner.module` names the persistent host module that NeMo Fabric invokes with
   `python -m`.
-- `requirements` powers `fabric doctor`; keep required env vars, binaries, or
+- `requirements` powers `nemo-fabric doctor`; keep required env vars, binaries, or
   packages current.
 - `config.accepts` must match the NeMo Fabric sections this adapter maps into Hermes Agent.
 - `telemetry.providers` declares provider-specific outputs and integration modes

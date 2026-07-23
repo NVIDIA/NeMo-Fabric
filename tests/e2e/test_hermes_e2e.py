@@ -236,13 +236,15 @@ class TestHermesE2E:
         trajectory = json.loads(atif_paths[0].read_text())
         assert trajectory["agent"]["name"] in {"code-review-agent", "Hermes Agent"}
         steps = trajectory["steps"]
-        assert len(steps) == 5
+        assert len(steps) == 2
 
         first_step = steps[0]
-        assert first_step["message"] == "hermes.turn.start"
-        assert first_step["extra"]["event_payload"]["is_first_turn"] is True
+        assert first_step["source"] == "user"
+        assert first_step["message"] == "Reply with exactly: relay ok"
+        assert "llm_request" in first_step["extra"]
 
         last_step = steps[-1]
-        assert last_step["message"] == "hermes.session.end"
+        assert last_step["source"] == "agent"
+        assert last_step["message"].startswith("echo user_count=1")
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"

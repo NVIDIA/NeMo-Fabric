@@ -27,7 +27,6 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "nemo-fabric-adapters-common == 0.1.0",
-  "pyyaml>=6.0", # needed for writing hermes config files
 ]
 
 [project.urls]

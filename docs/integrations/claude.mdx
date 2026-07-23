@@ -10,9 +10,10 @@ Claude Code runtime. NeMo Fabric preserves Claude's native credential precedence
 forwards only supported operating-system, configuration, and authentication
 variables plus values explicitly configured in `harness.settings.env`.
 
-The adapter pins `claude-agent-sdk==0.2.120`. The SDK owns its compatible Claude
-Code runtime unless `harness.settings.cli_path` explicitly selects another
-executable.
+The execution environment must provide a compatible Claude Agent SDK
+separately. The repository test environment uses
+`claude-agent-sdk==0.2.120`. The SDK owns its compatible Claude Code runtime
+unless `harness.settings.cli_path` explicitly selects another executable.
 
 ## Choose an Authentication Mode
 

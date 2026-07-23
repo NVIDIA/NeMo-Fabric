@@ -314,6 +314,12 @@ async def test_missing_deepagents_package_fails_runtime_start(
         )
 
 
+def test_relay_integration_imports_with_supported_host_dependencies():
+    from nemo_relay.integrations.deepagents import add_nemo_relay_integration
+
+    assert callable(add_nemo_relay_integration)
+
+
 async def test_agent_creation_error_fails_runtime_start(
     tmp_path, make_payload, monkeypatch
 ):

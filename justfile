@@ -401,7 +401,7 @@ test-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
-        uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents --extra harbor --extra hermes --extra relay --extra runtime
+        uv sync --group adapter-tests --group test --no-group dev --extra claude --extra codex --extra deepagents --extra harbor --extra hermes --extra relay --extra runtime
     fi
     uv run --no-sync pytest
 

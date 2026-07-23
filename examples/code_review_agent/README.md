@@ -59,7 +59,7 @@ The entrypoint exposes complete harness configs defined in
 | Variant | Command option | Additional setup |
 | --- | --- | --- |
 | Hermes Agent | `--variant hermes` | Installed [Hermes Agent adapter requirements](../../adapters/hermes/README.md) and `NVIDIA_API_KEY`|
-| Codex | `--variant codex` | Installed [Codex adapter](../../adapters/codex/README.md) and an existing ChatGPT or API key login |
+| Codex | `--variant codex` | Installed [Codex adapter and SDK requirements](../../adapters/codex/README.md) and an existing ChatGPT or API key login |
 | Claude | `--variant claude` | Installed [Claude adapter requirements](../../adapters/claude/README.md) and `ANTHROPIC_API_KEY` |
 | Deep Agents | `--variant deepagents` | Installed [Deep Agents adapter requirements](../../adapters/deepagents/README.md) and `NVIDIA_API_KEY` |
 

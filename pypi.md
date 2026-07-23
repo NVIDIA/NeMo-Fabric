@@ -25,18 +25,40 @@ Install the core runtime and Python SDK:
 pip install nemo-fabric
 ```
 
-To use a supported agent harness, install its adapter extra:
+When the runtime and adapter share an environment, replace `<adapter>` with
+`claude`, `codex`, `deepagents`, or `hermes`. Repeat the command for each harness
+you use:
 
 ```bash
-pip install "nemo-fabric[claude]"
-pip install "nemo-fabric[codex]"
-pip install "nemo-fabric[deepagents]"
-pip install "nemo-fabric[hermes]"
+pip install "nemo-fabric[<adapter>]"
 ```
 
-NeMo Fabric supports running an agent harness in a different virtual environment than the one used to run NeMo Fabric itself. This is useful for running agents that have conflicting dependencies with NeMo Fabric or other agents.
+These extras install the adapter and its adapter-owned runtime dependencies.
+They do not install the corresponding agent harness.
 
-The adapter must be installed into the virtual environment that the harness is installed in. For this reason adapters intentionally have minimal dependencies.
+NeMo Fabric supports two environment layouts:
+
+- **Co-located runtime and harness:** Install one of the `nemo-fabric` adapter
+  extras shown above and a compatible harness in the same virtual environment.
+- **Separate runtime and harness:** Install `nemo-fabric` in the runtime
+  environment. In the harness environment, install both the corresponding
+  `nemo-fabric-adapters-*` distribution and a compatible harness.
+
+Separate environments are useful when a harness has dependencies that conflict
+with NeMo Fabric or another harness. Refer to the
+[adapter compatibility reference](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters)
+for exact package names, supported harness versions, and installation
+instructions.
+
+For a complete co-located Claude environment, the `claude-agent` convenience
+extra includes the adapter and the exact SDK version tested by this repository.
+The `hermes-agent` convenience extra includes the Hermes adapter and its
+declared Hermes Agent dependency:
+
+```bash
+pip install "nemo-fabric[claude-agent]"
+pip install "nemo-fabric[hermes-agent]"
+```
 
 ### Integrations
 

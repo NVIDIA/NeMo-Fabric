@@ -50,12 +50,14 @@ Decide the following before implementation:
   `src/nemo_fabric_adapters/<name>/adapter.py`, and
   `tests/adapters/test_<name>*.py`. Keep the package independent and small.
 - Keep published runtime dependencies (`[project].dependencies` for Python)
-  razor-thin and adapter-owned. For an SDK/module boundary, declare every runtime
-  library the adapter host directly imports, including SDK/client libraries. For
-  an external process or separately managed harness environment, do not install
-  or upgrade the harness or consumer agent environment; keep test-only
-  dependencies in a non-published, language-native group
-  (`[dependency-groups]` for UV/Python).
+  razor-thin and adapter-owned. Do not declare the wrapped harness/SDK or
+  libraries it already supplies, even when an SDK/module adapter imports their
+  APIs; the host agent environment owns them. Declare other directly imported
+  runtime libraries that the adapter owns. Keep wrapped-harness packages needed
+  by repository adapter tests in the root `adapter-tests` dependency group, and
+  other test-only dependencies in the appropriate non-published group. For an
+  external process or separately managed harness environment, do not install or
+  upgrade the harness or consumer agent environment.
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.
@@ -148,6 +150,7 @@ and examples together when they expose the changed behavior.
 Run `validate-change` and the applicable adapter commands:
 
 ```bash
+uv sync --group adapter-tests
 uv run --no-sync pytest tests/adapters/test_<name>*.py
 just test-python
 just lock-python && just wheels  # Package or dependency changes.
