@@ -77,9 +77,12 @@ def with_atof_endpoint(config: FabricConfig, url: str) -> FabricConfig:
 class InvokeStream:
     """Async-iterable of raw ATOF records for one invocation; ``result()`` = RunResult.
 
-    Early-exit contract: ``aclose()`` detaches the consumer but does NOT interrupt
-    the turn — ``invoke`` is a blocking native call on a worker thread and runs to
-    completion. Only ``runtime.stop()`` aborts a turn.
+    Early-exit contract: ``aclose()`` (or breaking the ``async for``) detaches the
+    consumer — iteration stops and buffered records are discarded — but does NOT
+    interrupt the turn. ``invoke`` is a blocking native call on a worker thread and
+    runs to completion; ``result()`` stays awaitable after detaching. There is **no**
+    in-flight cancellation in v0.1: ``runtime.stop()`` raises ``FabricStateError``
+    while a turn is active, so a turn can only be torn down after it finishes.
     """
 
     def __init__(
@@ -87,6 +90,7 @@ class InvokeStream:
     ):
         self._listener = listener
         self._task = asyncio.ensure_future(runtime.invoke(input=input, request=request))
+        self._closed = False
 
     def __aiter__(self) -> "InvokeStream":
         return self
@@ -94,6 +98,8 @@ class InvokeStream:
     async def __anext__(self) -> dict[str, Any]:
         q = self._listener.records
         while True:
+            if self._closed:
+                raise StopAsyncIteration
             if not q.empty():
                 return q.get_nowait()
             if self._task.done():
@@ -113,12 +119,13 @@ class InvokeStream:
         return await self._task
 
     async def aclose(self) -> None:
-        if not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except BaseException:
-                pass
+        """Detach the consumer: stop iteration, leave the turn running.
+
+        Does NOT cancel the invoke task — the blocking native turn runs to
+        completion and ``result()`` stays awaitable. (Cancelling the future would
+        not stop the native call anyway; it would only break ``result()``.)
+        """
+        self._closed = True
 
 
 class StreamingRuntime:

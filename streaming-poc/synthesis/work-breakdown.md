@@ -46,17 +46,24 @@ scoped from real POC findings; effort is relative (S/M/L).
   stream-sink-capable CLI. In-process harnesses need no gateway.
 
 ## 6. Multi-turn semantics (S)
-- Per-runtime listener; `invoke_stream` per turn. Two-turn isolation proven
-  (temporal separation + drain; no cross-turn leakage).
+- Per-runtime listener; `invoke_stream` per turn. Two-turn isolation proven by a
+  checked-in artifact (`../two-turn-isolation.jsonl`; runner
+  `common/two_turn_isolation.py`): one persistent runtime, two turns, disjoint
+  record `uuid`s (overlap 0), no sentinel leakage.
 
 ## 7. Early-exit / cancellation contract (S)
 - Document + implement: `aclose()`/break **detaches** the consumer but does **not**
   interrupt the turn (blocking native call on a worker thread runs to completion);
-  `runtime.stop()` aborts. Unread buffered events discarded.
+  unread buffered events discarded.
+- **Gap to close: there is no in-flight cancellation today.** `runtime.stop()` raises
+  `FabricStateError` while a turn is active (idle-only teardown), so a running turn
+  cannot be aborted from the SDK. A production cancellation path (cooperative
+  interrupt through the native boundary, or an adapter-level turn interrupt) is
+  required before advertising cancellation.
 
 ## 8. Consumer contract documentation (M)
-- Raw ATOF record shape; granularity by mode (gateway=token-level,
-  in-process=scope-level).
+- Raw ATOF record shape; granularity by mode (gateway = per-delta events, token
+  **text terminal-only** in current ATOF; in-process = scope-level).
 - **Delta-vs-terminal:** render deltas live, treat terminal/`RunResult` as
   authoritative — *replace, don't append* (HIGH duplicate risk on Claude/Codex).
 - **Tree reconstruction:** group by `uuid`/`parent_uuid` (required for Deep Agents

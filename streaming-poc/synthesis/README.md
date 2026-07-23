@@ -5,15 +5,17 @@ SPDX-License-Identifier: Apache-2.0
 
 # Streaming POC — cross-harness synthesis & recommendation
 
-Synthesis of the child POCs. **All four were run for real** with ATOF capture:
-**Hermes** ([findings](../hermes/findings.md)) and **Deep Agents**
-([findings](../deepagents/findings.md)) in-process (native events teed before
-Relay), **Claude** ([findings](../claude/findings.md)) and **Codex**
-([findings](../codex/findings.md)) through the gateway on a **subscription / SSO**
-session — no API key; the native SSE events embedded in the ATOF. Codex and Claude
-produced **structurally identical** ATOF from different SDK event models — the
-strongest confirmation that the uniformity holds at the ATOF layer. The
-`invoke_stream` prototype is harness-agnostic and validated on both Relay modes.
+Synthesis of the child POCs. **All four were run for real**, and for each the raw
+native SDK stream was **teed before Relay** and diffed against Relay's ATOF from the
+same run: **Hermes** ([findings](../hermes/findings.md)) and **Deep Agents**
+([findings](../deepagents/findings.md)) in-process, **Claude**
+([findings](../claude/findings.md)) and **Codex** ([findings](../codex/findings.md))
+through the gateway on a **subscription / SSO** session — no API key. The gateway
+diff is measured, not assumed: the native stream carries the **per-delta token text**
+that Relay's ATOF projection **drops** (text is terminal-only). Even so, Codex and
+Claude produced **structurally identical** ATOF from different SDK event models — the
+uniformity holds at the ATOF layer, with the one measured loss uniform across both.
+The `invoke_stream` prototype is harness-agnostic and validated on both Relay modes.
 
 ## Cross-harness evidence
 | | Hermes | Deep Agents | Claude | Codex |
@@ -31,8 +33,10 @@ strongest confirmation that the uniformity holds at the ATOF layer. The
 - **Stream units differ per harness** — callback-scope vs. content-block vs.
   response/item. Codex ≠ Claude (different SDK event models); neither is inferable
   from the other.
-- **Granularity splits by Relay mode:** gateway (Claude/Codex) = token-level;
-  in-process (Hermes/Deep Agents) = scope-level (no token deltas).
+- **Granularity splits by Relay mode:** gateway (Claude/Codex) = per-delta events
+  (one ATOF `llm.chunk` per SSE event — structure/timing/usage live, but the token
+  **text is terminal-only** in the current ATOF projection, measured against the
+  native fixtures); in-process (Hermes/Deep Agents) = scope-level (no token deltas).
 - **Nesting/ordering:** Deep Agents needs `parent_uuid` tree reconstruction
   (parallel sub-agents *would* interleave, keyed by `parent_uuid` — but parallel
   execution was **not observed** in the POC; both subagents ran sequentially). The
@@ -43,9 +47,10 @@ strongest confirmation that the uniformity holds at the ATOF layer. The
 ### The unifying fact
 Relay wraps **all four** into one ATOF envelope: `scope`/`mark` records with
 `uuid`/`parent_uuid`/`timestamp`, and native events either *are* the scope
-(in-process) or are embedded in `llm.chunk` `data` (gateway — event type, block/item
-index, timing, and usage inline; the per-delta text currently lands only in the
-terminal scope, as **both** the real Claude and Codex runs confirmed). The
+(in-process) or are **projected** into `llm.chunk` `data` (gateway — event type,
+block/item index, timing, and usage inline, but **not** the delta text, which lands
+only in the terminal scope, as **both** the real Claude and Codex native fixtures
+confirmed). The
 cross-harness uniformity the effort wanted **already exists at the ATOF layer**,
 with native detail preserved.
 

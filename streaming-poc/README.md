@@ -6,11 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 # NeMo Fabric streaming POC
 
 Proof-of-concept for a Fabric streaming API built on **NeMo Relay-generated ATOF**.
-**All four harnesses were run for real** — their ATOF (and, for the in-process
-harnesses, native events teed before Relay) captured, and the same `invoke_stream`
-prototype exercised. Both gateway harnesses (Claude, Codex) were captured on a
-**subscription / SSO** session forwarded by the gateway — **no API key**. Conclusion
-+ production plan: [`synthesis/`](synthesis/README.md).
+**All four harnesses were run for real** — for each, both the raw native SDK stream
+(teed *before* Relay) and Relay's ATOF were captured from the same run, and the same
+`invoke_stream` prototype exercised. Both gateway harnesses (Claude, Codex) were
+captured on a **subscription / SSO** session forwarded by the gateway — **no API
+key**. Conclusion + production plan: [`synthesis/`](synthesis/README.md).
 
 ## The v0.1 contract (recommended)
 ```python
@@ -28,27 +28,28 @@ normalization in v0.1); `RunResult` out of band. Why normalization is deferred:
 ```
 streaming-poc/
 ├── implementation-spec.md   architecture + end-to-end flow (mermaid diagram)
+├── two-turn-isolation.jsonl checked-in artifact: two turns, one runtime, no leakage
 ├── common/          the experimental prototype: loopback listener, invoke_stream,
-│                    run_harness, native_recorder
+│                    run_harness, native_recorder, two_turn_isolation
 ├── hermes/          in-process · native-events.jsonl · events.atof.jsonl · findings.md
 ├── deepagents/      in-process · native-events.jsonl · events.atof.jsonl · findings.md
-├── claude/          gateway · events.atof.jsonl · findings.md (real run, SSO)
-├── codex/           gateway · events.atof.jsonl · findings.md (real run, SSO)
+├── claude/          gateway · native-events.jsonl · events.atof.jsonl · findings.md
+├── codex/           gateway · native-events.jsonl · events.atof.jsonl · findings.md
 └── synthesis/       cross-harness conclusion + production work breakdown
 ```
-Each completed harness folder carries `events.atof.jsonl` (the Relay ATOF that
-crossed the Fabric boundary) and `findings.md` (native→ATOF mapping, loss analysis,
-deltas-vs-terminal, duplicate-rendering risks, recommendation). The **in-process**
-harnesses also carry `native-events.jsonl` (the SDK stream teed *before* Relay via
-`common/native_recorder.py`); in **gateway** mode Relay embeds the native events
-inside the ATOF `llm.chunk` marks, so no separate native file is needed.
+**Every** harness folder carries `native-events.jsonl` (the raw SDK stream teed
+*before* Relay via `common/native_recorder.py`), `events.atof.jsonl` (the Relay ATOF
+from the same run), and `findings.md` (native→ATOF diff, measured loss analysis,
+deltas-vs-terminal, duplicate-rendering risks, recommendation). For the **gateway**
+harnesses the native stream carries the per-delta token text that Relay's ATOF
+projection drops — the diff is measured, not assumed.
 
 | Harness | mode | status |
 |---|---|---|
-| Hermes | in-process | ✅ complete — real run, native + ATOF captured |
-| Deep Agents | in-process | ✅ complete — real run w/ delegated subagents |
-| Claude | gateway | ✅ complete — real run, token-level ATOF (subscription/SSO, no API key) |
-| Codex | gateway | ✅ complete — real run, token-level ATOF (subscription/SSO, no API key; needs Codex CLI ≥0.145.0) |
+| Hermes | in-process | ✅ real run — native + ATOF captured |
+| Deep Agents | in-process | ◑ partial — real run w/ delegated subagents, but **parallel-subagent interleaving not yet observed** (ran sequentially); see [findings](deepagents/findings.md#nesting--parallelism--delegation) |
+| Claude | gateway | ✅ real run — live delta-event structure/timing + terminal text (subscription/SSO, no API key) |
+| Codex | gateway | ✅ real run — live delta-event structure/timing + terminal text (subscription/SSO, no API key; needs Codex CLI ≥0.145.0) |
 
 ## Reproduce (Hermes / Deep Agents)
 Prereqs: a native extension matching the Python SDK (`just build-python`, or
@@ -69,5 +70,8 @@ additionally need `nemo-relay` ≥0.6.0 and either a subscription (SSO) or an AP
 CLI ≥0.145.0 for the `gpt-5.6-sol` account model).
 
 ## Fixture note
-Oversized full-request snapshot records (>20 KB/line) have their `data` truncated
-in the committed fixtures; the streaming deltas and IDs are preserved.
+Oversized full-request/response snapshot records have their `data` truncated in the
+committed ATOF fixtures; the per-delta records, IDs, usage, and terminal text are
+preserved. The raw per-delta token **text** lives in each folder's
+`native-events.jsonl` (the ATOF projection omits it — that is the measured finding).
+Any PII in a native capture (e.g. an email in model thinking) is redacted.

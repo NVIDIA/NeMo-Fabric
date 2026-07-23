@@ -23,12 +23,13 @@ class AtofStreamListener:
     """Receive live ndjson ATOF push; expose raw records via an async queue."""
 
     def __init__(
-        self, host: str = "127.0.0.1", port: int = 0, maxsize: int = 0
+        self, host: str = "127.0.0.1", port: int = 0, maxsize: int = 1024
     ) -> None:
         self._host = host
         self._port = port
-        # maxsize>0 bounds memory: a full queue blocks the handler's put(), which
-        # stops reading the socket -> TCP backpressure -> Relay's sender backs off.
+        # Bounded by default: a full queue blocks the handler's put(), which stops
+        # reading the socket -> TCP backpressure -> Relay's sender backs off. Pass
+        # maxsize=0 for an explicitly unbounded queue (no backpressure).
         self._queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=maxsize)
         self._runner: web.AppRunner | None = None
         self._bound_port: int | None = None

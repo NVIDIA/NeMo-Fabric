@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Streaming POC — implementation spec
 
 How the relay-only streaming works end to end, centered on the **loopback NDJSON
@@ -95,10 +100,15 @@ flowchart LR
   closes at shutdown.
 - Reads raw chunks and splits on newlines itself — gateway records embed the full
   model request/response and exceed aiohttp's default 512 KB readline limit.
-- **Bounded queue + TCP backpressure** caps memory; delivery is best-effort under
-  sustained stall (Relay drops past its ~3 s flush/close timeout).
+- **Bounded queue (default `maxsize=1024`) + TCP backpressure** caps memory: a full
+  queue blocks the handler's `put()`, stops reading the socket, and Relay's sender
+  backs off; delivery is best-effort under sustained stall (Relay drops past its
+  ~3 s flush/close timeout). Pass `maxsize=0` to opt into an unbounded queue.
 - **One listener per runtime**; `invoke_stream` delimits turns by `invoke`
-  completion (two-turn isolation verified — no cross-turn leakage).
+  completion. Two-turn isolation is demonstrated by a checked-in artifact —
+  [`two-turn-isolation.jsonl`](two-turn-isolation.jsonl) (runner:
+  [`common/two_turn_isolation.py`](common/two_turn_isolation.py)): two turns on one
+  persistent runtime, disjoint record `uuid`s (overlap 0) and no sentinel leakage.
 
 ## Relay integration modes (one mechanism)
 
@@ -114,7 +124,11 @@ Both honor the *same* injected endpoint — no per-harness streaming code.
 - **Relay-only**: available only when Relay is enabled; else `FabricCapabilityError`.
 - **Raw ATOF pass-through**; no Fabric-specific normalization in v0.1.
 - **`RunResult` out of band** via `await stream.result()`.
-- **Honest early-exit**: `aclose()` detaches the consumer but does not interrupt
-  the in-flight turn (blocking native call on a worker thread); `runtime.stop()`
-  aborts.
+- **Honest early-exit**: `aclose()` (or breaking the `async for`) detaches the
+  consumer — iteration stops, buffered records are discarded — but does **not**
+  interrupt the turn; the blocking native call on a worker thread runs to completion
+  and `stream.result()` stays awaitable. **There is no in-flight cancellation in
+  v0.1:** `runtime.stop()` raises `FabricStateError` while a turn is active (it only
+  tears down an idle runtime), so a turn can be torn down only after it finishes. A
+  real cancellation path is a production follow-up (see the work breakdown).
 - **No Rust/core change**: streaming rides the existing relay-config path.
