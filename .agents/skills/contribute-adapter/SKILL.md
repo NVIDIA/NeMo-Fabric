@@ -31,8 +31,9 @@ Decide the following before implementation:
    and packaged descriptor. Choose the matching `harness.resolution` strategy,
    and document repository or `base_dir` descriptor discovery; wheel package
    data alone does not add a descriptor to core discovery.
-3. Define adapter-owned harness-session behavior: start fresh per invocation or
-   persist and resume state for the same `runtime_context.runtime_id`.
+3. Define how adapter-owned harness state is initialized in `start`, retained
+   for continuation across repeated `invoke` calls on the same runtime, and
+   released in `stop`.
 4. List the normalized fields the adapter supports, partially supports, or
    rejects.
 5. Identify fixed requirements, dynamic credentials, telemetry, workspace,
@@ -49,9 +50,12 @@ Decide the following before implementation:
   `src/nemo_fabric_adapters/<name>/adapter.py`, and
   `tests/adapters/test_<name>*.py`. Keep the package independent and small.
 - Keep published runtime dependencies (`[project].dependencies` for Python)
-  razor-thin and adapter-owned: exclude the harness and agent-supplied packages.
-  Put harness/test dependencies in a non-published, language-native development
-  group (`[dependency-groups]` for UV/Python).
+  razor-thin and adapter-owned. For an SDK/module boundary, declare every runtime
+  library the adapter host directly imports, including SDK/client libraries. For
+  an external process or separately managed harness environment, do not install
+  or upgrade the harness or consumer agent environment; keep test-only
+  dependencies in a non-published, language-native group
+  (`[dependency-groups]` for UV/Python).
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.
@@ -71,16 +75,19 @@ Decide the following before implementation:
 - Forward only required system variables, selected credential variables,
   telemetry variables, and documented harness-specific environment. Never
   forward or log unrelated environment values.
-- For current non-streaming runners, emit one terminal JSON object on stdout;
-  use stderr for diagnostics and a nonzero exit status for failures.
+- Start one local adapter host per Fabric runtime and keep it alive for ordered
+  `start` → `invoke*` → `stop`.
+  Emit one JSON lifecycle response per request on stdout and diagnostics on
+  stderr; an early exit is a host crash. Return harness-level invoke failures in
+  a successful lifecycle response as adapter output with `response: null`,
+  `failed: true`, and structured `error` (`code`, `message`, `retryable`, and
+  optional `metadata`); Fabric normalizes it into a failed `RunResult`.
 
 > **TODO:** Revisit this output contract when Fabric adds streaming support;
 > update this guidance and affected adapter evidence then.
 
 - Scope workspace, generated config, state, sessions, and artifacts to the
   resolved runtime context. Stateful adapters must isolate Fabric runtime IDs.
-- Claim only lifecycle operations supported end to end by the core runner and
-  adapter; implement the required start, invoke, resume, and cleanup hooks.
 - Keep stdout stable: emit `response` plus adapter-specific extensions such as
   `error`, harness `events`, `usage`, and session IDs. Fabric supplies top-level
   harness/adapter identity, lifecycle IDs, `status`, `error`, artifacts,
@@ -120,7 +127,8 @@ applicable cases:
 - Positive mapping for each claimed normalized surface.
 - Rejection of unsupported capability values and unenforceable policy.
 - Successful and failed harness result normalization without secret leakage.
-- One-shot execution, plus resume and runtime isolation when stateful.
+- One-shot execution, continuation across repeated invokes, and runtime
+  isolation when stateful.
 - A subprocess test of the packaged entry point to catch stdout, exit-code,
   interpreter, descriptor, and package-data failures.
 
