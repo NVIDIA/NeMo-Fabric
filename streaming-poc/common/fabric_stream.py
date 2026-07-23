@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from nemo_fabric.errors import FabricCapabilityError
+from nemo_fabric.errors import FabricCapabilityError, FabricStateError
 from nemo_fabric.models import (
     FabricConfig,
     RelayAtofConfig,
@@ -77,12 +77,17 @@ def with_atof_endpoint(config: FabricConfig, url: str) -> FabricConfig:
 class InvokeStream:
     """Async-iterable of raw ATOF records for one invocation; ``result()`` = RunResult.
 
-    Early-exit contract: ``aclose()`` (or breaking the ``async for``) detaches the
-    consumer — iteration stops and buffered records are discarded — but does NOT
-    interrupt the turn. ``invoke`` is a blocking native call on a worker thread and
-    runs to completion; ``result()`` stays awaitable after detaching. There is **no**
-    in-flight cancellation in v0.1: ``runtime.stop()`` raises ``FabricStateError``
-    while a turn is active, so a turn can only be torn down after it finishes.
+    The listener queue is shared across turns, so a turn MUST be **finalized** before
+    the next one starts or its unread records leak into the next turn. Finalizing
+    (full consumption, ``aclose()``, or the next ``invoke_stream``) waits for the
+    turn to complete — there is no in-flight cancellation in v0.1 (the blocking
+    native call runs to completion; ``runtime.stop()`` refuses while a turn is
+    active) — then drains and discards every record still queued for this turn.
+
+    Early-exit contract: ``aclose()`` (or breaking the ``async for`` and then
+    ``await stream.aclose()``) detaches the consumer and finalizes; ``result()``
+    stays awaitable afterward. Breaking the loop **without** ``aclose()`` leaves the
+    turn un-finalized — the next ``invoke_stream`` raises until you finalize it.
     """
 
     def __init__(
@@ -91,6 +96,7 @@ class InvokeStream:
         self._listener = listener
         self._task = asyncio.ensure_future(runtime.invoke(input=input, request=request))
         self._closed = False
+        self._finalized = False
 
     def __aiter__(self) -> "InvokeStream":
         return self
@@ -99,6 +105,7 @@ class InvokeStream:
         q = self._listener.records
         while True:
             if self._closed:
+                await self._finalize()
                 raise StopAsyncIteration
             if not q.empty():
                 return q.get_nowait()
@@ -106,6 +113,7 @@ class InvokeStream:
                 try:  # let trailing records land after the turn finishes
                     return await asyncio.wait_for(q.get(), _DRAIN)
                 except asyncio.TimeoutError:
+                    await self._finalize()
                     raise StopAsyncIteration
             getter = asyncio.ensure_future(q.get())
             await asyncio.wait(
@@ -119,26 +127,59 @@ class InvokeStream:
         return await self._task
 
     async def aclose(self) -> None:
-        """Detach the consumer: stop iteration, leave the turn running.
-
-        Does NOT cancel the invoke task — the blocking native turn runs to
-        completion and ``result()`` stays awaitable. (Cancelling the future would
-        not stop the native call anyway; it would only break ``result()``.)
-        """
+        """Detach the consumer and finalize (run the turn to completion, then drain
+        and discard any unread records so none leak into the next turn)."""
         self._closed = True
+        await self._finalize()
+
+    async def _finalize(self) -> None:
+        if self._finalized:
+            return
+        # The turn cannot be interrupted; wait for it to finish so no more records
+        # can arrive, then drain everything still queued for this turn and discard.
+        try:
+            await self._task
+        except BaseException:
+            pass
+        q = self._listener.records
+        while True:
+            while not q.empty():
+                q.get_nowait()
+            try:  # settle: catch any straggler Relay flushes after completion
+                await asyncio.wait_for(q.get(), _DRAIN)
+            except asyncio.TimeoutError:
+                break
+        self._finalized = True
 
 
 class StreamingRuntime:
-    """A relay-enabled Runtime that also exposes ``invoke_stream()``."""
+    """A relay-enabled Runtime that also exposes ``invoke_stream()``.
+
+    Enforces **one active invocation at a time** on its single loopback listener:
+    starting a turn while the previous one is not finalized raises ``FabricStateError``
+    rather than letting the previous turn's records leak into the new stream.
+    """
 
     def __init__(self, runtime: Any, listener: AtofStreamListener):
         self._runtime = runtime
         self._listener = listener
+        self._current: InvokeStream | None = None
 
     def invoke_stream(self, *, input: Any = None, request: Any = None) -> InvokeStream:
-        return InvokeStream(self._runtime, self._listener, input=input, request=request)
+        if self._current is not None and not self._current._finalized:
+            raise FabricStateError(
+                "an invocation is already active on this runtime; fully consume it "
+                "or call `await stream.aclose()` before starting the next turn"
+            )
+        stream = InvokeStream(self._runtime, self._listener, input=input, request=request)
+        self._current = stream
+        return stream
 
     async def aclose(self) -> None:
+        # Finalize any dangling turn (drain-through-completion) before stopping —
+        # runtime.stop() refuses while a turn is in flight.
+        if self._current is not None and not self._current._finalized:
+            await self._current.aclose()
         try:
             await self._runtime.stop()
         finally:

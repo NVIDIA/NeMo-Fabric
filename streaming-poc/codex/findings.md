@@ -78,10 +78,13 @@ Relay later projects delta text, render live for progress/cadence and treat
 don't append**.
 
 ## Recommendation
-**Raw ATOF pass-through (v0.1).** Codex and Claude emit structurally identical ATOF
-from different SDK event models, with the same single measured loss (delta text) —
-strong evidence the uniformity is real and that normalizing per-harness is
-unnecessary for v0.1. Ship raw ATOF; document the delta-vs-terminal contract.
+**Raw ATOF pass-through (v0.1).** Codex and Claude share the same ATOF **envelope**
+(`scope`/`mark`, `uuid`/`parent_uuid`, one `llm.chunk` per SSE event) though their
+event vocabularies and payloads differ (`response.*` vs `message`/`content_block`),
+and both exhibit the same single measured loss (delta text). The uniform *shape*
+(not identical content) plus the uniform loss is strong evidence that normalizing
+per-harness is unnecessary for v0.1. Ship raw ATOF; document the delta-vs-terminal
+contract.
 
 ## Reproduce this experiment
 Prereqs: a native extension matching the Python SDK (`just build-python`, or

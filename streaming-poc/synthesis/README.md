@@ -12,17 +12,19 @@ same run: **Hermes** ([findings](../hermes/findings.md)) and **Deep Agents**
 ([findings](../claude/findings.md)) and **Codex** ([findings](../codex/findings.md))
 through the gateway on a **subscription / SSO** session — no API key. The gateway
 diff is measured, not assumed: the native stream carries the **per-delta token text**
-that Relay's ATOF projection **drops** (text is terminal-only). Even so, Codex and
-Claude produced **structurally identical** ATOF from different SDK event models — the
-uniformity holds at the ATOF layer, with the one measured loss uniform across both.
-The `invoke_stream` prototype is harness-agnostic and validated on both Relay modes.
+that Relay's ATOF projection **drops** (text is terminal-only). Codex and Claude
+share the **same ATOF envelope** (`scope`/`mark`, `uuid`/`parent_uuid`, one
+`llm.chunk` per SSE event) even though their **event vocabularies and payloads
+differ** (`response.*` items vs `message`/`content_block` events) — the *shape* is
+uniform, the *content* is provider-specific. The `invoke_stream` prototype is
+harness-agnostic and validated on both Relay modes.
 
 ## Cross-harness evidence
 | | Hermes | Deep Agents | Claude | Codex |
 |---|---|---|---|---|
 | Relay mode | in-process | in-process | gateway CLI | gateway CLI |
-| native API | AIAgent callbacks | LangGraph + middleware | Anthropic Messages SSE | OpenAI Responses SSE |
-| **stream unit** | callback scope/mark | scope tree (nested) | message → content_block → delta | response → item → delta |
+| native API (captured layer) | AIAgent callbacks | LangGraph + middleware | Anthropic Messages SSE (`StreamEvent`) | **Codex app-server notifications** (`item/agentMessage/delta`) — Relay taps Responses SSE at the gateway |
+| **stream unit** | callback scope/mark | scope tree (nested) | message → content_block → delta | response → item → delta (ATOF) / notification (native) |
 | **token deltas** | ❌ (scope-level) | ❌ (scope-level) | ✅ SSE events live (`content_block_delta`); **text terminal-only** in current ATOF | ✅ SSE events live (`response.output_text.delta`); **text terminal-only** in current ATOF |
 | **nesting** | session>turn>tool/llm | deep (delegated sub-agents) | message>block | response>item |
 | **ordering** | temporal | temporal (sequential in POC; `parent_uuid` would key any parallel) | temporal | temporal |
@@ -51,8 +53,9 @@ Relay wraps **all four** into one ATOF envelope: `scope`/`mark` records with
 block/item index, timing, and usage inline, but **not** the delta text, which lands
 only in the terminal scope, as **both** the real Claude and Codex native fixtures
 confirmed). The
-cross-harness uniformity the effort wanted **already exists at the ATOF layer**,
-with native detail preserved.
+uniform **envelope** the effort wanted already exists at the ATOF layer; the
+per-event *content* stays provider-specific, and the per-delta token text is the one
+native detail the projection drops.
 
 ## Final recommendation — v0.1
 **Ship raw, Relay-generated ATOF pass-through**, surfaced as sugar over
