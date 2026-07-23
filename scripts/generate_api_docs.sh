@@ -42,6 +42,9 @@ perl -0pi -e 's/\A\s+//' "$out"/*.md
 perl -pi -e 's/^#### (<kbd>property<\/kbd>)/### $1/' "$out"/*.md
 # lazydocs emits the ToolsConfig class heading without a separating blank line.
 perl -0pi -e 's/(^## <kbd>class<\/kbd> `ToolsConfig`\n)(?!\n)/$1\n/m' "$out/nemo_fabric.models.md"
+# lazydocs omits the async marker from generated method signatures.
+perl -0pi -e 's/(### <kbd>method<\/kbd> `(aclose|result)`\n\n```python\n)\2\(/${1}async def ${2}(/g' \
+  "$out/nemo_fabric.streaming.md"
 
 add_frontmatter() {
   local file="$1"

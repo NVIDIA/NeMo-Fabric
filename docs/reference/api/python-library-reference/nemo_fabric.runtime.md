@@ -127,6 +127,7 @@ Start one turn and stream raw Relay ATOF records as they arrive.
 **Raises:**
 
  - <b>`FabricCapabilityError`</b>:  If Relay was not enabled when the runtime  started.
+ - <b>`FabricConfigError`</b>:  If request fields conflict or are not  JSON-compatible.
  - <b>`FabricStateError`</b>:  If another turn or stream is active.
 
 ---

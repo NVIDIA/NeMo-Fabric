@@ -28,7 +28,7 @@ from nemo_fabric.runtime import (
 from nemo_fabric.streaming import (
     _AtofStreamListener,
     _relay_enabled,
-    _with_stream_endpoint,
+    _with_stream_sink,
 )
 from nemo_fabric.types import (
     DoctorReport,
@@ -220,7 +220,7 @@ class Fabric:
         if _relay_enabled(config):
             try:
                 stream_listener = await _AtofStreamListener().start()
-                runtime_config = _with_stream_endpoint(config, stream_listener.url)
+                runtime_config = _with_stream_sink(config, stream_listener.url)
             except Exception as error:
                 if stream_listener is not None:
                     await stream_listener.close()
@@ -243,7 +243,9 @@ class Fabric:
 
         def start() -> dict[str, Any]:
             nonlocal started_runtime
-            started_runtime = json.loads(native.start_runtime(json.dumps(plan.to_mapping())))
+            started_runtime = json.loads(
+                native.start_runtime(json.dumps(plan.to_mapping()))
+            )
             return started_runtime
 
         try:

@@ -146,21 +146,17 @@ class Runtime:
                 "a streaming invocation is active; fully consume it or call "
                 "`await stream.aclose()` before starting another turn"
             )
-        return await self._invoke(input=input, request=request)
+        self._ensure_invocable()
+        payload = _run_request_payload(input=input, request=request)
+        return await self._invoke_payload(payload)
 
-    async def _invoke(
+    async def _invoke_payload(
         self,
-        *,
-        input: Any = None,
-        request: RunRequest | None = None,
+        payload: dict[str, Any],
     ) -> RunResult:
         self._ensure_invocable()
         self._current_task = asyncio.current_task()
         try:
-            payload = _run_request_payload(
-                input=input,
-                request=request,
-            )
             merged = _merge_overrides(self._overrides, payload.get("overrides"))
             if merged:
                 payload["overrides"] = merged
@@ -242,6 +238,8 @@ class Runtime:
         Raises:
             FabricCapabilityError: If Relay was not enabled when the runtime
                 started.
+            FabricConfigError: If request fields conflict or are not
+                JSON-compatible.
             FabricStateError: If another turn or stream is active.
         """
 
@@ -258,8 +256,9 @@ class Runtime:
                 "`await stream.aclose()` before starting another turn"
             )
         self._ensure_invocable()
+        payload = _run_request_payload(input=input, request=request)
         stream = InvokeStream(
-            self._invoke(input=input, request=request),
+            self._invoke_payload(payload),
             self._stream_listener,
         )
         self._current_stream = stream
@@ -290,11 +289,14 @@ class Runtime:
 
         if self._status is RuntimeStatus.STOPPED:
             return
-        if (
-            self._current_task is not None
-            or self._current_stream is not None
-            and not self._current_stream._finalized
-        ):
+        if self._current_stream is not None and not self._current_stream._finalized:
+            if not self._current_stream._task.done():
+                raise FabricStateError(
+                    "cannot stop while a streaming invocation is active; await "
+                    "`stream.result()` and then call `await stream.aclose()`"
+                )
+            await self._current_stream.aclose()
+        if self._current_task is not None:
             raise FabricStateError("cannot stop while a turn is in flight")
         if self._closing:
             raise FabricStateError("runtime shutdown is already in progress")

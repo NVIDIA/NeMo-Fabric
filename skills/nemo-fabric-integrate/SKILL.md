@@ -126,9 +126,11 @@ Pick the smallest lifecycle the consumer needs:
 - **Relay-backed stream** — live, raw ATOF records plus a terminal normalized
   result. Enable Relay before `start_runtime(...)`, call
   `runtime.invoke_stream(...)`, iterate the returned `InvokeStream`, and then
-  await `stream.result()`. If iteration stops early, call
-  `await stream.aclose()` before starting another turn. `aclose()` waits for the
-  turn to finish; it does not cancel the harness invocation.
+  await `stream.result()`. Iteration ending does not indicate invocation
+  success; invocation exceptions raise from `result()`, while harness-reported
+  failures remain normalized `RunResult` values. If iteration stops early,
+  call `await stream.aclose()` before starting another turn. `aclose()` waits
+  for the turn to finish; it does not cancel the harness invocation.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
@@ -164,20 +166,19 @@ async def main() -> None:
     async with await fabric.start_runtime(streaming_config, base_dir=base) as runtime:
         stream = runtime.invoke_stream(input="Review the latest patch")
         async for record in stream:
-            consume_atof(record)
+            print(record)
         streamed_result = await stream.result()
 
 
 asyncio.run(main())
 ```
 
-NeMo Fabric owns no queue, worker pool, retry policy, or concurrency limit. For
-parallel work, start independent runtimes and let the consumer decide how many.
-The Relay-backed streaming path uses an internal bounded queue and TCP
-backpressure only to carry one invocation's ATOF records; it is not an
-application scheduling queue. Treat `stream.result()` as authoritative, and
-reconstruct nested work from ATOF `uuid` and `parent_uuid` fields rather than
-stream order.
+NeMo Fabric owns no application scheduling queue, worker pool, retry policy, or
+concurrency limit. For parallel work, start independent runtimes and let the
+consumer decide how many. The Relay-backed streaming path uses an internal
+bounded transport queue and TCP backpressure only to carry one invocation's
+ATOF records. Treat `stream.result()` as authoritative, and reconstruct nested
+work from ATOF `uuid` and `parent_uuid` fields rather than stream order.
 
 ## Validate Before Running
 

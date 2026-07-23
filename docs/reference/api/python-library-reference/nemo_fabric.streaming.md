@@ -7,7 +7,7 @@ description: "Consume Relay-backed raw ATOF records and terminal invocation resu
 SPDX-License-Identifier: Apache-2.0 */}
 
 # <kbd>module</kbd> `nemo_fabric.streaming`
-Relay-backed streaming support for the Fabric Python SDK.
+Relay-backed streaming support for the NVIDIA NeMo Fabric Python SDK.
 
 
 
@@ -20,18 +20,6 @@ Async iterator of raw ATOF records for one runtime invocation.
 Consume the final normalized result separately with :meth:`result`. If iteration stops early, call :meth:`aclose` before starting another turn.
 
 
-### <kbd>method</kbd> `__init__`
-
-```python
-__init__(
-    invoke: 'Coroutine[Any, Any, RunResult]',
-    listener: '_AtofStreamListener'
-) → None
-```
-
-Initialize one stream around an existing runtime invocation.
-
-
 
 
 ---
@@ -40,7 +28,7 @@ Initialize one stream around an existing runtime invocation.
 ### <kbd>method</kbd> `aclose`
 
 ```python
-aclose() → None
+async def aclose() → None
 ```
 
 Stop iteration and drain this turn without cancelling the invocation.
@@ -51,7 +39,7 @@ Stop iteration and drain this turn without cancelling the invocation.
 ### <kbd>method</kbd> `result`
 
 ```python
-result() → RunResult
+async def result() → RunResult
 ```
 
 Return the terminal normalized result without adding it to the stream.
