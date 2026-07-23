@@ -33,6 +33,7 @@ streaming-poc/
 │                    run_harness, native_recorder, two_turn_isolation
 ├── hermes/          in-process · native-events.jsonl · events.atof.jsonl · findings.md
 ├── deepagents/      in-process · native-events.jsonl · events.atof.jsonl · findings.md
+│                    · parallel-{native-events,events.atof}.jsonl (concurrent subagents)
 ├── claude/          gateway · native-events.jsonl · events.atof.jsonl · findings.md
 ├── codex/           gateway · native-events.jsonl · events.atof.jsonl · findings.md
 └── synthesis/       cross-harness conclusion + production work breakdown
@@ -47,7 +48,7 @@ projection drops — the diff is measured, not assumed.
 | Harness | mode | status |
 |---|---|---|
 | Hermes | in-process | ✅ real run — native + ATOF captured |
-| Deep Agents | in-process | ◑ partial — real run w/ delegated subagents, but **parallel-subagent interleaving not yet observed** (ran sequentially); see [findings](deepagents/findings.md#nesting--parallelism--delegation) |
+| Deep Agents | in-process | ✅ real run — delegated subagents; **parallel subagents observed** (two `task` calls one message, 9.57s overlapping sibling scopes, interleaved namespaces) in a second capture ([findings](deepagents/findings.md#nesting--parallelism--delegation)) |
 | Claude | gateway | ✅ real run — live delta-event structure/timing + terminal text (subscription/SSO, no API key) |
 | Codex | gateway | ✅ real run — live delta-event structure/timing + terminal text (subscription/SSO, no API key; needs Codex CLI ≥0.145.0) |
 

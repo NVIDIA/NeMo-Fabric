@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Deep Agents streaming POC — findings
 
 **Harness:** `nvidia.fabric.langchain.deepagents` · **Relay mode:** in-process SDK
@@ -8,15 +13,23 @@
 Prompt: *"Delegate two independent subtasks to two separate subagents … subagent A
 computes 15*23; subagent B writes a one-line haiku … Launch both, then combine."*
 Captured live via `invoke_stream` with **both** recorders active. Two delegated
-subagents resulted (this model ran them sequentially, not concurrently).
+subagents resulted; this run's model ran them sequentially (a **separate** run with
+`llama-3.1-70b` captures them running **concurrently** — see Parallelism and the
+`parallel-*.jsonl` fixtures).
 
 ## Fixtures & how they were captured
-- [`native-events.jsonl`](native-events.jsonl) — **genuine native evidence**, teed
-  *before* Relay at the `agent.astream(..., stream_mode=["updates","values"],
-  subgraphs=True)` loop (via POC-only `common/native_recorder.py`). 26 raw
-  `(namespace, mode, chunk)` tuples.
-- [`events.atof.jsonl`](events.atof.jsonl) — Relay's ATOF from the *same* run
-  (51 records).
+Two runs, for two purposes:
+- **Sequential (loss analysis):** [`native-events.jsonl`](native-events.jsonl) —
+  **genuine native evidence**, teed *before* Relay at the
+  `agent.astream(..., stream_mode=["updates","values"], subgraphs=True)` loop (via
+  POC-only `common/native_recorder.py`), 26 raw `(namespace, mode, chunk)` tuples —
+  and [`events.atof.jsonl`](events.atof.jsonl), Relay's ATOF from the *same* run
+  (51 records). Model `nvidia/nemotron-3-nano-30b-a3b`; the two subagents ran
+  sequentially here (fine for the native→ATOF diff below).
+- **Parallel (FABRIC-104 concurrency evidence):**
+  [`parallel-native-events.jsonl`](parallel-native-events.jsonl) +
+  [`parallel-events.atof.jsonl`](parallel-events.atof.jsonl), model
+  `meta/llama-3.1-70b-instruct` — see the Parallelism section for the overlap proof.
 
 ## Native event units (real LangGraph astream tuples)
 `(namespace, mode, chunk)` where `mode ∈ {values, updates}` and `namespace` is the
@@ -31,20 +44,29 @@ id, additional_kwargs, invalid_tool_calls, type, name}`.
   subagent whose entire sub-stream is tagged `namespace=tools:<tool_call_id>`; two
   distinct subagents (`tools:e55b5b5f-…`, `tools:e898cde5-…`), each with its own
   nested `before_agent → model → after_model` sub-stream.
-- **Parallelism (NOT observed — still required):** in this fixture the two
-  subagents ran **sequentially**, not concurrently:
-  ```
-  subagent 1: 21:28:10.350 → 21:28:10.974
-  subagent 2: 21:28:12.244 → 21:28:17.348   (1.3 s gap, no scope overlap)
-  ```
-  Forcing two `task` calls in one turn was attempted with a stronger model
-  (`meta/llama-3.3-70b-instruct`), but the fast model **serializes** the
-  delegations and the larger model exceeded the time budget before two subagents
-  completed. So the claim that "concurrent subagents interleave, distinguished only
-  by `namespace`" is a **design property of the astream namespace, not observed
-  evidence** here. **Open item:** genuine parallel evidence — overlapping sibling
-  subagent scopes and interleaved namespaces in one run — is still pending; treat
-  the parallel behavior as unproven until such a run is captured.
+- **Parallelism (OBSERVED)** — captured in the parallel fixtures
+  (`parallel-*.jsonl`, `meta/llama-3.1-70b-instruct`, which emits two `task` calls
+  in one assistant message). Three independent signals confirm concurrent sibling
+  subagents:
+  1. **Two `task` calls in one message:** two `task` scopes share the same parent
+     and start **5 µs apart** (`…9cc07e48fd48` and `…9cd662a71b03`, both parent
+     `…49440f42ee0b`).
+  2. **Overlapping scopes:** the two `task` scopes are active simultaneously for
+     **9.57 s** (start 16.339 → ends 25.909 / 18.783).
+  3. **Interleaved namespaces (native tee):** the two subagent namespaces alternate
+     in stream order — `tools:43d0a4d3 → tools:5c7a0931 → tools:43d0a4d3 →
+     tools:5c7a0931 → …` (7 transitions across 2 subagents) — the definitive
+     signature of concurrent execution, not sequential blocks.
+  So concurrent subagents **do** interleave, distinguished by `namespace`
+  (native) / `parent_uuid` (ATOF) — now evidence, not inference. Reconstruct the
+  tree by `parent_uuid`; stream order alone mis-nests parallel work.
+  - *Caveat (honest):* this run's **terminal status is `failed`** — the two
+    subagents ran to completion in parallel, but the final *combine* model call
+    returned `400: "This model only supports single tool-calls at once"` (a
+    provider limit for this model, hit after and independent of the parallel
+    delegation). The parallelism evidence above is unaffected; the sibling `task`
+    scopes both close normally. The prior sequential run (`nemotron-nano`) had no
+    such issue, which is why it remains the loss-analysis fixture.
 
 ## Native → ATOF paired examples (same run)
 | native event | ATOF record | preserved | dropped / changed |
@@ -69,9 +91,11 @@ Verified by diffing the two fixtures from the same run:
 ## Streamed events vs. terminal · duplicate-rendering risks
 1. **Sub-agent → parent echo:** a subagent result re-appears in the parent's next
    `model` input and again in the terminal — dedup by scope `uuid`.
-2. **Tree vs. stream order:** *if* subagents run in parallel (not observed here —
-   see Parallelism), naive concatenation mis-nests — group by `parent_uuid` (ATOF)
-   / `namespace` (native). The keys exist in the fixtures; the interleaving does not.
+2. **Tree vs. stream order:** with parallel subagents (**observed** — see
+   Parallelism; the parallel fixtures show interleaved `tools:43d0a4d3` /
+   `tools:5c7a0931` events), naive concatenation mis-nests — group by `parent_uuid`
+   (ATOF) / `namespace` (native). The keys and the interleaving are both in the
+   `parallel-*` fixtures.
 3. **Delta vs terminal:** final `model` scope == `RunResult.output` — render once.
 
 ## Recommendation
@@ -106,13 +130,20 @@ Prereqs: a native extension matching the Python SDK (`just build-python`, or
 3. **Revert** the adapter patch:
    `git checkout -- adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py`.
 
-Delegation is model-dependent: this run's two subagents ran **sequentially**. To
-attempt genuine parallelism (overlapping scopes), set `FABRIC_MODEL` to a stronger
-tool-caller and prompt for two `task` calls in one turn, e.g.:
+### Reproduce the parallel run (`parallel-*.jsonl`)
+Parallelism is model-dependent: the model must emit **two `task` calls in one
+message**. `meta/llama-3.1-70b-instruct` does (a probe of the NVIDIA endpoint found
+it emits 2 parallel tool calls where `llama-3.3-70b` serializes and `gpt-oss-120b`
+emits 1). With the native tee applied (step 1 above), run:
 ```bash
-FABRIC_MODEL="meta/llama-3.3-70b-instruct" python streaming-poc/common/run_harness.py \
-  nvidia.fabric.langchain.deepagents out.atof.jsonl \
-  "Make exactly two task tool calls in the same turn: task 'reply apple'; task 'reply banana'. Delegate both at once."
+FABRIC_MODEL="meta/llama-3.1-70b-instruct" \
+POC_RECORDER_DIR="$PWD/streaming-poc/common" \
+POC_NATIVE_RECORD="$PWD/streaming-poc/deepagents/parallel-native-events.jsonl" \
+python streaming-poc/common/run_harness.py nvidia.fabric.langchain.deepagents \
+  streaming-poc/deepagents/parallel-events.atof.jsonl \
+  "Make TWO 'task' tool calls in a SINGLE response, at once (subagent_type 'general-purpose'): Task 1 'Write a 4-line poem about the ocean'; Task 2 'Write a 4-line poem about mountains'. Emit both task calls together now, then combine."
 ```
-Not yet captured here — the fast model serialized and the 70B model exceeded the
-run budget before two subagents completed (see the Parallelism note).
+The two subagents launch together and interleave (see Parallelism). Note: the turn
+terminates `failed` because the model's *combine* step then trips the endpoint's
+`"model only supports single tool-calls at once"` limit — after, and independent of,
+the parallel delegation. Then revert the adapter patch (step 3).

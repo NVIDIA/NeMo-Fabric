@@ -27,7 +27,7 @@ harness-agnostic and validated on both Relay modes.
 | **stream unit** | callback scope/mark | scope tree (nested) | message → content_block → delta | response → item → delta (ATOF) / notification (native) |
 | **token deltas** | ❌ (scope-level) | ❌ (scope-level) | ✅ SSE events live (`content_block_delta`); **text terminal-only** in current ATOF | ✅ SSE events live (`response.output_text.delta`); **text terminal-only** in current ATOF |
 | **nesting** | session>turn>tool/llm | deep (delegated sub-agents) | message>block | response>item |
-| **ordering** | temporal | temporal (sequential in POC; `parent_uuid` would key any parallel) | temporal | temporal |
+| **ordering** | temporal | temporal; **parallel subagents observed** — interleaved, keyed by `parent_uuid`/`namespace` | temporal | temporal |
 | **terminal** | `session end` scope + metadata | `request end` scope (`status OK`) | `message_delta`(stop,usage)+`message_stop` | `response.completed`/`failed`(+usage) |
 | duplicate risk | delta↔terminal | subagent-echo + delta↔terminal + tree | latent (text terminal-only today) | latent (text terminal-only today) |
 
@@ -39,10 +39,12 @@ harness-agnostic and validated on both Relay modes.
   (one ATOF `llm.chunk` per SSE event — structure/timing/usage live, but the token
   **text is terminal-only** in the current ATOF projection, measured against the
   native fixtures); in-process (Hermes/Deep Agents) = scope-level (no token deltas).
-- **Nesting/ordering:** Deep Agents needs `parent_uuid` tree reconstruction
-  (parallel sub-agents *would* interleave, keyed by `parent_uuid` — but parallel
-  execution was **not observed** in the POC; both subagents ran sequentially). The
-  others are largely linear.
+- **Nesting/ordering:** Deep Agents needs `parent_uuid` tree reconstruction —
+  parallel sub-agents **do** interleave, keyed by `parent_uuid`/`namespace`. Now
+  **observed** (`deepagents/parallel-*.jsonl`, `llama-3.1-70b`): two `task` calls in
+  one message, 9.57s overlapping sibling scopes, interleaved namespaces
+  (`43d0a4d3`↔`5c7a0931`). Stream order alone mis-nests. The others are largely
+  linear.
 - **Terminal semantics differ** — scope-end + metadata vs. `message_stop` vs.
   `response.completed/failed`.
 
