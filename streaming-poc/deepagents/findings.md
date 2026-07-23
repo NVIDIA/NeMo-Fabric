@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0
 (`relay_api_plugin_config` + callback handler) · **Model:**
 `nvidia/nemotron-3-nano-30b-a3b`
 
-## Scenario (real run, nested + delegated subagents)
+## Scenario (nested + delegated subagents)
 Prompt: *"Delegate two independent subtasks to two separate subagents … subagent A
 computes 15*23; subagent B writes a one-line haiku … Launch both, then combine."*
 Captured live via `invoke_stream` with **both** recorders active. Two delegated
@@ -20,11 +20,11 @@ subagents resulted; this run's model ran them sequentially (a **separate** run w
 ## Fixtures & how they were captured
 Two runs, for two purposes:
 - **Sequential (loss analysis):** [`native-events.jsonl`](native-events.jsonl) —
-  **genuine native evidence**, teed *before* Relay at the
+  the native stream teed *before* Relay at the
   `agent.astream(..., stream_mode=["updates","values"], subgraphs=True)` loop (via
-  POC-only `common/native_recorder.py`), 26 raw `(namespace, mode, chunk)` tuples —
-  and [`events.atof.jsonl`](events.atof.jsonl), Relay's ATOF from the *same* run
-  (51 records). Model `nvidia/nemotron-3-nano-30b-a3b`; the two subagents ran
+  POC-only `common/native_recorder.py`), 26 `(namespace, mode, chunk)` tuples — and
+  [`events.atof.jsonl`](events.atof.jsonl), Relay's ATOF from the *same* run (51
+  records). Model `nvidia/nemotron-3-nano-30b-a3b`; the two subagents ran
   sequentially here (fine for the native→ATOF diff below).
 - **Parallel (FABRIC-104 concurrency evidence):**
   [`parallel-native-events.jsonl`](parallel-native-events.jsonl) +
@@ -44,29 +44,24 @@ id, additional_kwargs, invalid_tool_calls, type, name}`.
   subagent whose entire sub-stream is tagged `namespace=tools:<tool_call_id>`; two
   distinct subagents (`tools:e55b5b5f-…`, `tools:e898cde5-…`), each with its own
   nested `before_agent → model → after_model` sub-stream.
-- **Parallelism (OBSERVED)** — captured in the parallel fixtures
-  (`parallel-*.jsonl`, `meta/llama-3.1-70b-instruct`, which emits two `task` calls
-  in one assistant message). Three independent signals confirm concurrent sibling
-  subagents:
-  1. **Two `task` calls in one message:** two `task` scopes share the same parent
-     and start **5 µs apart** (`…9cc07e48fd48` and `…9cd662a71b03`, both parent
-     `…49440f42ee0b`).
-  2. **Overlapping scopes:** the two `task` scopes are active simultaneously for
-     **9.57 s** (start 16.339 → ends 25.909 / 18.783).
-  3. **Interleaved namespaces (native tee):** the two subagent namespaces alternate
-     in stream order — `tools:43d0a4d3 → tools:5c7a0931 → tools:43d0a4d3 →
-     tools:5c7a0931 → …` (7 transitions across 2 subagents) — the definitive
-     signature of concurrent execution, not sequential blocks.
-  So concurrent subagents **do** interleave, distinguished by `namespace`
-  (native) / `parent_uuid` (ATOF) — now evidence, not inference. Reconstruct the
-  tree by `parent_uuid`; stream order alone mis-nests parallel work.
-  - *Caveat (honest):* this run's **terminal status is `failed`** — the two
-    subagents ran to completion in parallel, but the final *combine* model call
-    returned `400: "This model only supports single tool-calls at once"` (a
-    provider limit for this model, hit after and independent of the parallel
-    delegation). The parallelism evidence above is unaffected; the sibling `task`
-    scopes both close normally. The prior sequential run (`nemotron-nano`) had no
-    such issue, which is why it remains the loss-analysis fixture.
+- **Parallelism (observed)** — the parallel fixtures (`parallel-*.jsonl`,
+  `meta/llama-3.1-70b-instruct`) capture two subagents running concurrently, shown
+  three independent ways:
+  1. **Two `task` calls in one message:** two `task` scopes share one parent and
+     start **5 µs apart** (`…9cc07e48fd48`, `…9cd662a71b03`, parent `…49440f42ee0b`).
+  2. **Overlapping scopes:** the two `task` scopes are active together for **9.57 s**
+     (start 16.339 → ends 25.909 / 18.783).
+  3. **Interleaved namespaces (native tee):** the subagent namespaces alternate —
+     `tools:43d0a4d3 → tools:5c7a0931 → tools:43d0a4d3 → tools:5c7a0931 → …`
+     (7 transitions), the signature of concurrent, not sequential, execution.
+
+  Concurrent subagents interleave, distinguished by `namespace` (native) /
+  `parent_uuid` (ATOF); reconstruct the tree by `parent_uuid` — stream order alone
+  mis-nests. The run's **terminal status is `failed`**: the subagents completed in
+  parallel (both `task` scopes close normally), but the model's later *combine* call
+  returned `400: "This model only supports single tool-calls at once"` — a provider
+  limit hit independently of the delegation. The sequential `nemotron-nano` run has
+  no such issue, so it stays the loss-analysis fixture.
 
 ## Native → ATOF paired examples (same run)
 | native event | ATOF record | preserved | dropped / changed |
@@ -78,8 +73,7 @@ id, additional_kwargs, invalid_tool_calls, type, name}`.
 Pairing key: native `sequence` + `namespace`; two subagents ↔ the two ATOF
 `general-purpose` scopes in order; `parent_uuid` reconstructs the ATOF tree.
 
-## What cannot be normalized without loss (comparison-based)
-Verified by diffing the two fixtures from the same run:
+## What cannot be normalized without loss
 - **Absent from ATOF:** the `values`/`updates` **mode** distinction and the
   `values` full-state snapshots — you cannot recreate the native stream_mode view
   from ATOF.
@@ -131,10 +125,9 @@ Prereqs: a native extension matching the Python SDK (`just build-python`, or
    `git checkout -- adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py`.
 
 ### Reproduce the parallel run (`parallel-*.jsonl`)
-Parallelism is model-dependent: the model must emit **two `task` calls in one
-message**. `meta/llama-3.1-70b-instruct` does (a probe of the NVIDIA endpoint found
-it emits 2 parallel tool calls where `llama-3.3-70b` serializes and `gpt-oss-120b`
-emits 1). With the native tee applied (step 1 above), run:
+Parallelism needs a model that emits **two `task` calls in one message**;
+`meta/llama-3.1-70b-instruct` does (not all do). With the native tee applied (step 1
+above), run:
 ```bash
 FABRIC_MODEL="meta/llama-3.1-70b-instruct" \
 POC_RECORDER_DIR="$PWD/streaming-poc/common" \
@@ -143,7 +136,5 @@ python streaming-poc/common/run_harness.py nvidia.fabric.langchain.deepagents \
   streaming-poc/deepagents/parallel-events.atof.jsonl \
   "Make TWO 'task' tool calls in a SINGLE response, at once (subagent_type 'general-purpose'): Task 1 'Write a 4-line poem about the ocean'; Task 2 'Write a 4-line poem about mountains'. Emit both task calls together now, then combine."
 ```
-The two subagents launch together and interleave (see Parallelism). Note: the turn
-terminates `failed` because the model's *combine* step then trips the endpoint's
-`"model only supports single tool-calls at once"` limit — after, and independent of,
-the parallel delegation. Then revert the adapter patch (step 3).
+The two subagents launch together and interleave (see Parallelism, incl. the
+`failed`-status note). Then revert the adapter patch (step 3).

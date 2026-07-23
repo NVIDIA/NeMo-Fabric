@@ -26,7 +26,7 @@ scoped from real POC findings; effort is relative (S/M/L).
 ## 3. Loopback listener (M)
 - **Must handle large records:** gateway ATOF embeds full request/response;
   records exceed aiohttp's 512 KB readline limit — read raw chunks, split on
-  newlines. (POC bug found + fixed.)
+  newlines.
 - **Bounded queue + backpressure** (default maxsize ~1024); document that a
   consumer stalling beyond Relay's ~3 s flush/close timeout causes **Relay-side
   drops** (best-effort under sustained stall).
@@ -93,9 +93,6 @@ scoped from real POC findings; effort is relative (S/M/L).
 - `nemo-fabric` native must be built to match the Python SDK (stale `.so` breaks
   `plan()/run()`); ensure CI builds it. Build with the venv interpreter
   (`PYO3_PYTHON`) or `just build-python`.
-- **Both** gateway harnesses were captured live on a **subscription / SSO** session
-  (no API key) — the gateway forwarded the OAuth session for Claude
-  ([claude/findings.md](../claude/findings.md)) and Codex
-  ([codex/findings.md](../codex/findings.md)). Codex additionally requires **Codex
-  CLI ≥0.145.0** for the ChatGPT account's `gpt-5.6-sol` model (older CLIs reject
-  it); a funded `OPENAI_API_KEY` is an alternative to SSO for both.
+- Gateway harnesses take either a subscription/SSO session or an API key; Codex also
+  needs Codex CLI ≥0.145.0 for the `gpt-5.6-sol` account model (see the gateway
+  [findings](../codex/findings.md)).

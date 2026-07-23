@@ -12,28 +12,26 @@ ChatGPT **subscription / SSO** forwarded through the gateway — **no
 `CODEX_HOME=~/.codex/auth.json`). Requires **Codex CLI ≥0.145.0** (older CLIs reject
 the ChatGPT account's `gpt-5.6-sol`).
 
-## Scenario (real run, live delta-event stream through the gateway)
-Prompt: *"Reply with a one-sentence greeting."* Captured live via `invoke_stream`
-while the real Codex CLI ran a single turn against the OpenAI Responses API through
-the Relay gateway, with **both** recorders active. Final answer: *"Hello! It's great
-to meet you."*
+## Scenario
+Prompt: *"Reply with a one-sentence greeting."* A single Codex CLI turn against the
+OpenAI Responses API through the Relay gateway, captured via `invoke_stream` with
+both recorders active. Final answer: *"Hello! It's great to meet you."*
 
 ## Fixtures & how they were captured
-- [`native-events.jsonl`](native-events.jsonl) — **genuine native evidence**, teed
-  *before* Relay at the Codex SDK `AsyncTurnHandle.stream()` notification loop (the
-  same stream `handle.run()` consumes), via `common/native_recorder.py`. 26 raw
-  Codex app-server notifications; delta bodies preserved verbatim, no PII present.
+- [`native-events.jsonl`](native-events.jsonl) — the native stream, teed *before*
+  Relay at the Codex SDK `AsyncTurnHandle.stream()` notification loop (the same
+  stream `handle.run()` consumes), via `common/native_recorder.py`. 26 Codex
+  app-server notifications; delta bodies verbatim, no PII.
 - [`events.atof.jsonl`](events.atof.jsonl) — Relay's ATOF from the *same* run
   (22 records; oversized request/terminal snapshots elided for size — model, shape,
   counts, usage, IDs, and the terminal answer text preserved).
 
-> **Layer note (important).** The two fixtures are captured at **different layers**,
-> so this is not a byte-identical source→projection pair like Claude. The Codex
-> adapter sees **Codex app-server notifications** (`item/agentMessage/delta`, …);
-> Relay taps the **OpenAI Responses SSE** at the gateway (`response.output_text.delta`,
-> …). They are two representations of the same turn. The comparison below still holds
-> the reviewer's line: the **token text is present in the native adapter stream and
-> absent from Relay's ATOF**.
+> **Layer note.** The two fixtures are captured at **different layers**, so this is
+> not a byte-identical source→projection pair like Claude. The Codex adapter sees
+> **Codex app-server notifications** (`item/agentMessage/delta`, …); Relay taps the
+> **OpenAI Responses SSE** at the gateway (`response.output_text.delta`, …) — two
+> representations of the same turn. Either way, the token text is present in the
+> native stream and absent from Relay's ATOF.
 
 ## Native event units (real Codex app-server notifications)
 The 26 notifications, by `method`: `turn/started` ×1, `hook/started`/`hook/completed`
@@ -43,7 +41,7 @@ The 26 notifications, by `method`: `turn/started` ×1, `hook/started`/`hook/comp
 probes a `ws://…/responses` transport that returns 405 and falls back to HTTP; the
 turn still succeeds). **Unit = one app-server notification.**
 
-## Native → ATOF diff (same run — this is the point)
+## Native → ATOF diff (same run)
 Both streams carry exactly **9 text deltas**, one per token fragment, in order — but
 only the native stream carries the **text**:
 
@@ -56,9 +54,9 @@ only the native stream carries the **text**:
 Assembling the 9 native `payload.delta` fragments yields exactly the terminal
 answer `"Hello! It's great to meet you."`; the 9 ATOF `response.output_text.delta`
 `llm.chunk` records carry `event_type` + `indices` + `provider` and **no `delta`/
-`text` field** — verified by grepping both files.
+`text` field**.
 
-## What is preserved vs. lost (measured, not inferred)
+## What is preserved vs. lost
 - **Preserved in ATOF:** the full Responses event **sequence**
   (`response.created` … `response.completed`), per-event **timing**,
   **output/content indices**, and terminal **usage** + assembled text.
@@ -66,9 +64,8 @@ answer `"Hello! It's great to meet you."`; the 9 ATOF `response.output_text.delt
   carries (`item/agentMessage/delta.payload.delta`) and every ATOF
   `response.output_text.delta` omits.
 - So the gateway stream gives, live, **delta-event structure + timing + usage** —
-  **not renderable incremental text**; the text is terminal-only. This is the
-  "degraded granularity" (option a) contract, and it matches Claude: a Relay
-  ATOF-projection choice, not a per-harness limitation.
+  **not renderable incremental text**; authoritative text arrives at the end. Same
+  result as Claude — a Relay ATOF-projection choice, not a per-harness limitation.
 
 ## Streamed events vs. terminal response · duplicate-rendering risk
 As with Claude, delta text is **absent** from the live ATOF today, so only the
@@ -78,13 +75,10 @@ Relay later projects delta text, render live for progress/cadence and treat
 don't append**.
 
 ## Recommendation
-**Raw ATOF pass-through (v0.1).** Codex and Claude share the same ATOF **envelope**
-(`scope`/`mark`, `uuid`/`parent_uuid`, one `llm.chunk` per SSE event) though their
-event vocabularies and payloads differ (`response.*` vs `message`/`content_block`),
-and both exhibit the same single measured loss (delta text). The uniform *shape*
-(not identical content) plus the uniform loss is strong evidence that normalizing
-per-harness is unnecessary for v0.1. Ship raw ATOF; document the delta-vs-terminal
-contract.
+**Raw ATOF pass-through (v0.1)** — see the
+[cross-harness recommendation](../synthesis/README.md). Everything a progress UI
+needs (event sequence, timing, usage, indices, terminal text) is preserved; the one
+loss is the per-delta text. Document the delta-vs-terminal contract above.
 
 ## Reproduce this experiment
 Prereqs: a native extension matching the Python SDK (`just build-python`, or

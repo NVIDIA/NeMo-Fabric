@@ -10,20 +10,19 @@ SPDX-License-Identifier: Apache-2.0
 **subscription / SSO** forwarded through the gateway — **no `ANTHROPIC_API_KEY`**
 (the gateway relayed the OAuth session from `ANTHROPIC_CONFIG_DIR=~/.claude`).
 
-## Scenario (real run, live delta-event stream through the gateway)
-Prompt: *"Reply with a one-sentence greeting."* Captured live via `invoke_stream`
-while the real Claude Agent SDK ran a single turn against the Anthropic Messages
-API through the Relay gateway, with **both** recorders active. The turn produced a
-thinking block and a text block; final answer: *"Hello! I'm Claude, ready to help
-you with your NeMo-Fabric project or any other tasks you have in mind."*
+## Scenario
+Prompt: *"Reply with a one-sentence greeting."* A single Claude Agent SDK turn
+against the Anthropic Messages API through the Relay gateway, captured via
+`invoke_stream` with both recorders active. The turn produced a thinking block and a
+text block; final answer: *"Hello! I'm Claude, ready to help you with your
+NeMo-Fabric project or any other tasks you have in mind."*
 
 ## Fixtures & how they were captured
-- [`native-events.jsonl`](native-events.jsonl) — **genuine native evidence**, the
-  raw Anthropic SSE teed *before* Relay by enabling `include_partial_messages=True`
-  and recording every `StreamEvent.event` in `ClaudeSDKClient.receive_response()`
-  (POC-only seam, via `common/native_recorder.py`). 15 raw stream events. Secrets
-  are redacted by key; **one email address in the model's thinking was redacted**;
-  the delta bodies (token text) are preserved verbatim.
+- [`native-events.jsonl`](native-events.jsonl) — the raw Anthropic SSE, teed
+  *before* Relay by enabling `include_partial_messages=True` and recording every
+  `StreamEvent.event` in `ClaudeSDKClient.receive_response()` (POC-only seam, via
+  `common/native_recorder.py`). 15 stream events; delta bodies (token text)
+  verbatim. Secrets redacted by key; one email in the model's thinking redacted.
 - [`events.atof.jsonl`](events.atof.jsonl) — Relay's ATOF from the *same* run
   (21 records; the oversized request snapshot #2 has its `data.content` +
   `category_profile` elided for size — model/shape/counts/IDs preserved).
@@ -35,7 +34,7 @@ you with your NeMo-Fabric project or any other tasks you have in mind."*
 block) → `content_block_stop` → `message_delta` → `message_stop`. **Unit = one SSE
 event.**
 
-## Native (SSE) → ATOF diff (same run — this is the point)
+## Native (SSE) → ATOF diff (same run)
 Pairing the two fixtures by event order shows ATOF is a **projection** that keeps
 the event *structure* but **drops the delta bodies**:
 
@@ -46,12 +45,12 @@ the event *structure* but **drops the delta bodies**:
 | `message_start` / `message_delta` (usage) | `llm.chunk` `event_type=message_start`/`message_delta` (+ `usage`) | n/a — usage preserved in both |
 | *(not surfaced by the SDK stream)* | `llm.chunk` `event_type=ping` (1 extra) | ATOF carries a `ping` the SDK's `StreamEvent` stream does not |
 
-The ATOF `llm.chunk` records carry `event_type` + `indices` + `provider` + (on
-start/delta of the message) `usage`, but **no `text`/`thinking` field** — verified
-by grepping both files: every token string lives in `native-events.jsonl` and in
-the terminal `anthropic.messages end` scope, and in **none** of the ATOF deltas.
+The ATOF `llm.chunk` records carry `event_type` + `indices` + `provider` + (on the
+message's start/delta) `usage`, but **no `text`/`thinking` field**: every token
+string lives in `native-events.jsonl` and the terminal `anthropic.messages end`
+scope, and in **none** of the ATOF deltas.
 
-## What is preserved vs. lost (measured, not inferred)
+## What is preserved vs. lost
 - **Preserved in ATOF:** the full event **sequence**, per-event **timing**,
   **usage/token accounting**, **content-block indices**, and the terminal assembled
   message. (ATOF even adds the `ping` the SDK hides.)
@@ -59,11 +58,9 @@ the terminal `anthropic.messages end` scope, and in **none** of the ATOF deltas.
   (`delta.text` / `delta.thinking`), absent from every ATOF `llm.chunk`. The text
   reappears only in the terminal `anthropic.messages end` scope `content`.
 - So the gateway stream gives, live, **delta-event structure + timing + usage** —
-  **not renderable incremental text**. That is the "degraded granularity" (option a)
-  contract accepted for v0.1: per-delta *cadence and shape* live, authoritative
-  *text* at the end. The loss is a property of Relay's current ATOF projection, not
-  of the Anthropic wire (which carries `text_delta`, as `native-events.jsonl`
-  proves).
+  **not renderable incremental text**; authoritative text arrives at the end. This
+  is a property of Relay's current ATOF projection, not of the Anthropic wire (which
+  carries `text_delta`, as `native-events.jsonl` shows).
 
 ## Streamed events vs. terminal response · duplicate-rendering risk
 Today the delta text is **absent** from the live ATOF, so only the terminal scope
@@ -74,11 +71,10 @@ treat `await stream.result()` (→ terminal `content`) as authoritative — **re
 don't append**.
 
 ## Recommendation
-**Raw ATOF pass-through (v0.1).** ATOF wraps the turn in the same `scope`/`mark`
-envelope as every harness and preserves the event structure, timing, and usage a
-progress UI needs; the one measured loss (delta text) is uniform with Codex and is
-a Relay-projection choice, not a per-harness schema problem. Ship raw ATOF; document
-the delta-vs-terminal contract above.
+**Raw ATOF pass-through (v0.1)** — see the
+[cross-harness recommendation](../synthesis/README.md). Everything a progress UI
+needs (event sequence, timing, usage, indices, terminal text) is preserved; the one
+loss is the per-delta text. Document the delta-vs-terminal contract above.
 
 ## Reproduce this experiment
 Prereqs: a native extension matching the Python SDK (`just build-python`, or

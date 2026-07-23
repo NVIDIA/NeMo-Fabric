@@ -1,18 +1,23 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Hermes streaming POC — findings
 
 **Harness:** `nvidia.fabric.hermes` · **Relay mode:** in-process SDK plugin
 (`observability/nemo_relay`) · **Model:** `nvidia/nemotron-3-nano-30b-a3b`
 
-## Scenario (real run, callback streaming with Relay)
+## Scenario
 Prompt: *"Write and run a short Python snippet that prints the sum of 1 to 10,
-then tell me the result."* — an LLM call plus tool execution. Captured live via
-`invoke_stream` while the real Hermes agent ran, with **both** recorders active.
+then tell me the result."* — an LLM call plus tool execution, captured via
+`invoke_stream` with both recorders active.
 
 ## Fixtures & how they were captured
-- [`native-events.jsonl`](native-events.jsonl) — **genuine native evidence**, teed
-  *before* Relay by patching `hermes_cli.plugins.PluginManager.invoke_hook` (the
-  single hook-dispatch chokepoint that Relay's plugin also subscribes to) via the
-  POC-only `common/native_recorder.py`. 12 native lifecycle hooks.
+- [`native-events.jsonl`](native-events.jsonl) — the native stream, teed *before*
+  Relay by patching `hermes_cli.plugins.PluginManager.invoke_hook` (the single
+  hook-dispatch chokepoint that Relay's plugin also subscribes to) via the POC-only
+  `common/native_recorder.py`. 12 native lifecycle hooks.
 - [`events.atof.jsonl`](events.atof.jsonl) — Relay's ATOF from the *same* run
   (11 records; 2 oversized request snapshots have their `data` truncated).
 
@@ -28,12 +33,6 @@ Each hook carries structured kwargs, e.g. `pre_tool_call`:
 tool_call_id, turn_id, api_request_id, middleware_trace}`. **Unit = a lifecycle
 hook, not a token** (Hermes has no token-level deltas).
 
-## Prototype crossing the Fabric boundary
-`common/run_harness.py` → `start_streaming_runtime` injects a loopback ndjson ATOF
-endpoint; the in-process Relay plugin pushes ATOF live to the SDK listener;
-`invoke_stream` yields each raw record. (Unchanged; the native recorder is
-orthogonal POC instrumentation.)
-
 ## Native → ATOF paired examples (same run)
 | native event | ATOF record | preserved | dropped / changed |
 |---|---|---|---|
@@ -46,8 +45,7 @@ Pairing key: native `sequence` + shared `session_id` (native
 `session_id="runtime-1784755641256-…"` appears verbatim in the ATOF scope name
 `hermes-session-runtime-1784755641256-…`); event order matches.
 
-## What cannot be normalized without loss (comparison-based)
-Verified by diffing the two fixtures from the same run:
+## What cannot be normalized without loss
 - **Absent from ATOF entirely:** the `transform_llm_output` hook and the
   `middleware_trace` field — you cannot recreate them from ATOF.
 - **Collapsed:** ATOF folds the four native hooks around one LLM step
