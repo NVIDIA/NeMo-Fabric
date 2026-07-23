@@ -9,6 +9,31 @@ The `nvidia.fabric.codex` adapter uses the Codex Python SDK and its pinned
 app-server runtime. NeMo Fabric does not execute `codex` for agent turns or fall back
 to the legacy Codex CLI adapter.
 
+## Install the Adapter
+
+Install the adapter and its Codex Python SDK dependencies in the environment
+that runs the agent harness:
+
+```bash
+pip install "nemo-fabric[codex]"
+```
+
+## Configure the Adapter
+
+Select the Codex harness integration in `HarnessConfig`:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(adapter_id="nvidia.fabric.codex")
+```
+
+Use normalized `FabricConfig` fields to configure the model, workspace, skills,
+MCP servers, and telemetry. The Codex adapter does not support normalized
+`tools.blocked` policy. Use `harness.settings` for supported Codex-specific
+options such as `sandbox`, `approval_mode`, `base_instructions`,
+`developer_instructions`, and `output_schema`.
+
 ## Configure MCP and Skills
 
 Use normalized NeMo Fabric fields so the same capability configuration can be
