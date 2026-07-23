@@ -14,8 +14,15 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from nemo_fabric.errors import FabricConfigError, FabricError, FabricRuntimeError, FabricStateError
+from nemo_fabric.errors import (
+    FabricCapabilityError,
+    FabricConfigError,
+    FabricError,
+    FabricRuntimeError,
+    FabricStateError,
+)
 from nemo_fabric.models import RunRequest
+from nemo_fabric.streaming import InvokeStream, _AtofStreamListener
 from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
 
 
@@ -51,6 +58,7 @@ class Runtime:
         plan: RunPlan | Mapping[str, Any],
         runtime: RuntimeHandle | Mapping[str, Any],
         overrides: Mapping[str, Any] | None = None,
+        stream_listener: _AtofStreamListener | None = None,
     ) -> None:
         """lazydocs: ignore"""
 
@@ -64,6 +72,8 @@ class Runtime:
         self._invocations: list[dict[str, Any]] = []
         self._status = RuntimeStatus.ACTIVE
         self._current_task: asyncio.Task[Any] | None = None
+        self._current_stream: InvokeStream | None = None
+        self._stream_listener = stream_listener
         self._closing = False
 
     @property
@@ -96,6 +106,12 @@ class Runtime:
 
         return self._runtime.runtime_id
 
+    @property
+    def supports_streaming(self) -> bool:
+        """Return whether Relay-backed ATOF streaming is enabled."""
+
+        return self._stream_listener is not None
+
     async def invoke(
         self,
         *,
@@ -125,12 +141,20 @@ class Runtime:
                 normalized result.
         """
 
-        if self._status is not RuntimeStatus.ACTIVE:
-            raise FabricStateError(f"cannot invoke a {self._status.value} runtime")
-        if self._closing:
-            raise FabricStateError("cannot invoke while runtime shutdown is in progress")
-        if self._current_task is not None:
-            raise FabricStateError("runtime is already running an invocation")
+        if self._current_stream is not None and not self._current_stream._finalized:
+            raise FabricStateError(
+                "a streaming invocation is active; fully consume it or call "
+                "`await stream.aclose()` before starting another turn"
+            )
+        return await self._invoke(input=input, request=request)
+
+    async def _invoke(
+        self,
+        *,
+        input: Any = None,
+        request: RunRequest | None = None,
+    ) -> RunResult:
+        self._ensure_invocable()
         self._current_task = asyncio.current_task()
         try:
             payload = _run_request_payload(
@@ -203,6 +227,54 @@ class Runtime:
         finally:
             self._current_task = None
 
+    def invoke_stream(
+        self,
+        *,
+        input: Any = None,
+        request: RunRequest | None = None,
+    ) -> InvokeStream:
+        """Start one turn and stream raw Relay ATOF records as they arrive.
+
+        ``input`` and ``request`` are mutually exclusive. The returned
+        :class:`InvokeStream` yields raw ATOF dictionaries. Await
+        ``stream.result()`` for the terminal normalized :class:`RunResult`.
+
+        Raises:
+            FabricCapabilityError: If Relay was not enabled when the runtime
+                started.
+            FabricStateError: If another turn or stream is active.
+        """
+
+        if self._stream_listener is None:
+            raise FabricCapabilityError(
+                "streaming requires Relay telemetry to be enabled",
+                stage="invoke",
+                code="streaming_unavailable",
+                details={"capability": "streaming"},
+            )
+        if self._current_stream is not None and not self._current_stream._finalized:
+            raise FabricStateError(
+                "a streaming invocation is active; fully consume it or call "
+                "`await stream.aclose()` before starting another turn"
+            )
+        self._ensure_invocable()
+        stream = InvokeStream(
+            self._invoke(input=input, request=request),
+            self._stream_listener,
+        )
+        self._current_stream = stream
+        return stream
+
+    def _ensure_invocable(self) -> None:
+        if self._status is not RuntimeStatus.ACTIVE:
+            raise FabricStateError(f"cannot invoke a {self._status.value} runtime")
+        if self._closing:
+            raise FabricStateError(
+                "cannot invoke while runtime shutdown is in progress"
+            )
+        if self._current_task is not None:
+            raise FabricStateError("runtime is already running an invocation")
+
     async def stop(self) -> None:
         """Destroy an idle runtime exactly once.
 
@@ -218,7 +290,11 @@ class Runtime:
 
         if self._status is RuntimeStatus.STOPPED:
             return
-        if self._current_task is not None:
+        if (
+            self._current_task is not None
+            or self._current_stream is not None
+            and not self._current_stream._finalized
+        ):
             raise FabricStateError("cannot stop while a turn is in flight")
         if self._closing:
             raise FabricStateError("runtime shutdown is already in progress")
@@ -252,6 +328,8 @@ class Runtime:
             self._status = RuntimeStatus.STOPPED
         finally:
             self._closing = False
+            if self._stream_listener is not None:
+                await self._stream_listener.close()
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(
@@ -276,11 +354,16 @@ class Runtime:
         traceback: object,
     ) -> None:
         try:
+            if self._current_stream is not None and not self._current_stream._finalized:
+                await self._current_stream.aclose()
             await self.stop()
         except Exception as cleanup_error:
             if exc is None:
                 raise
             exc.add_note(f"runtime cleanup failed: {cleanup_error}")
+        finally:
+            if self._stream_listener is not None:
+                await self._stream_listener.close()
 
 
 def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:

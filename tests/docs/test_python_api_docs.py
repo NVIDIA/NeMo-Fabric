@@ -21,6 +21,7 @@ NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
+    "nemo_fabric.streaming": "/reference/api/python-library-reference/streaming",
     "nemo_fabric.models": "/reference/api/python-library-reference/models",
     "nemo_fabric.types": "/reference/api/python-library-reference/types",
     "nemo_fabric.errors": "/reference/api/python-library-reference/errors",
@@ -108,6 +109,7 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
     for destination in (
         "/reference/api/python-library-reference/client",
         "/reference/api/python-library-reference/runtime",
+        "/reference/api/python-library-reference/streaming",
         "/reference/api/python-library-reference/types",
         "/reference/api/python-library-reference/errors",
     ):

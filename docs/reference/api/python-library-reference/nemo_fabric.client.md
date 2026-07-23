@@ -151,7 +151,7 @@ start_runtime(
 
 Start a stateful runtime for one or more ordered invocations.
 
-Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. When Relay is enabled, startup also provisions the SDK-owned loopback ATOF endpoint used by ``Runtime.invoke_stream()``.
 
 
 

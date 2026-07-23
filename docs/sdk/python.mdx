@@ -272,6 +272,7 @@ multiple independent runtimes.
 | `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
 | `Fabric.start_runtime(config, ...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
+| `Runtime.invoke_stream(...)` | No | You need live Relay-generated ATOF records for one turn. | Returns an async `InvokeStream`; await `stream.result()` for the terminal `RunResult`. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
 
 ## Single-Invocation Runs
@@ -333,6 +334,61 @@ The adapter reuses its native state between calls. Codex maps the calls to turns
 on one live thread, Deep Agents invokes one compiled graph and checkpointer,
 Hermes Agent reuses one agent and session database, and Claude keeps one connected SDK
 client. Harness-native identifiers remain adapter-internal.
+
+## Relay-Backed Streaming
+
+Enable Relay before starting a runtime to consume raw ATOF records while a turn
+runs. `Runtime.supports_streaming` reports whether this Relay-backed path is
+available. It is separate from `RuntimeCapabilities.streaming`, which describes
+adapter-native progressive output.
+
+The following example streams one invocation and collects its terminal result:
+
+```python
+from nemo_fabric import Fabric
+
+config.enable_relay()
+
+async with await Fabric().start_runtime(config) as runtime:
+    stream = runtime.invoke_stream(input="Review the latest patch")
+    async for record in stream:
+        render_atof(record)
+    result = await stream.result()
+```
+
+`invoke_stream(...)` is synchronous and starts the invocation in the background.
+The returned `InvokeStream` is an async iterator of raw Relay-generated ATOF
+dictionaries. The terminal `RunResult` stays out of band and is available only
+through `await stream.result()`. Treat that terminal result as authoritative:
+replace any provisional rendering instead of appending it. Calling
+`stream.result()` does not finalize unread stream records.
+
+Streaming has the following v0.1 constraints:
+
+- Relay must be enabled when the runtime starts. Otherwise,
+  `invoke_stream(...)` raises `FabricCapabilityError`.
+- One invocation can be active on a runtime. Fully consume the stream or call
+  `await stream.aclose()` before starting another turn.
+- Breaking an `async for` loop does not finalize the stream. Call
+  `await stream.aclose()` explicitly. It waits for the invocation to finish and
+  discards unread records; it does not cancel the harness turn.
+- The SDK uses a bounded queue of 1,024 records and applies TCP backpressure.
+  Relay can drop records if a consumer stalls longer than Relay's delivery
+  timeout.
+- ATOF granularity depends on the Relay integration. Gateway harnesses expose
+  per-delta event structure, but current ATOF records keep token text in the
+  terminal scope. In-process harnesses expose scope-level progress.
+- Reconstruct nested and parallel work with `uuid` and `parent_uuid`. Stream
+  order alone does not define the Deep Agents scope tree.
+- Turn completion and a short drain window delimit records on a persistent
+  runtime. Very late Relay records can arrive after that window, so turn
+  isolation is best effort in v0.1.
+
+Claude and Codex streaming use the `nemo-relay` gateway CLI and require a
+stream-sink-capable release, version 0.6.0 or later. Follow the
+[NeMo Relay CLI installation instructions](/getting-started/install#nemo-relay-cli)
+to provision it. Hermes Agent and Deep Agents use their in-process Relay
+integrations.
 
 ## Application-Owned Parallelism
 
