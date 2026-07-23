@@ -11,8 +11,10 @@ Env:
     FABRIC_INPUT       default prompt if [input] not given
 
 Prereqs: a correctly built native extension (see streaming-poc/README.md) and
-provider creds (NVIDIA_API_KEY in-process; OPENAI_API_KEY Codex; ANTHROPIC_API_KEY
-Claude). Every ATOF record streamed live is written to <out.jsonl>.
+provider creds (NVIDIA_API_KEY in-process; OPENAI_API_KEY Codex; Claude accepts
+ANTHROPIC_API_KEY *or* a signed-in Claude Code subscription via ANTHROPIC_CONFIG_DIR
+with the key unset — the gateway forwards the OAuth session). Every ATOF record
+streamed live is written to <out.jsonl>.
 """
 
 from __future__ import annotations
@@ -50,17 +52,18 @@ WORK = Path(__file__).resolve().parent.parent / ".work" / ADAPTER.split(".")[-1]
 
 
 def _model() -> ModelConfig:
+    override = os.environ.get("FABRIC_MODEL")
     if "codex" in ADAPTER:  # Relay gateway requires the built-in openai provider
         return ModelConfig(
-            provider="openai", model="gpt-4o-mini", api_key_env="OPENAI_API_KEY"
+            provider="openai", model=override or "gpt-4o-mini", api_key_env="OPENAI_API_KEY"
         )
     if "claude" in ADAPTER:
         return ModelConfig(
             provider="anthropic",
-            model="claude-3-5-haiku-latest",
+            model=override or "claude-3-5-haiku-latest",
             api_key_env="ANTHROPIC_API_KEY",
         )
-    model = os.environ.get("FABRIC_MODEL", "nvidia/nemotron-3-nano-30b-a3b")
+    model = override or "nvidia/nemotron-3-nano-30b-a3b"
     return ModelConfig(provider="nvidia", model=model)
 
 
@@ -70,6 +73,8 @@ def build_config() -> FabricConfig:
     settings: dict = {}
     if ADAPTER.endswith("hermes"):
         settings = {"hermes_home": str(WORK / "home"), "terminal_timeout": 120}
+    if "claude" in ADAPTER:  # run the turn non-interactively
+        settings["permission_mode"] = "bypassPermissions"
     relay_cli = os.environ.get(
         "FABRIC_RELAY_CLI"
     )  # gateway CLI >=0.6.0 for Claude/Codex

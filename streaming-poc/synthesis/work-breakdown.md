@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Production implementation — work breakdown
 
 Turns the validated POC into a shippable `Runtime.invoke_stream()`. Each item is
@@ -77,5 +82,9 @@ scoped from real POC findings; effort is relative (S/M/L).
 - `nemo-fabric` native must be built to match the Python SDK (stale `.so` breaks
   `plan()/run()`); ensure CI builds it. Build with the venv interpreter
   (`PYO3_PYTHON`) or `just build-python`.
-- A funded OpenAI key gives a clean Codex terminal (POC hit `Quota exceeded`); an
-  `ANTHROPIC_API_KEY` enables live Claude capture.
+- Claude was captured live through the gateway on a **Claude Code subscription /
+  SSO** session (no API key) — the gateway forwarded the OAuth session
+  ([claude/findings.md](../claude/findings.md)). The same SSO path did **not**
+  unblock Codex: auth works, but the installed Codex CLI is too old for the
+  account's model and the API key is out of quota — a funded OpenAI key or a CLI
+  upgrade (`npm i -g @openai/codex@latest`) is still needed for a clean Codex run.

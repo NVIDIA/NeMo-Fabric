@@ -1,12 +1,19 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Streaming POC — cross-harness synthesis & recommendation
 
-Synthesis of the child POCs. **Hermes** ([findings](../hermes/findings.md)) and
-**Deep Agents** ([findings](../deepagents/findings.md)) were run for real with
-native + ATOF capture. **Codex / Claude** ([findings](../codex/findings.md)) are
-stubs pending a usable API key — their rows below are **preliminary**, drawn from a
-prior real Claude Relay capture, a partial Codex run, and the two SDK event models;
-they will be confirmed when keys are available. The `invoke_stream` prototype is
-harness-agnostic and validated on both Relay modes.
+Synthesis of the child POCs. **Hermes** ([findings](../hermes/findings.md)),
+**Deep Agents** ([findings](../deepagents/findings.md)), and **Claude**
+([findings](../claude/findings.md)) were run for real with ATOF capture (Claude
+through the gateway on a **subscription / SSO** session — no API key; native
+Anthropic events embedded in the ATOF). **Codex** ([findings](../codex/findings.md))
+is still a stub — its row below is **preliminary**, drawn from a partial run and the
+OpenAI Responses event model; it will be confirmed once the CLI/quota blocker
+clears. The `invoke_stream` prototype is harness-agnostic and validated on both
+Relay modes.
 
 ## Cross-harness evidence
 | | Hermes | Deep Agents | Claude | Codex |
@@ -14,11 +21,11 @@ harness-agnostic and validated on both Relay modes.
 | Relay mode | in-process | in-process | gateway CLI | gateway CLI |
 | native API | AIAgent callbacks | LangGraph + middleware | Anthropic Messages SSE | OpenAI Responses SSE |
 | **stream unit** | callback scope/mark | scope tree (nested) | message → content_block → delta | response → item → delta |
-| **token deltas** | ❌ (scope-level) | ❌ (scope-level) | ✅ `content_block_delta` | ✅ `response.output_text.delta` |
+| **token deltas** | ❌ (scope-level) | ❌ (scope-level) | ✅ SSE events live (`content_block_delta`); **text terminal-only** in current ATOF | ✅ `response.output_text.delta` (expected) |
 | **nesting** | session>turn>tool/llm | deep (delegated sub-agents) | message>block | response>item |
 | **ordering** | temporal | temporal (sequential in POC; `parent_uuid` would key any parallel) | temporal | temporal |
 | **terminal** | `session end` scope + metadata | `request end` scope (`status OK`) | `message_delta`(stop,usage)+`message_stop` | `response.completed`/`failed`(+usage) |
-| duplicate risk | delta↔terminal | subagent-echo + delta↔terminal + tree | HIGH (delta↔terminal) | HIGH (delta↔terminal) |
+| duplicate risk | delta↔terminal | subagent-echo + delta↔terminal + tree | latent (text terminal-only today) | HIGH (delta↔terminal, expected) |
 
 ### Differences that matter
 - **Stream units differ per harness** — callback-scope vs. content-block vs.
@@ -36,9 +43,10 @@ harness-agnostic and validated on both Relay modes.
 ### The unifying fact
 Relay wraps **all four** into one ATOF envelope: `scope`/`mark` records with
 `uuid`/`parent_uuid`/`timestamp`, and native events either *are* the scope
-(in-process) or embedded verbatim in `llm.chunk` `data` (gateway). The
-cross-harness uniformity the effort wanted **already exists at the ATOF layer**,
-with native detail preserved.
+(in-process) or are embedded in `llm.chunk` `data` (gateway — event type, block
+index, timing, and usage inline; the per-delta text currently lands only in the
+terminal scope, as the real Claude run confirmed). The cross-harness uniformity the
+effort wanted **already exists at the ATOF layer**, with native detail preserved.
 
 ## Final recommendation — v0.1
 **Ship raw, Relay-generated ATOF pass-through**, surfaced as sugar over

@@ -1,9 +1,17 @@
+<!--
+SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # NeMo Fabric streaming POC
 
 Proof-of-concept for a Fabric streaming API built on **NeMo Relay-generated ATOF**.
-Hermes and Deep Agents were run for real — their raw native events (teed before
-Relay) and ATOF captured, and the same `invoke_stream` prototype exercised.
-Codex and Claude are stubs pending a usable API key. Conclusion + production plan:
+Hermes, Deep Agents, and Claude were run for real — their ATOF (and, for the
+in-process harnesses, native events teed before Relay) captured, and the same
+`invoke_stream` prototype exercised. Claude was captured through the gateway on a
+**Claude Code subscription / SSO** — no API key. Codex remains a stub (auth works
+via SSO, but the installed Codex CLI is too old for the account's model, and the
+API-key path is out of quota). Conclusion + production plan:
 [`synthesis/`](synthesis/README.md).
 
 ## The v0.1 contract (recommended)
@@ -26,20 +34,23 @@ streaming-poc/
 │                    run_harness, native_recorder
 ├── hermes/          in-process · native-events.jsonl · events.atof.jsonl · findings.md
 ├── deepagents/      in-process · native-events.jsonl · events.atof.jsonl · findings.md
-├── claude/          gateway · findings.md (stub: pending ANTHROPIC_API_KEY)
-├── codex/           gateway · findings.md (stub: pending a funded OpenAI key)
+├── claude/          gateway · events.atof.jsonl · findings.md (real run, SSO)
+├── codex/           gateway · findings.md (stub: SSO works, CLI too old / key out of quota)
 └── synthesis/       cross-harness conclusion + production work breakdown
 ```
-Each completed harness folder carries `native-events.jsonl` (the SDK stream teed
-*before* Relay via `common/native_recorder.py`), `events.atof.jsonl` (the Relay
-ATOF that crossed the Fabric boundary), and `findings.md` (native→ATOF mapping,
-loss analysis, deltas-vs-terminal, duplicate-rendering risks, recommendation).
+Each completed harness folder carries `events.atof.jsonl` (the Relay ATOF that
+crossed the Fabric boundary) and `findings.md` (native→ATOF mapping, loss analysis,
+deltas-vs-terminal, duplicate-rendering risks, recommendation). The **in-process**
+harnesses also carry `native-events.jsonl` (the SDK stream teed *before* Relay via
+`common/native_recorder.py`); in **gateway** mode Relay embeds the native events
+inside the ATOF `llm.chunk` marks, so no separate native file is needed.
 
 | Harness | mode | status |
 |---|---|---|
 | Hermes | in-process | ✅ complete — real run, native + ATOF captured |
 | Deep Agents | in-process | ✅ complete — real run w/ delegated subagents |
-| Codex / Claude | gateway | ⏸ stub — pending a usable API key (native seam identified) |
+| Claude | gateway | ✅ complete — real run, token-level ATOF (subscription/SSO, no API key) |
+| Codex | gateway | ⏸ stub — SSO auth works; installed Codex CLI too old for the account model, API-key path out of quota (native seam identified) |
 
 ## Reproduce (Hermes / Deep Agents)
 Prereqs: a native extension matching the Python SDK (`just build-python`, or
@@ -52,8 +63,10 @@ python streaming-poc/common/run_harness.py nvidia.fabric.hermes out.atof.jsonl "
 ```
 To also tee native events, set `POC_NATIVE_RECORD=<path>` and
 `POC_RECORDER_DIR=streaming-poc/common` and apply the seam patch documented in
-`common/native_recorder.py` (POC-only; revert after capture). Gateway harnesses
-(Claude/Codex) additionally need `nemo-relay` ≥0.6.0 and the respective key.
+`common/native_recorder.py` (POC-only; revert after capture). The gateway harness
+Claude additionally needs `nemo-relay` ≥0.6.0 and either a Claude Code subscription
+(SSO) or `ANTHROPIC_API_KEY` — exact commands in
+[`claude/findings.md`](claude/findings.md#reproduce-this-experiment).
 
 ## Fixture note
 Oversized full-request snapshot records (>20 KB/line) have their `data` truncated
