@@ -41,7 +41,7 @@ cleanup validation.
 - **Status:** Waiting for an upstream release
 - **Added:** July 16, 2026
 - **Affected documentation:** `adapters/codex/README.md` and
-  `docs/integrations/codex.mdx`
+  `docs/integrations/harness/codex.mdx`
 - **Reason:** Released NeMo Relay versions do not yet decode the
   `zstd`-compressed request bodies emitted by the Codex SDK, so semantic Relay
   artifacts require a source installation.
