@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Relay-backed streaming support for the Fabric Python SDK."""
+"""Relay-backed streaming support for the NVIDIA NeMo Fabric Python SDK."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from typing import Any
 from nemo_fabric.models import (
     FabricConfig,
     RelayAtofConfig,
-    RelayAtofEndpointConfig,
+    RelayAtofStreamSinkConfig,
     RelayConfig,
     RelayObservabilityConfig,
 )
@@ -37,7 +37,7 @@ class InvokeStream:
         invoke: Coroutine[Any, Any, RunResult],
         listener: _AtofStreamListener,
     ) -> None:
-        """Initialize one stream around an existing runtime invocation."""
+        """lazydocs: ignore"""
 
         self._listener = listener
         self._closed = False
@@ -106,11 +106,16 @@ class InvokeStream:
             pass
 
         queue = self._listener.records
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _DRAIN_SECONDS
         while True:
             while not queue.empty():
                 queue.get_nowait()
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
             try:
-                await asyncio.wait_for(queue.get(), _DRAIN_SECONDS)
+                await asyncio.wait_for(queue.get(), remaining)
             except TimeoutError:
                 break
         self._listener.end_stream()
@@ -313,7 +318,7 @@ def _relay_enabled(config: FabricConfig) -> bool:
     return telemetry is not None and "relay" in telemetry.providers
 
 
-def _with_stream_endpoint(config: FabricConfig, url: str) -> FabricConfig:
+def _with_stream_sink(config: FabricConfig, url: str) -> FabricConfig:
     copied = config.model_copy(deep=True)
     if copied.relay is None:
         relay = RelayConfig()
@@ -336,9 +341,13 @@ def _with_stream_endpoint(config: FabricConfig, url: str) -> FabricConfig:
     else:
         atof = RelayAtofConfig.model_validate(observability.atof)
 
-    atof.enabled = True
-    atof.endpoints = list(atof.endpoints or ())
-    atof.endpoints.append(RelayAtofEndpointConfig(url=url, transport="ndjson"))
+    if atof.enabled:
+        sinks = list(atof.sinks or ())
+    else:
+        atof = RelayAtofConfig(enabled=True)
+        sinks = []
+    sinks.append(RelayAtofStreamSinkConfig(url=url, transport="ndjson"))
+    atof.sinks = sinks
     observability.atof = atof
     relay.observability = observability
     copied.relay = relay

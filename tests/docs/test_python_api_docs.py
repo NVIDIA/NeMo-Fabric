@@ -89,6 +89,14 @@ def test_generated_reference_uses_valid_heading_order() -> None:
         assert "#### <kbd>property</kbd>" not in text, page
 
 
+def test_streaming_reference_hides_constructor_and_preserves_async_methods() -> None:
+    reference = (REFERENCE_DIR / "nemo_fabric.streaming.md").read_text(encoding="utf-8")
+
+    assert "### <kbd>method</kbd> `__init__`" not in reference
+    assert "async def aclose()" in reference
+    assert "async def result()" in reference
+
+
 def test_landing_page_routes_new_users_through_the_product() -> None:
     landing = LANDING_PAGE.read_text(encoding="utf-8")
     navigation = NAVIGATION.read_text(encoding="utf-8")

@@ -345,15 +345,37 @@ adapter-native progressive output.
 The following example streams one invocation and collects its terminal result:
 
 ```python
-from nemo_fabric import Fabric
+import asyncio
 
-config.enable_relay()
+from nemo_fabric import (
+    EnvironmentConfig,
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+)
 
-async with await Fabric().start_runtime(config) as runtime:
-    stream = runtime.invoke_stream(input="Review the latest patch")
-    async for record in stream:
-        render_atof(record)
-    result = await stream.result()
+
+async def main() -> None:
+    config = FabricConfig(
+        metadata=MetadataConfig(name="streaming-agent"),
+        harness=HarnessConfig(adapter_id="nvidia.fabric.codex"),
+        models={
+            "default": ModelConfig(provider="openai", model="openai/gpt-5.4")
+        },
+        environment=EnvironmentConfig(provider="local", workspace="."),
+    ).enable_relay()
+
+    async with await Fabric().start_runtime(config) as runtime:
+        stream = runtime.invoke_stream(input="Review the latest patch")
+        async for record in stream:
+            print(record)
+        result = await stream.result()
+        print(result.status, result.output)
+
+
+asyncio.run(main())
 ```
 
 `invoke_stream(...)` is synchronous and starts the invocation in the background.
@@ -361,7 +383,9 @@ The returned `InvokeStream` is an async iterator of raw Relay-generated ATOF
 dictionaries. The terminal `RunResult` stays out of band and is available only
 through `await stream.result()`. Treat that terminal result as authoritative:
 replace any provisional rendering instead of appending it. Calling
-`stream.result()` does not finalize unread stream records.
+`stream.result()` does not finalize unread stream records. Calling
+`Runtime.stop()` after the result completes finalizes the stream and discards
+those unread records.
 
 Streaming has the following v0.1 constraints:
 
@@ -372,6 +396,10 @@ Streaming has the following v0.1 constraints:
 - Breaking an `async for` loop does not finalize the stream. Call
   `await stream.aclose()` explicitly. It waits for the invocation to finish and
   discards unread records; it does not cancel the harness turn.
+- The end of async iteration only means that no more ATOF records are available.
+  It does not indicate invocation success. Always await `stream.result()`.
+  Invocation exceptions raise from that call, while harness-reported failures
+  are represented by the returned result's status and error fields.
 - The SDK uses a bounded queue of 1,024 records and applies TCP backpressure.
   Relay can drop records if a consumer stalls longer than Relay's delivery
   timeout.

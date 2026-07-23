@@ -17,13 +17,16 @@ from nemo_fabric import (
     Fabric,
     FabricCapabilityError,
     FabricConfig,
+    FabricConfigError,
     FabricStateError,
     HarnessConfig,
     InvokeStream,
     MetadataConfig,
     RelayAtofConfig,
-    RelayAtofEndpointConfig,
+    RelayAtofFileSinkConfig,
+    RelayAtofStreamSinkConfig,
     RelayObservabilityConfig,
+    RunRequest,
     RunResult,
 )
 from nemo_fabric import client as client_mod
@@ -39,9 +42,8 @@ def _config(*, relay: bool = False) -> FabricConfig:
         config.enable_relay(
             observability=RelayObservabilityConfig(
                 atof=RelayAtofConfig(
-                    endpoints=[
-                        RelayAtofEndpointConfig(url="https://example.com/events")
-                    ]
+                    enabled=True,
+                    sinks=[RelayAtofStreamSinkConfig(url="https://example.com/events")],
                 )
             )
         )
@@ -148,6 +150,46 @@ async def _post_chunked(url: str, records: list[dict[str, Any]]) -> None:
     await writer.wait_closed()
 
 
+async def _post_content_length(
+    url: str,
+    records: list[dict[str, Any]],
+    *,
+    expect_continue: bool = False,
+) -> None:
+    host_port = url.removeprefix("http://").split("/", 1)[0]
+    host, port = host_port.split(":", 1)
+    reader, writer = await asyncio.open_connection(host, int(port))
+    payload = b"".join(json.dumps(record).encode() + b"\n" for record in records)
+    expect = b"Expect: 100-continue\r\n" if expect_continue else b""
+    writer.write(
+        b"POST /atof HTTP/1.1\r\n"
+        + f"Host: {host_port}\r\n".encode()
+        + f"Content-Length: {len(payload)}\r\n".encode()
+        + expect
+        + b"Content-Type: application/x-ndjson\r\n\r\n"
+        + payload
+    )
+    await writer.drain()
+    if expect_continue:
+        assert await reader.readline() == b"HTTP/1.1 100 Continue\r\n"
+        assert await reader.readline() == b"\r\n"
+    assert await reader.readline() == b"HTTP/1.1 200 OK\r\n"
+    writer.close()
+    await writer.wait_closed()
+
+
+async def _request_status(url: str, request: bytes) -> bytes:
+    host_port = url.removeprefix("http://").split("/", 1)[0]
+    host, port = host_port.split(":", 1)
+    reader, writer = await asyncio.open_connection(host, int(port))
+    writer.write(request)
+    await writer.drain()
+    status = await reader.readline()
+    writer.close()
+    await writer.wait_closed()
+    return status
+
+
 async def _wait_for(event: threading.Event, timeout: float = 2.0) -> bool:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -156,7 +198,7 @@ async def _wait_for(event: threading.Event, timeout: float = 2.0) -> bool:
     return event.is_set()
 
 
-async def test_start_runtime_injects_stream_endpoint_without_mutating_config(
+async def test_start_runtime_injects_stream_sink_without_mutating_config(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
@@ -165,18 +207,42 @@ async def test_start_runtime_injects_stream_endpoint_without_mutating_config(
     runtime = await native_client.start_runtime(config)
 
     planned = json.loads(mock_native.plan_config.call_args.args[0])
-    endpoints = planned["relay"]["observability"]["atof"]["endpoints"]
-    assert endpoints[0] == {
+    sinks = planned["relay"]["observability"]["atof"]["sinks"]
+    assert sinks[0] == {
+        "type": "stream",
         "url": "https://example.com/events",
         "transport": "http_post",
-        "headers": {},
         "timeout_millis": 3000,
         "field_name_policy": "preserve",
     }
-    assert endpoints[1]["transport"] == "ndjson"
-    assert endpoints[1]["url"].startswith("http://127.0.0.1:")
+    assert sinks[1]["type"] == "stream"
+    assert sinks[1]["transport"] == "ndjson"
+    assert sinks[1]["url"].startswith("http://127.0.0.1:")
     assert runtime.supports_streaming is True
-    assert len(config.relay.observability.atof.endpoints) == 1
+    assert len(config.relay.observability.atof.sinks) == 1
+
+    await runtime.stop()
+
+
+async def test_start_runtime_does_not_enable_disabled_atof_outputs(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    config = _config(relay=True)
+    atof = config.relay.observability.atof
+    atof.enabled = False
+    atof.sinks = [RelayAtofFileSinkConfig(output_directory="./disabled")]
+
+    runtime = await native_client.start_runtime(config)
+
+    planned = json.loads(mock_native.plan_config.call_args.args[0])
+    planned_atof = planned["relay"]["observability"]["atof"]
+    assert planned_atof["enabled"] is True
+    assert len(planned_atof["sinks"]) == 1
+    assert planned_atof["sinks"][0]["type"] == "stream"
+    assert planned_atof["sinks"][0]["url"].startswith("http://127.0.0.1:")
+    assert config.relay.observability.atof.enabled is False
+    assert config.relay.observability.atof.sinks[0].output_directory == "./disabled"
 
     await runtime.stop()
 
@@ -188,7 +254,7 @@ async def test_invoke_stream_yields_raw_records_and_returns_result_out_of_band(
     runtime = await native_client.start_runtime(_config(relay=True))
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
-    ]["atof"]["endpoints"][-1]["url"]
+    ]["atof"]["sinks"][-1]["url"]
     records = [
         {"type": "scope", "uuid": "scope-1", "name": "request"},
         {"type": "mark", "uuid": "mark-1", "parent_uuid": "scope-1"},
@@ -214,7 +280,7 @@ async def test_stream_must_be_finalized_before_another_turn(
     runtime = await native_client.start_runtime(_config(relay=True))
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
-    ]["atof"]["endpoints"][-1]["url"]
+    ]["atof"]["sinks"][-1]["url"]
     stream = runtime.invoke_stream(input="first")
     await _post_chunked(endpoint, [{"uuid": "first"}])
 
@@ -224,14 +290,41 @@ async def test_stream_must_be_finalized_before_another_turn(
 
     with pytest.raises(FabricStateError, match="streaming invocation is active"):
         runtime.invoke_stream(input="second")
-    with pytest.raises(FabricStateError, match="cannot stop while a turn is in flight"):
-        await runtime.stop()
 
     await stream.aclose()
     second = runtime.invoke_stream(input="second")
     assert [record async for record in second] == []
     assert (await second.result()).status == "succeeded"
     await runtime.stop()
+
+
+async def test_invoke_stream_validates_request_before_returning_stream(
+    native_client: Fabric,
+):
+    runtime = await native_client.start_runtime(_config(relay=True))
+    request = RunRequest(input="request")
+
+    with pytest.raises(FabricConfigError, match="mutually exclusive"):
+        runtime.invoke_stream(input="input", request=request)
+
+    stream = runtime.invoke_stream(input="valid")
+    assert [record async for record in stream] == []
+    assert (await stream.result()).status == "succeeded"
+    await runtime.stop()
+
+
+async def test_stop_finalizes_completed_stream_after_result(
+    native_client: Fabric,
+):
+    runtime = await native_client.start_runtime(_config(relay=True))
+    stream = runtime.invoke_stream(input="hello")
+
+    assert (await stream.result()).status == "succeeded"
+    assert stream._finalized is False
+
+    await runtime.stop()
+
+    assert stream._finalized is True
 
 
 async def test_invoke_stream_requires_relay(
@@ -284,6 +377,11 @@ async def test_cancelled_aclose_keeps_turn_active_and_result_awaitable(
         await closing
     with pytest.raises(FabricStateError, match="streaming invocation is active"):
         runtime.invoke_stream(input="too soon")
+    with pytest.raises(
+        FabricStateError,
+        match="streaming invocation is active",
+    ):
+        await runtime.stop()
 
     release.set()
     await stream.aclose()
@@ -300,4 +398,44 @@ async def test_listener_accepts_atof_record_larger_than_default_read_limits():
 
     assert await listener.records.get() == record
     listener.end_stream()
+    await listener.close()
+
+
+async def test_listener_accepts_content_length_and_100_continue():
+    listener = await _AtofStreamListener(maxsize=2).start()
+    listener.begin_stream()
+    records = [{"uuid": "first"}, {"uuid": "second"}]
+
+    await _post_content_length(listener.url, records, expect_continue=True)
+
+    assert [await listener.records.get(), await listener.records.get()] == records
+    listener.end_stream()
+    await listener.close()
+
+
+@pytest.mark.parametrize(
+    ("raw_request", "expected"),
+    [
+        (
+            b"GET /atof HTTP/1.1\r\nContent-Length: 0\r\n\r\n",
+            b"HTTP/1.1 404 Not Found\r\n",
+        ),
+        (
+            b"POST /atof HTTP/1.1\r\n\r\n",
+            b"HTTP/1.1 411 Length Required\r\n",
+        ),
+        (
+            b"POST /atof HTTP/1.1\r\nContent-Length: invalid\r\n\r\n",
+            b"HTTP/1.1 400 Bad Request\r\n",
+        ),
+    ],
+)
+async def test_listener_rejects_invalid_http_requests(
+    raw_request: bytes,
+    expected: bytes,
+):
+    listener = await _AtofStreamListener().start()
+
+    assert await _request_status(listener.url, raw_request) == expected
+
     await listener.close()

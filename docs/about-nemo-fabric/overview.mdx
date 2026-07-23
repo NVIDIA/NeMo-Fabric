@@ -142,7 +142,8 @@ obtain complete typed configs from built-in presets or maintained examples.
    observability settings without mutating the base config.
 3. **Plan and diagnose** to resolve the adapter and check capabilities and
    requirements before spending work on a runtime.
-4. **Run, start, or stream a runtime** through the shared lifecycle contract.
+4. **Run or start a runtime** through the shared lifecycle contract, then stream
+   one invocation with `Runtime.invoke_stream()` when live ATOF records are needed.
 5. **Consume evidence** from `RunResult`: output, structured failure details,
    artifacts, events, and telemetry references.
 
