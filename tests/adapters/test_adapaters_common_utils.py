@@ -377,10 +377,8 @@ def test_collect_relay_artifacts(tmp_path: Path):
     ]
 
 
-def test_relay_api_plugin_config_translates_flat_atof_to_relay_v06_sinks(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setenv("TOKEN", "test-token")
+def test_relay_api_plugin_config_translates_flat_atof_to_relay_v06_sinks():
+    os.environ["TOKEN"] = "test-token"
     plugin_config = {
         "version": 1,
         "components": [
