@@ -10,6 +10,7 @@ import shlex
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 import pytest
@@ -228,7 +229,7 @@ async def test_harbor_uploads_a_portable_asset_bundle(tmp_path: Path):
     assert environment.directory_uploads == [(bundle, "/tmp/nemo-fabric-config")]
     payload = agent._build_spec("fix it")
     assert payload.config.harness.adapter_id == "nvidia.fabric.hermes"
-    assert payload.config_base_dir == Path("/tmp/nemo-fabric-config")
+    assert payload.config_base_dir == PurePosixPath("/tmp/nemo-fabric-config")
 
 
 async def test_harbor_generated_config_uses_an_uploaded_bundle_as_base_dir(
@@ -246,7 +247,7 @@ async def test_harbor_generated_config_uses_an_uploaded_bundle_as_base_dir(
     await agent.setup(environment)  # type: ignore[arg-type]
 
     payload = agent._build_spec("fix it")
-    assert payload.config_base_dir == Path("/tmp/nemo-fabric-config")
+    assert payload.config_base_dir == PurePosixPath("/tmp/nemo-fabric-config")
     assert environment.directory_uploads == [(bundle, "/tmp/nemo-fabric-config")]
 
 
@@ -308,7 +309,7 @@ def test_harbor_defaults_config_base_dir_to_workspace(tmp_path: Path):
         fabric_workspace="/workspace",
     )
 
-    assert agent._build_spec("fix it").config_base_dir == Path("/workspace")
+    assert agent._build_spec("fix it").config_base_dir == PurePosixPath("/workspace")
 
 
 def test_harbor_config_bundle_rejects_an_explicit_base_dir(tmp_path: Path):

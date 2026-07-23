@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux-amd64, linux-arm64, macos-arm64]
+        platform: [linux-amd64, linux-arm64, macos-arm64, windows-amd64]
         python-version: ['3.11', '3.12', '3.13', '3.14']
         include:
           - platform: linux-amd64
@@ -49,6 +49,8 @@ jobs:
             runner: ubuntu-24.04-arm
           - platform: macos-arm64
             runner: macos-15
+          - platform: windows-amd64
+            runner: windows-2022
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -85,7 +87,7 @@ jobs:
       # imports it to read Hermes Agent config fixtures, so install it for the tests.
       - name: Build SDK with native extension
         run: |
-          uv venv --python ${{ matrix.python-version }} .venv
+          uv venv --python "${UV_PYTHON:-${{ matrix.python-version }}}" .venv
           uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes' || '' }} --extra relay --extra runtime
 
       - name: Run pytest
@@ -106,6 +108,8 @@ jobs:
             runner: ubuntu-24.04-arm
           - platform: macos-arm64
             runner: macos-15
+          - platform: windows-amd64
+            runner: windows-2022
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:

@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RunPlan &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub base_dir: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig\">FabricConfig</a>,\n    pub adapter_descriptor: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-resolvedadapterdescriptor\">ResolvedAdapterDescriptor</a>&gt;,\n    pub resolution: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-resolutionstrategy\">ResolutionStrategy</a>&gt;,\n    pub environment_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentplan\">EnvironmentPlan</a>&gt;,\n    pub capability_plan: <a href=\"struct-capabilityplan\">CapabilityPlan</a>,\n    pub capabilities: <a href=\"struct-runtimecapabilities\">RuntimeCapabilities</a>,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryplan\">TelemetryPlan</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RunPlan &#123;\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub base_dir: <a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>,\n    pub config: <a href=\"struct-fabricconfig.mdx\">FabricConfig</a>,\n    pub adapter_descriptor: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-resolvedadapterdescriptor.mdx\">ResolvedAdapterDescriptor</a>&gt;,\n    pub resolution: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"enum-resolutionstrategy.mdx\">ResolutionStrategy</a>&gt;,\n    pub environment_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentplan.mdx\">EnvironmentPlan</a>&gt;,\n    pub capability_plan: <a href=\"struct-capabilityplan.mdx\">CapabilityPlan</a>,\n    pub capabilities: <a href=\"struct-runtimecapabilities.mdx\">RuntimeCapabilities</a>,\n    pub telemetry_plan: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>&gt;,\n&#125;"}} /></pre>
 
 Resolved Fabric run plan.
 
@@ -55,11 +55,11 @@ Resolved telemetry pass-through plan.
 
 ### `impl Clone for RunPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html\">Clone</a> for <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html\">Clone</a> for <a href=\"struct-runplan.mdx\">RunPlan</a>"}} /></pre>
 
 #### `clone`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"struct-runplan.mdx\">RunPlan</a>"}} /></pre>
 
 #### `clone_from`
 
@@ -67,7 +67,7 @@ Resolved telemetry pass-through plan.
 
 ### `impl Debug for RunPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-runplan.mdx\">RunPlan</a>"}} /></pre>
 
 #### `fmt`
 
@@ -75,7 +75,7 @@ Resolved telemetry pass-through plan.
 
 ### `impl<'de> Deserialize<'de> for RunPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"struct-runplan.mdx\">RunPlan</a>"}} /></pre>
 
 #### `deserialize`
 
@@ -83,7 +83,7 @@ Resolved telemetry pass-through plan.
 
 ### `impl JsonSchema for RunPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"struct-runplan.mdx\">RunPlan</a>"}} /></pre>
 
 #### `schema_name`
 
@@ -103,11 +103,11 @@ Resolved telemetry pass-through plan.
 
 ### `impl PartialEq for RunPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"struct-runplan.mdx\">RunPlan</a>"}} /></pre>
 
 #### `eq`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"struct-runplan\">RunPlan</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"struct-runplan.mdx\">RunPlan</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
 
 #### `ne`
 
@@ -115,7 +115,7 @@ Resolved telemetry pass-through plan.
 
 ### `impl Serialize for RunPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-runplan.mdx\">RunPlan</a>"}} /></pre>
 
 #### `serialize`
 
@@ -123,4 +123,4 @@ Resolved telemetry pass-through plan.
 
 ### `impl StructuralPartialEq for RunPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"struct-runplan\">RunPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"struct-runplan.mdx\">RunPlan</a>"}} /></pre>

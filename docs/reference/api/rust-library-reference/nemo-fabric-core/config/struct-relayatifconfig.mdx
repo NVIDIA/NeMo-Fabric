@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RelayAtifConfig &#123;\n    pub enabled: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub agent_version: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub model_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub tool_definitions: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;&gt;,\n    pub extra: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub output_directory: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub filename_template: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub storage: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"enum-relayatifstorageconfig\">RelayAtifStorageConfig</a>&gt;&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct RelayAtifConfig &#123;\n    pub enabled: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub agent_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub agent_version: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub model_name: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub tool_definitions: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;&gt;,\n    pub extra: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub output_directory: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub filename_template: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub storage: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"enum-relayatifstorageconfig.mdx\">RelayAtifStorageConfig</a>&gt;&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
 Relay ATIF export configuration.
 
@@ -59,11 +59,11 @@ Additive ATIF fields.
 
 ### `impl Clone for RelayAtifConfig`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html\">Clone</a> for <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html\">Clone</a> for <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>
 
 #### `clone`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>
 
 #### `clone_from`
 
@@ -71,7 +71,7 @@ Additive ATIF fields.
 
 ### `impl Debug for RelayAtifConfig`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>
 
 #### `fmt`
 
@@ -79,7 +79,7 @@ Additive ATIF fields.
 
 ### `impl Default for RelayAtifConfig`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/default/trait.Default.html\">Default</a> for <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/default/trait.Default.html\">Default</a> for <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>
 
 #### `default`
 
@@ -87,7 +87,7 @@ Additive ATIF fields.
 
 ### `impl<'de> Deserialize<'de> for RelayAtifConfig`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>
 
 #### `deserialize`
 
@@ -95,7 +95,7 @@ Additive ATIF fields.
 
 ### `impl JsonSchema for RelayAtifConfig`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>
 
 #### `schema_name`
 
@@ -115,11 +115,11 @@ Additive ATIF fields.
 
 ### `impl PartialEq for RelayAtifConfig`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>
 
 #### `eq`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"struct-relayatifconfig\">RelayAtifConfig</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
 
 #### `ne`
 
@@ -127,7 +127,7 @@ Additive ATIF fields.
 
 ### `impl Serialize for RelayAtifConfig`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>
 
 #### `serialize`
 
@@ -135,4 +135,4 @@ Additive ATIF fields.
 
 ### `impl StructuralPartialEq for RelayAtifConfig`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"struct-relayatifconfig\">RelayAtifConfig</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"struct-relayatifconfig.mdx\">RelayAtifConfig</a>"}} /></pre>

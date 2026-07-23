@@ -25,7 +25,7 @@ async def run(payload: FabricRunPayload) -> RunResult:
     )
     publish_telemetry_evidence(
         result,
-        payload.logs_dir,
+        Path(payload.logs_dir),
         harbor_session_id=payload.request.context.get("harbor_session_id"),
         harbor_context_id=payload.request.context.get("harbor_context_id"),
     )

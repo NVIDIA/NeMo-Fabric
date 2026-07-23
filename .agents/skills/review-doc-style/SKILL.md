@@ -30,6 +30,16 @@ and NVIDIA NeMo Fabric repo conventions.
 - Run `just docs` to regenerate and validate the API reference after changing a
   source or generator.
 
+## Documentation Links
+
+- For links between files under `docs/`, use paths relative to the source file
+  and include the target file's `.mdx` extension. These links work in both Fern
+  builds and repository browsers.
+- Do not use Fern site-root paths such as
+  `[NeMo Fabric overview](/nemo/fabric/about-nemo-fabric/overview)`.
+- Use the repository-relative equivalent, such as
+  `[NeMo Fabric overview](../about-nemo-fabric/overview.mdx)`.
+
 ## Review Priorities
 
 - Prioritize factual accuracy over copy polish
@@ -65,6 +75,8 @@ Treat these as blocking issues:
 - User-facing naming is inconsistent with current repo terminology
 - MDX top-of-file SPDX comments use HTML comment delimiters instead of
   `{/* ... */}`
+- Links between files under `docs/` use Fern site-root paths instead of
+  repository-relative `.mdx` paths
 - NVIDIA is not capitalized correctly
 - Code, commands, paths, or filenames are not formatted as inline code where needed
 
@@ -87,7 +99,8 @@ Flag these when they materially improve clarity or consistency:
 - **Entry points**: Top-level docs changed wherever users would naturally look first.
 - **Headings**: Technical docs use title case consistently.
 - **Voice**: Prefer active voice, present tense, short sentences, and plain English.
-- **Links**: Use descriptive anchor text, not bare URLs or weak labels.
+- **Links**: Use descriptive anchor text, not bare URLs or weak labels. For links
+  within `docs/`, use repository-relative paths with the `.mdx` extension.
 - **Formatting**: Commands, code elements, expressions, file names, and paths are monospace.
 - **MDX headers**: Top-of-file MDX SPDX comments use `{/*` and `*/}` delimiters.
 - **Procedures**: Steps are easy to scan, imperative, and split into smaller tasks when long.

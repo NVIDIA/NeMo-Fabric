@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct TelemetryPlan &#123;\n    pub providers: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"enum-telemetryprovider\">TelemetryProvider</a>&gt;,\n    pub relay_enabled: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub relay_project: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub relay_output_dir: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub relay_config: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub native_config: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub adapter_outputs: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct TelemetryPlan &#123;\n    pub providers: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"enum-telemetryprovider.mdx\">TelemetryProvider</a>&gt;,\n    pub relay_enabled: <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>,\n    pub relay_project: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub relay_output_dir: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/path/struct.PathBuf.html\">PathBuf</a>&gt;,\n    pub relay_config: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub native_config: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n    pub adapter_outputs: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n&#125;"}} /></pre>
 
 Resolved telemetry plan.
 
@@ -47,11 +47,11 @@ Telemetry outputs declared by the selected adapter descriptor.
 
 ### `impl Clone for TelemetryPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html\">Clone</a> for <a href=\"struct-telemetryplan\">TelemetryPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html\">Clone</a> for <a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>"}} /></pre>
 
 #### `clone`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"struct-telemetryplan\">TelemetryPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/clone/trait.Clone.html#tymethod.clone\">clone</a>(&amp;self) -&gt; <a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>"}} /></pre>
 
 #### `clone_from`
 
@@ -59,7 +59,7 @@ Telemetry outputs declared by the selected adapter descriptor.
 
 ### `impl Debug for TelemetryPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-telemetryplan\">TelemetryPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/fmt/trait.Debug.html\">Debug</a> for <a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>"}} /></pre>
 
 #### `fmt`
 
@@ -67,7 +67,7 @@ Telemetry outputs declared by the selected adapter descriptor.
 
 ### `impl<'de> Deserialize<'de> for TelemetryPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"struct-telemetryplan\">TelemetryPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl&lt;'de&gt; <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/de/trait.Deserialize.html\">Deserialize</a>&lt;'de&gt; for <a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>"}} /></pre>
 
 #### `deserialize`
 
@@ -75,7 +75,7 @@ Telemetry outputs declared by the selected adapter descriptor.
 
 ### `impl JsonSchema for TelemetryPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"struct-telemetryplan\">TelemetryPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl JsonSchema for <a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>"}} /></pre>
 
 #### `schema_name`
 
@@ -95,11 +95,11 @@ Telemetry outputs declared by the selected adapter descriptor.
 
 ### `impl PartialEq for TelemetryPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"struct-telemetryplan\">TelemetryPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html\">PartialEq</a> for <a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>"}} /></pre>
 
 #### `eq`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"struct-telemetryplan\">TelemetryPlan</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "fn <a href=\"https://doc.rust-lang.org/1.94.0/core/cmp/trait.PartialEq.html#tymethod.eq\">eq</a>(&amp;self, other: &amp;<a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>) -&gt; <a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.bool.html\">bool</a>"}} /></pre>
 
 #### `ne`
 
@@ -107,7 +107,7 @@ Telemetry outputs declared by the selected adapter descriptor.
 
 ### `impl Serialize for TelemetryPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-telemetryplan\">TelemetryPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://docs.rs/serde_core/1.0.228/serde_core/ser/trait.Serialize.html\">Serialize</a> for <a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>"}} /></pre>
 
 #### `serialize`
 
@@ -115,4 +115,4 @@ Telemetry outputs declared by the selected adapter descriptor.
 
 ### `impl StructuralPartialEq for TelemetryPlan`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"struct-telemetryplan\">TelemetryPlan</a>"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "impl <a href=\"https://doc.rust-lang.org/1.94.0/core/marker/trait.StructuralPartialEq.html\">StructuralPartialEq</a> for <a href=\"struct-telemetryplan.mdx\">TelemetryPlan</a>"}} /></pre>

@@ -1,7 +1,7 @@
 ---
 title: "Models"
 slug: "/reference/api/python-library-reference/models"
-description: "Pydantic authoring models for Fabric config and request inputs."
+description: "Pydantic authoring models for NeMo Fabric config and request inputs."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}

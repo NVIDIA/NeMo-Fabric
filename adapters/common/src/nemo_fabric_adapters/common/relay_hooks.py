@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import shlex
+import subprocess
 from pathlib import Path
+from sys import platform
 from typing import Any, Literal
 
 
@@ -70,7 +72,12 @@ def render_relay_hooks(
     if agent not in ("claude", "codex"):
         raise ValueError(f"unsupported NeMo Relay hook agent {agent!r}")
 
-    command = f"{shlex.quote(str(executable))} hook-forward {agent}"
+    executable_arg = (
+        subprocess.list2cmdline([str(executable)])
+        if platform == "win32"
+        else shlex.quote(str(executable))
+    )
+    command = f"{executable_arg} hook-forward {agent}"
     hooks: dict[str, list[dict[str, Any]]] = {}
     for event in RELAY_HOOK_EVENTS[agent]:
         group: dict[str, Any] = {
