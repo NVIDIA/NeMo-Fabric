@@ -54,7 +54,8 @@ packages into a virtual environment with:
 uv pip install --find-links ./dist "nemo-fabric[runtime]"
 ```
 
-Adapters are distributed as optional extras. For example, install the Hermes Agent adapter with:
+Adapters are distributed as optional extras. For example, install the Hermes
+Agent adapter with:
 
 ```bash
 uv pip install --find-links ./dist "nemo-fabric[hermes]"
