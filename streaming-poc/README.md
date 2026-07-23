@@ -6,13 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 # NeMo Fabric streaming POC
 
 Proof-of-concept for a Fabric streaming API built on **NeMo Relay-generated ATOF**.
-Hermes, Deep Agents, and Claude were run for real — their ATOF (and, for the
-in-process harnesses, native events teed before Relay) captured, and the same
-`invoke_stream` prototype exercised. Claude was captured through the gateway on a
-**Claude Code subscription / SSO** — no API key. Codex remains a stub (auth works
-via SSO, but the installed Codex CLI is too old for the account's model, and the
-API-key path is out of quota). Conclusion + production plan:
-[`synthesis/`](synthesis/README.md).
+**All four harnesses were run for real** — their ATOF (and, for the in-process
+harnesses, native events teed before Relay) captured, and the same `invoke_stream`
+prototype exercised. Both gateway harnesses (Claude, Codex) were captured on a
+**subscription / SSO** session forwarded by the gateway — **no API key**. Conclusion
++ production plan: [`synthesis/`](synthesis/README.md).
 
 ## The v0.1 contract (recommended)
 ```python
@@ -35,7 +33,7 @@ streaming-poc/
 ├── hermes/          in-process · native-events.jsonl · events.atof.jsonl · findings.md
 ├── deepagents/      in-process · native-events.jsonl · events.atof.jsonl · findings.md
 ├── claude/          gateway · events.atof.jsonl · findings.md (real run, SSO)
-├── codex/           gateway · findings.md (stub: SSO works, CLI too old / key out of quota)
+├── codex/           gateway · events.atof.jsonl · findings.md (real run, SSO)
 └── synthesis/       cross-harness conclusion + production work breakdown
 ```
 Each completed harness folder carries `events.atof.jsonl` (the Relay ATOF that
@@ -50,7 +48,7 @@ inside the ATOF `llm.chunk` marks, so no separate native file is needed.
 | Hermes | in-process | ✅ complete — real run, native + ATOF captured |
 | Deep Agents | in-process | ✅ complete — real run w/ delegated subagents |
 | Claude | gateway | ✅ complete — real run, token-level ATOF (subscription/SSO, no API key) |
-| Codex | gateway | ⏸ stub — SSO auth works; installed Codex CLI too old for the account model, API-key path out of quota (native seam identified) |
+| Codex | gateway | ✅ complete — real run, token-level ATOF (subscription/SSO, no API key; needs Codex CLI ≥0.145.0) |
 
 ## Reproduce (Hermes / Deep Agents)
 Prereqs: a native extension matching the Python SDK (`just build-python`, or
@@ -63,10 +61,12 @@ python streaming-poc/common/run_harness.py nvidia.fabric.hermes out.atof.jsonl "
 ```
 To also tee native events, set `POC_NATIVE_RECORD=<path>` and
 `POC_RECORDER_DIR=streaming-poc/common` and apply the seam patch documented in
-`common/native_recorder.py` (POC-only; revert after capture). The gateway harness
-Claude additionally needs `nemo-relay` ≥0.6.0 and either a Claude Code subscription
-(SSO) or `ANTHROPIC_API_KEY` — exact commands in
-[`claude/findings.md`](claude/findings.md#reproduce-this-experiment).
+`common/native_recorder.py` (POC-only; revert after capture). The gateway harnesses
+additionally need `nemo-relay` ≥0.6.0 and either a subscription (SSO) or an API key
+— exact per-harness commands in
+[`claude/findings.md`](claude/findings.md#reproduce-this-experiment) and
+[`codex/findings.md`](codex/findings.md#reproduce-this-experiment) (Codex also needs
+CLI ≥0.145.0 for the `gpt-5.6-sol` account model).
 
 ## Fixture note
 Oversized full-request snapshot records (>20 KB/line) have their `data` truncated

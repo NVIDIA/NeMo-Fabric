@@ -82,9 +82,9 @@ scoped from real POC findings; effort is relative (S/M/L).
 - `nemo-fabric` native must be built to match the Python SDK (stale `.so` breaks
   `plan()/run()`); ensure CI builds it. Build with the venv interpreter
   (`PYO3_PYTHON`) or `just build-python`.
-- Claude was captured live through the gateway on a **Claude Code subscription /
-  SSO** session (no API key) — the gateway forwarded the OAuth session
-  ([claude/findings.md](../claude/findings.md)). The same SSO path did **not**
-  unblock Codex: auth works, but the installed Codex CLI is too old for the
-  account's model and the API key is out of quota — a funded OpenAI key or a CLI
-  upgrade (`npm i -g @openai/codex@latest`) is still needed for a clean Codex run.
+- **Both** gateway harnesses were captured live on a **subscription / SSO** session
+  (no API key) — the gateway forwarded the OAuth session for Claude
+  ([claude/findings.md](../claude/findings.md)) and Codex
+  ([codex/findings.md](../codex/findings.md)). Codex additionally requires **Codex
+  CLI ≥0.145.0** for the ChatGPT account's `gpt-5.6-sol` model (older CLIs reject
+  it); a funded `OPENAI_API_KEY` is an alternative to SSO for both.
