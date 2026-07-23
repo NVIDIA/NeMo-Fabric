@@ -70,8 +70,9 @@ Decide the following before implementation:
   `harness.settings` for harness-specific behavior.
 - Apply precedence in this order: normalized `config`; Fabric-resolved plans and
   runtime context; harness-specific settings; descriptor and adapter defaults.
-  Reject duplicates or unsupported behavior with an actionable error that
-  names the field and supported alternatives. Never silently drop configuration.
+  Let intentional overlaps layer by this order. Reject conflicting duplicate
+  declarations or unsupported behavior with an actionable error naming the field
+  and supported alternatives; never silently drop configuration.
 - Run dependency and authentication preflight: declare fixed dependencies in
   descriptor requirements, then validate selected versions, hooks, and
   credentials before invoking the harness. Never expose credential values in
@@ -86,9 +87,10 @@ Decide the following before implementation:
 - Implement only the harness lifecycle hooks needed for start, invoke, resume,
   and cleanup; do not claim unsupported service, streaming, update, or
   cancellation behavior.
-- Keep adapter output stable across harness versions. Normalize the primary
-  response, structured errors, measured usage, harness events, session IDs, and
-  artifact paths without duplicating Fabric lifecycle events.
+- Keep stdout stable: emit `response` plus adapter-specific extensions such as
+  `error`, harness `events`, `usage`, and session IDs. Fabric supplies top-level
+  harness/adapter identity, lifecycle IDs, `status`, `error`, artifacts,
+  telemetry, Fabric lifecycle events, and metadata when it builds `RunResult`.
 
 Wire a public Python package into root optional extras, the adapter dependency
 group, `[tool.uv.sources]`, `python_projects` in `justfile`, and applicable
