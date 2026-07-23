@@ -117,9 +117,9 @@ NeMo Fabric and the selected harness run. For example, Harbor constructs
 harness inside an isolated task container. Refer to the
 [Harbor execution model](examples/harbor/README.md#execution-model) for details.
 
-NeMo Fabric can also run the runtime and harness in separate Python
-environments. This setup can match existing deployment boundaries and isolate
-their dependencies.
+NeMo Fabric can also operate with the NeMo Fabric runtime and the agent harness
+in separate Python environments. This setup can match existing deployment 
+boundaries and isolate their dependencies.
 
 Create an environment for the NeMo Fabric runtime:
 
