@@ -118,16 +118,16 @@ Harness installation and credential requirements differ by adapter. The
 [repository quick start](https://github.com/NVIDIA/NeMo-Fabric#quick-start-hermes-agent)
 contains the complete Hermes Agent environment recipe.
 
-Refer to the [Python SDK guide](/nemo/fabric/sdk/python-sdk) for planning,
+Refer to the [Python SDK guide](../sdk/python.mdx) for planning,
 diagnostics, typed requests, and multi-turn runtime examples.
 
 ## Choose Your Interface
 
 | Interface | Use it when | Start with |
 | --- | --- | --- |
-| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](/reference/api/python-library-reference/client) |
-| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](/reference/api/python-library-reference/runtime) |
-| `nemo-fabric` CLI | You are experimenting with harnesses, running maintained examples, or troubleshooting configs | [Experimentation CLI](/experimentation/cli) |
+| Python SDK | Your application owns job config, runtime lifecycle, or multi-turn state | [Client API](../reference/api/python-library-reference/nemo_fabric.client.md) |
+| Runtime API | You need multiple ordered turns over one live harness runtime | [Runtime](../reference/api/python-library-reference/nemo_fabric.runtime.md) |
+| `nemo-fabric` CLI | You are experimenting with harnesses, running maintained examples, or troubleshooting configs | [Experimentation CLI](../experimentation/cli.mdx) |
 | JSON Schema | You are building editors, validation, code generation, or another language binding | Committed schemas in the [repository](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) |
 
 Use `FabricConfig` as the canonical configuration contract. CLI selectors
