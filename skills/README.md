@@ -53,8 +53,9 @@ or `.agents/skills/` set); those serve NeMo Fabric's own contributors.
 
 ## Consumer Integrations
 
-Consumer integration skills live under `integrations/consumer/`. They help
-software on the consumer side call NeMo Fabric through its public SDK.
+Consumer integration skills live under `integrations/consumer/`. The following
+skill helps software on the consumer side call NeMo Fabric through its public
+SDK:
 
 | Skill | Use it when |
 |---|---|
@@ -64,7 +65,8 @@ software on the consumer side call NeMo Fabric through its public SDK.
 
 Harness integration skills belong under `integrations/harness/`. A forthcoming
 adapter-authoring skill will guide third-party harness authors through the
-published adapter contract so they can make their harnesses Fabric-ready.
+published adapter contract so they can build harness integrations that are
+compatible with NeMo Fabric.
 
 ## Conventions
 
