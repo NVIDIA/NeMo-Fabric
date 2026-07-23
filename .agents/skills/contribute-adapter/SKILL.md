@@ -43,10 +43,10 @@ Decide the following before implementation:
 - Use the existing Fabric `python` or `process` runner and normalized
   request/result contracts. Reuse `adapters/common/` only when its contract
   fits; do not add a runner or abstraction for one adapter.
-- Create only the package surfaces that adapter needs: license link, README,
-  descriptor, package metadata, `src/nemo_fabric_adapters/<name>` module entry
-  point, lockfile, and focused tests under `tests/adapters`. Keep it independent
-  and small.
+- Use `adapters/<name>/` with `LICENSE -> ../../LICENSE`, `README.md`,
+  `fabric-adapter.json`, `pyproject.toml`, `uv.lock`, and
+  `src/nemo_fabric_adapters/<name>/adapter.py`; put focused tests in
+  `tests/adapters/test_<name>*.py`. Keep the package independent and small.
 - Declare only adapter-owned runtime dependencies. Do not add the wrapped harness
   or packages supplied by its agent package. Put local-test-only packages in a
   dependency group.
@@ -134,7 +134,7 @@ and examples together when they expose the changed behavior.
 Run `validate-change` and the applicable adapter commands:
 
 ```bash
-uv run --no-sync pytest tests/adapters/test_<name>_adapter.py
+uv run --no-sync pytest tests/adapters/test_<name>*.py
 just test-python
 just lock-python && just wheels  # Package or dependency changes.
 cargo run -p nemo-fabric-core --example generate-schemas -- schemas  # Schema changes.
