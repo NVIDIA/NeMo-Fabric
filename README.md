@@ -160,7 +160,7 @@ references.
 | Agent harness | Choose it for | Model ecosystem | Key capabilities | Observability |
 | --- | --- | --- | --- | --- |
 | Claude | Claude-native coding and tool-use workflows | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
-| Codex | Codex-native coding workflows | OpenAI and NVIDIA-hosted Responses-compatible models | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
+| Codex | Codex-native coding workflows | OpenAI and NVIDIA-hosted Responses-compatible models | Blocked-tool policy, MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
 | LangChain Deep Agents | Composable LangChain and LangGraph agents | LangChain model providers | Built-in and MCP tools, guardrails, skills, and local subagents | NeMo Relay and native OpenTelemetry/OpenInference |
 | Hermes Agent | Hermes Agent workflows with custom model endpoints | Configurable provider, model, and base URL | Toolsets, guardrails, MCP, skills, and persistent conversation history | NeMo Relay |
 
@@ -200,9 +200,9 @@ runtimes, authentication, and execution details.
   ```
 
   The selected adapter interprets these names: Hermes Agent maps them to disabled
-  toolsets, Claude maps them to `disallowed_tools`, Deep Agents enforces them
-  with middleware, and adapters without a native deny mechanism route the
-  policy as unsupported.
+  toolsets, Claude maps them to `disallowed_tools`, Codex maps them to native
+  feature gates and scoped MCP or app filters, and Deep Agents enforces them
+  with middleware. Adapters reject policy they cannot enforce.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
   Harness-specific extensions belong under `harness.settings` so the normalized
   contract can remain stable. Refer to the

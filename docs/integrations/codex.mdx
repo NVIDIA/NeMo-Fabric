@@ -37,16 +37,36 @@ root. Codex uses its normal skill discovery behavior. Invalid skill directories
 and MCP transports fail before the SDK runtime starts.
 
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
-roots, and `harness.settings.config_overrides` are fixed when the runtime starts
-and cannot vary between `Runtime.invoke(...)` calls. Start a new runtime to
-change them. `Fabric.run(...)` starts the same runtime, invokes it once, and
-stops it, so the same settings are scoped to that single invocation.
+roots, blocked tools, and `harness.settings.config_overrides` are fixed when the
+runtime starts and cannot vary between `Runtime.invoke(...)` calls. Start a new
+runtime to change them. `Fabric.run(...)` starts the same runtime, invokes it
+once, and stops it, so the same settings are scoped to that single invocation.
 
-The Codex adapter does not declare `tools.blocked` support. Codex can filter
-individual MCP server tools, but the pinned runtime does not provide one deny
-mechanism that covers built-in, local, MCP, and hosted tools. NeMo Fabric
-reports normalized blocked-tool policy as unsupported instead of enforcing
-only part of the requested policy.
+## Block Codex Tools
+
+Use `FabricConfig.block_tools(...)` with Codex tool or toolset names:
+
+```python
+config.block_tools(
+    "shell",
+    "web_search",
+    "mcp:repo:delete_repository",
+    "app:google_drive:files/delete",
+)
+```
+
+The adapter supports `shell`, `browser`, `web_search`, `apps`, `plugins`,
+`image_generation`, `multi_agent`, `tool_suggest`, and `request_user_input`.
+Use `mcp` to disable every configured MCP server. Use
+`mcp:<server>:<tool>` or `app:<connector>:<tool>` to block one raw MCP or app
+tool name. The server in an MCP-qualified name must exist in the normalized
+Fabric MCP configuration.
+
+NeMo Fabric applies blocked-tool controls after Codex-specific
+`config_overrides`. Unsupported or malformed names fail before the Codex SDK
+runtime starts instead of running with a partial policy. Blocked-tool policy
+uses the runtime version pinned by the adapter and cannot be combined with a
+`harness.settings.codex_bin` override.
 
 ## Select a Codex Runtime
 

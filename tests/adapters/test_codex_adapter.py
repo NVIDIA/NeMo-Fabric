@@ -309,6 +309,205 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
     }
 
 
+def test_blocked_toolsets_override_codex_config_overrides(codex_payload, mock_codex):
+    codex_payload["config"]["tools"] = {
+        "blocked": [
+            "apps",
+            "browser",
+            "image_generation",
+            "multi_agent",
+            "plugins",
+            "request_user_input",
+            "shell",
+            "tool_suggest",
+            "web_search",
+        ]
+    }
+    overrides = codex_payload["config"]["harness"]["settings"]["config_overrides"]
+    overrides.update(
+        {
+            "features.apps": True,
+            "features.browser_use": True,
+            "features.image_generation": True,
+            "features.multi_agent": True,
+            "features.plugins": True,
+            "features.shell_tool": True,
+            "features.tool_suggest": True,
+            "tools.experimental_request_user_input.enabled": True,
+            "web_search": "live",
+        }
+    )
+
+    output = invoke_once(codex_payload)
+
+    assert output["completed"] is True
+    config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert all(
+        adapter._config_has_layer(config, layer)
+        for layer in adapter.BLOCKED_TOOL_CONFIG.values()
+    )
+
+
+def test_blocked_toolset_config_does_not_leak_between_runtimes(
+    codex_payload, mock_codex
+):
+    codex_payload["config"]["tools"] = {"blocked": ["shell"]}
+
+    output = invoke_once(codex_payload)
+
+    assert output["completed"] is True
+    config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["features"] == {"shell_tool": False, "web_search": False}
+
+
+def test_blocked_toolsets_preserve_unrelated_codex_tools(codex_payload, mock_codex):
+    codex_payload["config"]["tools"] = {"blocked": ["apps", "browser", "plugins"]}
+    codex_payload["config"]["harness"]["settings"]["config_overrides"].update(
+        {
+            "features.standalone_web_search": True,
+            "features.tool_suggest": True,
+            "web_search": "live",
+        }
+    )
+
+    output = invoke_once(codex_payload)
+
+    assert output["completed"] is True
+    config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["features"]["standalone_web_search"] is True
+    assert config["features"]["tool_suggest"] is True
+    assert config["web_search"] == "live"
+
+
+def test_blocked_mcp_tool_uses_raw_server_and_tool_names(codex_payload, mock_codex):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "repo": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/repo",
+                }
+            }
+        }
+    }
+    codex_payload["config"]["tools"] = {
+        "blocked": ["mcp:repo:write_file", "mcp:repo:delete:file"]
+    }
+    codex_payload["config"]["harness"]["settings"]["config_overrides"].update(
+        {
+            "mcp_servers.repo.disabled_tools": ["existing"],
+        }
+    )
+
+    output = invoke_once(codex_payload)
+
+    assert output["completed"] is True
+    server = mock_codex.instances[0].thread_start.await_args.kwargs["config"][
+        "mcp_servers"
+    ]["repo"]
+    assert server["disabled_tools"] == ["existing", "write_file", "delete:file"]
+
+
+def test_blocked_mcp_toolset_disables_every_configured_server(
+    codex_payload, mock_codex
+):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "repo": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/repo",
+                }
+            }
+        }
+    }
+    codex_payload["config"]["tools"] = {"blocked": ["mcp"]}
+    codex_payload["config"]["harness"]["settings"]["config_overrides"].update(
+        {
+            "mcp_servers.repo.enabled": True,
+            "mcp_servers.extra.command": "extra-mcp",
+        }
+    )
+
+    output = invoke_once(codex_payload)
+
+    assert output["completed"] is True
+    servers = mock_codex.instances[0].thread_start.await_args.kwargs["config"][
+        "mcp_servers"
+    ]
+    assert servers["repo"]["enabled"] is False
+    assert servers["extra"]["enabled"] is False
+
+
+def test_blocked_app_tool_uses_raw_connector_and_tool_names(codex_payload, mock_codex):
+    codex_payload["config"]["tools"] = {"blocked": ["app:google_drive:files/delete"]}
+    codex_payload["config"]["harness"]["settings"]["config_overrides"].update(
+        {"apps.google_drive.tools.files/delete.enabled": True}
+    )
+
+    output = invoke_once(codex_payload)
+
+    assert output["completed"] is True
+    config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["apps"]["google_drive"]["tools"]["files/delete"] == {"enabled": False}
+
+
+@pytest.mark.parametrize(
+    "blocked",
+    [
+        "apply_patch",
+        "dynamic:arbitrary",
+        "mcp:repo",
+        "mcp::tool",
+        "app:connector:",
+    ],
+)
+def test_unenforceable_blocked_tool_fails_before_codex_starts(
+    codex_payload, mock_codex, blocked
+):
+    codex_payload["config"]["tools"] = {"blocked": [blocked]}
+
+    error = runtime_start_error(codex_payload)
+
+    assert error.code == "codex_invalid_configuration"
+    assert blocked in error.message
+    mock_codex.assert_not_called()
+
+
+def test_blocked_tool_rejects_unknown_mcp_server(codex_payload, mock_codex):
+    codex_payload["config"]["tools"] = {"blocked": ["mcp:unknown:delete"]}
+
+    error = runtime_start_error(codex_payload)
+
+    assert error.code == "codex_invalid_configuration"
+    assert "unknown Fabric MCP server 'unknown'" in error.message
+    mock_codex.assert_not_called()
+
+
+def test_blocked_tool_rejects_custom_codex_runtime(codex_payload, mock_codex):
+    codex_payload["config"]["tools"] = {"blocked": ["shell"]}
+    codex_payload["config"]["harness"]["settings"]["codex_bin"] = "/tmp/codex"
+
+    error = runtime_start_error(codex_payload)
+
+    assert error.code == "codex_invalid_configuration"
+    assert "runtime pinned by the adapter" in error.message
+    mock_codex.assert_not_called()
+
+
+def test_blocked_tool_validation_is_defense_in_depth(
+    codex_payload, mock_codex, monkeypatch
+):
+    codex_payload["config"]["tools"] = {"blocked": ["shell"]}
+    monkeypatch.setattr(adapter, "_apply_blocked_tools_config", lambda *_args: None)
+
+    error = runtime_start_error(codex_payload)
+
+    assert error.code == "codex_invalid_configuration"
+    assert "was not enforced for 'shell'" in error.message
+    mock_codex.assert_not_called()
+
+
 def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):
     review = tmp_path / "skills" / "review"
     test = tmp_path / "skills" / "test"
@@ -934,7 +1133,11 @@ def test_cli_only_settings_are_rejected(codex_payload, setting):
 
 @pytest.mark.parametrize(
     ("setting", "normalized_field"),
-    [("mcp_servers", "FabricConfig.mcp"), ("skills", "FabricConfig.skills")],
+    [
+        ("mcp_servers", "FabricConfig.mcp"),
+        ("skills", "FabricConfig.skills"),
+        ("tools", "FabricConfig.tools"),
+    ],
 )
 def test_normalized_capabilities_reject_harness_settings(
     codex_payload, mock_codex, setting, normalized_field
@@ -974,6 +1177,8 @@ def test_descriptor_has_no_codex_binary_requirement():
         "mcp",
         "skills",
         "telemetry",
+        "tools",
+        "tools.blocked",
     ]
     assert "requirements" not in descriptor
 
@@ -990,13 +1195,16 @@ def test_codex_config_resolves_sdk_adapter():
         url="https://mcp.example.test/mcp",
         exposure="harness_native",
     )
+    config.block_tools("shell")
     plan = Fabric().plan(config, base_dir=BASE_DIR)
 
     assert plan.adapter.adapter_id == "nvidia.fabric.codex"
     assert plan.adapter.harness == "codex"
     assert plan.config.runtime.input_schema == "text"
     assert plan.config.harness.settings["reasoning_effort"] == "high"
+    assert plan.config.tools.blocked == ["shell"]
     native = plan["capability_plan"]["native"]
+    assert native["tools_configured"] is True
     assert native["skill_paths"] == [str(skill_path)]
     assert native["mcp_servers"]["github"] == {
         "transport": "streamable-http",
@@ -1004,6 +1212,7 @@ def test_codex_config_resolves_sdk_adapter():
         "exposure": "harness_native",
     }
     unsupported = plan["capability_plan"]["unsupported"]
+    assert unsupported["tools_configured"] is False
     assert not unsupported.get("skill_paths")
     assert not unsupported.get("mcp_servers")
 

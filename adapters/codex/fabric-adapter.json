@@ -7,7 +7,7 @@
     "module": "nemo_fabric_adapters.codex.adapter"
   },
   "config": {
-    "accepts": ["models", "mcp", "skills", "telemetry"]
+    "accepts": ["models", "mcp", "skills", "telemetry", "tools", "tools.blocked"]
   },
   "telemetry": {
     "providers": {

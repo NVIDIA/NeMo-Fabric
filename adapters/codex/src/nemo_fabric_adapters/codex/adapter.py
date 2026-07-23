@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import math
@@ -90,6 +91,46 @@ NORMALIZED_SETTING_FIELDS = {
     "mcp_servers": "FabricConfig.mcp",
     "model_name": "FabricConfig.models",
     "skills": "FabricConfig.skills",
+    "tools": "FabricConfig.tools",
+}
+BLOCKED_TOOL_CONFIG = {
+    "apps": {
+        "features": {
+            "apps": False,
+            "enable_mcp_apps": False,
+        }
+    },
+    "browser": {
+        "features": {
+            "browser_use": False,
+            "browser_use_external": False,
+            "browser_use_full_cdp_access": False,
+            "computer_use": False,
+            "in_app_browser": False,
+        },
+    },
+    "image_generation": {"features": {"image_generation": False}},
+    "multi_agent": {
+        "features": {
+            "multi_agent": False,
+            "multi_agent_v2": {"enabled": False},
+        }
+    },
+    "plugins": {
+        "features": {
+            "plugins": False,
+            "remote_plugin": False,
+        }
+    },
+    "request_user_input": {
+        "tools": {"experimental_request_user_input": {"enabled": False}}
+    },
+    "shell": {"features": {"shell_tool": False}},
+    "tool_suggest": {"features": {"tool_suggest": False}},
+    "web_search": {
+        "web_search": "disabled",
+        "features": {"standalone_web_search": False},
+    },
 }
 LOGGER = logging.getLogger(__name__)
 
@@ -532,6 +573,157 @@ def _apply_config_overrides(config: dict[str, Any], overrides: dict[str, Any]) -
         target[parts[-1]] = _json_value(value, name=f"config_overrides.{dotted_key}")
 
 
+def _blocked_tools(payload: dict[str, Any]) -> list[str]:
+    tools = common_utils.fabric_config(payload).get("tools")
+    if tools is None:
+        return []
+    if not isinstance(tools, dict):
+        raise AdapterConfigError(
+            "codex_invalid_configuration", "FabricConfig.tools must be a mapping"
+        )
+    blocked = tools.get("blocked")
+    if blocked is None:
+        return []
+    if not isinstance(blocked, list) or any(
+        not isinstance(name, str) or not name.strip() for name in blocked
+    ):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "FabricConfig.tools.blocked must be a list of non-empty strings",
+        )
+    result = list(dict.fromkeys(name.strip() for name in blocked))
+    if result and _settings(payload).get("codex_bin") is not None:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "tools.blocked requires the Codex runtime pinned by the adapter; "
+            "harness.settings.codex_bin cannot be set",
+        )
+    return result
+
+
+def _scoped_blocked_tool(name: str) -> tuple[str, str, str] | None:
+    parts = name.split(":", 2)
+    if len(parts) != 3 or parts[0] not in {"app", "mcp"}:
+        return None
+    if not parts[1] or not parts[2]:
+        return None
+    return parts[0], parts[1], parts[2]
+
+
+def _config_mapping(config: dict[str, Any], key: str, *, name: str) -> dict[str, Any]:
+    value = config.setdefault(key, {})
+    if not isinstance(value, dict):
+        raise AdapterConfigError(
+            "codex_invalid_configuration", f"Codex {name} must be a mapping"
+        )
+    return value
+
+
+def _disable_mcp_tool(
+    payload: dict[str, Any], config: dict[str, Any], server_name: str, tool_name: str
+) -> None:
+    if server_name not in _native_mcp_servers(payload):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            f"blocked MCP tool references unknown Fabric MCP server {server_name!r}",
+        )
+    servers = _config_mapping(config, "mcp_servers", name="mcp_servers")
+    server = _config_mapping(servers, server_name, name=f"MCP server {server_name}")
+    disabled = server.get("disabled_tools")
+    if disabled is None:
+        disabled = []
+    if not isinstance(disabled, list) or any(
+        not isinstance(value, str) or not value for value in disabled
+    ):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            f"Codex MCP server {server_name} disabled_tools must be a list of strings",
+        )
+    server["disabled_tools"] = list(dict.fromkeys([*disabled, tool_name]))
+
+
+def _disable_app_tool(config: dict[str, Any], app_name: str, tool_name: str) -> None:
+    apps = _config_mapping(config, "apps", name="apps")
+    app = _config_mapping(apps, app_name, name=f"app {app_name}")
+    tools = _config_mapping(app, "tools", name=f"app {app_name} tools")
+    tool = _config_mapping(tools, tool_name, name=f"app {app_name} tool {tool_name}")
+    tool["enabled"] = False
+
+
+def _apply_blocked_tools_config(
+    payload: dict[str, Any], config: dict[str, Any]
+) -> None:
+    blocked = _blocked_tools(payload)
+    for name in blocked:
+        layer = BLOCKED_TOOL_CONFIG.get(name)
+        if layer is not None:
+            _merge_config(config, copy.deepcopy(layer))
+            continue
+        if name == "mcp":
+            servers = _config_mapping(config, "mcp_servers", name="mcp_servers")
+            for server_name in sorted(servers):
+                server = _config_mapping(
+                    servers, server_name, name=f"MCP server {server_name}"
+                )
+                server["enabled"] = False
+            continue
+        scoped = _scoped_blocked_tool(name)
+        if scoped is None:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"Codex cannot enforce blocked tool {name!r}",
+            )
+        kind, owner, tool = scoped
+        if kind == "mcp":
+            _disable_mcp_tool(payload, config, owner, tool)
+        else:
+            _disable_app_tool(config, owner, tool)
+
+
+def _config_has_layer(config: dict[str, Any], layer: dict[str, Any]) -> bool:
+    for key, expected in layer.items():
+        actual = config.get(key)
+        if isinstance(expected, dict):
+            if not isinstance(actual, dict) or not _config_has_layer(actual, expected):
+                return False
+        elif actual != expected:
+            return False
+    return True
+
+
+def _validate_blocked_tools_config(
+    payload: dict[str, Any], config: dict[str, Any]
+) -> None:
+    for name in _blocked_tools(payload):
+        layer = BLOCKED_TOOL_CONFIG.get(name)
+        if layer is not None:
+            enforced = _config_has_layer(config, layer)
+        elif name == "mcp":
+            servers = config.get("mcp_servers")
+            enforced = isinstance(servers, dict) and all(
+                isinstance(server, dict) and server.get("enabled") is False
+                for server in servers.values()
+            )
+        else:
+            scoped = _scoped_blocked_tool(name)
+            if scoped is None:
+                enforced = False
+            else:
+                kind, owner, tool = scoped
+                if kind == "mcp":
+                    server = (config.get("mcp_servers") or {}).get(owner) or {}
+                    enforced = tool in (server.get("disabled_tools") or [])
+                else:
+                    app = (config.get("apps") or {}).get(owner) or {}
+                    app_tool = (app.get("tools") or {}).get(tool) or {}
+                    enforced = app_tool.get("enabled") is False
+        if not enforced:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"Codex blocked-tool policy was not enforced for {name!r}",
+            )
+
+
 def native_codex_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
     if "native" not in common_utils.telemetry_providers(payload):
         return {}
@@ -671,6 +863,7 @@ def thread_config(
                 "bypass_hook_trust": True,
             },
         )
+    _apply_blocked_tools_config(payload, config)
     return config
 
 
@@ -755,7 +948,8 @@ def validate_runtime_payload(payload: dict[str, Any]) -> str:
             "NeMo Relay requires the built-in openai model provider",
         )
     child_environment(payload)
-    thread_config(payload, None)
+    config = thread_config(payload, None)
+    _validate_blocked_tools_config(payload, config)
     return fabric_runtime_id
 
 
@@ -891,10 +1085,12 @@ def _thread_options(
     payload: dict[str, Any], relay: CodexRelaySettings | None
 ) -> dict[str, Any]:
     settings = _settings(payload)
+    config = thread_config(payload, relay)
+    _validate_blocked_tools_config(payload, config)
     return {
         "approval_mode": approval_mode(payload),
         "base_instructions": _optional_string(settings, "base_instructions"),
-        "config": thread_config(payload, relay) or None,
+        "config": config or None,
         "cwd": str(resolve_cwd(payload)),
         "developer_instructions": _optional_string(settings, "developer_instructions"),
         "model": selected_model(payload),

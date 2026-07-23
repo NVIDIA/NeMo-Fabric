@@ -99,11 +99,27 @@ Use normalized `FabricConfig` fields for portable configuration:
   select matching skills through its normal discovery behavior.
 - `telemetry` enables native OpenTelemetry or NeMo Relay observability.
 
-The Codex adapter does not declare `tools.blocked` support. The current Codex
-runtime has per-MCP-server tool filters, but it does not provide one complete
-deny boundary for built-in, local, MCP, and hosted tools. NeMo Fabric therefore
-routes normalized blocked-tool policy as unsupported instead of applying a
-partial policy.
+The Codex adapter declares `tools.blocked` support and translates these names
+to Codex-native registration or filtering controls:
+
+- `shell`, `browser`, `web_search`, `apps`, `plugins`, `image_generation`,
+  `multi_agent`, `tool_suggest`, and `request_user_input` disable the
+  corresponding Codex tool or toolset.
+- `mcp` disables every configured MCP server.
+- `mcp:<server>:<tool>` adds the raw MCP tool name to that Fabric MCP server's
+  `disabled_tools` list.
+- `app:<connector>:<tool>` disables the raw app tool name for that connector.
+
+The adapter applies this policy after `config_overrides`, so Codex-specific
+overrides cannot re-enable a blocked tool. Unsupported, malformed, or unknown
+MCP server names fail before the Codex SDK runtime starts. This includes Codex
+built-ins without an enforceable per-tool control, such as `apply_patch`, and
+dynamic tool names that the supported high-level SDK does not expose.
+
+Blocked-tool policy requires the app-server runtime pinned by the adapter.
+NeMo Fabric rejects a configuration that combines `tools.blocked` with
+`harness.settings.codex_bin` because it cannot establish the same controls for
+an arbitrary runtime override.
 
 Codex-specific controls belong in `harness.settings`:
 
@@ -123,8 +139,9 @@ Set model selection through `models` and the working directory through
 `environment.workspace`.
 
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
-roots, and `config_overrides` are fixed when the runtime starts and cannot vary
-between `Runtime.invoke(...)` calls. Start a new runtime to change them.
+roots, blocked tools, and `config_overrides` are fixed when the runtime starts
+and cannot vary between `Runtime.invoke(...)` calls. Start a new runtime to
+change them.
 `Fabric.run(...)` starts the same runtime, invokes it once, and stops it, so the
 same settings are scoped to that single invocation.
 
