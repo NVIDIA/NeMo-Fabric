@@ -45,6 +45,11 @@ pip install "nemo-fabric[hermes]"
 | Hermes Agent | `nemo-fabric[hermes]` |
 | LangChain Deep Agents | `nemo-fabric[deepagents]` |
 
+**Supported Platforms**
+* Linux (x86_64, arm64)
+* macOS (arm64)
+* Windows (x86_64)
+
 Refer to [the installation guide](docs/getting-started/install.mdx) for more details.
 
 ## Quick Start
