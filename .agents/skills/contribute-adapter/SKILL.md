@@ -156,6 +156,7 @@ git diff --check
 - [ ] Precedence, actionable rejection, forwarding, isolation, results, telemetry, and artifacts are tested.
 - [ ] Package, runtime/test dependencies, installation, resolution, docs, SDK/YAML examples, fixtures, and generated artifacts agree.
 - [ ] Generated files came from repository commands, applicable CI catalogs enumerate the adapter, and the diff has no contract drift or unrelated changes.
+- [ ] Update this skill and affected adapter evidence when core changes adapter kinds, output framing, or lifecycle capabilities.
 
 ## References
 
