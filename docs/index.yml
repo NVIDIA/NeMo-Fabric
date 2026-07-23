@@ -24,22 +24,24 @@ navigation:
         path: ./sdk/python.mdx
   - section: Integrations
     contents:
-      - page: Overview
-        path: ./integrations/overview.mdx
       - section: Consumer Integrations
         contents:
+          - page: Overview
+            path: ./integrations/consumer/overview.mdx
           - page: Harbor
-            path: ./integrations/harbor.mdx
+            path: ./integrations/consumer/harbor.mdx
       - section: Harness Integrations
         contents:
+          - page: Overview
+            path: ./integrations/harness/overview.mdx
           - page: Claude Code
-            path: ./integrations/claude.mdx
+            path: ./integrations/harness/claude.mdx
           - page: Codex
-            path: ./integrations/codex.mdx
+            path: ./integrations/harness/codex.mdx
           - page: Hermes Agent
-            path: ./integrations/hermes.mdx
+            path: ./integrations/harness/hermes.mdx
           - page: LangChain Deep Agents
-            path: ./integrations/deepagents.mdx
+            path: ./integrations/harness/deepagents.mdx
   - section: Reference
     contents:
       - section: API

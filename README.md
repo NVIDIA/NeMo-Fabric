@@ -31,10 +31,10 @@ NeMo Fabric provides the following harness integrations:
 
 | Agent Harness | Package Extra |
 | --- | --- |
-| [Claude Code](docs/integrations/claude.mdx) | `nemo-fabric[claude]` |
-| [Codex](docs/integrations/codex.mdx) | `nemo-fabric[codex]` |
-| [Hermes Agent](docs/integrations/hermes.mdx) | `nemo-fabric[hermes]` |
-| [LangChain Deep Agents](docs/integrations/deepagents.mdx) | `nemo-fabric[deepagents]` |
+| [Claude Code](docs/integrations/harness/claude.mdx) | `nemo-fabric[claude]` |
+| [Codex](docs/integrations/harness/codex.mdx) | `nemo-fabric[codex]` |
+| [Hermes Agent](docs/integrations/harness/hermes.mdx) | `nemo-fabric[hermes]` |
+| [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` |
 
 ## Quick Start
 
@@ -186,10 +186,10 @@ systems, and platforms to NeMo Fabric through its public interfaces.
 
 - [Consumer integration skills](skills/README.md): repository-local coding-agent
   skills for integrating NeMo Fabric into an application through the Python SDK.
-- [Harbor integration](docs/integrations/harbor.mdx): validate the integration
-  with a deterministic, credential-free calculator smoke, optionally run the
-  same task with Hermes Agent or Claude, and evaluate real coding tasks with
-  SWE-Bench.
+- [Harbor integration](docs/integrations/consumer/harbor.mdx): validate the
+  integration with a deterministic, credential-free calculator smoke,
+  optionally run the same task with Hermes Agent or Claude, and evaluate real
+  coding tasks with SWE-Bench.
 
 ### Harness Integrations
 
