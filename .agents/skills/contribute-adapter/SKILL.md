@@ -4,7 +4,7 @@ description: Add or substantially change a NeMo Fabric harness adapter, includin
 license: Apache-2.0
 ---
 
-# Contribute An Adapter To NVIDIA NeMo Fabric
+# Contribute an Adapter to NVIDIA NeMo Fabric
 
 ## Companion Guidance
 
@@ -16,21 +16,10 @@ the validation matrix, and `prepare-pr` for review handoff.
 Do not use this skill for a consumer application that only selects an existing
 adapter. Use the consumer `nemo-fabric-integrate` skill for that work.
 
-## Define The Contract
+## Contract
 
-Read the authoritative surfaces before editing. Use the closest existing
-adapter only for harness-specific patterns, not to infer the core contract:
-
-- `schemas/adapter-descriptor.schema.json` and the descriptor types in
-  `crates/fabric-core/src/config.rs`.
-- Invocation construction, subprocess dispatch, result wrapping, and artifact
-  collection in `crates/fabric-core/src/runtime.rs`.
-- Planning and preflight behavior in `crates/fabric-core/src/config.rs` and
-  `crates/fabric-core/src/doctor.rs`.
-- Public models in `python/src/nemo_fabric/models.py` and result types in
-  `python/src/nemo_fabric/types.py`.
-- Shared utilities in `adapters/common/` and the closest adapter by harness API
-  and lifecycle.
+Read the authoritative surfaces under References before editing. Use the closest
+existing adapter only for harness-specific patterns, not the core contract.
 
 Decide the following before implementation:
 
@@ -49,7 +38,7 @@ Decide the following before implementation:
 5. Identify fixed requirements, dynamic credentials, telemetry, workspace,
    state, and artifact needs.
 
-## Implement The Narrowest Adapter
+## Implementation
 
 - Use the existing Fabric `python` or `process` runner and normalized
   request/result contracts. Reuse `adapters/common/` only when its contract
@@ -98,7 +87,7 @@ catalogs and CI enumerations. Ship its descriptor under
 `share/nemo-fabric/adapters/<name>`. Use `maintain-packaging` to regenerate
 lockfiles and package artifacts.
 
-## Map Capabilities And Policy
+## Capabilities and Policy
 
 Use this table as the minimum capability review. Omit claims that the adapter
 cannot implement and test end to end.
@@ -116,7 +105,7 @@ cannot implement and test end to end.
 Descriptor claims participate in planning and routing. Assert their exact
 values in focused tests so capability expansion is review-visible.
 
-## Add Focused Evidence
+## Evidence
 
 Add only tests that prove adapter behavior or descriptor claims. Cover the
 applicable cases:
@@ -140,7 +129,7 @@ commands in the adapter README. Provide a canonical typed SDK example and, when
 the harness requires YAML, a canonical harness-native YAML fixture. Update docs
 and examples together when they expose the changed behavior.
 
-## Validate And Review
+## Validation
 
 Run `validate-change` and the applicable adapter commands:
 
@@ -155,9 +144,18 @@ uv run pre-commit run --all-files --show-diff-on-failure
 git diff --check
 ```
 
-Before handoff, confirm:
+## Checklist
 
 - [ ] Descriptor claims match implementation and positive, negative, and lifecycle evidence.
 - [ ] Precedence, actionable rejection, forwarding, isolation, results, telemetry, and artifacts are tested.
 - [ ] Package, runtime/test dependencies, installation, resolution, docs, SDK/YAML examples, fixtures, and generated artifacts agree.
 - [ ] Generated files came from repository commands, applicable CI catalogs enumerate the adapter, and the diff has no contract drift or unrelated changes.
+
+## References
+
+- Descriptor schema and types: `schemas/adapter-descriptor.schema.json` and
+  `crates/fabric-core/src/config.rs`.
+- Runtime invocation, result wrapping, and artifacts: `crates/fabric-core/src/runtime.rs`.
+- Planning and preflight: `crates/fabric-core/src/config.rs` and `crates/fabric-core/src/doctor.rs`.
+- Public models and result types: `python/src/nemo_fabric/models.py` and `python/src/nemo_fabric/types.py`.
+- Shared patterns: `adapters/common/` and the closest adapter by harness API and lifecycle.
