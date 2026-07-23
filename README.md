@@ -38,6 +38,8 @@ NeMo Fabric provides the following harness integrations:
 
 ## Supported Platforms
 
+NeMo Fabric supports the following platforms:
+
 * Linux (x86_64, arm64)
 * macOS (arm64)
 * Windows (x86_64)
