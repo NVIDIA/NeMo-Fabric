@@ -1,0 +1,31 @@
+diff --git a/adapters/claude/src/nemo_fabric_adapters/claude/adapter.py b/adapters/claude/src/nemo_fabric_adapters/claude/adapter.py
+index 2a57fd1..edd69d8 100644
+--- a/adapters/claude/src/nemo_fabric_adapters/claude/adapter.py
++++ b/adapters/claude/src/nemo_fabric_adapters/claude/adapter.py
+@@ -547,6 +547,7 @@ def build_options(
+         strict_mcp_config=True,
+         skills="all" if has_skill_plugin else None,
+         plugins=plugins,
++        include_partial_messages=bool(os.environ.get("POC_NATIVE_RECORD")),  # POC native tee
+         env=child_environment(
+             payload,
+             relay_gateway_url=relay.gateway.url if relay is not None else None,
+@@ -889,6 +890,18 @@ class ClaudeRuntime:
+             async with asyncio.timeout(invocation_timeout):
+                 await client.query(prompt)
+                 async for message in client.receive_response():
++                    if type(message).__name__ == "StreamEvent":  # POC native tee
++                        try:
++                            import sys as _sys
++
++                            _sys.path.insert(0, os.environ.get("POC_RECORDER_DIR", ""))
++                            from native_recorder import record as _record
++
++                            _ev = getattr(message, "event", {}) or {}
++                            _record("claude-sdk", _ev.get("type", "stream_event"), _ev)
++                        except Exception:
++                            pass
++                        continue
+                     if isinstance(message, ResultMessage):
+                         result = message
+                     else:

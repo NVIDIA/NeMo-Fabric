@@ -1,0 +1,29 @@
+diff --git a/adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py b/adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py
+index 07fd53a..570c680 100755
+--- a/adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py
++++ b/adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py
+@@ -273,6 +273,24 @@ class HermesRuntime:
+ 
+             with redirect_stdout(StringIO()):
+                 discover_plugins(force=True)
++                if os.environ.get("POC_NATIVE_RECORD"):  # POC native tee (temporary)
++                    import sys as _sys
++
++                    from hermes_cli import plugins as _plugins
++
++                    _sys.path.insert(0, os.environ.get("POC_RECORDER_DIR", ""))
++                    from native_recorder import record as _record
++
++                    _orig_invoke_hook = _plugins.PluginManager.invoke_hook
++
++                    def _teed_invoke_hook(self, hook_name, **kwargs):
++                        try:
++                            _record("hermes-cli", hook_name, dict(kwargs))
++                        except Exception:
++                            pass
++                        return _orig_invoke_hook(self, hook_name, **kwargs)
++
++                    _plugins.PluginManager.invoke_hook = _teed_invoke_hook
+                 loaded_hermes_config = load_config()
+                 self._enabled_toolsets = resolve_hermes_toolsets(
+                     self._settings, loaded_hermes_config

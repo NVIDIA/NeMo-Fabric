@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Hermes streaming POC — findings
+# Hermes Streaming POC — Findings
 
 **Harness:** `nvidia.fabric.hermes` · **Relay mode:** in-process SDK plugin
 (`observability/nemo_relay`) · **Model:** `nvidia/nemotron-3-nano-30b-a3b`
@@ -13,7 +13,7 @@ Prompt: *"Write and run a short Python snippet that prints the sum of 1 to 10,
 then tell me the result."* — an LLM call plus tool execution, captured via
 `invoke_stream` with both recorders active.
 
-## Fixtures & how they were captured
+## Fixtures & How They Were Captured
 - [`native-events.jsonl`](native-events.jsonl) — the native stream, teed *before*
   Relay by patching `hermes_cli.plugins.PluginManager.invoke_hook` (the single
   hook-dispatch chokepoint that Relay's plugin also subscribes to) via the POC-only
@@ -21,7 +21,7 @@ then tell me the result."* — an LLM call plus tool execution, captured via
 - [`events.atof.jsonl`](events.atof.jsonl) — Relay's ATOF from the *same* run
   (11 records; 2 oversized request snapshots have their `data` truncated).
 
-## Native event units (real, pre-Relay)
+## Native Event Units (Real, Pre-Relay)
 ```
 1 on_session_start   5 pre_tool_call      9 transform_llm_output
 2 pre_llm_call        6 post_tool_call    10 post_llm_call
@@ -33,7 +33,9 @@ Each hook carries structured kwargs, e.g. `pre_tool_call`:
 tool_call_id, turn_id, api_request_id, middleware_trace}`. **Unit = a lifecycle
 hook, not a token** (Hermes has no token-level deltas).
 
-## Native → ATOF paired examples (same run)
+## Native → ATOF Paired Examples (Same Run)
+Each native hook (or hook group) paired with the ATOF record it produced:
+
 | native event | ATOF record | preserved | dropped / changed |
 |---|---|---|---|
 | #5 `pre_tool_call` (execute_code) | `scope execute_code start` uuid `019f8bba…`, `data:{code:"print(sum(range(1,11)))"}` | tool name, **code/args**, and **all IDs** (`tool_call_id`/`task_id`/`turn_id`/`api_request_id`/`session_id` all appear in ATOF) | **`middleware_trace`** field only |
@@ -45,7 +47,7 @@ Pairing key: native `sequence` + shared `session_id` (native
 `session_id="runtime-1784755641256-…"` appears verbatim in the ATOF scope name
 `hermes-session-runtime-1784755641256-…`); event order matches.
 
-## What cannot be normalized without loss
+## What Cannot Be Normalized Without Loss
 - **Absent from ATOF entirely:** the `transform_llm_output` hook and the
   `middleware_trace` field — you cannot recreate them from ATOF.
 - **Collapsed:** ATOF folds the four native hooks around one LLM step
@@ -56,7 +58,7 @@ Pairing key: native `sequence` + shared `session_id` (native
   projection that drops mostly redundant bookkeeping.
 - **No token-level deltas** either way — Hermes streams at hook/scope granularity.
 
-## Streamed events vs. terminal response · duplicate-rendering risk
+## Streamed Events vs. Terminal Response · Duplicate-Rendering Risk
 Streamed scopes/marks are structural; the terminal `RunResult.output` is the final
 text. The final `nvidia` LLM scope's data and the terminal output **both** contain
 the answer → render streamed events for progress, terminal via
@@ -70,29 +72,26 @@ session/turn/tool/llm structure a streaming UI needs. The loss is small and
 Hermes-specific with no cross-harness peer, so normalizing isn't worth it for
 v0.1; ship raw ATOF.
 
-## Reproduce this experiment
+## Reproduce This Experiment
 Prereqs: a native extension matching the Python SDK (`just build-python`, or
-`PYO3_PYTHON=$PWD/.venv/bin/python cargo build -p fabric-python --release` then copy
-`target/release/lib_native.dylib` → `python/src/nemo_fabric/_native.abi3.so`), and
-`NVIDIA_API_KEY` in the environment.
+`PYO3_PYTHON=$PWD/.venv/bin/python cargo build -p fabric-python --release`, then copy
+`target/release/lib_native.dylib` → `python/src/nemo_fabric/_native.abi3.so`) and
+`NVIDIA_API_KEY` in the environment. Output goes to a scratch directory so the
+committed fixtures are never overwritten. The seam is a checked-in, reversible patch
+([`../patches/hermes-native-tee.patch`](../patches/hermes-native-tee.patch)):
 
-1. **Apply the POC native tee** (temporary — revert after capture) in
-   `adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py`, immediately after
-   `discover_plugins(force=True)`: patch `hermes_cli.plugins.PluginManager.invoke_hook`
-   to record each hook then delegate. Exact snippet:
-   [`../common/native_recorder.py`](../common/native_recorder.py).
-2. **Run with both recorders active** — this writes both fixtures in this folder:
-   ```bash
-   export POC_RECORDER_DIR="$PWD/streaming-poc/common"
-   export POC_NATIVE_RECORD="$PWD/streaming-poc/hermes/native-events.jsonl"; rm -f "$POC_NATIVE_RECORD"
-   python streaming-poc/common/run_harness.py nvidia.fabric.hermes \
-     streaming-poc/hermes/events.atof.jsonl \
-     "Write and run a short Python snippet that prints the sum of 1 to 10, then tell me the result."
-   ```
-   `run_harness` streams the Relay ATOF via `invoke_stream` → `events.atof.jsonl`;
-   the tee writes the native hooks → `native-events.jsonl`.
-3. **Revert** the adapter patch:
-   `git checkout -- adapters/hermes/src/nemo_fabric_adapters/hermes/adapter.py`.
+```bash
+out=$(mktemp -d)
+git apply streaming-poc/patches/hermes-native-tee.patch      # POC seam; gated on POC_NATIVE_RECORD
+POC_RECORDER_DIR="$PWD/streaming-poc/common" \
+POC_NATIVE_RECORD="$out/native-events.jsonl" \
+python streaming-poc/common/run_harness.py nvidia.fabric.hermes \
+  "$out/events.atof.jsonl" \
+  "Write and run a short Python snippet that prints the sum of 1 to 10, then tell me the result."
+git apply -R streaming-poc/patches/hermes-native-tee.patch   # revert the seam
+```
 
-(Oversized full-request records in `events.atof.jsonl` have their `data` truncated
-for size; IDs and deltas are preserved.)
+`run_harness` streams the Relay ATOF via `invoke_stream` → `$out/events.atof.jsonl`;
+the seam writes the native hooks → `$out/native-events.jsonl`. The committed fixtures
+are these outputs with oversized request snapshots truncated for size before
+check-in.

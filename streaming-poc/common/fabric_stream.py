@@ -152,7 +152,11 @@ class InvokeStream:
         while True:
             while not q.empty():
                 q.get_nowait()
-            try:  # settle: catch any straggler Relay flushes after completion
+            # Settle window to catch trailing Relay flushes. NOTE: this is a timing
+            # heuristic, not a guarantee — a record arriving after _DRAIN can still
+            # leak into the next turn. Production needs a positive turn boundary
+            # (per-record turn attribution or a terminal delivery ack), not a timer.
+            try:
                 await asyncio.wait_for(q.get(), _DRAIN)
             except asyncio.TimeoutError:
                 break

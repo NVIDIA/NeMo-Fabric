@@ -3,27 +3,27 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Production implementation — work breakdown
+# Production Implementation — Work Breakdown
 
 Turns the validated POC into a shippable `Runtime.invoke_stream()`. Each item is
 scoped from real POC findings; effort is relative (S/M/L).
 
-## 1. SDK surface (M)
+## 1. SDK Surface (M)
 - Add `Runtime.invoke_stream(*, input, request) -> InvokeStream` returning an async
   iterator of **raw ATOF records**, plus `await stream.result() -> RunResult` and
   `await stream.aclose()`. (POC: `common/fabric_stream.py`.)
 - Gate on Relay: raise `FabricCapabilityError` when Relay is not enabled.
 - Keep `RunResult` strictly out of band (no in-band terminal event).
 
-## 2. Endpoint injection at `start_runtime` (M)
-- In `Fabric.start_runtime`, when `relay_enabled`, auto-inject a loopback ndjson
+## 2. Endpoint Injection at `start_runtime` (M)
+- In `Fabric.start_runtime`, when `relay_enabled`, auto-inject a loopback NDJSON
   ATOF endpoint into `relay.observability.atof.endpoints` before planning. Verified
   to survive planning into the adapter's `relay-config.json` for all four adapters
   — **no Rust/core change required**.
 - One listener per runtime (fixed at start); `invoke_stream` delimits turns by
   invoke completion.
 
-## 3. Loopback listener (M)
+## 3. Loopback Listener (M)
 - **Must handle large records:** gateway ATOF embeds full request/response;
   records exceed aiohttp's 512 KB readline limit — read raw chunks, split on
   newlines.
@@ -34,24 +34,30 @@ scoped from real POC findings; effort is relative (S/M/L).
   or ship aiohttp behind `nemo-fabric[streaming]`. (`aiohttp` is transitive today,
   not a first-party dep.)
 
-## 4. Capability discovery (S)
+## 4. Capability Discovery (S)
 - Surface `runtime.supports_streaming` (== `relay_enabled`) for discovery.
 - Do **not** overload `RuntimeCapabilities.streaming` (native progressive output;
   stays `False`).
 
-## 5. Gateway provisioning (S/M)
-- Claude/Codex require the `nemo-relay` gateway CLI with the ndjson stream sink →
+## 5. Gateway Provisioning (S/M)
+- Claude/Codex require the `nemo-relay` gateway CLI with the NDJSON stream sink →
   **≥0.6.0** (the adapter already version-checks). Document provisioning
   (`cargo install nemo-relay-cli`), and that streaming's floor is the
   stream-sink-capable CLI. In-process harnesses need no gateway.
 
-## 6. Multi-turn semantics (S)
-- Per-runtime listener; `invoke_stream` per turn. Two-turn isolation proven by a
-  checked-in artifact (`../two-turn-isolation.jsonl`; runner
-  `common/two_turn_isolation.py`): one persistent runtime, two turns, disjoint
-  record `uuid`s (overlap 0), no sentinel leakage.
+## 6. Multi-Turn Semantics (M)
+- Per-runtime listener; `invoke_stream` per turn. The POC delimits turns with a
+  250 ms drain heuristic; the checked-in artifact (`../two-turn-isolation.jsonl`;
+  runner `common/two_turn_isolation.py`) demonstrates **one** clean run — one
+  persistent runtime, two turns, disjoint record `uuid`s (overlap 0), no sentinel
+  leakage.
+- **Required for production — a positive turn boundary, not the timer.** The drain is
+  best-effort: a trailing record arriving after the window can leak into the next
+  turn. Add explicit per-record turn attribution (a turn id on each ATOF record) or a
+  terminal delivery acknowledgement from Relay so every record is unambiguously
+  assigned to its turn before the next `invoke_stream`.
 
-## 7. Early-exit / cancellation contract (S)
+## 7. Early-Exit / Cancellation Contract (S)
 - Document + implement: to stop early, break the `async for` **then**
   `await stream.aclose()`. Breaking alone stops iteration but does **not** finalize;
   `aclose()` **waits for the turn to complete** (the blocking native call runs to
@@ -65,7 +71,7 @@ scoped from real POC findings; effort is relative (S/M/L).
   interrupt through the native boundary, or an adapter-level turn interrupt) is
   required before advertising cancellation.
 
-## 8. Consumer contract documentation (M)
+## 8. Consumer Contract Documentation (M)
 - Raw ATOF record shape; granularity by mode (gateway = per-delta events, token
   **text terminal-only** in current ATOF; in-process = scope-level).
 - **Delta-vs-terminal:** render deltas live, treat terminal/`RunResult` as
@@ -74,22 +80,22 @@ scoped from real POC findings; effort is relative (S/M/L).
   parallel/nested work; stream order alone is insufficient).
 - Sub-agent echo dedup keyed by scope `uuid`.
 
-## 9. Tests & fixtures (M)
+## 9. Tests & Fixtures (M)
 - Reuse POC prototypes: two-turn isolation, early-exit, buffering, long-line.
 - Per-harness capture smoke tests behind provider-cred markers.
 - Commit the `streaming-poc/*/` ATOF fixtures as regression fixtures.
 
-## 10. Docs & skills parity (S)
+## 10. Docs & Skills Parity (S)
 - Update `docs/sdk/python.mdx` and the consumer skills (`skills/`) with the
   streaming contract (repo requires SDK/docs/skills parity).
 
-## Deferred (explicitly out of scope for v0.1)
+## Deferred (Explicitly Out of Scope for v0.1)
 - Normalized/typed event layer over raw ATOF (a `FabricStreamEvent` mapping) —
   optional, opt-in, on top of the raw stream; only if a consumer needs
   provider-agnostic text/tool events.
 - Non-Relay (native-SDK) streaming path.
 
-## Known follow-ups from the POC environment
+## Known Follow-Ups from the POC Environment
 - `nemo-fabric` native must be built to match the Python SDK (stale `.so` breaks
   `plan()/run()`); ensure CI builds it. Build with the venv interpreter
   (`PYO3_PYTHON`) or `just build-python`.

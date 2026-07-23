@@ -1,0 +1,26 @@
+diff --git a/adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py b/adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py
+index 0a3523e..30f35c5 100644
+--- a/adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py
++++ b/adapters/deepagents/src/nemo_fabric_adapters/deepagents/adapter.py
+@@ -723,6 +723,21 @@ async def invoke_compiled_agent(
+         else agent.astream(inputs, stream_mode=["updates", "values"], subgraphs=True)
+     )
+     async for namespace, mode, chunk in stream:
++        if os.environ.get("POC_NATIVE_RECORD"):  # POC native tee (temporary)
++            try:
++                import sys as _sys
++                import time as _time
++
++                _sys.path.insert(0, os.environ.get("POC_RECORDER_DIR", ""))
++                from native_recorder import record as _record
++
++                _record(
++                    "langgraph",
++                    str(mode),
++                    {"namespace": list(namespace), "ts": _time.time(), "chunk": chunk},
++                )
++            except Exception:
++                pass
+         if mode == "updates" and isinstance(chunk, dict):
+             event: dict[str, Any] = {"nodes": [str(node) for node in chunk]}
+             if namespace:

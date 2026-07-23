@@ -3,11 +3,16 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Streaming POC — implementation spec
+# Streaming POC — Implementation Spec
 
 How the relay-only streaming works end to end, centered on the **loopback NDJSON
 listener** that carries raw ATOF back to the caller *out of band*. The v0.1 API is
 `runtime.invoke_stream()` yielding raw ATOF, with `RunResult` delivered separately.
+
+> **Proposed v0.1 API — not implemented in the SDK.** The `fabric.start_runtime(config).invoke_stream(...)`
+> snippets below show the intended production surface. The runnable POC models it in
+> [`common/fabric_stream.py`](common/fabric_stream.py) via `start_streaming_runtime()`
+> and `StreamingRuntime`.
 
 ## Architecture
 
@@ -71,7 +76,7 @@ flowchart LR
     Result -->|"6. Return separately from stream"| User
 ```
 
-## End-to-end flow
+## End-to-End Flow
 
 1. **Start runtime.** `fabric.start_runtime(config)`. When Relay is enabled, Fabric
    starts a loopback listener and injects its URL into
@@ -92,7 +97,7 @@ flowchart LR
    `RunResult` returns through the Rust core and is delivered by
    `await stream.result()` — never mixed into the event stream.
 
-## The loopback NDJSON listener
+## The Loopback NDJSON Listener
 
 - A small loopback HTTP server in the SDK process (`common/atof_stream.py`). Relay
   opens **one chunked `application/x-ndjson` POST** on the first event and streams
@@ -105,12 +110,18 @@ flowchart LR
   backs off; delivery is best-effort under sustained stall (Relay drops past its
   ~3 s flush/close timeout). Pass `maxsize=0` to opt into an unbounded queue.
 - **One listener per runtime**; `invoke_stream` delimits turns by `invoke`
-  completion. Two-turn isolation is demonstrated by a checked-in artifact —
+  completion, then drains trailing records for a short settle window (`_DRAIN`,
+  250 ms). The checked-in artifact
   [`two-turn-isolation.jsonl`](two-turn-isolation.jsonl) (runner:
-  [`common/two_turn_isolation.py`](common/two_turn_isolation.py)): two turns on one
-  persistent runtime, disjoint record `uuid`s (overlap 0) and no sentinel leakage.
+  [`common/two_turn_isolation.py`](common/two_turn_isolation.py)) demonstrates **one**
+  clean run — two turns on one persistent runtime, disjoint record `uuid`s (overlap
+  0), no sentinel leakage. **This is best-effort, not a guarantee:** the settle
+  window is a timing heuristic, so a trailing record that arrives after it (e.g. at
+  300 ms) could still land in the next turn. Production needs a *positive* turn
+  boundary — explicit per-record turn attribution or a terminal delivery
+  acknowledgement — not a timer (see the work breakdown).
 
-## Relay integration modes (one mechanism)
+## Relay Integration Modes (One Mechanism)
 
 - **In-process** (Hermes, Deep Agents): Relay runs inside the adapter subprocess
   and pushes ATOF directly to the loopback URL.
@@ -119,7 +130,7 @@ flowchart LR
 
 Both honor the *same* injected endpoint — no per-harness streaming code.
 
-## Key properties
+## Key Properties
 
 - **Relay-only**: available only when Relay is enabled; else `FabricCapabilityError`.
 - **Raw ATOF pass-through**; no Fabric-specific normalization in v0.1.
@@ -128,8 +139,9 @@ Both honor the *same* injected endpoint — no per-harness streaming code.
   `await stream.aclose()`. Breaking alone only stops iteration — it does **not**
   clean up; `aclose()` is what finalizes: it **waits for the turn to complete** (the
   blocking native call on a worker thread runs to completion — it is not
-  interrupted), then drains and discards the unread records so none leak into the
-  next turn. `stream.result()` stays awaitable throughout. Until the stream is
+  interrupted), then drains and discards the unread records (best-effort; the drain
+  is the same 250 ms timing heuristic — see the loopback-listener note on isolation).
+  `stream.result()` stays awaitable throughout. Until the stream is
   finalized (fully consumed or `aclose()`d), the next `invoke_stream` raises
   `FabricStateError`. **There is no in-flight cancellation in v0.1:**
   `runtime.stop()` also raises while a turn is active (idle-only teardown), so a turn

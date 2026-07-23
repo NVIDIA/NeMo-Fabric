@@ -11,7 +11,7 @@ Env:
     FABRIC_INPUT       default prompt if [input] not given
 
 Prereqs: a correctly built native extension (see streaming-poc/README.md) and
-provider creds (NVIDIA_API_KEY in-process; OPENAI_API_KEY Codex; Claude accepts
+provider credentials (NVIDIA_API_KEY in-process; OPENAI_API_KEY Codex; Claude accepts
 ANTHROPIC_API_KEY *or* a signed-in Claude Code subscription via ANTHROPIC_CONFIG_DIR
 with the key unset — the gateway forwards the OAuth session). Every ATOF record
 streamed live is written to <out.jsonl>.

@@ -1,0 +1,59 @@
+diff --git a/adapters/codex/src/nemo_fabric_adapters/codex/adapter.py b/adapters/codex/src/nemo_fabric_adapters/codex/adapter.py
+index 0d08f92..30af52f 100644
+--- a/adapters/codex/src/nemo_fabric_adapters/codex/adapter.py
++++ b/adapters/codex/src/nemo_fabric_adapters/codex/adapter.py
+@@ -919,6 +919,42 @@ async def _open_thread(
+     )
+ 
+ 
++async def _poc_run_with_tee(handle: Any) -> Any:
++    """POC-only: run the turn while teeing each native notification before Relay."""
++    from openai_codex._run import _collect_async_turn_result
++
++    stream = handle.stream()
++
++    async def _teed() -> Any:
++        async for event in stream:
++            try:
++                import sys as _sys
++
++                _sys.path.insert(0, os.environ.get("POC_RECORDER_DIR", ""))
++                from native_recorder import record as _record
++
++                payload_obj = getattr(event, "payload", None)
++                if hasattr(payload_obj, "model_dump"):
++                    native = payload_obj.model_dump(mode="json")
++                elif hasattr(payload_obj, "__dict__"):
++                    native = dict(payload_obj.__dict__)
++                else:
++                    native = payload_obj
++                _record(
++                    "codex-sdk",
++                    getattr(event, "method", "event"),
++                    {"method": getattr(event, "method", None), "payload": native},
++                )
++            except Exception:
++                pass
++            yield event
++
++    try:
++        return await _collect_async_turn_result(_teed(), turn_id=handle.id)
++    finally:
++        await stream.aclose()
++
++
+ async def _invoke_thread(
+     payload: dict[str, Any], thread: Any
+ ) -> tuple[dict[str, Any], bool]:
+@@ -932,7 +968,10 @@ async def _invoke_thread(
+                 effort=_reasoning_effort(payload),
+                 output_schema=_output_schema(payload),
+             )
+-            result = await handle.run()
++            if os.environ.get("POC_NATIVE_RECORD"):  # POC native tee (temporary)
++                result = await _poc_run_with_tee(handle)
++            else:
++                result = await handle.run()
+             return normalize_result(payload, thread_id=thread.id, result=result), True
+     except TimeoutError as error:
+         await _interrupt_turn(handle)

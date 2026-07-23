@@ -3,10 +3,11 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Streaming POC — cross-harness synthesis & recommendation
+# Streaming POC — Cross-Harness Synthesis & Recommendation
 
-Synthesis of the four child POCs. Each folder holds the harness's native SDK stream
-(teed before Relay) and Relay's ATOF from the same run — **Hermes**
+Synthesis of the three child POCs — covering four harnesses. Each folder holds the
+harness's native SDK stream (teed before Relay) and Relay's ATOF from the same run —
+**Hermes**
 ([findings](../hermes/findings.md)) and **Deep Agents**
 ([findings](../deepagents/findings.md)) in-process, **Claude**
 ([findings](../claude/findings.md)) and **Codex** ([findings](../codex/findings.md))
@@ -17,22 +18,27 @@ prototype is harness-agnostic across both Relay modes.
 cross-harness uniformity is **structural — no bespoke schema needed.** The envelope
 is uniform (`scope`/`mark`, `uuid`/`parent_uuid`, one `llm.chunk` per SSE event); the
 per-event *content* stays provider-specific (`response.*` items vs
-`message`/`content_block` events); and the gateway projection drops exactly one
-native detail — the **per-delta token text**, which lands only in the terminal scope.
+`message`/`content_block` events). ATOF is a lossy projection of the native stream —
+it also drops, e.g., content-block start bodies/types and Codex app-server lifecycle
+detail — but the **only rendering-relevant loss shared by both gateway harnesses is
+the per-delta token text**, which lands only in the terminal scope.
 
-## Cross-harness evidence
+## Cross-Harness Evidence
+The captured native layer, stream unit, token-delta behavior, nesting, ordering,
+terminal semantics, and duplicate-rendering risk for each harness:
+
 | | Hermes | Deep Agents | Claude | Codex |
 |---|---|---|---|---|
 | Relay mode | in-process | in-process | gateway CLI | gateway CLI |
-| native API (captured layer) | AIAgent callbacks | LangGraph + middleware | Anthropic Messages SSE (`StreamEvent`) | **Codex app-server notifications** (`item/agentMessage/delta`) — Relay taps Responses SSE at the gateway |
+| native API (captured layer) | Hermes lifecycle/plugin hooks | LangGraph + middleware | Anthropic Messages SSE (`StreamEvent`) | **Codex app-server notifications** (`item/agentMessage/delta`) — Relay taps Responses SSE at the gateway |
 | **stream unit** | callback scope/mark | scope tree (nested) | message → content_block → delta | response → item → delta (ATOF) / notification (native) |
 | **token deltas** | ❌ (scope-level) | ❌ (scope-level) | ✅ SSE events live (`content_block_delta`); **text terminal-only** in current ATOF | ✅ SSE events live (`response.output_text.delta`); **text terminal-only** in current ATOF |
 | **nesting** | session>turn>tool/llm | deep (delegated sub-agents) | message>block | response>item |
 | **ordering** | temporal | temporal; **parallel subagents observed** — interleaved, keyed by `parent_uuid`/`namespace` | temporal | temporal |
-| **terminal** | `session end` scope + metadata | `request end` scope (`status OK`) | `message_delta`(stop,usage)+`message_stop` | `response.completed`/`failed`(+usage) |
+| **terminal** | `session end` scope + metadata | `request end` scope — sequential run `OK`; parallel run `failed` at combine (after both `task` scopes close) | `message_delta`(stop,usage)+`message_stop` | `response.completed`/`failed`(+usage) |
 | duplicate risk | delta↔terminal | subagent-echo + delta↔terminal + tree | latent (text terminal-only today) | latent (text terminal-only today) |
 
-### Differences that matter
+### Differences That Matter
 - **Stream units differ per harness** — callback-scope vs. content-block vs.
   response/item. Codex ≠ Claude (different SDK event models); neither is inferable
   from the other.
@@ -47,9 +53,11 @@ native detail — the **per-delta token text**, which lands only in the terminal
 - **Terminal semantics differ** — scope-end + metadata vs. `message_stop` vs.
   `response.completed/failed`.
 
-## Final recommendation — v0.1
+## Final Recommendation — v0.1
 **Ship raw, Relay-generated ATOF pass-through**, surfaced as sugar over
-`Runtime.invoke()`:
+`Runtime.invoke()`. This is the **proposed** surface — not implemented in the SDK;
+the POC models it in [`../common/fabric_stream.py`](../common/README.md)
+(`start_streaming_runtime()` / `StreamingRuntime`):
 
 ```python
 runtime = await fabric.start_runtime(config)   # relay on → loopback ATOF endpoint injected
@@ -62,7 +70,7 @@ result = await stream.result()     # RunResult, out of band
   `FabricCapabilityError`.
 - **No Fabric-specific normalization** in v0.1; **`RunResult` out of band**.
 
-## Why normalization is deferred (not needed for v0.1)
+## Why Normalization Is Deferred (Not Needed for v0.1)
 1. **ATOF is already the common envelope** across all four harnesses (uniform
    `scope`/`mark` + `uuid`/`parent_uuid` + `timestamp`) — the uniformity goal is
    met without a bespoke schema.
@@ -80,5 +88,5 @@ result = await stream.result()     # RunResult, out of band
 A typed/normalized event layer can later sit **on top of** the raw stream, opt-in,
 without changing this contract.
 
-## Production work breakdown
+## Production Work Breakdown
 See [work-breakdown.md](work-breakdown.md).

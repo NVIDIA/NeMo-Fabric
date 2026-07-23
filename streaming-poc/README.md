@@ -3,15 +3,19 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NeMo Fabric streaming POC
+# NVIDIA NeMo Fabric Streaming POC
 
-Proof-of-concept for a Fabric streaming API built on **NeMo Relay-generated ATOF**.
+Proof-of-concept for a NeMo Fabric streaming API built on **NeMo Relay-generated ATOF**.
 Each harness folder holds its native SDK stream and Relay's ATOF from the same
 `invoke_stream` run, plus a `findings.md`; the gateway harnesses (Claude, Codex) ran
 on a subscription/SSO session — **no API key**. Conclusion + production plan:
 [`synthesis/`](synthesis/README.md).
 
-## The v0.1 contract (recommended)
+## The v0.1 Contract (Proposed API)
+> **Proposed v0.1 API — not implemented in the SDK.** The POC models this surface
+> with [`common/fabric_stream.py`](common/README.md) (runnable equivalent:
+> `start_streaming_runtime()` / `StreamingRuntime`).
+
 ```python
 runtime = await fabric.start_runtime(config)   # Relay enabled → loopback ATOF endpoint injected
 stream  = runtime.invoke_stream(input="...")
@@ -21,7 +25,7 @@ result = await stream.result()     # RunResult, out of band
 ```
 Relay-only; available only when Relay is enabled; raw ATOF pass-through (no
 normalization in v0.1); `RunResult` out of band. Why normalization is deferred:
-[`synthesis/README.md`](synthesis/README.md).
+[the synthesis](synthesis/README.md).
 
 ## Layout
 ```
@@ -43,7 +47,9 @@ same run), and `findings.md` (native→ATOF diff, loss analysis, deltas-vs-termi
 duplicate-rendering risks, recommendation). For the **gateway** harnesses the native
 stream carries the per-delta token text that Relay's ATOF projection drops.
 
-| Harness | mode | status |
+Status by harness:
+
+| Harness | Mode | Status |
 |---|---|---|
 | Hermes | in-process | ✅ real run — native + ATOF captured |
 | Deep Agents | in-process | ✅ real run — delegated subagents; **parallel subagents observed** (two `task` calls one message, 9.57s overlapping sibling scopes, interleaved namespaces) in a second capture ([findings](deepagents/findings.md#nesting--parallelism--delegation)) |
@@ -51,24 +57,29 @@ stream carries the per-delta token text that Relay's ATOF projection drops.
 | Codex | gateway | ✅ real run — live delta-event structure/timing + terminal text (subscription/SSO, no API key; needs Codex CLI ≥0.145.0) |
 
 ## Reproduce (Hermes / Deep Agents)
-Prereqs: a native extension matching the Python SDK (`just build-python`, or
-`PYO3_PYTHON=$PWD/.venv/bin/python cargo build -p fabric-python --release` then copy
-`target/release/lib_native.dylib` → `python/src/nemo_fabric/_native.abi3.so`), and
-`NVIDIA_API_KEY`.
+The gateway harnesses (Claude, Codex) have their own recipes in
+[claude/findings.md](claude/findings.md#reproduce-this-experiment) and
+[codex/findings.md](codex/findings.md#reproduce-this-experiment). For the in-process
+harnesses, with a native extension matching the Python SDK (`just build-python`, or
+`PYO3_PYTHON=$PWD/.venv/bin/python cargo build -p fabric-python --release`, then copy
+`target/release/lib_native.dylib` → `python/src/nemo_fabric/_native.abi3.so`) and
+`NVIDIA_API_KEY`, stream a run to a scratch file:
 
 ```bash
-python streaming-poc/common/run_harness.py nvidia.fabric.hermes out.atof.jsonl "your prompt"
+python streaming-poc/common/run_harness.py nvidia.fabric.hermes /tmp/out.atof.jsonl "your prompt"
 ```
-To also tee native events, set `POC_NATIVE_RECORD=<path>` and
-`POC_RECORDER_DIR=streaming-poc/common` and apply the seam patch documented in
-`common/native_recorder.py` (POC-only; revert after capture). The gateway harnesses
-additionally need `nemo-relay` ≥0.6.0 and either a subscription (SSO) or an API key
-— exact per-harness commands in
-[`claude/findings.md`](claude/findings.md#reproduce-this-experiment) and
-[`codex/findings.md`](codex/findings.md#reproduce-this-experiment) (Codex also needs
-CLI ≥0.145.0 for the `gpt-5.6-sol` account model).
 
-## Fixture note
+To also capture the native stream, apply the reversible seam patch and set the
+recorder environment (per-harness steps are in each `findings.md`):
+
+```bash
+git apply streaming-poc/patches/hermes-native-tee.patch
+POC_RECORDER_DIR=streaming-poc/common POC_NATIVE_RECORD=/tmp/native.jsonl \
+  python streaming-poc/common/run_harness.py nvidia.fabric.hermes /tmp/out.atof.jsonl "your prompt"
+git apply -R streaming-poc/patches/hermes-native-tee.patch
+```
+
+## Fixture Note
 Oversized request/response snapshot records have their `data` truncated in the
 committed ATOF fixtures; per-delta records, IDs, usage, and terminal text are
 preserved. The per-delta token **text** lives in each folder's `native-events.jsonl`

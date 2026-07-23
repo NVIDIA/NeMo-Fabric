@@ -3,6 +3,12 @@
 
 """Turn-isolation demonstration for the streaming POC — the *early-exit* path.
 
+This demonstrates isolation for **one** run; it is not a protocol guarantee. Turns
+are delimited by a 250 ms drain heuristic (`fabric_stream._DRAIN`), so a trailing
+record arriving after that window could still land in the next turn. A production
+build needs a positive turn boundary (per-record turn attribution or a terminal
+delivery acknowledgement), not a timer.
+
 Exercises the path where the shared-listener leak would occur (not just fully
 drained sequential turns):
 
