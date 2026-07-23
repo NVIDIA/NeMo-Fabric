@@ -23,16 +23,16 @@ existing adapter only for harness-specific patterns, not the core contract.
 
 Decide the following before implementation:
 
-1. Choose the harness boundary: Python SDK or module, CLI/process, or service.
-   Use `python` for Python-owned execution and `process` for an executable. Core
-   runtime dispatch does not yet implement `http` service or `native_plugin`
-   execution.
+1. Choose the harness boundary: SDK/module, CLI/process, or service. Use
+   `python` for Python-owned execution and `process` for any executable,
+   including TypeScript/Node SDK or CLI wrappers. Core runtime dispatch does not
+   yet implement `http` service or `native_plugin` execution.
 2. Place a repository adapter under `adapters/<name>`. Define its install extra
    and packaged descriptor. Choose the matching `harness.resolution` strategy,
    and document repository or `base_dir` descriptor discovery; wheel package
    data alone does not add a descriptor to core discovery.
-3. Decide whether invocations are one-shot and independent or stateful and
-   resume harness state for the same `runtime_context.runtime_id`.
+3. Define adapter-owned harness-session behavior: start fresh per invocation or
+   persist and resume state for the same `runtime_context.runtime_id`.
 4. List the normalized fields the adapter supports, partially supports, or
    rejects.
 5. Identify fixed requirements, dynamic credentials, telemetry, workspace,
@@ -44,12 +44,14 @@ Decide the following before implementation:
   request/result contracts. Reuse `adapters/common/` only when its contract
   fits; do not add a runner or abstraction for one adapter.
 - Use `adapters/<name>/` with `LICENSE -> ../../LICENSE`, `README.md`,
-  `fabric-adapter.json`, `pyproject.toml`, `uv.lock`, and
-  `src/nemo_fabric_adapters/<name>/adapter.py`; put focused tests in
+  `fabric-adapter.json`, language-native package and lock files, a source entry
+  point, and focused tests. For Python, use `pyproject.toml`, `uv.lock`,
+  `src/nemo_fabric_adapters/<name>/adapter.py`, and
   `tests/adapters/test_<name>*.py`. Keep the package independent and small.
-- Declare only adapter-owned runtime dependencies. Do not add the wrapped harness
-  or packages supplied by its agent package. Put local-test-only packages in a
-  dependency group.
+- Keep published runtime dependencies (`[project].dependencies` for Python)
+  razor-thin and adapter-owned: exclude the harness and agent-supplied packages.
+  Put harness/test dependencies in a non-published, language-native development
+  group (`[dependency-groups]` for UV/Python).
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.
@@ -69,23 +71,23 @@ Decide the following before implementation:
 - Forward only required system variables, selected credential variables,
   telemetry variables, and documented harness-specific environment. Never
   forward or log unrelated environment values.
-- Emit one JSON object on stdout and diagnostics on stderr. Return a nonzero
-  exit code for failures so core result normalization remains accurate.
+- For current non-streaming runners, emit one terminal JSON object on stdout;
+  use stderr for diagnostics and a nonzero exit status for failures.
 - Scope workspace, generated config, state, sessions, and artifacts to the
   resolved runtime context. Stateful adapters must isolate Fabric runtime IDs.
-- Implement only the harness lifecycle hooks needed for start, invoke, resume,
-  and cleanup; do not claim unsupported service, streaming, update, or
-  cancellation behavior.
+- Claim only lifecycle operations supported end to end by the core runner and
+  adapter; implement the required start, invoke, resume, and cleanup hooks.
 - Keep stdout stable: emit `response` plus adapter-specific extensions such as
   `error`, harness `events`, `usage`, and session IDs. Fabric supplies top-level
   harness/adapter identity, lifecycle IDs, `status`, `error`, artifacts,
   telemetry, Fabric lifecycle events, and metadata when it builds `RunResult`.
 
-Wire a public Python package into root optional extras, the adapter dependency
-group, `[tool.uv.sources]`, `python_projects` in `justfile`, and applicable
-catalogs and CI enumerations. Ship its descriptor under
-`share/nemo-fabric/adapters/<name>`. Use `maintain-packaging` to regenerate
-lockfiles and package artifacts.
+Wire public adapter packages into language-native installation,
+descriptor, build, catalog, and CI surfaces. For Python, add the package to root
+optional extras, the adapter dependency group, `[tool.uv.sources]`,
+`python_projects` in `justfile`, and applicable catalogs and CI enumerations;
+ship its descriptor under `share/nemo-fabric/adapters/<name>`. Use
+`maintain-packaging` to regenerate lockfiles and package artifacts.
 
 ## Capabilities and Policy
 
@@ -150,6 +152,7 @@ git diff --check
 - [ ] Precedence, actionable rejection, forwarding, isolation, results, telemetry, and artifacts are tested.
 - [ ] Package, runtime/test dependencies, installation, resolution, docs, SDK/YAML examples, fixtures, and generated artifacts agree.
 - [ ] Generated files came from repository commands, applicable CI catalogs enumerate the adapter, and the diff has no contract drift or unrelated changes.
+- [ ] Update this skill and affected adapter evidence when core changes adapter kinds, output framing, or lifecycle capabilities.
 
 ## References
 
