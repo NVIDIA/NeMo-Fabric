@@ -22,6 +22,8 @@ then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes Agent runs o
 Build the standalone Relay executable that will be uploaded into the isolated
 task container for the Claude walkthrough:
 
+> **TEMP — replace the pre-release alpha tag with a stable release once available.**
+
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 
