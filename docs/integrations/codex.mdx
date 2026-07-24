@@ -48,22 +48,11 @@ mechanism that covers built-in, local, MCP, and hosted tools. NeMo Fabric
 reports normalized blocked-tool policy as unsupported instead of enforcing
 only part of the requested policy.
 
-## Select a Codex Runtime
+## Codex Runtime Ownership
 
 The Codex SDK installs and selects its matching app-server runtime. NeMo Fabric
 does not declare or select the runtime package separately. A `codex` command on
 `PATH` does not replace the SDK-owned runtime.
-
-To override the SDK-selected app-server intentionally, set an absolute path or
-a path relative to the NeMo Fabric config root in `harness.settings.codex_bin`:
-
-```python
-config.harness.settings["codex_bin"] = "/path/to/codex"
-```
-
-NeMo Fabric passes this path to `CodexConfig.codex_bin`; it does not invoke the
-command as a CLI adapter. Pin the override in reproducible environments because
-the app-server protocol can change before a matching Python SDK is published.
 
 ## Choose an Authentication Mode
 
@@ -117,7 +106,7 @@ runtime, invokes it once, and stops it, so the gateway is scoped to that single
 invocation. The SDK still obtains credentials from the selected Codex
 authentication mode.
 
-Relay-enabled Codex runs require `models.default.provider` to be `openai`.
+Relay-enabled Codex runs require the selected model provider to be `openai`.
 The custom `nvidia` provider uses its configured NVIDIA Responses endpoint and
 does not support the built-in provider redirect that Relay requires. Use the
 `nvidia` provider without Relay.

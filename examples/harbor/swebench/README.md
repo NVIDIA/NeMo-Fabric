@@ -93,8 +93,8 @@ uv run --extra runtime --extra harbor harbor run \
   --max-retries 1
 ```
 
-For a self-hosted OpenAI-compatible model, change `--model` and add a
-`base_url` to `fabric_harness_settings`. The server must support automatic tool
+For a self-hosted OpenAI-compatible model, change `--model` and add
+`--ak fabric_model_base_url=<url>`. The server must support automatic tool
 calling; a successful plain chat completion is not sufficient for SWE-Bench.
 
 ## Run the Same Task with Claude
@@ -113,9 +113,9 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_adapter_id=nvidia.fabric.claude \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_telemetry=relay \
-  --ak 'fabric_harness_settings={"nemo_relay_command":"/tmp/nemo-fabric-config/.relay/bin/nemo-relay"}' \
   --ak "fabric_package=$FABRIC_PACKAGE" \
   --ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS" \
+  --ae "PATH=/tmp/nemo-fabric-config/.relay/bin:$PATH" \
   --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
   --job-name django-13741-claude \
   --jobs-dir "$RUNS_DIR" \

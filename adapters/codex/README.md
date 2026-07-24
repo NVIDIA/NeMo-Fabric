@@ -49,25 +49,21 @@ the SDK runtime. The current real-agent acceptance path validates an existing
 Codex login; it does not yet claim a raw environment variable as a complete
 login flow.
 
-When `models.default.provider` is `nvidia`, the adapter defines a Codex model
+When the selected model provider is `nvidia`, the adapter defines a Codex model
 provider for the configured NVIDIA Responses endpoint. `Fabric.run(...)` owns
 that provider for one invocation, while `Fabric.start_runtime(...)` fixes it for
 the lifetime of the persistent runtime. The adapter reads the credential from
 `api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex state under the
 NeMo Fabric artifact root, so execution does not depend on or modify a user's Codex
 login. Set the endpoint in
-`models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`; the adapter
-does not assume a default frontier endpoint.
+`models.<role>.base_url`; it defaults to the public NVIDIA API Catalog endpoint.
+Set it explicitly for a frontier or self-hosted endpoint.
 
 The adapter depends on the Codex SDK, which installs and selects its matching
 app-server runtime. NeMo Fabric does not declare the runtime package directly or
 treat it as a user-installed command or adapter descriptor requirement.
 
-A `codex` command on `PATH` is not selected implicitly. To override the
-SDK-selected runtime intentionally, set
-`harness.settings.codex_bin` to an app-server path that is absolute or relative
-to the explicit `base_dir`. NeMo Fabric passes the resolved path through
-`CodexConfig.codex_bin`; the SDK remains the execution driver.
+A `codex` command on `PATH` is not selected implicitly.
 
 ## Execution Model
 
@@ -89,8 +85,11 @@ Use normalized `FabricConfig` fields for portable configuration:
 
 - `models` selects the Codex model. The adapter supports the built-in `openai`
   provider and NVIDIA-hosted Responses-compatible models through the `nvidia`
-  provider.
-- `environment.workspace` sets the working directory.
+  provider. `models.<role>.base_url` selects an explicit endpoint.
+- `system_prompt` maps to Codex base instructions.
+- `runtime.timeout_seconds` sets the Fabric invocation deadline.
+- `environment.workspace` sets the working directory, and `environment.env`
+  supplies explicit harness-visible variables.
 - `mcp` maps stdio, HTTP, and streamable HTTP servers into the Codex thread's
   `mcp_servers` configuration. For stdio, NeMo Fabric parses `url` as a command plus
   arguments.
@@ -109,18 +108,15 @@ Codex-specific controls belong in `harness.settings`:
 
 - `sandbox`: `read-only`, `workspace-write`, or `danger-full-access`
 - `approval_mode`: `auto_review` or `deny_all`
-- `base_instructions` and `developer_instructions`
-- `personality`, `reasoning_effort`, `service_name`, and `service_tier`
+- `developer_instructions`
+- `personality`, `reasoning_effort`, and `service_tier`
 - `output_schema` for SDK-native structured output
-- `codex_bin` for an explicit Codex app-server runtime override
 - `config_overrides` as dotted Codex configuration keys applied when the SDK
   runtime starts, such as Codex-only MCP timeout or required-server options
-- `timeout_seconds`, defaulting to 1800
-- `env` for variables explicitly forwarded to the Codex runtime
-- `nemo_relay_command` for the optional external Relay gateway executable
 
-Set model selection through `models` and the working directory through
-`environment.workspace`.
+Set model selection and endpoints through `models`, system instructions through
+`system_prompt`, the invocation deadline through `runtime.timeout_seconds`, and
+the working directory and explicit environment through `environment`.
 
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
 roots, and `config_overrides` are fixed when the runtime starts and cannot vary
@@ -130,7 +126,7 @@ same settings are scoped to that single invocation.
 
 The adapter filters the inherited environment. It retains portable OS and
 Codex state variables, the selected model's `api_key_env`, and explicit
-`settings.env` values while clearing unrelated parent-process secrets.
+`environment.env` values while clearing unrelated parent-process secrets.
 
 ## Relay Integration
 

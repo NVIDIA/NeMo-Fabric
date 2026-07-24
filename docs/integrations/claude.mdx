@@ -8,11 +8,10 @@ SPDX-License-Identifier: Apache-2.0 */}
 The `nvidia.fabric.claude` adapter uses the Claude Agent SDK and its bundled
 Claude Code runtime. NeMo Fabric preserves Claude's native credential precedence and
 forwards only supported operating-system, configuration, and authentication
-variables plus values explicitly configured in `harness.settings.env`.
+variables plus values explicitly configured in `environment.env`.
 
-The adapter pins `claude-agent-sdk==0.2.120`. The SDK owns its compatible Claude
-Code runtime unless `harness.settings.cli_path` explicitly selects another
-executable.
+The adapter pins `claude-agent-sdk==0.2.120`. The SDK owns and selects its
+compatible Claude Code runtime.
 
 ## Choose an Authentication Mode
 
