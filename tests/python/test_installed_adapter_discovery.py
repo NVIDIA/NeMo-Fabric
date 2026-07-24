@@ -41,11 +41,17 @@ def _write_descriptor(
     return descriptor
 
 
-def _config(adapter_id: str = "test.fabric.installed") -> FabricConfig:
+def _config(
+    adapter_id: str = "test.fabric.installed",
+    settings: dict[str, str] | None = None,
+) -> FabricConfig:
     return FabricConfig.from_mapping(
         {
             "metadata": {"name": "installed-adapter-test"},
-            "harness": {"adapter_id": adapter_id},
+            "harness": {
+                "adapter_id": adapter_id,
+                "settings": settings or {},
+            },
         }
     )
 
@@ -87,6 +93,16 @@ def _python_sysconfig_path(python: Path, name: str) -> Path:
             text=True,
         )
     )
+
+
+@pytest.fixture(name="adapter_python")
+def adapter_python_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    adapter_env = tmp_path / "adapter-env"
+    venv.EnvBuilder(with_pip=False).create(adapter_env)
+    python = adapter_env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    data_root = _python_sysconfig_path(python, "data")
+    descriptor = _write_descriptor(data_root, "configured.adapter")
+    return python, descriptor
 
 
 def test_plan_discovers_adapter_from_python_data_directory(
@@ -166,6 +182,55 @@ def test_adapter_python_data_directory_replaces_current_data_directory(
             _config("test.fabric.current-only"),
             base_dir=tmp_path / "agent",
         )
+
+
+def test_harness_python_takes_precedence_over_adapter_python(
+    tmp_path: Path,
+    adapter_python: tuple[Path, Path],
+):
+    python, descriptor = adapter_python
+    os.environ["ADAPTER_PYTHON"] = str(tmp_path / "missing-python")
+
+    plan = Fabric().plan(
+        _config(settings={"python": str(python)}),
+        base_dir=tmp_path / "agent",
+    )
+
+    assert Path(plan["adapter_descriptor"]["path"]).samefile(descriptor)
+
+
+def test_harness_python_env_takes_precedence_over_adapter_python(
+    tmp_path: Path,
+    adapter_python: tuple[Path, Path],
+):
+    python, descriptor = adapter_python
+    os.environ["TEST_ADAPTER_PYTHON"] = str(python)
+    os.environ["ADAPTER_PYTHON"] = str(tmp_path / "missing-python")
+
+    plan = Fabric().plan(
+        _config(settings={"python_env": "TEST_ADAPTER_PYTHON"}),
+        base_dir=tmp_path / "agent",
+    )
+
+    assert Path(plan["adapter_descriptor"]["path"]).samefile(descriptor)
+
+
+def test_unset_harness_python_env_uses_sdk_interpreter(
+    tmp_path: Path,
+    patch_sysconfig_data: Callable[[Path], None],
+):
+    data_root = tmp_path / "python-data"
+    descriptor = _write_descriptor(data_root, "sdk.adapter")
+    patch_sysconfig_data(data_root)
+    os.environ.pop("MISSING_ADAPTER_PYTHON", None)
+    os.environ["ADAPTER_PYTHON"] = str(tmp_path / "missing-python")
+
+    plan = Fabric().plan(
+        _config(settings={"python_env": "MISSING_ADAPTER_PYTHON"}),
+        base_dir=tmp_path / "agent",
+    )
+
+    assert Path(plan["adapter_descriptor"]["path"]).samefile(descriptor)
 
 
 def test_adapter_python_data_path_query_times_out(tmp_path: Path):
