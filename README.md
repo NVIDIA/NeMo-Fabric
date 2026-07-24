@@ -16,9 +16,9 @@ SPDX-License-Identifier: Apache-2.0
   <img src="assets/fabric-hero-option2.png" alt="Diagram showing NeMo Fabric connecting applications, evaluations, and reinforcement learning rollouts to Hermes, Codex, Claude, and Deep Agents, with results, artifacts, and telemetry as outputs." width="1000">
 </p>
 
-NVIDIA NeMo Fabric connects applications, evaluation systems, and reinforcement
-learning rollout systems to agent harnesses such as Hermes Agent, Codex, Claude
-Code, and LangChain Deep Agents through one configurable execution interface.
+NeMo Fabric gives applications one configurable, observable way to run applications
+across multiple agent harnesses. It standardizes configuration, lifecycle
+management, and results without requiring a separate integration for every harness.
 
 NeMo Fabric lets you change harnesses without rebuilding each integration,
 isolate conflicting runtime dependencies, and manage harness configuration,
