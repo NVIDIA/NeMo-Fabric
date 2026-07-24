@@ -61,12 +61,15 @@ impl Example {
 
     /// Construct one complete example config without staging its assets.
     pub fn config(self, variant: Option<&str>) -> Result<FabricConfig, String> {
-        self.preset(variant).map(code_review_config)
+        let preset = self.preset(variant)?;
+        preset.validate_config_environment()?;
+        Ok(code_review_config(preset))
     }
 
     /// Construct and stage one complete example variant.
     pub fn select(self, variant: Option<&str>) -> Result<SelectedExample, String> {
         let preset = self.preset(variant)?;
+        preset.validate_config_environment()?;
         let files = self.embedded_files(preset);
         let assets = StagedAssets::create(&files)
             .map_err(|error| format!("failed to stage example {:?}: {error}", self.name))?;

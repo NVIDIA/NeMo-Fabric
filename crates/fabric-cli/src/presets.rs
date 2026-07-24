@@ -58,6 +58,7 @@ pub struct Preset {
     pub description: &'static str,
     /// Environment variables required by the harness/model combination.
     pub required_env: &'static [&'static str],
+    required_config_env: &'static [&'static str],
     build: fn() -> FabricConfig,
     assets: &'static [EmbeddedFile],
 }
@@ -70,11 +71,26 @@ impl Preset {
 
     /// Stage the adapter assets required to plan or run this preset.
     pub fn stage(self) -> std::io::Result<SelectedPreset> {
+        self.validate_config_environment()
+            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
         Ok(SelectedPreset {
             preset: self,
             config: self.config(),
             assets: StagedAssets::create(self.assets)?,
         })
+    }
+
+    pub(crate) fn validate_config_environment(self) -> Result<(), String> {
+        for name in self.required_config_env {
+            if std::env::var(name).is_ok_and(|value| !value.trim().is_empty()) {
+                continue;
+            }
+            return Err(format!(
+                "preset {:?} requires {name} to be set to a non-empty endpoint before planning",
+                self.name
+            ));
+        }
+        Ok(())
     }
 
     pub(crate) fn embedded_files(self) -> &'static [EmbeddedFile] {
@@ -114,6 +130,7 @@ const PRESETS: [Preset; 5] = [
         name: "scripted",
         description: "Credential-free deterministic smoke preset.",
         required_env: &[],
+        required_config_env: &[],
         build: scripted,
         assets: SCRIPTED_ASSETS,
     },
@@ -121,6 +138,7 @@ const PRESETS: [Preset; 5] = [
         name: "hermes",
         description: "Hermes Agent with an NVIDIA-hosted model.",
         required_env: &["NVIDIA_API_KEY"],
+        required_config_env: &[],
         build: hermes,
         assets: HERMES_ASSETS,
     },
@@ -128,6 +146,7 @@ const PRESETS: [Preset; 5] = [
         name: "claude",
         description: "Claude Code with an NVIDIA-hosted Claude model.",
         required_env: &["NVIDIA_API_KEY", "NVIDIA_FRONTIER_BASE_URL"],
+        required_config_env: &["NVIDIA_FRONTIER_BASE_URL"],
         build: claude,
         assets: CLAUDE_ASSETS,
     },
@@ -135,6 +154,7 @@ const PRESETS: [Preset; 5] = [
         name: "codex",
         description: "Codex with an NVIDIA-hosted OpenAI model.",
         required_env: &["NVIDIA_API_KEY", "NVIDIA_FRONTIER_BASE_URL"],
+        required_config_env: &["NVIDIA_FRONTIER_BASE_URL"],
         build: codex,
         assets: CODEX_ASSETS,
     },
@@ -142,6 +162,7 @@ const PRESETS: [Preset; 5] = [
         name: "deepagents",
         description: "LangChain Deep Agents with an NVIDIA-hosted model.",
         required_env: &["NVIDIA_API_KEY"],
+        required_config_env: &[],
         build: deepagents,
         assets: DEEPAGENTS_ASSETS,
     },
