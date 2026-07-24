@@ -65,6 +65,10 @@ def with_relay(base: FabricConfig) -> FabricConfig:
 Use this function-and-copy pattern for every variant; keep all variation in
 ordinary Python.
 
+For ATOF, author the Relay 0.6 sink model directly. Put
+`RelayAtofFileSinkConfig` and `RelayAtofStreamSinkConfig` instances in
+`RelayAtofConfig.sinks`.
+
 ## Relative Paths
 
 If the config uses relative paths for skills, workspaces, or artifacts, pass

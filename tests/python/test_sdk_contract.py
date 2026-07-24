@@ -30,6 +30,8 @@ from nemo_fabric import McpConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
+from nemo_fabric import RelayAtofFileSinkConfig
+from nemo_fabric import RelayAtofStreamSinkConfig
 from nemo_fabric import RelayComponentConfig
 from nemo_fabric import RelayConfigPolicy
 from nemo_fabric import RelayObservabilityConfig
@@ -220,9 +222,19 @@ def test_fabric_config_authors_first_class_relay_observability():
         observability=RelayObservabilityConfig(
             atof=RelayAtofConfig(
                 enabled=True,
-                output_directory="./artifacts/relay",
-                filename="events.atof.jsonl",
-                mode="overwrite",
+                sinks=[
+                    RelayAtofFileSinkConfig(
+                        output_directory="./artifacts/relay",
+                        filename="events.atof.jsonl",
+                        mode="overwrite",
+                    ),
+                    RelayAtofStreamSinkConfig(
+                        url="http://localhost:4319/events",
+                        transport="ndjson",
+                        header_env={"authorization": "RELAY_AUTHORIZATION"},
+                        name="live-events",
+                    ),
+                ],
             ),
             atif=RelayAtifConfig(
                 enabled=True,
@@ -243,12 +255,27 @@ def test_fabric_config_authors_first_class_relay_observability():
     assert config.to_mapping()["relay"] == {
         "output_dir": "./artifacts/relay",
         "observability": {
-            "version": 1,
+            "version": 2,
             "atof": {
                 "enabled": True,
-                "output_directory": "./artifacts/relay",
-                "filename": "events.atof.jsonl",
-                "mode": "overwrite",
+                "sinks": [
+                    {
+                        "type": "file",
+                        "output_directory": "./artifacts/relay",
+                        "filename": "events.atof.jsonl",
+                        "mode": "overwrite",
+                    },
+                        {
+                            "type": "stream",
+                            "url": "http://localhost:4319/events",
+                            "transport": "ndjson",
+                            "headers": {},
+                            "header_env": {"authorization": "RELAY_AUTHORIZATION"},
+                            "timeout_millis": 3000,
+                            "field_name_policy": "preserve",
+                            "name": "live-events",
+                        },
+                ],
             },
             "atif": {
                 "enabled": True,

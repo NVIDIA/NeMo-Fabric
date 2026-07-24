@@ -213,21 +213,41 @@ variant = review_agent_config(config, github_mcp=True, relay=True)
 ```
 
 Relay observability is represented directly in the SDK config's top-level
-`relay` block, and additional Relay plugin components can be supplied
-generically when their component package is available in the runtime
-environment:
+`relay` block. ATOF uses Relay 0.6 file and stream sinks:
 
 ```python
-from nemo_fabric import RelayComponentConfig
+from nemo_fabric import (
+    RelayAtofConfig,
+    RelayAtofFileSinkConfig,
+    RelayAtofStreamSinkConfig,
+    RelayObservabilityConfig,
+)
 
 relay_config = config.model_copy(deep=True)
 relay_config.enable_relay(
     output_dir="./artifacts/relay",
-    components=[
-        RelayComponentConfig(kind="switchyard", config={"route": "canary"}),
-    ],
+    observability=RelayObservabilityConfig(
+        atof=RelayAtofConfig(
+            enabled=True,
+            sinks=[
+                RelayAtofFileSinkConfig(
+                    output_directory="./artifacts/relay",
+                    filename="events.atof.jsonl",
+                    mode="overwrite",
+                ),
+                RelayAtofStreamSinkConfig(
+                    url="http://localhost:4319/events",
+                    transport="ndjson",
+                ),
+            ],
+        ),
+    ),
 )
 ```
+
+Additional Relay plugin components can be supplied generically with
+`RelayComponentConfig` when their component package is available in the runtime
+environment.
 
 The repository's
 [code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/main/examples/code_review_agent)
