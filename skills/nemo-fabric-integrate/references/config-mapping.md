@@ -93,6 +93,9 @@ package or job layout, so nothing depends on the process working directory.
   settings. Adapter settings are not portable, and `doctor(...)` does not yet
   validate their contents. Validate them against the adapter's docs and your
   integration tests.
+- Provider compatibility and `models.<role>.settings` are descriptor-owned.
+  `plan(...)` and `doctor(...)` reject an incompatible provider or undeclared
+  model setting before adapter startup.
 - Use `metadata` and extension fields for caller-owned annotations NeMo Fabric carries
   but does not interpret. Config `metadata` is not echoed into
   `RunResult.metadata`: the name surfaces as `RunResult.agent_name`, and for

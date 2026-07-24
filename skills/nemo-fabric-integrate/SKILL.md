@@ -191,7 +191,8 @@ print(plan.adapter.adapter_id, report.status)
 ```
 
 - Use `plan(...)` to confirm adapter selection and capability routing before
-  running.
+  running. Planning rejects model providers and provider-specific model
+  settings that the selected adapter descriptor does not declare.
 - Use `doctor(...)` to check adapter availability, resolution, environment
   context, and declared requirements such as required environment variables. Its
   aggregate `status` is `pass`, `warn`, or `fail`. It does **not** validate the

@@ -99,7 +99,10 @@ are grouped because their support does not vary by adapter.
 | Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics |
 
 The selected model role is `default`, or the sole configured role when no
-`default` exists. More than one role without `default` fails planning.
+`default` exists. The adapter descriptor validates the selected provider and
+every `models.<role>.settings` key during `plan(...)` and `doctor(...)`.
+First-party adapters currently declare no provider-specific model settings, so
+misspelled or undeclared keys fail rather than disappearing at runtime.
 
 ## Runtime and Observability Compatibility
 

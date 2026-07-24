@@ -214,6 +214,11 @@ are grouped because their support does not vary by adapter.
 
 Model selection is deterministic: the `default` role wins; otherwise a single
 named role is selected. More than one role without `default` fails planning.
+The adapter descriptor validates provider compatibility and every declared
+provider-specific model setting during `plan(...)` and `doctor(...)`. The
+adapter keeps its local checks at runtime as a defense-in-depth boundary.
+First-party adapters currently declare no `models.<role>.settings` keys, so an
+unknown or misspelled key fails instead of being silently ignored.
 
 If a normalized field has no complete mapping, `plan(...)`, `doctor(...)`, and
 runtime start fail with a configuration compatibility error naming the adapter
