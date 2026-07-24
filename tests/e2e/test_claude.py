@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -299,13 +300,27 @@ async def test_live_claude_relay_session(tmp_path):
         nemo_relay_command=relay_command,
     )
 
-    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
-        first = await runtime.invoke(input="Remember token FABRIC-CLAUDE-RELAY-7")
-        second = await runtime.invoke(
-            input="Reply only with the token I asked you to remember"
-        )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        async with await Fabric().start_runtime(
+            config,
+            base_dir=tmp_path,
+            streaming=True,
+        ) as runtime:
+            first_stream = runtime.invoke_stream(
+                input="Remember token FABRIC-CLAUDE-RELAY-7"
+            )
+            first_records = [record async for record in first_stream]
+            first = await first_stream.result()
+            second_stream = runtime.invoke_stream(
+                input="Reply only with the token I asked you to remember"
+            )
+            second_records = [record async for record in second_stream]
+            second = await second_stream.result()
 
     results = (first.to_mapping(), second.to_mapping())
+    assert first_records
+    assert second_records
     assert first.status == second.status == "succeeded", results
     assert first.output["session_id"] == second.output["session_id"], results
     assert first.metadata["host_pid"] == second.metadata["host_pid"], results

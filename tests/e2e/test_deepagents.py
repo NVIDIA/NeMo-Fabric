@@ -75,7 +75,11 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
-        async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        async with await Fabric().start_runtime(
+            config,
+            base_dir=tmp_path,
+            streaming=True,
+        ) as runtime:
             first_stream = runtime.invoke_stream(input="first")
             first_records = [record async for record in first_stream]
             first = await first_stream.result()

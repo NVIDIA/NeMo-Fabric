@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import warnings
 from pathlib import Path
 from types import ModuleType
 
@@ -30,13 +31,23 @@ async def test_hermes_persistent_host_reuses_native_session(
     config = hermes_config()
     config.harness.settings["base_url"] = f"{api_server}/v1"
 
-    async with await Fabric().start_runtime(
-        config, base_dir=code_review_agent_dir
-    ) as runtime:
-        first = await runtime.invoke(input="first")
-        second = await runtime.invoke(input="second")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        async with await Fabric().start_runtime(
+            config,
+            base_dir=code_review_agent_dir,
+            streaming=True,
+        ) as runtime:
+            first_stream = runtime.invoke_stream(input="first")
+            first_records = [record async for record in first_stream]
+            first = await first_stream.result()
+            second_stream = runtime.invoke_stream(input="second")
+            second_records = [record async for record in second_stream]
+            second = await second_stream.result()
 
     results = (first.to_mapping(), second.to_mapping())
+    assert first_records
+    assert second_records
     assert first["status"] == second["status"] == "succeeded", results
     assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
     assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results

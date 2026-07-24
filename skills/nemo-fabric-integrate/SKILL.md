@@ -124,7 +124,7 @@ Pick the smallest lifecycle the consumer needs:
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
 - **Relay-backed stream** — live, raw ATOF records plus a terminal normalized
-  result. Enable Relay before `start_runtime(...)`, call
+  result. Enable Relay, pass `streaming=True` to `start_runtime(...)`, call
   `runtime.invoke_stream(...)`, iterate the returned `InvokeStream`, and then
   await `stream.result()`. Iteration ending does not indicate invocation
   success; invocation exceptions raise from `result()`, while harness-reported
@@ -147,6 +147,8 @@ Pick the smallest lifecycle the consumer needs:
   that only await `stream.result()` do not run that warning check. The SDK also
   warns when a Relay upload terminates before completing its chunked request
   body because yielded records can be incomplete.
+  Without `streaming=True`, startup leaves the Relay configuration unchanged
+  and does not inject the loopback ATOF stream sink.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
@@ -179,7 +181,11 @@ async def main() -> None:
 
     # Relay-backed streaming
     streaming_config = config.model_copy(deep=True).enable_relay()
-    async with await fabric.start_runtime(streaming_config, base_dir=base) as runtime:
+    async with await fabric.start_runtime(
+        streaming_config,
+        base_dir=base,
+        streaming=True,
+    ) as runtime:
         stream = runtime.invoke_stream(input="Review the latest patch")
         async for record in stream:
             print(record)

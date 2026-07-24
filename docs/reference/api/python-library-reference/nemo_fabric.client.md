@@ -3,8 +3,8 @@ title: "Client"
 slug: "/reference/api/python-library-reference/client"
 description: "Resolve, plan, diagnose, and run agents with NeMo Fabric."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.client`
 Native Python client for resolving and running NeMo Fabric agents.
@@ -145,13 +145,14 @@ Execute one complete start, invoke, and stop lifecycle.
 start_runtime(
     config: 'FabricConfig',
     base_dir: 'str | PathLike[str] | None' = None,
-    overrides: 'Mapping[str, Any] | None' = None
+    overrides: 'Mapping[str, Any] | None' = None,
+    streaming: 'bool' = False
 ) → Runtime
 ```
 
 Start a stateful runtime for one or more ordered invocations.
 
-Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. When Relay is enabled, startup also provisions the SDK-owned loopback ATOF endpoint used by ``Runtime.invoke_stream()``.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. Set ``streaming=True`` with Relay enabled to provision the SDK-owned loopback ATOF endpoint used by ``Runtime.invoke_stream()``.
 
 
 
@@ -160,6 +161,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
  - <b>`config`</b>:  Complete typed ``FabricConfig``.
  - <b>`base_dir`</b>:  Base directory for resolving relative paths.
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
+ - <b>`streaming`</b>:  Whether to provision Relay-backed ATOF streaming for  ``Runtime.invoke_stream()``.
 
 
 
@@ -170,7 +172,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 
 **Raises:**
 
- - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid.
+ - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, or streaming  is requested without Relay enabled.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 

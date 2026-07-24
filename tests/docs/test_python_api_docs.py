@@ -89,6 +89,14 @@ def test_generated_reference_uses_valid_heading_order() -> None:
         assert "#### <kbd>property</kbd>" not in text, page
 
 
+def test_generated_reference_uses_markdown_spdx_comments() -> None:
+    for page in REFERENCE_DIR.glob("*.md"):
+        text = page.read_text(encoding="utf-8")
+        assert "<!-- SPDX-FileCopyrightText:" in text, page
+        assert "SPDX-License-Identifier: Apache-2.0 -->" in text, page
+        assert "{/* SPDX-FileCopyrightText:" not in text, page
+
+
 def test_streaming_reference_hides_constructor_and_preserves_async_methods():
     reference = (REFERENCE_DIR / "nemo_fabric.streaming.md").read_text(encoding="utf-8")
 

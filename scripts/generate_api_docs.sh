@@ -28,9 +28,9 @@ PYTHONPATH="python/src" lazydocs \
   "nemo_fabric.types" \
   "nemo_fabric.errors"
 
-# Make the lazydocs output MDX-safe for Fern (Fern parses .md as MDX):
+# Normalize the lazydocs output for Fern:
 #  - drop source badges (relative links don't resolve on the site)
-#  - strip HTML comments (<!-- ... -->), which are invalid in MDX
+#  - strip lazydocs HTML comments before adding the generated SPDX header
 #  - remove trailing whitespace emitted by lazydocs
 perl -ni -e 'print unless m{img\.shields\.io/badge/-source}' "$out"/*.md
 perl -0pi -e 's/<!--.*?-->//gs' "$out"/*.md
@@ -57,8 +57,8 @@ add_frontmatter() {
   {
     printf -- '---\ntitle: "%s"\nslug: "%s"\ndescription: "%s"\n---\n' \
       "$title" "$slug" "$description"
-    printf '%s\n' '{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.'
-    printf '%s\n\n' 'SPDX-License-Identifier: Apache-2.0 */}'
+    printf '%s\n' '<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.'
+    printf '%s\n\n' 'SPDX-License-Identifier: Apache-2.0 -->'
     command cat "$file"
   } > "$temporary"
   mv "$temporary" "$file"

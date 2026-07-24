@@ -29,6 +29,12 @@ def _source_tree(root: Path) -> None:
     )
     (docs / "_source").mkdir()
     (docs / "_source" / "ignored.md").write_text("ignored\n", encoding="utf-8")
+    python_reference = docs / "reference" / "api" / "python-library-reference"
+    python_reference.mkdir(parents=True)
+    (python_reference / "client.md").write_text(
+        f"{sync_fern_docs_branch.MARKDOWN_SPDX_HEADER}\n\n# Client\n",
+        encoding="utf-8",
+    )
     _write_yaml(
         docs / "index.yml",
         {
@@ -90,6 +96,14 @@ def test_sync_dev_rewrites_navigation_and_preserves_versions(tmp_path: Path):
     assert not (target_fern / "pages-dev" / "index.yml").exists()
     assert not (target_fern / "pages-dev" / "_source").exists()
     assert (target_fern / "fern.config.json").is_file()
+    assert (
+        target_fern
+        / "pages-dev"
+        / "reference"
+        / "api"
+        / "python-library-reference"
+        / "client.md"
+    ).read_text(encoding="utf-8").startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)
 
     navigation = sync_fern_docs_branch.read_yaml(target_fern / "versions" / "dev.yml")
     assert navigation["navigation"][0]["path"] == "../pages-dev/guide.mdx"
@@ -179,3 +193,11 @@ def test_release_version_promotes_stable_snapshot(tmp_path: Path):
     assert "blob/0.2.0/README.md" in (
         target_fern / "pages-v0.2.0" / "guide.mdx"
     ).read_text(encoding="utf-8")
+    assert (
+        target_fern
+        / "pages-v0.2.0"
+        / "reference"
+        / "api"
+        / "python-library-reference"
+        / "client.md"
+    ).read_text(encoding="utf-8").startswith(sync_fern_docs_branch.MDX_SPDX_HEADER)

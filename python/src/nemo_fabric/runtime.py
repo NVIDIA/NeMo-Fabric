@@ -236,8 +236,8 @@ class Runtime:
         ``stream.result()`` for the terminal normalized :class:`RunResult`.
 
         Raises:
-            FabricCapabilityError: If Relay was not enabled when the runtime
-                started.
+            FabricCapabilityError: If the runtime was not started with Relay
+                enabled and ``streaming=True``.
             FabricConfigError: If request fields conflict or are not
                 JSON-compatible.
             FabricStateError: If another turn or stream is active.
@@ -245,7 +245,8 @@ class Runtime:
 
         if self._stream_listener is None:
             raise FabricCapabilityError(
-                "streaming requires Relay telemetry to be enabled",
+                "streaming requires Relay telemetry and "
+                "start_runtime(..., streaming=True)",
                 stage="invoke",
                 code="streaming_unavailable",
                 details={"capability": "streaming"},
