@@ -24,7 +24,9 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import SerializerFunctionWrapHandler
 from pydantic import field_validator
+from pydantic import model_serializer
 from pydantic import model_validator
 
 
@@ -255,11 +257,22 @@ class RelayAtofStreamSinkConfig(FabricBaseModel):
     type: Literal["stream"] = "stream"
     url: str
     transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
-    headers: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
-    header_env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    headers: dict[str, str] = Field(default_factory=dict)
+    header_env: dict[str, str] = Field(default_factory=dict)
     timeout_millis: int = 3000
     field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
     name: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_header_maps(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Omit optional header maps when they are empty."""
+
+        data = handler(self)
+        if not self.headers:
+            data.pop("headers", None)
+        if not self.header_env:
+            data.pop("header_env", None)
+        return data
 
 
 class RelayAtofConfig(FabricBaseModel):

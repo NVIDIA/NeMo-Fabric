@@ -99,6 +99,20 @@ class InvokeStream:
     async def _finalize(self, *, warn_if_unconnected: bool = False) -> None:
         if self._finalized:
             return
+        queue = self._listener.records
+        while not self._task.done():
+            getter = asyncio.create_task(queue.get())
+            try:
+                await asyncio.wait(
+                    {getter, self._task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            finally:
+                if not getter.done():
+                    getter.cancel()
+                with suppress(asyncio.CancelledError):
+                    await getter
+
         invocation_completed = False
         try:
             await asyncio.shield(self._task)
@@ -109,7 +123,6 @@ class InvokeStream:
         except Exception:
             pass
 
-        queue = self._listener.records
         loop = asyncio.get_running_loop()
         deadline = loop.time() + _DRAIN_SECONDS
         while True:
