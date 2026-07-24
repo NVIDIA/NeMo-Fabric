@@ -171,7 +171,7 @@ retries, worker scaling, and the number of runtimes to run.
 
 ### Normalized Configuration Compatibility
 
-Fabric-owned fields such as workspace, environment variables, and the
+NeMo Fabric-owned fields such as workspace, environment variables, and the
 invocation deadline apply to every local adapter. Adapter-translated fields are
 validated against the selected adapter descriptor during planning.
 
@@ -237,12 +237,29 @@ capability_config.enable_relay(
     project="fabric-review",
     output_dir="./artifacts/relay",
 )
-capability_config.block_tools("Bash")
-# Toolsets are harness-defined bundles, not individual tool names.
-capability_config.configure_toolsets(
-    enabled=["web", "terminal"],
-    blocked=["browser"],
-)
+```
+
+Tool names and toolsets remain separate because adapters expose different
+native controls. Configure individual blocked tools only for Claude or Deep
+Agents:
+
+```python
+def with_blocked_tools(claude_or_deepagents_config):
+    blocked_tools_config = claude_or_deepagents_config.model_copy(deep=True)
+    blocked_tools_config.block_tools("Bash")
+    return blocked_tools_config
+```
+
+Configure harness-defined toolsets only for Hermes:
+
+```python
+def with_toolsets(hermes_config):
+    toolset_config = hermes_config.model_copy(deep=True)
+    toolset_config.configure_toolsets(
+        enabled=["web", "terminal"],
+        blocked=["browser"],
+    )
+    return toolset_config
 ```
 
 Config helpers edit the typed config before planning or starting a runtime. They

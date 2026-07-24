@@ -17,6 +17,7 @@ The Rust core remains the source of truth for persisted schema snapshots. These 
 
 
 ## <kbd>class</kbd> `FabricBaseModel`
+
 Base class for SDK-facing Pydantic models.
 
 
@@ -77,6 +78,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `MetadataConfig`
+
 Human-readable agent identity.
 
 
@@ -137,6 +139,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `HarnessConfig`
+
 Harness adapter selection plus adapter-owned settings.
 
 
@@ -197,6 +200,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RuntimeConfig`
+
 Runtime input/output contract.
 
 
@@ -257,6 +261,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `EnvironmentConfig`
+
 Execution environment configuration supplied by the consumer.
 
 ``provider`` selects the environment implementation. ``workspace`` is the path visible to the harness, while ``artifacts`` is the provider-specific output location. ``settings`` configures the selected provider; ``connection`` describes how Fabric reaches an existing environment; and ``metadata`` carries consumer-owned values that Fabric does not interpret. ``ownership`` identifies who tears the environment down, and ``control_location`` identifies whether Fabric control code runs inside or outside it.
@@ -319,6 +324,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `ModelConfig`
+
 Model alias configuration.
 
 
@@ -379,6 +385,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `SkillConfig`
+
 Skill capability configuration.
 
 
@@ -461,6 +468,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `McpServerConfig`
+
 MCP server configuration.
 
 
@@ -521,6 +529,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `McpConfig`
+
 MCP capability configuration.
 
 
@@ -609,6 +618,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayConfigPolicy`
+
 NeMo Relay config validation policy.
 
 
@@ -669,6 +679,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayAtofFileSinkConfig`
+
 NeMo Relay ATOF file sink configuration.
 
 
@@ -729,6 +740,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayAtofStreamSinkConfig`
+
 NeMo Relay ATOF stream sink configuration.
 
 
@@ -789,6 +801,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayAtofConfig`
+
 NeMo Relay ATOF export configuration.
 
 
@@ -849,6 +862,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayS3StorageConfig`
+
 NeMo Relay ATIF S3 storage configuration.
 
 
@@ -909,6 +923,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayHttpStorageConfig`
+
 NeMo Relay ATIF HTTP storage configuration.
 
 
@@ -969,6 +984,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayAtifConfig`
+
 NeMo Relay ATIF export configuration.
 
 
@@ -1029,6 +1045,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayOtlpConfig`
+
 NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference.
 
 
@@ -1089,6 +1106,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayObservabilityConfig`
+
 NeMo Relay observability component configuration.
 
 
@@ -1149,6 +1167,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayComponentConfig`
+
 Generic NeMo Relay plugin component configuration.
 
 
@@ -1209,6 +1228,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayConfig`
+
 First-class NeMo Relay integration configuration.
 
 
@@ -1269,6 +1289,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `TelemetryProviderConfig`
+
 Provider-specific telemetry configuration.
 
 
@@ -1329,6 +1350,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `TelemetryConfig`
+
 Telemetry configuration.
 
 
@@ -1422,6 +1444,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `ToolsetConfig`
+
 Harness-neutral toolset selection and blocking policy.
 
 
@@ -1543,6 +1566,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `FabricConfig`
+
 SDK-facing typed Fabric agent configuration.
 
 Fabric-owned fields apply uniformly. Adapter-translated fields are checked against the selected descriptor; see the normalized configuration compatibility table in ``docs/sdk/python.mdx``.
@@ -1697,6 +1721,7 @@ Return a detached mapping matching the Rust ``FabricConfig`` schema.
 
 
 ## <kbd>class</kbd> `RunRequest`
+
 One validated Fabric invocation request.
 
 

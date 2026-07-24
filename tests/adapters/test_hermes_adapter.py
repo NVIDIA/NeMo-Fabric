@@ -659,11 +659,19 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
 
 @pytest.mark.parametrize(
     "setting",
-    ["hermes_home", "insert_reasoning", "terminal_backend", "toolset_platform"],
+    ["hermes_home", "insert_reasoning", "toolset_platform"],
 )
 def test_removed_runtime_settings_are_rejected(setting):
     with pytest.raises(ValueError, match=rf"harness\.settings\.{setting}"):
         adapter._validate_settings_boundary({setting: "value"})
+
+
+def test_terminal_backend_reports_local_only_support():
+    with pytest.raises(
+        ValueError,
+        match=r"harness\.settings\.terminal_backend.*only local terminal execution",
+    ):
+        adapter._validate_settings_boundary({"terminal_backend": "ssh"})
 
 
 def test_main_serves_persistent_runtime(monkeypatch):

@@ -1,7 +1,7 @@
 {
   "$defs": {
     "AdapterConfigField": {
-      "description": "Adapter-translated normalized Fabric configuration fields.",
+      "description": "Adapter-translated normalized NeMo Fabric configuration fields.",
       "oneOf": [
         {
           "const": "models",
@@ -65,7 +65,7 @@
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "Normalized Fabric config fields accepted by this adapter.",
+          "description": "Normalized NVIDIA NeMo Fabric config fields accepted by this adapter.",
           "items": {
             "$ref": "#/$defs/AdapterConfigField"
           },

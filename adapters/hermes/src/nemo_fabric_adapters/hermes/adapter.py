@@ -47,7 +47,7 @@ NORMALIZED_SETTING_FIELDS = {
 REMOVED_SETTING_FIELDS = {
     "hermes_home": "runtime state is derived from the Fabric artifact root and runtime ID",
     "insert_reasoning": "the supported Hermes SDK does not consume this option",
-    "terminal_backend": "execution placement is owned by FabricConfig.environment",
+    "terminal_backend": "this adapter currently supports only local terminal execution",
     "toolset_platform": "the adapter owns its Hermes SDK lookup bridge",
 }
 PROVIDER_DEFAULT_API_KEY_ENV = {

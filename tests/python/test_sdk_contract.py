@@ -244,6 +244,8 @@ def test_typed_config_serializes_normalized_execution_fields():
 
     with pytest.raises(ValidationError, match="greater than 0"):
         RuntimeConfig(timeout_seconds=0)
+    with pytest.raises(ValidationError, match="finite number"):
+        RuntimeConfig(timeout_seconds=float("inf"))
     with pytest.raises(ValidationError, match="greater than 0"):
         FabricConfig(
             metadata=MetadataConfig(name="demo"),
@@ -252,7 +254,10 @@ def test_typed_config_serializes_normalized_execution_fields():
         )
     with pytest.raises(ValidationError, match="both enabled and blocked"):
         ToolsetConfig(enabled=["browser"], blocked=["browser"])
-    with pytest.raises(ValidationError, match="models.<role>.base_url"):
+    with pytest.raises(
+        ValidationError,
+        match=r"models\.<role>\.settings\.base_url",
+    ):
         FabricConfig(
             metadata=MetadataConfig(name="demo"),
             harness=HarnessConfig(adapter_id="test.fabric.shim"),
