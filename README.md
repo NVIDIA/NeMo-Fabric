@@ -192,17 +192,19 @@ runtimes, authentication, and execution details.
 - **Experimentation CLI:** presets provide quick probes, examples provide
   maintained runnable workflows, and `example init` generates editable Python
   or Rust applications that call a language API directly.
-- **Tools policy:** use top-level `tools.blocked` for harness-neutral blocked
-  tool policy. Names are interpreted by the selected adapter:
+- **Tools policy:** use `tools.blocked` for individual tool names and
+  `tools.toolsets` for harness-defined tool bundles. They are separate policies
+  and adapters declare support for each independently:
 
   ```python
   config.block_tools("browser", "shell")
+  config.configure_toolsets(enabled=["web", "terminal"], blocked=["browser"])
   ```
 
-  The selected adapter interprets these names: Hermes Agent maps them to disabled
-  toolsets, Claude maps them to `disallowed_tools`, Deep Agents enforces them
-  with middleware, and adapters without a native deny mechanism route the
-  policy as unsupported.
+  Claude maps blocked tools to `disallowed_tools`; Deep Agents enforces them
+  with middleware. Hermes Agent maps `tools.toolsets` into its toolset controls.
+  An adapter that cannot enforce a configured policy fails planning with a
+  compatibility error instead of applying only part of it.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
   Harness-specific extensions belong under `harness.settings` so the normalized
   contract can remain stable. Refer to the

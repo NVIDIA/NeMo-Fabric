@@ -46,11 +46,10 @@ adapter resolution.
 
 NeMo Fabric maps the following into the harness:
 
-- `models.default.model` / `harness.settings.model_name` selects the model.
-- `models.default.provider` selects the client (`nvidia`/`openai` → OpenAI-compatible).
-- `models.default.temperature` / `harness.settings.temperature` sets sampling.
-- `harness.settings.base_url` overrides the model endpoint.
-- `harness.settings.system_prompt` becomes the Deep Agents `system_prompt`.
+- The selected `models` role supplies `model`, `provider`, `api_key_env`,
+  `base_url`, and `temperature`.
+- Top-level `system_prompt` becomes the Deep Agents `system_prompt`.
+- `runtime.timeout_seconds` sets the Fabric invocation deadline.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
   confines the agent to the workspace: absolute paths and `..` cannot escape
@@ -71,6 +70,10 @@ NeMo Fabric maps the following into the harness:
   `checkpointer`) cannot be overridden through this passthrough, and an unknown or
   unsupported key is a normalized configuration failure rather than a silently
   dropped setting.
+
+The legacy `harness.settings` aliases for model fields, `system_prompt`,
+`workspace`, environment variables, and invocation timeout are rejected. Keep
+only the Deep Agents-specific `deepagents` controls there.
 
 ### Subagents
 
@@ -98,9 +101,8 @@ NeMo Fabric starts one local adapter host for every runtime. During runtime star
 the host compiles one Deep Agents graph, opens its async LangGraph checkpointer,
 and creates one thread ID. Every invocation reuses those native objects; later
 turns report `resumed` as `true`. The checkpointer lives under
-`harness.settings.state_dir` (default the runtime artifacts directory) and is
-closed during runtime stop. The live host owns the thread identity, and
-LangGraph owns the transcript.
+the Fabric artifact root, scoped by runtime ID, and is closed during runtime
+stop. The live host owns the thread identity, and LangGraph owns the transcript.
 
 `Fabric.run(...)` is a convenience over that same lifecycle: it starts the
 runtime, invokes it once, and stops it. It does not use a separate adapter

@@ -85,7 +85,8 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
-  --ak 'fabric_harness_settings={"cwd":"/app","base_url":"https://integrate.api.nvidia.com/v1","max_iterations":20}' \
+  --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
+  --ak fabric_max_turns=20 \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-hermes \
   --jobs-dir "$RUNS_DIR" \
@@ -110,7 +111,9 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak fabric_telemetry=relay \
-  --ak 'fabric_harness_settings={"cwd":"/app","base_url":"https://integrate.api.nvidia.com/v1","max_iterations":4,"terminal_timeout":120}' \
+  --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
+  --ak fabric_max_turns=4 \
+  --ak 'fabric_harness_settings={"terminal_timeout":120}' \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-hermes-relay \
   --jobs-dir "$RUNS_DIR" \
@@ -148,7 +151,8 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_adapter_id=nvidia.fabric.claude \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
-  --ak 'fabric_harness_settings={"max_turns":20,"timeout_seconds":600}' \
+  --ak fabric_max_turns=20 \
+  --ak fabric_runtime_timeout_seconds=600 \
   --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
   --job-name fabric-claude \
   --jobs-dir "$RUNS_DIR" \
