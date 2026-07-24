@@ -1,0 +1,51 @@
+---
+title: "Use the LangChain Deep Agents Adapter"
+description: "Install and configure the NeMo Fabric harness integration for LangChain Deep Agents."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The NVIDIA NeMo Fabric `nvidia.fabric.langchain.deepagents` adapter runs
+LangChain Deep Agents in the persistent NeMo Fabric Python adapter host. The
+adapter maps normalized NeMo Fabric configuration into the model, tools,
+skills, Model Context Protocol (MCP) servers, workspace, subagents, and
+telemetry.
+
+## Install the Adapter
+
+Install the adapter and its LangChain Deep Agents dependencies in the
+environment that runs the agent harness:
+
+```bash
+pip install "nemo-fabric[deepagents]"
+```
+
+## Configure the Adapter
+
+Select the LangChain Deep Agents harness integration in `HarnessConfig`:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents")
+```
+
+Use normalized `FabricConfig` fields to configure the model, workspace, skills,
+MCP servers, blocked tools, and telemetry. Use `harness.settings` for
+supported JSON-serializable Deep Agents options such as `subagents` and
+`interrupt_on`.
+
+## Understand the Runtime Lifecycle
+
+Each NeMo Fabric runtime compiles one Deep Agents graph and retains its
+checkpointer and LangGraph thread across ordered invocations. In-process
+subagents inherit the parent run's model, tools, skills, workspace, telemetry,
+and permissions.
+
+NeMo Relay provides the SDK-native observability integration for this adapter.
+Native OpenTelemetry and OpenInference exporters are also available through the
+model provider configuration.
+
+For the complete configuration, subagent, lifecycle, and telemetry reference,
+refer to the
+[LangChain Deep Agents adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/deepagents).

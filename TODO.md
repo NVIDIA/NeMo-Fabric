@@ -41,7 +41,7 @@ cleanup validation.
 - **Status:** Waiting for an upstream release
 - **Added:** July 16, 2026
 - **Affected documentation:** `adapters/codex/README.md` and
-  `docs/integrations/codex.mdx`
+  `docs/integrations/harness/codex.mdx`
 - **Reason:** Released NeMo Relay versions do not yet decode the
   `zstd`-compressed request bodies emitted by the Codex SDK, so semantic Relay
   artifacts require a source installation.
@@ -53,22 +53,6 @@ cleanup validation.
 - **Cleanup:** Replace the pinned source-install instructions with the released
   CLI installation, run the Codex Relay end-to-end test, update both affected
   documentation files, and remove this entry.
-
-## NeMo Fabric PyPI Availability
-
-- **Status:** Waiting for a published release
-- **Added:** July 16, 2026
-- **Affected documentation:** `skills/nemo-fabric-integrate/SKILL.md` (install
-  section)
-- **Reason:** `nemo-fabric` is not yet published on PyPI, so the consumer
-  integration skill installs from a source checkout (`just build-all`) or locally
-  built wheels (`just wheels` plus `uv pip install --find-links`).
-- **Upstream resolution:** NeMo Fabric's own first PyPI release (internal
-  milestone; no external dependency).
-- **Removal condition:** `nemo-fabric` and its adapter extras are published on
-  PyPI in a version the skill can target.
-- **Cleanup:** Replace the source and wheel install steps in the skill with the
-  published `pip install "nemo-fabric[...]"` instructions and remove this entry.
 
 # Planned Work
 

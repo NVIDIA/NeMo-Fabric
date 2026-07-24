@@ -14,6 +14,29 @@ The adapter pins `claude-agent-sdk==0.2.120`. The SDK owns its compatible Claude
 Code runtime unless `harness.settings.cli_path` explicitly selects another
 executable.
 
+## Install the Adapter
+
+Install the adapter for Claude Code:
+
+```bash
+pip install "nemo-fabric[claude]"
+```
+
+## Configure the Adapter
+
+Select the Claude harness integration in `HarnessConfig`:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(adapter_id="nvidia.fabric.claude")
+```
+
+Use normalized `FabricConfig` fields to configure the model, workspace, skills,
+MCP servers, blocked tools, and telemetry. Use `harness.settings` for supported
+Claude-specific options such as `system_prompt`, `allowed_tools`,
+`permission_mode`, `max_turns`, and `max_budget_usd`.
+
 ## Choose an Authentication Mode
 
 Use the mode that matches the execution environment:

@@ -15,14 +15,13 @@ README = ROOT / "README.md"
 
 # The README stays a quick start and routes detailed SDK usage to canonical docs.
 DOCUMENTED_SNIPPETS = [
-    ".venv/bin/python -m examples.code_review_agent \\",
-    "examples/code_review_agent/config.py",
+    "config = FabricConfig(",
+    "[`01_quickstart.ipynb` notebook](examples/notebooks/01_quickstart.ipynb)",
     "[Python SDK guide](docs/sdk/python.mdx)",
-    "[generated Python API reference](docs/reference/api/python-library-reference/index.md)",
+    "pip install \"nemo-fabric[runtime]\"",
 ]
 
 DETAILED_SDK_SNIPPETS = (
-    "config = FabricConfig(",
     "request = RunRequest(",
     "### Multi-Turn SDK Runtimes",
 )

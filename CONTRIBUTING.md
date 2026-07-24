@@ -13,25 +13,6 @@ the development workflow, coding standards, and pull request process.
 This section collects the setup steps needed before building, testing, or
 contributing changes.
 
-### Package Installation
-
-NeMo Fabric is not currently available on PyPI. To consume the Python packages,
-build wheels from a source checkout:
-
-```bash
-just wheels
-uv pip install --find-links dist nemo-fabric
-```
-
-Adapters are distributed as optional extras. For example, install the Hermes Agent adapter with:
-
-```bash
-uv pip install --find-links dist "nemo-fabric[hermes]"
-```
-
-Refer to the [installation guide](docs/getting-started/install.mdx) for the
-complete list of adapters and installation options.
-
 ### Source Development
 
 Install these tools before you start:
@@ -54,8 +35,36 @@ uv sync --all-groups --all-extras
 just no_uv=true build-all
 ```
 
-Verify the checkout by running the test suites described in
-[Testing Requirements](#testing-requirements).
+In the above, replace `3.13` with the Python version you want to use for development.
+
+Verify the checkout by running the test suites described in [Testing](#testing).
+
+### Package Installation
+
+To build Python packages (wheels) locally from a source checkout:
+
+```bash
+just wheels
+```
+
+The resulting wheel files are placed in the `dist/` directory. Install the
+packages into a virtual environment with:
+
+```bash
+uv pip install --find-links ./dist "nemo-fabric[runtime]"
+```
+
+Adapters are distributed as optional extras. For example, install the Hermes
+Agent adapter with:
+
+```bash
+uv pip install --find-links ./dist "nemo-fabric[hermes]"
+```
+
+Refer to the [installation guide](docs/getting-started/install.mdx) for the
+complete list of adapters and installation options.
+
+
 
 ## Release Tagging
 
@@ -95,7 +104,7 @@ Use the naming conventions appropriate to each language: Rust and Python use
 `snake_case` for functions and variables, Rust types use `PascalCase`, and
 Python classes use `PascalCase`.
 
-## Testing Requirements
+## Testing
 
 **Run tests for every language surface affected by your changes.** If a change
 touches the Rust core or public schemas, run both the Rust and Python suites

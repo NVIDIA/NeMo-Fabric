@@ -1,0 +1,48 @@
+---
+title: "Use the Hermes Agent Adapter"
+description: "Install and configure the NeMo Fabric harness integration for Hermes Agent."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The NVIDIA NeMo Fabric `nvidia.fabric.hermes` adapter runs Hermes Agent through
+its Python SDK. The adapter maps normalized NeMo Fabric configuration into
+Hermes Agent models, tools, skills, Model Context Protocol (MCP) servers,
+sessions, and telemetry.
+
+## Install the Adapter
+
+Install the adapter and a compatible Hermes Agent version in the environment
+that runs the agent harness:
+
+```bash
+pip install "nemo-fabric[hermes,hermes-agent]"
+```
+
+Hermes Agent currently supports Python 3.11 through 3.13.
+
+## Configure the Adapter
+
+Select the Hermes Agent harness integration in `HarnessConfig`:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
+```
+
+Use normalized `FabricConfig` fields to configure the model, workspace, skills,
+MCP servers, blocked toolsets, and telemetry. Use `harness.settings` only for
+Hermes Agent-specific options such as `hermes_home` or
+`disabled_toolsets`.
+
+## Understand the Runtime Lifecycle
+
+Each NeMo Fabric runtime creates one Hermes Agent `AIAgent` and one `SessionDB`.
+Ordered invocations reuse those objects and the conversation history until the
+runtime stops. When NeMo Relay telemetry is enabled, the adapter finalizes Agent
+Trajectory Observability Format (ATOF) and Agent Trajectory Interchange Format
+(ATIF) artifacts after each invocation.
+
+For the complete configuration and lifecycle reference, refer to the
+[Hermes Agent adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters/hermes).

@@ -558,6 +558,5 @@ def test_swebench_mcp_config_uses_the_bundled_repo_inspector():
 def test_root_readme_routes_to_sdk_and_harbor_guides():
     readme = ROOT_README.read_text(encoding="utf-8")
 
-    assert "runtime execution layer" in readme
     assert "docs/sdk/python.mdx" in readme
     assert "examples/harbor/README.md" in readme
