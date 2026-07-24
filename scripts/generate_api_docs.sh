@@ -40,8 +40,9 @@ perl -0pi -e 's/\A\s+//' "$out"/*.md
 # lazydocs nests properties at h4 directly under h2 class sections. Flatten
 # those headings to h3 so generated pages satisfy markdown heading order.
 perl -pi -e 's/^#### (<kbd>property<\/kbd>)/### $1/' "$out"/*.md
-# lazydocs emits the ToolsConfig class heading without a separating blank line.
-perl -0pi -e 's/(^## <kbd>class<\/kbd> `ToolsConfig`\n)(?!\n)/$1\n/m' "$out/nemo_fabric.models.md"
+# lazydocs emits some class headings without a separating blank line.
+perl -0pi -e 's/(^## <kbd>class<\/kbd> `(ToolsConfig|RelayAtofFileSinkConfig|RelayAtofStreamSinkConfig)`\n)(?!\n)/$1\n/gm' \
+  "$out/nemo_fabric.models.md"
 # lazydocs omits the async marker from generated method signatures.
 perl -0pi -e 's/(### <kbd>method<\/kbd> `(aclose|result)`\n\n```python\n)\2\(/${1}async def ${2}(/g' \
   "$out/nemo_fabric.streaming.md"

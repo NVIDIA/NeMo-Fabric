@@ -173,12 +173,13 @@ async def _post_content_length(
         + f"Content-Length: {len(payload)}\r\n".encode()
         + expect
         + b"Content-Type: application/x-ndjson\r\n\r\n"
-        + payload
     )
     await writer.drain()
     if expect_continue:
         assert await reader.readline() == b"HTTP/1.1 100 Continue\r\n"
         assert await reader.readline() == b"\r\n"
+    writer.write(payload)
+    await writer.drain()
     assert await reader.readline() == b"HTTP/1.1 200 OK\r\n"
     writer.close()
     await writer.wait_closed()
@@ -451,6 +452,31 @@ async def test_cancelled_aclose_keeps_turn_active_and_result_awaitable(
     await stream.aclose()
     assert (await stream.result()).status == "succeeded"
     await runtime.stop()
+
+
+async def test_aclose_drains_backpressure_while_invocation_finishes():
+    listener = _AtofStreamListener(maxsize=1)
+    producer_finished = asyncio.Event()
+
+    async def invoke() -> RunResult:
+        await producer_finished.wait()
+        return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
+
+    stream = InvokeStream(invoke(), listener)
+    listener.records.put_nowait({"uuid": "first"})
+
+    async def produce() -> None:
+        await listener.records.put({"uuid": "second"})
+        producer_finished.set()
+
+    producer = asyncio.create_task(produce())
+    await asyncio.sleep(0)
+    assert not producer.done()
+
+    await asyncio.wait_for(stream.aclose(), timeout=1)
+
+    assert producer.done()
+    assert (await stream.result()).status == "succeeded"
 
 
 async def test_listener_accepts_atof_record_larger_than_default_read_limits():
