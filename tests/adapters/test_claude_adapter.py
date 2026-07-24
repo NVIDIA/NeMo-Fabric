@@ -87,6 +87,9 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "module": "nemo_fabric_adapters.claude.adapter",
         },
         "config": {
+            "models": {
+                "providers": ["anthropic", "nvidia"],
+            },
             "accepts": [
                 "models",
                 "models.base_url",

@@ -997,6 +997,9 @@ def test_descriptor_has_no_codex_binary_requirement():
     assert descriptor["runner"] == {
         "module": "nemo_fabric_adapters.codex.adapter",
     }
+    assert descriptor["config"]["models"] == {
+        "providers": ["nvidia", "openai"],
+    }
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",

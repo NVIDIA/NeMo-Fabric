@@ -77,6 +77,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "models": {
+          "$ref": "#/$defs/AdapterModelConfigSupport",
+          "description": "Model providers and provider-specific settings accepted by this adapter."
         }
       },
       "type": "object"
@@ -183,6 +187,28 @@
         }
       ]
     },
+    "AdapterModelConfigSupport": {
+      "additionalProperties": true,
+      "description": "Adapter compatibility constraints for normalized model configuration.",
+      "properties": {
+        "providers": {
+          "description": "Supported model providers. An empty set accepts any provider.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "settings": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AdapterSettingSchema"
+          },
+          "description": "Supported provider-specific model settings.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "AdapterRequirements": {
       "additionalProperties": true,
       "description": "Adapter runtime requirements.",
@@ -224,6 +250,66 @@
         }
       },
       "type": "object"
+    },
+    "AdapterSettingSchema": {
+      "description": "Descriptor-owned schema for one adapter-specific setting.",
+      "properties": {
+        "description": {
+          "description": "Human-readable setting description.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required": {
+          "default": false,
+          "description": "Whether the setting must be present.",
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/$defs/AdapterSettingType",
+          "description": "Expected JSON value kind."
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "AdapterSettingType": {
+      "description": "JSON value kinds accepted by an adapter-owned setting.",
+      "oneOf": [
+        {
+          "const": "string",
+          "description": "JSON string.",
+          "type": "string"
+        },
+        {
+          "const": "integer",
+          "description": "JSON integer.",
+          "type": "string"
+        },
+        {
+          "const": "number",
+          "description": "JSON number.",
+          "type": "string"
+        },
+        {
+          "const": "boolean",
+          "description": "JSON boolean.",
+          "type": "string"
+        },
+        {
+          "const": "object",
+          "description": "JSON object.",
+          "type": "string"
+        },
+        {
+          "const": "array",
+          "description": "JSON array.",
+          "type": "string"
+        }
+      ]
     },
     "AdapterTelemetryProviderSupport": {
       "additionalProperties": true,

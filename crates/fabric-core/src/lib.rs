@@ -11,7 +11,8 @@ pub mod schema;
 
 pub use config::{
     ADAPTER_CONTRACT_VERSION, AdapterConfigField, AdapterConfigSupport, AdapterDescriptor,
-    AdapterDescriptorSource, AdapterKind, AdapterRequirements, AdapterTelemetryProviderSupport,
+    AdapterDescriptorSource, AdapterKind, AdapterModelConfigSupport, AdapterRequirements,
+    AdapterSettingSchema, AdapterSettingType, AdapterTelemetryProviderSupport,
     AdapterTelemetrySupport, CapabilityPlan, ControlLocation, EnvironmentConfig,
     EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig, McpConfig, McpExposure,
     McpServerPlan, MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext,

@@ -7,6 +7,9 @@
     "module": "nemo_fabric_adapters.codex.adapter"
   },
   "config": {
+    "models": {
+      "providers": ["nvidia", "openai"]
+    },
     "accepts": [
       "models",
       "models.base_url",
