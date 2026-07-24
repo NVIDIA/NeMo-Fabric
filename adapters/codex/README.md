@@ -7,21 +7,30 @@ SPDX-License-Identifier: Apache-2.0
 
 The `nvidia.fabric.codex` adapter uses the official Codex Python SDK behind
 NeMo Fabric's normalized invocation contract. It does not resolve or execute a
-separately installed `codex` command. The SDK package owns its pinned
-app-server runtime and typed JSON-RPC protocol.
+separately installed `codex` command. The execution environment must provide a
+compatible SDK separately. The repository test environment uses
+`openai-codex==0.144.4`. The SDK package owns its pinned app-server runtime and
+typed JSON-RPC protocol.
 
 ## Install
 
-To install just the Codex adapter by itself:
+To install only the Codex adapter distribution:
+
+```bash
+pip install nemo-fabric-adapters-codex
+```
+
+Install a compatible Codex SDK in the same environment. The following version
+matches the repository test environment:
+
+```bash
+pip install "openai-codex==0.144.4"
+```
+
+To install the NeMo Fabric Runtime and Codex adapter in the same environment:
 
 ```bash
 pip install "nemo-fabric[codex]"
-```
-
-To install just the Codex adapter along with the NeMo Fabric Runtime:
-
-```bash
-pip install "nemo-fabric[codex, runtime]"
 ```
 
 ## Authentication
@@ -59,9 +68,10 @@ login. Set the endpoint in
 `models.default.settings.base_url` or `NVIDIA_FRONTIER_BASE_URL`; the adapter
 does not assume a default frontier endpoint.
 
-The adapter depends on the Codex SDK, which installs and selects its matching
-app-server runtime. NeMo Fabric does not declare the runtime package directly or
-treat it as a user-installed command or adapter descriptor requirement.
+The Codex SDK installs and selects its matching app-server runtime. NeMo Fabric
+does not declare the SDK or the app-server runtime as adapter dependencies or
+treat the app-server as a user-installed command or adapter descriptor
+requirement.
 
 A `codex` command on `PATH` is not selected implicitly. To override the
 SDK-selected runtime intentionally, set

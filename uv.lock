@@ -2057,6 +2057,10 @@ dependencies = [
 claude = [
     { name = "nemo-fabric-adapters-claude" },
 ]
+claude-agent = [
+    { name = "claude-agent-sdk" },
+    { name = "nemo-fabric-adapters-claude" },
+]
 codex = [
     { name = "nemo-fabric-adapters-codex" },
 ]
@@ -2083,6 +2087,15 @@ runtime = [
 ]
 
 [package.dev-dependencies]
+adapter-tests = [
+    { name = "claude-agent-sdk" },
+    { name = "deepagents" },
+    { name = "hermes-agent", marker = "python_full_version < '3.14'" },
+    { name = "langchain" },
+    { name = "langgraph" },
+    { name = "nemo-relay", extra = ["deepagents"] },
+    { name = "openai-codex" },
+]
 adapters = [
     { name = "nemo-fabric-adapters-claude" },
     { name = "nemo-fabric-adapters-codex" },
@@ -2118,9 +2131,11 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "claude-agent-sdk", marker = "extra == 'claude-agent'", specifier = "==0.2.120" },
     { name = "harbor", marker = "python_full_version >= '3.12' and extra == 'harbor'", specifier = ">=0.18,<0.19" },
     { name = "hermes-agent", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", specifier = ">=0.17.0" },
     { name = "nemo-fabric-adapters-claude", marker = "extra == 'claude'", editable = "adapters/claude" },
+    { name = "nemo-fabric-adapters-claude", marker = "extra == 'claude-agent'", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", marker = "extra == 'codex'", editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes'", editable = "adapters/hermes" },
@@ -2131,9 +2146,18 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
     { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
 ]
-provides-extras = ["codex", "claude", "deepagents", "harbor", "hermes", "hermes-agent", "relay", "runtime"]
+provides-extras = ["codex", "claude", "claude-agent", "deepagents", "harbor", "hermes", "hermes-agent", "relay", "runtime"]
 
 [package.metadata.requires-dev]
+adapter-tests = [
+    { name = "claude-agent-sdk", specifier = "==0.2.120" },
+    { name = "deepagents", specifier = ">=0.6.12,<0.7.0" },
+    { name = "hermes-agent", marker = "python_full_version < '3.14'", specifier = ">=0.17.0" },
+    { name = "langchain", specifier = ">=1.3,<2.0" },
+    { name = "langgraph", specifier = ">=1.2,<2.0" },
+    { name = "nemo-relay", extras = ["deepagents"], specifier = ">=0.6.0,<0.7" },
+    { name = "openai-codex", specifier = "==0.144.4" },
+]
 adapters = [
     { name = "nemo-fabric-adapters-claude", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", editable = "adapters/codex" },
@@ -2172,14 +2196,12 @@ name = "nemo-fabric-adapters-claude"
 version = "0.1.0"
 source = { editable = "adapters/claude" }
 dependencies = [
-    { name = "claude-agent-sdk" },
     { name = "nemo-fabric-adapters-common" },
     { name = "tomli-w" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "claude-agent-sdk", specifier = "==0.2.120" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
@@ -2190,14 +2212,12 @@ version = "0.1.0"
 source = { editable = "adapters/codex" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
-    { name = "openai-codex" },
     { name = "tomli-w" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "openai-codex", specifier = "==0.144.4" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
 
@@ -2211,30 +2231,24 @@ name = "nemo-fabric-adapters-deepagents"
 version = "0.1.0"
 source = { editable = "adapters/deepagents" }
 dependencies = [
-    { name = "deepagents" },
-    { name = "langchain" },
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
-    { name = "langgraph" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "nemo-fabric-adapters-common" },
 ]
 
 [package.optional-dependencies]
 relay = [
-    { name = "nemo-relay", extra = ["deepagents"] },
+    { name = "nemo-relay" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "deepagents", specifier = ">=0.6.12,<0.7.0" },
-    { name = "langchain", specifier = ">=1.3,<2.0" },
     { name = "langchain-mcp-adapters", specifier = ">=0.1,<0.3.0" },
     { name = "langchain-openai", specifier = ">=0.3" },
-    { name = "langgraph", specifier = ">=1.2,<2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0,<4.0" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-relay", extras = ["deepagents"], marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
 ]
 provides-extras = ["relay"]
 
@@ -2244,14 +2258,10 @@ version = "0.1.0"
 source = { editable = "adapters/hermes" }
 dependencies = [
     { name = "nemo-fabric-adapters-common", marker = "python_full_version < '3.14'" },
-    { name = "pyyaml", marker = "python_full_version < '3.14'" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "pyyaml", specifier = ">=6.0" },
-]
+requires-dist = [{ name = "nemo-fabric-adapters-common", editable = "adapters/common" }]
 
 [[package]]
 name = "nemo-fabric-runtime"

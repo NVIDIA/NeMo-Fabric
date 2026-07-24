@@ -88,7 +88,7 @@ jobs:
       - name: Build SDK with native extension
         run: |
           uv venv --python "${UV_PYTHON:-${{ matrix.python-version }}}" .venv
-          uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes' || '' }} --extra relay --extra runtime
+          uv sync --group adapter-tests --group test --no-group dev --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes' || '' }} --extra relay --extra runtime
 
       - name: Run pytest
         run: |

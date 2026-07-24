@@ -29,10 +29,10 @@ pip install nemo-fabric
 
 ### Installing the NeMo Fabric Adapters
 
-This command installs a NeMo Fabric adapter and its dependencies. Adapters
-intentionally have minimal dependencies and belong in the same environment as
-the agent harness. That environment can differ from the NeMo Fabric runtime
-environment.
+When the NeMo Fabric Runtime and an adapter share an environment, install the
+adapter through an extra on the `nemo-fabric` distribution. The short adapter
+extras install the adapter and its adapter-owned dependencies, but not the
+corresponding agent harness:
 
 The following adapter extras are available:
 
@@ -45,10 +45,26 @@ The following adapter extras are available:
 pip install "nemo-fabric[<adapter_name>]"
 ```
 
-For example, to install the Hermes Agent adapter:
+When the harness runs in a separate environment, install the adapter
+distribution directly into that environment. For example, install only the
+Hermes Agent adapter with:
 
 ```bash
-pip install "nemo-fabric[hermes]"
+pip install nemo-fabric-adapters-hermes
+```
+
+Install a compatible harness separately in the same environment as the adapter.
+The [adapter compatibility reference](https://github.com/NVIDIA/NeMo-Fabric/tree/main/adapters)
+links to the installation guide for each adapter and its harness.
+
+For complete co-located environments, the `claude-agent` convenience extra
+includes the Claude adapter and the exact SDK version tested by this repository.
+The `hermes-agent` convenience extra includes the Hermes adapter and its
+declared Hermes Agent dependency:
+
+```bash
+pip install "nemo-fabric[claude-agent]"
+pip install "nemo-fabric[hermes-agent]"
 ```
 
 ### Install NeMo Relay

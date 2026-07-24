@@ -9,22 +9,37 @@ The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
 Python behind NeMo Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
-This adapter pins `claude-agent-sdk==0.2.120`. The SDK supplies its compatible
-Claude Code runtime unless `harness.settings.cli_path` explicitly selects
-another executable.
+The execution environment must provide a compatible Claude Agent SDK
+separately. The repository test environment uses
+`claude-agent-sdk==0.2.120`. The SDK supplies its compatible Claude Code runtime
+unless `harness.settings.cli_path` explicitly selects another executable.
 
 ## Install
 
-To install just the Claude adapter by itself:
+To install only the Claude adapter distribution:
+
+```bash
+pip install nemo-fabric-adapters-claude
+```
+
+Install a compatible Claude Agent SDK in the same environment. The following
+version matches the repository test environment:
+
+```bash
+pip install "claude-agent-sdk==0.2.120"
+```
+
+To install the NeMo Fabric Runtime and Claude adapter in the same environment:
 
 ```bash
 pip install "nemo-fabric[claude]"
 ```
 
-To install just the Claude adapter along with the NeMo Fabric Runtime:
+For a complete co-located environment using the Claude Agent SDK version tested
+by this repository:
 
 ```bash
-pip install "nemo-fabric[claude, runtime]"
+pip install "nemo-fabric[claude-agent]"
 ```
 
 ## Authentication
@@ -135,8 +150,8 @@ gateway has the same lifecycle as that single invocation.
 The NeMo Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
 startup failures return a stable adapter error and retain the gateway log for
-diagnosis. The default Claude Agent SDK dependency bundles a compatible Claude
-Code executable. An executable supplied with `cli_path` must support the Relay
+diagnosis. A compatible Claude Agent SDK supplies a bundled Claude Code
+executable. An executable supplied with `cli_path` must support the Relay
 plugin's complete hook set, including `UserPromptExpansion`.
 
 ## Typed Configuration

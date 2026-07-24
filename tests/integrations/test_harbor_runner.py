@@ -17,6 +17,7 @@ CALCULATOR_SOLUTION = CALCULATOR_ROOT / "task" / "solution" / "solve.sh"
 CALCULATOR_FABRIC_ROOT = CALCULATOR_ROOT / "task" / "environment" / "fabric"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_README = SWEBENCH_ROOT / "README.md"
+SWEBENCH_PREPARE = ROOT / "examples" / "harbor" / "prepare_swebench.sh"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
@@ -253,8 +254,14 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     assert "-e /opt/nemo-fabric/adapters/claude" in dockerfile
     assert "-e /opt/nemo-fabric/adapters/hermes" in dockerfile
+    assert '"claude-agent-sdk==0.2.120"' in dockerfile
     assert "nemo-fabric[harbor,hermes,hermes-agent,relay,runtime]" in dockerfile
     assert "@openai/codex" not in dockerfile
+
+    swebench_prepare = SWEBENCH_PREPARE.read_text(encoding="utf-8")
+    assert "nemo-fabric[claude-agent,harbor,hermes,hermes-agent,relay,runtime]" in (
+        swebench_prepare
+    )
 
 
 def test_harbor_calculator_uses_agent_inputs_without_config_files():

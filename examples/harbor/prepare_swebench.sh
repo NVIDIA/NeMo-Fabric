@@ -64,7 +64,7 @@ if [[ -z "$fabric_wheel" ]]; then
 fi
 
 printf '%s\n' \
-    "nemo-fabric[claude,harbor,hermes,hermes-agent,relay,runtime] @ file:///tmp/nemo-fabric-config/.wheelhouse/$fabric_wheel" \
+    "nemo-fabric[claude-agent,harbor,hermes,hermes-agent,relay,runtime] @ file:///tmp/nemo-fabric-config/.wheelhouse/$fabric_wheel" \
     > "$bundle_dir/.fabric-package"
 
 echo "Prepared $bundle_dir"

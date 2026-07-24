@@ -15,6 +15,7 @@ ENV PATH=/root/.cargo/bin:$PATH
 
 COPY vendor/nemo-fabric /opt/nemo-fabric
 RUN pip install --no-cache-dir \
+        "claude-agent-sdk==0.2.120" \
         -e /opt/nemo-fabric/python \
         -e /opt/nemo-fabric/adapters/common \
         -e /opt/nemo-fabric/adapters/claude \

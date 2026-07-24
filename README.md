@@ -137,7 +137,10 @@ An explicit `harness.settings.python` or `harness.settings.python_env` takes
 precedence. If none is configured and `ADAPTER_PYTHON` is unset, NeMo Fabric falls
 back to `python3`. 
 
-Use `ADAPTER_PYTHON` when the harness is installed in a separate environment from NeMo Fabric. The environment must have the adapter package installed. The adapters Python packages are designed to be small with minimal dependencies.
+Use `ADAPTER_PYTHON` when the harness is installed in a separate environment
+from NeMo Fabric. That environment must contain the adapter package and a
+compatible harness. Adapter packages install only their adapter-owned runtime
+dependencies.
 
 The run returns a normalized `RunResult` JSON payload and writes logs/artifacts
 under `examples/code_review_agent/artifacts/hermes/`. Its complete base
@@ -152,7 +155,7 @@ config and clone-based variants live in
 
 ## Supported Agent Harnesses
 
-Choose a bundled agent harness based on your model ecosystem and application
+Choose a supported agent harness based on your model ecosystem and application
 needs. Every harness supports persistent multi-turn local runtimes through the
 same NeMo Fabric lifecycle and returns normalized results, artifacts, and telemetry
 references.
@@ -170,11 +173,12 @@ individual harness guides, refer to the
 
 ## Claude Adapter
 
-Build the local wheels and install NeMo Fabric with the independent Claude adapter:
+Build the local wheels and install NeMo Fabric with the Claude adapter and the
+Claude Agent SDK version tested by this repository:
 
 ```bash
 just wheels
-python -m pip install --find-links dist "nemo-fabric[claude]"
+python -m pip install --find-links dist "nemo-fabric[claude-agent]"
 ```
 
 Refer to the [Claude adapter guide](adapters/claude/README.md) for

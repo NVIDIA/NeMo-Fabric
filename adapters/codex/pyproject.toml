@@ -26,7 +26,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "nemo-fabric-adapters-common == 0.1.0",
-  "openai-codex==0.144.4",
   "tomli-w~=1.2",
 ]
 

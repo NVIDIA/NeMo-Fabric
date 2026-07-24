@@ -25,10 +25,14 @@ variations notebook shows advanced composition against a real, maintained agent.
   - **Hermes Agent** (both notebooks): install Hermes Agent in its own environment (the repo
     README's [Hermes Agent quick start](../../README.md#quick-start-hermes-agent))
     and set `NVIDIA_API_KEY`. The setup cell auto-detects `.tmp/hermes-venv`.
-  - **Deep Agents, Codex, Claude** (variations notebook): the matching adapter
-    installed in the NeMo Fabric environment, plus that harness's credentials
-    (`NVIDIA_API_KEY` for Deep Agents; an authenticated `codex` and
-    `OPENAI_API_KEY` for Codex; `ANTHROPIC_API_KEY` for Claude).
+  - **Deep Agents, Codex, Claude** (variations notebook): install both the
+    adapter and compatible harness package by following the
+    [Deep Agents](../../adapters/deepagents/README.md),
+    [Codex](../../adapters/codex/README.md), or
+    [Claude](../../adapters/claude/README.md) adapter guide. Provide that
+    harness's credentials (`NVIDIA_API_KEY` for Deep Agents; an authenticated
+    `codex` login established with either ChatGPT or an OpenAI API key for Codex;
+    `ANTHROPIC_API_KEY` for Claude).
 - `NVIDIA_API_KEY` is loaded from a gitignored `.env` at the repo root if present.
 
 Every live cell is guarded. With only `just build-all` done, both notebooks
