@@ -142,7 +142,7 @@ Claude authentication variables selected by the adapter; this command uses
 ```bash
 : "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra runtime --extra harbor --extra claude harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model anthropic/claude-sonnet-4-5 \
