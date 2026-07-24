@@ -1,7 +1,7 @@
 ---
 title: "Module config"
 sidebar-title: "config"
-description: "Fabric config models and loading helpers."
+description: "NeMo Fabric config models and loading helpers."
 position: 65
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-Fabric config models and loading helpers.
+NeMo Fabric config models and loading helpers.
 
 ## Structs
 
@@ -23,7 +23,7 @@ Fabric config models and loading helpers.
 - [CapabilityTargetPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-capabilitytargetplan): Capabilities routed to one target.
 - [EnvironmentConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-environmentconfig): Execution environment configuration.
 - [EnvironmentPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-environmentplan): Resolved environment plan.
-- [FabricConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-fabricconfig): Versioned Fabric agent config.
+- [FabricConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-fabricconfig): Versioned NeMo Fabric agent config.
 - [HarnessConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-harnessconfig): Harness selection.
 - [McpConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-mcpconfig): MCP capability configuration.
 - [McpServerConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-mcpserverconfig): MCP server configuration.
@@ -38,9 +38,9 @@ Fabric config models and loading helpers.
 - [RelayConfigPolicy](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayconfigpolicy): Relay validation policy.
 - [RelayObservabilityConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayobservabilityconfig): NeMo Relay observability component configuration.
 - [RelayOtlpConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayotlpconfig): Relay OpenTelemetry/OpenInference export configuration.
-- [ResolveContext](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-resolvecontext): Source context used when resolving an in-memory Fabric config.
+- [ResolveContext](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-resolvecontext): Source context used when resolving an in-memory NeMo Fabric config.
 - [ResolvedAdapterDescriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-resolvedadapterdescriptor): Adapter descriptor selected for a run plan.
-- [RunPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runplan): Resolved Fabric run plan.
+- [RunPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runplan): Resolved NeMo Fabric run plan.
 - [RuntimeCapabilities](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runtimecapabilities): Lifecycle behavior implemented by a resolved runtime path.
 - [RuntimeConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runtimeconfig): Runtime input/output contract.
 - [SkillConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-skillconfig): Skill capability configuration.
@@ -52,12 +52,12 @@ Fabric config models and loading helpers.
 
 ## Enums
 
-- [AdapterDescriptorSource](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-adapterdescriptorsource): Where Fabric resolved an adapter descriptor from.
+- [AdapterDescriptorSource](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-adapterdescriptorsource): Where NeMo Fabric resolved an adapter descriptor from.
 - [AdapterKind](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-adapterkind): Adapter implementation kind.
 - [CapabilityKind](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-capabilitykind): Capability kind.
 - [CapabilityTarget](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-capabilitytarget): Capability routing target.
-- [ControlLocation](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-controllocation): Where Fabric control code runs relative to the environment.
-- [EnvironmentOwnership](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-environmentownership): Whether Fabric owns the underlying environment resource.
+- [ControlLocation](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-controllocation): Where NeMo Fabric control code runs relative to the environment.
+- [EnvironmentOwnership](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-environmentownership): Whether NeMo Fabric owns the underlying environment resource.
 - [McpExposure](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-mcpexposure): MCP exposure strategy.
 - [RelayAtifStorageConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatifstorageconfig): Relay ATIF remote storage configuration.
 - [RelayAtofEndpointFieldNamePolicy](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatofendpointfieldnamepolicy): Relay ATOF endpoint field-name policy.
@@ -75,4 +75,4 @@ Fabric config models and loading helpers.
 ## Functions
 
 - [load_adapter_descriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-load-adapter-descriptor): Load an adapter descriptor from JSON package metadata.
-- [resolve_run_plan_from_config](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-resolve-run-plan-from-config): Resolve a typed Fabric config into a runnable plan.
+- [resolve_run_plan_from_config](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-resolve-run-plan-from-config): Resolve a typed NeMo Fabric config into a runnable plan.

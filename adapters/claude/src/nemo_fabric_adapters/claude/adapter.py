@@ -173,7 +173,7 @@ def runtime_id(payload: dict[str, Any]) -> str:
     value = common_utils.runtime_context(payload).get("runtime_id")
     if not isinstance(value, str) or not value:
         raise AdapterInputError(
-            "claude_invalid_request", "Fabric runtime ID is required"
+            "claude_invalid_request", "NeMo Fabric runtime ID is required"
         )
     return value
 
@@ -345,13 +345,13 @@ def _stage_skill_plugin(payload: dict[str, Any]) -> list[dict[str, str]]:
         if not skill_path.is_dir() or not (skill_path / "SKILL.md").is_file():
             raise AdapterConfigError(
                 "claude_invalid_configuration",
-                f"Fabric skill path must be a directory containing SKILL.md: {skill_path}",
+                f"NeMo Fabric skill path must be a directory containing SKILL.md: {skill_path}",
             )
         name = skill_path.name
         if name in names:
             raise AdapterConfigError(
                 "claude_invalid_configuration",
-                f"Fabric skill names must be unique: {name}",
+                f"NeMo Fabric skill names must be unique: {name}",
             )
         names.add(name)
         skills.append((name, skill_path))

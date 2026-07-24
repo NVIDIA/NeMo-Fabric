@@ -7,7 +7,7 @@ description: "Drive stateful multi-turn execution through the Runtime API."
 SPDX-License-Identifier: Apache-2.0 */}
 
 # <kbd>module</kbd> `nemo_fabric.runtime`
-Runtime lifecycle support for the Fabric Python SDK.
+Runtime lifecycle support for the NVIDIA NeMo Fabric Python SDK.
 
 
 

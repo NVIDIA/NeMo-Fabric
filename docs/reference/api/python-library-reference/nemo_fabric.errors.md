@@ -15,7 +15,7 @@ Public exception hierarchy for the NeMo Fabric Python SDK.
 
 
 ## <kbd>class</kbd> `FabricError`
-Base class for structured SDK-level Fabric errors.
+Base class for structured SDK-level NeMo Fabric errors.
 
 Catch this type to handle any SDK failure while preserving machine-readable stage, code, retryability, and detail fields.
 
@@ -41,7 +41,7 @@ __init__(
 ) → None
 ```
 
-Initialize a structured Fabric exception.
+Initialize a structured NeMo Fabric exception.
 
 
 
@@ -76,7 +76,7 @@ __init__(
 ) → None
 ```
 
-Initialize a structured Fabric exception.
+Initialize a structured NeMo Fabric exception.
 
 
 
@@ -111,7 +111,7 @@ __init__(
 ) → None
 ```
 
-Initialize a structured Fabric exception.
+Initialize a structured NeMo Fabric exception.
 
 
 
@@ -146,7 +146,7 @@ __init__(
 ) → None
 ```
 
-Initialize a structured Fabric exception.
+Initialize a structured NeMo Fabric exception.
 
 
 
@@ -181,7 +181,7 @@ __init__(
 ) → None
 ```
 
-Initialize a structured Fabric exception.
+Initialize a structured NeMo Fabric exception.
 
 
 
@@ -216,7 +216,7 @@ __init__(
 ) → None
 ```
 
-Initialize a structured Fabric exception.
+Initialize a structured NeMo Fabric exception.
 
 
 

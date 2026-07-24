@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Plan diagnostics for Fabric.
+//! Plan diagnostics for NeMo Fabric.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -115,7 +115,7 @@ fn check_resolution(plan: &RunPlan) -> DoctorCheck {
     let message = match status {
         DoctorStatus::Pass => format!("selected resolution strategy `{resolution:?}`"),
         DoctorStatus::Warn if matches!(resolution, ResolutionStrategy::Service) => {
-            "selected resolution strategy `service` is modeled but not implemented by Fabric runtime execution".to_string()
+            "selected resolution strategy `service` is modeled but not implemented by NeMo Fabric runtime execution".to_string()
         }
         DoctorStatus::Warn => format!(
             "selected resolution strategy `{resolution:?}` is declared but not executed by this POC"

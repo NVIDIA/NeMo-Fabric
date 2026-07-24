@@ -172,7 +172,7 @@ class _HarnessConfig(_ConfigMapping):
     """Harness adapter selection and adapter-owned settings.
 
     Attributes:
-        adapter_id: Stable identifier of the Fabric adapter to resolve.
+        adapter_id: Stable identifier of the NeMo Fabric adapter to resolve.
         resolution: Optional adapter resolution strategy.
         settings: JSON-compatible settings owned by the selected adapter.
         extra_fields: Preserved extension fields not recognized by this SDK.
@@ -542,7 +542,7 @@ class _TelemetryConfig(_ConfigMapping):
 
 
 class _FabricConfigSnapshot(_ConfigMapping):
-    """Typed snapshot of the Fabric configuration stored in a run plan.
+    """Typed snapshot of the NeMo Fabric configuration stored in a run plan.
 
     It is reconstructed from the native plan payload and exposed through the
     immutable ``RunPlan`` mapping. Unknown fields survive round trips through
@@ -872,7 +872,7 @@ class AdapterInfo(FabricMapping):
     """Resolved adapter identity attached to a run plan.
 
     Attributes:
-        adapter_id: Stable identifier of the Fabric adapter implementation.
+        adapter_id: Stable identifier of the NeMo Fabric adapter implementation.
         harness: Stable machine-readable harness identifier.
         adapter_kind: Execution mechanism used by the adapter.
         metadata: Adapter-specific, JSON-compatible metadata.
@@ -1149,7 +1149,7 @@ class FabricEvent(FabricMapping):
 class RuntimeHandle(FabricMapping):
     """Opaque identity and binding for one started runtime.
 
-    Applications should treat ``runtime_binding`` as opaque. Fabric validates
+    Applications should treat ``runtime_binding`` as opaque. NeMo Fabric validates
     the handle against the run plan before invocation or shutdown.
 
     Attributes:
@@ -1158,7 +1158,7 @@ class RuntimeHandle(FabricMapping):
         agent_name: Resolved agent name.
         harness: Stable harness identifier.
         adapter_kind: Adapter execution mechanism.
-        adapter_id: Optional Fabric adapter identifier.
+        adapter_id: Optional NeMo Fabric adapter identifier.
         environment: Prepared environment snapshot.
     """
 
@@ -1202,7 +1202,7 @@ class RunOutput(FabricMapping):
     """Normalized adapter output.
 
     ``response`` is a known adapter response field whose value follows the
-    core Fabric JSON contract. Other keys are adapter-specific extensions.
+    core NeMo Fabric JSON contract. Other keys are adapter-specific extensions.
     """
 
     response: JSONValue | None
@@ -1217,7 +1217,7 @@ class RunOutput(FabricMapping):
 
 
 class RunResult(FabricMapping):
-    """Normalized terminal result from one Fabric invocation.
+    """Normalized terminal result from one NeMo Fabric invocation.
 
     The model is both attribute-accessible and mapping-compatible. A harness
     failure can be represented by ``status`` and ``error`` without raising when
@@ -1227,7 +1227,7 @@ class RunResult(FabricMapping):
         agent_name: Resolved agent name.
         harness: Stable harness identifier.
         adapter_kind: Adapter execution mechanism.
-        adapter_id: Fabric adapter identifier.
+        adapter_id: NeMo Fabric adapter identifier.
         runtime_id: Runtime lifecycle identifier.
         invocation_id: Identifier for this invocation.
         request_id: Correlated request identifier.

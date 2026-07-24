@@ -407,8 +407,8 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
     reserved = sorted(FABRIC_OWNED_AGENT_KEYS.intersection(extra))
     if reserved:
         raise AdapterConfigError(
-            f"harness.settings.deepagents cannot override Fabric-owned keys {reserved}; "
-            "they are derived from the normalized Fabric config."
+            f"harness.settings.deepagents cannot override NeMo Fabric-owned keys {reserved}; "
+            "they are derived from the normalized NeMo Fabric config."
         )
     unknown = sorted(set(extra) - DEEPAGENTS_PASSTHROUGH_KEYS)
     if unknown:

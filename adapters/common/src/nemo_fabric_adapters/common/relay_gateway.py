@@ -94,7 +94,7 @@ def relay_cli_contract(executable: Path) -> RelayCliContract:
         raise RelayGatewayError(
             "unsupported NeMo Relay CLI version "
             f"{'.'.join(str(value) for value in version)}; "
-            "Fabric requires >=0.6.0,<0.7.0"
+            "NeMo Fabric requires >=0.6.0,<0.7.0"
         )
     return RelayCliContract(version=version, observability_version=2)
 

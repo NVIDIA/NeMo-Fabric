@@ -102,7 +102,7 @@ class Fabric:
         """Diagnose a planned agent without starting its runtime.
 
         Doctor checks the resolved adapter, capability mappings, and declared
-        environment requirements using the native Fabric core.
+        environment requirements using the native NeMo Fabric core.
 
         Args:
             config: Complete typed ``FabricConfig``.
@@ -147,7 +147,7 @@ class Fabric:
         ``input`` and ``request`` are mutually exclusive. Omitting both produces
         an empty text input. Use ``RunRequest`` when the invocation needs a
         caller-owned request ID, context, or overrides.
-        Fabric attempts to stop a started runtime even when invocation fails.
+        NeMo Fabric attempts to stop a started runtime even when invocation fails.
 
         Args:
             config: Complete typed ``FabricConfig``.

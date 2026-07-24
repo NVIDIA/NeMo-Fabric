@@ -1,7 +1,7 @@
 ---
 title: "Client"
 slug: "/reference/api/python-library-reference/client"
-description: "Resolve, plan, diagnose, and run agents with Fabric."
+description: "Resolve, plan, diagnose, and run agents with NVIDIA NeMo Fabric."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -40,7 +40,7 @@ doctor(
 
 Diagnose a planned agent without starting its runtime.
 
-Doctor checks the resolved adapter, capability mappings, and declared environment requirements using the native Fabric core.
+Doctor checks the resolved adapter, capability mappings, and declared environment requirements using the native NeMo Fabric core.
 
 
 
@@ -112,7 +112,7 @@ run(
 
 Execute one complete start, invoke, and stop lifecycle.
 
-``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. Fabric attempts to stop a started runtime even when invocation fails.
+``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. NeMo Fabric attempts to stop a started runtime even when invocation fails.
 
 
 

@@ -1,7 +1,7 @@
 ---
 title: "Models"
 slug: "/reference/api/python-library-reference/models"
-description: "Pydantic authoring models for Fabric config and request inputs."
+description: "Pydantic authoring models for NVIDIA NeMo Fabric config and request inputs."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -259,7 +259,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ## <kbd>class</kbd> `EnvironmentConfig`
 Execution environment configuration supplied by the consumer.
 
-``provider`` selects the environment implementation. ``workspace`` is the path visible to the harness, while ``artifacts`` is the provider-specific output location. ``settings`` configures the selected provider; ``connection`` describes how Fabric reaches an existing environment; and ``metadata`` carries consumer-owned values that Fabric does not interpret. ``ownership`` identifies who tears the environment down, and ``control_location`` identifies whether Fabric control code runs inside or outside it.
+``provider`` selects the environment implementation. ``workspace`` is the path visible to the harness, while ``artifacts`` is the provider-specific output location. ``settings`` configures the selected provider; ``connection`` describes how NeMo Fabric reaches an existing environment; and ``metadata`` carries consumer-owned values that NeMo Fabric does not interpret. ``ownership`` identifies who tears the environment down, and ``control_location`` identifies whether NeMo Fabric control code runs inside or outside it.
 
 
 ---
@@ -1423,7 +1423,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `FabricConfig`
-SDK-facing typed Fabric agent configuration.
+SDK-facing typed NeMo Fabric agent configuration.
 
 
 ---
@@ -1561,7 +1561,7 @@ Return a detached mapping matching the Rust ``FabricConfig`` schema.
 
 
 ## <kbd>class</kbd> `RunRequest`
-One validated Fabric invocation request.
+One validated NeMo Fabric invocation request.
 
 
 ---
