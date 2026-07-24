@@ -85,7 +85,7 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
-  --ak 'fabric_harness_settings={"cwd":"/app","base_url":"https://integrate.api.nvidia.com/v1","max_iterations":20}' \
+  --ak 'fabric_harness_settings={"base_url":"https://integrate.api.nvidia.com/v1","max_iterations":20}' \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-hermes \
   --jobs-dir "$RUNS_DIR" \
@@ -110,7 +110,7 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak fabric_telemetry=relay \
-  --ak 'fabric_harness_settings={"cwd":"/app","base_url":"https://integrate.api.nvidia.com/v1","max_iterations":4,"terminal_timeout":120}' \
+  --ak 'fabric_harness_settings={"base_url":"https://integrate.api.nvidia.com/v1","max_iterations":4,"terminal_timeout":120}' \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-hermes-relay \
   --jobs-dir "$RUNS_DIR" \
@@ -135,8 +135,9 @@ find "$RUNS_DIR/fabric-hermes-relay" \
 ## 4. Claude
 
 The Claude Agent SDK supplies its compatible Claude Code executable. Harbor
-passes the API key into the task environment; NeMo Fabric forwards only the model's
-configured credential variable to Claude.
+passes the API key into the task environment. NeMo Fabric forwards the supported
+Claude authentication variables selected by the adapter; this command uses
+`ANTHROPIC_API_KEY`.
 
 ```bash
 : "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
@@ -173,8 +174,9 @@ uv run --extra runtime --extra harbor harbor view "$RUNS_DIR"
 ```
 
 Check NeMo Fabric status, harness and adapter identity, runtime and invocation IDs,
-artifacts, telemetry, Harbor exceptions, and reward. A successful smoke run has
-NeMo Fabric status `succeeded` and Harbor mean reward `1.0`.
+artifacts, telemetry, Harbor exceptions, and reward. A successful calculator run
+has one completed trial, zero errored trials, NeMo Fabric status `succeeded`, and
+Harbor mean reward `1.0`.
 
 After the runs, remove the generated build-context copy:
 

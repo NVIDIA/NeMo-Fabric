@@ -17,6 +17,7 @@ CALCULATOR_SOLUTION = CALCULATOR_ROOT / "task" / "solution" / "solve.sh"
 CALCULATOR_FABRIC_ROOT = CALCULATOR_ROOT / "task" / "environment" / "fabric"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_README = SWEBENCH_ROOT / "README.md"
+SWEBENCH_PREPARE = ROOT / "examples" / "harbor" / "prepare_swebench.sh"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
@@ -329,6 +330,27 @@ def test_harbor_calculator_documents_explicit_cli_commands():
         "agent/trajectory.json",
     ):
         assert value in swebench
+
+
+def test_harbor_generated_paths_are_ignored():
+    ignore = (CALCULATOR_ROOT / ".gitignore").read_text(encoding="utf-8")
+
+    assert "runs/" in ignore
+    assert "task/environment/vendor/" in ignore
+    assert "task/environment/.vendor.*/" in ignore
+
+
+def test_swebench_bootstrap_pins_a_supported_relay_cli():
+    from nemo_fabric_adapters.common.relay_gateway import RELAY_MINIMUM_VERSION
+
+    prepare = SWEBENCH_PREPARE.read_text(encoding="utf-8")
+    minimum = ".".join(str(part) for part in RELAY_MINIMUM_VERSION)
+
+    assert f'relay_cli_version="{minimum}"' in prepare
+    assert '"nemo-relay $relay_cli_version"' in prepare
+    assert 'nemo-relay-cli --version "$relay_cli_version" --locked' in prepare
+    assert '"$(uname -s)" != "Linux"' in prepare
+    assert '"$(uname -m)" != "x86_64"' in prepare
 
 
 def test_harbor_calculator_setup_and_solution_fail_fast():

@@ -19,9 +19,10 @@ repo_root="$(git rev-parse --show-toplevel)"
 bundle_dir="$repo_root/examples/harbor/swebench"
 wheelhouse="$bundle_dir/.wheelhouse"
 relay_root="$bundle_dir/.relay"
+relay_cli_version="0.6.0"
 
-if [[ "$(uname -m)" != "x86_64" ]]; then
-    echo "This SWE-Bench example currently targets x86_64 task images." >&2
+if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
+    echo "This SWE-Bench example currently requires an x86_64 Linux host." >&2
     exit 1
 fi
 
@@ -46,14 +47,14 @@ docker run --rm \
 
 # TEMP: Keep only this block if PyPI wheels land before Relay CLI distribution.
 relay_version="$({ "$relay_root/bin/nemo-relay" --version 2>/dev/null || true; })"
-if [[ "$relay_version" != "nemo-relay 0.5.0" ]]; then
+if [[ "$relay_version" != "nemo-relay $relay_cli_version" ]]; then
     docker run --rm \
         --user "$(id -u):$(id -g)" \
         -e CARGO_HOME=/tmp/cargo \
         -e CARGO_TARGET_DIR=/tmp/target \
         -v "$relay_root:/out" \
         rust:1.94-bullseye \
-        cargo install nemo-relay-cli --version 0.5.0 --locked --force --root /out
+        cargo install nemo-relay-cli --version "$relay_cli_version" --locked --force --root /out
 fi
 
 # TEMP: Record the source-built meta-wheel path for installation in the task.
