@@ -1,13 +1,73 @@
 {
   "$defs": {
+    "AdapterConfigField": {
+      "description": "Adapter-translated normalized Fabric configuration fields.",
+      "oneOf": [
+        {
+          "const": "models",
+          "description": "Normalized model selection and credentials.",
+          "type": "string"
+        },
+        {
+          "const": "models.base_url",
+          "description": "Custom model endpoint.",
+          "type": "string"
+        },
+        {
+          "const": "models.temperature",
+          "description": "Model temperature.",
+          "type": "string"
+        },
+        {
+          "const": "system_prompt",
+          "description": "Portable system instructions.",
+          "type": "string"
+        },
+        {
+          "const": "max_turns",
+          "description": "Per-invocation harness turn limit.",
+          "type": "string"
+        },
+        {
+          "const": "tools.blocked",
+          "description": "Adapter-native tool names to block.",
+          "type": "string"
+        },
+        {
+          "const": "tools.toolsets.enabled",
+          "description": "Harness-defined toolsets to expose.",
+          "type": "string"
+        },
+        {
+          "const": "tools.toolsets.blocked",
+          "description": "Harness-defined toolsets to block.",
+          "type": "string"
+        },
+        {
+          "const": "mcp",
+          "description": "Harness-native MCP servers.",
+          "type": "string"
+        },
+        {
+          "const": "skills",
+          "description": "Harness-native skills.",
+          "type": "string"
+        },
+        {
+          "const": "telemetry",
+          "description": "Typed telemetry configuration. Exact support remains declared by telemetry provider.",
+          "type": "string"
+        }
+      ]
+    },
     "AdapterConfigSupport": {
       "additionalProperties": true,
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "Fabric config areas or policy paths accepted by this adapter.",
+          "description": "Normalized Fabric config fields accepted by this adapter.",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/AdapterConfigField"
           },
           "type": "array"
         },

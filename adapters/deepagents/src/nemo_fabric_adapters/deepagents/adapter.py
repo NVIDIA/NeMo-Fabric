@@ -28,11 +28,8 @@ from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
-DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 # Providers we serve through the OpenAI-compatible ``ChatOpenAI`` client.
 OPENAI_COMPATIBLE_PROVIDERS = {"", "nvidia", "openai", "openai-compatible"}
-# Providers whose default endpoint is NVIDIA's OpenAI-compatible gateway.
-NVIDIA_DEFAULT_PROVIDERS = {"", "nvidia"}
 # Conventional credential env var per provider; others must set api_key_env.
 PROVIDER_DEFAULT_API_KEY_ENV = {
     "": "NVIDIA_API_KEY",
@@ -60,6 +57,21 @@ FABRIC_OWNED_AGENT_KEYS = frozenset(
 # through harness.settings.deepagents. Executable objects (AgentMiddleware, BaseTool,
 # Python callables) cannot cross the SDK->JSON->payload boundary and are excluded.
 DEEPAGENTS_PASSTHROUGH_KEYS = frozenset({"subagents", "interrupt_on"})
+NORMALIZED_SETTING_FIELDS = {
+    "model": "FabricConfig.models",
+    "model_name": "FabricConfig.models.<role>.model",
+    "provider": "FabricConfig.models.<role>.provider",
+    "api_key_env": "FabricConfig.models.<role>.api_key_env",
+    "base_url": "FabricConfig.models.<role>.base_url",
+    "temperature": "FabricConfig.models.<role>.temperature",
+    "system_prompt": "FabricConfig.system_prompt",
+    "workspace": "FabricConfig.environment.workspace",
+    "env": "FabricConfig.environment.env",
+    "timeout_seconds": "FabricConfig.runtime.timeout_seconds",
+}
+REMOVED_SETTING_FIELDS = {
+    "state_dir": "runtime state is derived from the Fabric artifact root and runtime ID",
+}
 
 
 class AdapterConfigError(RuntimeError):
@@ -96,7 +108,20 @@ class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
         return handler(request)
 
 
-def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) -> str:
+def _validate_settings_boundary(settings: dict[str, Any]) -> None:
+    for name, normalized_field in NORMALIZED_SETTING_FIELDS.items():
+        if name in settings:
+            raise AdapterConfigError(
+                f"harness.settings.{name} is not supported; use {normalized_field}"
+            )
+    for name, reason in REMOVED_SETTING_FIELDS.items():
+        if name in settings:
+            raise AdapterConfigError(
+                f"harness.settings.{name} is not supported; {reason}"
+            )
+
+
+def resolve_api_key_env(model_config: dict[str, Any]) -> str:
     """Resolve the credential env var, defaulting per provider.
 
     An explicit ``api_key_env`` always wins. Otherwise nvidia/unspecified default
@@ -104,10 +129,10 @@ def resolve_api_key_env(settings: dict[str, Any], model_config: dict[str, Any]) 
     set ``api_key_env`` explicitly so a key is never sent to the wrong endpoint.
     """
 
-    explicit = settings.get("api_key_env") or model_config.get("api_key_env")
+    explicit = model_config.get("api_key_env")
     if explicit:
         return str(explicit)
-    provider = (settings.get("provider") or model_config.get("provider") or "").lower()
+    provider = str(model_config.get("provider") or "").lower()
     default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
     if default is None:
         raise AdapterConfigError(
@@ -140,8 +165,9 @@ def preflight_check(payload: dict[str, Any]) -> None:
         )
 
     settings = common_utils.settings_payload(payload)
+    _validate_settings_boundary(settings)
     model_config = selected_model_config(payload)
-    api_key_env = resolve_api_key_env(settings, model_config)
+    api_key_env = resolve_api_key_env(model_config)
     if api_key_env not in os.environ:
         raise RuntimeError(
             f"the model-provider credential env var '{api_key_env}' is not set in the "
@@ -151,27 +177,11 @@ def preflight_check(payload: dict[str, Any]) -> None:
 
 
 def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = common_utils.settings_payload(payload)
-    models = common_utils.models_payload(payload)
-    return models.get(settings.get("model", "default"), {}) or {}
+    return common_utils.selected_model_config(payload)
 
 
-def resolve_base_url(
-    settings: dict[str, Any], model_config: dict[str, Any]
-) -> str | None:
-    base_url = (
-        settings.get("base_url")
-        or (model_config.get("settings") or {}).get("base_url")
-        or model_config.get("base_url")
-    )
-    if base_url:
-        return base_url
-    provider = (settings.get("provider") or model_config.get("provider") or "").lower()
-    # Only NVIDIA (or an unspecified provider) defaults to NVIDIA's endpoint; a
-    # plain ``openai`` provider must fall through to ChatOpenAI's own default.
-    if provider in NVIDIA_DEFAULT_PROVIDERS:
-        return DEFAULT_NVIDIA_BASE_URL
-    return None
+def resolve_base_url(model_config: dict[str, Any]) -> str | None:
+    return common_utils.get_base_url(model_config)
 
 
 def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
@@ -183,24 +193,21 @@ def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
     reworking the adapter.
     """
 
-    settings = common_utils.settings_payload(payload)
     model_config = selected_model_config(payload)
-    model_name = settings.get("model_name") or model_config.get("model")
+    model_name = model_config.get("model")
     if not model_name:
         raise RuntimeError(
             "models.default.model is required for the Deep Agents adapter"
         )
 
-    api_key_env = resolve_api_key_env(settings, model_config)
+    api_key_env = resolve_api_key_env(model_config)
     api_key = os.environ.get(api_key_env)
     if not api_key:
         raise RuntimeError(f"{api_key_env} is required for the Deep Agents adapter")
 
-    provider = (
-        settings.get("provider") or model_config.get("provider") or "nvidia"
-    ).lower()
-    base_url = resolve_base_url(settings, model_config)
-    temperature = settings.get("temperature", model_config.get("temperature"))
+    provider = str(model_config.get("provider") or "nvidia").lower()
+    base_url = resolve_base_url(model_config)
+    temperature = model_config.get("temperature")
 
     if provider not in OPENAI_COMPATIBLE_PROVIDERS:
         # Generic provider hook: honor an explicit non-OpenAI-compatible provider.
@@ -231,9 +238,7 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
     """Root the Deep Agents filesystem backend at the Fabric workspace, if set."""
 
     environment = common_utils.environment_payload(payload)
-    workspace = environment.get("workspace") or common_utils.settings_payload(
-        payload
-    ).get("workspace")
+    workspace = environment.get("workspace")
     if not workspace:
         return None
     root = Path(str(workspace))
@@ -322,11 +327,6 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
 
 def state_dir(payload: dict[str, Any]) -> Path:
     base_dir = Path(common_utils.base_dir(payload)).resolve()
-    settings = common_utils.settings_payload(payload)
-    configured = settings.get("state_dir")
-    if configured:
-        path = Path(str(configured))
-        return path if path.is_absolute() else base_dir / path
     artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
     root = artifacts.get("root") or os.environ.get("FABRIC_ARTIFACTS")
     if root:
@@ -373,7 +373,7 @@ async def build_agent_kwargs(
         "model": model,
         "tools": await resolve_tools(payload),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
-        "system_prompt": settings.get("system_prompt"),
+        "system_prompt": common_utils.system_prompt(payload),
         "skills": resolve_skills(payload),
         "backend": resolve_backend(payload),
     }

@@ -251,10 +251,13 @@ fn config(
         models: default_model
             .map(|model| BTreeMap::from_iter([("default".to_string(), model)]))
             .unwrap_or_default(),
+        system_prompt: None,
+        max_turns: None,
         runtime: RuntimeConfig {
             input_schema: "text".to_string(),
             output_schema: "message".to_string(),
             artifacts: None,
+            timeout_seconds: None,
             extensions: BTreeMap::new(),
         },
         environment: Some(EnvironmentConfig {
@@ -263,6 +266,7 @@ fn config(
             ownership: EnvironmentOwnership::FabricOwned,
             workspace: None,
             artifacts: None,
+            env: BTreeMap::new(),
             connection: Map::new(),
             metadata: Map::new(),
             settings: Map::new(),
@@ -288,9 +292,8 @@ fn model(
         model: name.to_string(),
         temperature: None,
         api_key_env: api_key_env.map(str::to_string),
-        settings: base_url
-            .map(|value| Map::from_iter([("base_url".to_string(), json!(value))]))
-            .unwrap_or_default(),
+        base_url: base_url.map(str::to_string),
+        settings: Map::new(),
         extensions: BTreeMap::new(),
     }
 }
@@ -349,10 +352,7 @@ mod tests {
         for name in ["hermes", "deepagents"] {
             let config = find(name).expect("catalog preset").config();
             let model = config.models.get("default").expect("default model");
-            assert_eq!(
-                model.settings.get("base_url").and_then(Value::as_str),
-                Some(NVIDIA_API_CATALOG_BASE_URL)
-            );
+            assert_eq!(model.base_url.as_deref(), Some(NVIDIA_API_CATALOG_BASE_URL));
         }
 
         for name in ["claude", "codex"] {
