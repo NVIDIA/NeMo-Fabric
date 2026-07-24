@@ -2349,8 +2349,8 @@ fn event_with_metadata(
 }
 
 fn new_id(prefix: &str) -> String {
-    // The atomic counter only differentiates ids within one NeMo Fabric process.
-    // Include the process id so independently running NeMo Fabric processes cannot
+    // The atomic counter only differentiates ids within one Fabric process.
+    // Include the process id so independently running Fabric processes cannot
     // collide when they generate ids in the same millisecond.
     let counter = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     format!("{prefix}-{}-{}-{counter}", now_millis(), std::process::id())

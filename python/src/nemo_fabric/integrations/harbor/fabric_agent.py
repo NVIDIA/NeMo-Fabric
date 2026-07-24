@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Harbor agent implementation backed by the NeMo Fabric Python SDK."""
+"""Harbor agent implementation backed by the Fabric Python SDK."""
 
 from __future__ import annotations
 
@@ -419,7 +419,7 @@ def build_harbor_config(
 
 
 def model_provider(model_name: str) -> str:
-    """Derive the NeMo Fabric provider from Harbor's model identifier."""
+    """Derive the Fabric provider from Harbor's model identifier."""
 
     return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
 
@@ -549,7 +549,7 @@ def _record_host_atif_validation(
 
 
 def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -> None:
-    """Attach telemetry quality evidence to NeMo Fabric's Harbor metadata."""
+    """Attach telemetry quality evidence to Fabric's Harbor metadata."""
 
     if not path.is_file():
         return

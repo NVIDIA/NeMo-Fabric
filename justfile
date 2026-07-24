@@ -226,12 +226,12 @@ for package in metadata["packages"]:
         mismatched.append(f"{package['name']}={package['version']}")
 
 if checked == 0:
-    raise SystemExit("Cargo metadata did not include any NeMo Fabric workspace packages")
+    raise SystemExit("Cargo metadata did not include any Fabric workspace packages")
 if mismatched:
     raise SystemExit(
         f"Cargo workspace packages do not all resolve to {version}: {', '.join(mismatched)}"
     )
-print(f"Cargo metadata resolves {checked} NeMo Fabric workspace packages to {version}")
+print(f"Cargo metadata resolves {checked} Fabric workspace packages to {version}")
 PY
     then
         rm -f "$metadata_file"

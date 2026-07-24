@@ -41,7 +41,7 @@ class RelayGatewayLaunch:
 
 @dataclass(frozen=True)
 class RelayCliContract:
-    """Versioned external Relay CLI contract consumed by NeMo Fabric adapters."""
+    """Versioned external Relay CLI contract consumed by Fabric adapters."""
 
     version: tuple[int, int, int]
     observability_version: int

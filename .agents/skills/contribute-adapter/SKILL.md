@@ -41,7 +41,7 @@ Decide the following before implementation:
 
 ## Implementation
 
-- Use the existing NeMo Fabric `python` or `process` runner and normalized
+- Use the existing Fabric `python` or `process` runner and normalized
   request/result contracts. Reuse `adapters/common/` only when its contract
   fits; do not add a runner or abstraction for one adapter.
 - Use `adapters/<name>/` with `LICENSE -> ../../LICENSE`, `README.md`,
@@ -59,11 +59,11 @@ Decide the following before implementation:
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.
-- Use the complete NeMo Fabric invocation for adapters that consume normalized
+- Use the complete Fabric invocation for adapters that consume normalized
   config or runtime context. Treat `config`, `capability_plan`,
   `telemetry_plan`, and `runtime_context` as authoritative. Reserve
   `harness.settings` for harness-specific behavior.
-- Apply precedence in this order: normalized `config`; NeMo Fabric-resolved plans and
+- Apply precedence in this order: normalized `config`; Fabric-resolved plans and
   runtime context; harness-specific settings; descriptor and adapter defaults.
   Let intentional overlaps layer by this order. Reject conflicting duplicate
   declarations or unsupported behavior with an actionable error naming the field
@@ -75,23 +75,23 @@ Decide the following before implementation:
 - Forward only required system variables, selected credential variables,
   telemetry variables, and documented harness-specific environment. Never
   forward or log unrelated environment values.
-- Start one local adapter host per NeMo Fabric runtime and keep it alive for ordered
+- Start one local adapter host per Fabric runtime and keep it alive for ordered
   `start` → `invoke*` → `stop`.
   Emit one JSON lifecycle response per request on stdout and diagnostics on
   stderr; an early exit is a host crash. Return harness-level invoke failures in
   a successful lifecycle response as adapter output with `response: null`,
   `failed: true`, and structured `error` (`code`, `message`, `retryable`, and
-  optional `metadata`); NeMo Fabric normalizes it into a failed `RunResult`.
+  optional `metadata`); Fabric normalizes it into a failed `RunResult`.
 
-> **TODO:** Revisit this output contract when NeMo Fabric adds streaming support;
+> **TODO:** Revisit this output contract when Fabric adds streaming support;
 > update this guidance and affected adapter evidence then.
 
 - Scope workspace, generated config, state, sessions, and artifacts to the
-  resolved runtime context. Stateful adapters must isolate NeMo Fabric runtime IDs.
+  resolved runtime context. Stateful adapters must isolate Fabric runtime IDs.
 - Keep stdout stable: emit `response` plus adapter-specific extensions such as
-  `error`, harness `events`, `usage`, and session IDs. NeMo Fabric supplies top-level
+  `error`, harness `events`, `usage`, and session IDs. Fabric supplies top-level
   harness/adapter identity, lifecycle IDs, `status`, `error`, artifacts,
-  telemetry, NeMo Fabric lifecycle events, and metadata when it builds `RunResult`.
+  telemetry, Fabric lifecycle events, and metadata when it builds `RunResult`.
 
 Wire public adapter packages into language-native installation,
 descriptor, build, catalog, and CI surfaces. For Python, add the package to root
@@ -105,7 +105,7 @@ ship its descriptor under `share/nemo-fabric/adapters/<name>`. Use
 Use this table as the minimum capability review. Omit claims that the adapter
 cannot implement and test end to end.
 
-| Surface | NeMo Fabric input | Adapter responsibility |
+| Surface | Fabric input | Adapter responsibility |
 | --- | --- | --- |
 | Models | `config.models` and selected alias | Map supported provider settings and credential-variable names; reject unsupported providers. |
 | Tool policy | `config.tools.blocked` and `capability_plan.tools` | Claim `tools.blocked` only when every harness tool path enforces it. |

@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Hermes adapter for NeMo Fabric.
+"""Hermes adapter for Fabric.
 
-This adapter maps NeMo Fabric's normalized config into Hermes' native Python SDK
+This adapter maps Fabric's normalized config into Hermes' native Python SDK
 surface and invokes the installed Hermes runtime.
 """
 
@@ -174,7 +174,7 @@ def resolve_hermes_toolsets(
 
 
 class HermesRuntime:
-    """One Hermes agent and session database owned by a NeMo Fabric runtime."""
+    """One Hermes agent and session database owned by a Fabric runtime."""
 
     def __init__(self) -> None:
         self._started = False
@@ -356,7 +356,7 @@ class HermesRuntime:
             )
         finally:
             # Hermes' Relay plugin materializes ATIF when its session-finalize
-            # hook runs. Finalize the telemetry session for each NeMo Fabric
+            # hook runs. Finalize the telemetry session for each Fabric
             # invocation while retaining the native AIAgent and SessionDB.
             self._finalize_relay_session()
         messages = result.get("messages") or []

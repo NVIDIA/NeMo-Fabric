@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""LangChain Deep Agents adapter for NeMo Fabric.
+"""LangChain Deep Agents adapter for Fabric.
 
-Maps NeMo Fabric's normalized invocation onto the ``deepagents`` SDK and returns a
-normalized NeMo Fabric result. A started runtime retains one compiled graph and
+Maps Fabric's normalized invocation onto the ``deepagents`` SDK and returns a
+normalized Fabric result. A started runtime retains one compiled graph and
 LangGraph checkpointer across ordered invocations.
 """
 
@@ -41,7 +41,7 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
 }
 # MCP transports langchain-mcp-adapters accepts (after normalization).
 VALID_MCP_TRANSPORTS = {"stdio", "sse", "streamable_http", "websocket"}
-# create_deep_agent arguments NeMo Fabric derives from normalized config; the
+# create_deep_agent arguments Fabric derives from normalized config; the
 # harness.settings.deepagents passthrough must not override them (doing so would
 # bypass the normalized model config, MCP tool resolution, workspace confinement,
 # or tool gating).
@@ -125,7 +125,7 @@ def main() -> None:
 def preflight_check(payload: dict[str, Any]) -> None:
     """Validate invocation-time prerequisites and fail fast with clear errors.
 
-    These are runtime preflight checks, not ``fabric doctor`` checks: NeMo Fabric core
+    These are runtime preflight checks, not ``fabric doctor`` checks: Fabric core
     has no adapter-doctor hook, so doctor cannot verify these. At invocation time
     the ``deepagents`` package must be importable and the configured
     model-provider credential must be present in the environment.
@@ -175,7 +175,7 @@ def resolve_base_url(
 
 
 def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
-    """Build a LangChain chat model from NeMo Fabric model config.
+    """Build a LangChain chat model from Fabric model config.
 
     The default path targets NVIDIA-hosted OpenAI-compatible endpoints. A generic
     hook falls back to ``langchain.chat_models.init_chat_model`` for any provider
@@ -228,7 +228,7 @@ def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
 
 
 def resolve_backend(payload: dict[str, Any]) -> Any:
-    """Root the Deep Agents filesystem backend at the NeMo Fabric workspace, if set."""
+    """Root the Deep Agents filesystem backend at the Fabric workspace, if set."""
 
     environment = common_utils.environment_payload(payload)
     workspace = environment.get("workspace") or common_utils.settings_payload(
@@ -247,7 +247,7 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
 
 
 async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
-    """Resolve NeMo Fabric MCP servers into Deep Agents tools."""
+    """Resolve Fabric MCP servers into Deep Agents tools."""
 
     tools = await _mcp_tools(payload)
     return tools or None
@@ -395,7 +395,7 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
     """Validate the harness.settings.deepagents passthrough and return the safe subset.
 
     Only documented, JSON-serializable create_deep_agent options are forwarded.
-    NeMo Fabric-owned keys cannot be overridden (that would bypass the normalized model
+    Fabric-owned keys cannot be overridden (that would bypass the normalized model
     config, MCP tool resolution, workspace confinement, and tool gating), and unknown
     keys fail clearly instead of being silently dropped.
     """
@@ -463,7 +463,7 @@ def _gated_subagents(subagents: Any, blocked: set[str]) -> list[dict[str, Any]]:
 
 
 class DeepAgentsRuntime:
-    """One compiled Deep Agents graph and checkpointer owned by a NeMo Fabric runtime."""
+    """One compiled Deep Agents graph and checkpointer owned by a Fabric runtime."""
 
     def __init__(self) -> None:
         self._started = False

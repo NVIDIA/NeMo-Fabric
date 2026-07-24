@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Complete NeMo Fabric configs and clone-based variants for the example agent."""
+"""Complete Fabric configs and clone-based variants for the example agent."""
 
 from __future__ import annotations
 
@@ -211,7 +211,7 @@ def with_opensandbox(base: FabricConfig) -> FabricConfig:
 
 
 def with_fabric_managed_github_mcp(base: FabricConfig) -> FabricConfig:
-    """Return a copy that routes the GitHub MCP server through NeMo Fabric."""
+    """Return a copy that routes the GitHub MCP server through Fabric."""
 
     config = base.model_copy(deep=True)
     config.add_mcp_server(

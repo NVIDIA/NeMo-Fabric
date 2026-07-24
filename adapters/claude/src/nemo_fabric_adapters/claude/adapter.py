@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run Claude Agent SDK through the NeMo Fabric adapter contract."""
+"""Run Claude Agent SDK through the Fabric adapter contract."""
 
 from __future__ import annotations
 
@@ -122,7 +122,7 @@ class ClaudeAdapterError(Exception):
 
 
 class AdapterInputError(ClaudeAdapterError):
-    """Invalid NeMo Fabric invocation input."""
+    """Invalid Fabric invocation input."""
 
 
 class AdapterConfigError(ClaudeAdapterError):
@@ -271,7 +271,7 @@ def _nvidia_environment(payload: dict[str, Any]) -> dict[str, str]:
             "models.default.settings.base_url or NVIDIA_FRONTIER_BASE_URL is required "
             "for the NVIDIA model provider",
         )
-    # Claude Code appends the Anthropic API version path itself, while NeMo Fabric's
+    # Claude Code appends the Anthropic API version path itself, while Fabric's
     # shared NVIDIA endpoint includes it for OpenAI-compatible clients.
     claude_base_url = base_url.rstrip("/").removesuffix("/v1")
     return {
@@ -484,7 +484,7 @@ def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
 
 
 def discard_stderr(_: str) -> None:
-    """Consume Claude Code stderr without exposing it through NeMo Fabric artifacts."""
+    """Consume Claude Code stderr without exposing it through Fabric artifacts."""
 
 
 def build_options(
@@ -793,7 +793,7 @@ def _sdk_lifecycle_error(error: BaseException) -> lifecycle.LifecycleError:
 
 
 class ClaudeRuntime:
-    """One connected Claude SDK client owned by a NeMo Fabric runtime."""
+    """One connected Claude SDK client owned by a Fabric runtime."""
 
     def __init__(self) -> None:
         self._start_payload: dict[str, Any] | None = None
