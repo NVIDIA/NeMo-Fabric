@@ -3,10 +3,19 @@
 
 """Dependency-free tests for Hermes Relay streaming integration."""
 
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pytest
+
+if sys.version_info >= (3, 14):
+    pytest.skip(
+        "Hermes adapter requires Python 3.13 or earlier",
+        allow_module_level=True,
+    )
 
 from nemo_fabric_adapters.hermes import adapter
 
