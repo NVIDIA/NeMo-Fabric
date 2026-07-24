@@ -53,6 +53,8 @@ def test_variant_builders_return_independent_complete_configs():
     assert claude.models["default"].api_key_env == "ANTHROPIC_API_KEY"
     assert claude.mcp is None
     assert claude.skills is None
+    assert deepagents is not base
+    assert deepagents.harness is not base.harness
     assert deepagents.harness.adapter_id == "nvidia.fabric.langchain.deepagents"
     assert deepagents.mcp is None
     assert deepagents.skills is None

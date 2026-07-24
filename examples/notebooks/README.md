@@ -25,7 +25,7 @@ variations notebook shows advanced composition against a real, maintained agent.
   harness's adapter and credentials must be present:
   - **Hermes Agent** (both notebooks): follow the
     [Hermes Agent adapter setup](../../adapters/hermes/README.md) with Python
-    3.11-3.13 and set `NVIDIA_API_KEY`. The setup cells auto-detect
+    3.11–3.13 and set `NVIDIA_API_KEY`. The setup cells auto-detect
     `.tmp/hermes-venv`.
   - **Deep Agents, Codex, Claude** (variations notebook): the matching adapter
     installed in the NeMo Fabric environment, plus that harness's credentials

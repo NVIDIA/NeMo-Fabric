@@ -22,7 +22,7 @@ just build-all
 
 The default variant uses Hermes Agent with an NVIDIA-hosted model. Follow the
 [Hermes Agent adapter setup](../../adapters/hermes/README.md) with Python
-3.11-3.13, then set `NVIDIA_API_KEY`. If Hermes Agent is installed in a
+3.11–3.13, then set `NVIDIA_API_KEY`. If Hermes Agent is installed in a
 separate environment, select its interpreter only for the Hermes command:
 
 ```bash

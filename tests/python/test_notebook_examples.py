@@ -77,7 +77,11 @@ def test_variations_notebook_uses_runnable_capabilities_and_checks_relay_status(
     assert 'if result.status != "succeeded":' in source
     assert "detail = failure_detail(result)" in source
     assert 'print("    error:", json.dumps(detail, indent=2))' in source
+    assert "Attempted run failed; continuing with remaining variants." in source
     assert "run_failures.append" in source
     assert "Harness variation failures" in source
     assert "returned no Relay telemetry reference" in source
+    assert "if not atof_paths:" in source
+    assert "produced no ATOF trace" in source
     assert "produced an empty ATOF trace" in source
+    assert "for line in atof_lines:\n            json.loads(line)" in source

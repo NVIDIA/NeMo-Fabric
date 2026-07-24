@@ -350,6 +350,7 @@ def test_swebench_bootstrap_pins_a_supported_relay_cli():
     assert '"nemo-relay $relay_cli_version"' in prepare
     assert 'nemo-relay-cli --version "$relay_cli_version" --locked' in prepare
     assert '"$(uname -s)" != "Linux"' in prepare
+    assert '"$(uname -m)" != "x86_64"' in prepare
 
 
 def test_harbor_calculator_setup_and_solution_fail_fast():
