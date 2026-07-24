@@ -96,20 +96,25 @@ the current real-agent acceptance path validates cached Codex authentication.
 Treat `CODEX_HOME/auth.json` as a secret when Codex uses file-based credential
 storage. Do not commit or copy it into NeMo Fabric configuration or artifacts.
 
+## Use a Compatible Custom Provider
+
+Use `provider="openai"` for Codex's native authentication and endpoint
+discovery. For another provider name, set both `api_key_env` and `base_url`.
+The configured endpoint must implement the OpenAI Responses protocol. NeMo
+Fabric defines a runtime-scoped Codex model provider with the configured name;
+it does not maintain a provider-name allowlist or reuse the native Codex login
+for that provider.
+
 ## Use Authentication with Relay
 
-NeMo Relay does not replace OpenAI authentication. A Relay-enabled NeMo Fabric
-runtime starts one gateway as a supervised sidecar and directs the Codex SDK's
-built-in OpenAI provider through that gateway. The runtime reuses the gateway
-and SDK client across ordered invocations. `Fabric.run(...)` starts the same
-runtime, invokes it once, and stops it, so the gateway is scoped to that single
-invocation. The SDK still obtains credentials from the selected Codex
-authentication mode.
-
-Relay-enabled Codex runs require the selected model provider to be `openai`.
-The custom `nvidia` provider uses its configured NVIDIA Responses endpoint and
-does not support the built-in provider redirect that Relay requires. Use the
-`nvidia` provider without Relay.
+NeMo Relay does not replace model-provider authentication. A Relay-enabled NeMo
+Fabric runtime starts one gateway as a supervised sidecar and directs the
+selected Responses-compatible provider through it. For a configured custom
+provider, NeMo Fabric passes its explicit `base_url` to the gateway as the
+OpenAI-compatible upstream. The runtime reuses the gateway and SDK client across
+ordered invocations. `Fabric.run(...)` starts the same runtime, invokes it once,
+and stops it, so the gateway is scoped to that single invocation. The SDK still
+obtains credentials from the selected provider configuration.
 
 NeMo Fabric supplies runtime-scoped Relay configuration to the SDK. It does not
 copy the Codex credential store into Relay configuration or persist credentials

@@ -6,11 +6,7 @@
   "runner": {
     "module": "nemo_fabric_adapters.hermes.adapter"
   },
-  "requirements": {
-    "env": [
-      "NVIDIA_API_KEY"
-    ]
-  },
+  "requirements": {},
   "config": {
     "accepts": [
       "models",

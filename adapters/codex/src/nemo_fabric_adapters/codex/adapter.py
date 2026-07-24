@@ -291,10 +291,10 @@ def selected_model(payload: dict[str, Any]) -> str | None:
     if value is None:
         return None
     provider = model_config.get("provider")
-    if provider not in {"openai", "nvidia"}:
+    if not isinstance(provider, str) or not provider:
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            "selected model provider must be openai or nvidia for the Codex adapter",
+            "selected model provider must be a non-empty string",
         )
     if not isinstance(value, str) or not value:
         raise AdapterConfigError(
@@ -304,18 +304,26 @@ def selected_model(payload: dict[str, Any]) -> str | None:
 
 
 def selected_model_provider(payload: dict[str, Any]) -> str:
-    return str(_selected_model_config(payload).get("provider") or "openai")
+    provider = _selected_model_config(payload).get("provider")
+    if not isinstance(provider, str) or not provider:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "selected model provider must be a non-empty string",
+        )
+    return provider
 
 
-def nvidia_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
+def custom_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
     model_config = _selected_model_config(payload)
-    if model_config.get("provider") != "nvidia":
+    provider = selected_model_provider(payload)
+    if provider == "openai":
         return {}
-    api_key_env = model_config.get("api_key_env") or "NVIDIA_API_KEY"
+    api_key_env = model_config.get("api_key_env")
     if not isinstance(api_key_env, str) or not api_key_env:
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            "models.default.api_key_env must be a non-empty string",
+            "selected model api_key_env is required for a custom "
+            "Responses-compatible provider",
         )
     if not (
         common_utils.environment_env(payload).get(api_key_env)
@@ -323,18 +331,19 @@ def nvidia_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
     ):
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            f"{api_key_env} is required for the NVIDIA model provider",
+            f"{api_key_env} is required for the selected model provider",
         )
     base_url = common_utils.get_base_url(model_config)
     if not isinstance(base_url, str) or not base_url:
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            "selected model base_url is required for the NVIDIA model provider",
+            "selected model base_url is required for a custom "
+            "Responses-compatible provider",
         )
     return {
         "model_providers": {
-            "nvidia": {
-                "name": "NVIDIA",
+            provider: {
+                "name": provider,
                 "base_url": base_url.rstrip("/"),
                 "env_key": api_key_env,
                 "wire_api": "responses",
@@ -437,8 +446,8 @@ def child_environment(
         and api_key_env in values
     ):
         values["OPENAI_API_KEY"] = values[api_key_env]
-    if selected_model_provider(payload) == "nvidia":
-        codex_home = state_dir(payload) / "nvidia-home"
+    if selected_model_provider(payload) != "openai":
+        codex_home = state_dir(payload) / "custom-provider-home"
         values["CODEX_HOME"] = str(codex_home)
     # The SDK overlays this mapping on the parent environment. An empty
     # originator is still treated as an override by Codex and produces invalid
@@ -586,6 +595,12 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
             "NeMo Relay runtime configuration is unavailable",
         )
 
+    base_url = common_utils.get_base_url(_selected_model_config(payload))
+    if base_url is not None and (not isinstance(base_url, str) or not base_url):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "selected model base_url must be a non-empty string",
+        )
     port = relay_gateway.find_available_tcp_port()
     bind = f"127.0.0.1:{port}"
     return CodexRelaySettings(
@@ -595,6 +610,7 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
             bind=bind,
             url=f"http://{bind}",
             log_path=config_path.parent / "gateway.log",
+            openai_base_url=base_url.rstrip("/") if base_url else None,
         ),
         plugin_config=plugin_config,
     )
@@ -606,7 +622,7 @@ def thread_config(
     """Build request-scoped Codex config without writing a user profile."""
 
     config = native_codex_telemetry_config(payload)
-    _merge_config(config, nvidia_model_provider_config(payload))
+    _merge_config(config, custom_model_provider_config(payload))
     _merge_config(config, openai_model_provider_config(payload))
     mcp_servers = _native_mcp_servers(payload)
     if mcp_servers:
@@ -617,13 +633,22 @@ def thread_config(
     )
     _apply_config_overrides(config, overrides)
     if relay is not None:
+        provider = selected_model_provider(payload)
+        transport_config = (
+            {"openai_base_url": relay.gateway.url}
+            if provider == "openai"
+            else {
+                "model_providers": {
+                    provider: {
+                        "base_url": relay.gateway.url,
+                    }
+                }
+            }
+        )
         _merge_config(
             config,
             {
-                # Keep the SDK-selected built-in provider so Codex retains its
-                # native API-key and ChatGPT authentication behavior. Relay is
-                # only the transport endpoint for this invocation.
-                "openai_base_url": relay.gateway.url,
+                **transport_config,
                 "features": {
                     "hooks": True,
                     # Relay disables delegated multi-agent execution because
@@ -713,14 +738,6 @@ def validate_runtime_payload(payload: dict[str, Any]) -> str:
     _personality(payload)
     _reasoning_effort(payload)
     _output_schema(payload)
-    if (
-        common_utils.relay_enabled(payload)
-        and selected_model_provider(payload) != "openai"
-    ):
-        raise AdapterConfigError(
-            "codex_invalid_configuration",
-            "NeMo Relay requires the built-in openai model provider",
-        )
     child_environment(payload)
     thread_config(payload, None)
     return fabric_runtime_id
@@ -992,7 +1009,7 @@ class CodexRuntime:
             self._relay = relay
             self._gateway_process = _start_relay_gateway(payload, relay)
             client_config = sdk_config(payload, relay)
-            if selected_model_provider(payload) == "nvidia":
+            if selected_model_provider(payload) != "openai":
                 await asyncio.to_thread(
                     Path(client_config.env["CODEX_HOME"]).mkdir,
                     parents=True,

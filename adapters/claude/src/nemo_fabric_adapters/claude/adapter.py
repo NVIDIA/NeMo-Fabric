@@ -208,10 +208,10 @@ def selected_model(payload: dict[str, Any]) -> str | None:
     if value is None:
         return None
     provider = model_config.get("provider")
-    if provider not in {"anthropic", "nvidia"}:
+    if not isinstance(provider, str) or not provider:
         raise AdapterConfigError(
             "claude_invalid_configuration",
-            "selected model provider must be anthropic or nvidia for the Claude adapter",
+            "selected model provider must be a non-empty string",
         )
     if not isinstance(value, str) or not value:
         raise AdapterConfigError(
@@ -220,14 +220,29 @@ def selected_model(payload: dict[str, Any]) -> str | None:
     return value.removeprefix("anthropic/") if provider == "anthropic" else value
 
 
+def _anthropic_base_url(model: dict[str, Any]) -> str | None:
+    base_url = common_utils.get_base_url(model)
+    if base_url is None:
+        return None
+    if not isinstance(base_url, str) or not base_url:
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "selected model base_url must be a non-empty string",
+        )
+    base_url = base_url.rstrip("/")
+    return (
+        base_url.removesuffix("/v1")
+        if model.get("provider") != "anthropic"
+        else base_url
+    )
+
+
 def _model_environment(
     payload: dict[str, Any], environment: dict[str, str]
 ) -> dict[str, str]:
     model = _selected_model_config(payload)
     provider = model.get("provider")
     api_key_env = model.get("api_key_env")
-    if provider == "nvidia" and api_key_env is None:
-        api_key_env = "NVIDIA_API_KEY"
     if not isinstance(api_key_env, str) or not api_key_env:
         if api_key_env is None:
             api_key = None
@@ -238,29 +253,30 @@ def _model_environment(
             )
     else:
         api_key = environment.get(api_key_env) or os.environ.get(api_key_env)
+    if provider != "anthropic" and api_key_env is None:
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            "selected model api_key_env is required for a custom "
+            "Anthropic Messages-compatible provider",
+        )
     if api_key_env is not None and not api_key:
         raise AdapterConfigError(
             "claude_invalid_configuration",
             f"{api_key_env} is required for the selected model provider",
         )
-    base_url = common_utils.get_base_url(model)
-    if provider == "nvidia" and not base_url:
+    base_url = _anthropic_base_url(model)
+    if provider != "anthropic" and not base_url:
         raise AdapterConfigError(
             "claude_invalid_configuration",
-            "selected model base_url is required for the NVIDIA model provider",
+            "selected model base_url is required for a custom "
+            "Anthropic Messages-compatible provider",
         )
     values: dict[str, str] = {}
     if api_key:
         values["ANTHROPIC_API_KEY"] = api_key
     if base_url:
-        # Claude Code appends the Anthropic API version path itself, while
-        # Fabric's NVIDIA endpoint includes it for OpenAI-compatible clients.
-        values["ANTHROPIC_BASE_URL"] = (
-            base_url.rstrip("/").removesuffix("/v1")
-            if provider == "nvidia"
-            else base_url.rstrip("/")
-        )
-    if provider == "nvidia":
+        values["ANTHROPIC_BASE_URL"] = base_url
+    if provider != "anthropic":
         values["ANTHROPIC_AUTH_TOKEN"] = ""
     return values
 
@@ -444,6 +460,7 @@ def prepare_claude_relay(payload: dict[str, Any]) -> ClaudeRelaySettings | None:
         bind=gateway_bind,
         url=f"http://{gateway_bind}",
         log_path=config_path.parent / "gateway.log",
+        anthropic_base_url=_anthropic_base_url(_selected_model_config(payload)),
     )
     plugin_path = config_path.parent / "claude-plugin"
     try:
@@ -644,7 +661,21 @@ def child_environment(
         values[api_key_env] = os.environ[api_key_env]
     configured = common_utils.environment_env(payload)
     values.update(configured)
-    values.update(_model_environment(payload, values))
+    model_environment = _model_environment(payload, values)
+    conflicts = sorted(
+        name
+        for name, value in model_environment.items()
+        if name in configured and configured[name] != value
+    )
+    if conflicts:
+        fields = ", ".join(f"environment.env.{name}" for name in conflicts)
+        raise AdapterConfigError(
+            "claude_invalid_configuration",
+            f"{fields} conflicts with the selected model configuration; "
+            "configure model credentials and endpoints through models.<role>, "
+            "or remove the duplicate environment.env values",
+        )
+    values.update(model_environment)
     if relay_gateway_url is not None:
         values["NEMO_RELAY_GATEWAY_URL"] = relay_gateway_url
         values["ANTHROPIC_BASE_URL"] = relay_gateway_url

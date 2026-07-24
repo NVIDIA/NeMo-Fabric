@@ -138,8 +138,8 @@ use the descriptor contract values.
 
 | Adapter ID | Models | Tools / Blocked Tools | MCP | Skills | Subagents | Telemetry | Persistent Local Host | Remote Service |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `nvidia.fabric.claude` | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | Per-tool blocking through Claude `disallowed_tools`; toolsets unsupported | Normalized | Normalized | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway | Yes: connected `ClaudeSDKClient`, session, and optional Relay gateway | Not implemented |
-| `nvidia.fabric.codex` | OpenAI and NVIDIA-hosted Responses-compatible models | Per-tool blocking and toolsets unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized: `SKILL.md` directories | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway; native `otel` | Yes: `AsyncCodex` app-server client, thread, and optional Relay gateway | Not implemented |
+| `nvidia.fabric.claude` | Native Anthropic or a configured Anthropic Messages-compatible provider | Per-tool blocking through Claude `disallowed_tools`; toolsets unsupported | Normalized | Normalized | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway | Yes: connected `ClaudeSDKClient`, session, and optional Relay gateway | Not implemented |
+| `nvidia.fabric.codex` | Native OpenAI or a configured Responses-compatible provider | Per-tool blocking and toolsets unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized: `SKILL.md` directories | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway; native `otel` | Yes: `AsyncCodex` app-server client, thread, and optional Relay gateway | Not implemented |
 | `nvidia.fabric.langchain.deepagents` | NVIDIA, OpenAI, OpenAI-compatible, and other LangChain providers | Per-tool blocking across built-ins, MCP, and local subagents; toolsets unsupported | Normalized | Normalized | Constrained: declarative local subagents inherit parent capabilities | Relay SDK: `atif`, `otel`, and `openinference`; native `otel` and `openinference` | Yes: compiled graph and async LangGraph checkpointer | Not implemented |
 | `nvidia.fabric.hermes` | Configurable provider, model, and base URL | Hermes toolset selection and blocking; per-tool blocking unsupported | Normalized | Normalized | Not exposed | Relay plugin: `atif`, `otel`, and `openinference` | Yes: `AIAgent`, `SessionDB`, and Relay plugin context | Not implemented |
 
@@ -187,7 +187,7 @@ are grouped because their support does not vary by adapter.
 | `metadata.name`, `.description` | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core |
 | `harness.settings` | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch |
-| `models.<role>.provider` | `anthropic`, `nvidia` | `openai`, `nvidia` | Dynamic LangChain provider | Dynamic Hermes provider |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes |
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes |
@@ -536,7 +536,10 @@ Runtime compatibility checks should validate:
 
 Use normalized NeMo Fabric fields for portable behavior: models, system
 instructions, turn limit, runtime, environment, skills, MCP, telemetry, tools,
-toolsets, artifacts, and request context.
+toolsets, and artifacts.
+
+Supply request context through `RunRequest.context` for each invocation. Request
+context is not part of `FabricConfig`.
 
 Use `harness.settings` only for stable, harness-native behavior that the selected
 adapter understands, such as Claude permission policy, Codex sandbox controls,

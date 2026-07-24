@@ -34,12 +34,13 @@ bearer credential, `ANTHROPIC_API_KEY` for a static API credential, or Anthropic
 Workload Identity Federation (WIF) for production and CI workloads that should
 not store a long-lived API key.
 
-When the selected model provider is `nvidia`, the adapter reads the selected
-model's credential from `api_key_env` (default: `NVIDIA_API_KEY`) and translates
-the configured NVIDIA `/v1` endpoint into the host URL expected by Claude Code.
-`models.<role>.base_url` overrides the public NVIDIA API Catalog endpoint. Set
-it explicitly for a frontier or self-hosted endpoint. This request-scoped
-mapping does not change the parent environment.
+The native `anthropic` provider can use any Claude authentication mode above
+without an explicit endpoint. For another provider name, configure both
+`models.<role>.api_key_env` and `models.<role>.base_url`. The endpoint must
+implement the Anthropic Messages protocol; the adapter maps the named
+credential and endpoint into the environment expected by Claude Code. Provider
+names identify configuration; the adapter does not maintain a provider
+allowlist. The runtime-scoped mapping does not change the parent environment.
 
 The adapter forwards the Anthropic profile and federation environment variables
 that Claude Code and the Claude Agent SDK consume. This includes
@@ -82,9 +83,9 @@ hosting is adapter-declared; consumers do not configure a runtime strategy in
 
 Configure portable capabilities through the normalized `FabricConfig` fields:
 
-- `models` selects the Claude model. The adapter accepts the native `anthropic`
-  provider and NVIDIA-hosted Anthropic Messages-compatible models through the
-  `nvidia` provider. `models.<role>.base_url` selects an explicit endpoint.
+- `models` selects the Claude model. The native `anthropic` provider retains
+  Claude authentication and endpoint discovery. Any other provider name must
+  configure an Anthropic Messages-compatible `base_url` and `api_key_env`.
 - `system_prompt` supplies the Claude system instructions.
 - `max_turns` sets the Claude turn limit.
 - `runtime.timeout_seconds` sets the Fabric invocation deadline.
@@ -122,8 +123,9 @@ config.enable_relay(
 For each Relay-enabled Claude runtime, NeMo Fabric starts one `nemo-relay` gateway,
 waits for its health endpoint, and stops it with the runtime. NeMo Fabric passes the
 gateway URL to the connected Claude Code process through `ANTHROPIC_BASE_URL`
-and `NEMO_RELAY_GATEWAY_URL`. It also stages a runtime-scoped Claude plugin that
-forwards lifecycle hooks with `nemo-relay hook-forward claude`.
+and `NEMO_RELAY_GATEWAY_URL`, and passes the selected explicit model endpoint to
+the gateway as its Anthropic upstream. It also stages a runtime-scoped Claude
+plugin that forwards lifecycle hooks with `nemo-relay hook-forward claude`.
 `Fabric.run(...)` starts the same runtime, invokes it once, and stops it, so the
 gateway has the same lifecycle as that single invocation.
 

@@ -39,6 +39,8 @@ Artifact path inside or outside the provider.
 
 Environment variables visible to the harness and its tools.
 
+Values are serialized into the run plan and can appear wherever configs or plans are logged or persisted. Prefer `api_key_env`-style environment-variable-name indirection for credentials.
+
 ### `connection: Map<String, Value>`
 
 Provider connection metadata, such as server URL, credential reference, or namespace.

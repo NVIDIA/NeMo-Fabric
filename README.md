@@ -159,8 +159,8 @@ references.
 
 | Agent harness | Choose it for | Model ecosystem | Key capabilities | Observability |
 | --- | --- | --- | --- | --- |
-| Claude | Claude-native coding and tool-use workflows | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
-| Codex | Codex-native coding workflows | OpenAI and NVIDIA-hosted Responses-compatible models | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
+| Claude | Claude-native coding and tool-use workflows | Native Anthropic or a configured Anthropic Messages-compatible provider | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
+| Codex | Codex-native coding workflows | Native OpenAI or a configured Responses-compatible provider | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
 | LangChain Deep Agents | Composable LangChain and LangGraph agents | LangChain model providers | Built-in and MCP tools, guardrails, skills, and local subagents | NeMo Relay and native OpenTelemetry/OpenInference |
 | Hermes Agent | Hermes Agent workflows with custom model endpoints | Configurable provider, model, and base URL | Toolsets, guardrails, MCP, skills, and persistent conversation history | NeMo Relay |
 

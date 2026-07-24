@@ -49,15 +49,14 @@ the SDK runtime. The current real-agent acceptance path validates an existing
 Codex login; it does not yet claim a raw environment variable as a complete
 login flow.
 
-When the selected model provider is `nvidia`, the adapter defines a Codex model
-provider for the configured NVIDIA Responses endpoint. `Fabric.run(...)` owns
-that provider for one invocation, while `Fabric.start_runtime(...)` fixes it for
-the lifetime of the persistent runtime. The adapter reads the credential from
-`api_key_env` (default: `NVIDIA_API_KEY`) and isolates Codex state under the
-NeMo Fabric artifact root, so execution does not depend on or modify a user's Codex
-login. Set the endpoint in
-`models.<role>.base_url`; it defaults to the public NVIDIA API Catalog endpoint.
-Set it explicitly for a frontier or self-hosted endpoint.
+The native `openai` provider retains Codex authentication and endpoint
+discovery. For another provider name, configure both
+`models.<role>.api_key_env` and `models.<role>.base_url`. The endpoint must
+implement the OpenAI Responses protocol. The adapter defines a runtime-scoped
+Codex model provider with that name and isolates its Codex state under the
+NeMo Fabric artifact root, so execution does not depend on or modify a user's
+Codex login. Provider names identify configuration; the adapter does not
+maintain a provider allowlist.
 
 The adapter depends on the Codex SDK, which installs and selects its matching
 app-server runtime. NeMo Fabric does not declare the runtime package directly or
@@ -83,9 +82,9 @@ return codes, stdout, or stderr.
 
 Use normalized `FabricConfig` fields for portable configuration:
 
-- `models` selects the Codex model. The adapter supports the built-in `openai`
-  provider and NVIDIA-hosted Responses-compatible models through the `nvidia`
-  provider. `models.<role>.base_url` selects an explicit endpoint.
+- `models` selects the Codex model. The native `openai` provider retains Codex
+  authentication and endpoint discovery. Any other provider name must configure
+  a Responses-compatible `base_url` and `api_key_env`.
 - `system_prompt` maps to Codex base instructions.
 - `runtime.timeout_seconds` sets the Fabric invocation deadline.
 - `environment.workspace` sets the working directory, and `environment.env`
@@ -132,3 +131,5 @@ Codex state variables, the selected model's `api_key_env`, and explicit
 
 Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the
 [NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
+NeMo Fabric routes the selected Responses-compatible provider through the
+gateway and passes its explicit `base_url` to Relay as the upstream endpoint.

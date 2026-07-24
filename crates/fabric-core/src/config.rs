@@ -70,7 +70,7 @@ pub struct ToolsConfig {
     /// Adapter-native tool names to block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked: Vec<String>,
-    /// Adapter-native toolset selection and blocking policy.
+    /// Harness-defined toolset selection and blocking policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toolsets: Option<ToolsetConfig>,
     /// Additive tool configuration fields.
@@ -78,13 +78,13 @@ pub struct ToolsConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Harness-neutral toolset capability configuration.
+/// Harness-defined toolset capability configuration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ToolsetConfig {
-    /// Toolsets to expose. `None` preserves the adapter default; an empty list exposes none.
+    /// Toolsets to expose. `None` preserves the harness default; an empty list exposes none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<Vec<String>>,
-    /// Toolsets to block.
+    /// Toolsets to exclude from the enabled or default harness toolset set.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked: Vec<String>,
     /// Additive toolset configuration fields.
@@ -530,6 +530,10 @@ pub struct EnvironmentConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<PathBuf>,
     /// Environment variables visible to the harness and its tools.
+    ///
+    /// Values are serialized into the run plan and can appear wherever configs
+    /// or plans are logged or persisted. Prefer `api_key_env`-style
+    /// environment-variable-name indirection for credentials.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
     /// Provider connection metadata, such as server URL, credential reference, or namespace.
@@ -1857,7 +1861,7 @@ pub struct ToolsPlan {
     /// Adapter-native tool names to block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked: Vec<String>,
-    /// Adapter-native toolset selection and blocking policy.
+    /// Harness-defined toolset selection and blocking policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub toolsets: Option<ToolsetConfig>,
 }

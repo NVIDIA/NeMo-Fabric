@@ -7,7 +7,7 @@ description: "Pydantic authoring models for NeMo Fabric config and request input
 SPDX-License-Identifier: Apache-2.0 */}
 
 # <kbd>module</kbd> `nemo_fabric.models`
-Pydantic SDK models for NeMo Fabric configuration and requests.
+Pydantic SDK models for NVIDIA NeMo Fabric configuration and requests.
 
 The Rust core remains the source of truth for persisted schema snapshots. These models provide the Python SDK's typed authoring surface and intentionally keep extension fields so consumers can carry adapter- or application-owned data without waiting for a schema release.
 
@@ -1423,7 +1423,9 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 ## <kbd>class</kbd> `ToolsetConfig`
 
-Harness-neutral toolset selection and blocking policy.
+Harness-defined toolset selection and blocking policy.
+
+``enabled=None`` preserves the selected harness default, while an empty ``enabled`` list exposes no toolsets. ``blocked`` excludes toolsets from either the enabled list or the harness default.
 
 
 ---
@@ -1546,7 +1548,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ## <kbd>class</kbd> `FabricConfig`
 SDK-facing typed Fabric agent configuration.
 
-Fabric-owned fields apply uniformly. Adapter-translated fields are checked against the selected descriptor; see the normalized configuration compatibility table in ``docs/sdk/python.mdx``.
+Fabric-owned fields apply uniformly. Adapter-translated fields are checked against the selected descriptor; refer to the [normalized configuration compatibility table](/nemo/fabric/sdk/python-sdk#normalized-configuration-compatibility).
 
 
 ---
@@ -1630,7 +1632,7 @@ configure_toolsets(
 ) → Self
 ```
 
-Set adapter-native toolset selection and blocking policy.
+Set harness-defined toolset selection and blocking policy.
 
 ---
 
