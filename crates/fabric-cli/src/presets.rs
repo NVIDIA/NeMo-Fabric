@@ -21,6 +21,7 @@ const CODEX_DESCRIPTOR: &str = include_str!("../assets/adapters/codex/fabric-ada
 const DEEPAGENTS_DESCRIPTOR: &str =
     include_str!("../assets/adapters/deepagents/fabric-adapter.json");
 const NVIDIA_API_CATALOG_BASE_URL: &str = "https://integrate.api.nvidia.com/v1";
+const NVIDIA_FRONTIER_BASE_URL_ENV: &str = "NVIDIA_FRONTIER_BASE_URL";
 
 const SCRIPTED_ASSETS: &[EmbeddedFile] = &[
     EmbeddedFile {
@@ -58,7 +59,6 @@ pub struct Preset {
     pub description: &'static str,
     /// Environment variables required by the harness/model combination.
     pub required_env: &'static [&'static str],
-    required_config_env: &'static [&'static str],
     build: fn() -> FabricConfig,
     assets: &'static [EmbeddedFile],
 }
@@ -81,16 +81,16 @@ impl Preset {
     }
 
     pub(crate) fn validate_config_environment(self) -> Result<(), String> {
-        for name in self.required_config_env {
-            if std::env::var(name).is_ok_and(|value| !value.trim().is_empty()) {
-                continue;
-            }
-            return Err(format!(
-                "preset {:?} requires {name} to be set to a non-empty endpoint before planning",
-                self.name
-            ));
+        if !self.required_env.contains(&NVIDIA_FRONTIER_BASE_URL_ENV) {
+            return Ok(());
         }
-        Ok(())
+        if std::env::var(NVIDIA_FRONTIER_BASE_URL_ENV).is_ok_and(|value| !value.trim().is_empty()) {
+            return Ok(());
+        }
+        Err(format!(
+            "preset {:?} requires {NVIDIA_FRONTIER_BASE_URL_ENV} to be set to a non-empty endpoint before use",
+            self.name
+        ))
     }
 
     pub(crate) fn embedded_files(self) -> &'static [EmbeddedFile] {
@@ -130,7 +130,6 @@ const PRESETS: [Preset; 5] = [
         name: "scripted",
         description: "Credential-free deterministic smoke preset.",
         required_env: &[],
-        required_config_env: &[],
         build: scripted,
         assets: SCRIPTED_ASSETS,
     },
@@ -138,23 +137,20 @@ const PRESETS: [Preset; 5] = [
         name: "hermes",
         description: "Hermes Agent with an NVIDIA-hosted model.",
         required_env: &["NVIDIA_API_KEY"],
-        required_config_env: &[],
         build: hermes,
         assets: HERMES_ASSETS,
     },
     Preset {
         name: "claude",
         description: "Claude Code with an NVIDIA-hosted Claude model.",
-        required_env: &["NVIDIA_API_KEY", "NVIDIA_FRONTIER_BASE_URL"],
-        required_config_env: &["NVIDIA_FRONTIER_BASE_URL"],
+        required_env: &["NVIDIA_API_KEY", NVIDIA_FRONTIER_BASE_URL_ENV],
         build: claude,
         assets: CLAUDE_ASSETS,
     },
     Preset {
         name: "codex",
         description: "Codex with an NVIDIA-hosted OpenAI model.",
-        required_env: &["NVIDIA_API_KEY", "NVIDIA_FRONTIER_BASE_URL"],
-        required_config_env: &["NVIDIA_FRONTIER_BASE_URL"],
+        required_env: &["NVIDIA_API_KEY", NVIDIA_FRONTIER_BASE_URL_ENV],
         build: codex,
         assets: CODEX_ASSETS,
     },
@@ -162,7 +158,6 @@ const PRESETS: [Preset; 5] = [
         name: "deepagents",
         description: "LangChain Deep Agents with an NVIDIA-hosted model.",
         required_env: &["NVIDIA_API_KEY"],
-        required_config_env: &[],
         build: deepagents,
         assets: DEEPAGENTS_ASSETS,
     },
@@ -202,7 +197,7 @@ fn claude() -> FabricConfig {
             "nvidia",
             "aws/anthropic/claude-opus-4-5",
             Some("NVIDIA_API_KEY"),
-            std::env::var("NVIDIA_FRONTIER_BASE_URL").ok().as_deref(),
+            std::env::var(NVIDIA_FRONTIER_BASE_URL_ENV).ok().as_deref(),
         )),
         Map::from_iter([("permission_mode".to_string(), json!("dontAsk"))]),
     )
@@ -217,7 +212,7 @@ fn codex() -> FabricConfig {
             "nvidia",
             "azure/openai/gpt-5.4",
             Some("NVIDIA_API_KEY"),
-            std::env::var("NVIDIA_FRONTIER_BASE_URL").ok().as_deref(),
+            std::env::var(NVIDIA_FRONTIER_BASE_URL_ENV).ok().as_deref(),
         )),
         Map::from_iter([
             ("sandbox".to_string(), json!("workspace-write")),
@@ -381,7 +376,7 @@ mod tests {
                 find(name)
                     .expect("frontier preset")
                     .required_env
-                    .contains(&"NVIDIA_FRONTIER_BASE_URL")
+                    .contains(&NVIDIA_FRONTIER_BASE_URL_ENV)
             );
         }
     }

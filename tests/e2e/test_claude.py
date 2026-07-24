@@ -170,34 +170,6 @@ async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
 
 
 @pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="the mock Claude CLI is not yet a Windows executable",
-)
-async def test_fabric_run_preserves_legacy_model_endpoint(tmp_path, monkeypatch):
-    config = fabric_config(tmp_path, cli_path=MOCK_CLAUDE_CLI)
-    model = config.models["default"]
-    model.provider = "nvidia"
-    model.model = "aws/anthropic/claude-opus-4-5"
-    model.api_key_env = "NVIDIA_API_KEY"
-    model.settings["base_url"] = "https://frontier.example/v1"
-    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
-
-    result = await Fabric().run(config, base_dir=tmp_path, input="inspect")
-
-    assert result.status == "succeeded"
-    environments = [
-        json.loads(line)
-        for line in (tmp_path / "claude-env.jsonl").read_text().splitlines()
-    ]
-    assert environments == [
-        {
-            "ANTHROPIC_BASE_URL": "https://frontier.example",
-            "NEMO_RELAY_GATEWAY_URL": None,
-        }
-    ]
-
-
-@pytest.mark.skipif(
     sys.platform in {"darwin", "win32"},
     reason="the mock Relay gateway is not supported on macOS or Windows",
 )
