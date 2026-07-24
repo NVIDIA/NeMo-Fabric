@@ -24,5 +24,5 @@ ATOF and ATIF output before running the example yourself.
 The checked-in trajectories record Relay 0.5.0 and the earlier
 `nvidia/nemotron-3-nano` model identifier because they are historical evidence
 from the original runs. New runs use the compatible Relay CLI version pinned by
-the current walkthrough's [task-bundle setup](../README.md#prepare-the-task-bundle)
+the [task-bundle setup](../README.md#prepare-the-task-bundle) in the walkthrough
 and the selected model; do not treat sample metadata as installation guidance.
