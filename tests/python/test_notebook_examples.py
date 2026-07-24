@@ -78,7 +78,8 @@ def test_variations_notebook_accepts_adapter_commands_and_relative_paths(
 ):
     adapter_python = tmp_path / "adapter" / "python"
     adapter_python.parent.mkdir()
-    adapter_python.touch()
+    adapter_python.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    adapter_python.chmod(0o755)
     _, _, blocker = _variation_harness_definitions(base_dir=tmp_path)
     monkeypatch.setattr(shutil, "which", lambda _command: "/resolved/python3")
 
@@ -138,6 +139,7 @@ def test_variations_notebook_uses_runnable_capabilities_and_checks_relay_status(
 
     assert "./skills/style-guide" not in source
     assert "${DOCS_MCP_URL}" not in source
+    assert "path.is_file() and os.access(path, os.X_OK)" in source
     assert 'recomposed.add_skill_path("./skills/code-review")' in source
     assert 'exposure="harness_native"' in source
     assert 'exposure="fabric_managed"' not in source
