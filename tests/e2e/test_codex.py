@@ -39,7 +39,7 @@ async def test_codex_sdk_with_relay():
     )
     if relay_command is None:
         pytest.fail("the nemo-relay CLI is required")
-    await _run_relay()
+    await _run_relay(str(relay_command))
 
 
 async def _run() -> None:
@@ -80,11 +80,13 @@ async def _run() -> None:
     assert second["output"]["usage"] is not None, second.to_mapping()
 
 
-async def _run_relay() -> None:
+async def _run_relay(relay_command: str) -> None:
     from examples.code_review_agent import BASE_DIR, codex_config, with_relay
     from nemo_fabric import Fabric
 
     config = with_relay(codex_config())
+    assert config.environment is not None
+    config.environment.env["FABRIC_TEST_NEMO_RELAY_COMMAND"] = relay_command
     client = Fabric()
     result = await client.run(
         config,

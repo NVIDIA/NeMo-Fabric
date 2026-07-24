@@ -111,7 +111,11 @@ class RuntimeConfig(FabricBaseModel):
     input_schema: str | None = None
     output_schema: str | None = None
     artifacts: str | Path | None = None
-    timeout_seconds: float | None = Field(default=None, gt=0)
+    timeout_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+    )
 
 
 class EnvironmentConfig(FabricBaseModel):
