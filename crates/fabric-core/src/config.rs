@@ -367,7 +367,7 @@ pub struct AdapterConfigSupport {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Adapter-translated normalized NeMo Fabric configuration fields.
+/// Adapter-translated normalized NVIDIA NeMo Fabric configuration fields.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
