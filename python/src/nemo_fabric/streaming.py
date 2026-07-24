@@ -10,8 +10,6 @@ import json
 import warnings
 from collections.abc import Coroutine
 from contextlib import suppress
-from datetime import datetime
-from datetime import timezone
 from typing import Any
 
 from nemo_fabric.models import (
@@ -112,13 +110,16 @@ class InvokeStream:
         self,
         invoke: Coroutine[Any, Any, RunResult],
         listener: _AtofStreamListener,
+        *,
+        request_id: str | None = None,
+        turn_index: int | None = None,
     ) -> None:
         """lazydocs: ignore"""
 
         self._listener = listener
         self._closed = False
         self._finalized = False
-        listener.begin_stream()
+        listener.begin_stream(request_id=request_id, turn_index=turn_index)
         try:
             self._task = asyncio.create_task(invoke)
         except BaseException:
@@ -234,7 +235,10 @@ class _AtofStreamListener:
         self._server: asyncio.Server | None = None
         self._bound_port: int | None = None
         self._accepting = False
-        self._stream_started_at: datetime | None = None
+        self._request_id: str | None = None
+        self._turn_index: int | None = None
+        self._turn_root_uuid: str | None = None
+        self._turn_scope_uuids: set[str] = set()
         self._has_atof_connection = False
         self._warned_unconnected = False
         self._tasks: set[asyncio.Task[None]] = set()
@@ -266,21 +270,32 @@ class _AtofStreamListener:
         self._bound_port = int(socket.getsockname()[1])
         return self
 
-    def begin_stream(self) -> None:
+    def begin_stream(
+        self,
+        *,
+        request_id: str | None = None,
+        turn_index: int | None = None,
+    ) -> None:
         """Route subsequent records to the active invocation queue."""
 
         if self._accepting:
             raise RuntimeError("ATOF stream listener already has an active consumer")
         while not self._queue.empty():
             self._queue.get_nowait()
-        self._stream_started_at = datetime.now(timezone.utc)
+        self._request_id = request_id
+        self._turn_index = turn_index
+        self._turn_root_uuid = None
+        self._turn_scope_uuids.clear()
         self._accepting = True
 
     def end_stream(self) -> None:
         """Discard records until another streaming invocation begins."""
 
         self._accepting = False
-        self._stream_started_at = None
+        self._request_id = None
+        self._turn_index = None
+        self._turn_root_uuid = None
+        self._turn_scope_uuids.clear()
 
     def warn_if_unconnected(self) -> None:
         """Warn once when Relay has never reached this listener."""
@@ -418,19 +433,51 @@ class _AtofStreamListener:
             record = json.loads(stripped)
         except json.JSONDecodeError:
             return
-        if isinstance(record, dict) and not self._is_from_previous_turn(record):
+        if isinstance(record, dict) and self._belongs_to_active_turn(record):
             await self._queue.put(record, byte_size=len(stripped))
 
-    def _is_from_previous_turn(self, record: dict[str, Any]) -> bool:
-        started_at = self._stream_started_at
-        timestamp = record.get("timestamp")
-        if started_at is None or not isinstance(timestamp, str):
+    def _belongs_to_active_turn(self, record: dict[str, Any]) -> bool:
+        if self._request_id is None and self._turn_index is None:
+            return True
+
+        uuid = record.get("uuid")
+        if not isinstance(uuid, str):
             return False
-        try:
-            emitted_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
-        except ValueError:
+        if self._turn_root_uuid is None:
+            if not self._matches_turn_root(record):
+                return False
+            self._turn_root_uuid = uuid
+            self._turn_scope_uuids.add(uuid)
+            return True
+
+        if uuid in self._turn_scope_uuids:
+            return True
+        parent_uuid = record.get("parent_uuid")
+        if (
+            not isinstance(parent_uuid, str)
+            or parent_uuid not in self._turn_scope_uuids
+        ):
             return False
-        return emitted_at.tzinfo is not None and emitted_at < started_at
+        if record.get("kind") == "scope" and record.get("scope_category") == "start":
+            self._turn_scope_uuids.add(uuid)
+        return True
+
+    def _matches_turn_root(self, record: dict[str, Any]) -> bool:
+        if record.get("kind") != "scope" or record.get("scope_category") != "start":
+            return False
+        metadata = record.get("metadata")
+        if not isinstance(metadata, dict):
+            return False
+        if (
+            self._request_id is not None
+            and metadata.get("nemo_fabric_request_id") == self._request_id
+        ):
+            return True
+        return (
+            self._turn_index is not None
+            and metadata.get("nemo_relay_scope_role") == "turn"
+            and metadata.get("turn_index") == self._turn_index
+        )
 
     async def close(self) -> None:
         """Stop accepting records and close active HTTP connections."""

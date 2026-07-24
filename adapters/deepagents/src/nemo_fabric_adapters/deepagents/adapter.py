@@ -579,6 +579,7 @@ class DeepAgentsRuntime:
         user_message = request.get("input") or ""
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
+        request_id = request.get("request_id")
 
         result_state: Any = None
         events: list[dict[str, Any]] = []
@@ -590,7 +591,9 @@ class DeepAgentsRuntime:
                 callback_handler = self._callback_handler_type()
                 async with self._relay_plugin.plugin(self._relay_plugin_config):
                     with self._relay_scope.scope(
-                        "deepagents-request", self._relay_scope_type.Agent
+                        "deepagents-request",
+                        self._relay_scope_type.Agent,
+                        metadata={"nemo_fabric_request_id": request_id},
                     ):
                         (
                             result_state,

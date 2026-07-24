@@ -280,12 +280,19 @@ async def test_invoke_stream_yields_raw_records_and_returns_result_out_of_band(
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
+    request = RunRequest(input="hello", request_id="request-stream")
     records = [
-        {"type": "scope", "uuid": "scope-1", "name": "request"},
-        {"type": "mark", "uuid": "mark-1", "parent_uuid": "scope-1"},
+        {
+            "kind": "scope",
+            "scope_category": "start",
+            "uuid": "scope-1",
+            "name": "request",
+            "metadata": {"nemo_fabric_request_id": request.request_id},
+        },
+        {"kind": "mark", "uuid": "mark-1", "parent_uuid": "scope-1"},
     ]
 
-    stream = runtime.invoke_stream(input="hello")
+    stream = runtime.invoke_stream(request=request)
     assert isinstance(stream, InvokeStream)
     await _post_chunked(endpoint, records)
     streamed = [record async for record in stream]
@@ -306,11 +313,18 @@ async def test_stream_must_be_finalized_before_another_turn(
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
-    stream = runtime.invoke_stream(input="first")
-    await _post_chunked(endpoint, [{"uuid": "first"}])
+    request = RunRequest(input="first", request_id="request-first")
+    first = {
+        "kind": "scope",
+        "scope_category": "start",
+        "uuid": "first",
+        "metadata": {"nemo_fabric_request_id": request.request_id},
+    }
+    stream = runtime.invoke_stream(request=request)
+    await _post_chunked(endpoint, [first])
 
     async for record in stream:
-        assert record == {"uuid": "first"}
+        assert record == first
         break
 
     with pytest.raises(FabricStateError, match="streaming invocation is active"):
@@ -481,22 +495,50 @@ async def test_aclose_drains_backpressure_while_invocation_finishes():
     await listener.close()
 
 
-async def test_listener_filters_timestamped_records_from_previous_turn():
-    listener = await _AtofStreamListener(maxsize=2).start()
-    listener.begin_stream()
-    listener.end_stream()
-    listener.begin_stream()
-    current = {"uuid": "current", "timestamp": "2100-01-01T00:00:00Z"}
+@pytest.mark.parametrize(
+    "current_metadata",
+    [
+        {"nemo_fabric_request_id": "request-2"},
+        {"nemo_relay_scope_role": "turn", "turn_index": 2},
+    ],
+)
+async def test_listener_correlates_records_to_active_turn(
+    current_metadata: dict[str, Any],
+):
+    listener = await _AtofStreamListener(maxsize=4).start()
+    listener.begin_stream(request_id="request-2", turn_index=2)
+    current = [
+        {
+            "kind": "scope",
+            "scope_category": "start",
+            "uuid": "current",
+            "metadata": current_metadata,
+        },
+        {
+            "kind": "scope",
+            "scope_category": "start",
+            "uuid": "child",
+            "parent_uuid": "current",
+        },
+        {"kind": "mark", "uuid": "mark", "parent_uuid": "child"},
+    ]
 
     await _post_chunked(
         listener.url,
         [
-            {"uuid": "late", "timestamp": "2000-01-01T00:00:00Z"},
-            current,
+            {
+                "kind": "scope",
+                "scope_category": "start",
+                "uuid": "previous",
+                "metadata": {"nemo_fabric_request_id": "request-1"},
+            },
+            {"kind": "mark", "uuid": "late", "parent_uuid": "previous"},
+            *current,
+            {"kind": "mark", "uuid": "unrelated", "parent_uuid": "previous"},
         ],
     )
 
-    assert await listener.records.get() == current
+    assert [await listener.records.get() for _ in current] == current
     assert listener.records.empty()
     listener.end_stream()
     await listener.close()

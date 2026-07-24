@@ -349,12 +349,29 @@ class HermesRuntime:
         try:
             self._relay_session_pending = self._relay_plugin_config is not None
             self._relay_finalize_hook_invoked = False
-            result, adapter_stdout = _invoke_hermes_turn(
-                agent=self._agent,
-                settings=self._settings,
-                user_message=user_message,
-                conversation_history=self._conversation_history,
-            )
+            if self._relay_plugin_config is None:
+                result, adapter_stdout = _invoke_hermes_turn(
+                    agent=self._agent,
+                    settings=self._settings,
+                    user_message=user_message,
+                    conversation_history=self._conversation_history,
+                )
+            else:
+                from nemo_relay import ScopeType, scope
+
+                with scope.scope(
+                    "nemo-fabric-invocation",
+                    ScopeType.Agent,
+                    metadata={
+                        "nemo_fabric_request_id": request.get("request_id"),
+                    },
+                ):
+                    result, adapter_stdout = _invoke_hermes_turn(
+                        agent=self._agent,
+                        settings=self._settings,
+                        user_message=user_message,
+                        conversation_history=self._conversation_history,
+                    )
         finally:
             # Hermes' Relay plugin materializes ATIF when its session-finalize
             # hook runs. Finalize the telemetry session for each Fabric

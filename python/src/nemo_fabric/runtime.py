@@ -260,6 +260,8 @@ class Runtime:
         stream = InvokeStream(
             self._invoke_payload(payload),
             self._stream_listener,
+            request_id=payload["request_id"],
+            turn_index=len(self._invocations) + 1,
         )
         self._current_stream = stream
         return stream
