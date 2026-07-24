@@ -413,17 +413,23 @@ Streaming has the following v0.1 constraints:
 - Reconstruct nested and parallel work with `uuid` and `parent_uuid`. Stream
   order alone does not define the Deep Agents scope tree.
 - The listener correlates records to one Relay scope tree. Deep Agents and
-  Hermes roots carry the Fabric request ID; Claude and Codex roots carry
-  Relay's turn index. Records outside the matched root and its descendants are
-  discarded, so delayed records from another turn do not enter the active
-  stream. A short drain window only collects late records from the matched
-  tree; it does not define turn ownership.
+  Hermes roots carry the Fabric request ID. For Claude and Codex, the SDK
+  matches Relay turn scopes by their role and 1-based turn index. Records
+  outside the matched root and its descendants are discarded, so delayed
+  records from another turn do not enter the active stream. If the gateway
+  turn sequence does not align with the Fabric invocation sequence, the SDK
+  yields no uncorrelated records and emits a `RuntimeWarning` after natural
+  stream exhaustion. A short drain window only collects late records from the
+  matched tree; it does not define turn ownership.
 - The SDK listener binds to `127.0.0.1`. Claude and Codex gateway processes
   must run in the same network namespace as the SDK. A gateway in another
   container, pod, or remote host cannot reach the listener. If async iteration
-  reaches the post-turn drain timeout without a Relay connection, the SDK emits
-  one `RuntimeWarning`. A caller that only awaits `stream.result()` still
-  receives the terminal result and does not run this warning check.
+  reaches the post-turn drain timeout without a Relay connection, or if Relay
+  sends data but no record matches the active turn, the SDK emits one
+  `RuntimeWarning` for that failure mode. It also warns if a long-lived Relay
+  upload closes during the active turn because the yielded stream can be
+  incomplete. A caller that only awaits `stream.result()` still receives the
+  terminal result and does not run this warning check.
 
 Claude and Codex streaming use the `nemo-relay` gateway CLI and require a
 stream-sink-capable release, version 0.6.0 or later. Follow the
