@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import importlib.metadata
 import json
 import os
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 from nemo_fabric.errors import (
     FabricConfigError,
@@ -86,6 +88,7 @@ class Fabric:
             raw = native.plan_config(
                 _config_json(config),
                 _base_dir_arg(base_dir),
+                _installed_adapter_descriptor_paths(),
             )
             return RunPlan.from_mapping(json.loads(raw))
         except FabricError:
@@ -124,6 +127,7 @@ class Fabric:
             raw = native.doctor_config(
                 _config_json(config),
                 _base_dir_arg(base_dir),
+                _installed_adapter_descriptor_paths(),
             )
             return DoctorReport.from_mapping(json.loads(raw))
 
@@ -271,3 +275,15 @@ def _config_json(config: FabricConfig) -> str:
 
 def _base_dir_arg(base_dir: str | os.PathLike[str] | None) -> str | None:
     return None if base_dir is None else os.fspath(base_dir)
+
+
+def _installed_adapter_descriptor_paths() -> list[str]:
+    paths: set[str] = set()
+    for distribution in importlib.metadata.distributions():
+        for file in distribution.files or ():
+            if file.name != "fabric-adapter.json":
+                continue
+            path = Path(distribution.locate_file(file))
+            if path.is_file():
+                paths.add(os.fspath(path.resolve()))
+    return sorted(paths)

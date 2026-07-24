@@ -10,8 +10,10 @@ from inspect import signature
 from pathlib import Path
 from typing import Any
 from typing import get_overloads
+from unittest.mock import MagicMock
 
 import nemo_fabric
+import nemo_fabric.client as client_mod
 import nemo_fabric.errors as fabric_errors
 import pytest
 from nemo_fabric import AdapterInfo
@@ -627,6 +629,7 @@ class NativeRecorder:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
         self.config_base_dir_calls: list[str | None] = []
+        self.adapter_descriptor_calls: list[list[str]] = []
         self.stopped = 0
         self.fail_invoke = False
 
@@ -634,9 +637,11 @@ class NativeRecorder:
         self,
         config_json: str,
         base_dir: str | None = None,
+        adapter_descriptors: list[str] | None = None,
     ) -> str:
         assert json.loads(config_json)["metadata"]["name"] == "demo"
         self.config_base_dir_calls.append(base_dir)
+        self.adapter_descriptor_calls.append(adapter_descriptors or [])
         return json.dumps(_plan())
 
     def start_runtime(self, plan_json: str) -> str:
@@ -1139,6 +1144,40 @@ def test_config_methods_accept_real_pydantic_models_and_reject_lookalikes():
     client.plan(config, base_dir=".")
 
     assert native.config_base_dir_calls == ["."]
+
+
+def test_plan_registers_installed_adapter_descriptors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    descriptor = (
+        tmp_path
+        / "share"
+        / "nemo-fabric"
+        / "adapters"
+        / "shim"
+        / "fabric-adapter.json"
+    )
+    descriptor.parent.mkdir(parents=True)
+    descriptor.write_text("{}")
+
+    mock_distribution = MagicMock()
+    mock_distribution.files = [
+        Path("share/nemo-fabric/adapters/shim/fabric-adapter.json")
+    ]
+    mock_distribution.locate_file.side_effect = lambda file: tmp_path / file
+
+    monkeypatch.setattr(
+        client_mod.importlib.metadata,
+        "distributions",
+        lambda: [mock_distribution],
+    )
+    native = NativeRecorder()
+    client = NativeClient(native)
+
+    client.plan(_fabric_config())
+
+    assert native.adapter_descriptor_calls == [[str(descriptor.resolve())]]
 
 
 def test_fabric_config_constructors_emit_schema_shaped_mappings():

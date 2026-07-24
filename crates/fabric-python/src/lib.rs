@@ -5,9 +5,9 @@
 
 use std::path::PathBuf;
 
+use nemo_fabric_core::config::resolve_run_plan_from_config_with_adapter_descriptors;
 use nemo_fabric_core::{
-    FabricConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
-    resolve_run_plan_from_config, run_plan,
+    FabricConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
@@ -20,33 +20,39 @@ fn version() -> PyResult<String> {
 
 /// Resolve typed config JSON into a runnable plan and return JSON.
 #[pyfunction]
-#[pyo3(signature = (config_json, base_dir=None))]
-fn plan_config(py: Python<'_>, config_json: String, base_dir: Option<String>) -> PyResult<String> {
+#[pyo3(signature = (config_json, base_dir=None, adapter_descriptors=None))]
+fn plan_config(
+    py: Python<'_>,
+    config_json: String,
+    base_dir: Option<String>,
+    adapter_descriptors: Option<Vec<String>>,
+) -> PyResult<String> {
     let config = parse_config(config_json)?;
     let plan = py
-        .detach(|| resolve_run_plan_from_config(config, resolve_context(base_dir)))
+        .detach(|| resolve_config(config, base_dir, adapter_descriptors))
         .map_err(to_py_error)?;
     to_json(&plan)
 }
 
 /// Diagnose typed config JSON without installing or running it.
 #[pyfunction]
-#[pyo3(signature = (config_json, base_dir=None))]
+#[pyo3(signature = (config_json, base_dir=None, adapter_descriptors=None))]
 fn doctor_config(
     py: Python<'_>,
     config_json: String,
     base_dir: Option<String>,
+    adapter_descriptors: Option<Vec<String>>,
 ) -> PyResult<String> {
     let config = parse_config(config_json)?;
     let plan = py
-        .detach(|| resolve_run_plan_from_config(config, resolve_context(base_dir)))
+        .detach(|| resolve_config(config, base_dir, adapter_descriptors))
         .map_err(to_py_error)?;
     to_json(&doctor_plan(&plan))
 }
 
 /// Run typed config JSON through its Fabric adapter and return JSON.
 #[pyfunction]
-#[pyo3(signature = (config_json, base_dir=None, input_text=None, input_file=None, request_json=None, request_file=None))]
+#[pyo3(signature = (config_json, base_dir=None, input_text=None, input_file=None, request_json=None, request_file=None, adapter_descriptors=None))]
 fn run_config(
     py: Python<'_>,
     config_json: String,
@@ -55,10 +61,11 @@ fn run_config(
     input_file: Option<String>,
     request_json: Option<String>,
     request_file: Option<String>,
+    adapter_descriptors: Option<Vec<String>>,
 ) -> PyResult<String> {
     let config = parse_config(config_json)?;
     let plan = py
-        .detach(|| resolve_run_plan_from_config(config, resolve_context(base_dir)))
+        .detach(|| resolve_config(config, base_dir, adapter_descriptors))
         .map_err(to_py_error)?;
     let request = match (request_file, request_json, input_file, input_text) {
         (Some(path), None, None, None) => std::fs::read_to_string(PathBuf::from(&path))
@@ -148,6 +155,23 @@ fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
 
 fn resolve_context(base_dir: Option<String>) -> ResolveContext {
     ResolveContext::new(base_dir.unwrap_or_else(|| ".".to_string()))
+}
+
+fn resolve_config(
+    config: FabricConfig,
+    base_dir: Option<String>,
+    adapter_descriptors: Option<Vec<String>>,
+) -> nemo_fabric_core::Result<RunPlan> {
+    let adapter_descriptors = adapter_descriptors
+        .unwrap_or_default()
+        .into_iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    resolve_run_plan_from_config_with_adapter_descriptors(
+        config,
+        resolve_context(base_dir),
+        &adapter_descriptors,
+    )
 }
 
 fn parse_config(contents: String) -> PyResult<FabricConfig> {

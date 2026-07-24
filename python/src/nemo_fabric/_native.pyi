@@ -5,10 +5,12 @@ def version() -> str: ...
 def plan_config(
     config_json: str,
     base_dir: str | None = None,
+    adapter_descriptors: list[str] | None = None,
 ) -> str: ...
 def doctor_config(
     config_json: str,
     base_dir: str | None = None,
+    adapter_descriptors: list[str] | None = None,
 ) -> str: ...
 def run_config(
     config_json: str,
@@ -17,6 +19,7 @@ def run_config(
     input_file: str | None = None,
     request_json: str | None = None,
     request_file: str | None = None,
+    adapter_descriptors: list[str] | None = None,
 ) -> str: ...
 def start_runtime(plan_json: str) -> str: ...
 def invoke_runtime(

@@ -95,7 +95,9 @@ async def _wait_for(event: threading.Event, timeout: float = 2.0) -> bool:
 def mock_native_fixture() -> MagicMock:
     mock_native = MagicMock()
     mock_native.requests = []
-    mock_native.plan_config.side_effect = lambda config_json, base_dir: json.dumps(_plan())
+    mock_native.plan_config.side_effect = (
+        lambda config_json, base_dir, adapter_descriptors: json.dumps(_plan())
+    )
     mock_native.start_runtime.return_value = json.dumps(_runtime())
 
     def invoke(plan_json: str, runtime_json: str, request_json: str) -> str:

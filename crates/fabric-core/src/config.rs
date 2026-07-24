@@ -164,10 +164,17 @@ struct AdapterRegistry {
 }
 
 impl AdapterRegistry {
-    fn from_config(_config: &FabricConfig, base_dir: &Path) -> Result<Self> {
+    fn from_config(
+        _config: &FabricConfig,
+        base_dir: &Path,
+        adapter_descriptors: &[PathBuf],
+    ) -> Result<Self> {
         let mut registry = Self::default();
         registry.register_repository_directory(&repository_adapter_dir())?;
         registry.register_local_directory(&base_dir.join("adapters"))?;
+        for path in adapter_descriptors {
+            registry.register_descriptor_file(path, AdapterDescriptorSource::Local)?;
+        }
         Ok(registry)
     }
 
@@ -204,10 +211,18 @@ impl AdapterRegistry {
             if !is_adapter_descriptor_file(&path) {
                 continue;
             }
-            let descriptor = load_adapter_descriptor(&path)?;
-            self.register_descriptor(path, source, descriptor)?;
+            self.register_descriptor_file(&path, source)?;
         }
         Ok(())
+    }
+
+    fn register_descriptor_file(
+        &mut self,
+        path: &Path,
+        source: AdapterDescriptorSource,
+    ) -> Result<()> {
+        let descriptor = load_adapter_descriptor(path)?;
+        self.register_descriptor(path.to_path_buf(), source, descriptor)
     }
 
     fn register_descriptor(
@@ -990,6 +1005,16 @@ pub fn resolve_run_plan_from_config(
     config: FabricConfig,
     context: ResolveContext,
 ) -> Result<RunPlan> {
+    resolve_run_plan_from_config_with_adapter_descriptors(config, context, &[])
+}
+
+/// Resolve a typed Fabric config with caller-registered adapter descriptors.
+#[doc(hidden)]
+pub fn resolve_run_plan_from_config_with_adapter_descriptors(
+    config: FabricConfig,
+    context: ResolveContext,
+    adapter_descriptors: &[PathBuf],
+) -> Result<RunPlan> {
     validate_config(&config)?;
     let supplied_base_dir = context.base_dir;
     let base_dir = std::path::absolute(&supplied_base_dir)
@@ -998,7 +1023,7 @@ pub fn resolve_run_plan_from_config(
             path: supplied_base_dir,
             source,
         })?;
-    resolve_run_plan(config, base_dir)
+    resolve_run_plan(config, base_dir, adapter_descriptors)
 }
 
 fn read_json<T>(path: &Path) -> Result<T>
@@ -1015,8 +1040,12 @@ where
     })
 }
 
-fn resolve_run_plan(config: FabricConfig, base_dir: PathBuf) -> Result<RunPlan> {
-    let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir)?;
+fn resolve_run_plan(
+    config: FabricConfig,
+    base_dir: PathBuf,
+    adapter_descriptors: &[PathBuf],
+) -> Result<RunPlan> {
+    let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_descriptors)?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
@@ -1042,9 +1071,10 @@ fn resolve_run_plan(config: FabricConfig, base_dir: PathBuf) -> Result<RunPlan> 
 fn resolve_adapter_descriptor(
     config: &FabricConfig,
     base_dir: &Path,
+    adapter_descriptors: &[PathBuf],
 ) -> Result<Option<ResolvedAdapterDescriptor>> {
     let adapter_id = &config.harness.adapter_id;
-    let registry = AdapterRegistry::from_config(config, base_dir)?;
+    let registry = AdapterRegistry::from_config(config, base_dir, adapter_descriptors)?;
     let Some(entry) = registry.get(adapter_id) else {
         return Err(FabricError::UnknownAdapter {
             adapter_id: adapter_id.clone(),
@@ -1711,5 +1741,25 @@ mod tests {
 
         assert_eq!(descriptor.contract_version, ADAPTER_CONTRACT_VERSION);
         assert_eq!(descriptor.adapter_kind, AdapterKind::Python);
+    }
+
+    #[test]
+    fn resolves_caller_registered_adapter_descriptor() {
+        let descriptor_path = repository_root()
+            .join("tests/fixtures/hermes-shim-agent/adapters/hermes-shim/fabric-adapter.json");
+        let plan = resolve_run_plan_from_config_with_adapter_descriptors(
+            typed_config("test.fabric.hermes_shim"),
+            ResolveContext::new("/tmp/fabric-base"),
+            std::slice::from_ref(&descriptor_path),
+        )
+        .expect("registered adapter descriptor");
+        let resolved = plan.adapter_descriptor.expect("adapter descriptor");
+
+        assert_eq!(resolved.descriptor.adapter_id, "test.fabric.hermes_shim");
+        assert_eq!(resolved.source, AdapterDescriptorSource::Local);
+        assert_eq!(
+            resolved.path,
+            descriptor_path.canonicalize().expect("descriptor path")
+        );
     }
 }

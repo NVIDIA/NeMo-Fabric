@@ -153,6 +153,38 @@ jobs:
       - name: Build wheels
         run: just wheels
 
+      - name: Test installed adapter discovery
+        run: |
+          set -euo pipefail
+          uv venv .wheel-test-venv
+          if [[ -x .wheel-test-venv/bin/python ]]; then
+            test_python="$PWD/.wheel-test-venv/bin/python"
+          else
+            test_python="$PWD/.wheel-test-venv/Scripts/python.exe"
+          fi
+          uv pip install \
+            --python "$test_python" \
+            --find-links dist \
+            "nemo-fabric[hermes]"
+
+          source_adapters="$GITHUB_WORKSPACE/adapters"
+          staged_source_adapters="$RUNNER_TEMP/nemo-fabric-source-adapters"
+          mv "$source_adapters" "$staged_source_adapters"
+          trap 'mv "$staged_source_adapters" "$source_adapters"' EXIT
+
+          smoke_dir="$(mktemp -d)"
+          cd "$smoke_dir"
+          "$test_python" - <<'PY'
+          from nemo_fabric import Fabric, FabricConfig, HarnessConfig, MetadataConfig
+
+          config = FabricConfig(
+              metadata=MetadataConfig(name="installed-adapter-smoke"),
+              harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
+          )
+          plan = Fabric().plan(config)
+          assert plan.adapter.adapter_id == "nvidia.fabric.hermes"
+          PY
+
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
