@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 VARIATIONS_NOTEBOOK = ROOT / "examples" / "notebooks" / "02_variations.ipynb"
 
 
-def _variation_harness_definitions():
+def _variation_harness_definitions(base_dir=BASE_DIR):
     notebook = json.loads(VARIATIONS_NOTEBOOK.read_text(encoding="utf-8"))
     source = next(
         "".join(cell["source"])
@@ -32,6 +32,7 @@ def _variation_harness_definitions():
     )
     namespace = {
         "base_config": base_config,
+        "BASE_DIR": base_dir,
         "HarnessConfig": HarnessConfig,
         "ModelConfig": ModelConfig,
         "os": os,
@@ -72,11 +73,18 @@ def test_variations_notebook_harnesses_plan_with_current_adapters():
     assert plans["Codex"].config.runtime.input_schema == "text"
 
 
-def test_variations_notebook_accepts_adapter_command_on_path(monkeypatch):
-    _, _, blocker = _variation_harness_definitions()
+def test_variations_notebook_accepts_adapter_commands_and_relative_paths(
+    monkeypatch, tmp_path
+):
+    adapter_python = tmp_path / "adapter" / "python"
+    adapter_python.parent.mkdir()
+    adapter_python.touch()
+    _, _, blocker = _variation_harness_definitions(base_dir=tmp_path)
     monkeypatch.setattr(shutil, "which", lambda _command: "/resolved/python3")
 
     assert blocker({"python": "python3"}) is None
+    assert blocker({"python": "adapter/python"}) is None
+    assert blocker({"python": "adapter/missing"}) == "adapter interpreter not found"
 
 
 async def test_variations_notebook_relay_failure_preserves_prior_failures(tmp_path):
@@ -144,4 +152,5 @@ def test_variations_notebook_uses_runnable_capabilities_and_checks_relay_status(
     assert "produced no ATOF trace" in source
     assert "produced an empty ATOF trace" in source
     assert "for line in atof_lines:\n                json.loads(line)" in source
+    assert "# Print the full Relay trace: every ATOF event.\n        for path in atof_paths:" in source
     assert 'run_failures.append(f"Deep Agents Relay:' in source
