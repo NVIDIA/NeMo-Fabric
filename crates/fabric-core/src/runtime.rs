@@ -959,7 +959,16 @@ fn run_local_host_adapter_with_timeout(
             &artifacts,
             relay_config.as_ref(),
         )?;
-        let adapter_payload = serde_json::to_string_pretty(&adapter_invocation)
+        let mut persisted_invocation = adapter_invocation.clone();
+        for value in persisted_invocation
+            .runtime_context
+            .environment
+            .env
+            .values_mut()
+        {
+            *value = "[REDACTED]".to_string();
+        }
+        let adapter_payload = serde_json::to_string_pretty(&persisted_invocation)
             .map_err(FabricError::SerializeJson)?;
         let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
         let lifecycle_request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Invoke(
@@ -2564,6 +2573,19 @@ for line in sys.stdin:
         assert_eq!(first.output["normalized_env"], serde_json::json!("visible"));
         assert_eq!(second.output["input"], serde_json::json!("second"));
         assert_eq!(first.metadata["host_pid"], second.metadata["host_pid"]);
+        let persisted_invocation: Value = serde_json::from_str(
+            &fs::read_to_string(
+                first.metadata["fabric_invocation"]
+                    .as_str()
+                    .expect("invocation path"),
+            )
+            .expect("read persisted invocation"),
+        )
+        .expect("parse persisted invocation");
+        assert_eq!(
+            persisted_invocation["runtime_context"]["environment"]["env"]["FABRIC_NORMALIZED_ENV"],
+            serde_json::json!("[REDACTED]")
+        );
         assert_eq!(
             first.metadata["adapter_runner"],
             serde_json::json!("persistent_local_host")
