@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import warnings
 from collections.abc import Coroutine
 from contextlib import suppress
 from typing import Any
@@ -70,7 +71,7 @@ class InvokeStream:
                 try:
                     return await asyncio.wait_for(queue.get(), _DRAIN_SECONDS)
                 except TimeoutError:
-                    await self._finalize()
+                    await self._finalize(warn_if_unconnected=True)
                     raise StopAsyncIteration from None
 
             getter = asyncio.create_task(queue.get())
@@ -95,11 +96,13 @@ class InvokeStream:
         self._closed = True
         await self._finalize()
 
-    async def _finalize(self) -> None:
+    async def _finalize(self, *, warn_if_unconnected: bool = False) -> None:
         if self._finalized:
             return
+        invocation_completed = False
         try:
             await asyncio.shield(self._task)
+            invocation_completed = True
         except asyncio.CancelledError:
             if not self._task.cancelled():
                 raise
@@ -121,6 +124,8 @@ class InvokeStream:
                 break
         self._listener.end_stream()
         self._finalized = True
+        if invocation_completed and warn_if_unconnected:
+            self._listener.warn_if_unconnected()
 
 
 class _AtofStreamListener:
@@ -139,6 +144,8 @@ class _AtofStreamListener:
         self._server: asyncio.Server | None = None
         self._bound_port: int | None = None
         self._accepting = False
+        self._has_atof_connection = False
+        self._warned_unconnected = False
         self._tasks: set[asyncio.Task[None]] = set()
         self._writers: set[asyncio.StreamWriter] = set()
 
@@ -182,6 +189,21 @@ class _AtofStreamListener:
 
         self._accepting = False
 
+    def warn_if_unconnected(self) -> None:
+        """Warn once when Relay has never reached this listener."""
+
+        if self._has_atof_connection or self._warned_unconnected:
+            return
+        self._warned_unconnected = True
+        warnings.warn(
+            "No Relay ATOF connection reached the SDK loopback listener. "
+            "Relay-backed streaming yielded no records. Claude and Codex "
+            "gateways must run in the same network namespace as the SDK to "
+            "reach 127.0.0.1.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
     def _connected(
         self,
         reader: asyncio.StreamReader,
@@ -210,6 +232,7 @@ class _AtofStreamListener:
             if method != "POST" or target.split("?", 1)[0] != "/atof":
                 await _write_response(writer, 404, "Not Found")
                 return
+            self._has_atof_connection = True
             if headers.get("expect", "").lower() == "100-continue":
                 writer.write(b"HTTP/1.1 100 Continue\r\n\r\n")
                 await writer.drain()

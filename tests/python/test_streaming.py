@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import warnings
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -331,7 +332,47 @@ async def test_invoke_stream_validates_request_before_returning_stream(
         runtime.invoke_stream(input="input", request=request)
 
     stream = runtime.invoke_stream(input="valid")
-    assert [record async for record in stream] == []
+    with pytest.warns(RuntimeWarning, match="No Relay ATOF connection"):
+        assert [record async for record in stream] == []
+    assert (await stream.result()).status == "succeeded"
+    await runtime.stop()
+
+
+async def test_invoke_stream_warns_only_once_when_relay_never_connects(
+    native_client: Fabric,
+):
+    runtime = await native_client.start_runtime(_config(relay=True))
+
+    first = runtime.invoke_stream(input="first")
+    with pytest.warns(RuntimeWarning, match="same network namespace"):
+        assert [record async for record in first] == []
+    assert (await first.result()).status == "succeeded"
+
+    second = runtime.invoke_stream(input="second")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert [record async for record in second] == []
+    assert caught == []
+    assert (await second.result()).status == "succeeded"
+    await runtime.stop()
+
+
+async def test_invoke_stream_does_not_warn_after_relay_connects(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    runtime = await native_client.start_runtime(_config(relay=True))
+    endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
+        "observability"
+    ]["atof"]["sinks"][-1]["url"]
+
+    stream = runtime.invoke_stream(input="empty stream")
+    await _post_content_length(endpoint, [])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert [record async for record in stream] == []
+
+    assert caught == []
     assert (await stream.result()).status == "succeeded"
     await runtime.stop()
 

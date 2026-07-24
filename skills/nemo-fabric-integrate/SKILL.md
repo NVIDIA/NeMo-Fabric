@@ -130,7 +130,11 @@ Pick the smallest lifecycle the consumer needs:
   success; invocation exceptions raise from `result()`, while harness-reported
   failures remain normalized `RunResult` values. If iteration stops early,
   call `await stream.aclose()` before starting another turn. `aclose()` waits
-  for the turn to finish; it does not cancel the harness invocation.
+  for the turn to finish; it does not cancel the harness invocation. The SDK
+  stream listener binds to `127.0.0.1`, so Claude and Codex gateway processes
+  must share the SDK's network namespace. If no Relay connection reaches the
+  listener, the SDK emits one `RuntimeWarning`; `stream.result()` still returns
+  the terminal result.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
