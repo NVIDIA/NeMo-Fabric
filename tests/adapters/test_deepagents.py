@@ -165,7 +165,7 @@ def make_payload_fixture():
                 "invocation_id": "inv-1",
                 "environment": {"workspace": str(tmp_path)},
             },
-            "request": {"input": "hello"},
+            "request": {"input": "hello", "request_id": "request-1"},
             "capability_plan": {},
         }
 
@@ -201,10 +201,15 @@ def fake_relay_fixture(monkeypatch):
         Agent = "agent"
 
     @contextlib.contextmanager
-    def scope_ctx(name: str, scope_type: object, **_: object) -> Iterator[None]:
+    def scope_ctx(
+        name: str,
+        scope_type: object,
+        **kwargs: object,
+    ) -> Iterator[None]:
         # Record every scope entered so tests can assert the top-level
         # ``deepagents-request`` Agent scope wraps the invocation.
         calls.setdefault("scopes", []).append((name, scope_type))
+        calls.setdefault("scope_metadata", []).append(kwargs.get("metadata"))
         yield
 
     class NemoRelayDeepAgentsCallbackHandler:
@@ -369,6 +374,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     # the top-level invocation is wrapped in the deepagents-request Agent scope
     # ("agent" is the fake ScopeType.Agent sentinel from the fake_relay fixture)
     assert fake_relay["scopes"] == [("deepagents-request", "agent")]
+    assert fake_relay["scope_metadata"] == [{"nemo_fabric_request_id": "request-1"}]
     # the Deep Agents callback handler is added to the LangGraph run config so
     # LangGraph scopes and human-in-the-loop interrupt/resume marks are captured
     assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
@@ -422,6 +428,7 @@ async def test_native_telemetry_exports_without_artifacts(
     assert "relay-mw" in fake_sdks["create_kwargs"]["middleware"]
     # the scope + callback handler apply to any observability-enabled run, native included
     assert fake_relay["scopes"] == [("deepagents-request", "agent")]
+    assert fake_relay["scope_metadata"] == [{"nemo_fabric_request_id": "request-1"}]
     assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
         "callbacks", []
     )
