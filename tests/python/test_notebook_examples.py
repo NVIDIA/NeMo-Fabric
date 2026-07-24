@@ -75,6 +75,8 @@ def test_variations_notebook_uses_runnable_capabilities_and_checks_relay_status(
     assert "${DOCS_MCP_URL}" not in source
     assert 'recomposed.add_skill_path("./skills/code-review")' in source
     assert 'if result.status != "succeeded":' in source
+    assert "detail = failure_detail(result)" in source
+    assert 'print("    error:", json.dumps(detail, indent=2))' in source
     assert "run_failures.append" in source
     assert "Harness variation failures" in source
     assert "returned no Relay telemetry reference" in source
