@@ -255,8 +255,8 @@ class RelayAtofStreamSinkConfig(FabricBaseModel):
     type: Literal["stream"] = "stream"
     url: str
     transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
-    headers: dict[str, str] = Field(default_factory=dict)
-    header_env: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    header_env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
     timeout_millis: int = 3000
     field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
     name: str | None = None

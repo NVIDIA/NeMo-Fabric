@@ -269,7 +269,6 @@ def test_fabric_config_authors_first_class_relay_observability():
                             "type": "stream",
                             "url": "http://localhost:4319/events",
                             "transport": "ndjson",
-                            "headers": {},
                             "header_env": {"authorization": "RELAY_AUTHORIZATION"},
                             "timeout_millis": 3000,
                             "field_name_policy": "preserve",
@@ -297,6 +296,18 @@ def test_fabric_config_authors_first_class_relay_observability():
             "unknown_field": "warn",
             "unsupported_value": "error",
         },
+    }
+
+
+def test_relay_atof_stream_sink_omits_empty_header_maps():
+    sink = RelayAtofStreamSinkConfig(url="https://example.test/events")
+
+    assert sink.to_mapping() == {
+        "type": "stream",
+        "url": "https://example.test/events",
+        "transport": "http_post",
+        "timeout_millis": 3000,
+        "field_name_policy": "preserve",
     }
 
 

@@ -67,7 +67,7 @@ ordinary Python.
 
 For ATOF, author the Relay 0.6 sink model directly. Put
 `RelayAtofFileSinkConfig` and `RelayAtofStreamSinkConfig` instances in
-`RelayAtofConfig.sinks`.
+`RelayAtofConfig.sinks`, and set `RelayAtofConfig.enabled=True`.
 
 ## Relative Paths
 

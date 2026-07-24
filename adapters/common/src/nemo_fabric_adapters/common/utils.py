@@ -346,10 +346,13 @@ def _relay_api_atof_config(value: Any) -> AtofConfig | None:
     for sink in value.get("sinks") or []:
         if not isinstance(sink, dict):
             continue
-        if sink.get("type") == "file":
+        sink_type = sink.get("type")
+        if sink_type == "file":
             sinks.append(_relay_api_atof_file_sink_config(sink))
-        elif sink.get("type") == "stream":
+        elif sink_type == "stream":
             sinks.append(_relay_api_atof_stream_sink_config(sink))
+        else:
+            raise ValueError(f"unsupported ATOF sink type {sink_type!r}; expected 'file' or 'stream'")
 
     return AtofConfig(
         enabled=bool(value.get("enabled", False)),
@@ -457,7 +460,10 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
             for sink in atof.get("sinks") or []:
                 if not isinstance(sink, dict) or sink.get("type") != "file":
                     continue
-                directory = Path(sink.get("output_directory") or ".")
+                output_directory = sink.get("output_directory")
+                if not output_directory:
+                    continue
+                directory = Path(output_directory)
                 if not directory.exists():
                     continue
                 for path in sorted(directory.glob("*.jsonl")):
@@ -466,7 +472,10 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
         atif = config.get("atif")
         if not isinstance(atif, dict) or not atif.get("enabled"):
             continue
-        directory = Path(atif.get("output_directory") or ".")
+        output_directory = atif.get("output_directory")
+        if not output_directory:
+            continue
+        directory = Path(output_directory)
         if not directory.exists():
             continue
         for path in sorted(directory.glob("*.json")):

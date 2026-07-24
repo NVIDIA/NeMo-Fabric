@@ -393,6 +393,31 @@ def test_collect_relay_artifacts(tmp_path: Path):
     ]
 
 
+def test_collect_relay_artifacts_ignores_missing_output_directories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    (tmp_path / "unrelated.jsonl").write_text("{}", encoding="utf-8")
+    (tmp_path / "unrelated.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [{"type": "file"}],
+                    },
+                    "atif": {"enabled": True},
+                },
+            }
+        ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
 def test_relay_api_plugin_config_uses_relay_v06_sinks():
     os.environ["TOKEN"] = "test-token"
     plugin_config = {
@@ -452,6 +477,31 @@ def test_relay_api_plugin_config_uses_relay_v06_sinks():
             },
         ],
     }
+
+
+def test_relay_api_plugin_config_rejects_unknown_atof_sink_type():
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 2,
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [{"type": "unknown"}],
+                    },
+                },
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"unsupported ATOF sink type 'unknown'; expected 'file' or 'stream'",
+    ):
+        common_utils.relay_api_plugin_config(plugin_config)
 
 
 @pytest.mark.parametrize(
