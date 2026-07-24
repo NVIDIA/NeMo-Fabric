@@ -161,7 +161,7 @@ async def test_plan_and_doctor_share_model_provider_diagnostic(
     assert supported_provider in plan_diagnostic
 
 
-def test_plan_rejects_undeclared_model_setting_without_exposing_value():
+async def test_plan_and_doctor_reject_undeclared_model_setting_without_exposing_value():
     config = _repository_adapter_config()
     config.harness.adapter_id = "nvidia.fabric.claude"
     config.models["default"].provider = "anthropic"
@@ -169,7 +169,10 @@ def test_plan_rejects_undeclared_model_setting_without_exposing_value():
 
     with pytest.raises(FabricConfigError) as caught:
         Fabric().plan(config)
+    with pytest.raises(FabricConfigError) as doctor_error:
+        await Fabric().doctor(config)
 
     diagnostic = str(caught.value)
+    assert str(doctor_error.value) == diagnostic
     assert "models.default.settings.regionn" in diagnostic
     assert "secret-setting-value" not in diagnostic

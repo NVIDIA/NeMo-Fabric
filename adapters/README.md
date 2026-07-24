@@ -100,7 +100,8 @@ are grouped because their support does not vary by adapter.
 
 The selected model role is `default`, or the sole configured role when no
 `default` exists. The adapter descriptor validates the selected provider and
-every `models.<role>.settings` key during `plan(...)` and `doctor(...)`.
+the selected role's `models.<role>.settings` keys during `plan(...)` and
+`doctor(...)`.
 First-party adapters currently declare no provider-specific model settings, so
 misspelled or undeclared keys fail rather than disappearing at runtime.
 
