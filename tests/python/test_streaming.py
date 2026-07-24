@@ -539,6 +539,8 @@ async def test_invoke_stream_warns_when_long_lived_upload_truncates_turn(
     while listener.records.empty():
         await asyncio.sleep(0)
 
+    writer.write(b"0\r\n")
+    await writer.drain()
     writer.close()
     await writer.wait_closed()
     while listener._active_atof_connections:
@@ -551,7 +553,7 @@ async def test_invoke_stream_warns_when_long_lived_upload_truncates_turn(
     await runtime.stop()
 
 
-async def test_invoke_stream_warns_when_long_lived_upload_ends_during_turn(
+async def test_invoke_stream_does_not_warn_when_chunked_upload_ends_cleanly(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
@@ -572,9 +574,11 @@ async def test_invoke_stream_warns_when_long_lived_upload_ends_during_turn(
     stream = runtime.invoke_stream(input="ended stream")
     await _post_chunked(endpoint, [root])
 
-    with pytest.warns(RuntimeWarning, match="streaming may be incomplete"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         assert [record async for record in stream] == [root]
 
+    assert caught == []
     assert (await stream.result()).status == "succeeded"
     await runtime.stop()
 

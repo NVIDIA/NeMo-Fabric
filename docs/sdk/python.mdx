@@ -426,10 +426,10 @@ Streaming has the following v0.1 constraints:
   container, pod, or remote host cannot reach the listener. If async iteration
   reaches the post-turn drain timeout without a Relay connection, or if Relay
   sends data but no record matches the active turn, the SDK emits one
-  `RuntimeWarning` for that failure mode. It also warns if a long-lived Relay
-  upload closes during the active turn because the yielded stream can be
-  incomplete. A caller that only awaits `stream.result()` still receives the
-  terminal result and does not run this warning check.
+  `RuntimeWarning` for that failure mode. It also warns if a Relay upload
+  terminates before completing its chunked request body because the yielded
+  stream can be incomplete. A caller that only awaits `stream.result()` still
+  receives the terminal result and does not run this warning check.
 
 Claude and Codex streaming use the `nemo-relay` gateway CLI and require a
 stream-sink-capable release, version 0.6.0 or later. Follow the

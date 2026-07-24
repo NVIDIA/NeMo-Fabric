@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import uuid
+import warnings
 
 import pytest
 
@@ -72,11 +73,20 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
         artifacts=tmp_path / "artifacts",
     )
 
-    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
-        first = await runtime.invoke(input="first")
-        second = await runtime.invoke(input="second")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+            first_stream = runtime.invoke_stream(input="first")
+            first_records = [record async for record in first_stream]
+            first = await first_stream.result()
+
+            second_stream = runtime.invoke_stream(input="second")
+            second_records = [record async for record in second_stream]
+            second = await second_stream.result()
 
     results = (first.to_mapping(), second.to_mapping())
+    assert first_records
+    assert second_records
     assert first["status"] == second["status"] == "succeeded", results
     assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results

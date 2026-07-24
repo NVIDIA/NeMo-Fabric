@@ -378,6 +378,7 @@ class _AtofStreamListener:
         self._writers.add(writer)
         is_atof_connection = False
         is_chunked = False
+        chunked_body_completed = False
         try:
             request = await reader.readuntil(b"\r\n\r\n")
             request_line, *header_lines = request[:-4].split(b"\r\n")
@@ -398,6 +399,7 @@ class _AtofStreamListener:
             is_chunked = "chunked" in headers.get("transfer-encoding", "").lower()
             if is_chunked:
                 await self._read_chunked(reader, buffer)
+                chunked_body_completed = True
             elif "content-length" in headers:
                 await self._read_sized(
                     reader,
@@ -422,7 +424,7 @@ class _AtofStreamListener:
         finally:
             if is_atof_connection:
                 self._active_atof_connections -= 1
-                if is_chunked and self._accepting:
+                if is_chunked and not chunked_body_completed and self._accepting:
                     self._lost_atof_connection = True
             self._writers.discard(writer)
             writer.close()
@@ -438,9 +440,12 @@ class _AtofStreamListener:
             size_line = await reader.readline()
             size = int(size_line.split(b";", 1)[0].strip(), 16)
             if size == 0:
-                while await reader.readline() not in (b"\r\n", b"\n", b""):
-                    pass
-                return
+                while True:
+                    trailer = await reader.readline()
+                    if trailer in (b"\r\n", b"\n"):
+                        return
+                    if trailer == b"":
+                        raise ValueError("incomplete HTTP chunk trailers")
             remaining = size
             while remaining:
                 chunk = await reader.readexactly(min(_READ_SIZE, remaining))
