@@ -21,9 +21,9 @@ just build-all
 ```
 
 The default variant uses Hermes Agent with an NVIDIA-hosted model. Follow the
-[Hermes Agent adapter setup](../../adapters/hermes/README.md) with Python
-3.11–3.13, then set `NVIDIA_API_KEY`. If Hermes Agent is installed in a
-separate environment, select its interpreter only for the Hermes command:
+[Hermes Agent quick start](../../README.md#quick-start-hermes-agent) through the
+environment installation steps, which create `.tmp/hermes-venv`, then set
+`NVIDIA_API_KEY`. Select that interpreter only for Hermes commands:
 
 ```bash
 ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
@@ -51,7 +51,8 @@ environment, and telemetry plan.
 Run one request through the default Hermes Agent variant:
 
 ```bash
-.venv/bin/python -m examples.code_review_agent \
+ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
+  .venv/bin/python -m examples.code_review_agent \
   --input "Reply with exactly: fabric works"
 ```
 
@@ -65,7 +66,7 @@ The entrypoint exposes complete harness configs defined in
 
 | Variant | Command option | Additional setup |
 | --- | --- | --- |
-| Hermes Agent | `--variant hermes` | Installed [Hermes Agent adapter requirements](../../adapters/hermes/README.md) and `NVIDIA_API_KEY`|
+| Hermes Agent | `--variant hermes` | Created the environment from the [Hermes Agent quick start](../../README.md#quick-start-hermes-agent) and set `NVIDIA_API_KEY` |
 | Codex | `--variant codex` | Installed [Codex adapter](../../adapters/codex/README.md) and an existing ChatGPT or API key login |
 | Claude | `--variant claude` | Installed [Claude adapter requirements](../../adapters/claude/README.md) and `ANTHROPIC_API_KEY` |
 | Deep Agents | `--variant deepagents` | Installed [Deep Agents adapter requirements](../../adapters/deepagents/README.md) and `NVIDIA_API_KEY` |
@@ -81,7 +82,8 @@ adapter environment. Refer to the
 for the current compatibility requirements.
 
 ```bash
-.venv/bin/python -m examples.code_review_agent \
+ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
+  .venv/bin/python -m examples.code_review_agent \
   --variant hermes \
   --relay \
   --input "Review calculator.py"
@@ -100,7 +102,7 @@ application-owned composition:
 from examples.code_review_agent import (
     BASE_DIR,
     hermes_config,
-    with_fabric_managed_github_mcp,
+    with_github_mcp,
     with_opensandbox,
     with_relay,
 )
@@ -108,9 +110,10 @@ from examples.code_review_agent import (
 config = hermes_config()
 relay_config = with_relay(config)
 sandbox_config = with_opensandbox(config)
-github_config = with_fabric_managed_github_mcp(config)
+github_config = with_github_mcp(config)
 ```
 
 Each function returns a deep copy. The four configs can therefore be planned or
 run independently with `base_dir=BASE_DIR`. Set `GITHUB_MCP_URL` before running
-`github_config`; the default smoke does not configure or contact that server.
+`github_config`; it maps the server into the selected harness's native MCP
+configuration. The default smoke does not configure or contact that server.

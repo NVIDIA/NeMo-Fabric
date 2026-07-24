@@ -19,14 +19,14 @@ variations notebook shows advanced composition against a real, maintained agent.
 ## Prerequisites
 
 - Build the SDK and native extension from the repo root: `just build-all`. This
-  alone is enough to execute both notebooks top to bottom with unavailable live
-  harnesses skipped.
+  is enough to execute the setup, planning, and configuration-inspection cells.
+  Live runs require the prerequisites below.
 - To actually *run* a harness (rather than just inspect its config), that
   harness's adapter and credentials must be present:
   - **Hermes Agent** (both notebooks): follow the
-    [Hermes Agent adapter setup](../../adapters/hermes/README.md) with Python
-    3.11–3.13 and set `NVIDIA_API_KEY`. The setup cells auto-detect
-    `.tmp/hermes-venv`.
+    [Hermes Agent quick start](../../README.md#quick-start-hermes-agent) through
+    the environment installation steps and set `NVIDIA_API_KEY`. The setup cells
+    auto-detect the resulting `.tmp/hermes-venv`.
   - **Deep Agents, Codex, Claude** (variations notebook): the matching adapter
     installed in the NeMo Fabric environment, plus that harness's credentials
     (`NVIDIA_API_KEY` for Deep Agents; an existing ChatGPT or provisioned API-key

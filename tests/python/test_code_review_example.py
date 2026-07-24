@@ -16,7 +16,7 @@ from examples.code_review_agent import claude_config
 from examples.code_review_agent import codex_config
 from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
-from examples.code_review_agent import with_fabric_managed_github_mcp
+from examples.code_review_agent import with_github_mcp
 from examples.code_review_agent import with_native_otel
 from examples.code_review_agent import with_opensandbox
 from examples.code_review_agent import with_relay
@@ -67,7 +67,7 @@ def test_variant_builders_return_independent_complete_configs():
 def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     base = hermes_config()
     variants = (
-        with_fabric_managed_github_mcp(base),
+        with_github_mcp(base),
         with_native_otel(base),
         with_opensandbox(base),
         with_relay(base),
@@ -82,7 +82,7 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     assert base.mcp is None
     assert all(variant is not base for variant in variants)
     assert variants[0].mcp is not None
-    assert variants[0].mcp.servers["github"].exposure == "fabric_managed"
+    assert variants[0].mcp.servers["github"].exposure == "harness_native"
     assert variants[1].telemetry is not None
     assert "native" in variants[1].telemetry.providers
     assert variants[2].environment is not None
@@ -104,6 +104,9 @@ def test_variants_plan_from_complete_configs():
         assert plan.base_dir == BASE_DIR
         assert plan.agent_name == "code-review-agent"
         assert plan.adapter.adapter_id == config.harness.adapter_id
+        github_plan = client.plan(with_github_mcp(config), base_dir=BASE_DIR)
+        assert "github" in github_plan["capability_plan"]["native"]["mcp_servers"]
+        assert "mcp_servers" not in github_plan["capability_plan"]["unsupported"]
 
 
 def test_example_entrypoint_plans_without_starting_a_runtime():

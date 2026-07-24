@@ -201,15 +201,15 @@ def with_opensandbox(base: FabricConfig) -> FabricConfig:
     return config
 
 
-def with_fabric_managed_github_mcp(base: FabricConfig) -> FabricConfig:
-    """Return a copy that routes the GitHub MCP server through Fabric."""
+def with_github_mcp(base: FabricConfig) -> FabricConfig:
+    """Return a copy that maps GitHub MCP into the selected harness."""
 
     config = base.model_copy(deep=True)
     config.add_mcp_server(
         "github",
         transport="streamable-http",
         url="${GITHUB_MCP_URL}",
-        exposure="fabric_managed",
+        exposure="harness_native",
     )
     return config
 

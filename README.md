@@ -126,9 +126,8 @@ Run the code-review example:
 
 ```bash
 export NVIDIA_API_KEY=...
-export ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python"
-
-.venv/bin/python -m examples.code_review_agent \
+ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
+  .venv/bin/python -m examples.code_review_agent \
   --input "Reply with exactly: fabric works"
 ```
 
