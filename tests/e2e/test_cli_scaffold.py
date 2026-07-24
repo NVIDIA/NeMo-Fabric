@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 
 
 ROOT = Path(__file__).parents[2]
@@ -66,17 +67,18 @@ def test_generated_python_scaffold_installs_editable(tmp_path: Path):
 def test_generated_rust_scaffold_builds(tmp_path: Path):
     destination = tmp_path / "rust-agent"
     generate_scaffold(destination, "rust")
-    assert "path =" not in (destination / "Cargo.toml").read_text()
+    manifest = (destination / "Cargo.toml").read_text()
+    assert "[workspace]" in manifest
+    core_dependency = tomllib.loads(manifest)["dependencies"]["nemo-fabric-core"]
+    assert Path(core_dependency["path"]) == ROOT / "crates/fabric-core"
+    assert core_dependency["version"] == "0.1.0"
     environment = os.environ.copy()
     environment["CARGO_TARGET_DIR"] = str(ROOT / "target")
-    core_path = json.dumps(str(ROOT / "crates/fabric-core"))
 
     subprocess.run(
         [
             "cargo",
             "build",
-            "--config",
-            f"patch.crates-io.nemo-fabric-core.path={core_path}",
             "--manifest-path",
             str(destination / "Cargo.toml"),
         ],

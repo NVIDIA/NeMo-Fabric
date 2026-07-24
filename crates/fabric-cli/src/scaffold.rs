@@ -112,7 +112,21 @@ fn language_files(language: Language, config: &FabricConfig, example: &str) -> V
 }
 
 fn rust_core_dependency() -> String {
-    rust_string(env!("CARGO_PKG_VERSION"))
+    let version = rust_string(env!("CARGO_PKG_VERSION"));
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fabric-core");
+    if !source_path.join("Cargo.toml").is_file() {
+        return version;
+    }
+    let Ok(source_path) = source_path.canonicalize() else {
+        return version;
+    };
+    let Some(source_path) = source_path.to_str() else {
+        return version;
+    };
+    format!(
+        "{{ path = {}, version = {version} }}",
+        rust_string(source_path)
+    )
 }
 
 fn write_files(destination: &Path, files: &[ScaffoldFile]) -> Result<(), String> {
@@ -308,10 +322,38 @@ mod tests {
                 assert!(
                     manifest.contains(&format!("nemo-fabric-core = {}", rust_core_dependency()))
                 );
-                assert!(!manifest.contains("path ="));
+                assert!(manifest.contains("[workspace]"));
             }
             fs::remove_dir_all(destination).expect("remove scaffold");
         }
+    }
+
+    #[test]
+    fn source_checkout_rust_scaffold_builds_inside_the_repository() {
+        let destination = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            ".nemo-fabric-scaffold-test-{}-build",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&destination);
+        init(
+            examples::find("code-review").expect("example"),
+            None,
+            Language::Rust,
+            &destination,
+        )
+        .expect("generate scaffold");
+
+        let output = std::process::Command::new(env!("CARGO"))
+            .args(["check", "--offline"])
+            .current_dir(&destination)
+            .output()
+            .expect("run cargo check");
+        assert!(
+            output.status.success(),
+            "generated Rust scaffold did not build:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fs::remove_dir_all(destination).expect("remove scaffold");
     }
 
     #[test]

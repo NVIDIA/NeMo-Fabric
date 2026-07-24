@@ -23,6 +23,21 @@ Lifecycle state of a runtime.
 
 
 
+
+### Inheritance
+
+Direct bases: `str`, `Enum`.
+
+### Values
+
+The enum defines the following values:
+
+| Name | Value |
+| --- | --- |
+| `ACTIVE` | `active` |
+| `STOPPED` | `stopped` |
+| `FAILED` | `failed` |
+
 ---
 
 
@@ -71,8 +86,8 @@ Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 
 ### <kbd>method</kbd> `invoke`
 
-```python
-invoke(input: 'Any' = None, request: 'RunRequest | None' = None) → RunResult
+```text
+async invoke(*, input: Any = None, request: RunRequest | None = None) -> RunResult
 ```
 
 Run one turn on this runtime.
@@ -105,8 +120,8 @@ Run one turn on this runtime.
 
 ### <kbd>method</kbd> `stop`
 
-```python
-stop() → None
+```text
+async stop() -> None
 ```
 
 Destroy an idle runtime exactly once.

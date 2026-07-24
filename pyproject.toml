@@ -103,6 +103,7 @@ package = [
 ]
 
 test = [
+    "beautifulsoup4>=4.12",
     "fastapi~=0.138",
     "pytest>=8",
     "pytest-asyncio>=0.26",

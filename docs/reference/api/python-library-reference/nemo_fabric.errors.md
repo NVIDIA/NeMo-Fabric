@@ -29,16 +29,22 @@ Catch this type to handle any SDK failure while preserving machine-readable stag
  - <b>`details`</b>:  Detached structured error details.
 
 
+
+### Inheritance
+
+Direct base: `RuntimeError`.
+
 ### <kbd>method</kbd> `__init__`
 
-```python
+```text
 __init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured Fabric exception.
@@ -64,16 +70,22 @@ Initialize a structured Fabric exception.
 Invalid SDK input, request shape, factory, or resolved config.
 
 
+
+### Inheritance
+
+Direct base: `FabricError`.
+
 ### <kbd>method</kbd> `__init__`
 
-```python
+```text
 __init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured Fabric exception.
@@ -99,16 +111,22 @@ Initialize a structured Fabric exception.
 Failure while starting, invoking, stopping, or otherwise driving a runtime.
 
 
+
+### Inheritance
+
+Direct base: `FabricError`.
+
 ### <kbd>method</kbd> `__init__`
 
-```python
+```text
 __init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured Fabric exception.
@@ -134,16 +152,22 @@ Initialize a structured Fabric exception.
 Operation rejected because a local runtime is in the wrong state.
 
 
+
+### Inheritance
+
+Direct base: `FabricRuntimeError`.
+
 ### <kbd>method</kbd> `__init__`
 
-```python
+```text
 __init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured Fabric exception.
@@ -169,16 +193,22 @@ Initialize a structured Fabric exception.
 Operation rejected by resolved runtime capabilities or implementation status.
 
 
+
+### Inheritance
+
+Direct base: `FabricRuntimeError`.
+
 ### <kbd>method</kbd> `__init__`
 
-```python
+```text
 __init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured Fabric exception.
@@ -204,16 +234,22 @@ Initialize a structured Fabric exception.
 SDK call requires the PyO3 extension, but it is not installed or importable.
 
 
+
+### Inheritance
+
+Direct base: `FabricRuntimeError`.
+
 ### <kbd>method</kbd> `__init__`
 
-```python
+```text
 __init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured Fabric exception.
