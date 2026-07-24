@@ -480,7 +480,7 @@ class DeepAgentsRuntime:
         self._relay_plugin: Any = None
         self._relay_scope: Any = None
         self._relay_scope_type: Any = None
-        self._relay_api_config: Any = None
+        self._relay_plugin_config: dict[str, Any] | None = None
         self._callback_handler_type: Any = None
 
     async def start(self, payload: dict[str, Any]) -> None:
@@ -549,9 +549,7 @@ class DeepAgentsRuntime:
             raise _relay_dependency_error() from exc
 
         assert self._observability is not None
-        self._relay_api_config = common_utils.relay_api_plugin_config(
-            self._observability.plugin_config
-        )
+        self._relay_plugin_config = self._observability.plugin_config
         self._relay_plugin = plugin
         self._relay_scope = scope
         self._relay_scope_type = ScopeType
@@ -590,7 +588,7 @@ class DeepAgentsRuntime:
         try:
             if self._observability is not None:
                 callback_handler = self._callback_handler_type()
-                async with self._relay_plugin.plugin(self._relay_api_config):
+                async with self._relay_plugin.plugin(self._relay_plugin_config):
                     with self._relay_scope.scope(
                         "deepagents-request", self._relay_scope_type.Agent
                     ):
@@ -663,7 +661,7 @@ class DeepAgentsRuntime:
         self._relay_plugin = None
         self._relay_scope = None
         self._relay_scope_type = None
-        self._relay_api_config = None
+        self._relay_plugin_config = None
         self._callback_handler_type = None
         self._started = False
         if checkpointer is not None:

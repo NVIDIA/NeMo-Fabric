@@ -187,9 +187,10 @@ def fake_relay_fixture(monkeypatch):
         return merged
 
     @contextlib.asynccontextmanager
-    async def plugin_ctx(_config):
+    async def plugin_ctx(config):
         calls["plugin_open"] = True
         calls["plugin_enters"] = calls.get("plugin_enters", 0) + 1
+        calls.setdefault("plugin_configs", []).append(config)
         try:
             yield
         finally:
@@ -331,13 +332,11 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
     artifacts = [{"kind": "atof", "path": str(tmp_path / "events.atof.jsonl")}]
+    plugin_config = {"version": 1, "components": []}
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        lambda _p: {"version": 1, "components": []},
-    )
-    monkeypatch.setattr(
-        adapter.common_utils, "relay_api_plugin_config", lambda _c: object()
+        lambda _p: plugin_config,
     )
     monkeypatch.setattr(
         adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts
@@ -357,6 +356,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
+    assert fake_relay["plugin_configs"] == [plugin_config]
     assert output["telemetry"] == {
         "enabled": True,
         "provider": "relay",
@@ -378,10 +378,6 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
 async def test_native_telemetry_exports_without_artifacts(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
-    monkeypatch.setattr(
-        adapter.common_utils, "relay_api_plugin_config", lambda _c: object()
-    )
-
     payload = make_payload(tmp_path)
     payload["telemetry_plan"] = {
         "providers": ["native"],
@@ -412,6 +408,9 @@ async def test_native_telemetry_exports_without_artifacts(
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
+    assert fake_relay["plugin_configs"] == [
+        payload["telemetry_plan"]["native_config"]
+    ]
     assert output["telemetry"] == {
         "enabled": True,
         "provider": "native",
@@ -794,13 +793,11 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
     artifacts = [{"kind": "atif", "path": str(tmp_path / "trajectory.json")}]
+    plugin_config = {"version": 1, "components": []}
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        lambda _payload: {"version": 1, "components": []},
-    )
-    monkeypatch.setattr(
-        adapter.common_utils, "relay_api_plugin_config", lambda _config: object()
+        lambda _payload: plugin_config,
     )
     monkeypatch.setattr(
         adapter.common_utils,
@@ -829,6 +826,7 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
     assert fake_relay["integration_adds"] == 1
     assert fake_relay["plugin_enters"] == 2
     assert fake_relay["plugin_exits"] == 2
+    assert fake_relay["plugin_configs"] == [plugin_config, plugin_config]
     assert fake_relay["scopes"] == [
         ("deepagents-request", "agent"),
         ("deepagents-request", "agent"),

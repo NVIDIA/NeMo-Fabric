@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import builtins
-import dataclasses
 import json
 import os
 import sys
@@ -418,8 +417,10 @@ def test_collect_relay_artifacts_ignores_missing_output_directories(
     assert common_utils.collect_relay_artifacts(plugin_config) == []
 
 
-def test_relay_api_plugin_config_uses_relay_v06_sinks():
-    os.environ["TOKEN"] = "test-token"
+def test_relay_validates_raw_v06_plugin_config(monkeypatch: pytest.MonkeyPatch):
+    from nemo_relay import plugin
+
+    monkeypatch.setenv("TOKEN", "test-token")
     plugin_config = {
         "version": 1,
         "components": [
@@ -454,32 +455,12 @@ def test_relay_api_plugin_config_uses_relay_v06_sinks():
         ],
     }
 
-    rendered = common_utils.relay_api_plugin_config(plugin_config)
-    observability = rendered.components[0].config
-
-    assert observability.version == 2
-    assert dataclasses.asdict(observability.atof) == {
-        "enabled": True,
-        "sinks": [
-            {
-                "output_directory": "/tmp/atof",
-                "filename": "events.jsonl",
-                "mode": "overwrite",
-            },
-            {
-                "url": "https://example.test/events",
-                "transport": "ndjson",
-                "headers": {"x-test": "value"},
-                "header_env": {"authorization": "TOKEN"},
-                "timeout_millis": 1000,
-                "field_name_policy": "replace_dots",
-                "name": "phoenix",
-            },
-        ],
-    }
+    assert plugin.validate(plugin_config)["diagnostics"] == []
 
 
-def test_relay_api_plugin_config_rejects_unknown_atof_sink_type():
+def test_relay_validates_unknown_atof_sink_type():
+    from nemo_relay import plugin
+
     plugin_config = {
         "version": 1,
         "components": [
@@ -497,11 +478,17 @@ def test_relay_api_plugin_config_rejects_unknown_atof_sink_type():
         ],
     }
 
-    with pytest.raises(
-        ValueError,
-        match=r"unsupported ATOF sink type 'unknown'; expected 'file' or 'stream'",
-    ):
-        common_utils.relay_api_plugin_config(plugin_config)
+    assert plugin.validate(plugin_config)["diagnostics"] == [
+        {
+            "code": "observability.invalid_plugin_config",
+            "component": "observability",
+            "level": "error",
+            "message": (
+                "invalid config: invalid observability plugin config: "
+                "unknown variant `unknown`, expected `file` or `stream`"
+            ),
+        }
+    ]
 
 
 @pytest.mark.parametrize(
