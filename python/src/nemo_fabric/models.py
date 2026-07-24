@@ -240,24 +240,42 @@ class RelayConfigPolicy(FabricBaseModel):
     unsupported_value: Literal["ignore", "warn", "error"] = "error"
 
 
-class RelayAtofEndpointConfig(FabricBaseModel):
-    """NeMo Relay ATOF remote endpoint configuration."""
+class RelayAtofFileSinkConfig(FabricBaseModel):
+    """NeMo Relay ATOF file sink configuration."""
 
+    type: Literal["file"] = "file"
+    output_directory: str | Path | None = None
+    filename: str | None = None
+    mode: Literal["append", "overwrite"] = "append"
+
+
+class RelayAtofStreamSinkConfig(FabricBaseModel):
+    """NeMo Relay ATOF stream sink configuration."""
+
+    type: Literal["stream"] = "stream"
     url: str
     transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
-    headers: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    header_env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
     timeout_millis: int = 3000
     field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
+    name: str | None = None
 
 
 class RelayAtofConfig(FabricBaseModel):
     """NeMo Relay ATOF export configuration."""
 
     enabled: bool = False
-    output_directory: str | Path | None = None
-    filename: str | None = None
-    mode: Literal["append", "overwrite"] = "append"
-    endpoints: list[RelayAtofEndpointConfig | dict[str, Any]] | None = None
+    sinks: (
+        list[
+            Annotated[
+                RelayAtofFileSinkConfig | RelayAtofStreamSinkConfig,
+                Field(discriminator="type"),
+            ]
+            | dict[str, Any]
+        ]
+        | None
+    ) = None
 
 
 class RelayS3StorageConfig(FabricBaseModel):
@@ -325,7 +343,7 @@ class RelayOtlpConfig(FabricBaseModel):
 class RelayObservabilityConfig(FabricBaseModel):
     """NeMo Relay observability component configuration."""
 
-    version: int = 1
+    version: int = 2
     atof: RelayAtofConfig | dict[str, Any] | None = None
     atif: RelayAtifConfig | dict[str, Any] | None = None
     opentelemetry: RelayOtlpConfig | dict[str, Any] | None = None

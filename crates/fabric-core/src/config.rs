@@ -632,43 +632,59 @@ pub struct RelayAtofConfig {
     /// Whether ATOF export is enabled.
     #[serde(default)]
     pub enabled: bool,
-    /// Directory used for ATOF files.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_directory: Option<PathBuf>,
-    /// ATOF file name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub filename: Option<String>,
-    /// File write mode.
-    #[serde(default)]
-    pub mode: RelayAtofMode,
-    /// Optional remote ATOF endpoints.
+    /// ATOF file and stream sinks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub endpoints: Vec<RelayAtofEndpointConfig>,
+    pub sinks: Vec<RelayAtofSinkConfig>,
     /// Additive ATOF fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Relay ATOF endpoint configuration.
+/// Relay ATOF sink configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct RelayAtofEndpointConfig {
-    /// Endpoint URL.
-    pub url: String,
-    /// Endpoint transport.
-    #[serde(default)]
-    pub transport: RelayAtofEndpointTransport,
-    /// Endpoint headers.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub headers: BTreeMap<String, String>,
-    /// Request timeout in milliseconds.
-    #[serde(default = "default_relay_timeout_millis")]
-    pub timeout_millis: u64,
-    /// Field-name handling policy.
-    #[serde(default)]
-    pub field_name_policy: RelayAtofEndpointFieldNamePolicy,
-    /// Additive endpoint fields.
-    #[serde(default, flatten)]
-    pub extensions: BTreeMap<String, Value>,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RelayAtofSinkConfig {
+    /// Write ATOF records to a local file.
+    File {
+        /// Directory used for ATOF files.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output_directory: Option<PathBuf>,
+        /// ATOF file name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filename: Option<String>,
+        /// File write mode.
+        #[serde(default)]
+        mode: RelayAtofMode,
+        /// Additive file sink fields.
+        #[serde(default, flatten)]
+        extensions: BTreeMap<String, Value>,
+    },
+    /// Send ATOF records to a remote stream.
+    Stream {
+        /// Stream URL.
+        url: String,
+        /// Stream transport.
+        #[serde(default)]
+        transport: RelayAtofStreamTransport,
+        /// Static stream headers.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        headers: BTreeMap<String, String>,
+        /// Environment-variable-backed stream headers.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        header_env: BTreeMap<String, String>,
+        /// Request timeout in milliseconds.
+        #[serde(default = "default_relay_timeout_millis")]
+        timeout_millis: u64,
+        /// Field-name handling policy.
+        #[serde(default)]
+        field_name_policy: RelayAtofStreamFieldNamePolicy,
+        /// Optional stream sink name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        /// Additive stream sink fields.
+        #[serde(default, flatten)]
+        extensions: BTreeMap<String, Value>,
+    },
 }
 
 /// Relay ATIF export configuration.
@@ -881,10 +897,10 @@ pub enum RelayAtofMode {
     Overwrite,
 }
 
-/// Relay ATOF endpoint transport.
+/// Relay ATOF stream transport.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum RelayAtofEndpointTransport {
+pub enum RelayAtofStreamTransport {
     /// HTTP POST transport.
     #[default]
     HttpPost,
@@ -894,10 +910,10 @@ pub enum RelayAtofEndpointTransport {
     Ndjson,
 }
 
-/// Relay ATOF endpoint field-name policy.
+/// Relay ATOF stream field-name policy.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum RelayAtofEndpointFieldNamePolicy {
+pub enum RelayAtofStreamFieldNamePolicy {
     /// Preserve field names.
     #[default]
     Preserve,
@@ -940,7 +956,7 @@ impl TelemetryProvider {
 }
 
 fn default_relay_config_version() -> u32 {
-    1
+    2
 }
 
 fn default_enabled() -> bool {
@@ -1667,6 +1683,36 @@ mod tests {
 
     fn repository_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    #[test]
+    fn relay_observability_uses_v2_typed_atof_sinks() {
+        let observability: RelayObservabilityConfig = serde_json::from_value(serde_json::json!({
+            "atof": {
+                "enabled": true,
+                "sinks": [
+                    {
+                        "type": "file",
+                        "output_directory": "artifacts/relay",
+                        "filename": "events.atof.jsonl",
+                        "mode": "overwrite"
+                    },
+                    {
+                        "type": "stream",
+                        "url": "http://localhost:4319/events",
+                        "transport": "ndjson",
+                        "header_env": {"authorization": "RELAY_AUTHORIZATION"},
+                        "name": "live-events"
+                    }
+                ]
+            }
+        }))
+        .expect("Relay v2 observability config");
+
+        let value = serde_json::to_value(observability).expect("serialized observability");
+        assert_eq!(value["version"], 2);
+        assert_eq!(value["atof"]["sinks"][0]["type"], "file");
+        assert_eq!(value["atof"]["sinks"][1]["type"], "stream");
     }
 
     #[test]
