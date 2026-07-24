@@ -214,7 +214,11 @@ cargo run -- "Review the workspace"
 ```
 
 The Rust scaffold constructs `FabricConfig` and calls `fabric-core` directly.
-Neither scaffold is loaded back into the central CLI.
+When the CLI is built from a source checkout, the generated manifest uses an
+absolute path to that checkout's `crates/fabric-core`. Keep the checkout
+available, or replace the path dependency with a compatible published version
+before moving the scaffold. Neither scaffold is loaded back into the central
+CLI.
 
 ## CLI Boundaries
 

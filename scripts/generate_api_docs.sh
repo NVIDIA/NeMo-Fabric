@@ -42,6 +42,10 @@ perl -pi -e 's/^#### (<kbd>property<\/kbd>)/### $1/' "$out"/*.md
 # lazydocs emits the ToolsConfig class heading without a separating blank line.
 perl -0pi -e 's/(^## <kbd>class<\/kbd> `ToolsConfig`\n)(?!\n)/$1\n/m' "$out/nemo_fabric.models.md"
 
+# Restore signature semantics that lazydocs drops and add field-level contracts
+# for the SDK's Pydantic and immutable mapping models.
+PYTHONPATH="python/src" python scripts/docs/enhance_python_api_reference.py "$out"
+
 add_frontmatter() {
   local file="$1"
   local title="$2"

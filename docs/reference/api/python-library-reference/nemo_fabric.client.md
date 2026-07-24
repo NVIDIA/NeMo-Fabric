@@ -1,7 +1,7 @@
 ---
 title: "Client"
 slug: "/reference/api/python-library-reference/client"
-description: "Resolve, plan, diagnose, and run agents with Fabric."
+description: "Resolve, plan, diagnose, and run agents with NeMo Fabric."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -31,11 +31,12 @@ See the Getting Started overview for runnable single-invocation, typed-config, a
 
 ### <kbd>method</kbd> `doctor`
 
-```python
-doctor(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None
-) → DoctorReport
+```text
+async doctor(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> DoctorReport
 ```
 
 Diagnose a planned agent without starting its runtime.
@@ -66,11 +67,8 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 
 ### <kbd>method</kbd> `plan`
 
-```python
-plan(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None
-) → RunPlan
+```text
+plan(config: FabricConfig, *, base_dir: str | os.PathLike[str] | None = None) -> RunPlan
 ```
 
 Resolve a complete typed configuration into an immutable execution plan.
@@ -101,13 +99,14 @@ Planning resolves the selected adapter and reports optional runtime capabilities
 
 ### <kbd>method</kbd> `run`
 
-```python
-run(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None,
-    input: 'Any' = None,
-    request: 'RunRequest | None' = None
-) → RunResult
+```text
+async run(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+    input: Any = None,
+    request: RunRequest | None = None,
+) -> RunResult
 ```
 
 Execute one complete start, invoke, and stop lifecycle.
@@ -141,12 +140,13 @@ Execute one complete start, invoke, and stop lifecycle.
 
 ### <kbd>method</kbd> `start_runtime`
 
-```python
-start_runtime(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None,
-    overrides: 'Mapping[str, Any] | None' = None
-) → Runtime
+```text
+async start_runtime(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+    overrides: Mapping[str, Any] | None = None,
+) -> Runtime
 ```
 
 Start a stateful runtime for one or more ordered invocations.

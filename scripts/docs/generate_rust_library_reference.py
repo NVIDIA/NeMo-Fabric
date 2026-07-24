@@ -68,6 +68,10 @@ FERN_COMPONENT_TAGS = (
 FERN_COMPONENT_TAG_PATTERN = re.compile(
     rf"<(/?)({'|'.join(re.escape(tag) for tag in FERN_COMPONENT_TAGS)})(?=[\s>/]|$)"
 )
+VERSIONED_STDLIB_URL_PATTERN = re.compile(
+    r"^https://doc\.rust-lang\.org/\d+\.\d+\.\d+/"
+)
+STABLE_STDLIB_URL = "https://doc.rust-lang.org/stable/"
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +124,11 @@ def _rust_fence(value: str) -> str:
 
 
 def _html_text(value: str) -> str:
-    return html_escape(_ascii(value), quote=False).replace("{", "&#123;").replace("}", "&#125;")
+    return (
+        html_escape(_ascii(value), quote=False)
+        .replace("{", "&#123;")
+        .replace("}", "&#125;")
+    )
 
 
 def _html_attr(value: str) -> str:
@@ -202,7 +210,9 @@ def _discover_pages(doc_root: Path, output_dir: Path) -> dict[Path, Page]:
         for html_path in sorted(crate_dir.rglob("*.html")):
             if html_path.name == "all.html":
                 continue
-            if 'id="main-content"' not in html_path.read_text(encoding="utf-8", errors="ignore"):
+            if 'id="main-content"' not in html_path.read_text(
+                encoding="utf-8", errors="ignore"
+            ):
                 continue
             output_rel = _output_relative(crate_name, crate_dir, html_path)
             url_rel = _url_relative(crate_name, crate_dir, html_path)
@@ -220,7 +230,7 @@ def _resolve_href(page: Page, href: str, pages_by_html: dict[Path, Page]) -> str
     if not href or href.startswith("#"):
         return None
     if href.startswith(("http://", "https://")):
-        return href
+        return VERSIONED_STDLIB_URL_PATTERN.sub(STABLE_STDLIB_URL, href)
     href_no_fragment, _fragment = urldefrag(href)
     if href_no_fragment.startswith("../src/") or "/src/" in href_no_fragment:
         return None
@@ -245,21 +255,30 @@ def _tag_href(node: Tag) -> str:
     return href if isinstance(href, str) else ""
 
 
-def _inline_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Page]) -> str:
+def _inline_markdown(
+    node: PageElement, page: Page, pages_by_html: dict[Path, Page]
+) -> str:
     if isinstance(node, NavigableString):
         return _escape_text(str(node))
     if not isinstance(node, Tag):
         return ""
 
     classes = _tag_classes(node)
-    if classes & {"anchor", "doc-anchor", "src"} or node.name in {"script", "style", "wbr", "button"}:
+    if classes & {"anchor", "doc-anchor", "src"} or node.name in {
+        "script",
+        "style",
+        "wbr",
+        "button",
+    }:
         return ""
     if node.name == "br":
         return "\n"
     if node.name == "code":
         return _inline_code(_clean_text(node.get_text("", strip=False)))
     if node.name == "a":
-        label = "".join(_inline_markdown(child, page, pages_by_html) for child in node.children).strip()
+        label = "".join(
+            _inline_markdown(child, page, pages_by_html) for child in node.children
+        ).strip()
         if not label or label == "Source":
             return label
         target = _resolve_href(page, _tag_href(node), pages_by_html)
@@ -267,12 +286,18 @@ def _inline_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Pa
             return label
         return f"[{label}]({target})"
     if node.name == "strong":
-        content = "".join(_inline_markdown(child, page, pages_by_html) for child in node.children).strip()
+        content = "".join(
+            _inline_markdown(child, page, pages_by_html) for child in node.children
+        ).strip()
         return f"**{content}**" if content else ""
     if node.name == "em":
-        content = "".join(_inline_markdown(child, page, pages_by_html) for child in node.children).strip()
+        content = "".join(
+            _inline_markdown(child, page, pages_by_html) for child in node.children
+        ).strip()
         return f"*{content}*" if content else ""
-    return "".join(_inline_markdown(child, page, pages_by_html) for child in node.children)
+    return "".join(
+        _inline_markdown(child, page, pages_by_html) for child in node.children
+    )
 
 
 def _plain_code(node: Tag) -> str:
@@ -286,7 +311,9 @@ def _heading_text(node: Tag) -> str:
     return re.sub(r"_\s+", "_", text)
 
 
-def _signature_link_target(page: Page, href: str, pages_by_html: dict[Path, Page]) -> str | None:
+def _signature_link_target(
+    page: Page, href: str, pages_by_html: dict[Path, Page]
+) -> str | None:
     if not href or href.startswith("#"):
         return None
     target = _resolve_href(page, href, pages_by_html)
@@ -295,29 +322,43 @@ def _signature_link_target(page: Page, href: str, pages_by_html: dict[Path, Page
     return posixpath.relpath(target, start=posixpath.dirname(page.url))
 
 
-def _linked_signature_html(node: PageElement, page: Page, pages_by_html: dict[Path, Page]) -> str:
+def _linked_signature_html(
+    node: PageElement, page: Page, pages_by_html: dict[Path, Page]
+) -> str:
     if isinstance(node, NavigableString):
         return _html_text(str(node))
     if not isinstance(node, Tag):
         return ""
 
     classes = _tag_classes(node)
-    if classes & {"anchor", "doc-anchor", "src"} or node.name in {"script", "style", "wbr", "button"}:
+    if classes & {"anchor", "doc-anchor", "src"} or node.name in {
+        "script",
+        "style",
+        "wbr",
+        "button",
+    }:
         return ""
     if node.name == "br":
         return "\n"
     if node.name == "a":
-        label = "".join(_linked_signature_html(child, page, pages_by_html) for child in node.children)
+        label = "".join(
+            _linked_signature_html(child, page, pages_by_html)
+            for child in node.children
+        )
         if not label:
             return ""
         target = _signature_link_target(page, _tag_href(node), pages_by_html)
         if target is None:
             return label
         return f'<a href="{_html_attr(target)}">{label}</a>'
-    return "".join(_linked_signature_html(child, page, pages_by_html) for child in node.children)
+    return "".join(
+        _linked_signature_html(child, page, pages_by_html) for child in node.children
+    )
 
 
-def _linked_signature_block(node: Tag, page: Page, pages_by_html: dict[Path, Page]) -> str:
+def _linked_signature_block(
+    node: Tag, page: Page, pages_by_html: dict[Path, Page]
+) -> str:
     signature = _linked_signature_html(node, page, pages_by_html).strip()
     while "\n\n" in signature:
         signature = signature.replace("\n\n", "\n&#8203;\n")
@@ -355,7 +396,9 @@ def _code_header_label(node: Tag) -> str:
     return _inline_code(text) if text else ""
 
 
-def _code_header_markdown(node: Tag, page: Page, pages_by_html: dict[Path, Page]) -> str:
+def _code_header_markdown(
+    node: Tag, page: Page, pages_by_html: dict[Path, Page]
+) -> str:
     level = {"h2": "##", "h3": "###", "h4": "####", "h5": "#####"}[node.name]
     label = _code_header_label(node)
     if not label:
@@ -363,20 +406,29 @@ def _code_header_markdown(node: Tag, page: Page, pages_by_html: dict[Path, Page]
     return f"{level} {label}\n\n{_linked_signature_block(node, page, pages_by_html)}"
 
 
-def _block_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Page], depth: int = 0) -> str:
+def _block_markdown(
+    node: PageElement, page: Page, pages_by_html: dict[Path, Page], depth: int = 0
+) -> str:
     if isinstance(node, NavigableString):
         return ""
     if not isinstance(node, Tag):
         return ""
 
     classes = _tag_classes(node)
-    if node.name in {"script", "style", "rustdoc-toolbar"} or classes & {"anchor", "doc-anchor", "src"}:
+    if node.name in {"script", "style", "rustdoc-toolbar"} or classes & {
+        "anchor",
+        "doc-anchor",
+        "src",
+    }:
         return ""
     if node.name == "div" and "main-heading" in classes:
         return ""
     if node.name == "span" and "item-info" in classes:
         return ""
-    if node.get("id") in {"synthetic-implementations-list", "blanket-implementations-list"}:
+    if node.get("id") in {
+        "synthetic-implementations-list",
+        "blanket-implementations-list",
+    }:
         return ""
 
     if node.name in {"h2", "h3", "h4", "h5"} and "code-header" in classes:
@@ -391,7 +443,14 @@ def _block_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Pag
 
     if node.name == "span" and "section-header" in classes:
         text = _plain_code(node)
-        return f"### {_inline_code(text)}\n\n" if text else ""
+        node_id = node.get("id")
+        is_variant_field = (
+            isinstance(node_id, str)
+            and node_id.startswith("variant.")
+            and ".field." in node_id
+        )
+        level = "#####" if is_variant_field else "###"
+        return f"{level} {_inline_code(text)}\n\n" if text else ""
 
     if node.name == "p":
         text = re.sub(r"\s+", " ", _inline_markdown(node, page, pages_by_html)).strip()
@@ -405,7 +464,9 @@ def _block_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Pag
     if node.name == "ul":
         lines: list[str] = []
         for li in node.find_all("li", recursive=False):
-            text = re.sub(r"\s+", " ", _inline_markdown(li, page, pages_by_html)).strip()
+            text = re.sub(
+                r"\s+", " ", _inline_markdown(li, page, pages_by_html)
+            ).strip()
             if text:
                 lines.append(f"{'  ' * depth}- {text}")
         return "\n".join(lines) + ("\n\n" if lines else "")
@@ -413,7 +474,9 @@ def _block_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Pag
     if node.name == "ol":
         lines = []
         for index, li in enumerate(node.find_all("li", recursive=False), start=1):
-            text = re.sub(r"\s+", " ", _inline_markdown(li, page, pages_by_html)).strip()
+            text = re.sub(
+                r"\s+", " ", _inline_markdown(li, page, pages_by_html)
+            ).strip()
             if text:
                 lines.append(f"{'  ' * depth}{index}. {text}")
         return "\n".join(lines) + ("\n\n" if lines else "")
@@ -426,7 +489,9 @@ def _block_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Pag
             if children[index].name != "dt":
                 index += 1
                 continue
-            term = re.sub(r"\s+", " ", _inline_markdown(children[index], page, pages_by_html)).strip()
+            term = re.sub(
+                r"\s+", " ", _inline_markdown(children[index], page, pages_by_html)
+            ).strip()
             description = ""
             if index + 1 < len(children) and children[index + 1].name == "dd":
                 description = re.sub(
@@ -465,7 +530,9 @@ def _block_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Pag
             pieces.append(_block_markdown(child, page, pages_by_html, depth))
         return "".join(pieces)
 
-    pieces = [_block_markdown(child, page, pages_by_html, depth) for child in node.children]
+    pieces = [
+        _block_markdown(child, page, pages_by_html, depth) for child in node.children
+    ]
     return "".join(pieces)
 
 
@@ -474,6 +541,7 @@ def _remove_noisy_sections(content: Tag) -> None:
         "script",
         "style",
         "rustdoc-toolbar",
+        "summary.hideme",
         ".src",
         "button",
         ".item-info",
@@ -496,7 +564,19 @@ def _remove_noisy_sections(content: Tag) -> None:
 def _page_title(soup: BeautifulSoup, page: Page) -> str:
     h1 = soup.select_one("#main-content .main-heading h1")
     if h1 is not None:
-        title = _heading_text(h1)
+        item = h1.find("span", recursive=False)
+        if item is not None:
+            kind = _clean_text(
+                "".join(
+                    str(child)
+                    for child in h1.children
+                    if child is not item and isinstance(child, NavigableString)
+                )
+            )
+            identifier = _clean_text(item.get_text("", strip=True))
+            title = f"{kind} {identifier}".strip()
+        else:
+            title = _heading_text(h1)
         title = re.sub(
             r"^(Crate|Module|Function|Struct|Enum|Trait|Type Alias|Constant|Macro)(?=\S)",
             r"\1 ",
@@ -520,7 +600,8 @@ def _remove_duplicate_top_level_sections(markdown: str) -> str:
             if line in seen:
                 index += 1
                 while index < len(lines) and not (
-                    lines[index].startswith("## ") and not lines[index].startswith("### ")
+                    lines[index].startswith("## ")
+                    and not lines[index].startswith("### ")
                 ):
                     index += 1
                 continue
@@ -564,7 +645,9 @@ def _render_page(page: Page, pages_by_html: dict[Path, Page], position: int) -> 
         raise SystemExit(f"rustdoc main content not found: {page.html_path}")
     _remove_noisy_sections(content)
 
-    body = _remove_duplicate_top_level_sections(_block_markdown(content, page, pages_by_html).strip())
+    body = _remove_duplicate_top_level_sections(
+        _block_markdown(content, page, pages_by_html).strip()
+    )
     description = _description(soup)
     lines = [
         frontmatter(
@@ -600,7 +683,9 @@ def _item_order(index_html: Path, pages_by_html: dict[Path, Page]) -> dict[Path,
 
 def _positions(pages_by_html: dict[Path, Page], doc_root: Path) -> dict[Path, int]:
     positions: dict[Path, int] = {}
-    for position, (_crate_name, crate_dir_name, _description) in enumerate(CRATES, start=1):
+    for position, (_crate_name, crate_dir_name, _description) in enumerate(
+        CRATES, start=1
+    ):
         crate_index = (doc_root / crate_dir_name / "index.html").resolve()
         positions[crate_index] = position
 
@@ -625,11 +710,15 @@ def _write_index(output_dir: Path) -> None:
         "## Crates\n\n",
     ]
     for crate_name, _crate_dir_name, description in CRATES:
-        lines.append(f"- [{crate_name}]({BASE_URL}/{_crate_slug(crate_name)}): {_escape_text(description)}\n")
+        lines.append(
+            f"- [{crate_name}]({BASE_URL}/{_crate_slug(crate_name)}): {_escape_text(description)}\n"
+        )
     (output_dir / "index.mdx").write_text("".join(lines), encoding="utf-8")
 
 
-def generate(repo_root: Path, doc_root: Path, output_dir: Path, *, run_cargo_doc: bool) -> int:
+def generate(
+    repo_root: Path, doc_root: Path, output_dir: Path, *, run_cargo_doc: bool
+) -> int:
     if run_cargo_doc:
         _run_cargo_doc(repo_root)
     pages_by_html = _discover_pages(doc_root, output_dir)
@@ -638,10 +727,15 @@ def generate(repo_root: Path, doc_root: Path, output_dir: Path, *, run_cargo_doc
     reset_output_dir(output_dir)
     _write_index(output_dir)
 
-    for index, page in enumerate(sorted(pages_by_html.values(), key=lambda page: page.output_path.as_posix()), start=1):
+    for index, page in enumerate(
+        sorted(pages_by_html.values(), key=lambda page: page.output_path.as_posix()),
+        start=1,
+    ):
         page.output_path.parent.mkdir(parents=True, exist_ok=True)
         position = positions.get(page.html_path, index)
-        page.output_path.write_text(_render_page(page, pages_by_html, position), encoding="utf-8")
+        page.output_path.write_text(
+            _render_page(page, pages_by_html, position), encoding="utf-8"
+        )
 
     return len(pages_by_html)
 
@@ -660,8 +754,12 @@ def main() -> None:
     repo_root = Path.cwd()
     doc_root = args.doc_root.resolve()
     output_dir = args.output_dir.resolve()
-    count = generate(repo_root, doc_root, output_dir, run_cargo_doc=not args.skip_cargo_doc)
-    print(f"Generated Rust library reference for {count} rustdoc page(s) in {output_dir}")
+    count = generate(
+        repo_root, doc_root, output_dir, run_cargo_doc=not args.skip_cargo_doc
+    )
+    print(
+        f"Generated Rust library reference for {count} rustdoc page(s) in {output_dir}"
+    )
 
 
 if __name__ == "__main__":

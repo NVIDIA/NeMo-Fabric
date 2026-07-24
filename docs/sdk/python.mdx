@@ -248,7 +248,7 @@ multiple independent runtimes.
 | API | Async | Use When | Notes |
 | --- | --- | --- | --- |
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
-| `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
+| `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter resolution, capability routing, declared requirements, and environment assumptions. | Checks may inspect local binaries, environment variables, and files without starting a runtime. |
 | `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
 | `Fabric.start_runtime(config, ...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
@@ -413,8 +413,9 @@ print(report.status)
 ```
 
 Use the plan to confirm adapter selection and capability routing. Use the doctor
-report to catch missing dependencies, unsupported settings, and environment
-problems before starting a runtime.
+report to catch unresolved adapter descriptors, unsupported normalized
+capabilities, missing declared requirements, and environment problems before
+starting a runtime.
 
 ## Install And Runtime Responsibilities
 
@@ -445,12 +446,17 @@ Use `harness.settings` for adapter-owned configuration that the selected adapter
 understands. Examples include Hermes Agent-specific launch options, Codex controls,
 or adapter-specific launch paths.
 
-Use `metadata` for caller-owned annotations that NeMo Fabric should preserve and echo
-back, but not interpret.
+Use `FabricConfig.metadata` for human-readable agent identity and additive
+caller-owned annotations. NeMo Fabric preserves these values in the resolved
+config but does not copy them into `RunResult.metadata`. Use `request_id` and
+`RunRequest.context` for per-invocation correlation. `RunResult.metadata`
+contains adapter-specific result details.
 
 Adapter settings are not portable by default. An adapter must explicitly read
-and implement a setting before it affects runtime behavior. Use `doctor(...)` to
-catch unsupported, ignored, or malformed adapter settings before launching a run.
+and implement a setting before it affects runtime behavior. Validate
+adapter-owned settings against the selected adapter's documentation;
+`doctor(...)` does not generically detect unsupported, ignored, or malformed
+adapter settings.
 
 ## Errors
 

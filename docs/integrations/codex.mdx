@@ -15,6 +15,9 @@ Use normalized NeMo Fabric fields so the same capability configuration can be
 planned before the adapter starts:
 
 ```python
+from examples.code_review_agent import codex_config
+
+config = codex_config()
 config.add_skill_path("./skills/code-review")
 config.add_mcp_server(
     "repo",
@@ -58,6 +61,9 @@ To override the SDK-selected app-server intentionally, set an absolute path or
 a path relative to the NeMo Fabric config root in `harness.settings.codex_bin`:
 
 ```python
+from examples.code_review_agent import codex_config
+
+config = codex_config()
 config.harness.settings["codex_bin"] = "/path/to/codex"
 ```
 
@@ -132,12 +138,6 @@ dependency and does not install the CLI. NeMo Fabric owns sidecar supervision an
 runtime-scoped SDK configuration. Relay owns gateway transport behavior,
 including decoding `Content-Encoding` before it constructs managed LLM events.
 There is no NeMo Fabric compression setting.
-
-The initial NeMo Relay `0.6.0` source tag cannot recover semantic fields from
-zstd-compressed Codex SDK requests. Until a later `0.6.x` release contains the
-fix, use a build that includes
-[NeMo Relay PR #452](https://github.com/NVIDIA/NeMo-Relay/pull/452). NeMo Fabric's
-opt-in Relay E2E rejects opaque request bodies and missing token usage.
 
 ## Compare Phoenix Trace Modes
 

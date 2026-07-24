@@ -2107,6 +2107,7 @@ package = [
     { name = "maturin", extra = ["zig"], marker = "sys_platform == 'linux'" },
 ]
 test = [
+    { name = "beautifulsoup4" },
     { name = "fastapi" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2158,6 +2159,7 @@ package = [
     { name = "maturin", extras = ["zig"], marker = "sys_platform == 'linux'", specifier = ">=1.9.3,<2.0" },
 ]
 test = [
+    { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "fastapi", specifier = "~=0.138" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.26" },
