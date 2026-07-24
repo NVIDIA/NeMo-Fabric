@@ -25,6 +25,14 @@ isolate conflicting runtime dependencies, and manage harness configuration,
 execution, and observability consistently. Every run returns normalized
 results, artifacts, and telemetry for downstream systems to consume.
 
+It provides:
+
+- a versioned, typed configuration contract;
+- ordinary Python composition for experiment variants;
+- adapter integrations for harness-specific launch and control;
+- a Python SDK backed by the Rust core;
+- normalized run results, artifact manifests, and telemetry references.
+
 ## Supported Harnesses
 
 NeMo Fabric provides the following harness integrations:

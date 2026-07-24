@@ -12,11 +12,16 @@ SPDX-License-Identifier: Apache-2.0
 [![Crates.io](https://img.shields.io/crates/v/nemo-fabric-core?label=nemo-fabric-core&color=B7410E&logo=rust)](https://crates.io/crates/nemo-fabric-core)
 [![Crates.io](https://img.shields.io/crates/v/nemo-fabric-cli?label=nemo-fabric-cli&color=B7410E&logo=rust)](https://crates.io/crates/nemo-fabric-cli)
 
-NeMo Fabric is a runtime execution layer for agents. It turns multiple
-agent harnesses into one configurable, observable lifecycle surface.
+NeMo Fabric gives applications one configurable, observable way to run applications
+across multiple agent harnesses. It standardizes configuration, lifecycle
+management, and results without requiring a separate integration for every harness.
 
-NeMo Fabric standardizes how applications configure, launch, invoke, and
-collect artifacts from agent harnesses. It provides:
+NeMo Fabric lets you change harnesses without rebuilding each integration,
+isolate conflicting runtime dependencies, and manage harness configuration,
+execution, and observability consistently. Every run returns normalized
+results, artifacts, and telemetry for downstream systems to consume.
+
+It provides:
 
 - a versioned, typed configuration contract;
 - ordinary Python composition for experiment variants;
