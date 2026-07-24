@@ -13,6 +13,25 @@ installation, authentication, and configuration details.
 The adapter descriptor selected in `RunPlan` is authoritative for normalized
 configuration and telemetry support.
 
+## Descriptor Discovery
+
+As a stopgap until NeMo Fabric has a provider-backed adapter registry, the
+Python SDK discovers descriptors in three locations. Later locations take
+precedence:
+
+1. descriptors bundled in the NeMo Fabric source repository;
+2. `<sysconfig data>/share/nemo-fabric/adapters`, populated by adapter wheels
+   and queried from `ADAPTER_PYTHON` when set, otherwise from the current Python;
+3. `<base_dir>/adapters`, for agent-local and development overrides.
+
+Fabric resolves multi-component relative `ADAPTER_PYTHON` paths from
+`<base_dir>`. It resolves bare command names through `PATH`.
+
+This scan only discovers installed metadata. It is not the final registry
+contract for resolving or installing third-party adapters. Installed and
+agent-local descriptors both currently report `source: local`; a registry
+provider should expose more precise provenance.
+
 ## Bundled Adapter Packages
 
 | Agent Harness | Adapter ID | Python Package | Supported Python |

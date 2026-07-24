@@ -105,6 +105,7 @@ async def test_variations_notebook_relay_failure_preserves_prior_failures(tmp_pa
         "RELAY_AVAILABLE": True,
         "REPO_ROOT": tmp_path,
         "RelayAtofConfig": MagicMock(),
+        "RelayAtofFileSinkConfig": MagicMock(),
         "RelayObservabilityConfig": MagicMock(),
         "blocker": lambda _harness: None,
         "fabric": fabric,
@@ -150,6 +151,7 @@ def test_variations_notebook_uses_runnable_capabilities_and_checks_relay_status(
     assert "run_failures.append" in source
     assert "Notebook execution failures" in source
     assert "returned no Relay telemetry reference" in source
+    assert "sinks=[RelayAtofFileSinkConfig(" in source
     assert "if not atof_paths:" in source
     assert "produced no ATOF trace" in source
     assert "produced an empty ATOF trace" in source

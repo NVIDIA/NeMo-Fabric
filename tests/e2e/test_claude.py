@@ -21,6 +21,7 @@ from nemo_fabric import (
     ModelConfig,
     RelayAtifConfig,
     RelayAtofConfig,
+    RelayAtofFileSinkConfig,
     RelayObservabilityConfig,
     RuntimeConfig,
 )
@@ -123,7 +124,10 @@ def fabric_config(
     if relay:
         config.enable_relay(
             observability=RelayObservabilityConfig(
-                atof=RelayAtofConfig(enabled=True),
+                atof=RelayAtofConfig(
+                    enabled=True,
+                    sinks=[RelayAtofFileSinkConfig()],
+                ),
                 atif=RelayAtifConfig(enabled=True),
             )
         )

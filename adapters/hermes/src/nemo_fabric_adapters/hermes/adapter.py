@@ -238,12 +238,9 @@ class HermesRuntime:
                 self._relay_plugin_config = common_utils.load_relay_plugin_config(
                     payload
                 )
-                relay_api_config = common_utils.relay_api_plugin_config(
-                    self._relay_plugin_config
-                )
                 from nemo_relay import plugin
 
-                self._relay_context = plugin.plugin(relay_api_config)
+                self._relay_context = plugin.plugin(self._relay_plugin_config)
                 await self._relay_context.__aenter__()
                 self._relay_context_entered = True
 

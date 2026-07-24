@@ -17,7 +17,7 @@ from examples.code_review_agent import BASE_DIR
 from examples.code_review_agent import base_config
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
-from nemo_fabric import FabricRuntimeError
+from nemo_fabric import FabricConfigError
 
 
 async def test_native_sdk(hermes_shim_agent_dir: Path):
@@ -40,19 +40,17 @@ async def test_adapter_python_selects_python_adapter_interpreter(
     assert result["status"] == "succeeded"
 
 
-async def test_adapter_python_rejects_invalid_path_before_start(
+def test_adapter_python_rejects_invalid_path_during_plan(
     hermes_shim_agent_dir: Path,
 ):
     invalid_python = hermes_shim_agent_dir / "missing-python"
     os.environ["ADAPTER_PYTHON"] = str(invalid_python)
 
-    with pytest.raises(FabricRuntimeError, match="ADAPTER_PYTHON") as caught:
-        await Fabric().start_runtime(
+    with pytest.raises(FabricConfigError, match="ADAPTER_PYTHON"):
+        Fabric().plan(
             hermes_shim_config(),
             base_dir=hermes_shim_agent_dir,
         )
-
-    assert caught.value.stage == "start"
 
 
 def test_native_run_rejects_multiple_request_sources(hermes_shim_agent_dir: Path):
