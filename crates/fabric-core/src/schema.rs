@@ -218,8 +218,7 @@ mod tests {
 
         assert_eq!(schema["properties"]["max_turns"]["minimum"], 1);
         assert_eq!(
-            schema["$defs"]["RuntimeConfig"]["properties"]["timeout_seconds"]
-                ["exclusiveMinimum"],
+            schema["$defs"]["RuntimeConfig"]["properties"]["timeout_seconds"]["exclusiveMinimum"],
             0.0
         );
     }
