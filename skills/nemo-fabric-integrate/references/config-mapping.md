@@ -84,8 +84,9 @@ package or job layout, so nothing depends on the process working directory.
 ## Adapter-Owned And Caller-Owned Data
 
 - Use normalized fields for portable behavior: models, system prompt, turn
-  limit, runtime, environment, tools and toolsets, skills, MCP, telemetry, and
-  request context.
+  limit, runtime, environment, tools and toolsets, skills, MCP, and telemetry.
+- Supply request context through `RunRequest.context` for each invocation;
+  request context is not part of `FabricConfig`.
 - Use `harness.settings` for adapter-owned configuration the selected adapter
   understands (for example Claude permission policy, Codex sandbox controls, or
   Deep Agents subagent definitions). Executable paths, state directories, and

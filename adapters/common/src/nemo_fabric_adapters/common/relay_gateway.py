@@ -37,6 +37,8 @@ class RelayGatewayLaunch:
     bind: str
     url: str
     log_path: Path
+    openai_base_url: str | None = None
+    anthropic_base_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,16 +157,21 @@ def start_relay_gateway(
     if not launch.config_path.is_file():
         raise RelayGatewayError("NeMo Relay gateway configuration was not generated")
     launch.log_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        str(launch.executable),
+        "--config",
+        str(launch.config_path),
+        "--bind",
+        launch.bind,
+    ]
+    if launch.openai_base_url is not None:
+        command.extend(["--openai-base-url", launch.openai_base_url])
+    if launch.anthropic_base_url is not None:
+        command.extend(["--anthropic-base-url", launch.anthropic_base_url])
     try:
         with launch.log_path.open("wb") as log_stream:
             process = subprocess.Popen(
-                [
-                    str(launch.executable),
-                    "--config",
-                    str(launch.config_path),
-                    "--bind",
-                    launch.bind,
-                ],
+                command,
                 cwd=cwd,
                 stdout=log_stream,
                 stderr=subprocess.STDOUT,

@@ -158,6 +158,7 @@ def make_payload_fixture():
                         "provider": "nvidia",
                         "model": "nvidia/nemotron-3-nano-30b-a3b",
                         "api_key_env": "NVIDIA_API_KEY",
+                        "base_url": "https://integrate.api.nvidia.com/v1",
                     }
                 },
             },
@@ -1091,6 +1092,19 @@ async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_pa
     }
 
     with pytest.raises(adapter.AdapterConfigError, match="api_key_env"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+
+async def test_openai_compatible_provider_requires_base_url(tmp_path, make_payload):
+    os.environ["CUSTOM_API_KEY"] = "sk-test"
+    payload = make_payload(tmp_path)
+    payload["config"]["models"]["default"] = {
+        "provider": "openai-compatible",
+        "model": "some/model",
+        "api_key_env": "CUSTOM_API_KEY",
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="base_url"):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 

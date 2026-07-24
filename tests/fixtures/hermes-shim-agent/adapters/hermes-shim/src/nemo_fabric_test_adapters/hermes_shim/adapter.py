@@ -108,7 +108,10 @@ def run_swebench_shim(payload: dict[str, Any]) -> dict[str, Any]:
     request = request_payload(payload)
     context = request.get("context", {})
     environment = environment_payload(payload)
-    workspace = Path(environment.get("workspace") or ".")
+    workspace_value = environment.get("workspace")
+    if not isinstance(workspace_value, str) or not workspace_value:
+        raise ValueError("runtime_context.environment.workspace is required")
+    workspace = Path(workspace_value)
     target_file = workspace / settings.get("target_file", "calculator.py")
     before = settings.get("expected_before")
     after = settings.get("replacement")

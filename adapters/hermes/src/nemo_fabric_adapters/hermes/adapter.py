@@ -30,7 +30,6 @@ import nemo_fabric_adapters.common.utils as common_utils
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
 PROVIDER_DEFAULT_API_KEY_ENV = {
-    "": "NVIDIA_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
     "nvidia": "NVIDIA_API_KEY",
     "openai": "OPENAI_API_KEY",
@@ -240,10 +239,7 @@ class HermesRuntime:
             os.environ.setdefault("HERMES_YOLO_MODE", "1")
             os.environ.setdefault("HERMES_ACCEPT_HOOKS", "1")
             os.environ["HERMES_SESSION_SOURCE"] = "fabric"
-            os.environ.setdefault(
-                "TERMINAL_ENV",
-                "local",
-            )
+            os.environ["TERMINAL_ENV"] = "local"
             os.environ.setdefault(
                 "TERMINAL_TIMEOUT",
                 str(self._settings.get("terminal_timeout", 60)),

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pydantic SDK models for NeMo Fabric configuration and requests.
+"""Pydantic SDK models for NVIDIA NeMo Fabric configuration and requests.
 
 The Rust core remains the source of truth for persisted schema snapshots. These
 models provide the Python SDK's typed authoring surface and intentionally keep
@@ -146,7 +146,11 @@ class EnvironmentConfig(FabricBaseModel):
     )
     env: dict[str, str] = Field(
         default_factory=dict,
-        description="Environment variables visible to the harness and its tools.",
+        description=(
+            "Environment variables visible to the harness and its tools. Values are "
+            "serialized into configuration and run plans; prefer api_key_env-style "
+            "environment-variable-name indirection for credentials."
+        ),
     )
     settings: dict[str, Any] = Field(
         default_factory=dict,
@@ -293,8 +297,12 @@ class RelayAtofStreamSinkConfig(FabricBaseModel):
     type: Literal["stream"] = "stream"
     url: str
     transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
-    headers: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
-    header_env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    headers: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    header_env: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     timeout_millis: int = 3000
     field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
     name: str | None = None
@@ -403,7 +411,9 @@ class RelayConfig(FabricBaseModel):
     project: str | None = None
     output_dir: str | Path | None = None
     observability: RelayObservabilityConfig | dict[str, Any] | None = None
-    components: list[RelayComponentConfig | dict[str, Any]] = Field(default_factory=list)
+    components: list[RelayComponentConfig | dict[str, Any]] = Field(
+        default_factory=list
+    )
     policy: RelayConfigPolicy | dict[str, Any] | None = None
 
 
@@ -416,7 +426,9 @@ class TelemetryProviderConfig(FabricBaseModel):
 class TelemetryConfig(FabricBaseModel):
     """Telemetry configuration."""
 
-    providers: dict[Literal["relay", "native"], TelemetryProviderConfig | dict[str, Any]] = Field(default_factory=dict)
+    providers: dict[
+        Literal["relay", "native"], TelemetryProviderConfig | dict[str, Any]
+    ] = Field(default_factory=dict)
 
     def enable_relay(
         self,
@@ -445,10 +457,26 @@ class TelemetryConfig(FabricBaseModel):
 
 
 class ToolsetConfig(FabricBaseModel):
-    """Harness-neutral toolset selection and blocking policy."""
+    """Harness-defined toolset selection and blocking policy.
 
-    enabled: list[str] | None = None
-    blocked: list[str] = Field(default_factory=list)
+    ``enabled=None`` preserves the selected harness default, while an empty
+    ``enabled`` list exposes no toolsets. ``blocked`` excludes toolsets from
+    either the enabled list or the harness default.
+    """
+
+    enabled: list[str] | None = Field(
+        default=None,
+        description=(
+            "Toolsets to expose. None preserves the harness default; an empty list "
+            "exposes no toolsets."
+        ),
+    )
+    blocked: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Toolsets to exclude from the enabled or default harness toolset set."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_policy(self) -> Self:
@@ -484,8 +512,9 @@ class FabricConfig(FabricBaseModel):
     """SDK-facing typed Fabric agent configuration.
 
     Fabric-owned fields apply uniformly. Adapter-translated fields are checked
-    against the selected descriptor; see the normalized configuration
-    compatibility table in ``docs/sdk/python.mdx``.
+    against the selected descriptor; refer to the
+    [normalized configuration compatibility
+    table](/nemo/fabric/sdk/python-sdk#normalized-configuration-compatibility).
     """
 
     schema_version: str = "fabric.agent/v1alpha1"
@@ -582,7 +611,7 @@ class FabricConfig(FabricBaseModel):
         enabled: Sequence[str] | None = None,
         blocked: Sequence[str] = (),
     ) -> Self:
-        """Set adapter-native toolset selection and blocking policy."""
+        """Set harness-defined toolset selection and blocking policy."""
 
         if self.tools is None:
             self.tools = ToolsConfig()
@@ -618,12 +647,19 @@ class FabricConfig(FabricBaseModel):
             relay.output_dir = output_dir
         if observability is not None:
             relay.observability = (
-                observability if isinstance(observability, RelayObservabilityConfig) else dict(observability)
+                observability
+                if isinstance(observability, RelayObservabilityConfig)
+                else dict(observability)
             )
         if components is not None:
-            relay.components = [item if isinstance(item, RelayComponentConfig) else dict(item) for item in components]
+            relay.components = [
+                item if isinstance(item, RelayComponentConfig) else dict(item)
+                for item in components
+            ]
         if policy is not None:
-            relay.policy = policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
+            relay.policy = (
+                policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
+            )
         self.relay = relay
         return self
 

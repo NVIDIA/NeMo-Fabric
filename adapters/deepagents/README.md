@@ -23,22 +23,20 @@ pip install "nemo-fabric[deepagents, runtime]"
 
 ## Model and Authentication
 
-The adapter builds a LangChain chat model from NeMo Fabric's `models.default` config.
-For `nvidia` (or an unspecified provider) it targets NVIDIA-hosted,
-OpenAI-compatible endpoints (`https://integrate.api.nvidia.com/v1`) via
-`ChatOpenAI`; `openai` and `openai-compatible` also use `ChatOpenAI` with the
-provider's own default endpoint. Any other provider is constructed through
-`langchain.chat_models.init_chat_model`, so additional backends can be added
-without changing the adapter.
+The adapter builds a LangChain chat model from the selected NeMo Fabric model
+role: `models.default`, or the sole configured role when `default` is absent.
+The `openai`, `nvidia`, and `openai-compatible` providers use `ChatOpenAI`;
+`nvidia` and `openai-compatible` require an explicit compatible `base_url`.
+Any other provider is constructed through
+`langchain.chat_models.init_chat_model`, so LangChain-supported backends do not
+require adapter-specific branches.
 
-`models.default.api_key_env` names the environment variable holding the API key,
-and defaults **per provider** — `NVIDIA_API_KEY` for `nvidia` (or an unspecified
-provider) and `OPENAI_API_KEY` for `openai`. Every other provider — including
-`openai-compatible` and any `init_chat_model` backend — must set `api_key_env`
-explicitly (a missing one is a normalized configuration failure), so a key is
-never sent to the wrong endpoint.
+`models.<role>.api_key_env` names the environment variable holding the API key,
+and defaults to `OPENAI_API_KEY` only for the native `openai` provider. Every
+other provider must set `api_key_env` explicitly (a missing one is a normalized
+configuration failure), so a key is never sent to the wrong endpoint.
 
-Because `models.default.api_key_env` is provider-specific, the adapter declares no
+Because `models.<role>.api_key_env` is provider-specific, the adapter declares no
 static env requirement; a runtime **preflight** verifies that the `deepagents`
 package is importable and the configured credential is set. A failed preflight
 fails runtime start with a stable lifecycle error. `fabric doctor` validates

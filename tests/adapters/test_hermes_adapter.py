@@ -467,6 +467,34 @@ async def test_runtime_start_rejects_native_telemetry():
         await adapter.HermesRuntime().start(payload)
 
 
+async def test_runtime_start_overrides_inherited_terminal_environment(
+    monkeypatch,
+    tmp_path: Path,
+):
+    os.environ["TERMINAL_ENV"] = "docker"
+
+    def stop_after_environment_setup(*_args, **_kwargs):
+        assert os.environ["TERMINAL_ENV"] == "local"
+        raise RuntimeError("stop after environment setup")
+
+    monkeypatch.setattr(adapter, "write_hermes_config", stop_after_environment_setup)
+    payload = {
+        "base_dir": str(tmp_path),
+        "config": {
+            "harness": {"settings": {}},
+            "models": {"default": {"provider": "nvidia", "model": "test-model"}},
+        },
+        "runtime_context": {
+            "runtime_id": "runtime-terminal-env",
+            "environment": {"workspace": str(tmp_path)},
+            "artifacts": {"root": str(tmp_path / "artifacts")},
+        },
+    }
+
+    with pytest.raises(RuntimeError, match="stop after environment setup"):
+        await adapter.HermesRuntime().start(payload)
+
+
 async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,

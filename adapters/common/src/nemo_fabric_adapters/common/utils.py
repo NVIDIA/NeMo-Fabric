@@ -104,16 +104,10 @@ def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return fabric_config(payload).get("models") or payload.get("models") or {}
 
 
-def default_base_url(provider: str | None) -> str | None:
-    if provider == "nvidia":
-        return "https://integrate.api.nvidia.com/v1"
-    return None
-
-
 def get_base_url(model_config: dict[str, Any]) -> str | None:
-    """Return the canonical model endpoint, including provider defaults."""
+    """Return the explicitly configured model endpoint."""
 
-    return model_config.get("base_url") or default_base_url(model_config.get("provider"))
+    return model_config.get("base_url")
 
 
 def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -153,7 +147,9 @@ def environment_env(payload: dict[str, Any]) -> dict[str, str]:
 
 
 def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    telemetry = fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    telemetry = (
+        fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    )
     return telemetry if isinstance(telemetry, dict) else {}
 
 
@@ -263,7 +259,9 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
     return plugin_config
 
 
-def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
+def normalize_relay_output_dirs(
+    plugin_config: dict[str, Any], payload: dict[str, Any]
+) -> None:
     base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
@@ -352,7 +350,9 @@ def write_relay_configs(
 
         config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
         if not config_path:
-            raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
+            raise RuntimeError(
+                "FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled"
+            )
 
         config_path = Path(config_path)
         config_dir = config_path.parent / "relay-config"
@@ -378,7 +378,6 @@ def write_relay_configs(
         return relay_config_path, plugin_config_path
     except ImportError as e:
         raise RuntimeError("tomli_w is not installed") from e
-
 
 
 def relay_model_name(payload: dict[str, Any]) -> str:

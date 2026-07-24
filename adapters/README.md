@@ -45,8 +45,8 @@ provider should expose more precise provenance.
 
 | Agent Harness | Models | Tool Policy | MCP | Skills | Subagents |
 | --- | --- | --- | --- | --- | --- |
-| [Claude](claude/README.md) | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | `tools.blocked` maps to Claude `disallowed_tools`; toolsets unsupported | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
-| [Codex](codex/README.md) | OpenAI and NVIDIA-hosted Responses-compatible models | Per-tool blocking and toolsets unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
+| [Claude](claude/README.md) | Native Anthropic or a configured Anthropic Messages-compatible provider | `tools.blocked` maps to Claude `disallowed_tools`; toolsets unsupported | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
+| [Codex](codex/README.md) | Native OpenAI or a configured Responses-compatible provider | Per-tool blocking and toolsets unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
 | [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | `tools.blocked` middleware covers built-ins, MCP, and local subagents; toolsets unsupported | Normalized through `langchain-mcp-adapters` | Normalized | Constrained declarative local delegation |
 | [Hermes Agent](hermes/README.md) | Configurable provider, model, and base URL | `tools.toolsets` maps to Hermes toolset controls; per-tool blocking unsupported | Normalized | Normalized | Not exposed |
 
@@ -73,7 +73,7 @@ are grouped because their support does not vary by adapter.
 | `metadata.name`, `.description` | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core |
 | `harness.settings` | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch |
-| `models.<role>.provider` | `anthropic`, `nvidia` | `openai`, `nvidia` | Dynamic LangChain provider | Dynamic Hermes provider |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes |
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes |

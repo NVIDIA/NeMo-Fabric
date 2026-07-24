@@ -40,7 +40,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "Environment variables visible to the harness and its tools.",
+          "description": "Environment variables visible to the harness and its tools.\n\nValues are serialized into the run plan and can appear wherever configs\nor plans are logged or persisted. Prefer `api_key_env`-style\nenvironment-variable-name indirection for credentials.",
           "type": "object"
         },
         "metadata": {
@@ -980,24 +980,24 @@
               "type": "null"
             }
           ],
-          "description": "Adapter-native toolset selection and blocking policy."
+          "description": "Harness-defined toolset selection and blocking policy."
         }
       },
       "type": "object"
     },
     "ToolsetConfig": {
       "additionalProperties": true,
-      "description": "Harness-neutral toolset capability configuration.",
+      "description": "Harness-defined toolset capability configuration.",
       "properties": {
         "blocked": {
-          "description": "Toolsets to block.",
+          "description": "Toolsets to exclude from the enabled or default harness toolset set.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
         "enabled": {
-          "description": "Toolsets to expose. `None` preserves the adapter default; an empty list exposes none.",
+          "description": "Toolsets to expose. `None` preserves the harness default; an empty list exposes none.",
           "items": {
             "type": "string"
           },

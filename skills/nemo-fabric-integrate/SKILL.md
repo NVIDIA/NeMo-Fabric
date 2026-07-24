@@ -75,6 +75,36 @@ from nemo_fabric import (
 )
 
 
+def to_tools_config(job) -> ToolsConfig | None:
+    blocked_tools = list(job.blocked_tools)
+    enabled_toolsets = job.enabled_toolsets
+    blocked_toolsets = list(job.blocked_toolsets)
+
+    if job.adapter_id in {
+        "nvidia.fabric.claude",
+        "nvidia.fabric.langchain.deepagents",
+    }:
+        if enabled_toolsets is not None or blocked_toolsets:
+            raise ValueError(f"{job.adapter_id} does not support toolset policy")
+        return ToolsConfig(blocked=blocked_tools) if blocked_tools else None
+
+    if job.adapter_id == "nvidia.fabric.hermes":
+        if blocked_tools:
+            raise ValueError("nvidia.fabric.hermes does not support per-tool blocking")
+        if enabled_toolsets is None and not blocked_toolsets:
+            return None
+        return ToolsConfig(
+            toolsets=ToolsetConfig(
+                enabled=enabled_toolsets,
+                blocked=blocked_toolsets,
+            )
+        )
+
+    if blocked_tools or enabled_toolsets is not None or blocked_toolsets:
+        raise ValueError(f"{job.adapter_id} does not support normalized tool policy")
+    return None
+
+
 def to_fabric_config(job) -> FabricConfig:
     config = FabricConfig(
         metadata=MetadataConfig(name=job.name),
@@ -94,13 +124,7 @@ def to_fabric_config(job) -> FabricConfig:
             output_schema="message",
             timeout_seconds=job.timeout_seconds,
         ),
-        tools=ToolsConfig(
-            blocked=list(job.blocked_tools),
-            toolsets=ToolsetConfig(
-                enabled=job.enabled_toolsets,
-                blocked=list(job.blocked_toolsets),
-            ),
-        ),
+        tools=to_tools_config(job),
     )
     config.add_skill_path(job.skill_dir)
     config.add_mcp_server(

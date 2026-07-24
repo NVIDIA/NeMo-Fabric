@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Native Python client for resolving and running NeMo Fabric agents."""
+"""Native Python client for resolving and running NVIDIA NeMo Fabric agents."""
 
 from __future__ import annotations
 
@@ -214,7 +214,9 @@ class Fabric:
 
         def start() -> dict[str, Any]:
             nonlocal started_runtime
-            started_runtime = json.loads(native.start_runtime(json.dumps(plan.to_mapping())))
+            started_runtime = json.loads(
+                native.start_runtime(json.dumps(plan.to_mapping()))
+            )
             return started_runtime
 
         try:

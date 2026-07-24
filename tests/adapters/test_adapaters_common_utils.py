@@ -71,23 +71,10 @@ def test_virtualenv_subprocess_env_preserves_environment_outside_virtualenv(
 
 
 def test_request_payload():
-    assert common_utils.request_payload({"request": {"input": "hello"}}) == {"input": "hello"}
+    assert common_utils.request_payload({"request": {"input": "hello"}}) == {
+        "input": "hello"
+    }
     assert common_utils.request_payload({}) == {}
-
-
-@pytest.mark.parametrize(
-    ("provider", "expected"),
-    [
-        ("nvidia", "https://integrate.api.nvidia.com/v1"),
-        ("openai", None),
-        (None, None),
-    ],
-)
-def test_default_base_url(
-    provider: str | None,
-    expected: str | None,
-):
-    assert common_utils.default_base_url(provider) == expected
 
 
 @pytest.mark.parametrize(
@@ -97,8 +84,11 @@ def test_default_base_url(
             {"provider": "nvidia", "base_url": "https://model.example/v1"},
             "https://model.example/v1",
         ),
-        ({"provider": "openai", "base_url": "https://model.example/v1"}, "https://model.example/v1"),
-        ({"provider": "nvidia"}, "https://integrate.api.nvidia.com/v1"),
+        (
+            {"provider": "openai", "base_url": "https://model.example/v1"},
+            "https://model.example/v1",
+        ),
+        ({"provider": "nvidia"}, None),
         ({"provider": "other"}, None),
     ],
 )
@@ -193,10 +183,14 @@ def test_payload_accessors_use_canonical_plan_fields(tmp_path):
     assert common_utils.agent_name(payload) == "outer-agent"
     assert common_utils.base_dir(payload) == base_dir
     assert common_utils.runtime_context(payload) == payload["runtime_context"]
-    assert common_utils.environment_payload(payload) == {"workspace": "/runtime-workspace"}
+    assert common_utils.environment_payload(payload) == {
+        "workspace": "/runtime-workspace"
+    }
     assert common_utils.settings_payload(payload) == {"inner": True}
     assert common_utils.models_payload(payload) == {"inner": {"model": "inner-model"}}
-    assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
+    assert common_utils.capability_plan(payload) == {
+        "native": {"skill_paths": ["skills"]}
+    }
 
 
 @pytest.mark.parametrize("value", [None, "", "relative/path"])
@@ -271,11 +265,15 @@ def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
-    assert common_utils.dump_yaml({"model": {"default": "demo"}}) == json.dumps(
-        {"model": {"default": "demo"}},
-        indent=2,
-        sort_keys=False,
-    ) + "\n"
+    assert (
+        common_utils.dump_yaml({"model": {"default": "demo"}})
+        == json.dumps(
+            {"model": {"default": "demo"}},
+            indent=2,
+            sort_keys=False,
+        )
+        + "\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -326,9 +324,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     previous_atof_dir.mkdir(parents=True)
     previous_atif_dir.mkdir(parents=True)
     (previous_atof_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
-    (previous_atif_dir / "trajectory-old.atif.json").write_text(
-        "{}", encoding="utf-8"
-    )
+    (previous_atif_dir / "trajectory-old.atif.json").write_text("{}", encoding="utf-8")
     payload = {
         "agent_name": "review-agent",
         "base_dir": str(tmp_path),
@@ -346,7 +342,9 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     assert plugin_config["components"][0]["kind"] == "observability"
     assert observability["version"] == 2
     file_sink, stream_sink = observability["atof"]["sinks"]
-    assert file_sink["output_directory"] == str(tmp_path / "custom-relay" / "runtime-current")
+    assert file_sink["output_directory"] == str(
+        tmp_path / "custom-relay" / "runtime-current"
+    )
     assert file_sink["filename"] == "events.atof.jsonl"
     assert file_sink["mode"] == "overwrite"
     assert Path(file_sink["output_directory"]).is_dir()
@@ -354,14 +352,21 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         "type": "stream",
         "url": "https://example.test/events",
     }
-    assert observability["atif"]["output_directory"] == str(tmp_path / "artifacts" / "relay" / "runtime-current")
-    assert observability["atif"]["filename_template"] == "trajectory-{session_id}.atif.json"
+    assert observability["atif"]["output_directory"] == str(
+        tmp_path / "artifacts" / "relay" / "runtime-current"
+    )
+    assert (
+        observability["atif"]["filename_template"]
+        == "trajectory-{session_id}.atif.json"
+    )
     assert observability["atif"]["agent_name"] == "review-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
     assert Path(observability["atif"]["output_directory"]).is_dir()
 
     atof_file = Path(file_sink["output_directory"]) / "events.atof.jsonl"
-    atif_file = Path(observability["atif"]["output_directory"]) / "trajectory-current.atif.json"
+    atif_file = (
+        Path(observability["atif"]["output_directory"]) / "trajectory-current.atif.json"
+    )
     atof_file.write_text("{}", encoding="utf-8")
     atif_file.write_text("{}", encoding="utf-8")
 

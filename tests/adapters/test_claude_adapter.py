@@ -231,6 +231,12 @@ def relay_payload_fixture(claude_payload, tmp_path) -> dict[str, Any]:
 def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
     relay_payload, monkeypatch, tmp_path
 ):
+    relay_payload["config"]["models"]["default"].update(
+        {
+            "provider": "acme",
+            "base_url": "https://acme.example/v1/",
+        }
+    )
     executable = tmp_path / "bin" / "nemo-relay"
     executable.parent.mkdir()
     executable.touch()
@@ -261,6 +267,7 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
     assert relay.gateway.bind == "127.0.0.1:43210"
     assert relay.gateway.url == "http://127.0.0.1:43210"
     assert relay.gateway.log_path == relay.gateway.config_path.parent / "gateway.log"
+    assert relay.gateway.anthropic_base_url == "https://acme.example"
     with relay.gateway.config_path.open("rb") as stream:
         assert tomllib.load(stream) == {"agents": {"claude": {"command": "claude"}}}
     with (relay.gateway.config_path.parent / "plugins.toml").open("rb") as stream:
@@ -381,70 +388,116 @@ def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload)
         adapter.build_options(claude_payload)
 
 
-def test_build_options_maps_nvidia_provider_to_claude_gateway_environment(
+def test_build_options_maps_custom_provider_to_claude_gateway_environment(
     claude_payload,
 ):
     model = claude_payload["config"]["models"]["default"]
     model.update(
         {
-            "provider": "nvidia",
+            "provider": "acme",
             "model": "aws/anthropic/claude-opus-4-5",
-            "api_key_env": "NVIDIA_API_KEY",
-            "base_url": "https://nvidia.example/v1/",
+            "api_key_env": "ACME_API_KEY",
+            "base_url": "https://acme.example/v1/",
         }
     )
-    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
+    claude_payload["runtime_context"]["environment"]["env"].pop("ANTHROPIC_API_KEY")
+    os.environ["ACME_API_KEY"] = "acme-secret"
 
     options = adapter.build_options(claude_payload)
 
     assert options.model == "aws/anthropic/claude-opus-4-5"
-    assert options.env["ANTHROPIC_BASE_URL"] == "https://nvidia.example"
-    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
+    assert options.env["ANTHROPIC_BASE_URL"] == "https://acme.example"
+    assert options.env["ANTHROPIC_API_KEY"] == "acme-secret"
     assert options.env["ANTHROPIC_AUTH_TOKEN"] == ""
 
 
-def test_build_options_uses_nvidia_provider_endpoint_and_default_credential(
+def test_build_options_requires_custom_provider_api_key_env(
     claude_payload,
 ):
     model = claude_payload["config"]["models"]["default"]
     model.update(
         {
-            "provider": "nvidia",
+            "provider": "acme",
             "model": "aws/anthropic/claude-opus-4-5",
+            "base_url": "https://acme.example/v1",
         }
     )
     model.pop("api_key_env")
     claude_payload["runtime_context"]["environment"]["env"].pop("ANTHROPIC_API_KEY")
-    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
 
-    options = adapter.build_options(claude_payload)
-
-    assert options.env["ANTHROPIC_BASE_URL"] == "https://integrate.api.nvidia.com"
-    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
-
-
-def test_build_options_requires_nvidia_provider_credential(claude_payload):
-    model = claude_payload["config"]["models"]["default"]
-    model.update(
-        {
-            "provider": "nvidia",
-            "model": "aws/anthropic/claude-opus-4-5",
-            "api_key_env": "NVIDIA_API_KEY",
-        }
-    )
-    os.environ.pop("NVIDIA_API_KEY", None)
-
-    with pytest.raises(adapter.AdapterConfigError, match="NVIDIA_API_KEY is required"):
+    with pytest.raises(adapter.AdapterConfigError, match="api_key_env is required"):
         adapter.build_options(claude_payload)
 
 
-def test_selected_model_rejects_unsupported_provider(claude_payload):
+def test_build_options_requires_custom_provider_credential(claude_payload):
     model = claude_payload["config"]["models"]["default"]
-    model["provider"] = "openai"
+    model.update(
+        {
+            "provider": "acme",
+            "model": "aws/anthropic/claude-opus-4-5",
+            "api_key_env": "ACME_API_KEY",
+            "base_url": "https://acme.example/v1",
+        }
+    )
+    os.environ.pop("ACME_API_KEY", None)
+
+    with pytest.raises(adapter.AdapterConfigError, match="ACME_API_KEY is required"):
+        adapter.build_options(claude_payload)
+
+
+def test_build_options_requires_custom_provider_endpoint(claude_payload):
+    model = claude_payload["config"]["models"]["default"]
+    model.update(
+        {
+            "provider": "acme",
+            "model": "aws/anthropic/claude-opus-4-5",
+            "api_key_env": "ACME_API_KEY",
+        }
+    )
+    claude_payload["runtime_context"]["environment"]["env"] = {
+        "ACME_API_KEY": "acme-secret"
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="base_url is required"):
+        adapter.build_options(claude_payload)
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("ANTHROPIC_API_KEY", "conflicting-secret"),
+        ("ANTHROPIC_AUTH_TOKEN", "conflicting-token"),
+        ("ANTHROPIC_BASE_URL", "https://other.example"),
+    ],
+)
+def test_build_options_rejects_model_environment_conflicts(
+    claude_payload,
+    name,
+    value,
+):
+    claude_payload["config"]["models"]["default"] = {
+        "provider": "acme",
+        "model": "aws/anthropic/claude-opus-4-5",
+        "api_key_env": "ACME_API_KEY",
+        "base_url": "https://acme.example/v1",
+    }
+    claude_payload["runtime_context"]["environment"]["env"] = {
+        "ACME_API_KEY": "acme-secret",
+        name: value,
+    }
 
     with pytest.raises(
-        adapter.AdapterConfigError, match="provider must be anthropic or nvidia"
+        adapter.AdapterConfigError,
+        match=rf"environment\.env\.{name} conflicts",
     ):
+        adapter.build_options(claude_payload)
+
+
+def test_selected_model_rejects_empty_provider(claude_payload):
+    model = claude_payload["config"]["models"]["default"]
+    model["provider"] = ""
+
+    with pytest.raises(adapter.AdapterConfigError, match="non-empty string"):
         adapter.selected_model(claude_payload)
 
 
