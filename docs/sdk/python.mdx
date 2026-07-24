@@ -30,9 +30,6 @@ running it:
 export NVIDIA_API_KEY=...
 ```
 
-The `api_key_env="NVIDIA_API_KEY"` setting tells the adapter to read the
-credential from that environment variable.
-
 Construct a typed config, then pass it to `Fabric.run(...)`. The SDK starts a
 runtime, invokes it once, collects the result, and stops the runtime.
 
@@ -73,10 +70,6 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
-
-For object-shaped adapter output, `result.output` is a `RunOutput`. Read
-`result.output.response` for the adapter response, or call
-`result.output.to_mapping()` to inspect the complete normalized output.
 
 Use `base_dir` to resolve relative paths in an in-memory config. Before running
 in a new environment, call `plan(...)` to inspect adapter selection and
