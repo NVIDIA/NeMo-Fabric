@@ -75,19 +75,18 @@ def fabric_config(
         "setting_sources": [],
         "permission_mode": "dontAsk",
     }
-    if cli_path is not None:
-        settings.update(
-            {
-                "cli_path": str(cli_path),
-                "env": {
-                    "CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK": "1",
-                    "MOCK_CLAUDE_CLI_LOG": str(tmp_path / "claude-args.jsonl"),
-                    "MOCK_CLAUDE_CLI_ENV_LOG": str(tmp_path / "claude-env.jsonl"),
-                },
-            }
-        )
+    environment_env = (
+        {
+            "FABRIC_TEST_CLAUDE_CLI_PATH": str(cli_path),
+            "CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK": "1",
+            "MOCK_CLAUDE_CLI_LOG": str(tmp_path / "claude-args.jsonl"),
+            "MOCK_CLAUDE_CLI_ENV_LOG": str(tmp_path / "claude-env.jsonl"),
+        }
+        if cli_path is not None
+        else {}
+    )
     if nemo_relay_command is not None:
-        settings["nemo_relay_command"] = str(nemo_relay_command)
+        environment_env["FABRIC_TEST_NEMO_RELAY_COMMAND"] = str(nemo_relay_command)
     config = FabricConfig(
         metadata=MetadataConfig(name="claude-runtime-test"),
         harness=HarnessConfig(
@@ -109,6 +108,7 @@ def fabric_config(
             provider="local",
             workspace=tmp_path,
             artifacts=tmp_path / "artifacts",
+            env=environment_env,
         ),
     )
     if cli_path is not None:

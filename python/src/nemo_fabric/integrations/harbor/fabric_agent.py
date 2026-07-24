@@ -28,6 +28,7 @@ from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import ToolsetConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
@@ -99,7 +100,14 @@ else:
             fabric_config_target: str = "/tmp/nemo-fabric-config",
             fabric_workspace: str = HARBOR_DEFAULT_WORKSPACE,
             fabric_harness_settings: dict[str, Any] | None = None,
+            fabric_model_base_url: str | None = None,
+            fabric_system_prompt: str | None = None,
+            fabric_max_turns: int | None = None,
+            fabric_runtime_timeout_seconds: float | None = None,
+            fabric_environment_env: dict[str, str] | None = None,
             fabric_blocked_tools: list[str] | None = None,
+            fabric_enabled_toolsets: list[str] | None = None,
+            fabric_blocked_toolsets: list[str] | None = None,
             fabric_telemetry: Literal["none", "relay"] = "none",
             fabric_python: str = "python3",
             fabric_package: str | None = None,
@@ -136,7 +144,18 @@ else:
             self.fabric_config_target = fabric_config_target
             self.fabric_workspace = str(workspace)
             self.fabric_harness_settings = dict(fabric_harness_settings or {})
+            self.fabric_model_base_url = fabric_model_base_url
+            self.fabric_system_prompt = fabric_system_prompt
+            self.fabric_max_turns = fabric_max_turns
+            self.fabric_runtime_timeout_seconds = fabric_runtime_timeout_seconds
+            self.fabric_environment_env = dict(fabric_environment_env or {})
             self.fabric_blocked_tools = blocked_tools
+            self.fabric_enabled_toolsets = (
+                list(fabric_enabled_toolsets)
+                if fabric_enabled_toolsets is not None
+                else None
+            )
+            self.fabric_blocked_toolsets = list(fabric_blocked_toolsets or [])
             self.fabric_telemetry = fabric_telemetry
             self.fabric_python = fabric_python
             self.fabric_package = fabric_package
@@ -259,7 +278,14 @@ else:
                 adapter_id=self.fabric_adapter_id,
                 workspace=self.fabric_workspace,
                 harness_settings=self.fabric_harness_settings,
+                model_base_url=self.fabric_model_base_url,
+                system_prompt=self.fabric_system_prompt,
+                max_turns=self.fabric_max_turns,
+                timeout_seconds=self.fabric_runtime_timeout_seconds,
+                environment_env=self.fabric_environment_env,
                 blocked_tools=self.fabric_blocked_tools,
+                enabled_toolsets=self.fabric_enabled_toolsets,
+                blocked_toolsets=self.fabric_blocked_toolsets,
                 telemetry=self.fabric_telemetry,
                 model_name=self.model_name,
                 skills_dir=self.skills_dir,
@@ -340,7 +366,14 @@ def build_harbor_config(
     adapter_id: str,
     workspace: str,
     harness_settings: dict[str, Any] | None = None,
+    model_base_url: str | None = None,
+    system_prompt: str | None = None,
+    max_turns: int | None = None,
+    timeout_seconds: float | None = None,
+    environment_env: dict[str, str] | None = None,
     blocked_tools: list[str] | None = None,
+    enabled_toolsets: list[str] | None = None,
+    blocked_toolsets: list[str] | None = None,
     telemetry: Literal["none", "relay"] = "none",
     model_name: str | None = None,
     skills_dir: str | Path | None = None,
@@ -352,6 +385,23 @@ def build_harbor_config(
     artifact_root = f"{HARBOR_ARTIFACT_ROOT}/{name}"
     settings = harbor_harness_defaults(adapter_id)
     settings.update(harness_settings or {})
+    if adapter_id == "nvidia.fabric.claude":
+        if max_turns is None:
+            max_turns = 75
+        if timeout_seconds is None:
+            timeout_seconds = 1800
+        environment_env = {
+            "IS_SANDBOX": "1",
+            **(environment_env or {}),
+        }
+    toolsets = (
+        ToolsetConfig(
+            enabled=enabled_toolsets,
+            blocked=list(blocked_toolsets or []),
+        )
+        if enabled_toolsets is not None or blocked_toolsets
+        else None
+    )
     config = FabricConfig(
         metadata=MetadataConfig(
             name=name,
@@ -366,19 +416,33 @@ def build_harbor_config(
             input_schema="text",
             output_schema="message",
             artifacts=artifact_root,
+            timeout_seconds=timeout_seconds,
         ),
         environment=EnvironmentConfig(
             provider="local",
             workspace=workspace,
             artifacts=artifact_root,
+            env=dict(environment_env or {}),
         ),
-        tools=(ToolsConfig(blocked=list(blocked_tools)) if blocked_tools else None),
+        system_prompt=system_prompt,
+        max_turns=max_turns,
+        tools=(
+            ToolsConfig(
+                blocked=list(blocked_tools or []),
+                toolsets=toolsets,
+            )
+            if blocked_tools or toolsets is not None
+            else None
+        ),
     )
     if model_name:
         config.models["default"] = ModelConfig(
             provider=model_provider(model_name),
             model=model_name,
+            base_url=model_base_url,
         )
+    elif model_base_url is not None:
+        raise ValueError("model_base_url requires model_name")
     for server in mcp_servers:
         if server.transport == "stdio":
             config.add_mcp_server(
@@ -434,15 +498,11 @@ def harbor_harness_defaults(adapter_id: str) -> dict[str, Any]:
 
     if adapter_id == "nvidia.fabric.hermes":
         return {
-            "hermes_home": "/tmp/fabric-hermes",
             "terminal_timeout": 300,
         }
     if adapter_id == "nvidia.fabric.claude":
         return {
             "permission_mode": "bypassPermissions",
-            "max_turns": 75,
-            "timeout_seconds": 1800,
-            "env": {"IS_SANDBOX": "1"},
         }
     return {}
 

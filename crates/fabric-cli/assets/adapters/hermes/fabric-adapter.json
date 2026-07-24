@@ -14,8 +14,12 @@
   "config": {
     "accepts": [
       "models",
-      "tools",
-      "tools.blocked",
+      "models.base_url",
+      "models.temperature",
+      "system_prompt",
+      "max_turns",
+      "tools.toolsets.enabled",
+      "tools.toolsets.blocked",
       "mcp",
       "skills",
       "telemetry"

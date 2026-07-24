@@ -84,6 +84,13 @@
           "$ref": "#/$defs/ControlLocation",
           "description": "Where Fabric control code runs."
         },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables visible to the harness and its tools.",
+          "type": "object"
+        },
         "environment_id": {
           "description": "Environment handle id.",
           "type": "string"

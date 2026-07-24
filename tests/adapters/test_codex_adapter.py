@@ -75,6 +75,7 @@ def codex_payload_fixture(tmp_path):
                     "model": "openai/gpt-5.4",
                 }
             },
+            "system_prompt": "Review carefully.",
             "runtime": {},
         },
         "runtime_context": {
@@ -179,7 +180,7 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
     os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
     os.environ["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] = "parent-codex"
     os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
-    codex_payload["config"]["harness"]["settings"]["env"] = {
+    codex_payload["runtime_context"]["environment"]["env"] = {
         "CODEX_EXPLICIT": "forward-me"
     }
 
@@ -209,6 +210,7 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
     start = client.thread_start.await_args.kwargs
     assert start["model"] == "gpt-5.4"
     assert start["model_provider"] == "openai"
+    assert start["base_instructions"] == "Review carefully."
     assert start["sandbox"] == adapter.Sandbox.workspace_write
     assert start["config"] == {
         "features": {"web_search": False},
@@ -397,11 +399,13 @@ def test_sdk_rejects_falsy_non_list_skill_paths(codex_payload, mock_codex, skill
     mock_codex.assert_not_called()
 
 
-def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_path):
+def test_sdk_test_override_can_use_an_explicit_codex_runtime(
+    codex_payload, mock_codex, tmp_path, monkeypatch
+):
     codex_bin = tmp_path / "bin" / "codex"
     codex_bin.parent.mkdir()
     codex_bin.touch()
-    codex_payload["config"]["harness"]["settings"]["codex_bin"] = str(codex_bin)
+    monkeypatch.setenv("FABRIC_TEST_CODEX_BIN", str(codex_bin))
 
     output = invoke_once(codex_payload)
 
@@ -410,8 +414,10 @@ def test_sdk_can_use_an_explicit_codex_runtime(codex_payload, mock_codex, tmp_pa
 
 
 @pytest.mark.parametrize("codex_bin", ["bin/codex", "~/bin/codex"])
-def test_sdk_resolves_relative_codex_runtime_from_base_dir(codex_payload, codex_bin):
-    codex_payload["config"]["harness"]["settings"]["codex_bin"] = codex_bin
+def test_sdk_test_override_resolves_relative_runtime_from_base_dir(
+    codex_payload, codex_bin, monkeypatch
+):
+    monkeypatch.setenv("FABRIC_TEST_CODEX_BIN", codex_bin)
 
     config = adapter.sdk_config(codex_payload, relay=None)
 
@@ -419,9 +425,11 @@ def test_sdk_resolves_relative_codex_runtime_from_base_dir(codex_payload, codex_
     assert config.codex_bin == str((base_dir / codex_bin).resolve())
 
 
-def test_sdk_keeps_absolute_codex_runtime_path(codex_payload, tmp_path):
+def test_sdk_test_override_keeps_absolute_runtime_path(
+    codex_payload, tmp_path, monkeypatch
+):
     codex_bin = tmp_path / "bin" / ".." / "codex"
-    codex_payload["config"]["harness"]["settings"]["codex_bin"] = str(codex_bin)
+    monkeypatch.setenv("FABRIC_TEST_CODEX_BIN", str(codex_bin))
 
     config = adapter.sdk_config(codex_payload, relay=None)
 
@@ -582,7 +590,7 @@ def test_nvidia_provider_uses_responses_api_and_nvidia_credential(
             "provider": "nvidia",
             "model": "openai/gpt-oss-120b",
             "api_key_env": "NVIDIA_API_KEY",
-            "settings": {"base_url": "https://nvidia.example/v1/"},
+            "base_url": "https://nvidia.example/v1/",
         }
     )
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
@@ -620,7 +628,7 @@ def test_nvidia_provider_normalizes_codex_home_creation_failure(
             "provider": "nvidia",
             "model": "openai/gpt-oss-120b",
             "api_key_env": "NVIDIA_API_KEY",
-            "settings": {"base_url": "https://nvidia.example/v1"},
+            "base_url": "https://nvidia.example/v1",
         }
     )
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
@@ -655,7 +663,7 @@ def test_nvidia_provider_requires_credential(codex_payload, mock_codex):
     mock_codex.assert_not_called()
 
 
-def test_nvidia_provider_requires_endpoint(codex_payload, mock_codex):
+def test_nvidia_provider_uses_default_endpoint(codex_payload, mock_codex):
     model = codex_payload["config"]["models"]["default"]
     model.update(
         {
@@ -664,16 +672,15 @@ def test_nvidia_provider_requires_endpoint(codex_payload, mock_codex):
             "api_key_env": "NVIDIA_API_KEY",
         }
     )
-    model.pop("settings", None)
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
-    os.environ.pop("NVIDIA_FRONTIER_BASE_URL", None)
 
-    error = runtime_start_error(codex_payload)
+    output = invoke_once(codex_payload)
 
-    assert error.code == "codex_invalid_configuration"
-    assert "NVIDIA_FRONTIER_BASE_URL" in error.message
-    assert not (adapter.state_dir(codex_payload) / "nvidia-home").exists()
-    mock_codex.assert_not_called()
+    assert output["completed"] is True
+    config = mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    assert config["model_providers"]["nvidia"]["base_url"] == (
+        "https://integrate.api.nvidia.com/v1"
+    )
 
 
 def test_relay_uses_gateway_and_request_scoped_sdk_config(
@@ -745,7 +752,7 @@ def test_relay_rejects_nvidia_provider(codex_payload, mock_codex):
             "provider": "nvidia",
             "model": "openai/gpt-oss-120b",
             "api_key_env": "NVIDIA_API_KEY",
-            "settings": {"base_url": "https://nvidia.example/v1"},
+            "base_url": "https://nvidia.example/v1",
         }
     )
     codex_payload["telemetry_plan"] = {
@@ -852,7 +859,6 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
         {
             "personality": "pragmatic",
             "reasoning_effort": "xhigh",
-            "service_name": "fabric-codex-test",
             "output_schema": {
                 "type": "object",
                 "properties": {"summary": {"type": "string"}},
@@ -887,7 +893,7 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
     client = mock_codex.instances[0]
     start = client.thread_start.await_args.kwargs
     assert start["personality"] == adapter.Personality.pragmatic
-    assert start["service_name"] == "fabric-codex-test"
+    assert "service_name" not in start
     assert start["config"]["otel"] == {
         "environment": "test",
         "trace_exporter": {
@@ -910,7 +916,7 @@ def test_timeout_interrupts_native_turn_and_closes_sdk(codex_payload, mock_codex
 
     mock_blocking_thread.handle.run.side_effect = block
     mock_codex.next_thread = mock_blocking_thread
-    codex_payload["config"]["harness"]["settings"]["timeout_seconds"] = 0.01
+    codex_payload["config"]["runtime"]["timeout_seconds"] = 0.01
 
     output = invoke_once(codex_payload)
 
@@ -934,7 +940,14 @@ def test_cli_only_settings_are_rejected(codex_payload, setting):
 
 @pytest.mark.parametrize(
     ("setting", "normalized_field"),
-    [("mcp_servers", "FabricConfig.mcp"), ("skills", "FabricConfig.skills")],
+    [
+        ("model", "FabricConfig.models"),
+        ("base_url", "FabricConfig.models.<role>.base_url"),
+        ("env", "FabricConfig.environment.env"),
+        ("timeout_seconds", "FabricConfig.runtime.timeout_seconds"),
+        ("mcp_servers", "FabricConfig.mcp"),
+        ("skills", "FabricConfig.skills"),
+    ],
 )
 def test_normalized_capabilities_reject_harness_settings(
     codex_payload, mock_codex, setting, normalized_field
@@ -945,6 +958,21 @@ def test_normalized_capabilities_reject_harness_settings(
 
     assert error.code == "codex_invalid_configuration"
     assert normalized_field in error.message
+    mock_codex.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "setting", ["codex_bin", "nemo_relay_command", "service_name"]
+)
+def test_removed_runtime_settings_are_rejected(
+    codex_payload, mock_codex, setting
+):
+    codex_payload["config"]["harness"]["settings"][setting] = "custom"
+
+    error = runtime_start_error(codex_payload)
+
+    assert error.code == "codex_invalid_configuration"
+    assert f"harness.settings.{setting}" in error.message
     mock_codex.assert_not_called()
 
 
@@ -971,6 +999,8 @@ def test_descriptor_has_no_codex_binary_requirement():
     }
     assert descriptor["config"]["accepts"] == [
         "models",
+        "models.base_url",
+        "system_prompt",
         "mcp",
         "skills",
         "telemetry",
@@ -1025,7 +1055,7 @@ def test_environment_preserves_runtime_telemetry_env(codex_payload):
             "CODEX_EXPLICIT": "telemetry",
         }
     }
-    codex_payload["config"]["harness"]["settings"]["env"] = {
+    codex_payload["runtime_context"]["environment"]["env"] = {
         "CODEX_EXPLICIT": "configured"
     }
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = "/tmp/parent-relay.json"

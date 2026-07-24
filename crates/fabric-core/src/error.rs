@@ -64,6 +64,24 @@ pub enum FabricError {
         /// Validation message.
         message: String,
     },
+    /// A normalized Fabric config field is invalid.
+    #[error("invalid Fabric configuration at `{field}`: {reason}")]
+    InvalidConfig {
+        /// Canonical configuration path.
+        field: String,
+        /// Validation failure.
+        reason: String,
+    },
+    /// A valid normalized field cannot be implemented by the selected adapter.
+    #[error("adapter `{adapter_id}` cannot implement configuration at `{field}`: {reason}")]
+    AdapterCompatibility {
+        /// Selected adapter id.
+        adapter_id: String,
+        /// Canonical configuration path.
+        field: String,
+        /// Compatibility failure.
+        reason: String,
+    },
     /// A requested schema is not known.
     #[error("unknown schema `{schema}`; available schemas: {available:?}")]
     UnknownSchema {
@@ -102,14 +120,6 @@ pub enum FabricError {
         message: String,
         /// Bounded adapter-host diagnostics.
         diagnostics: String,
-    },
-    /// The selected harness cannot enforce the configured blocked-tools policy.
-    #[error("harness `{harness}` cannot enforce configured blocked tools: {reason}")]
-    UnsupportedToolsPolicy {
-        /// Harness type.
-        harness: String,
-        /// Capability-routing explanation.
-        reason: String,
     },
     /// A runtime handle was used with a different run plan than the one that created it.
     #[error(

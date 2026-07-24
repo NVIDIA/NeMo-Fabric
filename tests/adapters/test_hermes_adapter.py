@@ -9,6 +9,7 @@ import importlib.util
 import inspect
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -181,22 +182,22 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         "config": {
             "harness": {
                 "settings": {
-                    "model": "review",
-                    "max_iterations": 4,
-                    "disabled_toolsets": ["browser"],
-                    "terminal_backend": "local",
                     "terminal_timeout": 90,
-                    "enabled_toolsets": "git",
-                    "toolset_platform": "cli",
                     "plugins_enabled": ["custom/plugin"],
                 }
             },
-            "tools": {"blocked": ["shell", "browser"]},
+            "max_turns": 4,
+            "tools": {
+                "toolsets": {
+                    "enabled": ["git"],
+                    "blocked": ["browser"],
+                }
+            },
             "models": {
                 "review": {
                     "provider": "nvidia",
                     "model": "nvidia/review-model",
-                    "settings": {"base_url": "https://model.example/v1"},
+                    "base_url": "https://model.example/v1",
                 }
             },
         },
@@ -212,7 +213,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         },
         "agent": {
             "max_turns": 4,
-            "disabled_toolsets": ["shell", "browser"],
+            "disabled_toolsets": ["browser"],
         },
         "terminal": {
             "backend": "local",
@@ -249,8 +250,37 @@ def test_default_max_iterations_matches_hermes_library_default():
     assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
 
 
-def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
-    # When max_iterations is unset the config layer must leave agent.max_turns
+@pytest.mark.parametrize(
+    ("setting", "target"),
+    [
+        ("api_key_env", "FabricConfig.models.<role>.api_key_env"),
+        ("base_url", "FabricConfig.models.<role>.base_url"),
+        ("disabled_toolsets", "FabricConfig.tools.toolsets.blocked"),
+        ("enabled_toolsets", "FabricConfig.tools.toolsets.enabled"),
+        ("env", "FabricConfig.environment.env"),
+        ("max_iterations", "FabricConfig.max_turns"),
+        ("max_turns", "FabricConfig.max_turns"),
+        ("model", "FabricConfig.models"),
+        ("model_name", "FabricConfig.models.<role>.model"),
+        ("provider", "FabricConfig.models.<role>.provider"),
+        ("system_prompt", "FabricConfig.system_prompt"),
+        ("temperature", "FabricConfig.models.<role>.temperature"),
+        ("workspace", "FabricConfig.environment.workspace"),
+    ],
+)
+def test_normalized_fields_are_rejected_in_harness_settings(
+    setting: str,
+    target: str,
+):
+    with pytest.raises(
+        ValueError,
+        match=rf"harness\.settings\.{setting}.*{re.escape(target)}",
+    ):
+        adapter._validate_settings_boundary({setting: "legacy"})
+
+
+def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
+    # When max_turns is unset the config layer must leave agent.max_turns
     # absent so Hermes applies its own default rather than a starving override.
     payload = {
         "config": {
@@ -264,12 +294,13 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
     assert "max_turns" not in config["agent"]
 
 
-def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
-    # An explicit null max_iterations is treated like unset: agent.max_turns is
+def test_build_hermes_config_omits_max_turns_when_fabric_limit_null():
+    # An explicit null max_turns is treated like unset: agent.max_turns is
     # omitted so Hermes applies its own default instead of a starving override.
     payload = {
         "config": {
-            "harness": {"settings": {"max_iterations": None}},
+            "harness": {"settings": {}},
+            "max_turns": None,
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
     }
@@ -336,13 +367,9 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         "base_dir": str(tmp_path),
         "config": {
             "harness": {
-                "settings": {
-                    "model": "review",
-                    "enabled_toolsets": ["git", "shell"],
-                    "toolset_platform": "cli",
-                    "terminal_backend": "local",
-                }
+                "settings": {}
             },
+            "tools": {"toolsets": {"enabled": ["git", "shell"]}},
             "models": {
                 "review": {
                     "provider": "nvidia",
@@ -537,15 +564,10 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         "agent_name": "demo",
         "base_dir": str(tmp_path),
         "config": {
-            "harness": {
-                "settings": {
-                    "hermes_home": "./hermes-home",
-                    "enabled_toolsets": [],
-                    "system_prompt": "system",
-                    # Explicit null must resolve to DEFAULT_MAX_ITERATIONS (not int(None)).
-                    "max_iterations": None,
-                }
-            },
+            "harness": {"settings": {}},
+            "system_prompt": "system",
+            "max_turns": None,
+            "tools": {"toolsets": {"enabled": []}},
             "models": {
                 "default": {
                     "provider": "test-provider",
@@ -626,8 +648,22 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert second["response"] == "second response"
     assert "session_id" not in second
     assert Path(second["hermes_home"]) == (
-        tmp_path / "hermes-home" / "runtimes" / "runtime-fabric-123"
+        tmp_path
+        / "artifacts"
+        / ".fabric"
+        / "hermes"
+        / "runtimes"
+        / "runtime-fabric-123"
     )
+
+
+@pytest.mark.parametrize(
+    "setting",
+    ["hermes_home", "insert_reasoning", "terminal_backend", "toolset_platform"],
+)
+def test_removed_runtime_settings_are_rejected(setting):
+    with pytest.raises(ValueError, match=rf"harness\.settings\.{setting}"):
+        adapter._validate_settings_boundary({setting: "value"})
 
 
 def test_main_serves_persistent_runtime(monkeypatch):

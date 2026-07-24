@@ -30,8 +30,18 @@ def build_config() -> FabricConfig:
             settings={{HARNESS_SETTINGS}},
         ),
         models={{MODELS}},
-        runtime=RuntimeConfig(input_schema="text", output_schema="message"),
-        environment=EnvironmentConfig(provider="local", workspace="repo"),
+        system_prompt={{SYSTEM_PROMPT}},
+        max_turns={{MAX_TURNS}},
+        runtime=RuntimeConfig(
+            input_schema="text",
+            output_schema="message",
+            timeout_seconds={{TIMEOUT_SECONDS}},
+        ),
+        environment=EnvironmentConfig(
+            provider="local",
+            workspace="repo",
+            env={{ENVIRONMENT_ENV}},
+        ),
     )
     config.add_skill_path("skills/code-review.md")
     return config

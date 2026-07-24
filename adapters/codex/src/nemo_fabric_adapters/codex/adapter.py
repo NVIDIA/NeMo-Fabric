@@ -85,8 +85,19 @@ REMOVED_CLI_SETTINGS = {
     "codex_state_dir",
     "skip_git_repo_check",
 }
+REMOVED_SETTING_FIELDS = {
+    "codex_bin": "the Codex SDK owns its pinned app-server runtime",
+    "nemo_relay_command": "NeMo Relay is resolved from PATH",
+    "service_name": "the Codex app-server service label is not portable consumer intent",
+}
 NORMALIZED_SETTING_FIELDS = {
+    "model": "FabricConfig.models",
+    "base_instructions": "FabricConfig.system_prompt",
+    "system_prompt": "FabricConfig.system_prompt",
     "cwd": "FabricConfig.environment.workspace",
+    "env": "FabricConfig.environment.env",
+    "base_url": "FabricConfig.models.<role>.base_url",
+    "timeout_seconds": "FabricConfig.runtime.timeout_seconds",
     "mcp_servers": "FabricConfig.mcp",
     "model_name": "FabricConfig.models",
     "skills": "FabricConfig.skills",
@@ -157,6 +168,12 @@ def _validate_settings_boundary(settings: dict[str, Any]) -> None:
             raise AdapterConfigError(
                 "codex_invalid_configuration",
                 f"harness.settings.{name} is not supported; use {normalized_field}",
+            )
+    for name, reason in REMOVED_SETTING_FIELDS.items():
+        if name in settings:
+            raise AdapterConfigError(
+                "codex_invalid_configuration",
+                f"harness.settings.{name} is not supported; {reason}",
             )
 
 
@@ -308,10 +325,10 @@ def resolve_cwd(payload: dict[str, Any]) -> Path:
 
 
 def _selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = _settings(payload)
-    models = _mapping(common_utils.models_payload(payload), name="models")
-    selected = models.get(settings.get("model", "default")) or {}
-    return _mapping(selected, name="selected model")
+    return _mapping(
+        common_utils.selected_model_config(payload),
+        name="selected model",
+    )
 
 
 def selected_model(payload: dict[str, Any]) -> str | None:
@@ -346,22 +363,19 @@ def nvidia_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
             "codex_invalid_configuration",
             "models.default.api_key_env must be a non-empty string",
         )
-    if not os.environ.get(api_key_env):
+    if not (
+        common_utils.environment_env(payload).get(api_key_env)
+        or os.environ.get(api_key_env)
+    ):
         raise AdapterConfigError(
             "codex_invalid_configuration",
             f"{api_key_env} is required for the NVIDIA model provider",
         )
-    model_settings = _mapping(
-        model_config.get("settings"), name="selected model settings"
-    )
-    base_url = model_settings.get("base_url") or os.environ.get(
-        "NVIDIA_FRONTIER_BASE_URL"
-    )
+    base_url = common_utils.get_base_url(model_config)
     if not isinstance(base_url, str) or not base_url:
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            "models.default.settings.base_url or NVIDIA_FRONTIER_BASE_URL is required "
-            "for the NVIDIA model provider",
+            "selected model base_url is required for the NVIDIA model provider",
         )
     return {
         "model_providers": {
@@ -373,6 +387,14 @@ def nvidia_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
             }
         }
     }
+
+
+def openai_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
+    model_config = _selected_model_config(payload)
+    if model_config.get("provider") != "openai":
+        return {}
+    base_url = common_utils.get_base_url(model_config)
+    return {"openai_base_url": base_url.rstrip("/")} if base_url else {}
 
 
 def sandbox(payload: dict[str, Any]) -> Sandbox:
@@ -398,7 +420,7 @@ def approval_mode(payload: dict[str, Any]) -> ApprovalMode:
 
 
 def timeout_seconds(payload: dict[str, Any]) -> float:
-    value = _settings(payload).get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
+    value = common_utils.timeout_seconds(payload, default=DEFAULT_TIMEOUT_SECONDS)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise AdapterConfigError(
             "codex_invalid_configuration", "timeout_seconds must be positive"
@@ -453,16 +475,14 @@ def child_environment(
     api_key_env = model_config.get("api_key_env")
     if isinstance(api_key_env, str) and api_key_env in os.environ:
         values[api_key_env] = os.environ[api_key_env]
-    configured = _mapping(_settings(payload).get("env"), name="harness.settings.env")
-    if any(
-        not isinstance(key, str) or not isinstance(value, str)
-        for key, value in configured.items()
-    ):
-        raise AdapterConfigError(
-            "codex_invalid_configuration",
-            "harness.settings.env must contain strings",
-        )
+    configured = common_utils.environment_env(payload)
     values.update(configured)
+    if (
+        selected_model_provider(payload) == "openai"
+        and isinstance(api_key_env, str)
+        and api_key_env in values
+    ):
+        values["OPENAI_API_KEY"] = values[api_key_env]
     if selected_model_provider(payload) == "nvidia":
         codex_home = state_dir(payload) / "nvidia-home"
         values["CODEX_HOME"] = str(codex_home)
@@ -582,11 +602,7 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
 
     if not common_utils.relay_enabled(payload):
         return None
-    command = _settings(payload).get("nemo_relay_command") or "nemo-relay"
-    if not isinstance(command, (str, Path)):
-        raise AdapterConfigError(
-            "codex_invalid_configuration", "nemo_relay_command must be a path"
-        )
+    command = os.environ.get("FABRIC_TEST_NEMO_RELAY_COMMAND", "nemo-relay")
     try:
         executable = relay_gateway.resolve_relay_command(
             Path(common_utils.base_dir(payload)).resolve(), command
@@ -639,6 +655,7 @@ def thread_config(
 
     config = native_codex_telemetry_config(payload)
     _merge_config(config, nvidia_model_provider_config(payload))
+    _merge_config(config, openai_model_provider_config(payload))
     mcp_servers = _native_mcp_servers(payload)
     if mcp_servers:
         config["mcp_servers"] = mcp_servers
@@ -677,8 +694,8 @@ def thread_config(
 def sdk_config(
     payload: dict[str, Any], relay: CodexRelaySettings | None
 ) -> CodexConfig:
-    codex_bin = _optional_string(_settings(payload), "codex_bin")
-    if codex_bin is not None:
+    codex_bin = os.environ.get("FABRIC_TEST_CODEX_BIN")
+    if codex_bin:
         path = Path(codex_bin)
         if not path.is_absolute():
             path = (Path(common_utils.base_dir(payload)) / path).resolve()
@@ -739,7 +756,6 @@ def validate_runtime_payload(payload: dict[str, Any]) -> str:
     for name in (
         "base_instructions",
         "developer_instructions",
-        "service_name",
         "service_tier",
     ):
         _optional_string(settings, name)
@@ -893,7 +909,7 @@ def _thread_options(
     settings = _settings(payload)
     return {
         "approval_mode": approval_mode(payload),
-        "base_instructions": _optional_string(settings, "base_instructions"),
+        "base_instructions": common_utils.system_prompt(payload),
         "config": thread_config(payload, relay) or None,
         "cwd": str(resolve_cwd(payload)),
         "developer_instructions": _optional_string(settings, "developer_instructions"),
@@ -911,12 +927,8 @@ async def _open_thread(
     *,
     relay: CodexRelaySettings | None,
 ) -> Any:
-    settings = _settings(payload)
     options = _thread_options(payload, relay)
-    return await codex.thread_start(
-        **options,
-        service_name=_optional_string(settings, "service_name"),
-    )
+    return await codex.thread_start(**options)
 
 
 async def _invoke_thread(

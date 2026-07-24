@@ -14,7 +14,7 @@ def hermes_shim_config() -> FabricConfig:
         harness=HarnessConfig(
             adapter_id="test.fabric.hermes_shim",
             resolution="preinstalled",
-            settings={"workspace": "./repos/my-service"},
+            settings={},
         ),
         models={"default": ModelConfig(provider="test", model="test-model", temperature=0.0)},
         runtime=RuntimeConfig(input_schema="chat", output_schema="message", artifacts="./artifacts"),
@@ -41,7 +41,6 @@ def swebench_shim_config() -> FabricConfig:
         resolution="preinstalled",
         settings={
             "mode": "swebench_shim",
-            "workspace": "./repos/my-service",
             "target_file": "calculator.py",
             "expected_before": "return 41",
             "replacement": "return 42",
@@ -70,7 +69,6 @@ def harbor_swebench_config() -> FabricConfig:
         resolution="preinstalled",
         settings={
             "mode": "swebench_shim",
-            "workspace": workspace,
             "target_file": "django/contrib/auth/forms.py",
             "expected_before": "        kwargs.setdefault(\"required\", False)\n        super().__init__(*args, **kwargs)",
             "replacement": "        kwargs.setdefault(\"required\", False)\n        kwargs.setdefault('disabled', True)\n        super().__init__(*args, **kwargs)",

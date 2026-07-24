@@ -90,7 +90,12 @@ def runtime_state_directory(base: str | Path, payload: dict[str, Any]) -> Path:
 
 
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return runtime_context(payload).get("environment") or payload.get("environment") or {}
+    return (
+        runtime_context(payload).get("environment")
+        or fabric_config(payload).get("environment")
+        or payload.get("environment")
+        or {}
+    )
 
 
 def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -108,21 +113,46 @@ def default_base_url(provider: str | None) -> str | None:
     return None
 
 
-def get_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
-    return (
-        settings.get("base_url")
-        or (model_config.get("settings") or {}).get("base_url")
-        or default_base_url(model_config.get("provider"))
-    )
+def get_base_url(model_config: dict[str, Any]) -> str | None:
+    """Return the canonical model endpoint, including provider defaults."""
+
+    return model_config.get("base_url") or default_base_url(model_config.get("provider"))
 
 
 def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = settings_payload(payload)
     models = models_payload(payload)
-    model_config = models.get(settings.get("model", "default"), {})
+    model_config = models.get("default")
+    if model_config is None and len(models) == 1:
+        model_config = next(iter(models.values()))
     if not isinstance(model_config, dict):
         return {}
     return model_config
+
+
+def system_prompt(payload: dict[str, Any]) -> str | None:
+    value = fabric_config(payload).get("system_prompt")
+    return value if isinstance(value, str) else None
+
+
+def max_turns(payload: dict[str, Any]) -> int | None:
+    value = fabric_config(payload).get("max_turns")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def timeout_seconds(payload: dict[str, Any], *, default: float) -> float:
+    value = (fabric_config(payload).get("runtime") or {}).get("timeout_seconds")
+    return float(default if value is None else value)
+
+
+def environment_env(payload: dict[str, Any]) -> dict[str, str]:
+    value = environment_payload(payload).get("env") or {}
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(name): str(item)
+        for name, item in value.items()
+        if isinstance(name, str) and isinstance(item, str)
+    }
 
 
 def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -163,6 +193,22 @@ def tools_config(payload: dict[str, Any]) -> dict[str, Any]:
 def blocked_tools(payload: dict[str, Any]) -> list[str]:
     blocked = tools_config(payload).get("blocked")
     return normalize_list(blocked)
+
+
+def toolsets_config(payload: dict[str, Any]) -> dict[str, Any]:
+    toolsets = tools_config(payload).get("toolsets") or {}
+    return toolsets if isinstance(toolsets, dict) else {}
+
+
+def enabled_toolsets(payload: dict[str, Any]) -> list[str] | None:
+    toolsets = toolsets_config(payload)
+    if "enabled" not in toolsets:
+        return None
+    return normalize_list(toolsets.get("enabled"))
+
+
+def blocked_toolsets(payload: dict[str, Any]) -> list[str]:
+    return normalize_list(toolsets_config(payload).get("blocked"))
 
 
 def normalize_list(value: Any) -> list[str]:
@@ -339,7 +385,4 @@ def write_relay_configs(
 
 
 def relay_model_name(payload: dict[str, Any]) -> str:
-    settings = settings_payload(payload)
-    models = models_payload(payload)
-    model_config = models.get(settings.get("model", "default"), {})
-    return settings.get("model_name") or model_config.get("model") or "unknown"
+    return selected_model_config(payload).get("model") or "unknown"

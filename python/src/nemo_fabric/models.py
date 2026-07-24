@@ -111,6 +111,7 @@ class RuntimeConfig(FabricBaseModel):
     input_schema: str | None = None
     output_schema: str | None = None
     artifacts: str | Path | None = None
+    timeout_seconds: float | None = Field(default=None, gt=0)
 
 
 class EnvironmentConfig(FabricBaseModel):
@@ -139,6 +140,10 @@ class EnvironmentConfig(FabricBaseModel):
         default=None,
         description="Environment-specific artifact path.",
     )
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        description="Environment variables visible to the harness and its tools.",
+    )
     settings: dict[str, Any] = Field(
         default_factory=dict,
         description="Provider-specific configuration interpreted by the environment provider.",
@@ -160,6 +165,13 @@ class EnvironmentConfig(FabricBaseModel):
         description="Whether Fabric control code runs outside or inside the environment.",
     )
 
+    @field_validator("env")
+    @classmethod
+    def _validate_env_names(cls, value: dict[str, str]) -> dict[str, str]:
+        if any(not name.strip() for name in value):
+            raise ValueError("environment.env variable names must not be empty")
+        return value
+
 
 class ModelConfig(FabricBaseModel):
     """Model alias configuration."""
@@ -168,7 +180,39 @@ class ModelConfig(FabricBaseModel):
     model: str = Field(min_length=1)
     api_key_env: str | None = None
     temperature: float | None = None
+    base_url: str | None = Field(default=None, min_length=1)
     settings: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("provider")
+    @classmethod
+    def _validate_provider(cls, value: str) -> str:
+        if not value.strip() or value != value.strip() or value != value.lower():
+            raise ValueError("provider must be a non-empty lowercase identifier")
+        return value
+
+    @field_validator("model", "api_key_env")
+    @classmethod
+    def _validate_nonempty_model_fields(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("model fields must be non-empty strings")
+        return value
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("base_url must be a non-empty string")
+        return value
+
+    @field_validator("settings")
+    @classmethod
+    def _reject_normalized_aliases(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if "base_url" in value:
+            raise ValueError(
+                "models.<role>.settings.base_url is not supported; use "
+                "models.<role>.base_url"
+            )
+        return value
 
 
 class SkillConfig(FabricBaseModel):
@@ -406,26 +450,63 @@ class TelemetryConfig(FabricBaseModel):
         return self
 
 
+class ToolsetConfig(FabricBaseModel):
+    """Harness-neutral toolset selection and blocking policy."""
+
+    enabled: list[str] | None = None
+    blocked: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_policy(self) -> Self:
+        for field, values in (
+            ("enabled", self.enabled or []),
+            ("blocked", self.blocked),
+        ):
+            if any(not value.strip() for value in values):
+                raise ValueError(f"tools.toolsets.{field} entries must not be empty")
+        if self.enabled is not None:
+            overlap = set(self.enabled).intersection(self.blocked)
+            if overlap:
+                name = sorted(overlap)[0]
+                raise ValueError(f"toolset {name!r} cannot be both enabled and blocked")
+        return self
+
+
 class ToolsConfig(FabricBaseModel):
     """Harness-neutral tool capability configuration."""
 
     blocked: list[str] = Field(default_factory=list)
+    toolsets: ToolsetConfig | None = None
+
+    @field_validator("blocked")
+    @classmethod
+    def _validate_blocked(cls, value: list[str]) -> list[str]:
+        if any(not tool.strip() for tool in value):
+            raise ValueError("tools.blocked entries must not be empty")
+        return value
 
 
 class FabricConfig(FabricBaseModel):
-    """SDK-facing typed Fabric agent configuration."""
+    """SDK-facing typed Fabric agent configuration.
+
+    Fabric-owned fields apply uniformly. Adapter-translated fields are checked
+    against the selected descriptor; see the normalized configuration
+    compatibility table in ``docs/sdk/python.mdx``.
+    """
 
     schema_version: str = "fabric.agent/v1alpha1"
     metadata: MetadataConfig
     harness: HarnessConfig
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     environment: EnvironmentConfig | None = None
-    models: dict[str, ModelConfig | dict[str, Any]] = Field(default_factory=dict)
+    models: dict[str, ModelConfig] = Field(default_factory=dict)
+    system_prompt: str | None = None
+    max_turns: int | None = Field(default=None, gt=0)
     mcp: McpConfig | None = None
     skills: SkillConfig | None = None
     telemetry: TelemetryConfig | None = None
     relay: RelayConfig | dict[str, Any] | None = None
-    tools: ToolsConfig | dict[str, Any] | None = None
+    tools: ToolsConfig | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> Self:
@@ -490,15 +571,31 @@ class FabricConfig(FabricBaseModel):
         return self
 
     def block_tools(self, *tools: str) -> Self:
-        """Block adapter-native tool names or toolsets and return this config."""
+        """Block adapter-native tool names and return this config."""
 
-        if self.tools is None or isinstance(self.tools, dict):
-            self.tools = ToolsConfig.model_validate(self.tools or {})
+        if self.tools is None:
+            self.tools = ToolsConfig()
         existing = list(self.tools.blocked)
         for tool in tools:
             if tool not in existing:
                 existing.append(tool)
         self.tools.blocked = existing
+        return self
+
+    def configure_toolsets(
+        self,
+        *,
+        enabled: Sequence[str] | None = None,
+        blocked: Sequence[str] = (),
+    ) -> Self:
+        """Set adapter-native toolset selection and blocking policy."""
+
+        if self.tools is None:
+            self.tools = ToolsConfig()
+        self.tools.toolsets = ToolsetConfig(
+            enabled=None if enabled is None else list(enabled),
+            blocked=list(blocked),
+        )
         return self
 
     def enable_relay(
