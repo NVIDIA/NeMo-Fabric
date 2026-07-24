@@ -23,6 +23,13 @@ For installation and a package-backed example, start with the
 
 ## Start With One Run
 
+This example uses an NVIDIA-hosted model. Export your NVIDIA API key before
+running it:
+
+```bash
+export NVIDIA_API_KEY=...
+```
+
 Construct a typed config, then pass it to `Fabric.run(...)`. The SDK starts a
 runtime, invokes it once, collects the result, and stops the runtime.
 
@@ -58,7 +65,7 @@ async def main() -> None:
     )
 
     print(result.status)
-    print(result.output)
+    print(result.output.response)
 
 
 asyncio.run(main())
@@ -269,7 +276,7 @@ result = await fabric.run(
 )
 
 print(result.status)
-print(result.output)
+print(result.output.response)
 print(result.artifacts)
 ```
 
