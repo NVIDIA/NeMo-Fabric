@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run the Fabric SDK inside a Harbor task environment."""
+"""Run the NeMo Fabric SDK inside a Harbor task environment."""
 
 from __future__ import annotations
 

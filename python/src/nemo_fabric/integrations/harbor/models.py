@@ -40,7 +40,7 @@ class HarborMcpServer(BaseModel):
 
 
 class FabricRunPayload(BaseModel):
-    """Typed Fabric inputs transported into one Harbor task environment."""
+    """Typed NeMo Fabric inputs transported into one Harbor task environment."""
 
     model_config = ConfigDict(extra="forbid")
 

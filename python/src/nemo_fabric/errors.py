@@ -11,7 +11,7 @@ from typing import Any
 
 
 class FabricError(RuntimeError):
-    """Base class for structured SDK-level Fabric errors.
+    """Base class for structured SDK-level NeMo Fabric errors.
 
     Catch this type to handle any SDK failure while preserving machine-readable
     stage, code, retryability, and detail fields.
@@ -32,7 +32,7 @@ class FabricError(RuntimeError):
         retryable: bool = False,
         details: Mapping[str, Any] | None = None,
     ) -> None:
-        """Initialize a structured Fabric exception.
+        """Initialize a structured NeMo Fabric exception.
 
         Args:
             message: Human-readable failure description.

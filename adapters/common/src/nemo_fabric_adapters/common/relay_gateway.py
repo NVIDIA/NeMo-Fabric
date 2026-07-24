@@ -41,7 +41,7 @@ class RelayGatewayLaunch:
 
 @dataclass(frozen=True)
 class RelayCliContract:
-    """Versioned external Relay CLI contract consumed by Fabric adapters."""
+    """Versioned external Relay CLI contract consumed by NeMo Fabric adapters."""
 
     version: tuple[int, int, int]
     observability_version: int
@@ -94,7 +94,7 @@ def relay_cli_contract(executable: Path) -> RelayCliContract:
         raise RelayGatewayError(
             "unsupported NeMo Relay CLI version "
             f"{'.'.join(str(value) for value in version)}; "
-            "Fabric requires >=0.6.0,<0.7.0"
+            "NeMo Fabric requires >=0.6.0,<0.7.0"
         )
     return RelayCliContract(version=version, observability_version=2)
 

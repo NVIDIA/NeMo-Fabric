@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Harbor agent implementation backed by the Fabric Python SDK."""
+"""Harbor agent implementation backed by the NeMo Fabric Python SDK."""
 
 from __future__ import annotations
 
@@ -81,10 +81,10 @@ if _HARBOR_IMPORT_ERROR is not None:
 else:
 
     class FabricAgent(BaseAgent):
-        """Harbor agent wrapper that delegates harness execution to Fabric.
+        """Harbor agent wrapper that delegates harness execution to NeMo Fabric.
 
         Harbor owns task materialization, environment lifecycle, verification, and
-        reward calculation. Fabric owns the selected agent harness invocation.
+        reward calculation. NeMo Fabric owns the selected agent harness invocation.
         """
 
         SUPPORTS_ATIF = True
@@ -176,7 +176,7 @@ else:
                 "mkdir -p " + " ".join(shlex.quote(path) for path in setup_dirs),
                 timeout_sec=30,
             )
-            ensure_success("Fabric setup failed", result)
+            ensure_success("NeMo Fabric setup failed", result)
             if self.fabric_config_bundle is not None:
                 await environment.upload_dir(
                     self.fabric_config_bundle,
@@ -193,7 +193,7 @@ else:
                     env=self._install_env,
                     timeout_sec=self.fabric_timeout_sec,
                 )
-                ensure_success("Fabric package installation failed", result)
+                ensure_success("NeMo Fabric package installation failed", result)
             elif self.fabric_install_command:
                 result = await environment.exec(
                     self.fabric_install_command,
@@ -201,7 +201,7 @@ else:
                     env=self._install_env,
                     timeout_sec=self.fabric_timeout_sec,
                 )
-                ensure_success("Fabric install command failed", result)
+                ensure_success("NeMo Fabric install command failed", result)
 
         async def run(
             self,
@@ -231,7 +231,7 @@ else:
                 env=self._runner_env,
                 timeout_sec=self.fabric_timeout_sec,
             )
-            ensure_success("Fabric run failed", result)
+            ensure_success("NeMo Fabric run failed", result)
 
             await environment.download_file(remote_result_path, host_result_path)
             self._result_path = host_result_path
@@ -354,7 +354,7 @@ def build_harbor_config(
     config = FabricConfig(
         metadata=MetadataConfig(
             name=name,
-            description="Fabric agent configured through Harbor run inputs.",
+            description="NeMo Fabric agent configured through Harbor run inputs.",
         ),
         harness=HarnessConfig(
             adapter_id=adapter_id,
@@ -419,7 +419,7 @@ def build_harbor_config(
 
 
 def model_provider(model_name: str) -> str:
-    """Derive the Fabric provider from Harbor's model identifier."""
+    """Derive the NeMo Fabric provider from Harbor's model identifier."""
 
     return model_name.split("/", maxsplit=1)[0] if "/" in model_name else "openai"
 
@@ -549,7 +549,7 @@ def _record_host_atif_validation(
 
 
 def populate_context_from_telemetry_summary(context: AgentContext, path: Path) -> None:
-    """Attach telemetry quality evidence to Fabric's Harbor metadata."""
+    """Attach telemetry quality evidence to NeMo Fabric's Harbor metadata."""
 
     if not path.is_file():
         return

@@ -377,7 +377,7 @@ def serve(
     input_stream: TextIO = sys.stdin,
     output_stream: TextIO = sys.stdout,
 ) -> None:
-    """Serve ordered lifecycle requests for exactly one Fabric runtime."""
+    """Serve ordered lifecycle requests for exactly one NeMo Fabric runtime."""
 
     # Reserve process stdout for the protocol for the entire host lifetime,
     # including SDK background tasks running while the host is idle.

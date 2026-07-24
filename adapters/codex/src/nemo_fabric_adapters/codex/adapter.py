@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run Codex through its native Python SDK and the Fabric adapter contract."""
+"""Run Codex through its native Python SDK and the NeMo Fabric adapter contract."""
 
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ class CodexAdapterError(Exception):
 
 
 class AdapterInputError(CodexAdapterError):
-    """Invalid Fabric invocation input."""
+    """Invalid NeMo Fabric invocation input."""
 
 
 class AdapterConfigError(CodexAdapterError):
@@ -164,7 +164,7 @@ def runtime_id(payload: dict[str, Any]) -> str:
     value = common_utils.runtime_context(payload).get("runtime_id")
     if not isinstance(value, str) or not value:
         raise AdapterInputError(
-            "codex_invalid_request", "Fabric runtime ID is required"
+            "codex_invalid_request", "NeMo Fabric runtime ID is required"
         )
     return value
 
@@ -259,14 +259,14 @@ def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
         if not skill_path.is_dir() or not skill_file.is_file():
             raise AdapterConfigError(
                 "codex_invalid_configuration",
-                "Fabric skill path must be a directory containing SKILL.md: "
+                "NeMo Fabric skill path must be a directory containing SKILL.md: "
                 f"{skill_path}",
             )
         name = skill_path.name
         if not name or name in names:
             raise AdapterConfigError(
                 "codex_invalid_configuration",
-                f"Fabric skill names must be unique: {name}",
+                f"NeMo Fabric skill names must be unique: {name}",
             )
         names.add(name)
         paths.append(skill_path)
@@ -279,7 +279,7 @@ async def _register_skill_roots(codex: AsyncCodex, skill_paths: list[Path]) -> N
 
     # The pinned SDK does not yet wrap the app-server's process-scoped
     # skills/extraRoots/set request. Keep the pinned-SDK compatibility seam
-    # here so arbitrary Fabric skill paths become discoverable without
+    # here so arbitrary NeMo Fabric skill paths become discoverable without
     # modifying the consumer workspace.
     await codex.models()
     client = getattr(codex, "_client", None)
@@ -666,7 +666,7 @@ def thread_config(
                     "codex", relay.gateway.executable
                 )["hooks"],
                 # This runtime-only request override is the SDK-native equivalent
-                # of the former non-interactive CLI flag. Fabric generated and
+                # of the former non-interactive CLI flag. NeMo Fabric generated and
                 # vetted every hook command above.
                 "bypass_hook_trust": True,
             },
@@ -1005,7 +1005,7 @@ def _as_lifecycle_error(error: CodexAdapterError) -> lifecycle.LifecycleError:
 
 
 class CodexRuntime:
-    """One Codex app-server client and thread owned by a Fabric runtime."""
+    """One Codex app-server client and thread owned by a NeMo Fabric runtime."""
 
     def __init__(self) -> None:
         self._start_payload: dict[str, Any] | None = None

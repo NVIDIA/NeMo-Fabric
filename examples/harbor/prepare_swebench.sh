@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# TEMPORARY SOURCE-CHECKOUT BOOTSTRAP — remove when Fabric is released.
+# TEMPORARY SOURCE-CHECKOUT BOOTSTRAP — remove when NeMo Fabric is released.
 #
-# The wheel-building path exists only because the Fabric distributions are not
+# The wheel-building path exists only because the NeMo Fabric distributions are not
 # yet available from PyPI. Once they are published, the Harbor README should use
 # a pinned PyPI requirement directly and this script's wheelhouse,
 # .fabric-package file, and PIP_FIND_LINKS plumbing should be deleted.
@@ -68,4 +68,4 @@ printf '%s\n' \
     > "$bundle_dir/.fabric-package"
 
 echo "Prepared $bundle_dir"
-echo "Fabric requirement: $(< "$bundle_dir/.fabric-package")"
+echo "NeMo Fabric requirement: $(< "$bundle_dir/.fabric-package")"

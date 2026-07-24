@@ -5,7 +5,7 @@
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "Fabric config areas or policy paths accepted by this adapter.",
+          "description": "NeMo Fabric config areas or policy paths accepted by this adapter.",
           "items": {
             "type": "string"
           },
@@ -47,7 +47,7 @@
         "config": {
           "$ref": "#/$defs/AdapterConfigSupport",
           "default": {},
-          "description": "Fabric config areas this adapter consumes or generates."
+          "description": "NeMo Fabric config areas this adapter consumes or generates."
         },
         "contract_version": {
           "description": "Adapter descriptor contract version.",
@@ -84,11 +84,11 @@
       "type": "object"
     },
     "AdapterDescriptorSource": {
-      "description": "Where Fabric resolved an adapter descriptor from.",
+      "description": "Where NeMo Fabric resolved an adapter descriptor from.",
       "oneOf": [
         {
           "const": "repository",
-          "description": "Descriptor maintained in this Fabric repository.",
+          "description": "Descriptor maintained in this NeMo Fabric repository.",
           "type": "string"
         },
         {
@@ -228,7 +228,7 @@
           "default": {
             "tools_configured": false
           },
-          "description": "Capabilities that Fabric must expose or manage outside the native harness config."
+          "description": "Capabilities that NeMo Fabric must expose or manage outside the native harness config."
         },
         "mcp_servers": {
           "additionalProperties": {
@@ -273,7 +273,7 @@
           "default": {
             "tools_configured": false
           },
-          "description": "Capabilities that are configured but not executable by this Fabric build."
+          "description": "Capabilities that are configured but not executable by this NeMo Fabric build."
         }
       },
       "type": "object"
@@ -316,7 +316,7 @@
         },
         {
           "const": "fabric_managed",
-          "description": "Fabric exposes or manages the capability around the harness.",
+          "description": "NeMo Fabric exposes or manages the capability around the harness.",
           "type": "string"
         },
         {
@@ -352,16 +352,16 @@
       "type": "object"
     },
     "ControlLocation": {
-      "description": "Where Fabric control code runs relative to the environment.",
+      "description": "Where NeMo Fabric control code runs relative to the environment.",
       "oneOf": [
         {
           "const": "external_control",
-          "description": "Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
+          "description": "NeMo Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
           "type": "string"
         },
         {
           "const": "in_env_control",
-          "description": "Fabric runs inside the prepared environment with the harness.",
+          "description": "NeMo Fabric runs inside the prepared environment with the harness.",
           "type": "string"
         }
       ]
@@ -385,7 +385,7 @@
         "control_location": {
           "$ref": "#/$defs/ControlLocation",
           "default": "in_env_control",
-          "description": "Where Fabric control code runs relative to the environment."
+          "description": "Where NeMo Fabric control code runs relative to the environment."
         },
         "metadata": {
           "additionalProperties": true,
@@ -395,7 +395,7 @@
         "ownership": {
           "$ref": "#/$defs/EnvironmentOwnership",
           "default": "caller_owned",
-          "description": "Whether Fabric owns the environment resource."
+          "description": "Whether NeMo Fabric owns the environment resource."
         },
         "provider": {
           "description": "Environment provider, for example `local`, `docker`, `opensandbox`, or `k8s`.",
@@ -420,7 +420,7 @@
       "type": "object"
     },
     "EnvironmentOwnership": {
-      "description": "Whether Fabric owns the underlying environment resource.",
+      "description": "Whether NeMo Fabric owns the underlying environment resource.",
       "oneOf": [
         {
           "const": "caller_owned",
@@ -429,7 +429,7 @@
         },
         {
           "const": "fabric_owned",
-          "description": "Fabric created or leased the environment resource and may release it.",
+          "description": "NeMo Fabric created or leased the environment resource and may release it.",
           "type": "string"
         }
       ]
@@ -451,7 +451,7 @@
         },
         "control_location": {
           "$ref": "#/$defs/ControlLocation",
-          "description": "Fabric control location."
+          "description": "NeMo Fabric control location."
         },
         "metadata": {
           "additionalProperties": true,
@@ -488,7 +488,7 @@
     },
     "FabricConfig": {
       "additionalProperties": true,
-      "description": "Versioned Fabric agent config.",
+      "description": "Versioned NeMo Fabric agent config.",
       "properties": {
         "environment": {
           "anyOf": [
@@ -642,7 +642,7 @@
         },
         {
           "const": "fabric_managed",
-          "description": "Fabric manages MCP and exposes basic tools/actions.",
+          "description": "NeMo Fabric manages MCP and exposes basic tools/actions.",
           "type": "string"
         }
       ]
@@ -653,7 +653,7 @@
       "properties": {
         "exposure": {
           "$ref": "#/$defs/McpExposure",
-          "description": "How Fabric exposes the MCP capability to the harness."
+          "description": "How NeMo Fabric exposes the MCP capability to the harness."
         },
         "transport": {
           "description": "MCP transport.",
@@ -1578,7 +1578,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Resolved Fabric run plan.",
+  "description": "Resolved NeMo Fabric run plan.",
   "properties": {
     "adapter_descriptor": {
       "anyOf": [
@@ -1596,7 +1596,7 @@
       "type": "string"
     },
     "base_dir": {
-      "description": "Base directory used to resolve relative Fabric paths.",
+      "description": "Base directory used to resolve relative NeMo Fabric paths.",
       "type": "string"
     },
     "capabilities": {
@@ -1622,7 +1622,7 @@
     },
     "config": {
       "$ref": "#/$defs/FabricConfig",
-      "description": "Complete typed Fabric config."
+      "description": "Complete typed NeMo Fabric config."
     },
     "environment_plan": {
       "anyOf": [

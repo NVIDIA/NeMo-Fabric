@@ -21,7 +21,7 @@ Resolved adapter identity attached to a run plan.
 
 **Attributes:**
 
- - <b>`adapter_id`</b>:  Stable identifier of the Fabric adapter implementation.
+ - <b>`adapter_id`</b>:  Stable identifier of the NeMo Fabric adapter implementation.
  - <b>`harness`</b>:  Stable machine-readable harness identifier.
  - <b>`adapter_kind`</b>:  Execution mechanism used by the adapter.
  - <b>`metadata`</b>:  Adapter-specific, JSON-compatible metadata.
@@ -712,7 +712,7 @@ Return a detached, JSON-compatible mapping for serialization.
 ## <kbd>class</kbd> `RuntimeHandle`
 Opaque identity and binding for one started runtime.
 
-Applications should treat ``runtime_binding`` as opaque. Fabric validates the handle against the run plan before invocation or shutdown.
+Applications should treat ``runtime_binding`` as opaque. NeMo Fabric validates the handle against the run plan before invocation or shutdown.
 
 
 
@@ -723,7 +723,7 @@ Applications should treat ``runtime_binding`` as opaque. Fabric validates the ha
  - <b>`agent_name`</b>:  Resolved agent name.
  - <b>`harness`</b>:  Stable harness identifier.
  - <b>`adapter_kind`</b>:  Adapter execution mechanism.
- - <b>`adapter_id`</b>:  Optional Fabric adapter identifier.
+ - <b>`adapter_id`</b>:  Optional NeMo Fabric adapter identifier.
  - <b>`environment`</b>:  Prepared environment snapshot.
 
 
@@ -786,7 +786,7 @@ Return a detached, JSON-compatible mapping for serialization.
 ## <kbd>class</kbd> `RunOutput`
 Normalized adapter output.
 
-``response`` is a known adapter response field whose value follows the core Fabric JSON contract. Other keys are adapter-specific extensions.
+``response`` is a known adapter response field whose value follows the core NeMo Fabric JSON contract. Other keys are adapter-specific extensions.
 
 
 ### <kbd>method</kbd> `__init__`
@@ -852,7 +852,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunResult`
-Normalized terminal result from one Fabric invocation.
+Normalized terminal result from one NeMo Fabric invocation.
 
 The model is both attribute-accessible and mapping-compatible. A harness failure can be represented by ``status`` and ``error`` without raising when the adapter successfully returns a normalized result.
 
@@ -863,7 +863,7 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`agent_name`</b>:  Resolved agent name.
  - <b>`harness`</b>:  Stable harness identifier.
  - <b>`adapter_kind`</b>:  Adapter execution mechanism.
- - <b>`adapter_id`</b>:  Fabric adapter identifier.
+ - <b>`adapter_id`</b>:  NeMo Fabric adapter identifier.
  - <b>`runtime_id`</b>:  Runtime lifecycle identifier.
  - <b>`invocation_id`</b>:  Identifier for this invocation.
  - <b>`request_id`</b>:  Correlated request identifier.

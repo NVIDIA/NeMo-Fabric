@@ -286,7 +286,7 @@ def relay_api_plugin_config(plugin_config: dict[str, Any]) -> plugin.PluginConfi
                 ComponentSpec(
                     ObservabilityConfig(
                         # Relay 0.6 only accepts the v2 observability API model.
-                        # Fabric still accepts its existing flat/v1 configuration
+                        # NeMo Fabric still accepts its existing flat/v1 configuration
                         # below and translates it at this API boundary.
                         version=2,
                         atof=_relay_api_atof_config(config.get("atof")),

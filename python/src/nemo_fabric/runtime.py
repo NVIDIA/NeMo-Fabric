@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Runtime lifecycle support for the Fabric Python SDK."""
+"""Runtime lifecycle support for the NeMo Fabric Python SDK."""
 
 from __future__ import annotations
 

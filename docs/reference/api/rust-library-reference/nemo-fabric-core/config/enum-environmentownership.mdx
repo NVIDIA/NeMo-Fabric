@@ -1,7 +1,7 @@
 ---
 title: "Enum Environment Ownership"
 sidebar-title: "EnvironmentOwnership"
-description: "Whether Fabric owns the underlying environment resource."
+description: "Whether NeMo Fabric owns the underlying environment resource."
 position: 12
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -16,7 +16,7 @@ pub enum EnvironmentOwnership {
 }
 ```
 
-Whether Fabric owns the underlying environment resource.
+Whether NeMo Fabric owns the underlying environment resource.
 
 ## Variants
 
@@ -30,7 +30,7 @@ The caller or a surrounding system owns the environment resource.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "FabricOwned"}} /></pre>
 
-Fabric created or leased the environment resource and may release it.
+NeMo Fabric created or leased the environment resource and may release it.
 
 ## Trait Implementations
 

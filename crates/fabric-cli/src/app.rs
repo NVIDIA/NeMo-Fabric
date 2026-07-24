@@ -47,7 +47,7 @@ enum Command {
         #[arg(long, default_value = "")]
         input: String,
     },
-    /// Print the Fabric core version.
+    /// Print the NeMo Fabric core version.
     Version,
 }
 
