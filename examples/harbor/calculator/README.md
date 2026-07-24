@@ -78,7 +78,7 @@ Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra runtime --extra harbor --extra hermes-agent harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
@@ -102,7 +102,7 @@ typed config. The API key is passed separately as a task credential.
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra runtime --extra harbor --extra hermes-agent --extra relay harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
