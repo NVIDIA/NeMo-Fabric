@@ -23,6 +23,7 @@ from nemo_fabric.types import RunResult
 _DRAIN_SECONDS = 0.25
 _QUEUE_MAXSIZE = 1024
 _READ_SIZE = 64 * 1024
+_STREAM_SINK_NAME = "nemo-fabric-stream"
 
 
 class InvokeStream:
@@ -318,6 +319,11 @@ def _relay_enabled(config: FabricConfig) -> bool:
     return telemetry is not None and "relay" in telemetry.providers
 
 
+def _sink_name(sink: Any) -> str | None:
+    name = sink.get("name") if isinstance(sink, dict) else getattr(sink, "name", None)
+    return name if isinstance(name, str) else None
+
+
 def _with_stream_sink(config: FabricConfig, url: str) -> FabricConfig:
     copied = config.model_copy(deep=True)
     if copied.relay is None:
@@ -342,11 +348,19 @@ def _with_stream_sink(config: FabricConfig, url: str) -> FabricConfig:
         atof = RelayAtofConfig.model_validate(observability.atof)
 
     if atof.enabled:
-        sinks = list(atof.sinks or ())
+        sinks = [
+            sink for sink in atof.sinks or () if _sink_name(sink) != _STREAM_SINK_NAME
+        ]
     else:
         atof = RelayAtofConfig(enabled=True)
         sinks = []
-    sinks.append(RelayAtofStreamSinkConfig(url=url, transport="ndjson"))
+    sinks.append(
+        RelayAtofStreamSinkConfig(
+            name=_STREAM_SINK_NAME,
+            url=url,
+            transport="ndjson",
+        )
+    )
     atof.sinks = sinks
     observability.atof = atof
     relay.observability = observability

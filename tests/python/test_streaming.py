@@ -30,7 +30,7 @@ from nemo_fabric import (
     RunResult,
 )
 from nemo_fabric import client as client_mod
-from nemo_fabric.streaming import _AtofStreamListener
+from nemo_fabric.streaming import _AtofStreamListener, _with_stream_sink
 
 
 def _config(*, relay: bool = False) -> FabricConfig:
@@ -43,7 +43,12 @@ def _config(*, relay: bool = False) -> FabricConfig:
             observability=RelayObservabilityConfig(
                 atof=RelayAtofConfig(
                     enabled=True,
-                    sinks=[RelayAtofStreamSinkConfig(url="https://example.com/events")],
+                    sinks=[
+                        RelayAtofStreamSinkConfig(
+                            name="user-stream",
+                            url="https://example.com/events",
+                        )
+                    ],
                 )
             )
         )
@@ -214,8 +219,10 @@ async def test_start_runtime_injects_stream_sink_without_mutating_config(
         "transport": "http_post",
         "timeout_millis": 3000,
         "field_name_policy": "preserve",
+        "name": "user-stream",
     }
     assert sinks[1]["type"] == "stream"
+    assert sinks[1]["name"] == "nemo-fabric-stream"
     assert sinks[1]["transport"] == "ndjson"
     assert sinks[1]["url"].startswith("http://127.0.0.1:")
     assert runtime.supports_streaming is True
@@ -240,11 +247,27 @@ async def test_start_runtime_does_not_enable_disabled_atof_outputs(
     assert planned_atof["enabled"] is True
     assert len(planned_atof["sinks"]) == 1
     assert planned_atof["sinks"][0]["type"] == "stream"
+    assert planned_atof["sinks"][0]["name"] == "nemo-fabric-stream"
     assert planned_atof["sinks"][0]["url"].startswith("http://127.0.0.1:")
     assert config.relay.observability.atof.enabled is False
     assert config.relay.observability.atof.sinks[0].output_directory == "./disabled"
 
     await runtime.stop()
+
+
+def test_with_stream_sink_replaces_reserved_sink_and_preserves_user_sinks():
+    config = _config(relay=True)
+
+    first = _with_stream_sink(config, "http://127.0.0.1:4100/atof")
+    second = _with_stream_sink(first, "http://127.0.0.1:4200/atof")
+
+    sinks = second.relay.observability.atof.sinks
+    assert [sink.name for sink in sinks] == [
+        "user-stream",
+        "nemo-fabric-stream",
+    ]
+    assert sinks[-1].url == "http://127.0.0.1:4200/atof"
+    assert len(config.relay.observability.atof.sinks) == 1
 
 
 async def test_invoke_stream_yields_raw_records_and_returns_result_out_of_band(
