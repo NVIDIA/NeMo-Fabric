@@ -119,7 +119,7 @@ pub fn find(name: &str) -> Option<Example> {
 
 const EXAMPLES: [Example; 1] = [Example {
     name: "code-review",
-    description: "Review a small Python workspace using a maintained skill.",
+    description: "Review a small Python workspace with a deterministic default or a skill-capable harness.",
     default_variant: "scripted",
     variants: CODE_REVIEW_VARIANTS,
 }];
@@ -167,6 +167,20 @@ mod tests {
             .expect("select example");
         assert!(selected.base_dir().join("repo/calculator.py").is_file());
         assert!(selected.base_dir().join("skills/code-review.md").is_file());
+        assert!(
+            selected.config.skills.is_none(),
+            "the scripted smoke variant does not declare skill support"
+        );
+        assert!(
+            find("code-review")
+                .expect("code review example")
+                .select(Some("hermes"))
+                .expect("select Hermes example")
+                .config
+                .skills
+                .is_some(),
+            "maintained harness variants consume the staged skill"
+        );
         let plan = resolve_run_plan_from_config(
             selected.config.clone(),
             ResolveContext::new(selected.base_dir()),

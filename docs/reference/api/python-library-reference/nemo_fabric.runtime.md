@@ -15,6 +15,7 @@ Runtime lifecycle support for the Fabric Python SDK.
 
 
 ## <kbd>class</kbd> `RuntimeStatus`
+
 Lifecycle state of a runtime.
 
 ``ACTIVE`` accepts invocations, ``STOPPED`` has released its runtime, and ``FAILED`` records a lifecycle failure that prevents further invocations but still permits cleanup.
@@ -27,6 +28,7 @@ Lifecycle state of a runtime.
 
 
 ## <kbd>class</kbd> `Runtime`
+
 One logical, stateful harness execution.
 
 Create runtimes with ``Fabric.start_runtime()`` rather than calling the constructor. A runtime serializes invocations and preserves adapter-owned harness state across turns. Use it as an asynchronous context manager to stop the runtime on exit.

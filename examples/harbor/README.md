@@ -75,17 +75,16 @@ container boundary:
 | `--model` | `models.default` |
 | `--skill` | `skills.paths` |
 | `--mcp-config` | `mcp.servers` |
+| `--ak fabric_telemetry=relay` | `telemetry.providers.relay` and `relay.observability` |
+| `--ak fabric_model_base_url=<url>` | `models.default.base_url` |
+| `--ak fabric_system_prompt=<text>` | `system_prompt` |
+| `--ak fabric_max_turns=<count>` | `max_turns` |
+| `--ak fabric_runtime_timeout_seconds=<seconds>` | `runtime.timeout_seconds` |
+| `--ak fabric_environment_env='{...}'` | `environment.env` |
 | `--ak fabric_blocked_tools='[...]'` | `tools.blocked` |
-| `--ak fabric_telemetry=relay` | `telemetry` and Relay ATOF/ATIF configuration |
-| `--ak fabric_model_base_url=<url>` | Selected model endpoint |
-| `--ak fabric_system_prompt=<text>` | Normalized agent system instructions |
-| `--ak fabric_max_turns=<count>` | Normalized harness turn limit |
-| `--ak fabric_runtime_timeout_seconds=<seconds>` | Fabric invocation deadline |
-| `--ak fabric_environment_env='{...}'` | Explicit harness-visible environment variables |
-| `--ak fabric_blocked_tools='[...]'` | Individual tool names to block |
-| `--ak fabric_enabled_toolsets='[...]'` | Harness-defined toolsets to enable |
-| `--ak fabric_blocked_toolsets='[...]'` | Harness-defined toolsets to block |
-| `--ak fabric_harness_settings='{...}'` | Adapter-specific controls only |
+| `--ak fabric_enabled_toolsets='[...]'` | `tools.toolsets.enabled` |
+| `--ak fabric_blocked_toolsets='[...]'` | `tools.toolsets.blocked` |
+| `--ak fabric_harness_settings='{...}'` | `harness.settings` |
 
 The result is the complete `FabricConfig` uploaded with the `RunRequest` and
 task-local `base_dir`. The container-side runner deserializes that payload and

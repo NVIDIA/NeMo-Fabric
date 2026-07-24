@@ -15,6 +15,7 @@ Public data contracts for the NeMo Fabric Python SDK.
 
 
 ## <kbd>class</kbd> `AdapterInfo`
+
 Resolved adapter identity attached to a run plan.
 
 
@@ -84,6 +85,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RuntimeCapabilities`
+
 Operations declared by the resolved runtime and adapter.
 
 Capabilities describe what the selected runtime can support; callers should still expect a capability-specific error when a transport is modeled but not implemented.
@@ -156,6 +158,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunPlan`
+
 Immutable execution plan produced before a runtime is started.
 
 
@@ -226,6 +229,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `DoctorCheck`
+
 One diagnostic check in a ``DoctorReport``.
 
 
@@ -295,6 +299,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `DoctorReport`
+
 Aggregate preflight diagnostics for a resolved run plan.
 
 
@@ -363,6 +368,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `ErrorInfo`
+
 Structured failure returned inside a normalized ``RunResult``.
 
 
@@ -433,6 +439,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `ArtifactRef`
+
 Reference to one artifact produced by a run.
 
 
@@ -503,6 +510,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `ArtifactManifest`
+
 Normalized collection of artifacts produced by a run.
 
 
@@ -570,6 +578,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `TelemetryRef`
+
 Reference to external or persisted telemetry for a run.
 
 
@@ -640,6 +649,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `FabricEvent`
+
 One normalized lifecycle or invocation event.
 
 
@@ -710,6 +720,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RuntimeHandle`
+
 Opaque identity and binding for one started runtime.
 
 Applications should treat ``runtime_binding`` as opaque. Fabric validates the handle against the run plan before invocation or shutdown.
@@ -784,6 +795,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunOutput`
+
 Normalized adapter output.
 
 ``response`` is a known adapter response field whose value follows the core Fabric JSON contract. Other keys are adapter-specific extensions.
@@ -852,6 +864,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunResult`
+
 Normalized terminal result from one Fabric invocation.
 
 The model is both attribute-accessible and mapping-compatible. A harness failure can be represented by ``status`` and ``error`` without raising when the adapter successfully returns a normalized result.
