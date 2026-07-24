@@ -58,12 +58,6 @@ def base_config() -> FabricConfig:
         telemetry=TelemetryConfig(),
     )
     config.add_skill_path(SKILL_PATH)
-    config.add_mcp_server(
-        "github",
-        transport="streamable-http",
-        url="${GITHUB_MCP_URL}",
-        exposure="harness_native",
-    )
     return config
 
 
@@ -122,7 +116,6 @@ def codex_config() -> FabricConfig:
         workspace=WORKSPACE,
         artifacts="./artifacts/codex",
     )
-    config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)
     return config
 
@@ -149,7 +142,6 @@ def deepagents_config() -> FabricConfig:
         workspace=WORKSPACE,
         artifacts="./artifacts/deepagents",
     )
-    config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)
     return config
 
@@ -188,7 +180,6 @@ def claude_config() -> FabricConfig:
         workspace=WORKSPACE,
         artifacts="./artifacts/claude",
     )
-    config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)
     return config
 

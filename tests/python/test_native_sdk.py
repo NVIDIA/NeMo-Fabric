@@ -78,7 +78,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
         plan["adapter_descriptor"]["descriptor"]["adapter_id"]
         == "nvidia.fabric.hermes"
     )
-    assert plan["capability_plan"]["native"]["mcp_servers"]["github"]
+    assert "mcp_servers" not in plan["capability_plan"]["native"]
     assert plan["capability_plan"]["native"]["skill_paths"]
 
     minimal = FabricConfig.from_mapping(

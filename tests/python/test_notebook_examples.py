@@ -61,3 +61,21 @@ def test_variations_notebook_harnesses_plan_with_current_adapters():
     assert plans["Codex"].config.harness.settings["sandbox"] == "workspace-write"
     assert plans["Codex"].config.harness.settings["reasoning_effort"] == "high"
     assert plans["Codex"].config.runtime.input_schema == "text"
+
+
+def test_variations_notebook_uses_runnable_capabilities_and_checks_relay_status():
+    notebook = json.loads(VARIATIONS_NOTEBOOK.read_text(encoding="utf-8"))
+    source = "\n".join(
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+    )
+
+    assert "./skills/style-guide" not in source
+    assert "${DOCS_MCP_URL}" not in source
+    assert 'recomposed.add_skill_path("./skills/code-review")' in source
+    assert 'if result.status != "succeeded":' in source
+    assert "run_failures.append" in source
+    assert "Harness variation failures" in source
+    assert "returned no Relay telemetry reference" in source
+    assert "produced an empty ATOF trace" in source
