@@ -145,8 +145,8 @@ Pick the smallest lifecycle the consumer needs:
   timeout without a Relay connection, or receives data without a matching
   turn root, the SDK emits one `RuntimeWarning` for that failure mode; callers
   that only await `stream.result()` do not run that warning check. The SDK also
-  warns when a long-lived Relay upload closes during an active turn because
-  yielded records can be incomplete.
+  warns when a Relay upload terminates before completing its chunked request
+  body because yielded records can be incomplete.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
