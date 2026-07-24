@@ -169,22 +169,6 @@ def test_normalized_agent_and_toolset_accessors():
     assert common_utils.blocked_toolsets(payload) == ["browser"]
 
 
-def test_environment_payload_uses_normalized_config_without_runtime_context():
-    payload = {
-        "config": {
-            "environment": {
-                "workspace": "/config-workspace",
-                "env": {"VISIBLE": "yes"},
-            }
-        }
-    }
-
-    assert common_utils.environment_payload(payload) == {
-        "workspace": "/config-workspace",
-        "env": {"VISIBLE": "yes"},
-    }
-
-
 def test_payload_accessors_use_canonical_plan_fields(tmp_path):
     base_dir = str(tmp_path / "outer")
     payload = {

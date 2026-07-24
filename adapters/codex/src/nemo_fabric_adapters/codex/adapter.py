@@ -78,30 +78,6 @@ INHERITED_ENV_NAMES = {
     "https_proxy",
     "no_proxy",
 }
-REMOVED_CLI_SETTINGS = {
-    "codex_args",
-    "codex_command",
-    "codex_profile",
-    "codex_state_dir",
-    "skip_git_repo_check",
-}
-REMOVED_SETTING_FIELDS = {
-    "codex_bin": "the Codex SDK owns its pinned app-server runtime",
-    "nemo_relay_command": "NeMo Relay is resolved from PATH",
-    "service_name": "the Codex app-server service label is not portable consumer intent",
-}
-NORMALIZED_SETTING_FIELDS = {
-    "model": "FabricConfig.models",
-    "base_instructions": "FabricConfig.system_prompt",
-    "system_prompt": "FabricConfig.system_prompt",
-    "cwd": "FabricConfig.environment.workspace",
-    "env": "FabricConfig.environment.env",
-    "base_url": "FabricConfig.models.<role>.base_url",
-    "timeout_seconds": "FabricConfig.runtime.timeout_seconds",
-    "mcp_servers": "FabricConfig.mcp",
-    "model_name": "FabricConfig.models",
-    "skills": "FabricConfig.skills",
-}
 LOGGER = logging.getLogger(__name__)
 
 
@@ -153,28 +129,6 @@ def _mapping(value: Any, *, name: str) -> dict[str, Any]:
 
 def _settings(payload: dict[str, Any]) -> dict[str, Any]:
     return _mapping(common_utils.settings_payload(payload), name="harness.settings")
-
-
-def _validate_settings_boundary(settings: dict[str, Any]) -> None:
-    removed = sorted(REMOVED_CLI_SETTINGS.intersection(settings))
-    if removed:
-        names = ", ".join(f"harness.settings.{name}" for name in removed)
-        raise AdapterConfigError(
-            "codex_invalid_configuration",
-            f"Codex CLI-only settings are not supported by the SDK adapter: {names}",
-        )
-    for name, normalized_field in NORMALIZED_SETTING_FIELDS.items():
-        if name in settings:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"harness.settings.{name} is not supported; use {normalized_field}",
-            )
-    for name, reason in REMOVED_SETTING_FIELDS.items():
-        if name in settings:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"harness.settings.{name} is not supported; {reason}",
-            )
 
 
 def runtime_id(payload: dict[str, Any]) -> str:
@@ -616,9 +570,7 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
         relay_contract = relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(payload)
         config_path, plugin_config_path = common_utils.write_relay_configs(
-            # The SDK owns Codex execution. Relay needs only gateway defaults and
-            # the sibling plugins.toml; configuring an agent command would retain
-            # a misleading dependency on the removed Codex CLI launch path.
+            # Codex execution remains SDK-owned; Relay runs only as a gateway.
             relay_config={},
             plugin_config=plugin_config,
             observability_version=relay_contract.observability_version,
@@ -745,7 +697,6 @@ def validate_runtime_payload(payload: dict[str, Any]) -> str:
     """Validate runtime-owned configuration before starting SDK or Relay processes."""
 
     settings = _settings(payload)
-    _validate_settings_boundary(settings)
     _native_skill_paths(payload)
     fabric_runtime_id = runtime_id(payload)
     resolve_cwd(payload)

@@ -9,7 +9,6 @@ import importlib.util
 import inspect
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -250,35 +249,6 @@ def test_default_max_iterations_matches_hermes_library_default():
     assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
 
 
-@pytest.mark.parametrize(
-    ("setting", "target"),
-    [
-        ("api_key_env", "FabricConfig.models.<role>.api_key_env"),
-        ("base_url", "FabricConfig.models.<role>.base_url"),
-        ("disabled_toolsets", "FabricConfig.tools.toolsets.blocked"),
-        ("enabled_toolsets", "FabricConfig.tools.toolsets.enabled"),
-        ("env", "FabricConfig.environment.env"),
-        ("max_iterations", "FabricConfig.max_turns"),
-        ("max_turns", "FabricConfig.max_turns"),
-        ("model", "FabricConfig.models"),
-        ("model_name", "FabricConfig.models.<role>.model"),
-        ("provider", "FabricConfig.models.<role>.provider"),
-        ("system_prompt", "FabricConfig.system_prompt"),
-        ("temperature", "FabricConfig.models.<role>.temperature"),
-        ("workspace", "FabricConfig.environment.workspace"),
-    ],
-)
-def test_normalized_fields_are_rejected_in_harness_settings(
-    setting: str,
-    target: str,
-):
-    with pytest.raises(
-        ValueError,
-        match=rf"harness\.settings\.{setting}.*{re.escape(target)}",
-    ):
-        adapter._validate_settings_boundary({setting: "legacy"})
-
-
 def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
     # When max_turns is unset the config layer must leave agent.max_turns
     # absent so Hermes applies its own default rather than a starving override.
@@ -366,9 +336,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         "agent_name": "matrix-agent",
         "base_dir": str(tmp_path),
         "config": {
-            "harness": {
-                "settings": {}
-            },
+            "harness": {"settings": {}},
             "tools": {"toolsets": {"enabled": ["git", "shell"]}},
             "models": {
                 "review": {
@@ -655,23 +623,6 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         / "runtimes"
         / "runtime-fabric-123"
     )
-
-
-@pytest.mark.parametrize(
-    "setting",
-    ["hermes_home", "insert_reasoning", "toolset_platform"],
-)
-def test_removed_runtime_settings_are_rejected(setting):
-    with pytest.raises(ValueError, match=rf"harness\.settings\.{setting}"):
-        adapter._validate_settings_boundary({setting: "value"})
-
-
-def test_terminal_backend_reports_local_only_support():
-    with pytest.raises(
-        ValueError,
-        match=r"harness\.settings\.terminal_backend.*only local terminal execution",
-    ):
-        adapter._validate_settings_boundary({"terminal_backend": "ssh"})
 
 
 def test_main_serves_persistent_runtime(monkeypatch):

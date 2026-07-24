@@ -15,8 +15,7 @@
       "system_prompt",
       "tools.blocked",
       "mcp",
-      "skills",
-      "telemetry"
+      "skills"
     ]
   },
   "telemetry": {

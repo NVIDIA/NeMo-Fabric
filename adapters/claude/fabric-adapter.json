@@ -14,8 +14,7 @@
       "max_turns",
       "tools.blocked",
       "mcp",
-      "skills",
-      "telemetry"
+      "skills"
     ]
   },
   "telemetry": {

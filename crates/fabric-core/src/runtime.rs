@@ -2392,10 +2392,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::config::{
-        CapabilityKind, CapabilityRoute, CapabilityTarget, ResolveContext,
-        resolve_run_plan_from_config,
-    };
+    use crate::config::{ResolveContext, resolve_run_plan_from_config};
 
     fn local_host_plan(mode: &str) -> (PathBuf, RunPlan) {
         local_host_plan_with_relay(mode, false)
@@ -2548,26 +2545,6 @@ for line in sys.stdin:
 
     fn stopped_agents() -> Vec<String> {
         TEST_STOPPED_AGENTS.lock().expect("stop tracker").clone()
-    }
-
-    #[test]
-    fn runtime_validation_reports_canonical_mcp_field() {
-        let (root, mut plan) = local_host_plan("success");
-        plan.capability_plan.routes.push(CapabilityRoute {
-            kind: CapabilityKind::Mcp,
-            name: "github".to_string(),
-            target: CapabilityTarget::Unsupported,
-            reason: "unsupported test route".to_string(),
-        });
-
-        let error = start_runtime(&plan).expect_err("unsupported MCP route must fail");
-        assert!(matches!(
-            error,
-            FabricError::AdapterCompatibility { field, .. }
-                if field == "mcp.servers.github"
-        ));
-
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

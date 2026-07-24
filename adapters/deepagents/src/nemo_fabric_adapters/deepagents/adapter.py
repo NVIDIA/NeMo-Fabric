@@ -57,21 +57,6 @@ FABRIC_OWNED_AGENT_KEYS = frozenset(
 # through harness.settings.deepagents. Executable objects (AgentMiddleware, BaseTool,
 # Python callables) cannot cross the SDK->JSON->payload boundary and are excluded.
 DEEPAGENTS_PASSTHROUGH_KEYS = frozenset({"subagents", "interrupt_on"})
-NORMALIZED_SETTING_FIELDS = {
-    "model": "FabricConfig.models",
-    "model_name": "FabricConfig.models.<role>.model",
-    "provider": "FabricConfig.models.<role>.provider",
-    "api_key_env": "FabricConfig.models.<role>.api_key_env",
-    "base_url": "FabricConfig.models.<role>.base_url",
-    "temperature": "FabricConfig.models.<role>.temperature",
-    "system_prompt": "FabricConfig.system_prompt",
-    "workspace": "FabricConfig.environment.workspace",
-    "env": "FabricConfig.environment.env",
-    "timeout_seconds": "FabricConfig.runtime.timeout_seconds",
-}
-REMOVED_SETTING_FIELDS = {
-    "state_dir": "runtime state is derived from the Fabric artifact root and runtime ID",
-}
 
 
 class AdapterConfigError(RuntimeError):
@@ -106,19 +91,6 @@ class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
         if self._is_blocked(request.tool_call.get("name")):
             return self._blocked(request)
         return handler(request)
-
-
-def _validate_settings_boundary(settings: dict[str, Any]) -> None:
-    for name, normalized_field in NORMALIZED_SETTING_FIELDS.items():
-        if name in settings:
-            raise AdapterConfigError(
-                f"harness.settings.{name} is not supported; use {normalized_field}"
-            )
-    for name, reason in REMOVED_SETTING_FIELDS.items():
-        if name in settings:
-            raise AdapterConfigError(
-                f"harness.settings.{name} is not supported; {reason}"
-            )
 
 
 def resolve_api_key_env(model_config: dict[str, Any]) -> str:
@@ -164,8 +136,6 @@ def preflight_check(payload: dict[str, Any]) -> None:
             "it with the 'deepagents' extra (pip install nemo-fabric-adapters-deepagents)."
         )
 
-    settings = common_utils.settings_payload(payload)
-    _validate_settings_boundary(settings)
     model_config = selected_model_config(payload)
     api_key_env = resolve_api_key_env(model_config)
     if api_key_env not in os.environ:

@@ -29,7 +29,7 @@ pub struct FabricConfig {
     pub metadata: MetadataConfig,
     /// Harness selection and harness-specific settings.
     pub harness: HarnessConfig,
-    /// Model aliases.
+    /// Named model roles.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, ModelConfig>,
     /// Portable system instructions for the selected harness.
@@ -402,9 +402,6 @@ pub enum AdapterConfigField {
     /// Harness-native skills.
     #[serde(rename = "skills")]
     Skills,
-    /// Typed telemetry configuration. Exact support remains declared by telemetry provider.
-    #[serde(rename = "telemetry")]
-    Telemetry,
 }
 
 /// Adapter telemetry support.
@@ -1122,12 +1119,6 @@ fn validate_config(config: &FabricConfig) -> Result<()> {
             return invalid_config(
                 format!("models.{role}.base_url"),
                 "must be a non-empty string",
-            );
-        }
-        if model.settings.contains_key("base_url") {
-            return invalid_config(
-                format!("models.{role}.settings.base_url"),
-                "is not supported; use models.<role>.base_url",
             );
         }
     }
@@ -2231,37 +2222,6 @@ mod tests {
                 } if actual == adapter_id && field == "tools.toolsets.enabled"
             ));
         }
-    }
-
-    #[test]
-    fn model_settings_rejects_normalized_base_url_alias() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        config.models.insert(
-            "default".to_string(),
-            ModelConfig {
-                provider: "nvidia".to_string(),
-                model: "nvidia/test".to_string(),
-                temperature: None,
-                api_key_env: None,
-                base_url: None,
-                settings: serde_json::Map::from_iter([(
-                    "base_url".to_string(),
-                    Value::String("https://legacy.example/v1".to_string()),
-                )]),
-                extensions: BTreeMap::new(),
-            },
-        );
-
-        let error =
-            resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-model-alias"))
-                .expect_err("normalized aliases must be rejected");
-
-        assert!(matches!(
-            error,
-            FabricError::InvalidConfig { field, reason }
-                if field == "models.default.settings.base_url"
-                    && reason.contains("models.<role>.base_url")
-        ));
     }
 
     #[test]

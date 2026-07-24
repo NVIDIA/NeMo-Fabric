@@ -254,23 +254,6 @@ def test_typed_config_serializes_normalized_execution_fields():
         )
     with pytest.raises(ValidationError, match="both enabled and blocked"):
         ToolsetConfig(enabled=["browser"], blocked=["browser"])
-    with pytest.raises(
-        ValidationError,
-        match=r"models\.<role>\.settings\.base_url",
-    ):
-        FabricConfig(
-            metadata=MetadataConfig(name="demo"),
-            harness=HarnessConfig(adapter_id="test.fabric.shim"),
-            models={
-                "default": {
-                    "provider": "nvidia",
-                    "model": "nvidia/test",
-                    "settings": {
-                        "base_url": "https://legacy.example/v1",
-                    },
-                }
-            },
-        )
 
 
 def test_run_plan_config_block_tools_emits_canonical_shape():

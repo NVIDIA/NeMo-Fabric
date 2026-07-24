@@ -46,23 +46,6 @@ PERMISSION_MODES = {
     "auto",
 }
 SETTING_SOURCES = {"user", "project", "local"}
-REMOVED_SETTING_FIELDS = {
-    "cli_path": "the Claude Agent SDK owns its bundled runtime",
-    "nemo_relay_command": "NeMo Relay is resolved from PATH",
-}
-NORMALIZED_SETTING_FIELDS = {
-    "model_name": "FabricConfig.models",
-    "base_url": "FabricConfig.models.<role>.base_url",
-    "cwd": "FabricConfig.environment.workspace",
-    "env": "FabricConfig.environment.env",
-    "system_prompt": "FabricConfig.system_prompt",
-    "max_turns": "FabricConfig.max_turns",
-    "timeout_seconds": "FabricConfig.runtime.timeout_seconds",
-    "tools": "FabricConfig.tools",
-    "disallowed_tools": "FabricConfig.tools.blocked",
-    "mcp_servers": "FabricConfig.mcp",
-    "skills": "FabricConfig.skills",
-}
 INHERITED_ENV_NAMES = {
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
@@ -197,21 +180,6 @@ def request_prompt(payload: dict[str, Any]) -> str:
 
 def _settings(payload: dict[str, Any]) -> dict[str, Any]:
     return _mapping(common_utils.settings_payload(payload), name="harness.settings")
-
-
-def _validate_settings_boundary(settings: dict[str, Any]) -> None:
-    for name, normalized_field in NORMALIZED_SETTING_FIELDS.items():
-        if name in settings:
-            raise AdapterConfigError(
-                "claude_invalid_configuration",
-                f"harness.settings.{name} is not supported; use {normalized_field}",
-            )
-    for name, reason in REMOVED_SETTING_FIELDS.items():
-        if name in settings:
-            raise AdapterConfigError(
-                "claude_invalid_configuration",
-                f"harness.settings.{name} is not supported; {reason}",
-            )
 
 
 def _selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -503,7 +471,6 @@ def build_options(
     relay: ClaudeRelaySettings | None = None,
 ) -> ClaudeAgentOptions:
     settings = _settings(payload)
-    _validate_settings_boundary(settings)
     permission_mode = settings.get("permission_mode")
     if permission_mode is not None and permission_mode not in PERMISSION_MODES:
         raise AdapterConfigError(

@@ -178,7 +178,7 @@ class EnvironmentConfig(FabricBaseModel):
 
 
 class ModelConfig(FabricBaseModel):
-    """Model alias configuration."""
+    """Configuration for one model role."""
 
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
@@ -206,16 +206,6 @@ class ModelConfig(FabricBaseModel):
     def _validate_base_url(cls, value: str | None) -> str | None:
         if value is not None and not value.strip():
             raise ValueError("base_url must be a non-empty string")
-        return value
-
-    @field_validator("settings")
-    @classmethod
-    def _reject_normalized_aliases(cls, value: dict[str, Any]) -> dict[str, Any]:
-        if "base_url" in value:
-            raise ValueError(
-                "models.<role>.settings.base_url is not supported; use "
-                "models.<role>.base_url"
-            )
         return value
 
 

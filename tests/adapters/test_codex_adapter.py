@@ -926,56 +926,6 @@ def test_timeout_interrupts_native_turn_and_closes_sdk(codex_payload, mock_codex
     assert client.closed is True
 
 
-@pytest.mark.parametrize(
-    "setting", ["codex_command", "codex_args", "codex_profile", "skip_git_repo_check"]
-)
-def test_cli_only_settings_are_rejected(codex_payload, setting):
-    codex_payload["config"]["harness"]["settings"][setting] = "legacy"
-
-    error = runtime_start_error(codex_payload)
-
-    assert error.code == "codex_invalid_configuration"
-    assert setting in error.message
-
-
-@pytest.mark.parametrize(
-    ("setting", "normalized_field"),
-    [
-        ("model", "FabricConfig.models"),
-        ("base_url", "FabricConfig.models.<role>.base_url"),
-        ("env", "FabricConfig.environment.env"),
-        ("timeout_seconds", "FabricConfig.runtime.timeout_seconds"),
-        ("mcp_servers", "FabricConfig.mcp"),
-        ("skills", "FabricConfig.skills"),
-    ],
-)
-def test_normalized_capabilities_reject_harness_settings(
-    codex_payload, mock_codex, setting, normalized_field
-):
-    codex_payload["config"]["harness"]["settings"][setting] = {}
-
-    error = runtime_start_error(codex_payload)
-
-    assert error.code == "codex_invalid_configuration"
-    assert normalized_field in error.message
-    mock_codex.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "setting", ["codex_bin", "nemo_relay_command", "service_name"]
-)
-def test_removed_runtime_settings_are_rejected(
-    codex_payload, mock_codex, setting
-):
-    codex_payload["config"]["harness"]["settings"][setting] = "custom"
-
-    error = runtime_start_error(codex_payload)
-
-    assert error.code == "codex_invalid_configuration"
-    assert f"harness.settings.{setting}" in error.message
-    mock_codex.assert_not_called()
-
-
 def test_adapter_rejects_structured_input(codex_payload):
     codex_payload["request"]["input"] = {
         "messages": [{"role": "user", "content": "Inspect the change."}]
@@ -1003,7 +953,6 @@ def test_descriptor_has_no_codex_binary_requirement():
         "system_prompt",
         "mcp",
         "skills",
-        "telemetry",
     ]
     assert "requirements" not in descriptor
 

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import importlib.machinery
 import os
-import re
 import sys
 import types
 from collections.abc import AsyncIterator
@@ -411,9 +410,7 @@ async def test_native_telemetry_exports_without_artifacts(
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
-    assert fake_relay["plugin_configs"] == [
-        payload["telemetry_plan"]["native_config"]
-    ]
+    assert fake_relay["plugin_configs"] == [payload["telemetry_plan"]["native_config"]]
     assert output["telemetry"] == {
         "enabled": True,
         "provider": "native",
@@ -1095,28 +1092,6 @@ async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_pa
 
     with pytest.raises(adapter.AdapterConfigError, match="api_key_env"):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
-
-
-def test_removed_state_dir_setting_is_rejected():
-    with pytest.raises(
-        adapter.AdapterConfigError, match=r"harness\.settings\.state_dir"
-    ):
-        adapter._validate_settings_boundary({"state_dir": "./state"})
-
-
-@pytest.mark.parametrize(
-    ("setting", "target"),
-    sorted(adapter.NORMALIZED_SETTING_FIELDS.items()),
-)
-def test_normalized_fields_are_rejected_in_harness_settings(
-    setting: str,
-    target: str,
-):
-    with pytest.raises(
-        adapter.AdapterConfigError,
-        match=rf"harness\.settings\.{setting}.*{re.escape(target)}",
-    ):
-        adapter._validate_settings_boundary({setting: "legacy"})
 
 
 def test_main_serves_persistent_runtime(monkeypatch):
