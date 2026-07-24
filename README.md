@@ -36,6 +36,10 @@ NeMo Fabric provides the following harness integrations:
 | [Hermes Agent](docs/integrations/harness/hermes.mdx) | `nemo-fabric[hermes]` |
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` |
 
+Capabilities vary by harness. Review the compatibility matrix and use plan()
+and doctor() before relying on optional capabilities such as MCP, skills,
+blocked tools, subagents, or telemetry.
+
 ## Supported Platforms
 
 NeMo Fabric supports the following platforms:
