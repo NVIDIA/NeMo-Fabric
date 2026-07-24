@@ -24,15 +24,20 @@ task container for the Claude walkthrough:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
-./examples/harbor/prepare_swebench.sh
 
 export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
 export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
 export FABRIC_PACKAGE='nemo-fabric[claude,harbor,hermes,relay,runtime]==0.1.0a20260722'
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
+
+curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
+  NEMO_RELAY_VERSION=0.6.0 sh -s -- \
+    --install-dir "$FABRIC_BUNDLE/.relay/bin"
 ```
 
-The preparation script builds the standalone Relay 0.6.0 CLI in Debian Bullseye.
+The shell installer downloads the standalone Relay 0.6.0 CLI and verifies its
+checksum. For other installation methods, refer to the
+[NeMo Relay installation instructions](../../../docs/getting-started/install.mdx#install-nemo-relay).
 The generated files are ignored by Git. The uploaded bundle contains the example
 MCP server and Relay; it does not contain a persisted `FabricConfig`.
 
