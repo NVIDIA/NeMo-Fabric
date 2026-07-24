@@ -135,13 +135,18 @@ Pick the smallest lifecycle the consumer needs:
   output is deferred to a future normalized Fabric contract. The listener
   limits each record to 1 MiB and its queue to 1,024 records or 16 MiB of
   encoded data. It correlates records through the Fabric request ID for
-  in-process harnesses or Relay's turn index for gateway harnesses, then yields
-  only the matched scope tree. Delayed prior-turn records therefore do not
-  enter the next stream. The listener
+  in-process harnesses or Relay's turn-scope role and 1-based turn index for
+  gateway harnesses, then yields only the matched scope tree. Delayed
+  prior-turn records therefore do not enter the next stream. If gateway and
+  Fabric turn sequences do not align, the SDK discards the uncorrelated records
+  and emits a `RuntimeWarning` after natural stream exhaustion. The listener
   binds to `127.0.0.1`, so Claude and Codex gateway processes must share the
   SDK's network namespace. If async iteration reaches its post-turn drain
-  timeout without a Relay connection, the SDK emits one `RuntimeWarning`;
-  callers that only await `stream.result()` do not run that warning check.
+  timeout without a Relay connection, or receives data without a matching
+  turn root, the SDK emits one `RuntimeWarning` for that failure mode; callers
+  that only await `stream.result()` do not run that warning check. The SDK also
+  warns when a long-lived Relay upload closes during an active turn because
+  yielded records can be incomplete.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,

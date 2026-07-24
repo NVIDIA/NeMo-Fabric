@@ -146,7 +146,7 @@ class InvokeStream:
                 try:
                     return await asyncio.wait_for(queue.get(), _DRAIN_SECONDS)
                 except TimeoutError:
-                    await self._finalize(warn_if_unconnected=True)
+                    await self._finalize(warn_if_unavailable=True)
                     raise StopAsyncIteration from None
 
             getter = asyncio.create_task(queue.get())
@@ -171,7 +171,7 @@ class InvokeStream:
         self._closed = True
         await self._finalize()
 
-    async def _finalize(self, *, warn_if_unconnected: bool = False) -> None:
+    async def _finalize(self, *, warn_if_unavailable: bool = False) -> None:
         if self._finalized:
             return
         queue = self._listener.records
@@ -212,8 +212,8 @@ class InvokeStream:
                 break
         self._listener.end_stream()
         self._finalized = True
-        if invocation_completed and warn_if_unconnected:
-            self._listener.warn_if_unconnected()
+        if invocation_completed and warn_if_unavailable:
+            self._listener.warn_if_unavailable()
 
 
 class _AtofStreamListener:
@@ -239,8 +239,14 @@ class _AtofStreamListener:
         self._turn_index: int | None = None
         self._turn_root_uuid: str | None = None
         self._turn_scope_uuids: set[str] = set()
-        self._has_atof_connection = False
+        self._saw_atof_data = False
+        self._matched_turn_root = False
+        self._active_atof_connections = 0
+        self._saw_atof_connection = False
+        self._lost_atof_connection = False
         self._warned_unconnected = False
+        self._warned_uncorrelated = False
+        self._warned_interrupted = False
         self._tasks: set[asyncio.Task[None]] = set()
         self._writers: set[asyncio.StreamWriter] = set()
 
@@ -286,6 +292,10 @@ class _AtofStreamListener:
         self._turn_index = turn_index
         self._turn_root_uuid = None
         self._turn_scope_uuids.clear()
+        self._saw_atof_data = False
+        self._matched_turn_root = request_id is None and turn_index is None
+        self._saw_atof_connection = self._active_atof_connections > 0
+        self._lost_atof_connection = False
         self._accepting = True
 
     def end_stream(self) -> None:
@@ -297,20 +307,54 @@ class _AtofStreamListener:
         self._turn_root_uuid = None
         self._turn_scope_uuids.clear()
 
-    def warn_if_unconnected(self) -> None:
-        """Warn once when Relay has never reached this listener."""
+    def warn_if_unavailable(self) -> None:
+        """Warn once when Relay is unreachable or turn correlation fails."""
 
-        if self._has_atof_connection or self._warned_unconnected:
+        if not self._saw_atof_connection or (
+            self._lost_atof_connection
+            and not self._saw_atof_data
+            and self._active_atof_connections == 0
+        ):
+            if self._warned_unconnected:
+                return
+            self._warned_unconnected = True
+            warnings.warn(
+                "No Relay ATOF connection reached the SDK loopback listener. "
+                "Relay-backed streaming yielded no records. Claude and Codex "
+                "gateways must run in the same network namespace as the SDK to "
+                "reach 127.0.0.1.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
             return
-        self._warned_unconnected = True
-        warnings.warn(
-            "No Relay ATOF connection reached the SDK loopback listener. "
-            "Relay-backed streaming yielded no records. Claude and Codex "
-            "gateways must run in the same network namespace as the SDK to "
-            "reach 127.0.0.1.",
-            RuntimeWarning,
-            stacklevel=3,
-        )
+        if (
+            self._saw_atof_data
+            and not self._matched_turn_root
+            and not self._warned_uncorrelated
+        ):
+            self._warned_uncorrelated = True
+            warnings.warn(
+                "Relay ATOF data reached the SDK listener, but no record matched "
+                "the active Fabric turn. Relay-backed streaming yielded no "
+                "records. Verify the Relay turn correlation metadata and record "
+                "size limits.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            return
+        if (
+            self._lost_atof_connection
+            and self._matched_turn_root
+            and self._active_atof_connections == 0
+            and not self._warned_interrupted
+        ):
+            self._warned_interrupted = True
+            warnings.warn(
+                "The Relay ATOF connection closed during the active Fabric "
+                "turn. Relay-backed streaming may be incomplete.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
 
     def _connected(
         self,
@@ -332,6 +376,8 @@ class _AtofStreamListener:
         writer: asyncio.StreamWriter,
     ) -> None:
         self._writers.add(writer)
+        is_atof_connection = False
+        is_chunked = False
         try:
             request = await reader.readuntil(b"\r\n\r\n")
             request_line, *header_lines = request[:-4].split(b"\r\n")
@@ -340,13 +386,17 @@ class _AtofStreamListener:
             if method != "POST" or target.split("?", 1)[0] != "/atof":
                 await _write_response(writer, 404, "Not Found")
                 return
-            self._has_atof_connection = True
+            is_atof_connection = True
+            self._active_atof_connections += 1
+            if self._accepting:
+                self._saw_atof_connection = True
             if headers.get("expect", "").lower() == "100-continue":
                 writer.write(b"HTTP/1.1 100 Continue\r\n\r\n")
                 await writer.drain()
 
             buffer = bytearray()
-            if "chunked" in headers.get("transfer-encoding", "").lower():
+            is_chunked = "chunked" in headers.get("transfer-encoding", "").lower()
+            if is_chunked:
                 await self._read_chunked(reader, buffer)
             elif "content-length" in headers:
                 await self._read_sized(
@@ -370,6 +420,10 @@ class _AtofStreamListener:
         except asyncio.CancelledError:
             raise
         finally:
+            if is_atof_connection:
+                self._active_atof_connections -= 1
+                if is_chunked and self._accepting:
+                    self._lost_atof_connection = True
             self._writers.discard(writer)
             writer.close()
             with suppress(ConnectionError):
@@ -410,6 +464,8 @@ class _AtofStreamListener:
             await self._feed(buffer, chunk)
 
     async def _feed(self, buffer: bytearray, chunk: bytes) -> None:
+        if chunk and self._accepting:
+            self._saw_atof_data = True
         buffer.extend(chunk)
         while True:
             newline = buffer.find(b"\n")
@@ -433,8 +489,9 @@ class _AtofStreamListener:
             record = json.loads(stripped)
         except json.JSONDecodeError:
             return
-        if isinstance(record, dict) and self._belongs_to_active_turn(record):
-            await self._queue.put(record, byte_size=len(stripped))
+        if isinstance(record, dict):
+            if self._belongs_to_active_turn(record):
+                await self._queue.put(record, byte_size=len(stripped))
 
     def _belongs_to_active_turn(self, record: dict[str, Any]) -> bool:
         if self._request_id is None and self._turn_index is None:
@@ -448,6 +505,7 @@ class _AtofStreamListener:
                 return False
             self._turn_root_uuid = uuid
             self._turn_scope_uuids.add(uuid)
+            self._matched_turn_root = True
             return True
 
         if uuid in self._turn_scope_uuids:
