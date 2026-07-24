@@ -3,8 +3,8 @@ title: "Streaming"
 slug: "/reference/api/python-library-reference/streaming"
 description: "Consume Relay-backed raw ATOF records and terminal invocation results."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.streaming`
 Relay-backed streaming support for the NVIDIA NeMo Fabric Python SDK.

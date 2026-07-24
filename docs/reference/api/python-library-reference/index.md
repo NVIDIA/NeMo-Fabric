@@ -3,8 +3,8 @@ title: "Python SDK Reference"
 slug: "/reference/api/python-library-reference"
 description: "Complete reference for the public NeMo Fabric Python SDK."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # API Overview
 

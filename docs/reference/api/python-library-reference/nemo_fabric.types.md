@@ -3,8 +3,8 @@ title: "Types"
 slug: "/reference/api/python-library-reference/types"
 description: "Typed config, request, plan, result, artifact, telemetry, and runtime contracts."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.types`
 Public data contracts for the NeMo Fabric Python SDK.

@@ -23,6 +23,7 @@ from nemo_fabric import (
     HarnessConfig,
     InvokeStream,
     MetadataConfig,
+    RelayAtifConfig,
     RelayAtofConfig,
     RelayAtofFileSinkConfig,
     RelayAtofStreamSinkConfig,
@@ -225,7 +226,7 @@ async def test_start_runtime_injects_stream_sink_without_mutating_config(
 ):
     config = _config(relay=True)
 
-    runtime = await native_client.start_runtime(config)
+    runtime = await native_client.start_runtime(config, streaming=True)
 
     planned = json.loads(mock_native.plan_config.call_args.args[0])
     sinks = planned["relay"]["observability"]["atof"]["sinks"]
@@ -247,7 +248,7 @@ async def test_start_runtime_injects_stream_sink_without_mutating_config(
     await runtime.stop()
 
 
-async def test_start_runtime_does_not_enable_disabled_atof_outputs(
+async def test_start_runtime_without_streaming_preserves_disabled_atof(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
@@ -260,15 +261,71 @@ async def test_start_runtime_does_not_enable_disabled_atof_outputs(
 
     planned = json.loads(mock_native.plan_config.call_args.args[0])
     planned_atof = planned["relay"]["observability"]["atof"]
+    assert planned_atof["enabled"] is False
+    assert len(planned_atof["sinks"]) == 1
+    assert planned_atof["sinks"][0]["type"] == "file"
+    assert runtime.supports_streaming is False
+    assert config.relay.observability.atof.enabled is False
+    assert config.relay.observability.atof.sinks[0].output_directory == "./disabled"
+
+    await runtime.stop()
+
+
+async def test_start_runtime_without_streaming_does_not_add_atof(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    config = _config()
+    config.enable_relay(
+        observability=RelayObservabilityConfig(
+            atif=RelayAtifConfig(enabled=True),
+        )
+    )
+
+    runtime = await native_client.start_runtime(config)
+
+    planned = json.loads(mock_native.plan_config.call_args.args[0])
+    observability = planned["relay"]["observability"]
+    assert "atof" not in observability
+    assert observability["atif"]["enabled"] is True
+    assert runtime.supports_streaming is False
+
+    await runtime.stop()
+
+
+async def test_start_runtime_streaming_enables_only_reserved_atof_sink(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    config = _config(relay=True)
+    atof = config.relay.observability.atof
+    atof.enabled = False
+    atof.sinks = [RelayAtofFileSinkConfig(output_directory="./disabled")]
+
+    runtime = await native_client.start_runtime(config, streaming=True)
+
+    planned = json.loads(mock_native.plan_config.call_args.args[0])
+    planned_atof = planned["relay"]["observability"]["atof"]
     assert planned_atof["enabled"] is True
     assert len(planned_atof["sinks"]) == 1
     assert planned_atof["sinks"][0]["type"] == "stream"
     assert planned_atof["sinks"][0]["name"] == "nemo-fabric-stream"
     assert planned_atof["sinks"][0]["url"].startswith("http://127.0.0.1:")
+    assert runtime.supports_streaming is True
     assert config.relay.observability.atof.enabled is False
     assert config.relay.observability.atof.sinks[0].output_directory == "./disabled"
 
     await runtime.stop()
+
+
+async def test_start_runtime_rejects_streaming_without_relay(
+    native_client: Fabric,
+):
+    with pytest.raises(
+        FabricConfigError,
+        match="streaming requires Relay telemetry",
+    ):
+        await native_client.start_runtime(_config(), streaming=True)
 
 
 def test_with_stream_sink_replaces_reserved_sink_and_preserves_user_sinks():
@@ -290,7 +347,7 @@ async def test_invoke_stream_yields_raw_records_and_returns_result_out_of_band(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -323,7 +380,7 @@ async def test_invoke_stream_correlates_relay_gateway_turn_indexes(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -359,7 +416,7 @@ async def test_stream_must_be_finalized_before_another_turn(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -391,7 +448,7 @@ async def test_stream_must_be_finalized_before_another_turn(
 async def test_invoke_stream_validates_request_before_returning_stream(
     native_client: Fabric,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     request = RunRequest(input="request")
 
     with pytest.raises(FabricConfigError, match="mutually exclusive"):
@@ -407,7 +464,7 @@ async def test_invoke_stream_validates_request_before_returning_stream(
 async def test_invoke_stream_warns_only_once_when_relay_never_connects(
     native_client: Fabric,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
 
     first = runtime.invoke_stream(input="first")
     with pytest.warns(RuntimeWarning, match="same network namespace"):
@@ -427,7 +484,7 @@ async def test_invoke_stream_does_not_warn_after_relay_connects(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -447,7 +504,7 @@ async def test_invoke_stream_warns_after_long_lived_relay_upload_disconnects(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -488,7 +545,7 @@ async def test_invoke_stream_warns_when_long_lived_upload_drops_during_turn(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -514,7 +571,7 @@ async def test_invoke_stream_warns_when_long_lived_upload_truncates_turn(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -557,7 +614,7 @@ async def test_invoke_stream_does_not_warn_when_chunked_upload_ends_cleanly(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -587,7 +644,7 @@ async def test_invoke_stream_warns_when_records_do_not_match_active_turn(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     endpoint = json.loads(mock_native.plan_config.call_args.args[0])["relay"][
         "observability"
     ]["atof"]["sinks"][-1]["url"]
@@ -639,7 +696,7 @@ async def test_invoke_stream_warns_when_records_do_not_match_active_turn(
 async def test_stop_finalizes_completed_stream_after_result(
     native_client: Fabric,
 ):
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     stream = runtime.invoke_stream(input="hello")
 
     assert (await stream.result()).status == "succeeded"
@@ -650,15 +707,17 @@ async def test_stop_finalizes_completed_stream_after_result(
     assert stream._finalized is True
 
 
-async def test_invoke_stream_requires_relay(
+@pytest.mark.parametrize("relay", [False, True])
+async def test_invoke_stream_requires_streaming_enabled_at_startup(
     native_client: Fabric,
+    relay: bool,
 ):
-    runtime = await native_client.start_runtime(_config())
+    runtime = await native_client.start_runtime(_config(relay=relay))
 
     assert runtime.supports_streaming is False
     with pytest.raises(
         FabricCapabilityError,
-        match="requires Relay telemetry",
+        match=r"requires Relay telemetry.*streaming=True",
     ) as caught:
         runtime.invoke_stream(input="hello")
 
@@ -670,7 +729,9 @@ async def test_invoke_stream_requires_relay(
 async def test_context_manager_finalizes_unconsumed_stream(
     native_client: Fabric,
 ):
-    async with await native_client.start_runtime(_config(relay=True)) as runtime:
+    async with await native_client.start_runtime(
+        _config(relay=True), streaming=True
+    ) as runtime:
         stream = runtime.invoke_stream(input="hello")
 
     assert (await stream.result()).status == "succeeded"
@@ -689,7 +750,7 @@ async def test_cancelled_aclose_keeps_turn_active_and_result_awaitable(
         return json.dumps(_result(json.loads(request_json), json.loads(runtime_json)))
 
     mock_native.invoke_runtime.side_effect = invoke
-    runtime = await native_client.start_runtime(_config(relay=True))
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
     stream = runtime.invoke_stream(input="hello")
     assert await _wait_for(started)
 

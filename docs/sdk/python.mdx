@@ -270,7 +270,7 @@ multiple independent runtimes.
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
 | `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
-| `Fabric.start_runtime(config, ...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
+| `Fabric.start_runtime(config, ..., streaming=False)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use `streaming=True` to provision Relay-backed streaming. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
 | `Runtime.invoke_stream(...)` | No | You need live Relay-generated ATOF records for one turn. | Returns an async `InvokeStream`; await `stream.result()` for the terminal `RunResult`. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
@@ -370,7 +370,7 @@ async def main() -> None:
         environment=EnvironmentConfig(provider="local", workspace="."),
     ).enable_relay()
 
-    async with await Fabric().start_runtime(config) as runtime:
+    async with await Fabric().start_runtime(config, streaming=True) as runtime:
         stream = runtime.invoke_stream(input="Review the latest patch")
         async for record in stream:
             print(record)
@@ -392,8 +392,14 @@ those unread records.
 
 Streaming has the following v0.1 constraints:
 
-- Relay must be enabled when the runtime starts. Otherwise,
+- Enable Relay and pass `streaming=True` to `start_runtime(...)`. The SDK then
+  binds its loopback listener and injects the reserved ATOF stream sink.
+  Without this opt-in, Relay configuration remains unchanged and
   `invoke_stream(...)` raises `FabricCapabilityError`.
+- The default `streaming=False` does not force-enable ATOF for Relay runtimes
+  that use only ATIF, OpenTelemetry, or OpenInference. It also avoids the
+  additional loopback HTTP and JSON parsing cost when a runtime uses only
+  application-configured ATOF sinks.
 - One invocation can be active on a runtime. Fully consume the stream or call
   `await stream.aclose()` before starting another turn.
 - Breaking an `async for` loop does not finalize the stream. Call

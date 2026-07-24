@@ -189,26 +189,30 @@ class Fabric:
         *,
         base_dir: str | os.PathLike[str] | None = None,
         overrides: Mapping[str, Any] | None = None,
+        streaming: bool = False,
     ) -> Runtime:
         """Start a stateful runtime for one or more ordered invocations.
 
         Each call starts a new logical runtime. Runtime-scoped overrides are
-        recursively merged below invocation-scoped overrides. When Relay is
-        enabled, startup also provisions the SDK-owned loopback ATOF endpoint
-        used by ``Runtime.invoke_stream()``.
+        recursively merged below invocation-scoped overrides. Set
+        ``streaming=True`` with Relay enabled to provision the SDK-owned
+        loopback ATOF endpoint used by ``Runtime.invoke_stream()``.
 
         Args:
             config: Complete typed ``FabricConfig``.
             base_dir: Base directory for resolving relative paths.
             overrides: JSON-compatible overrides applied to every invocation
                 in the runtime unless superseded by invocation overrides.
+            streaming: Whether to provision Relay-backed ATOF streaming for
+                ``Runtime.invoke_stream()``.
 
         Returns:
             An active ``Runtime``. Use it as an asynchronous context
             manager to guarantee runtime shutdown.
 
         Raises:
-            FabricConfigError: If inputs or overrides are invalid.
+            FabricConfigError: If inputs or overrides are invalid, or streaming
+                is requested without Relay enabled.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
             FabricRuntimeError: If runtime startup fails.
@@ -217,7 +221,9 @@ class Fabric:
         runtime_overrides = _json_mapping(overrides, "runtime overrides")
         stream_listener: _AtofStreamListener | None = None
         runtime_config = config
-        if _relay_enabled(config):
+        if streaming and not _relay_enabled(config):
+            raise FabricConfigError("streaming requires Relay telemetry to be enabled")
+        if streaming:
             try:
                 stream_listener = await _AtofStreamListener().start()
                 runtime_config = _with_stream_sink(config, stream_listener.url)

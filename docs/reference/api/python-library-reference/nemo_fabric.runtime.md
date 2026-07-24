@@ -3,8 +3,8 @@ title: "Runtime"
 slug: "/reference/api/python-library-reference/runtime"
 description: "Drive stateful multi-turn execution through the Runtime API."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.runtime`
 Runtime lifecycle support for the Fabric Python SDK.
@@ -126,7 +126,7 @@ Start one turn and stream raw Relay ATOF records as they arrive.
 
 **Raises:**
 
- - <b>`FabricCapabilityError`</b>:  If Relay was not enabled when the runtime  started.
+ - <b>`FabricCapabilityError`</b>:  If the runtime was not started with Relay  enabled and ``streaming=True``.
  - <b>`FabricConfigError`</b>:  If request fields conflict or are not  JSON-compatible.
  - <b>`FabricStateError`</b>:  If another turn or stream is active.
 
