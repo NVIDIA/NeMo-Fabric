@@ -23,17 +23,17 @@ just build-all
 The default variant uses Hermes Agent with an NVIDIA-hosted model. Follow the
 [Hermes Agent quick start](../../README.md#quick-start-hermes-agent) through the
 environment installation steps, which create `.tmp/hermes-venv`, then set
-`NVIDIA_API_KEY`. Select that interpreter only for Hermes commands:
+`NVIDIA_API_KEY`. Select that interpreter only for Hermes Agent commands:
 
 ```bash
 ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
   .venv/bin/python -m examples.code_review_agent \
-  --input "Reply with exactly: fabric works"
+  --input "Reply with exactly: NeMo Fabric works"
 ```
 
-Do not export a Hermes-only `ADAPTER_PYTHON` globally before running the Codex,
-Claude, or Deep Agents variants. Those variants use the project interpreter
-unless you select another interpreter explicitly.
+Do not export a Hermes Agent-only `ADAPTER_PYTHON` globally before running the
+Codex, Claude, or Deep Agents variants. Those variants use the project
+interpreter unless you select another interpreter explicitly.
 
 ## Inspect the plan
 
@@ -53,7 +53,7 @@ Run one request through the default Hermes Agent variant:
 ```bash
 ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
   .venv/bin/python -m examples.code_review_agent \
-  --input "Reply with exactly: fabric works"
+  --input "Reply with exactly: NeMo Fabric works"
 ```
 
 The command prints a normalized `RunResult` and writes runtime artifacts under
@@ -75,9 +75,9 @@ Add `--relay` to any variant to enable the Relay ATOF and ATIF configuration:
 
 Relay requirements depend on the selected adapter. The Codex and Claude
 adapters require an external `nemo-relay` CLI in the supported `0.6.x` range;
-the Python package named `nemo-relay` does not install that command. Hermes
-Agent and Deep Agents require the Relay Python package in their selected
-adapter environment. Refer to the
+the Python package named `nemo-relay` does not install the `nemo-relay` CLI
+tool. Hermes Agent and Deep Agents require the Relay Python package in their
+selected adapter environment. Refer to the
 [installation guide](../../docs/getting-started/install.mdx#install-nemo-relay)
 for the current compatibility requirements.
 

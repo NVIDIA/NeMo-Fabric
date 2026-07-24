@@ -128,7 +128,7 @@ Run the code-review example:
 export NVIDIA_API_KEY=...
 ADAPTER_PYTHON="$PWD/.tmp/hermes-venv/bin/python" \
   .venv/bin/python -m examples.code_review_agent \
-  --input "Reply with exactly: fabric works"
+  --input "Reply with exactly: NeMo Fabric works"
 ```
 
 `ADAPTER_PYTHON` selects the interpreter used to launch any Python adapter.
