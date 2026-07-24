@@ -19,16 +19,8 @@ then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes Agent runs o
 
 ## Prepare the Task Bundle
 
-Build the NeMo Fabric wheels and Relay executable that will be uploaded into the
-isolated task container:
-
-> **TEMP — remove when NeMo Fabric is released:** This source-checkout bootstrap is
-> needed only while NeMo Fabric wheels are unavailable from PyPI. At release, the
-> docs writer should replace `FABRIC_PACKAGE` with a pinned PyPI requirement and
-> remove `prepare_swebench.sh`, `.fabric-package`, `.wheelhouse`,
-> `FABRIC_FIND_LINKS`, and every `PIP_FIND_LINKS` argument. If the Claude Relay
-> executable is not yet distributed or discovered automatically, retain only
-> the Relay CLI preparation until that is resolved.
+Build the standalone Relay executable that will be uploaded into the isolated
+task container for the Claude walkthrough:
 
 ```bash
 cd "$(git rev-parse --show-toplevel)"
@@ -36,17 +28,13 @@ cd "$(git rev-parse --show-toplevel)"
 
 export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
 export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
-export FABRIC_PACKAGE="$(< "$FABRIC_BUNDLE/.fabric-package")"
-export FABRIC_FIND_LINKS='/tmp/nemo-fabric-config/.wheelhouse'
+export FABRIC_PACKAGE='nemo-fabric[claude,harbor,hermes,relay,runtime]==0.1.0a20260722'
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 ```
 
-The preparation script builds the native runtime in a manylinux2014 container,
-builds the standalone Relay 0.5.0 CLI in Debian Bullseye, and writes the exact
-task-local package requirement to `.fabric-package`. The generated files are
-ignored by Git. The uploaded bundle contains adapter descriptors, the example
-MCP server, generated wheels, and Relay; it does not contain a persisted
-`FabricConfig`.
+The preparation script builds the standalone Relay 0.6.0 CLI in Debian Bullseye.
+The generated files are ignored by Git. The uploaded bundle contains the example
+MCP server and Relay; it does not contain a persisted `FabricConfig`.
 
 Keep this shell open for the commands below.
 
@@ -61,7 +49,6 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS" \
   --install-only \
   --job-name django-13741-install \
   --jobs-dir "$RUNS_DIR" \
@@ -84,7 +71,6 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS" \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name django-13741-hermes \
   --jobs-dir "$RUNS_DIR" \
@@ -115,7 +101,6 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_telemetry=relay \
   --ak 'fabric_harness_settings={"nemo_relay_command":"/tmp/nemo-fabric-config/.relay/bin/nemo-relay"}' \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS" \
   --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
   --job-name django-13741-claude \
   --jobs-dir "$RUNS_DIR" \
@@ -154,7 +139,6 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_telemetry=relay \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS" \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name django-13741-hermes-skill \
   --jobs-dir "$RUNS_DIR" \
@@ -245,7 +229,6 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_config_bundle="$FABRIC_BUNDLE" \
   --ak fabric_telemetry=relay \
   --ak "fabric_package=$FABRIC_PACKAGE" \
-  --ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS" \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name swebench-verified-hermes-5 \
   --jobs-dir "$RUNS_DIR" \
