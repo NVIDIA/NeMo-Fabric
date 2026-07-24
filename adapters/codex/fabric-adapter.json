@@ -12,8 +12,7 @@
       "models.base_url",
       "system_prompt",
       "mcp",
-      "skills",
-      "telemetry"
+      "skills"
     ]
   },
   "telemetry": {

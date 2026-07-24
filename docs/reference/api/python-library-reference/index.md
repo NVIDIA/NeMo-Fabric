@@ -28,7 +28,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.McpConfig`](./nemo_fabric.models.md#class-mcpconfig): MCP capability configuration.
 - [`models.McpServerConfig`](./nemo_fabric.models.md#class-mcpserverconfig): MCP server configuration.
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
-- [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Model alias configuration.
+- [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Configuration for one model role.
 - [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
 - [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
 - [`models.RelayAtofFileSinkConfig`](./nemo_fabric.models.md#class-relayatoffilesinkconfig): NeMo Relay ATOF file sink configuration.

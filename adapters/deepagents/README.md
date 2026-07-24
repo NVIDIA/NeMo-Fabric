@@ -68,12 +68,8 @@ NeMo Fabric maps the following into the harness:
   instances, and Python callables cannot cross the boundary. NeMo Fabric-owned
   arguments (`model`, `tools`, `backend`, `skills`, `system_prompt`, `middleware`,
   `checkpointer`) cannot be overridden through this passthrough, and an unknown or
-  unsupported key is a normalized configuration failure rather than a silently
+  unsupported key is an adapter configuration failure rather than a silently
   dropped setting.
-
-The legacy `harness.settings` aliases for model fields, `system_prompt`,
-`workspace`, environment variables, and invocation timeout are rejected. Keep
-only the Deep Agents-specific `deepagents` controls there.
 
 ### Subagents
 

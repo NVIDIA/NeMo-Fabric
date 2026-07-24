@@ -15,7 +15,6 @@ Public exception hierarchy for the NeMo Fabric Python SDK.
 
 
 ## <kbd>class</kbd> `FabricError`
-
 Base class for structured SDK-level Fabric errors.
 
 Catch this type to handle any SDK failure while preserving machine-readable stage, code, retryability, and detail fields.
@@ -62,7 +61,6 @@ Initialize a structured Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricConfigError`
-
 Invalid SDK input, request shape, factory, or resolved config.
 
 
@@ -98,7 +96,6 @@ Initialize a structured Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricRuntimeError`
-
 Failure while starting, invoking, stopping, or otherwise driving a runtime.
 
 
@@ -134,7 +131,6 @@ Initialize a structured Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricStateError`
-
 Operation rejected because a local runtime is in the wrong state.
 
 
@@ -170,7 +166,6 @@ Initialize a structured Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricCapabilityError`
-
 Operation rejected by resolved runtime capabilities or implementation status.
 
 
@@ -206,7 +201,6 @@ Initialize a structured Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricNativeUnavailableError`
-
 SDK call requires the PyO3 extension, but it is not installed or importable.
 
 

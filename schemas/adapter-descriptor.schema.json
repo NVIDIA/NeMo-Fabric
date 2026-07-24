@@ -52,11 +52,6 @@
           "const": "skills",
           "description": "Harness-native skills.",
           "type": "string"
-        },
-        {
-          "const": "telemetry",
-          "description": "Typed telemetry configuration. Exact support remains declared by telemetry provider.",
-          "type": "string"
         }
       ]
     },

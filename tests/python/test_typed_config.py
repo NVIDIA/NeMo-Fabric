@@ -19,11 +19,8 @@ import tempfile
 from pathlib import Path
 from shutil import copytree
 
-import pytest
-
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
-from nemo_fabric import FabricConfigError
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 
@@ -72,7 +69,6 @@ def _shim_adapter_config() -> FabricConfig:
     config["harness"] = {
         "adapter_id": "test.fabric.hermes_shim",
         "resolution": "preinstalled",
-        "settings": {},
     }
     config["models"] = {
         "default": {"provider": "test", "model": "test-model", "temperature": 0.0}

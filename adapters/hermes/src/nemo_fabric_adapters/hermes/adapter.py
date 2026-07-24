@@ -29,27 +29,6 @@ import nemo_fabric_adapters.common.utils as common_utils
 # answering while the trial still reports success). See FABRIC-85.
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
-NORMALIZED_SETTING_FIELDS = {
-    "model": "FabricConfig.models",
-    "model_name": "FabricConfig.models.<role>.model",
-    "provider": "FabricConfig.models.<role>.provider",
-    "api_key_env": "FabricConfig.models.<role>.api_key_env",
-    "base_url": "FabricConfig.models.<role>.base_url",
-    "temperature": "FabricConfig.models.<role>.temperature",
-    "system_prompt": "FabricConfig.system_prompt",
-    "max_iterations": "FabricConfig.max_turns",
-    "max_turns": "FabricConfig.max_turns",
-    "workspace": "FabricConfig.environment.workspace",
-    "env": "FabricConfig.environment.env",
-    "enabled_toolsets": "FabricConfig.tools.toolsets.enabled",
-    "disabled_toolsets": "FabricConfig.tools.toolsets.blocked",
-}
-REMOVED_SETTING_FIELDS = {
-    "hermes_home": "runtime state is derived from the Fabric artifact root and runtime ID",
-    "insert_reasoning": "the supported Hermes SDK does not consume this option",
-    "terminal_backend": "this adapter currently supports only local terminal execution",
-    "toolset_platform": "the adapter owns its Hermes SDK lookup bridge",
-}
 PROVIDER_DEFAULT_API_KEY_ENV = {
     "": "NVIDIA_API_KEY",
     "anthropic": "ANTHROPIC_API_KEY",
@@ -57,17 +36,6 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
-
-
-def _validate_settings_boundary(settings: dict[str, Any]) -> None:
-    for name, normalized_field in NORMALIZED_SETTING_FIELDS.items():
-        if name in settings:
-            raise ValueError(
-                f"harness.settings.{name} is not supported; use {normalized_field}"
-            )
-    for name, reason in REMOVED_SETTING_FIELDS.items():
-        if name in settings:
-            raise ValueError(f"harness.settings.{name} is not supported; {reason}")
 
 
 def _api_key_env(model_config: dict[str, Any]) -> str:
@@ -261,7 +229,6 @@ class HermesRuntime:
             self._relay_finalize_hook_invoked = False
             validate_hermes_telemetry_provider(payload)
             self._settings = common_utils.settings_payload(payload)
-            _validate_settings_boundary(self._settings)
             self._model_config = common_utils.selected_model_config(payload)
             self._runtime_id = common_utils.runtime_id(payload)
             self._hermes_home = common_utils.runtime_state_directory(

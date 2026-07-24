@@ -52,11 +52,6 @@
           "const": "skills",
           "description": "Harness-native skills.",
           "type": "string"
-        },
-        {
-          "const": "telemetry",
-          "description": "Typed telemetry configuration. Exact support remains declared by telemetry provider.",
-          "type": "string"
         }
       ]
     },
@@ -607,7 +602,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/ModelConfig"
           },
-          "description": "Model aliases.",
+          "description": "Named model roles.",
           "type": "object"
         },
         "relay": {

@@ -103,11 +103,6 @@ Only Claude-specific controls belong in `harness.settings`:
 - `max_budget_usd`
 - `setting_sources` (defaults to `[]` for deterministic isolation)
 
-Putting `model_name`, `base_url`, `cwd`, `system_prompt`, `max_turns`,
-`timeout_seconds`, `env`, `tools`, `disallowed_tools`, `mcp_servers`, or `skills`
-in `harness.settings` is an error. Use the corresponding normalized field so
-the same consumer configuration can compose with other adapters.
-
 The adapter filters the inherited environment before launching Claude Code.
 It retains portable OS/config variables, the selected model's `api_key_env`,
 and explicitly configured `environment.env` values. Raw Claude stderr is consumed

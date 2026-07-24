@@ -21,8 +21,7 @@
       "tools.toolsets.enabled",
       "tools.toolsets.blocked",
       "mcp",
-      "skills",
-      "telemetry"
+      "skills"
     ]
   },
   "telemetry": {

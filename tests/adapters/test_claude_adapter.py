@@ -95,7 +95,6 @@ def test_claude_descriptor_is_narrow_and_versioned():
                 "tools.blocked",
                 "mcp",
                 "skills",
-                "telemetry",
             ],
         },
         "telemetry": {
@@ -374,43 +373,6 @@ def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
     assert options.disallowed_tools == ["Bash", "WebFetch"]
 
 
-@pytest.mark.parametrize(
-    ("name", "normalized_field"),
-    [
-        ("model_name", "FabricConfig.models"),
-        ("base_url", "FabricConfig.models.<role>.base_url"),
-        ("cwd", "FabricConfig.environment.workspace"),
-        ("env", "FabricConfig.environment.env"),
-        ("system_prompt", "FabricConfig.system_prompt"),
-        ("max_turns", "FabricConfig.max_turns"),
-        ("timeout_seconds", "FabricConfig.runtime.timeout_seconds"),
-        ("tools", "FabricConfig.tools"),
-        ("disallowed_tools", "FabricConfig.tools.blocked"),
-        ("mcp_servers", "FabricConfig.mcp"),
-        ("skills", "FabricConfig.skills"),
-    ],
-)
-def test_build_options_rejects_normalized_capabilities_in_harness_settings(
-    claude_payload, name, normalized_field
-):
-    claude_payload["config"]["harness"]["settings"][name] = []
-
-    with pytest.raises(
-        adapter.AdapterConfigError, match=normalized_field.replace(".", r"\.")
-    ):
-        adapter.build_options(claude_payload)
-
-
-@pytest.mark.parametrize("setting", ["cli_path", "nemo_relay_command"])
-def test_build_options_rejects_removed_runtime_settings(claude_payload, setting):
-    claude_payload["config"]["harness"]["settings"][setting] = "custom"
-
-    with pytest.raises(
-        adapter.AdapterConfigError, match=rf"harness\.settings\.{setting}"
-    ):
-        adapter.build_options(claude_payload)
-
-
 def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload):
     skill_path = Path(claude_payload["capability_plan"]["native"]["skill_paths"][0])
     (skill_path / "SKILL.md").unlink()
@@ -457,10 +419,7 @@ def test_build_options_uses_nvidia_provider_endpoint_and_default_credential(
 
     options = adapter.build_options(claude_payload)
 
-    assert (
-        options.env["ANTHROPIC_BASE_URL"]
-        == "https://integrate.api.nvidia.com"
-    )
+    assert options.env["ANTHROPIC_BASE_URL"] == "https://integrate.api.nvidia.com"
     assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
 
 
