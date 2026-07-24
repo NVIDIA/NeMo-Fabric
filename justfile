@@ -388,7 +388,15 @@ docs:
     PATH="{{ REPO_ROOT }}/.venv/bin:$PATH" bash scripts/generate_api_docs.sh
     uv run --no-sync python scripts/docs/generate_rust_library_reference.py
     npx --prefix docs --no-install fern check --warnings
-    npx --prefix docs --no-install fern docs broken-links --strict
+    fern_validation_root="$(mktemp -d)"
+    trap 'rm -rf "$fern_validation_root"' EXIT
+    uv run --no-sync python scripts/docs/sync_fern_docs_branch.py sync-dev \
+        --source-root "$REPO_ROOT" \
+        --target-root "$fern_validation_root"
+    (
+        cd "$fern_validation_root/fern"
+        "$REPO_ROOT/docs/node_modules/.bin/fern" docs broken-links --strict
+    )
 
 # Launch Jupyter Lab for the onboarding notebooks under examples/notebooks/.
 # Jupyter is fetched on demand so it stays out of the project lockfile.

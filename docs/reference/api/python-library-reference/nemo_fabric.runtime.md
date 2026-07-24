@@ -3,8 +3,8 @@ title: "Runtime"
 slug: "/reference/api/python-library-reference/runtime"
 description: "Drive stateful multi-turn execution through the Runtime API."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.runtime`
 Runtime lifecycle support for the Fabric Python SDK.
@@ -64,6 +64,12 @@ Return the unique identifier for this started runtime lifecycle.
 
 Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 
+---
+
+### <kbd>property</kbd> supports_streaming
+
+Return whether Relay-backed ATOF streaming is enabled.
+
 
 
 ---
@@ -99,6 +105,30 @@ Run one turn on this runtime.
  - <b>`FabricStateError`</b>:  If the runtime is not active, is stopping, or is  already running a turn.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is missing.
  - <b>`FabricRuntimeError`</b>:  If native invocation fails before returning a  normalized result.
+
+---
+
+
+### <kbd>method</kbd> `invoke_stream`
+
+```python
+invoke_stream(
+    input: 'Any' = None,
+    request: 'RunRequest | None' = None
+) → InvokeStream
+```
+
+Start one turn and stream raw Relay ATOF records as they arrive.
+
+``input`` and ``request`` are mutually exclusive. The returned :class:`InvokeStream` yields raw ATOF dictionaries. Await ``stream.result()`` for the terminal normalized :class:`RunResult`.
+
+
+
+**Raises:**
+
+ - <b>`FabricCapabilityError`</b>:  If the runtime was not started with Relay  enabled and ``streaming=True``.
+ - <b>`FabricConfigError`</b>:  If request fields conflict or are not  JSON-compatible.
+ - <b>`FabricStateError`</b>:  If another turn or stream is active.
 
 ---
 

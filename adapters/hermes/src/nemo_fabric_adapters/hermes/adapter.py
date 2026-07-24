@@ -31,6 +31,30 @@ DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
 
 
+def _without_none(mapping: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in mapping.items() if value is not None}
+
+
+def _fabric_stream_sink_enabled(config: dict[str, Any] | None) -> bool:
+    if config is None:
+        return False
+    for component in config.get("components") or []:
+        if not isinstance(component, dict) or component.get("kind") != "observability":
+            continue
+        component_config = component.get("config")
+        if not isinstance(component_config, dict):
+            continue
+        atof = component_config.get("atof")
+        if not isinstance(atof, dict):
+            continue
+        if any(
+            isinstance(sink, dict) and sink.get("name") == "nemo-fabric-stream"
+            for sink in atof.get("sinks") or []
+        ):
+            return True
+    return False
+
+
 def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
     providers = common_utils.telemetry_providers(payload)
     if any(provider != "relay" for provider in providers):
@@ -59,20 +83,20 @@ def build_hermes_config(
     blocked_toolsets = disabled_toolsets(payload)
 
     config: dict[str, Any] = {
-        "model": common_utils.without_none(
+        "model": _without_none(
             {
                 "provider": provider,
                 "default": model_name,
                 "base_url": base_url,
             }
         ),
-        "agent": common_utils.without_none(
+        "agent": _without_none(
             {
                 "max_turns": settings.get("max_iterations"),
                 "disabled_toolsets": blocked_toolsets or None,
             }
         ),
-        "terminal": common_utils.without_none(
+        "terminal": _without_none(
             {
                 "backend": settings.get("terminal_backend", "local"),
                 "cwd": str(
@@ -131,7 +155,7 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("MCP server mapping requires a URL")
 
     if transport == "stdio":
-        return common_utils.without_none(
+        return _without_none(
             {
                 "enabled": True,
                 "command": target,
@@ -342,20 +366,41 @@ class HermesRuntime:
         user_message = request.get("input") or ""
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
-        try:
-            self._relay_session_pending = self._relay_plugin_config is not None
-            self._relay_finalize_hook_invoked = False
-            result, adapter_stdout = _invoke_hermes_turn(
+
+        def invoke_turn() -> tuple[dict[str, Any], str]:
+            return _invoke_hermes_turn(
                 agent=self._agent,
                 settings=self._settings,
                 user_message=user_message,
                 conversation_history=self._conversation_history,
             )
-        finally:
-            # Hermes' Relay plugin materializes ATIF when its session-finalize
-            # hook runs. Finalize the telemetry session for each Fabric
-            # invocation while retaining the native AIAgent and SessionDB.
-            self._finalize_relay_session()
+
+        self._relay_session_pending = self._relay_plugin_config is not None
+        self._relay_finalize_hook_invoked = False
+        if _fabric_stream_sink_enabled(self._relay_plugin_config):
+            from nemo_relay import ScopeType, scope
+
+            with scope.scope(
+                "nemo-fabric-invocation",
+                ScopeType.Agent,
+                metadata={
+                    "nemo_fabric_request_id": request.get("request_id"),
+                },
+            ):
+                try:
+                    result, adapter_stdout = invoke_turn()
+                finally:
+                    # The Hermes plugin pushes its session below this correlation
+                    # scope, so finalize that session before popping the parent.
+                    self._finalize_relay_session()
+        else:
+            try:
+                result, adapter_stdout = invoke_turn()
+            finally:
+                # Hermes' Relay plugin materializes ATIF when its session-finalize
+                # hook runs. Finalize the telemetry session for each Fabric
+                # invocation while retaining the native AIAgent and SessionDB.
+                self._finalize_relay_session()
         messages = result.get("messages") or []
         if isinstance(messages, list):
             self._conversation_history = messages

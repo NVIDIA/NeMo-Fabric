@@ -12,6 +12,7 @@ import importlib.util
 import os
 import shutil
 import uuid
+import warnings
 
 import pytest
 from _utils.utils import assert_semantic_relay_artifacts
@@ -112,13 +113,25 @@ async def _run_relay(relay_command: str) -> None:
     assert_semantic_relay_artifacts(result["output"], "FABRIC_CODEX_RELAY_OK")
 
     nonce = f"fabric-relay-{uuid.uuid4().hex[:8]}"
-    async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
-        first = await runtime.invoke(input=f"Remember this value: {nonce}")
-        second = await runtime.invoke(
-            input="Reply with only the value I asked you to remember."
-        )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        async with await client.start_runtime(
+            config,
+            base_dir=BASE_DIR,
+            streaming=True,
+        ) as runtime:
+            first_stream = runtime.invoke_stream(input=f"Remember this value: {nonce}")
+            first_records = [record async for record in first_stream]
+            first = await first_stream.result()
+            second_stream = runtime.invoke_stream(
+                input="Reply with only the value I asked you to remember."
+            )
+            second_records = [record async for record in second_stream]
+            second = await second_stream.result()
 
     results = (first.to_mapping(), second.to_mapping())
+    assert first_records
+    assert second_records
     assert first["status"] == second["status"] == "succeeded", results
     assert first["output"]["thread_id"] == second["output"]["thread_id"], results
     assert nonce in second["output"]["response"], second.to_mapping()

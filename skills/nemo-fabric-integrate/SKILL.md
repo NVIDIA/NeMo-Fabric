@@ -123,6 +123,32 @@ Pick the smallest lifecycle the consumer needs:
   (`stop()` can raise `FabricRuntimeError`; see Consume Results And Handle
   Errors). A runtime accepts one active invocation at a time; overlapping calls
   raise `FabricStateError`.
+- **Relay-backed stream** — live, raw ATOF records plus a terminal normalized
+  result. Enable Relay, pass `streaming=True` to `start_runtime(...)`, call
+  `runtime.invoke_stream(...)`, iterate the returned `InvokeStream`, and then
+  await `stream.result()`. Iteration ending does not indicate invocation
+  success; invocation exceptions raise from `result()`, while harness-reported
+  failures remain normalized `RunResult` values. If iteration stops early,
+  call `await stream.aclose()` before starting another turn. `aclose()` waits
+  for the turn to finish; it does not cancel the harness invocation. The SDK
+  intentionally exposes Relay-generated ATOF only; adapter-native progressive
+  output is deferred to a future normalized Fabric contract. The listener
+  limits each record to 1 MiB and its queue to 1,024 records or 16 MiB of
+  encoded data. It correlates records through the Fabric request ID for
+  in-process harnesses or Relay's turn-scope role and 1-based turn index for
+  gateway harnesses, then yields only the matched scope tree. Delayed
+  prior-turn records therefore do not enter the next stream. If gateway and
+  Fabric turn sequences do not align, the SDK discards the uncorrelated records
+  and emits a `RuntimeWarning` after natural stream exhaustion. The listener
+  binds to `127.0.0.1`, so Claude and Codex gateway processes must share the
+  SDK's network namespace. If async iteration reaches its post-turn drain
+  timeout without a Relay connection, or receives data without a matching
+  turn root, the SDK emits one `RuntimeWarning` for that failure mode; callers
+  that only await `stream.result()` do not run that warning check. The SDK also
+  warns when a Relay upload terminates before completing its chunked request
+  body because yielded records can be incomplete.
+  Without `streaming=True`, startup leaves the Relay configuration unchanged
+  and does not inject the loopback ATOF stream sink.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
@@ -153,12 +179,29 @@ async def main() -> None:
         first = await runtime.invoke(input="Inspect the repository")
         second = await runtime.invoke(input="Now review the latest patch")
 
+    # Relay-backed streaming
+    streaming_config = config.model_copy(deep=True).enable_relay()
+    async with await fabric.start_runtime(
+        streaming_config,
+        base_dir=base,
+        streaming=True,
+    ) as runtime:
+        stream = runtime.invoke_stream(input="Review the latest patch")
+        async for record in stream:
+            print(record)
+        streamed_result = await stream.result()
+
 
 asyncio.run(main())
 ```
 
-NeMo Fabric owns no queue, worker pool, retry policy, or concurrency limit. For
-parallel work, start independent runtimes and let the consumer decide how many.
+NeMo Fabric owns no application scheduling queue, worker pool, retry policy, or
+global concurrency policy. Each runtime still permits only one active
+invocation; start independent runtimes for parallel work. The Relay-backed
+streaming path uses an internal bounded transport queue and TCP backpressure
+only to carry one invocation's ATOF records. Treat `stream.result()` as
+authoritative, and reconstruct nested work from ATOF `uuid` and `parent_uuid`
+fields rather than stream order.
 
 ## Validate Before Running
 
@@ -242,7 +285,7 @@ result-field and error inventory, and
 - [ ] The consumer config object is translated directly into an in-memory `FabricConfig`.
 - [ ] Only public `nemo_fabric` symbols are imported; no `_native` or adapter internals.
 - [ ] The consumer config is built in memory and passed directly to NeMo Fabric.
-- [ ] The right lifecycle is chosen: `run(...)` for a single invocation, `start_runtime(...)` with `async with` for multi-turn.
+- [ ] The right lifecycle is chosen: `run(...)` for a single invocation, `start_runtime(...)` with `async with` for multi-turn, or `invoke_stream(...)` for Relay-backed raw ATOF.
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.
 - [ ] Installation, adapter dependencies, and credentials are owned by the environment, not consumer code.
 - [ ] `RunResult` status, error, and events are inspected before output; artifacts and telemetry are captured.
@@ -261,6 +304,7 @@ Link to these canonical sources instead of duplicating them:
   stubs are authoritative for exact signatures, fields, and defaults):
   [client](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.client.md),
   [runtime](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.runtime.md),
+  [streaming](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.streaming.md),
   [models](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.models.md),
   [types](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.types.md),
   [errors](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.errors.md)

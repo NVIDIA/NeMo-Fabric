@@ -270,8 +270,9 @@ multiple independent runtimes.
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
 | `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
-| `Fabric.start_runtime(config, ...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
+| `Fabric.start_runtime(config, ..., streaming=False)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use `streaming=True` to provision Relay-backed streaming. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
+| `Runtime.invoke_stream(...)` | No | You need live Relay-generated ATOF records for one turn. | Returns an async `InvokeStream`; await `stream.result()` for the terminal `RunResult`. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
 
 ## Single-Invocation Runs
@@ -333,6 +334,114 @@ The adapter reuses its native state between calls. Codex maps the calls to turns
 on one live thread, Deep Agents invokes one compiled graph and checkpointer,
 Hermes Agent reuses one agent and session database, and Claude keeps one connected SDK
 client. Harness-native identifiers remain adapter-internal.
+
+## Relay-Backed Streaming
+
+Enable Relay before starting a runtime to consume raw ATOF records while a turn
+runs. `Runtime.supports_streaming` reports whether this Relay-backed path is
+available. It is separate from `RuntimeCapabilities.streaming`, which describes
+adapter-native progressive output. This separation is intentional:
+`Runtime.invoke_stream()` exposes only Relay-generated ATOF records. A future
+normalized Fabric streaming contract will address adapter-native progressive
+output, such as Codex app-server message and item deltas.
+
+The following example streams one invocation and collects its terminal result:
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    EnvironmentConfig,
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+)
+
+
+async def main() -> None:
+    config = FabricConfig(
+        metadata=MetadataConfig(name="streaming-agent"),
+        harness=HarnessConfig(adapter_id="nvidia.fabric.codex"),
+        models={
+            "default": ModelConfig(provider="openai", model="openai/gpt-5.4")
+        },
+        environment=EnvironmentConfig(provider="local", workspace="."),
+    ).enable_relay()
+
+    async with await Fabric().start_runtime(config, streaming=True) as runtime:
+        stream = runtime.invoke_stream(input="Review the latest patch")
+        async for record in stream:
+            print(record)
+        result = await stream.result()
+        print(result.status, result.output)
+
+
+asyncio.run(main())
+```
+
+`invoke_stream(...)` is synchronous and starts the invocation in the background.
+The returned `InvokeStream` is an async iterator of raw Relay-generated ATOF
+dictionaries. The terminal `RunResult` stays out of band and is available only
+through `await stream.result()`. Treat that terminal result as authoritative:
+replace any provisional rendering instead of appending it. Calling
+`stream.result()` does not finalize unread stream records. Calling
+`Runtime.stop()` after the result completes finalizes the stream and discards
+those unread records.
+
+Streaming has the following v0.1 constraints:
+
+- Enable Relay and pass `streaming=True` to `start_runtime(...)`. The SDK then
+  binds its loopback listener and injects the reserved ATOF stream sink.
+  Without this opt-in, Relay configuration remains unchanged and
+  `invoke_stream(...)` raises `FabricCapabilityError`.
+- The default `streaming=False` does not force-enable ATOF for Relay runtimes
+  that use only ATIF, OpenTelemetry, or OpenInference. It also avoids the
+  additional loopback HTTP and JSON parsing cost when a runtime uses only
+  application-configured ATOF sinks.
+- One invocation can be active on a runtime. Fully consume the stream or call
+  `await stream.aclose()` before starting another turn.
+- Breaking an `async for` loop does not finalize the stream. Call
+  `await stream.aclose()` explicitly. It waits for the invocation to finish and
+  discards unread records; it does not cancel the harness turn.
+- The end of async iteration only means that no more ATOF records are available.
+  It does not indicate invocation success. Always await `stream.result()`.
+  Invocation exceptions raise from that call, while harness-reported failures
+  are represented by the returned result's status and error fields.
+- The SDK limits its queue to 1,024 records and 16 MiB of encoded record data.
+  It rejects individual records larger than 1 MiB and applies TCP backpressure.
+  Relay can drop records if a consumer stalls longer than Relay's delivery
+  timeout.
+- ATOF granularity depends on the Relay integration. Gateway harnesses expose
+  per-delta event structure, but current ATOF records keep token text in the
+  terminal scope. In-process harnesses expose scope-level progress.
+- Reconstruct nested and parallel work with `uuid` and `parent_uuid`. Stream
+  order alone does not define the Deep Agents scope tree.
+- The listener correlates records to one Relay scope tree. Deep Agents and
+  Hermes roots carry the Fabric request ID. For Claude and Codex, the SDK
+  matches Relay turn scopes by their role and 1-based turn index. Records
+  outside the matched root and its descendants are discarded, so delayed
+  records from another turn do not enter the active stream. If the gateway
+  turn sequence does not align with the Fabric invocation sequence, the SDK
+  yields no uncorrelated records and emits a `RuntimeWarning` after natural
+  stream exhaustion. A short drain window only collects late records from the
+  matched tree; it does not define turn ownership.
+- The SDK listener binds to `127.0.0.1`. Claude and Codex gateway processes
+  must run in the same network namespace as the SDK. A gateway in another
+  container, pod, or remote host cannot reach the listener. If async iteration
+  reaches the post-turn drain timeout without a Relay connection, or if Relay
+  sends data but no record matches the active turn, the SDK emits one
+  `RuntimeWarning` for that failure mode. It also warns if a Relay upload
+  terminates before completing its chunked request body because the yielded
+  stream can be incomplete. A caller that only awaits `stream.result()` still
+  receives the terminal result and does not run this warning check.
+
+Claude and Codex streaming use the `nemo-relay` gateway CLI and require a
+stream-sink-capable release, version 0.6.0 or later. Follow the
+[NeMo Relay CLI installation instructions](/getting-started/install#nemo-relay-cli)
+to provision it. Hermes Agent and Deep Agents use their in-process Relay
+integrations.
 
 ## Application-Owned Parallelism
 

@@ -21,6 +21,7 @@ NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
+    "nemo_fabric.streaming": "/reference/api/python-library-reference/streaming",
     "nemo_fabric.models": "/reference/api/python-library-reference/models",
     "nemo_fabric.types": "/reference/api/python-library-reference/types",
     "nemo_fabric.errors": "/reference/api/python-library-reference/errors",
@@ -88,6 +89,29 @@ def test_generated_reference_uses_valid_heading_order() -> None:
         assert "#### <kbd>property</kbd>" not in text, page
 
 
+def test_generated_reference_uses_markdown_spdx_comments() -> None:
+    for page in REFERENCE_DIR.glob("*.md"):
+        text = page.read_text(encoding="utf-8")
+        assert "<!-- SPDX-FileCopyrightText:" in text, page
+        assert "SPDX-License-Identifier: Apache-2.0 -->" in text, page
+        assert "{/* SPDX-FileCopyrightText:" not in text, page
+
+
+def test_streaming_reference_hides_constructor_and_preserves_async_methods():
+    reference = (REFERENCE_DIR / "nemo_fabric.streaming.md").read_text(encoding="utf-8")
+
+    assert "### <kbd>method</kbd> `__init__`" not in reference
+    assert "async def aclose()" in reference
+    assert "async def result()" in reference
+
+
+def test_relay_sink_reference_uses_valid_class_heading_spacing():
+    reference = (REFERENCE_DIR / "nemo_fabric.models.md").read_text(encoding="utf-8")
+
+    for class_name in ("RelayAtofFileSinkConfig", "RelayAtofStreamSinkConfig"):
+        assert f"## <kbd>class</kbd> `{class_name}`\n\n" in reference
+
+
 def test_landing_page_routes_new_users_through_the_product() -> None:
     landing = LANDING_PAGE.read_text(encoding="utf-8")
     navigation = NAVIGATION.read_text(encoding="utf-8")
@@ -108,6 +132,7 @@ def test_landing_page_routes_new_users_through_the_product() -> None:
     for destination in (
         "/reference/api/python-library-reference/client",
         "/reference/api/python-library-reference/runtime",
+        "/reference/api/python-library-reference/streaming",
         "/reference/api/python-library-reference/types",
         "/reference/api/python-library-reference/errors",
     ):

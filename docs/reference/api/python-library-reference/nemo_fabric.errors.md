@@ -3,8 +3,8 @@ title: "Errors"
 slug: "/reference/api/python-library-reference/errors"
 description: "Structured exception hierarchy for config, capability, state, and runtime failures."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.errors`
 Public exception hierarchy for the NeMo Fabric Python SDK.

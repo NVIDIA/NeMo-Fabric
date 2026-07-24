@@ -299,16 +299,34 @@ def test_fabric_config_authors_first_class_relay_observability():
     }
 
 
-def test_relay_atof_stream_sink_omits_empty_header_maps():
-    sink = RelayAtofStreamSinkConfig(url="https://example.test/events")
+@pytest.mark.parametrize(
+    ("headers", "header_env"),
+    [
+        ({}, {}),
+        ({"authorization": "Bearer test"}, {}),
+        ({}, {"authorization": "RELAY_AUTHORIZATION"}),
+    ],
+)
+def test_relay_atof_stream_sink_header_maps_round_trip(
+    headers: dict[str, str],
+    header_env: dict[str, str],
+):
+    config = RelayAtofConfig(
+        enabled=True,
+        sinks=[
+            RelayAtofStreamSinkConfig(
+                url="https://example.test/events",
+                headers=headers,
+                header_env=header_env,
+            )
+        ],
+    )
 
-    assert sink.to_mapping() == {
-        "type": "stream",
-        "url": "https://example.test/events",
-        "transport": "http_post",
-        "timeout_millis": 3000,
-        "field_name_policy": "preserve",
-    }
+    mapping = config.to_mapping()
+    sink = mapping["sinks"][0]
+    assert sink.get("headers", {}) == headers
+    assert sink.get("header_env", {}) == header_env
+    assert RelayAtofConfig.from_mapping(mapping).to_mapping() == mapping
 
 
 def test_fabric_config_enable_relay_preserves_omitted_fields():

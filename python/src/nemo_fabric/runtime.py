@@ -14,8 +14,15 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from nemo_fabric.errors import FabricConfigError, FabricError, FabricRuntimeError, FabricStateError
+from nemo_fabric.errors import (
+    FabricCapabilityError,
+    FabricConfigError,
+    FabricError,
+    FabricRuntimeError,
+    FabricStateError,
+)
 from nemo_fabric.models import RunRequest
+from nemo_fabric.streaming import InvokeStream, _AtofStreamListener
 from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
 
 
@@ -51,6 +58,7 @@ class Runtime:
         plan: RunPlan | Mapping[str, Any],
         runtime: RuntimeHandle | Mapping[str, Any],
         overrides: Mapping[str, Any] | None = None,
+        stream_listener: _AtofStreamListener | None = None,
     ) -> None:
         """lazydocs: ignore"""
 
@@ -64,6 +72,8 @@ class Runtime:
         self._invocations: list[dict[str, Any]] = []
         self._status = RuntimeStatus.ACTIVE
         self._current_task: asyncio.Task[Any] | None = None
+        self._current_stream: InvokeStream | None = None
+        self._stream_listener = stream_listener
         self._closing = False
 
     @property
@@ -96,6 +106,12 @@ class Runtime:
 
         return self._runtime.runtime_id
 
+    @property
+    def supports_streaming(self) -> bool:
+        """Return whether Relay-backed ATOF streaming is enabled."""
+
+        return self._stream_listener is not None
+
     async def invoke(
         self,
         *,
@@ -125,18 +141,22 @@ class Runtime:
                 normalized result.
         """
 
-        if self._status is not RuntimeStatus.ACTIVE:
-            raise FabricStateError(f"cannot invoke a {self._status.value} runtime")
-        if self._closing:
-            raise FabricStateError("cannot invoke while runtime shutdown is in progress")
-        if self._current_task is not None:
-            raise FabricStateError("runtime is already running an invocation")
+        if self._current_stream is not None and not self._current_stream._finalized:
+            raise FabricStateError(
+                "a streaming invocation is active; fully consume it or call "
+                "`await stream.aclose()` before starting another turn"
+            )
+        self._ensure_invocable()
+        payload = _run_request_payload(input=input, request=request)
+        return await self._invoke_payload(payload)
+
+    async def _invoke_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> RunResult:
+        self._ensure_invocable()
         self._current_task = asyncio.current_task()
         try:
-            payload = _run_request_payload(
-                input=input,
-                request=request,
-            )
             merged = _merge_overrides(self._overrides, payload.get("overrides"))
             if merged:
                 payload["overrides"] = merged
@@ -203,6 +223,60 @@ class Runtime:
         finally:
             self._current_task = None
 
+    def invoke_stream(
+        self,
+        *,
+        input: Any = None,
+        request: RunRequest | None = None,
+    ) -> InvokeStream:
+        """Start one turn and stream raw Relay ATOF records as they arrive.
+
+        ``input`` and ``request`` are mutually exclusive. The returned
+        :class:`InvokeStream` yields raw ATOF dictionaries. Await
+        ``stream.result()`` for the terminal normalized :class:`RunResult`.
+
+        Raises:
+            FabricCapabilityError: If the runtime was not started with Relay
+                enabled and ``streaming=True``.
+            FabricConfigError: If request fields conflict or are not
+                JSON-compatible.
+            FabricStateError: If another turn or stream is active.
+        """
+
+        if self._stream_listener is None:
+            raise FabricCapabilityError(
+                "streaming requires Relay telemetry and "
+                "start_runtime(..., streaming=True)",
+                stage="invoke",
+                code="streaming_unavailable",
+                details={"capability": "streaming"},
+            )
+        if self._current_stream is not None and not self._current_stream._finalized:
+            raise FabricStateError(
+                "a streaming invocation is active; fully consume it or call "
+                "`await stream.aclose()` before starting another turn"
+            )
+        self._ensure_invocable()
+        payload = _run_request_payload(input=input, request=request)
+        stream = InvokeStream(
+            self._invoke_payload(payload),
+            self._stream_listener,
+            request_id=payload["request_id"],
+            turn_index=len(self._invocations) + 1,
+        )
+        self._current_stream = stream
+        return stream
+
+    def _ensure_invocable(self) -> None:
+        if self._status is not RuntimeStatus.ACTIVE:
+            raise FabricStateError(f"cannot invoke a {self._status.value} runtime")
+        if self._closing:
+            raise FabricStateError(
+                "cannot invoke while runtime shutdown is in progress"
+            )
+        if self._current_task is not None:
+            raise FabricStateError("runtime is already running an invocation")
+
     async def stop(self) -> None:
         """Destroy an idle runtime exactly once.
 
@@ -218,6 +292,13 @@ class Runtime:
 
         if self._status is RuntimeStatus.STOPPED:
             return
+        if self._current_stream is not None and not self._current_stream._finalized:
+            if not self._current_stream._task.done():
+                raise FabricStateError(
+                    "cannot stop while a streaming invocation is active; await "
+                    "`stream.result()` and then call `await stream.aclose()`"
+                )
+            await self._current_stream.aclose()
         if self._current_task is not None:
             raise FabricStateError("cannot stop while a turn is in flight")
         if self._closing:
@@ -252,6 +333,8 @@ class Runtime:
             self._status = RuntimeStatus.STOPPED
         finally:
             self._closing = False
+            if self._stream_listener is not None:
+                await self._stream_listener.close()
 
     def _absorb(self, result: RunResult) -> None:
         self._invocations.append(
@@ -276,11 +359,16 @@ class Runtime:
         traceback: object,
     ) -> None:
         try:
+            if self._current_stream is not None and not self._current_stream._finalized:
+                await self._current_stream.aclose()
             await self.stop()
         except Exception as cleanup_error:
             if exc is None:
                 raise
             exc.add_note(f"runtime cleanup failed: {cleanup_error}")
+        finally:
+            if self._stream_listener is not None:
+                await self._stream_listener.close()
 
 
 def _json_mapping(value: Mapping[str, Any] | None, name: str) -> dict[str, Any]:

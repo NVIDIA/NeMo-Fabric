@@ -42,6 +42,8 @@ navigation:
                 path: ./reference/api/python-library-reference/nemo_fabric.client.md
               - page: Runtime
                 path: ./reference/api/python-library-reference/nemo_fabric.runtime.md
+              - page: Streaming
+                path: ./reference/api/python-library-reference/nemo_fabric.streaming.md
               - page: Models
                 path: ./reference/api/python-library-reference/nemo_fabric.models.md
               - page: Types

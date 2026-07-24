@@ -1,10 +1,10 @@
 ---
 title: "Models"
 slug: "/reference/api/python-library-reference/models"
-description: "Pydantic authoring models for Fabric config and request inputs."
+description: "Pydantic authoring models for NeMo Fabric config and request inputs."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.models`
 Pydantic SDK models for NeMo Fabric configuration and requests.
@@ -669,6 +669,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayAtofFileSinkConfig`
+
 NeMo Relay ATOF file sink configuration.
 
 
@@ -729,6 +730,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayAtofStreamSinkConfig`
+
 NeMo Relay ATOF stream sink configuration.
 
 
