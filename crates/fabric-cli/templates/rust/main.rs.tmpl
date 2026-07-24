@@ -26,10 +26,13 @@ fn build_config() -> FabricConfig {
             extensions: BTreeMap::new(),
         },
         models: {{MODELS}},
+        system_prompt: {{SYSTEM_PROMPT}},
+        max_turns: {{MAX_TURNS}},
         runtime: RuntimeConfig {
             input_schema: "text".to_string(),
             output_schema: "message".to_string(),
             artifacts: None,
+            timeout_seconds: {{TIMEOUT_SECONDS}},
             extensions: BTreeMap::new(),
         },
         environment: Some(EnvironmentConfig {
@@ -38,6 +41,7 @@ fn build_config() -> FabricConfig {
             ownership: EnvironmentOwnership::FabricOwned,
             workspace: Some(PathBuf::from("repo")),
             artifacts: None,
+            env: {{ENVIRONMENT_ENV}},
             connection: Map::new(),
             metadata: Map::new(),
             settings: Map::new(),

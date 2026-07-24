@@ -91,62 +91,98 @@ def test_default_base_url(
 
 
 @pytest.mark.parametrize(
-    ("settings", "model_config", "expected"),
+    ("model_config", "expected"),
     [
         (
-            {"base_url": "https://settings.example/v1"},
-            {"provider": "nvidia", "settings": {"base_url": "https://model.example/v1"}},
-            "https://settings.example/v1",
-        ),
-        (
-            {},
-            {"provider": "openai", "settings": {"base_url": "https://model.example/v1"}},
+            {"provider": "nvidia", "base_url": "https://model.example/v1"},
             "https://model.example/v1",
         ),
-        ({}, {"provider": "nvidia"}, "https://integrate.api.nvidia.com/v1"),
-        ({}, {"provider": "other"}, None),
+        ({"provider": "openai", "base_url": "https://model.example/v1"}, "https://model.example/v1"),
+        ({"provider": "nvidia"}, "https://integrate.api.nvidia.com/v1"),
+        ({"provider": "other"}, None),
     ],
 )
 def test_get_base_url(
-    settings: dict[str, object],
     model_config: dict[str, object],
     expected: str | None,
 ):
-    assert common_utils.get_base_url(settings, model_config) == expected
+    assert common_utils.get_base_url(model_config) == expected
 
 
 @pytest.mark.parametrize(
-    ("selected_model", "models", "expected"),
+    ("models", "expected"),
     [
         (
-            "fast",
             {"fast": {"provider": "nvidia", "model": "fast-model"}},
             {"provider": "nvidia", "model": "fast-model"},
         ),
         (
-            None,
             {"default": {"provider": "nvidia", "model": "default-model"}},
             {"provider": "nvidia", "model": "default-model"},
         ),
-        ("bad", {"bad": "not-a-model-config"}, {}),
+        ({"bad": "not-a-model-config"}, {}),
+        (
+            {
+                "fast": {"provider": "nvidia", "model": "fast-model"},
+                "slow": {"provider": "nvidia", "model": "slow-model"},
+            },
+            {},
+        ),
     ],
 )
 def test_selected_model_config(
-    selected_model: str | None,
     models: dict[str, object],
     expected: dict[str, object],
 ):
-    settings = {}
-    if selected_model is not None:
-        settings["model"] = selected_model
     payload = {
         "config": {
-            "harness": {"settings": settings},
+            "harness": {"settings": {}},
             "models": models,
         }
     }
 
     assert common_utils.selected_model_config(payload) == expected
+
+
+def test_normalized_agent_and_toolset_accessors():
+    payload = {
+        "config": {
+            "system_prompt": "Be concise.",
+            "max_turns": 7,
+            "runtime": {"timeout_seconds": 12.5},
+            "tools": {
+                "blocked": ["Bash"],
+                "toolsets": {"enabled": [], "blocked": ["browser"]},
+            },
+        },
+        "runtime_context": {
+            "environment": {"env": {"VISIBLE": "yes"}},
+        },
+    }
+
+    assert common_utils.system_prompt(payload) == "Be concise."
+    assert common_utils.max_turns(payload) == 7
+    assert common_utils.timeout_seconds(payload, default=30) == 12.5
+    assert common_utils.environment_env(payload) == {"VISIBLE": "yes"}
+    assert common_utils.blocked_tools(payload) == ["Bash"]
+    assert common_utils.enabled_toolsets(payload) == []
+    assert common_utils.blocked_toolsets(payload) == ["browser"]
+
+
+def test_environment_payload_uses_normalized_config_without_runtime_context():
+    payload = {
+        "config": {
+            "environment": {
+                "workspace": "/config-workspace",
+                "env": {"VISIBLE": "yes"},
+            }
+        }
+    }
+
+    assert common_utils.environment_payload(payload) == {
+        "workspace": "/config-workspace",
+        "env": {"VISIBLE": "yes"},
+    }
 
 
 def test_payload_accessors_use_canonical_plan_fields(tmp_path):

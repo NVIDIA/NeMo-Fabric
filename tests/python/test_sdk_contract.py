@@ -45,6 +45,7 @@ from nemo_fabric import RuntimeConfig
 from nemo_fabric import RuntimeHandle
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
+from nemo_fabric import ToolsetConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.types import _FabricConfigSnapshot
 from nemo_fabric.types import _ToolsConfig
@@ -145,13 +146,20 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         output_dir="./artifacts/relay",
     )
     config.block_tools("browser", "shell", "browser")
+    config.configure_toolsets(enabled=["terminal"], blocked=["browser"])
 
     assert isinstance(config.mcp, McpConfig)
     assert isinstance(config.skills, SkillConfig)
     assert isinstance(config.telemetry, TelemetryConfig)
     assert isinstance(config.tools, ToolsConfig)
 
-    assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
+    assert config.to_mapping()["tools"] == {
+        "blocked": ["browser", "shell"],
+        "toolsets": {
+            "enabled": ["terminal"],
+            "blocked": ["browser"],
+        },
+    }
     assert config.to_mapping()["skills"] == {"paths": ["./skills/review"]}
     assert config.to_mapping()["mcp"] == {
         "servers": {
@@ -201,12 +209,97 @@ def test_typed_tools_config_serializes_blocked_policy():
     assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
 
 
+def test_typed_config_serializes_normalized_execution_fields():
+    config = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        system_prompt="Be concise.",
+        max_turns=7,
+        runtime=RuntimeConfig(timeout_seconds=12.5),
+        environment=EnvironmentConfig(env={"VISIBLE": "yes"}),
+        models={
+            "default": {
+                "provider": "nvidia",
+                "model": "nvidia/test",
+                "base_url": "https://models.example/v1",
+            }
+        },
+        tools=ToolsConfig(
+            toolsets=ToolsetConfig(enabled=[], blocked=["browser"])
+        ),
+    )
+
+    mapping = config.to_mapping()
+    assert mapping["system_prompt"] == "Be concise."
+    assert mapping["max_turns"] == 7
+    assert mapping["runtime"]["timeout_seconds"] == 12.5
+    assert mapping["environment"]["env"] == {"VISIBLE": "yes"}
+    assert mapping["models"]["default"]["base_url"] == (
+        "https://models.example/v1"
+    )
+    assert mapping["tools"]["toolsets"] == {
+        "enabled": [],
+        "blocked": ["browser"],
+    }
+
+    with pytest.raises(ValidationError, match="greater than 0"):
+        RuntimeConfig(timeout_seconds=0)
+    with pytest.raises(ValidationError, match="greater than 0"):
+        FabricConfig(
+            metadata=MetadataConfig(name="demo"),
+            harness=HarnessConfig(adapter_id="test.fabric.shim"),
+            max_turns=0,
+        )
+    with pytest.raises(ValidationError, match="both enabled and blocked"):
+        ToolsetConfig(enabled=["browser"], blocked=["browser"])
+    with pytest.raises(ValidationError, match="models.<role>.base_url"):
+        FabricConfig(
+            metadata=MetadataConfig(name="demo"),
+            harness=HarnessConfig(adapter_id="test.fabric.shim"),
+            models={
+                "default": {
+                    "provider": "nvidia",
+                    "model": "nvidia/test",
+                    "settings": {
+                        "base_url": "https://legacy.example/v1",
+                    },
+                }
+            },
+        )
+
+
 def test_run_plan_config_block_tools_emits_canonical_shape():
     config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
 
     config.block_tools("browser", "shell", "browser")
 
     assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
+
+
+def test_run_plan_config_preserves_normalized_toolsets_and_execution_fields():
+    raw = _plan()["config"]
+    raw.update(
+        {
+            "system_prompt": "Be concise.",
+            "max_turns": 5,
+            "runtime": {"timeout_seconds": 9},
+            "environment": {"provider": "local", "env": {"VISIBLE": "yes"}},
+            "tools": {
+                "toolsets": {"enabled": [], "blocked": ["browser"]},
+            },
+        }
+    )
+
+    config = _FabricConfigSnapshot.from_mapping(raw)
+
+    assert config.to_mapping()["system_prompt"] == "Be concise."
+    assert config.to_mapping()["max_turns"] == 5
+    assert config.to_mapping()["runtime"]["timeout_seconds"] == 9
+    assert config.to_mapping()["environment"]["env"] == {"VISIBLE": "yes"}
+    assert config.to_mapping()["tools"]["toolsets"] == {
+        "enabled": [],
+        "blocked": ["browser"],
+    }
 
 
 def test_run_plan_tools_config_rejects_scalar_blocked_value():
@@ -411,6 +504,7 @@ def test_environment_model_defines_extension_field_ownership():
     properties = EnvironmentConfig.model_json_schema()["properties"]
 
     assert "environment provider" in properties["settings"]["description"]
+    assert "harness and its tools" in properties["env"]["description"]
     assert "without Fabric semantics" in properties["metadata"]["description"]
     assert "existing environment" in properties["connection"]["description"]
     assert "environment teardown" in properties["ownership"]["description"]
@@ -1185,7 +1279,7 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
         harness=HarnessConfig(
             adapter_id="test.fabric.shim",
             resolution="preinstalled",
-            settings={"workspace": "./ws"},
+            settings={"custom_option": "original"},
         ),
         runtime=RuntimeConfig(
             input_schema="chat",
@@ -1193,13 +1287,13 @@ def test_fabric_config_constructors_emit_schema_shaped_mappings():
         ),
     )
     copied = config.to_mapping()
-    copied["harness"]["settings"]["workspace"] = "mutated"
+    copied["harness"]["settings"]["custom_option"] = "mutated"
 
     assert config.schema_version == "fabric.agent/v1alpha1"
     assert config.metadata.to_mapping() == {"name": "demo"}
     assert config.harness.adapter_id == "test.fabric.shim"
     assert config.runtime.input_schema == "chat"
-    assert config.harness.settings["workspace"] == "./ws"
+    assert config.harness.settings["custom_option"] == "original"
 
     client = NativeClient(NativeRecorder())
     client.plan(config)

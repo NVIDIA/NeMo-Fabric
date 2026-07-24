@@ -136,10 +136,12 @@ fn code_review_config(preset: Preset) -> FabricConfig {
         .as_mut()
         .expect("CLI presets always define an execution environment");
     environment.workspace = Some(PathBuf::from("repo"));
-    config.skills = Some(SkillConfig {
-        paths: vec![PathBuf::from("skills/code-review.md")],
-        extensions: BTreeMap::new(),
-    });
+    if preset.name != "scripted" {
+        config.skills = Some(SkillConfig {
+            paths: vec![PathBuf::from("skills/code-review.md")],
+            extensions: BTreeMap::new(),
+        });
+    }
     config
 }
 

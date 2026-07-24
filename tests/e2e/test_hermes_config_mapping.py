@@ -52,19 +52,25 @@ def payload(tmpdir: str) -> dict:
     return {
         "agent_name": "code-review-agent",
         "base_dir": tmpdir,
-        "environment": {
-            "workspace": f"{tmpdir}/workspace",
-        },
-        "models": {
-            "default": {
-                "provider": "nvidia",
-                "model": "nvidia/nemotron-3-nano-30b-a3b",
-                "api_key_env": "NVIDIA_API_KEY",
-            }
+        "config": {
+            "environment": {
+                "workspace": f"{tmpdir}/workspace",
+            },
+            "models": {
+                "default": {
+                    "provider": "nvidia",
+                    "model": "nvidia/nemotron-3-nano-30b-a3b",
+                    "api_key_env": "NVIDIA_API_KEY",
+                    "base_url": "https://integrate.api.nvidia.com/v1",
+                }
+            },
+            "tools": {
+                "toolsets": {
+                    "enabled": [],
+                }
+            },
         },
         "settings": {
-            "enabled_toolsets": [],
-            "terminal_backend": "local",
             "terminal_timeout": 30,
         },
         "capabilities": {

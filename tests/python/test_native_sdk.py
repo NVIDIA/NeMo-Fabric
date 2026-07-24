@@ -65,6 +65,17 @@ def test_native_run_rejects_multiple_request_sources(hermes_shim_agent_dir: Path
         )
 
 
+def test_plan_rejects_adapter_incompatible_normalized_tool_policy():
+    config = base_config()
+    config.block_tools("Bash")
+
+    with pytest.raises(
+        FabricConfigError,
+        match=r"nvidia\.fabric\.hermes.*tools\.blocked",
+    ):
+        Fabric().plan(config, base_dir=BASE_DIR)
+
+
 async def smoke(client: Fabric, fixture_agent: Path) -> None:
     example_config = base_config()
 
@@ -96,10 +107,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
             "harness": {
                 "adapter_id": "test.fabric.hermes_shim",
                 "resolution": "preinstalled",
-                "settings": {
-                    "workspace": "./repos/my-service",
-                    "timeout_seconds": 30,
-                },
+                "settings": {},
             },
             "models": {
                 "default": {
@@ -112,6 +120,7 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
                 "input_schema": "chat",
                 "output_schema": "message",
                 "artifacts": "./artifacts",
+                "timeout_seconds": 30,
             },
             "environment": {
                 "provider": "local",
@@ -145,8 +154,8 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert typed_plan["telemetry_plan"]["relay_enabled"] is True
     resolved_config = typed_plan.config.to_mapping()
     assert resolved_config["harness"]["adapter_id"] == "test.fabric.hermes_shim"
-    assert resolved_config["harness"]["settings"]["workspace"] == "./repos/my-service"
-    assert resolved_config["harness"]["settings"]["timeout_seconds"] == 30
+    assert "settings" not in resolved_config["harness"]
+    assert resolved_config["runtime"]["timeout_seconds"] == 30
     assert resolved_config["consumer_extension"] == {
         "base": True,
         "custom": True,

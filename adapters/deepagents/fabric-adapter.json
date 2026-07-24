@@ -8,7 +8,16 @@
   },
   "requirements": {},
   "config": {
-    "accepts": ["models", "tools", "tools.blocked", "mcp", "skills", "telemetry"]
+    "accepts": [
+      "models",
+      "models.base_url",
+      "models.temperature",
+      "system_prompt",
+      "tools.blocked",
+      "mcp",
+      "skills",
+      "telemetry"
+    ]
   },
   "telemetry": {
     "providers": {
