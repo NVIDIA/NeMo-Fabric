@@ -29,12 +29,12 @@ application-facing Python SDK contract:
 - resolving relative workspace and skill paths with `base_dir`;
 - running maintained Hermes Agent, Codex, Claude, and Deep Agents adapters through the Python SDK.
 
-Start with:
+Complete the [code-review setup](code_review_agent/README.md#set-up), then run:
 
 ```bash
 just build-all
 .venv/bin/python -m examples.code_review_agent \
-  --input "Reply with exactly: fabric works"
+  --input "Reply with exactly: NeMo Fabric works"
 ```
 
 ## Harbor

@@ -14,8 +14,9 @@ from examples.code_review_agent import __main__ as main_module
 from examples.code_review_agent import base_config
 from examples.code_review_agent import claude_config
 from examples.code_review_agent import codex_config
+from examples.code_review_agent import deepagents_config
 from examples.code_review_agent import hermes_config
-from examples.code_review_agent import with_fabric_managed_github_mcp
+from examples.code_review_agent import with_github_mcp
 from examples.code_review_agent import with_native_otel
 from examples.code_review_agent import with_opensandbox
 from examples.code_review_agent import with_relay
@@ -31,8 +32,9 @@ def test_variant_builders_return_independent_complete_configs():
     hermes = hermes_config()
     codex = codex_config()
     claude = claude_config()
+    deepagents = deepagents_config()
 
-    for config in (base, hermes, codex, claude):
+    for config in (base, hermes, codex, claude, deepagents):
         assert isinstance(config, FabricConfig)
         assert config.metadata.name == "code-review-agent"
         assert config.environment is not None
@@ -51,14 +53,21 @@ def test_variant_builders_return_independent_complete_configs():
     assert claude.models["default"].api_key_env == "ANTHROPIC_API_KEY"
     assert claude.mcp is None
     assert claude.skills is None
-    assert base.mcp is not None
+    assert deepagents is not base
+    assert deepagents.harness is not base.harness
+    assert deepagents.harness.adapter_id == "nvidia.fabric.langchain.deepagents"
+    assert deepagents.mcp is None
+    assert deepagents.skills is None
+    assert base.mcp is None
     assert base.skills is not None
+    skill_path = BASE_DIR / base.skills.paths[0]
+    assert (skill_path / "SKILL.md").is_file()
 
 
 def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     base = hermes_config()
     variants = (
-        with_fabric_managed_github_mcp(base),
+        with_github_mcp(base),
         with_native_otel(base),
         with_opensandbox(base),
         with_relay(base),
@@ -70,11 +79,10 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     assert base.telemetry.providers == {}
     assert base.environment is not None
     assert base.environment.provider == "local"
-    assert base.mcp is not None
-    assert base.mcp.servers["github"].exposure == "harness_native"
+    assert base.mcp is None
     assert all(variant is not base for variant in variants)
     assert variants[0].mcp is not None
-    assert variants[0].mcp.servers["github"].exposure == "fabric_managed"
+    assert variants[0].mcp.servers["github"].exposure == "harness_native"
     assert variants[1].telemetry is not None
     assert "native" in variants[1].telemetry.providers
     assert variants[2].environment is not None
@@ -86,19 +94,36 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
 def test_variants_plan_from_complete_configs():
     client = Fabric()
 
-    for config in (hermes_config(), codex_config(), claude_config()):
+    for config in (
+        hermes_config(),
+        codex_config(),
+        claude_config(),
+        deepagents_config(),
+    ):
         plan = client.plan(config, base_dir=BASE_DIR)
         assert plan.base_dir == BASE_DIR
         assert plan.agent_name == "code-review-agent"
         assert plan.adapter.adapter_id == config.harness.adapter_id
+        github_plan = client.plan(with_github_mcp(config), base_dir=BASE_DIR)
+        assert "github" in github_plan["capability_plan"]["native"]["mcp_servers"]
+        assert "mcp_servers" not in github_plan["capability_plan"]["unsupported"]
 
 
 def test_example_entrypoint_plans_without_starting_a_runtime():
-    cases = (
-        ([], "nvidia.fabric.hermes", False),
-        (["--variant", "codex"], "nvidia.fabric.codex", False),
-        (["--variant", "claude"], "nvidia.fabric.claude", False),
-        (["--relay"], "nvidia.fabric.hermes", True),
+    variants = (
+        ("hermes", "nvidia.fabric.hermes"),
+        ("codex", "nvidia.fabric.codex"),
+        ("claude", "nvidia.fabric.claude"),
+        ("deepagents", "nvidia.fabric.langchain.deepagents"),
+    )
+    cases = tuple(
+        (
+            ["--variant", variant, *(["--relay"] if relay_enabled else [])],
+            adapter_id,
+            relay_enabled,
+        )
+        for variant, adapter_id in variants
+        for relay_enabled in (False, True)
     )
 
     for options, adapter_id, relay_enabled in cases:

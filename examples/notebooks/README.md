@@ -19,22 +19,29 @@ variations notebook shows advanced composition against a real, maintained agent.
 ## Prerequisites
 
 - Build the SDK and native extension from the repo root: `just build-all`. This
-  alone is enough to run both notebooks top to bottom.
+  is enough to execute the setup, planning, and configuration-inspection cells.
+  Live runs require the prerequisites below.
 - To actually *run* a harness (rather than just inspect its config), that
   harness's adapter and credentials must be present:
-  - **Hermes Agent** (both notebooks): install Hermes Agent in its own environment (the repo
-    README's [Hermes Agent quick start](../../README.md#quick-start-hermes-agent))
-    and set `NVIDIA_API_KEY`. The setup cell auto-detects `.tmp/hermes-venv`.
+  - **Hermes Agent** (both notebooks): follow the
+    [Hermes Agent quick start](../../README.md#quick-start-hermes-agent) through
+    the environment installation steps and set `NVIDIA_API_KEY`. The setup cells
+    auto-detect the resulting `.tmp/hermes-venv`.
   - **Deep Agents, Codex, Claude** (variations notebook): the matching adapter
     installed in the NeMo Fabric environment, plus that harness's credentials
-    (`NVIDIA_API_KEY` for Deep Agents; an authenticated `codex` and
-    `OPENAI_API_KEY` for Codex; `ANTHROPIC_API_KEY` for Claude).
+    (`NVIDIA_API_KEY` for Deep Agents; an existing ChatGPT or provisioned API-key
+    login for Codex; `ANTHROPIC_API_KEY` for the documented Claude run).
+    Relay-enabled Hermes Agent and Deep Agents runs also need the `nemo-relay`
+    Python package in the selected adapter environment.
 - `NVIDIA_API_KEY` is loaded from a gitignored `.env` at the repo root if present.
 
-Every live cell is guarded. With only `just build-all` done, both notebooks
-still execute end to end: the variations notebook runs each harness whose
-prerequisites are met and, for the rest, inspects the resolved config with
-`plan()` and prints exactly what to provide to run it for real.
+Every live cell checks the prerequisites it can inspect. Missing key-based
+credentials skip their harness and still show its resolved plan. Codex
+authentication is validated only after its adapter starts, so an attempted
+Codex authentication failure is collected as an execution failure. After every
+variant is attempted, the notebook raises on any attempted-run failure. The
+Relay cell also requires a succeeded result, a Relay telemetry reference, and a
+nonempty, parseable ATOF trace.
 
 ## Launch
 

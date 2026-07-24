@@ -59,12 +59,6 @@ def base_config() -> FabricConfig:
         telemetry=TelemetryConfig(),
     )
     config.add_skill_path(SKILL_PATH)
-    config.add_mcp_server(
-        "github",
-        transport="streamable-http",
-        url="${GITHUB_MCP_URL}",
-        exposure="harness_native",
-    )
     return config
 
 
@@ -123,7 +117,6 @@ def codex_config() -> FabricConfig:
         workspace=WORKSPACE,
         artifacts="./artifacts/codex",
     )
-    config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)
     return config
 
@@ -150,7 +143,6 @@ def deepagents_config() -> FabricConfig:
         workspace=WORKSPACE,
         artifacts="./artifacts/deepagents",
     )
-    config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)
     return config
 
@@ -189,7 +181,6 @@ def claude_config() -> FabricConfig:
         workspace=WORKSPACE,
         artifacts="./artifacts/claude",
     )
-    config.remove_mcp_server("github")
     config.remove_skill_path(SKILL_PATH)
     return config
 
@@ -211,15 +202,15 @@ def with_opensandbox(base: FabricConfig) -> FabricConfig:
     return config
 
 
-def with_fabric_managed_github_mcp(base: FabricConfig) -> FabricConfig:
-    """Return a copy that routes the GitHub MCP server through Fabric."""
+def with_github_mcp(base: FabricConfig) -> FabricConfig:
+    """Return a copy that maps GitHub MCP into the selected harness."""
 
     config = base.model_copy(deep=True)
     config.add_mcp_server(
         "github",
         transport="streamable-http",
         url="${GITHUB_MCP_URL}",
-        exposure="fabric_managed",
+        exposure="harness_native",
     )
     return config
 
