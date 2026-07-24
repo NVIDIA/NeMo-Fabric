@@ -13,66 +13,66 @@ Fabric config models and loading helpers.
 
 ## Structs
 
-- [AdapterConfigSupport](struct-adapterconfigsupport.mdx): Adapter config support.
-- [AdapterDescriptor](struct-adapterdescriptor.mdx): Language-neutral adapter descriptor for a harness integration.
-- [AdapterRequirements](struct-adapterrequirements.mdx): Adapter runtime requirements.
-- [AdapterTelemetryProviderSupport](struct-adaptertelemetryprovidersupport.mdx): Telemetry capabilities for one adapter-supported provider.
-- [AdapterTelemetrySupport](struct-adaptertelemetrysupport.mdx): Adapter telemetry support.
-- [CapabilityPlan](struct-capabilityplan.mdx): Resolved capability configuration.
-- [CapabilityRoute](struct-capabilityroute.mdx): One capability routing decision.
-- [CapabilityTargetPlan](struct-capabilitytargetplan.mdx): Capabilities routed to one target.
-- [EnvironmentConfig](struct-environmentconfig.mdx): Execution environment configuration.
-- [EnvironmentPlan](struct-environmentplan.mdx): Resolved environment plan.
-- [FabricConfig](struct-fabricconfig.mdx): Versioned Fabric agent config.
-- [HarnessConfig](struct-harnessconfig.mdx): Harness selection.
-- [McpConfig](struct-mcpconfig.mdx): MCP capability configuration.
-- [McpServerConfig](struct-mcpserverconfig.mdx): MCP server configuration.
-- [McpServerPlan](struct-mcpserverplan.mdx): Resolved MCP server exposure.
-- [MetadataConfig](struct-metadataconfig.mdx): Human-readable metadata.
-- [ModelConfig](struct-modelconfig.mdx): Model configuration.
-- [RelayAtifConfig](struct-relayatifconfig.mdx): Relay ATIF export configuration.
-- [RelayAtofConfig](struct-relayatofconfig.mdx): Relay ATOF export configuration.
-- [RelayAtofEndpointConfig](struct-relayatofendpointconfig.mdx): Relay ATOF endpoint configuration.
-- [RelayComponentConfig](struct-relaycomponentconfig.mdx): Generic NeMo Relay plugin component configuration.
-- [RelayConfig](struct-relayconfig.mdx): NeMo Relay integration configuration.
-- [RelayConfigPolicy](struct-relayconfigpolicy.mdx): Relay validation policy.
-- [RelayObservabilityConfig](struct-relayobservabilityconfig.mdx): NeMo Relay observability component configuration.
-- [RelayOtlpConfig](struct-relayotlpconfig.mdx): Relay OpenTelemetry/OpenInference export configuration.
-- [ResolveContext](struct-resolvecontext.mdx): Source context used when resolving an in-memory Fabric config.
-- [ResolvedAdapterDescriptor](struct-resolvedadapterdescriptor.mdx): Adapter descriptor selected for a run plan.
-- [RunPlan](struct-runplan.mdx): Resolved Fabric run plan.
-- [RuntimeCapabilities](struct-runtimecapabilities.mdx): Lifecycle behavior implemented by a resolved runtime path.
-- [RuntimeConfig](struct-runtimeconfig.mdx): Runtime input/output contract.
-- [SkillConfig](struct-skillconfig.mdx): Skill capability configuration.
-- [TelemetryConfig](struct-telemetryconfig.mdx): Telemetry configuration.
-- [TelemetryPlan](struct-telemetryplan.mdx): Resolved telemetry plan.
-- [TelemetryProviderConfig](struct-telemetryproviderconfig.mdx): Provider-specific telemetry configuration.
-- [ToolsConfig](struct-toolsconfig.mdx): Harness-neutral tool capability configuration.
-- [ToolsPlan](struct-toolsplan.mdx): Normalized tool policy for a run.
+- [AdapterConfigSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterconfigsupport): Adapter config support.
+- [AdapterDescriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterdescriptor): Language-neutral adapter descriptor for a harness integration.
+- [AdapterRequirements](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adapterrequirements): Adapter runtime requirements.
+- [AdapterTelemetryProviderSupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adaptertelemetryprovidersupport): Telemetry capabilities for one adapter-supported provider.
+- [AdapterTelemetrySupport](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-adaptertelemetrysupport): Adapter telemetry support.
+- [CapabilityPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-capabilityplan): Resolved capability configuration.
+- [CapabilityRoute](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-capabilityroute): One capability routing decision.
+- [CapabilityTargetPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-capabilitytargetplan): Capabilities routed to one target.
+- [EnvironmentConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-environmentconfig): Execution environment configuration.
+- [EnvironmentPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-environmentplan): Resolved environment plan.
+- [FabricConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-fabricconfig): Versioned Fabric agent config.
+- [HarnessConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-harnessconfig): Harness selection.
+- [McpConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-mcpconfig): MCP capability configuration.
+- [McpServerConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-mcpserverconfig): MCP server configuration.
+- [McpServerPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-mcpserverplan): Resolved MCP server exposure.
+- [MetadataConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-metadataconfig): Human-readable metadata.
+- [ModelConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-modelconfig): Model configuration.
+- [RelayAtifConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayatifconfig): Relay ATIF export configuration.
+- [RelayAtofConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayatofconfig): Relay ATOF export configuration.
+- [RelayComponentConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relaycomponentconfig): Generic NeMo Relay plugin component configuration.
+- [RelayConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayconfig): NeMo Relay integration configuration.
+- [RelayConfigPolicy](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayconfigpolicy): Relay validation policy.
+- [RelayObservabilityConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayobservabilityconfig): NeMo Relay observability component configuration.
+- [RelayOtlpConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-relayotlpconfig): Relay OpenTelemetry/OpenInference export configuration.
+- [ResolveContext](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-resolvecontext): Source context used when resolving an in-memory Fabric config.
+- [ResolvedAdapterDescriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-resolvedadapterdescriptor): Adapter descriptor selected for a run plan.
+- [RunPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runplan): Resolved Fabric run plan.
+- [RuntimeCapabilities](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runtimecapabilities): Lifecycle behavior implemented by a resolved runtime path.
+- [RuntimeConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-runtimeconfig): Runtime input/output contract.
+- [SkillConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-skillconfig): Skill capability configuration.
+- [TelemetryConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-telemetryconfig): Telemetry configuration.
+- [TelemetryPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-telemetryplan): Resolved telemetry plan.
+- [TelemetryProviderConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-telemetryproviderconfig): Provider-specific telemetry configuration.
+- [ToolsConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-toolsconfig): Harness-neutral tool capability configuration.
+- [ToolsPlan](/reference/api/rust-library-reference/nemo-fabric-core/config/struct-toolsplan): Normalized tool policy for a run.
 
 ## Enums
 
-- [AdapterDescriptorSource](enum-adapterdescriptorsource.mdx): Where Fabric resolved an adapter descriptor from.
-- [AdapterKind](enum-adapterkind.mdx): Adapter implementation kind.
-- [CapabilityKind](enum-capabilitykind.mdx): Capability kind.
-- [CapabilityTarget](enum-capabilitytarget.mdx): Capability routing target.
-- [ControlLocation](enum-controllocation.mdx): Where Fabric control code runs relative to the environment.
-- [EnvironmentOwnership](enum-environmentownership.mdx): Whether Fabric owns the underlying environment resource.
-- [McpExposure](enum-mcpexposure.mdx): MCP exposure strategy.
-- [RelayAtifStorageConfig](enum-relayatifstorageconfig.mdx): Relay ATIF remote storage configuration.
-- [RelayAtofEndpointFieldNamePolicy](enum-relayatofendpointfieldnamepolicy.mdx): Relay ATOF endpoint field-name policy.
-- [RelayAtofEndpointTransport](enum-relayatofendpointtransport.mdx): Relay ATOF endpoint transport.
-- [RelayAtofMode](enum-relayatofmode.mdx): Relay ATOF file mode.
-- [RelayOtlpTransport](enum-relayotlptransport.mdx): Relay OTLP transport.
-- [RelayUnsupportedBehavior](enum-relayunsupportedbehavior.mdx): Relay unsupported/unknown config handling.
-- [ResolutionStrategy](enum-resolutionstrategy.mdx): Adapter install or availability strategy.
-- [TelemetryProvider](enum-telemetryprovider.mdx): Telemetry runtime provider.
+- [AdapterDescriptorSource](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-adapterdescriptorsource): Where Fabric resolved an adapter descriptor from.
+- [AdapterKind](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-adapterkind): Adapter implementation kind.
+- [CapabilityKind](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-capabilitykind): Capability kind.
+- [CapabilityTarget](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-capabilitytarget): Capability routing target.
+- [ControlLocation](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-controllocation): Where Fabric control code runs relative to the environment.
+- [EnvironmentOwnership](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-environmentownership): Whether Fabric owns the underlying environment resource.
+- [McpExposure](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-mcpexposure): MCP exposure strategy.
+- [RelayAtifStorageConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatifstorageconfig): Relay ATIF remote storage configuration.
+- [RelayAtofMode](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatofmode): Relay ATOF file mode.
+- [RelayAtofSinkConfig](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatofsinkconfig): Relay ATOF sink configuration.
+- [RelayAtofStreamFieldNamePolicy](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatofstreamfieldnamepolicy): Relay ATOF stream field-name policy.
+- [RelayAtofStreamTransport](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayatofstreamtransport): Relay ATOF stream transport.
+- [RelayOtlpTransport](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayotlptransport): Relay OTLP transport.
+- [RelayUnsupportedBehavior](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-relayunsupportedbehavior): Relay unsupported/unknown config handling.
+- [ResolutionStrategy](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-resolutionstrategy): Adapter install or availability strategy.
+- [TelemetryProvider](/reference/api/rust-library-reference/nemo-fabric-core/config/enum-telemetryprovider): Telemetry runtime provider.
 
 ## Constants
 
-- [ADAPTER_CONTRACT_VERSION](constant-adapter-contract-version.mdx): Adapter descriptor contract version supported by this core.
+- [ADAPTER_CONTRACT_VERSION](/reference/api/rust-library-reference/nemo-fabric-core/config/constant-adapter-contract-version): Adapter descriptor contract version supported by this core.
 
 ## Functions
 
-- [load_adapter_descriptor](fn-load-adapter-descriptor.mdx): Load an adapter descriptor from JSON package metadata.
-- [resolve_run_plan_from_config](fn-resolve-run-plan-from-config.mdx): Resolve a typed Fabric config into a runnable plan.
+- [load_adapter_descriptor](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-load-adapter-descriptor): Load an adapter descriptor from JSON package metadata.
+- [resolve_run_plan_from_config](/reference/api/rust-library-reference/nemo-fabric-core/config/fn-resolve-run-plan-from-config): Resolve a typed Fabric config into a runnable plan.

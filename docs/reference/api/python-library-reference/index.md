@@ -31,7 +31,8 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Model alias configuration.
 - [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
 - [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
-- [`models.RelayAtofEndpointConfig`](./nemo_fabric.models.md#class-relayatofendpointconfig): NeMo Relay ATOF remote endpoint configuration.
+- [`models.RelayAtofFileSinkConfig`](./nemo_fabric.models.md#class-relayatoffilesinkconfig): NeMo Relay ATOF file sink configuration.
+- [`models.RelayAtofStreamSinkConfig`](./nemo_fabric.models.md#class-relayatofstreamsinkconfig): NeMo Relay ATOF stream sink configuration.
 - [`models.RelayComponentConfig`](./nemo_fabric.models.md#class-relaycomponentconfig): Generic NeMo Relay plugin component configuration.
 - [`models.RelayConfig`](./nemo_fabric.models.md#class-relayconfig): First-class NeMo Relay integration configuration.
 - [`models.RelayConfigPolicy`](./nemo_fabric.models.md#class-relayconfigpolicy): NeMo Relay config validation policy.

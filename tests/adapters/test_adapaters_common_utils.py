@@ -271,10 +271,6 @@ def test_normalize_list(value: object, expected: list[str]):
     assert common_utils.normalize_list(value) == expected
 
 
-def test_without_none():
-    assert common_utils.without_none({"a": 1, "b": None, "c": False}) == {"a": 1, "c": False}
-
-
 def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config(
     tmp_path: Path,
 ):
@@ -286,7 +282,16 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
                     "config": {
                         "atof": {
                             "enabled": True,
-                            "output_directory": "custom-relay",
+                            "sinks": [
+                                {
+                                    "type": "file",
+                                    "output_directory": "custom-relay",
+                                },
+                                {
+                                    "type": "stream",
+                                    "url": "https://example.test/events",
+                                },
+                            ],
                         },
                         "atif": {"enabled": True},
                     }
@@ -319,25 +324,24 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
 
     assert plugin_config["version"] == 1
     assert plugin_config["components"][0]["kind"] == "observability"
-    assert observability["atof"]["output_directory"] == str(
-        tmp_path / "custom-relay" / "runtime-current"
-    )
-    assert observability["atof"]["filename"] == "events.atof.jsonl"
-    assert observability["atof"]["mode"] == "overwrite"
-    assert Path(observability["atof"]["output_directory"]).is_dir()
-    assert observability["atif"]["output_directory"] == str(
-        tmp_path / "artifacts" / "relay" / "runtime-current"
-    )
+    assert observability["version"] == 2
+    file_sink, stream_sink = observability["atof"]["sinks"]
+    assert file_sink["output_directory"] == str(tmp_path / "custom-relay" / "runtime-current")
+    assert file_sink["filename"] == "events.atof.jsonl"
+    assert file_sink["mode"] == "overwrite"
+    assert Path(file_sink["output_directory"]).is_dir()
+    assert stream_sink == {
+        "type": "stream",
+        "url": "https://example.test/events",
+    }
+    assert observability["atif"]["output_directory"] == str(tmp_path / "artifacts" / "relay" / "runtime-current")
     assert observability["atif"]["filename_template"] == "trajectory-{session_id}.atif.json"
     assert observability["atif"]["agent_name"] == "review-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
     assert Path(observability["atif"]["output_directory"]).is_dir()
 
-    atof_file = Path(observability["atof"]["output_directory"]) / "events.atof.jsonl"
-    atif_file = (
-        Path(observability["atif"]["output_directory"])
-        / "trajectory-current.atif.json"
-    )
+    atof_file = Path(file_sink["output_directory"]) / "events.atof.jsonl"
+    atif_file = Path(observability["atif"]["output_directory"]) / "trajectory-current.atif.json"
     atof_file.write_text("{}", encoding="utf-8")
     atif_file.write_text("{}", encoding="utf-8")
 
@@ -363,7 +367,19 @@ def test_collect_relay_artifacts(tmp_path: Path):
             {
                 "kind": "observability",
                 "config": {
-                    "atof": {"enabled": True, "output_directory": str(atof_dir)},
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [
+                            {
+                                "type": "file",
+                                "output_directory": str(atof_dir),
+                            },
+                            {
+                                "type": "stream",
+                                "url": "https://example.test/events",
+                            },
+                        ],
+                    },
                     "atif": {"enabled": True, "output_directory": str(atif_dir)},
                 },
             }
@@ -373,6 +389,105 @@ def test_collect_relay_artifacts(tmp_path: Path):
     assert common_utils.collect_relay_artifacts(plugin_config) == [
         {"kind": "atof", "path": str(atof_file)},
         {"kind": "atif", "path": str(atif_file)},
+    ]
+
+
+def test_collect_relay_artifacts_ignores_missing_output_directories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    (tmp_path / "unrelated.jsonl").write_text("{}", encoding="utf-8")
+    (tmp_path / "unrelated.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [{"type": "file"}],
+                    },
+                    "atif": {"enabled": True},
+                },
+            }
+        ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def test_relay_validates_raw_v06_plugin_config():
+    from nemo_relay import plugin
+
+    os.environ["TOKEN"] = "test-token"
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 2,
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [
+                            {
+                                "type": "file",
+                                "output_directory": "/tmp/atof",
+                                "filename": "events.jsonl",
+                                "mode": "overwrite",
+                            },
+                            {
+                                "type": "stream",
+                                "url": "https://example.test/events",
+                                "transport": "ndjson",
+                                "headers": {"x-test": "value"},
+                                "header_env": {"authorization": "TOKEN"},
+                                "timeout_millis": 1000,
+                                "field_name_policy": "replace_dots",
+                                "name": "phoenix",
+                            },
+                        ],
+                    },
+                },
+            }
+        ],
+    }
+
+    assert plugin.validate(plugin_config)["diagnostics"] == []
+
+
+def test_relay_validates_unknown_atof_sink_type():
+    from nemo_relay import plugin
+
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 2,
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [{"type": "unknown"}],
+                    },
+                },
+            }
+        ],
+    }
+
+    assert plugin.validate(plugin_config)["diagnostics"] == [
+        {
+            "code": "observability.invalid_plugin_config",
+            "component": "observability",
+            "level": "error",
+            "message": (
+                "invalid config: invalid observability plugin config: "
+                "unknown variant `unknown`, expected `file` or `stream`"
+            ),
+        }
     ]
 
 
@@ -409,7 +524,7 @@ def test_write_relay_configs(
                 assert tomllib.load(stream) == config
 
 
-def test_write_relay_configs_migrates_atof_to_current_cli_contract(tmp_path: Path):
+def test_write_relay_configs_preserves_current_cli_contract(tmp_path: Path):
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
     plugin_config = {
         "version": 1,
@@ -418,21 +533,25 @@ def test_write_relay_configs_migrates_atof_to_current_cli_contract(tmp_path: Pat
                 "kind": "observability",
                 "enabled": True,
                 "config": {
-                    "version": 1,
+                    "version": 2,
                     "atof": {
                         "enabled": True,
-                        "output_directory": "/tmp/atof",
-                        "filename": "events.jsonl",
-                        "mode": "overwrite",
-                        "endpoints": [
+                        "sinks": [
                             {
+                                "type": "file",
+                                "output_directory": "/tmp/atof",
+                                "filename": "events.jsonl",
+                                "mode": "overwrite",
+                            },
+                            {
+                                "type": "stream",
                                 "url": "https://example.test/events",
                                 "transport": "http_post",
                                 "headers": {"x-test": "value"},
                                 "header_env": {"authorization": "TOKEN"},
                                 "timeout_millis": 1000,
                                 "field_name_policy": "replace_dots",
-                            }
+                            },
                         ],
                     },
                     "atif": {"enabled": True, "output_directory": "/tmp/atif"},
@@ -475,5 +594,4 @@ def test_write_relay_configs_migrates_atof_to_current_cli_contract(tmp_path: Pat
         "enabled": True,
         "output_directory": "/tmp/atif",
     }
-    assert plugin_config["components"][0]["config"]["version"] == 1
-    assert "sinks" not in plugin_config["components"][0]["config"]["atof"]
+    assert rendered == plugin_config

@@ -29,6 +29,7 @@ This table lists the maintainer skills in this set and what each covers.
 | Skill | Purpose |
 |---|---|
 | [`contribute-api`](contribute-api/SKILL.md) | Add a public API surface with Rust, CLI, Python, schema, adapter, and documentation parity. |
+| [`contribute-adapter`](contribute-adapter/SKILL.md) | Add a production-ready harness adapter with explicit capability, policy, packaging, lifecycle, and validation contracts. |
 | [`small-fix`](small-fix/SKILL.md) | Make a small, reviewable bug fix without widening scope. |
 | [`contribute-docs`](contribute-docs/SKILL.md) | Change documentation or examples in step with public behavior. |
 | [`review-doc-style`](review-doc-style/SKILL.md) | Review documentation and public text for NVIDIA technical-writing style. |
