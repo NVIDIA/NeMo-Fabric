@@ -15,6 +15,7 @@ import importlib.machinery
 import os
 import sys
 import types
+from collections.abc import AsyncIterator
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -187,7 +188,7 @@ def fake_relay_fixture(monkeypatch):
         return merged
 
     @contextlib.asynccontextmanager
-    async def plugin_ctx(config):
+    async def plugin_ctx(config: object) -> AsyncIterator[None]:
         calls["plugin_open"] = True
         calls["plugin_enters"] = calls.get("plugin_enters", 0) + 1
         calls.setdefault("plugin_configs", []).append(config)

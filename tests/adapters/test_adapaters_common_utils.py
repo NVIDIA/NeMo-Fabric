@@ -417,10 +417,10 @@ def test_collect_relay_artifacts_ignores_missing_output_directories(
     assert common_utils.collect_relay_artifacts(plugin_config) == []
 
 
-def test_relay_validates_raw_v06_plugin_config(monkeypatch: pytest.MonkeyPatch):
+def test_relay_validates_raw_v06_plugin_config():
     from nemo_relay import plugin
 
-    monkeypatch.setenv("TOKEN", "test-token")
+    os.environ["TOKEN"] = "test-token"
     plugin_config = {
         "version": 1,
         "components": [
