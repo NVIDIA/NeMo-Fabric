@@ -131,10 +131,15 @@ Pick the smallest lifecycle the consumer needs:
   failures remain normalized `RunResult` values. If iteration stops early,
   call `await stream.aclose()` before starting another turn. `aclose()` waits
   for the turn to finish; it does not cancel the harness invocation. The SDK
-  stream listener binds to `127.0.0.1`, so Claude and Codex gateway processes
-  must share the SDK's network namespace. If no Relay connection reaches the
-  listener, the SDK emits one `RuntimeWarning`; `stream.result()` still returns
-  the terminal result.
+  intentionally exposes Relay-generated ATOF only; adapter-native progressive
+  output is deferred to a future normalized Fabric contract. The listener
+  limits each record to 1 MiB and its queue to 1,024 records or 16 MiB of
+  encoded data. It filters canonical ATOF timestamps against each turn's start
+  time so delayed prior-turn records do not enter the next stream. The listener
+  binds to `127.0.0.1`, so Claude and Codex gateway processes must share the
+  SDK's network namespace. If async iteration reaches its post-turn drain
+  timeout without a Relay connection, the SDK emits one `RuntimeWarning`;
+  callers that only await `stream.result()` do not run that warning check.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,
@@ -178,11 +183,12 @@ asyncio.run(main())
 ```
 
 NeMo Fabric owns no application scheduling queue, worker pool, retry policy, or
-concurrency limit. For parallel work, start independent runtimes and let the
-consumer decide how many. The Relay-backed streaming path uses an internal
-bounded transport queue and TCP backpressure only to carry one invocation's
-ATOF records. Treat `stream.result()` as authoritative, and reconstruct nested
-work from ATOF `uuid` and `parent_uuid` fields rather than stream order.
+global concurrency policy. Each runtime still permits only one active
+invocation; start independent runtimes for parallel work. The Relay-backed
+streaming path uses an internal bounded transport queue and TCP backpressure
+only to carry one invocation's ATOF records. Treat `stream.result()` as
+authoritative, and reconstruct nested work from ATOF `uuid` and `parent_uuid`
+fields rather than stream order.
 
 ## Validate Before Running
 

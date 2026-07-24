@@ -455,7 +455,7 @@ async def test_cancelled_aclose_keeps_turn_active_and_result_awaitable(
 
 
 async def test_aclose_drains_backpressure_while_invocation_finishes():
-    listener = _AtofStreamListener(maxsize=1)
+    listener = await _AtofStreamListener(maxsize=1).start()
     producer_finished = asyncio.Event()
 
     async def invoke() -> RunResult:
@@ -463,20 +463,83 @@ async def test_aclose_drains_backpressure_while_invocation_finishes():
         return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
 
     stream = InvokeStream(invoke(), listener)
-    listener.records.put_nowait({"uuid": "first"})
+    records = [{"uuid": f"record-{index}"} for index in range(3)]
 
     async def produce() -> None:
-        await listener.records.put({"uuid": "second"})
+        await _post_chunked(listener.url, records)
         producer_finished.set()
 
     producer = asyncio.create_task(produce())
-    await asyncio.sleep(0)
+    while not listener.records.full():
+        await asyncio.sleep(0)
     assert not producer.done()
 
     await asyncio.wait_for(stream.aclose(), timeout=1)
 
     assert producer.done()
     assert (await stream.result()).status == "succeeded"
+    await listener.close()
+
+
+async def test_listener_filters_timestamped_records_from_previous_turn():
+    listener = await _AtofStreamListener(maxsize=2).start()
+    listener.begin_stream()
+    listener.end_stream()
+    listener.begin_stream()
+    current = {"uuid": "current", "timestamp": "2100-01-01T00:00:00Z"}
+
+    await _post_chunked(
+        listener.url,
+        [
+            {"uuid": "late", "timestamp": "2000-01-01T00:00:00Z"},
+            current,
+        ],
+    )
+
+    assert await listener.records.get() == current
+    assert listener.records.empty()
+    listener.end_stream()
+    await listener.close()
+
+
+async def test_listener_applies_byte_budget_backpressure():
+    record = {"uuid": "record", "payload": "x" * 16}
+    record_size = len(json.dumps(record).encode())
+    listener = await _AtofStreamListener(
+        maxsize=10,
+        max_bytes=record_size,
+        max_record_bytes=record_size,
+    ).start()
+    listener.begin_stream()
+
+    producer = asyncio.create_task(_post_chunked(listener.url, [record, record]))
+    while listener.records.empty():
+        await asyncio.sleep(0)
+    assert not producer.done()
+
+    assert await listener.records.get() == record
+    assert await listener.records.get() == record
+    await producer
+    listener.end_stream()
+    await listener.close()
+
+
+async def test_listener_rejects_oversized_record():
+    listener = await _AtofStreamListener(max_record_bytes=32).start()
+    listener.begin_stream()
+    payload = json.dumps({"payload": "x" * 64}).encode() + b"\n"
+    request = (
+        b"POST /atof HTTP/1.1\r\n"
+        + f"Content-Length: {len(payload)}\r\n".encode()
+        + b"Content-Type: application/x-ndjson\r\n\r\n"
+        + payload
+    )
+
+    assert await _request_status(listener.url, request) == (
+        b"HTTP/1.1 413 Content Too Large\r\n"
+    )
+    listener.end_stream()
+    await listener.close()
 
 
 async def test_listener_accepts_atof_record_larger_than_default_read_limits():

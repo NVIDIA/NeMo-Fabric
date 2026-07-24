@@ -340,7 +340,10 @@ client. Harness-native identifiers remain adapter-internal.
 Enable Relay before starting a runtime to consume raw ATOF records while a turn
 runs. `Runtime.supports_streaming` reports whether this Relay-backed path is
 available. It is separate from `RuntimeCapabilities.streaming`, which describes
-adapter-native progressive output.
+adapter-native progressive output. This separation is intentional:
+`Runtime.invoke_stream()` exposes only Relay-generated ATOF records. A future
+normalized Fabric streaming contract will address adapter-native progressive
+output, such as Codex app-server message and item deltas.
 
 The following example streams one invocation and collects its terminal result:
 
@@ -400,7 +403,8 @@ Streaming has the following v0.1 constraints:
   It does not indicate invocation success. Always await `stream.result()`.
   Invocation exceptions raise from that call, while harness-reported failures
   are represented by the returned result's status and error fields.
-- The SDK uses a bounded queue of 1,024 records and applies TCP backpressure.
+- The SDK limits its queue to 1,024 records and 16 MiB of encoded record data.
+  It rejects individual records larger than 1 MiB and applies TCP backpressure.
   Relay can drop records if a consumer stalls longer than Relay's delivery
   timeout.
 - ATOF granularity depends on the Relay integration. Gateway harnesses expose
@@ -408,14 +412,17 @@ Streaming has the following v0.1 constraints:
   terminal scope. In-process harnesses expose scope-level progress.
 - Reconstruct nested and parallel work with `uuid` and `parent_uuid`. Stream
   order alone does not define the Deep Agents scope tree.
-- Turn completion and a short drain window delimit records on a persistent
-  runtime. Very late Relay records can arrive after that window, so turn
-  isolation is best effort in v0.1.
+- Each turn records a start-time cutoff. The listener discards canonical ATOF
+  records with timestamps older than that cutoff, so delayed records from a
+  previous turn do not appear in the next stream. A short drain window collects
+  current-turn records after invocation completion; records that arrive after
+  that window are discarded.
 - The SDK listener binds to `127.0.0.1`. Claude and Codex gateway processes
   must run in the same network namespace as the SDK. A gateway in another
-  container, pod, or remote host cannot reach the listener. If no Relay
-  connection reaches the listener, the SDK emits one `RuntimeWarning`;
-  `stream.result()` still returns the terminal result.
+  container, pod, or remote host cannot reach the listener. If async iteration
+  reaches the post-turn drain timeout without a Relay connection, the SDK emits
+  one `RuntimeWarning`. A caller that only awaits `stream.result()` still
+  receives the terminal result and does not run this warning check.
 
 Claude and Codex streaming use the `nemo-relay` gateway CLI and require a
 stream-sink-capable release, version 0.6.0 or later. Follow the

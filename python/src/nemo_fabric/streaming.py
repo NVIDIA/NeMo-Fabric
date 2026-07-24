@@ -10,11 +10,14 @@ import json
 import warnings
 from collections.abc import Coroutine
 from contextlib import suppress
+from datetime import datetime
+from datetime import timezone
 from typing import Any
 
 from nemo_fabric.models import (
     FabricConfig,
     RelayAtofConfig,
+    RelayAtofFileSinkConfig,
     RelayAtofStreamSinkConfig,
     RelayConfig,
     RelayObservabilityConfig,
@@ -22,9 +25,80 @@ from nemo_fabric.models import (
 from nemo_fabric.types import RunResult
 
 _DRAIN_SECONDS = 0.25
+_MAX_RECORD_BYTES = 1024 * 1024
+_QUEUE_MAX_BYTES = 16 * 1024 * 1024
 _QUEUE_MAXSIZE = 1024
 _READ_SIZE = 64 * 1024
 _STREAM_SINK_NAME = "nemo-fabric-stream"
+
+
+class _RecordTooLarge(ValueError):
+    pass
+
+
+class _AtofRecordQueue:
+    def __init__(self, *, maxsize: int, max_bytes: int) -> None:
+        self._queue: asyncio.Queue[tuple[dict[str, Any], int]] = asyncio.Queue(
+            maxsize=maxsize
+        )
+        self._max_bytes = max_bytes
+        self._queued_bytes = 0
+        self._space_available = asyncio.Event()
+        self._space_available.set()
+
+    def empty(self) -> bool:
+        return self._queue.empty()
+
+    def full(self) -> bool:
+        return self._queue.full() or self._queued_bytes >= self._max_bytes
+
+    async def put(
+        self,
+        record: dict[str, Any],
+        *,
+        byte_size: int | None = None,
+    ) -> None:
+        size = byte_size if byte_size is not None else _record_size(record)
+        if size > self._max_bytes:
+            raise _RecordTooLarge
+        while self._queued_bytes + size > self._max_bytes:
+            self._space_available.clear()
+            await self._space_available.wait()
+        self._queued_bytes += size
+        try:
+            await self._queue.put((record, size))
+        except BaseException:
+            self._queued_bytes -= size
+            self._space_available.set()
+            raise
+
+    def put_nowait(
+        self,
+        record: dict[str, Any],
+        *,
+        byte_size: int | None = None,
+    ) -> None:
+        size = byte_size if byte_size is not None else _record_size(record)
+        if size > self._max_bytes:
+            raise _RecordTooLarge
+        if self._queued_bytes + size > self._max_bytes:
+            raise asyncio.QueueFull
+        self._queue.put_nowait((record, size))
+        self._queued_bytes += size
+
+    async def get(self) -> dict[str, Any]:
+        record, size = await self._queue.get()
+        self._release(size)
+        return record
+
+    def get_nowait(self) -> dict[str, Any]:
+        record, size = self._queue.get_nowait()
+        self._release(size)
+        return record
+
+    def _release(self, size: int) -> None:
+        self._queued_bytes -= size
+        self._space_available.set()
 
 
 class InvokeStream:
@@ -150,13 +224,17 @@ class _AtofStreamListener:
         host: str = "127.0.0.1",
         port: int = 0,
         maxsize: int = _QUEUE_MAXSIZE,
+        max_bytes: int = _QUEUE_MAX_BYTES,
+        max_record_bytes: int = _MAX_RECORD_BYTES,
     ) -> None:
         self._host = host
         self._port = port
-        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=maxsize)
+        self._queue = _AtofRecordQueue(maxsize=maxsize, max_bytes=max_bytes)
+        self._max_record_bytes = min(max_record_bytes, max_bytes)
         self._server: asyncio.Server | None = None
         self._bound_port: int | None = None
         self._accepting = False
+        self._stream_started_at: datetime | None = None
         self._has_atof_connection = False
         self._warned_unconnected = False
         self._tasks: set[asyncio.Task[None]] = set()
@@ -171,7 +249,7 @@ class _AtofStreamListener:
         return f"http://{self._host}:{self._bound_port}/atof"
 
     @property
-    def records(self) -> asyncio.Queue[dict[str, Any]]:
+    def records(self) -> _AtofRecordQueue:
         """Return the bounded record queue used by the active stream."""
 
         return self._queue
@@ -195,12 +273,14 @@ class _AtofStreamListener:
             raise RuntimeError("ATOF stream listener already has an active consumer")
         while not self._queue.empty():
             self._queue.get_nowait()
+        self._stream_started_at = datetime.now(timezone.utc)
         self._accepting = True
 
     def end_stream(self) -> None:
         """Discard records until another streaming invocation begins."""
 
         self._accepting = False
+        self._stream_started_at = None
 
     def warn_if_unconnected(self) -> None:
         """Warn once when Relay has never reached this listener."""
@@ -264,6 +344,9 @@ class _AtofStreamListener:
                 return
             await self._emit(buffer)
             await _write_response(writer, 200, "OK")
+        except _RecordTooLarge:
+            with suppress(ConnectionError):
+                await _write_response(writer, 413, "Content Too Large")
         except (ValueError, UnicodeDecodeError, asyncio.IncompleteReadError):
             with suppress(ConnectionError):
                 await _write_response(writer, 400, "Bad Request")
@@ -316,7 +399,11 @@ class _AtofStreamListener:
         while True:
             newline = buffer.find(b"\n")
             if newline < 0:
+                if len(buffer) > self._max_record_bytes:
+                    raise _RecordTooLarge
                 return
+            if newline > self._max_record_bytes:
+                raise _RecordTooLarge
             line = bytes(buffer[:newline])
             del buffer[: newline + 1]
             await self._emit(line)
@@ -325,12 +412,25 @@ class _AtofStreamListener:
         stripped = bytes(line).strip()
         if not stripped or not self._accepting:
             return
+        if len(stripped) > self._max_record_bytes:
+            raise _RecordTooLarge
         try:
             record = json.loads(stripped)
         except json.JSONDecodeError:
             return
-        if isinstance(record, dict):
-            await self._queue.put(record)
+        if isinstance(record, dict) and not self._is_from_previous_turn(record):
+            await self._queue.put(record, byte_size=len(stripped))
+
+    def _is_from_previous_turn(self, record: dict[str, Any]) -> bool:
+        started_at = self._stream_started_at
+        timestamp = record.get("timestamp")
+        if started_at is None or not isinstance(timestamp, str):
+            return False
+        try:
+            emitted_at = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return emitted_at.tzinfo is not None and emitted_at < started_at
 
     async def close(self) -> None:
         """Stop accepting records and close active HTTP connections."""
@@ -355,7 +455,13 @@ def _relay_enabled(config: FabricConfig) -> bool:
     return telemetry is not None and "relay" in telemetry.providers
 
 
-def _sink_name(sink: Any) -> str | None:
+def _record_size(record: dict[str, Any]) -> int:
+    return len(json.dumps(record, separators=(",", ":"), ensure_ascii=False).encode())
+
+
+def _sink_name(
+    sink: RelayAtofFileSinkConfig | RelayAtofStreamSinkConfig | dict[str, Any],
+) -> str | None:
     name = sink.get("name") if isinstance(sink, dict) else getattr(sink, "name", None)
     return name if isinstance(name, str) else None
 
