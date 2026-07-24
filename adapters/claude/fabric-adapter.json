@@ -7,7 +7,19 @@
     "module": "nemo_fabric_adapters.claude.adapter"
   },
   "config": {
-    "accepts": ["models", "tools", "tools.blocked", "mcp", "skills", "telemetry"]
+    "models": {
+      "providers": ["anthropic", "nvidia"]
+    },
+    "accepts": [
+      "models",
+      "models.base_url",
+      "system_prompt",
+      "max_turns",
+      "tools.blocked",
+      "mcp",
+      "skills",
+      "telemetry"
+    ]
   },
   "telemetry": {
     "providers": {

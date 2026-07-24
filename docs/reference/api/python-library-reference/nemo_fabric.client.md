@@ -1,7 +1,7 @@
 ---
 title: "Client"
 slug: "/reference/api/python-library-reference/client"
-description: "Resolve, plan, diagnose, and run agents with Fabric."
+description: "Resolve, plan, diagnose, and run agents with NeMo Fabric."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -15,6 +15,7 @@ Native Python client for resolving and running NeMo Fabric agents.
 
 
 ## <kbd>class</kbd> `Fabric`
+
 Primary Python entrypoint for NeMo Fabric.
 
 Every lifecycle method accepts a complete, typed ``FabricConfig`` plus an optional ``base_dir`` used to resolve relative paths. Compose variants in Python before calling the SDK. The ``doctor()``, ``plan()``, and ``run()`` results are typed, read-only mapping models. ``start_runtime()`` returns an active ``Runtime`` handle.

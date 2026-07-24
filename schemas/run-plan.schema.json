@@ -1,13 +1,73 @@
 {
   "$defs": {
+    "AdapterConfigField": {
+      "description": "Adapter-translated normalized NVIDIA NeMo Fabric configuration fields.",
+      "oneOf": [
+        {
+          "const": "models",
+          "description": "Normalized model selection and credentials.",
+          "type": "string"
+        },
+        {
+          "const": "models.base_url",
+          "description": "Custom model endpoint.",
+          "type": "string"
+        },
+        {
+          "const": "models.temperature",
+          "description": "Model temperature.",
+          "type": "string"
+        },
+        {
+          "const": "system_prompt",
+          "description": "Portable system instructions.",
+          "type": "string"
+        },
+        {
+          "const": "max_turns",
+          "description": "Per-invocation harness turn limit.",
+          "type": "string"
+        },
+        {
+          "const": "tools.blocked",
+          "description": "Adapter-native tool names to block.",
+          "type": "string"
+        },
+        {
+          "const": "tools.toolsets.enabled",
+          "description": "Harness-defined toolsets to expose.",
+          "type": "string"
+        },
+        {
+          "const": "tools.toolsets.blocked",
+          "description": "Harness-defined toolsets to block.",
+          "type": "string"
+        },
+        {
+          "const": "mcp",
+          "description": "Harness-native MCP servers.",
+          "type": "string"
+        },
+        {
+          "const": "skills",
+          "description": "Harness-native skills.",
+          "type": "string"
+        },
+        {
+          "const": "telemetry",
+          "description": "Typed telemetry configuration. Exact support remains declared by telemetry provider.",
+          "type": "string"
+        }
+      ]
+    },
     "AdapterConfigSupport": {
       "additionalProperties": true,
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "Fabric config areas or policy paths accepted by this adapter.",
+          "description": "Normalized NVIDIA NeMo Fabric config fields accepted by this adapter.",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/AdapterConfigField"
           },
           "type": "array"
         },
@@ -17,6 +77,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "models": {
+          "$ref": "#/$defs/AdapterModelConfigSupport",
+          "description": "Model providers and provider-specific settings accepted by this adapter."
         }
       },
       "type": "object"
@@ -123,6 +187,28 @@
         }
       ]
     },
+    "AdapterModelConfigSupport": {
+      "additionalProperties": true,
+      "description": "Adapter compatibility constraints for normalized model configuration.",
+      "properties": {
+        "providers": {
+          "description": "Supported model providers. An empty set accepts any provider.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "settings": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AdapterSettingSchema"
+          },
+          "description": "Supported provider-specific model settings.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "AdapterRequirements": {
       "additionalProperties": true,
       "description": "Adapter runtime requirements.",
@@ -164,6 +250,66 @@
         }
       },
       "type": "object"
+    },
+    "AdapterSettingSchema": {
+      "description": "Descriptor-owned schema for one adapter-specific setting.",
+      "properties": {
+        "description": {
+          "description": "Human-readable setting description.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required": {
+          "default": false,
+          "description": "Whether the setting must be present.",
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/$defs/AdapterSettingType",
+          "description": "Expected JSON value kind."
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "AdapterSettingType": {
+      "description": "JSON value kinds accepted by an adapter-owned setting.",
+      "oneOf": [
+        {
+          "const": "string",
+          "description": "JSON string.",
+          "type": "string"
+        },
+        {
+          "const": "integer",
+          "description": "JSON integer.",
+          "type": "string"
+        },
+        {
+          "const": "number",
+          "description": "JSON number.",
+          "type": "string"
+        },
+        {
+          "const": "boolean",
+          "description": "JSON boolean.",
+          "type": "string"
+        },
+        {
+          "const": "object",
+          "description": "JSON object.",
+          "type": "string"
+        },
+        {
+          "const": "array",
+          "description": "JSON array.",
+          "type": "string"
+        }
+      ]
     },
     "AdapterTelemetryProviderSupport": {
       "additionalProperties": true,
@@ -387,6 +533,13 @@
           "default": "in_env_control",
           "description": "Where Fabric control code runs relative to the environment."
         },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables visible to the harness and its tools.",
+          "type": "object"
+        },
         "metadata": {
           "additionalProperties": true,
           "description": "Consumer-provided environment metadata.",
@@ -453,6 +606,13 @@
           "$ref": "#/$defs/ControlLocation",
           "description": "Fabric control location."
         },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables visible to the harness and its tools.",
+          "type": "object"
+        },
         "metadata": {
           "additionalProperties": true,
           "description": "Consumer-provided environment metadata.",
@@ -488,7 +648,7 @@
     },
     "FabricConfig": {
       "additionalProperties": true,
-      "description": "Versioned Fabric agent config.",
+      "description": "Versioned NVIDIA NeMo Fabric agent config.\n\nNeMo Fabric-owned fields apply uniformly, while adapter-translated fields are\nvalidated against the selected adapter descriptor. See the\n[configuration compatibility matrix](/sdk/python#normalized-configuration-compatibility).",
       "properties": {
         "environment": {
           "anyOf": [
@@ -504,6 +664,15 @@
         "harness": {
           "$ref": "#/$defs/HarnessConfig",
           "description": "Harness selection and harness-specific settings."
+        },
+        "max_turns": {
+          "description": "Maximum number of harness turns within one invocation.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "mcp": {
           "anyOf": [
@@ -556,6 +725,13 @@
             }
           ],
           "description": "Skill capability configuration."
+        },
+        "system_prompt": {
+          "description": "Portable system instructions for the selected harness.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "telemetry": {
           "anyOf": [
@@ -721,6 +897,13 @@
       "properties": {
         "api_key_env": {
           "description": "Optional environment variable containing an API key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_url": {
+          "description": "Optional provider endpoint URL.",
           "type": [
             "string",
             "null"
@@ -1482,6 +1665,15 @@
           "default": "text",
           "description": "Output schema label.",
           "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Maximum duration of one invocation in seconds.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -1592,11 +1784,22 @@
       "description": "Harness-neutral tool capability configuration.",
       "properties": {
         "blocked": {
-          "description": "Adapter-native tool names or toolset names to block.",
+          "description": "Adapter-native tool names to block.",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "toolsets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolsetConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Adapter-native toolset selection and blocking policy."
         }
       },
       "type": "object"
@@ -1605,11 +1808,46 @@
       "description": "Normalized tool policy for a run.",
       "properties": {
         "blocked": {
-          "description": "Adapter-native tool names or toolset names to block.",
+          "description": "Adapter-native tool names to block.",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "toolsets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolsetConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Adapter-native toolset selection and blocking policy."
+        }
+      },
+      "type": "object"
+    },
+    "ToolsetConfig": {
+      "additionalProperties": true,
+      "description": "Harness-neutral toolset capability configuration.",
+      "properties": {
+        "blocked": {
+          "description": "Toolsets to block.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "description": "Toolsets to expose. `None` preserves the adapter default; an empty list exposes none.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "type": "object"

@@ -7,7 +7,17 @@
     "module": "nemo_fabric_adapters.codex.adapter"
   },
   "config": {
-    "accepts": ["models", "mcp", "skills", "telemetry"]
+    "models": {
+      "providers": ["nvidia", "openai"]
+    },
+    "accepts": [
+      "models",
+      "models.base_url",
+      "system_prompt",
+      "mcp",
+      "skills",
+      "telemetry"
+    ]
   },
   "telemetry": {
     "providers": {

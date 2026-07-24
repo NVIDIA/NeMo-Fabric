@@ -36,7 +36,7 @@ def base_config() -> FabricConfig:
         harness=HarnessConfig(
             adapter_id="nvidia.fabric.hermes",
             resolution="preinstalled",
-            settings={"workspace": WORKSPACE},
+            settings={},
         ),
         models={
             "default": ModelConfig(
@@ -76,17 +76,16 @@ def hermes_config() -> FabricConfig:
         adapter_id="nvidia.fabric.hermes",
         resolution="preinstalled",
         settings={
-            "workspace": WORKSPACE,
-            "hermes_home": "./artifacts/hermes-home",
-            "base_url": "https://integrate.api.nvidia.com/v1",
-            "max_iterations": 1,
             "max_tokens": 512,
-            "temperature": 0.0,
             "reasoning_config": {"effort": "none"},
-            "enabled_toolsets": [],
-            "system_prompt": "You are a concise smoke test assistant.",
         },
     )
+    model = config.models["default"]
+    assert isinstance(model, ModelConfig)
+    model.base_url = "https://integrate.api.nvidia.com/v1"
+    config.system_prompt = "You are a concise smoke test assistant."
+    config.max_turns = 1
+    config.configure_toolsets(enabled=[])
     config.runtime = RuntimeConfig(
         input_schema="chat",
         output_schema="message",
@@ -135,11 +134,9 @@ def deepagents_config() -> FabricConfig:
     config.harness = HarnessConfig(
         adapter_id="nvidia.fabric.langchain.deepagents",
         resolution="preinstalled",
-        settings={
-            "workspace": WORKSPACE,
-            "system_prompt": "You are a concise smoke test assistant.",
-        },
+        settings={},
     )
+    config.system_prompt = "You are a concise smoke test assistant."
     config.runtime = RuntimeConfig(
         input_schema="chat",
         output_schema="message",
@@ -159,8 +156,9 @@ def claude_config() -> FabricConfig:
     """Return the complete Claude adapter variant.
 
     The Claude adapter reads the working directory from ``environment.workspace``
-    and rejects ``cwd`` in ``harness.settings``; only Claude-specific controls
-    such as ``system_prompt`` and ``permission_mode`` belong there.
+    and reads portable instructions from ``FabricConfig.system_prompt``.
+    Claude-specific controls such as ``permission_mode`` stay in
+    ``harness.settings``.
     """
 
     config = base_config().model_copy(deep=True)
@@ -168,9 +166,11 @@ def claude_config() -> FabricConfig:
         adapter_id="nvidia.fabric.claude",
         resolution="preinstalled",
         settings={
-            "system_prompt": "You are a concise code reviewer. Point out correctness bugs and risks.",
             "permission_mode": "dontAsk",
         },
+    )
+    config.system_prompt = (
+        "You are a concise code reviewer. Point out correctness bugs and risks."
     )
     config.models = {
         "default": ModelConfig(

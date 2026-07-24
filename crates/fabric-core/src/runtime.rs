@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::config::{
-    AdapterKind, CapabilityKind, CapabilityPlan, CapabilityTarget, ControlLocation,
-    EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
+    AdapterKind, CapabilityPlan, CapabilityTarget, ControlLocation, EnvironmentOwnership,
+    FabricConfig, RunPlan, TelemetryPlan,
 };
 use crate::error::{FabricError, Result};
 
@@ -242,6 +242,9 @@ pub struct EnvironmentHandle {
     /// Artifact root visible to the harness runtime.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<PathBuf>,
+    /// Environment variables visible to the harness and its tools.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
     /// Whether Fabric owns the environment resource.
     pub ownership: EnvironmentOwnership,
     /// Provider connection metadata.
@@ -475,6 +478,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
         ownership,
         workspace,
         artifacts,
+        environment_env,
         connection_settings,
         environment_metadata,
         settings,
@@ -485,6 +489,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
             environment.ownership,
             environment.workspace.clone(),
             environment.artifacts.clone(),
+            environment.env.clone(),
             environment.connection.clone(),
             environment.metadata.clone(),
             environment.settings.clone(),
@@ -500,6 +505,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
                 .artifacts
                 .as_ref()
                 .map(|artifacts| resolve_path(&plan.base_dir, artifacts)),
+            BTreeMap::new(),
             serde_json::Map::new(),
             serde_json::Map::new(),
             serde_json::Map::new(),
@@ -524,6 +530,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
         control_location,
         workspace,
         artifacts,
+        env: environment_env,
         ownership,
         connection,
         metadata,
@@ -532,7 +539,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
 
 /// Start or connect to a harness runtime.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
-    validate_blocked_tools_support(plan)?;
+    validate_adapter_compatibility(plan)?;
     let environment = prepare_environment(plan)?;
     if uses_local_host(plan) {
         return LocalHostAdapter.start(plan, environment);
@@ -549,7 +556,7 @@ pub fn invoke_runtime(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
-    validate_blocked_tools_support(plan)?;
+    validate_adapter_compatibility(plan)?;
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
         return LocalHostAdapter.invoke(plan, runtime, request);
@@ -560,12 +567,16 @@ pub fn invoke_runtime(
     })
 }
 
-fn validate_blocked_tools_support(plan: &RunPlan) -> Result<()> {
-    if let Some(route) = plan.capability_plan.routes.iter().find(|route| {
-        route.kind == CapabilityKind::Tools && route.target == CapabilityTarget::Unsupported
-    }) {
-        return Err(FabricError::UnsupportedToolsPolicy {
-            harness: harness(plan),
+fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
+    if let Some(route) = plan
+        .capability_plan
+        .routes
+        .iter()
+        .find(|route| route.target == CapabilityTarget::Unsupported)
+    {
+        return Err(FabricError::AdapterCompatibility {
+            adapter_id: adapter_id(plan).unwrap_or_else(|| harness(plan)),
+            field: route.config_field(),
             reason: route.reason.clone(),
         });
     }
@@ -647,6 +658,7 @@ struct RuntimeEnvironmentBinding<'a> {
     control_location: ControlLocation,
     workspace: &'a Option<PathBuf>,
     artifacts: &'a Option<PathBuf>,
+    env: &'a BTreeMap<String, String>,
     ownership: EnvironmentOwnership,
     connection: &'a BTreeMap<String, Value>,
     metadata: &'a BTreeMap<String, Value>,
@@ -658,6 +670,7 @@ fn runtime_environment_binding(environment: &EnvironmentHandle) -> RuntimeEnviro
         control_location: environment.control_location,
         workspace: &environment.workspace,
         artifacts: &environment.artifacts,
+        env: &environment.env,
         ownership: environment.ownership,
         connection: &environment.connection,
         metadata: &environment.metadata,
@@ -894,7 +907,16 @@ fn run_local_host_adapter(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
-    run_local_host_adapter_with_timeout(plan, runtime, request, LOCAL_HOST_INVOKE_TIMEOUT)
+    let timeout = match plan.config.runtime.timeout_seconds {
+        Some(seconds) => {
+            Duration::try_from_secs_f64(seconds).map_err(|_| FabricError::InvalidConfig {
+                field: "runtime.timeout_seconds".to_string(),
+                reason: "must be a finite number greater than zero".to_string(),
+            })?
+        }
+        None => LOCAL_HOST_INVOKE_TIMEOUT,
+    };
+    run_local_host_adapter_with_timeout(plan, runtime, request, timeout)
 }
 
 fn run_local_host_adapter_with_timeout(
@@ -1336,7 +1358,8 @@ fn process_local_host_command(
     command
         .args(&command_args)
         .current_dir(cwd)
-        .envs(&settings.env);
+        .envs(&settings.env)
+        .envs(&runtime.environment.env);
     let display = std::iter::once(command_path.to_string_lossy().into_owned())
         .chain(command_args)
         .collect::<Vec<_>>()
@@ -1359,7 +1382,8 @@ fn python_local_host_command(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<
         .arg(&settings.module)
         .args(&settings.args)
         .current_dir(cwd)
-        .envs(&settings.env);
+        .envs(&settings.env)
+        .envs(&runtime.environment.env);
     Ok((
         command,
         format!("{} -m {}", python.to_string_lossy(), settings.module),
@@ -2368,7 +2392,10 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::config::{ResolveContext, resolve_run_plan_from_config};
+    use crate::config::{
+        CapabilityKind, CapabilityRoute, CapabilityTarget, ResolveContext,
+        resolve_run_plan_from_config,
+    };
 
     fn local_host_plan(mode: &str) -> (PathBuf, RunPlan) {
         local_host_plan_with_relay(mode, false)
@@ -2460,6 +2487,7 @@ for line in sys.stdin:
             "runtime_id": invocation["runtime_context"]["runtime_id"],
             "invocation_id": invocation["runtime_context"]["invocation_id"],
             "request_id": invocation["runtime_context"]["request_id"],
+            "normalized_env": os.environ.get("FABRIC_NORMALIZED_ENV"),
         }
         if MODE == "adapter_reported_failure":
             output.update({
@@ -2494,16 +2522,14 @@ for line in sys.stdin:
                     "env": {"FABRIC_FAKE_HOST_MODE": mode},
                 },
             },
-            "models": {
-                "default": {
-                    "provider": "test",
-                    "model": "test-model",
-                },
-            },
             "runtime": {
                 "input_schema": "text",
                 "output_schema": "text",
                 "artifacts": "./artifacts",
+            },
+            "environment": {
+                "provider": "local",
+                "env": {"FABRIC_NORMALIZED_ENV": "visible"},
             },
         });
         if relay {
@@ -2525,6 +2551,26 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn runtime_validation_reports_canonical_mcp_field() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.capability_plan.routes.push(CapabilityRoute {
+            kind: CapabilityKind::Mcp,
+            name: "github".to_string(),
+            target: CapabilityTarget::Unsupported,
+            reason: "unsupported test route".to_string(),
+        });
+
+        let error = start_runtime(&plan).expect_err("unsupported MCP route must fail");
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility { field, .. }
+                if field == "mcp.servers.github"
+        ));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn local_host_reuses_one_process_and_stops_idempotently() {
         let (root, plan) = local_host_plan("success");
         let runtime = start_runtime(&plan).expect("start local host");
@@ -2538,6 +2584,7 @@ for line in sys.stdin:
         assert_eq!(first.output["invocation_count"], serde_json::json!(1));
         assert_eq!(second.output["invocation_count"], serde_json::json!(2));
         assert_eq!(first.output["input"], serde_json::json!("first"));
+        assert_eq!(first.output["normalized_env"], serde_json::json!("visible"));
         assert_eq!(second.output["input"], serde_json::json!("second"));
         assert_eq!(first.metadata["host_pid"], second.metadata["host_pid"]);
         assert_eq!(

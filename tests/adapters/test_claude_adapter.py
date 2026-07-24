@@ -87,14 +87,19 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "module": "nemo_fabric_adapters.claude.adapter",
         },
         "config": {
+            "models": {
+                "providers": ["anthropic", "nvidia"],
+            },
             "accepts": [
                 "models",
-                "tools",
+                "models.base_url",
+                "system_prompt",
+                "max_turns",
                 "tools.blocked",
                 "mcp",
                 "skills",
                 "telemetry",
-            ]
+            ],
         },
         "telemetry": {
             "providers": {
@@ -121,16 +126,15 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
             "harness": {
                 "adapter_id": "nvidia.fabric.claude",
                 "settings": {
-                    "system_prompt": "Review carefully.",
                     "allowed_tools": ["Read"],
                     "permission_mode": "dontAsk",
-                    "max_turns": 4,
                     "max_budget_usd": 1.5,
                     "setting_sources": [],
-                    "timeout_seconds": 30,
-                    "env": {"ANTHROPIC_API_KEY": "configured-secret"},
                 },
             },
+            "system_prompt": "Review carefully.",
+            "max_turns": 4,
+            "runtime": {"timeout_seconds": 30},
             "models": {
                 "default": {
                     "provider": "anthropic",
@@ -143,7 +147,10 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
         "runtime_context": {
             "runtime_id": "runtime-claude-1",
             "invocation_id": "invocation-1",
-            "environment": {"workspace": str(workspace)},
+            "environment": {
+                "workspace": str(workspace),
+                "env": {"ANTHROPIC_API_KEY": "configured-secret"},
+            },
             "artifacts": {"root": str(tmp_path / "artifacts"), "artifacts": []},
         },
         "request": {"request_id": "request-1", "input": "Inspect the patch"},
@@ -374,7 +381,12 @@ def test_build_options_maps_blocked_tools_to_disallowed_tools(claude_payload):
     ("name", "normalized_field"),
     [
         ("model_name", "FabricConfig.models"),
+        ("base_url", "FabricConfig.models.<role>.base_url"),
         ("cwd", "FabricConfig.environment.workspace"),
+        ("env", "FabricConfig.environment.env"),
+        ("system_prompt", "FabricConfig.system_prompt"),
+        ("max_turns", "FabricConfig.max_turns"),
+        ("timeout_seconds", "FabricConfig.runtime.timeout_seconds"),
         ("tools", "FabricConfig.tools"),
         ("disallowed_tools", "FabricConfig.tools.blocked"),
         ("mcp_servers", "FabricConfig.mcp"),
@@ -388,6 +400,16 @@ def test_build_options_rejects_normalized_capabilities_in_harness_settings(
 
     with pytest.raises(
         adapter.AdapterConfigError, match=normalized_field.replace(".", r"\.")
+    ):
+        adapter.build_options(claude_payload)
+
+
+@pytest.mark.parametrize("setting", ["cli_path", "nemo_relay_command"])
+def test_build_options_rejects_removed_runtime_settings(claude_payload, setting):
+    claude_payload["config"]["harness"]["settings"][setting] = "custom"
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match=rf"harness\.settings\.{setting}"
     ):
         adapter.build_options(claude_payload)
 
@@ -409,7 +431,7 @@ def test_build_options_maps_nvidia_provider_to_claude_gateway_environment(
             "provider": "nvidia",
             "model": "aws/anthropic/claude-opus-4-5",
             "api_key_env": "NVIDIA_API_KEY",
-            "settings": {"base_url": "https://nvidia.example/v1/"},
+            "base_url": "https://nvidia.example/v1/",
         }
     )
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
@@ -433,31 +455,16 @@ def test_build_options_uses_nvidia_provider_endpoint_and_default_credential(
         }
     )
     model.pop("api_key_env")
-    claude_payload["config"]["harness"]["settings"].pop("env")
+    claude_payload["runtime_context"]["environment"]["env"].pop("ANTHROPIC_API_KEY")
     os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
-    os.environ["NVIDIA_FRONTIER_BASE_URL"] = "https://frontier.example/v1"
 
     options = adapter.build_options(claude_payload)
 
-    assert options.env["ANTHROPIC_BASE_URL"] == "https://frontier.example"
-    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
-
-
-def test_build_options_requires_nvidia_provider_endpoint(claude_payload):
-    model = claude_payload["config"]["models"]["default"]
-    model.update(
-        {
-            "provider": "nvidia",
-            "model": "aws/anthropic/claude-opus-4-5",
-            "api_key_env": "NVIDIA_API_KEY",
-        }
+    assert (
+        options.env["ANTHROPIC_BASE_URL"]
+        == "https://integrate.api.nvidia.com"
     )
-    model.pop("settings", None)
-    os.environ["NVIDIA_API_KEY"] = "nvidia-secret"
-    os.environ.pop("NVIDIA_FRONTIER_BASE_URL", None)
-
-    with pytest.raises(adapter.AdapterConfigError, match="NVIDIA_FRONTIER_BASE_URL"):
-        adapter.build_options(claude_payload)
+    assert options.env["ANTHROPIC_API_KEY"] == "nvidia-secret"
 
 
 def test_build_options_requires_nvidia_provider_credential(claude_payload):
@@ -1040,8 +1047,7 @@ def test_build_options_forwards_anthropic_auth_environment(
 ):
     model = claude_payload["config"]["models"]["default"]
     model.pop("api_key_env")
-    settings = claude_payload["config"]["harness"]["settings"]
-    settings.pop("env")
+    claude_payload["runtime_context"]["environment"].pop("env")
     for name in ANTHROPIC_AUTH_ENV_NAMES:
         os.environ.pop(name, None)
     os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"

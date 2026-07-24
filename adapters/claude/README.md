@@ -9,9 +9,8 @@ The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
 Python behind NeMo Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
-This adapter pins `claude-agent-sdk==0.2.120`. The SDK supplies its compatible
-Claude Code runtime unless `harness.settings.cli_path` explicitly selects
-another executable.
+This adapter pins `claude-agent-sdk==0.2.120`. The SDK supplies and selects its
+compatible Claude Code runtime.
 
 ## Install
 
@@ -35,12 +34,12 @@ bearer credential, `ANTHROPIC_API_KEY` for a static API credential, or Anthropic
 Workload Identity Federation (WIF) for production and CI workloads that should
 not store a long-lived API key.
 
-When `models.default.provider` is `nvidia`, the adapter reads the selected
+When the selected model provider is `nvidia`, the adapter reads the selected
 model's credential from `api_key_env` (default: `NVIDIA_API_KEY`) and translates
 the configured NVIDIA `/v1` endpoint into the host URL expected by Claude Code.
-Set the endpoint in `models.default.settings.base_url` or
-`NVIDIA_FRONTIER_BASE_URL`; the adapter does not assume a default frontier
-endpoint. This request-scoped mapping does not change the parent environment.
+`models.<role>.base_url` overrides the public NVIDIA API Catalog endpoint. Set
+it explicitly for a frontier or self-hosted endpoint. This request-scoped
+mapping does not change the parent environment.
 
 The adapter forwards the Anthropic profile and federation environment variables
 that Claude Code and the Claude Agent SDK consume. This includes
@@ -59,7 +58,6 @@ for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
 
 Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the [NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
-```
 
 The Python `nemo-relay` package does not install this executable. Refer to the
 [NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)
@@ -86,8 +84,12 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 
 - `models` selects the Claude model. The adapter accepts the native `anthropic`
   provider and NVIDIA-hosted Anthropic Messages-compatible models through the
-  `nvidia` provider.
-- `environment.workspace` sets the Claude working directory.
+  `nvidia` provider. `models.<role>.base_url` selects an explicit endpoint.
+- `system_prompt` supplies the Claude system instructions.
+- `max_turns` sets the Claude turn limit.
+- `runtime.timeout_seconds` sets the Fabric invocation deadline.
+- `environment.workspace` sets the Claude working directory, and
+  `environment.env` supplies explicit harness-visible variables.
 - `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool
   names.
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
@@ -97,20 +99,18 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 
 Only Claude-specific controls belong in `harness.settings`:
 
-- `system_prompt`, `allowed_tools`, and `permission_mode`
-- `max_turns`, `max_budget_usd`, and `timeout_seconds`
+- `allowed_tools` and `permission_mode`
+- `max_budget_usd`
 - `setting_sources` (defaults to `[]` for deterministic isolation)
-- `cli_path` for testing or an explicitly installed Claude Code executable
-- `nemo_relay_command` for an explicitly installed NeMo Relay CLI executable
-- `env` for variables explicitly forwarded to Claude Code
 
-Putting `model_name`, `cwd`, `tools`, `disallowed_tools`, `mcp_servers`, or
-`skills` in `harness.settings` is an error. Use the corresponding normalized
-field so the same consumer configuration can compose with other adapters.
+Putting `model_name`, `base_url`, `cwd`, `system_prompt`, `max_turns`,
+`timeout_seconds`, `env`, `tools`, `disallowed_tools`, `mcp_servers`, or `skills`
+in `harness.settings` is an error. Use the corresponding normalized field so
+the same consumer configuration can compose with other adapters.
 
 The adapter filters the inherited environment before launching Claude Code.
 It retains portable OS/config variables, the selected model's `api_key_env`,
-and explicitly configured `settings.env` values. Raw Claude stderr is consumed
+and explicitly configured `environment.env` values. Raw Claude stderr is consumed
 by the SDK and is not persisted as a NeMo Fabric artifact.
 
 ## Relay Observability
@@ -136,8 +136,7 @@ The NeMo Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
 startup failures return a stable adapter error and retain the gateway log for
 diagnosis. The default Claude Agent SDK dependency bundles a compatible Claude
-Code executable. An executable supplied with `cli_path` must support the Relay
-plugin's complete hook set, including `UserPromptExpansion`.
+Code executable.
 
 ## Typed Configuration
 
@@ -168,9 +167,7 @@ config = FabricConfig(
         adapter_id="nvidia.fabric.claude",
         resolution="preinstalled",
         settings={
-            "system_prompt": "Review changes for correctness and regressions.",
             "permission_mode": "dontAsk",
-            "max_turns": 8,
         },
     ),
     models={
@@ -180,7 +177,9 @@ config = FabricConfig(
             api_key_env="ANTHROPIC_API_KEY",
         )
     },
-    runtime=RuntimeConfig(artifacts="./artifacts"),
+    system_prompt="Review changes for correctness and regressions.",
+    max_turns=8,
+    runtime=RuntimeConfig(artifacts="./artifacts", timeout_seconds=600),
     environment=EnvironmentConfig(provider="local", workspace="."),
     tools=ToolsConfig(blocked=["WebFetch"]),
     mcp=McpConfig(

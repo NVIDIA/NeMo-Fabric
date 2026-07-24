@@ -70,6 +70,8 @@ from nemo_fabric import (
     MetadataConfig,
     ModelConfig,
     RuntimeConfig,
+    ToolsetConfig,
+    ToolsConfig,
 )
 
 
@@ -82,9 +84,23 @@ def to_fabric_config(job) -> FabricConfig:
                 provider=job.provider,
                 model=job.model,
                 api_key_env=job.api_key_env,
+                base_url=job.base_url,
             )
         },
-        runtime=RuntimeConfig(input_schema="chat", output_schema="message"),
+        system_prompt=job.system_prompt,
+        max_turns=job.max_turns,
+        runtime=RuntimeConfig(
+            input_schema="chat",
+            output_schema="message",
+            timeout_seconds=job.timeout_seconds,
+        ),
+        tools=ToolsConfig(
+            blocked=list(job.blocked_tools),
+            toolsets=ToolsetConfig(
+                enabled=job.enabled_toolsets,
+                blocked=list(job.blocked_toolsets),
+            ),
+        ),
     )
     config.add_skill_path(job.skill_dir)
     config.add_mcp_server(
@@ -96,7 +112,8 @@ def to_fabric_config(job) -> FabricConfig:
     return config
 ```
 
-- Shape capabilities with `add_skill_path`, `remove_skill_path`,
+- Shape capabilities with `block_tools`, `configure_toolsets`,
+  `add_skill_path`, `remove_skill_path`,
   `add_mcp_server`, `remove_mcp_server`, and `enable_relay`.
 - Create deployment or evaluation variants with `model_copy(deep=True)` and
   ordinary Python functions; each copy plans and runs independently.
@@ -174,7 +191,8 @@ print(plan.adapter.adapter_id, report.status)
 ```
 
 - Use `plan(...)` to confirm adapter selection and capability routing before
-  running.
+  running. Planning rejects model providers and provider-specific model
+  settings that the selected adapter descriptor does not declare.
 - Use `doctor(...)` to check adapter availability, resolution, environment
   context, and declared requirements such as required environment variables. Its
   aggregate `status` is `pass`, `warn`, or `fail`. It does **not** validate the

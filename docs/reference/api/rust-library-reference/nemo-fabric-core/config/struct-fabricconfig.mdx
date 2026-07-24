@@ -1,17 +1,19 @@
 ---
 title: "Struct Fabric Config"
 sidebar-title: "FabricConfig"
-description: "Versioned Fabric agent config."
-position: 14
+description: "Versioned NVIDIA NeMo Fabric agent config."
+position: 18
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct FabricConfig &#123;\n    pub schema_version: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub metadata: <a href=\"struct-metadataconfig\">MetadataConfig</a>,\n    pub harness: <a href=\"struct-harnessconfig\">HarnessConfig</a>,\n    pub models: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-modelconfig\">ModelConfig</a>&gt;,\n    pub runtime: <a href=\"struct-runtimeconfig\">RuntimeConfig</a>,\n    pub environment: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentconfig\">EnvironmentConfig</a>&gt;,\n    pub tools: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-toolsconfig\">ToolsConfig</a>&gt;,\n    pub skills: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-skillconfig\">SkillConfig</a>&gt;,\n    pub mcp: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-mcpconfig\">McpConfig</a>&gt;,\n    pub telemetry: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryconfig\">TelemetryConfig</a>&gt;,\n    pub relay: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayconfig\">RelayConfig</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct FabricConfig &#123;Show 14 fields\n    pub schema_version: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>,\n    pub metadata: <a href=\"struct-metadataconfig\">MetadataConfig</a>,\n    pub harness: <a href=\"struct-harnessconfig\">HarnessConfig</a>,\n    pub models: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"struct-modelconfig\">ModelConfig</a>&gt;,\n    pub system_prompt: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>&gt;,\n    pub max_turns: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u32.html\">u32</a>&gt;,\n    pub runtime: <a href=\"struct-runtimeconfig\">RuntimeConfig</a>,\n    pub environment: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-environmentconfig\">EnvironmentConfig</a>&gt;,\n    pub tools: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-toolsconfig\">ToolsConfig</a>&gt;,\n    pub skills: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-skillconfig\">SkillConfig</a>&gt;,\n    pub mcp: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-mcpconfig\">McpConfig</a>&gt;,\n    pub telemetry: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-telemetryconfig\">TelemetryConfig</a>&gt;,\n    pub relay: <a href=\"https://doc.rust-lang.org/1.94.0/core/option/enum.Option.html\">Option</a>&lt;<a href=\"struct-relayconfig\">RelayConfig</a>&gt;,\n    pub extensions: <a href=\"https://doc.rust-lang.org/1.94.0/alloc/collections/btree/map/struct.BTreeMap.html\">BTreeMap</a>&lt;<a href=\"https://doc.rust-lang.org/1.94.0/alloc/string/struct.String.html\">String</a>, <a href=\"https://docs.rs/serde_json/1.0.150/serde_json/value/enum.Value.html\">Value</a>&gt;,\n&#125;"}} /></pre>
 
-Versioned Fabric agent config.
+Versioned NVIDIA NeMo Fabric agent config.
+
+NeMo Fabric-owned fields apply uniformly, while adapter-translated fields are validated against the selected adapter descriptor. See the configuration compatibility matrix.
 
 ## Fields
 
@@ -30,6 +32,14 @@ Harness selection and harness-specific settings.
 ### `models: BTreeMap<String, ModelConfig>`
 
 Model aliases.
+
+### `system_prompt: Option<String>`
+
+Portable system instructions for the selected harness.
+
+### `max_turns: Option<u32>`
+
+Maximum number of harness turns within one invocation.
 
 ### `runtime: RuntimeConfig`
 

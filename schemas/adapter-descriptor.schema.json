@@ -1,13 +1,73 @@
 {
   "$defs": {
+    "AdapterConfigField": {
+      "description": "Adapter-translated normalized NVIDIA NeMo Fabric configuration fields.",
+      "oneOf": [
+        {
+          "const": "models",
+          "description": "Normalized model selection and credentials.",
+          "type": "string"
+        },
+        {
+          "const": "models.base_url",
+          "description": "Custom model endpoint.",
+          "type": "string"
+        },
+        {
+          "const": "models.temperature",
+          "description": "Model temperature.",
+          "type": "string"
+        },
+        {
+          "const": "system_prompt",
+          "description": "Portable system instructions.",
+          "type": "string"
+        },
+        {
+          "const": "max_turns",
+          "description": "Per-invocation harness turn limit.",
+          "type": "string"
+        },
+        {
+          "const": "tools.blocked",
+          "description": "Adapter-native tool names to block.",
+          "type": "string"
+        },
+        {
+          "const": "tools.toolsets.enabled",
+          "description": "Harness-defined toolsets to expose.",
+          "type": "string"
+        },
+        {
+          "const": "tools.toolsets.blocked",
+          "description": "Harness-defined toolsets to block.",
+          "type": "string"
+        },
+        {
+          "const": "mcp",
+          "description": "Harness-native MCP servers.",
+          "type": "string"
+        },
+        {
+          "const": "skills",
+          "description": "Harness-native skills.",
+          "type": "string"
+        },
+        {
+          "const": "telemetry",
+          "description": "Typed telemetry configuration. Exact support remains declared by telemetry provider.",
+          "type": "string"
+        }
+      ]
+    },
     "AdapterConfigSupport": {
       "additionalProperties": true,
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "Fabric config areas or policy paths accepted by this adapter.",
+          "description": "Normalized NVIDIA NeMo Fabric config fields accepted by this adapter.",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/AdapterConfigField"
           },
           "type": "array"
         },
@@ -17,6 +77,10 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "models": {
+          "$ref": "#/$defs/AdapterModelConfigSupport",
+          "description": "Model providers and provider-specific settings accepted by this adapter."
         }
       },
       "type": "object"
@@ -45,6 +109,28 @@
           "type": "string"
         }
       ]
+    },
+    "AdapterModelConfigSupport": {
+      "additionalProperties": true,
+      "description": "Adapter compatibility constraints for normalized model configuration.",
+      "properties": {
+        "providers": {
+          "description": "Supported model providers. An empty set accepts any provider.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "settings": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AdapterSettingSchema"
+          },
+          "description": "Supported provider-specific model settings.",
+          "type": "object"
+        }
+      },
+      "type": "object"
     },
     "AdapterRequirements": {
       "additionalProperties": true,
@@ -87,6 +173,66 @@
         }
       },
       "type": "object"
+    },
+    "AdapterSettingSchema": {
+      "description": "Descriptor-owned schema for one adapter-specific setting.",
+      "properties": {
+        "description": {
+          "description": "Human-readable setting description.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required": {
+          "default": false,
+          "description": "Whether the setting must be present.",
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/$defs/AdapterSettingType",
+          "description": "Expected JSON value kind."
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    "AdapterSettingType": {
+      "description": "JSON value kinds accepted by an adapter-owned setting.",
+      "oneOf": [
+        {
+          "const": "string",
+          "description": "JSON string.",
+          "type": "string"
+        },
+        {
+          "const": "integer",
+          "description": "JSON integer.",
+          "type": "string"
+        },
+        {
+          "const": "number",
+          "description": "JSON number.",
+          "type": "string"
+        },
+        {
+          "const": "boolean",
+          "description": "JSON boolean.",
+          "type": "string"
+        },
+        {
+          "const": "object",
+          "description": "JSON object.",
+          "type": "string"
+        },
+        {
+          "const": "array",
+          "description": "JSON array.",
+          "type": "string"
+        }
+      ]
     },
     "AdapterTelemetryProviderSupport": {
       "additionalProperties": true,

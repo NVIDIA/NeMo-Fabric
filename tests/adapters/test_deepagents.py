@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import os
+import re
 import sys
 import types
 from collections.abc import AsyncIterator
@@ -151,7 +152,8 @@ def make_payload_fixture():
         return {
             "base_dir": str(tmp_path),
             "config": {
-                "harness": {"settings": {"system_prompt": "be concise"}},
+                "harness": {"settings": {}},
+                "system_prompt": "be concise",
                 "models": {
                     "default": {
                         "provider": "nvidia",
@@ -1093,6 +1095,28 @@ async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_pa
 
     with pytest.raises(adapter.AdapterConfigError, match="api_key_env"):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+
+def test_removed_state_dir_setting_is_rejected():
+    with pytest.raises(
+        adapter.AdapterConfigError, match=r"harness\.settings\.state_dir"
+    ):
+        adapter._validate_settings_boundary({"state_dir": "./state"})
+
+
+@pytest.mark.parametrize(
+    ("setting", "target"),
+    sorted(adapter.NORMALIZED_SETTING_FIELDS.items()),
+)
+def test_normalized_fields_are_rejected_in_harness_settings(
+    setting: str,
+    target: str,
+):
+    with pytest.raises(
+        adapter.AdapterConfigError,
+        match=rf"harness\.settings\.{setting}.*{re.escape(target)}",
+    ):
+        adapter._validate_settings_boundary({setting: "legacy"})
 
 
 def test_main_serves_persistent_runtime(monkeypatch):

@@ -28,7 +28,7 @@ async def test_hermes_persistent_host_reuses_native_session(
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = hermes_config()
-    config.harness.settings["base_url"] = f"{api_server}/v1"
+    config.models["default"].base_url = f"{api_server}/v1"
 
     async with await Fabric().start_runtime(
         config, base_dir=code_review_agent_dir
@@ -50,7 +50,7 @@ async def test_hermes_persistent_host_with_relay(
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = with_relay(hermes_config())
-    config.harness.settings["base_url"] = f"{api_server}/v1"
+    config.models["default"].base_url = f"{api_server}/v1"
 
     async with await Fabric().start_runtime(
         config, base_dir=code_review_agent_dir
@@ -104,7 +104,7 @@ class TestHermesE2E:
         self.code_review_agent_dir = code_review_agent_dir
         self.api_server = api_server
         config = self.config_builder()
-        config.harness.settings["base_url"] = f"{api_server}/v1"
+        config.models["default"].base_url = f"{api_server}/v1"
         config = with_relay(config)
 
         self.result = await Fabric().run(
@@ -236,13 +236,14 @@ class TestHermesE2E:
         trajectory = json.loads(atif_paths[0].read_text())
         assert trajectory["agent"]["name"] in {"code-review-agent", "Hermes Agent"}
         steps = trajectory["steps"]
-        assert len(steps) == 5
+        user_step = next(step for step in steps if step["source"] == "user")
+        assert user_step["message"] == "Reply with exactly: relay ok"
+        assert user_step["extra"]["llm_request"]["model"] == (
+            "nvidia/nemotron-3-nano-30b-a3b"
+        )
 
-        first_step = steps[0]
-        assert first_step["message"] == "hermes.turn.start"
-        assert first_step["extra"]["event_payload"]["is_first_turn"] is True
-
-        last_step = steps[-1]
-        assert last_step["message"] == "hermes.session.end"
+        last_step = next(step for step in reversed(steps) if step["source"] == "agent")
+        assert "echo user_count=1" in last_step["message"]
+        assert last_step["extra"]["llm_response"]["finish_reason"] == "stop"
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"

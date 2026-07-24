@@ -19,8 +19,11 @@ import tempfile
 from pathlib import Path
 from shutil import copytree
 
+import pytest
+
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
+from nemo_fabric import FabricConfigError
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 
@@ -69,7 +72,7 @@ def _shim_adapter_config() -> FabricConfig:
     config["harness"] = {
         "adapter_id": "test.fabric.hermes_shim",
         "resolution": "preinstalled",
-        "settings": {"workspace": "./ws"},
+        "settings": {},
     }
     config["models"] = {
         "default": {"provider": "test", "model": "test-model", "temperature": 0.0}
@@ -129,3 +132,47 @@ async def test_typed_config():
     client = Fabric()
     await resolves_and_diagnoses_typed_config(client)
     await runs_with_typed_config_and_adapter_directory(client)
+
+
+@pytest.mark.parametrize(
+    ("adapter_id", "provider", "supported_provider"),
+    [
+        ("nvidia.fabric.claude", "openai", "anthropic"),
+        ("nvidia.fabric.codex", "anthropic", "openai"),
+    ],
+)
+async def test_plan_and_doctor_share_model_provider_diagnostic(
+    adapter_id: str,
+    provider: str,
+    supported_provider: str,
+):
+    config = _repository_adapter_config()
+    config.harness.adapter_id = adapter_id
+    config.models["default"].provider = provider
+
+    with pytest.raises(FabricConfigError) as plan_error:
+        Fabric().plan(config)
+    with pytest.raises(FabricConfigError) as doctor_error:
+        await Fabric().doctor(config)
+
+    plan_diagnostic = str(plan_error.value)
+    assert str(doctor_error.value) == plan_diagnostic
+    assert "models.default.provider" in plan_diagnostic
+    assert supported_provider in plan_diagnostic
+
+
+async def test_plan_and_doctor_reject_undeclared_model_setting_without_exposing_value():
+    config = _repository_adapter_config()
+    config.harness.adapter_id = "nvidia.fabric.claude"
+    config.models["default"].provider = "anthropic"
+    config.models["default"].settings["regionn"] = "secret-setting-value"
+
+    with pytest.raises(FabricConfigError) as caught:
+        Fabric().plan(config)
+    with pytest.raises(FabricConfigError) as doctor_error:
+        await Fabric().doctor(config)
+
+    diagnostic = str(caught.value)
+    assert str(doctor_error.value) == diagnostic
+    assert "models.default.settings.regionn" in diagnostic
+    assert "secret-setting-value" not in diagnostic
