@@ -23,8 +23,7 @@ async def test_deepagents_persistent_host_with_mock_model(api_server, tmp_path):
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
     config = deepagents_config()
-    config.harness.settings["base_url"] = f"{api_server}/v1"
-    config.harness.settings["workspace"] = str(tmp_path)
+    config.models["default"].base_url = f"{api_server}/v1"
     config.environment = EnvironmentConfig(
         provider="local",
         workspace=tmp_path,
@@ -59,8 +58,7 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
     config = with_relay(deepagents_config())
-    config.harness.settings["base_url"] = f"{api_server}/v1"
-    config.harness.settings["workspace"] = str(tmp_path)
+    config.models["default"].base_url = f"{api_server}/v1"
     config.environment = EnvironmentConfig(
         provider="local",
         workspace=tmp_path,

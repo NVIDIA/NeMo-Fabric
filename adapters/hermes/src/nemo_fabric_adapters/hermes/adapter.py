@@ -23,12 +23,31 @@ from typing import Any
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
-# Default agent loop budget when harness.settings.max_iterations is unset.
+# Default agent loop budget when FabricConfig.max_turns is unset.
 # Mirrors Hermes' own AIAgent default (agent/agent_init.py); a lower value such
 # as 1 silently starves multi-step tasks (they run out of budget before
 # answering while the trial still reports success). See FABRIC-85.
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
+PROVIDER_DEFAULT_API_KEY_ENV = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
+
+
+def _api_key_env(model_config: dict[str, Any]) -> str:
+    explicit = model_config.get("api_key_env")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    provider = str(model_config.get("provider") or "").lower()
+    default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
+    if default is None:
+        raise ValueError(
+            f"selected model api_key_env is required for provider {provider!r}"
+        )
+    return default
 
 
 def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
@@ -38,11 +57,7 @@ def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
 
 
 def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
-    settings = common_utils.settings_payload(payload)
-    return common_utils.merge_unique(
-        common_utils.blocked_tools(payload),
-        settings.get("disabled_toolsets"),
-    )
+    return common_utils.blocked_toolsets(payload)
 
 
 def build_hermes_config(
@@ -53,10 +68,11 @@ def build_hermes_config(
     native = common_utils.capability_plan(payload).get("native") or {}
     environment = common_utils.environment_payload(payload)
 
-    model_name = settings.get("model_name") or model_config.get("model", "")
-    provider = settings.get("provider") or model_config.get("provider")
-    base_url = common_utils.get_base_url(settings, model_config)
+    model_name = model_config.get("model", "")
+    provider = model_config.get("provider")
+    base_url = common_utils.get_base_url(model_config)
     blocked_toolsets = disabled_toolsets(payload)
+    enabled_toolsets = common_utils.enabled_toolsets(payload)
 
     config: dict[str, Any] = {
         "model": common_utils.without_none(
@@ -68,16 +84,14 @@ def build_hermes_config(
         ),
         "agent": common_utils.without_none(
             {
-                "max_turns": settings.get("max_iterations"),
+                "max_turns": common_utils.max_turns(payload),
                 "disabled_toolsets": blocked_toolsets or None,
             }
         ),
         "terminal": common_utils.without_none(
             {
-                "backend": settings.get("terminal_backend", "local"),
-                "cwd": str(
-                    environment.get("workspace") or settings.get("workspace") or "."
-                ),
+                "backend": "local",
+                "cwd": str(environment.get("workspace") or "."),
                 "timeout": settings.get("terminal_timeout", 60),
             }
         ),
@@ -94,12 +108,8 @@ def build_hermes_config(
             for name, server in sorted(mcp_servers.items())
         }
 
-    if "enabled_toolsets" in settings:
-        config["platform_toolsets"] = {
-            settings.get("toolset_platform", "cli"): common_utils.normalize_list(
-                settings.get("enabled_toolsets")
-            )
-        }
+    if enabled_toolsets is not None:
+        config["platform_toolsets"] = {"cli": enabled_toolsets}
 
     plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
     if relay_enabled and "observability/nemo_relay" not in plugins:
@@ -162,15 +172,23 @@ def main() -> None:
 
 
 def resolve_hermes_toolsets(
-    settings: dict[str, Any], config: dict[str, Any]
+    payload: dict[str, Any], config: dict[str, Any]
 ) -> list[str] | None:
-    if "enabled_toolsets" in settings:
-        return common_utils.normalize_list(settings.get("enabled_toolsets"))
+    enabled = common_utils.enabled_toolsets(payload)
+    if enabled is not None:
+        return enabled
 
     from hermes_cli.tools_config import _get_platform_tools
 
-    platform = settings.get("toolset_platform", "cli")
-    return sorted(_get_platform_tools(config, platform))
+    return sorted(_get_platform_tools(config, "cli"))
+
+
+def _artifact_root(payload: dict[str, Any]) -> Path:
+    artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
+    root = artifacts.get("root") if isinstance(artifacts, dict) else None
+    if root:
+        return Path(str(root)).resolve()
+    return Path(common_utils.base_dir(payload)).resolve() / "artifacts"
 
 
 class HermesRuntime:
@@ -212,11 +230,8 @@ class HermesRuntime:
             self._settings = common_utils.settings_payload(payload)
             self._model_config = common_utils.selected_model_config(payload)
             self._runtime_id = common_utils.runtime_id(payload)
-            hermes_home_base = Path(common_utils.base_dir(payload)).joinpath(
-                self._settings.get("hermes_home", "./artifacts/hermes-home")
-            )
             self._hermes_home = common_utils.runtime_state_directory(
-                hermes_home_base, payload
+                _artifact_root(payload) / ".fabric" / "hermes", payload
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
             os.environ["HOME"] = str(self._hermes_home)
@@ -224,10 +239,7 @@ class HermesRuntime:
             os.environ.setdefault("HERMES_YOLO_MODE", "1")
             os.environ.setdefault("HERMES_ACCEPT_HOOKS", "1")
             os.environ["HERMES_SESSION_SOURCE"] = "fabric"
-            os.environ.setdefault(
-                "TERMINAL_ENV",
-                self._settings.get("terminal_backend", "local"),
-            )
+            os.environ["TERMINAL_ENV"] = "local"
             os.environ.setdefault(
                 "TERMINAL_TIMEOUT",
                 str(self._settings.get("terminal_timeout", 60)),
@@ -249,17 +261,11 @@ class HermesRuntime:
                 self._hermes_home,
                 relay_enabled=relay_enabled,
             )
-            api_key_env = (
-                self._settings.get("api_key_env")
-                or self._model_config.get("api_key_env")
-                or "NVIDIA_API_KEY"
-            )
+            api_key_env = _api_key_env(self._model_config)
             api_key = os.environ.get(api_key_env)
             if not api_key:
                 raise RuntimeError(f"{api_key_env} is required for Hermes mode")
-            self._base_url = common_utils.get_base_url(
-                self._settings, self._model_config
-            )
+            self._base_url = common_utils.get_base_url(self._model_config)
             self._relay_model_name = common_utils.relay_model_name(payload)
 
             from hermes_cli.config import load_config
@@ -272,11 +278,11 @@ class HermesRuntime:
                 discover_plugins(force=True)
                 loaded_hermes_config = load_config()
                 self._enabled_toolsets = resolve_hermes_toolsets(
-                    self._settings, loaded_hermes_config
+                    payload, loaded_hermes_config
                 )
                 self._session_db = SessionDB()
                 self._conversation_history = None
-                max_iterations = self._settings.get("max_iterations")
+                max_iterations = common_utils.max_turns(payload)
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
                 self._agent = AIAgent(
@@ -284,10 +290,8 @@ class HermesRuntime:
                         AIAgent,
                         base_url=self._base_url,
                         api_key=api_key,
-                        provider=self._settings.get("provider")
-                        or self._model_config.get("provider"),
-                        model=self._settings.get("model_name")
-                        or self._model_config.get("model", ""),
+                        provider=self._model_config.get("provider"),
+                        model=self._model_config.get("model", ""),
                         max_iterations=int(max_iterations),
                         enabled_toolsets=self._enabled_toolsets,
                         disabled_toolsets=disabled_toolsets(payload) or None,
@@ -298,15 +302,9 @@ class HermesRuntime:
                             self._settings.get("save_trajectories", False)
                         ),
                         max_tokens=self._settings.get("max_tokens", 512),
-                        temperature=self._settings.get(
-                            "temperature",
-                            self._model_config.get("temperature", 0.0),
-                        ),
+                        temperature=self._model_config.get("temperature", 0.0),
                         reasoning_config=self._settings.get(
                             "reasoning_config", {"effort": "none"}
-                        ),
-                        insert_reasoning=bool(
-                            self._settings.get("insert_reasoning", False)
                         ),
                         platform="fabric",
                         session_id=self._runtime_id,
@@ -347,7 +345,7 @@ class HermesRuntime:
             self._relay_finalize_hook_invoked = False
             result, adapter_stdout = _invoke_hermes_turn(
                 agent=self._agent,
-                settings=self._settings,
+                system_prompt=common_utils.system_prompt(start_payload),
                 user_message=user_message,
                 conversation_history=self._conversation_history,
             )
@@ -481,7 +479,7 @@ class HermesRuntime:
 def _invoke_hermes_turn(
     *,
     agent: Any,
-    settings: dict[str, Any],
+    system_prompt: str | None,
     user_message: str,
     conversation_history: list[dict[str, Any]] | None,
 ) -> tuple[dict[str, Any], str]:
@@ -489,7 +487,7 @@ def _invoke_hermes_turn(
     with redirect_stdout(hermes_stdout):
         conversation_kwargs = filter_supported_call_kwargs(
             agent.run_conversation,
-            system_message=settings.get("system_prompt"),
+            system_message=system_prompt,
             conversation_history=conversation_history,
             sync_honcho=False,
             dont_review=True,

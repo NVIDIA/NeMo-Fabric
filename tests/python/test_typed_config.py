@@ -69,7 +69,6 @@ def _shim_adapter_config() -> FabricConfig:
     config["harness"] = {
         "adapter_id": "test.fabric.hermes_shim",
         "resolution": "preinstalled",
-        "settings": {"workspace": "./ws"},
     }
     config["models"] = {
         "default": {"provider": "test", "model": "test-model", "temperature": 0.0}

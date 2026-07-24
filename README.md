@@ -159,8 +159,8 @@ references.
 
 | Agent harness | Choose it for | Model ecosystem | Key capabilities | Observability |
 | --- | --- | --- | --- | --- |
-| Claude | Claude-native coding and tool-use workflows | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
-| Codex | Codex-native coding workflows | OpenAI and NVIDIA-hosted Responses-compatible models | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
+| Claude | Claude-native coding and tool-use workflows | Native Anthropic or a configured Anthropic Messages-compatible provider | Tool guardrails, MCP, skills, and persistent Claude sessions | NeMo Relay |
+| Codex | Codex-native coding workflows | Native OpenAI or a configured Responses-compatible provider | MCP, skills, and persistent Codex threads | NeMo Relay and native OpenTelemetry |
 | LangChain Deep Agents | Composable LangChain and LangGraph agents | LangChain model providers | Built-in and MCP tools, guardrails, skills, and local subagents | NeMo Relay and native OpenTelemetry/OpenInference |
 | Hermes Agent | Hermes Agent workflows with custom model endpoints | Configurable provider, model, and base URL | Toolsets, guardrails, MCP, skills, and persistent conversation history | NeMo Relay |
 
@@ -192,17 +192,19 @@ runtimes, authentication, and execution details.
 - **Experimentation CLI:** presets provide quick probes, examples provide
   maintained runnable workflows, and `example init` generates editable Python
   or Rust applications that call a language API directly.
-- **Tools policy:** use top-level `tools.blocked` for harness-neutral blocked
-  tool policy. Names are interpreted by the selected adapter:
+- **Tools policy:** use `tools.blocked` for individual tool names and
+  `tools.toolsets` for harness-defined tool bundles. They are separate policies
+  and adapters declare support for each independently:
 
   ```python
   config.block_tools("browser", "shell")
+  config.configure_toolsets(enabled=["web", "terminal"], blocked=["browser"])
   ```
 
-  The selected adapter interprets these names: Hermes Agent maps them to disabled
-  toolsets, Claude maps them to `disallowed_tools`, Deep Agents enforces them
-  with middleware, and adapters without a native deny mechanism route the
-  policy as unsupported.
+  Claude maps blocked tools to `disallowed_tools`; Deep Agents enforces them
+  with middleware. Hermes Agent maps `tools.toolsets` into its toolset controls.
+  An adapter that cannot enforce a configured policy fails planning with a
+  compatibility error instead of applying only part of it.
 - **Adapters:** harness-specific integrations selected by `harness.adapter_id`.
   Harness-specific extensions belong under `harness.settings` so the normalized
   contract can remain stable. Refer to the

@@ -146,6 +146,45 @@ fn render_python(config: &FabricConfig) -> String {
             "{{HARNESS_SETTINGS}}",
             &python_value(&Value::Object(config.harness.settings.clone())),
         )
+        .replace(
+            "{{SYSTEM_PROMPT}}",
+            &config
+                .system_prompt
+                .as_deref()
+                .map(python_string)
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{MAX_TURNS}}",
+            &config
+                .max_turns
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{TIMEOUT_SECONDS}}",
+            &config
+                .runtime
+                .timeout_seconds
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{ENVIRONMENT_ENV}}",
+            &python_value(&Value::Object(
+                config
+                    .environment
+                    .as_ref()
+                    .map(|environment| {
+                        environment
+                            .env
+                            .iter()
+                            .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            )),
+        )
         .replace("{{MODELS}}", &python_models(config.models.get("default")))
 }
 
@@ -157,8 +196,13 @@ fn python_models(model: Option<&ModelConfig>) -> String {
         .temperature
         .map(|value| value.to_string())
         .unwrap_or_else(|| "None".to_string());
+    let base_url = model
+        .base_url
+        .as_deref()
+        .map(python_string)
+        .unwrap_or_else(|| "None".to_string());
     format!(
-        "{{\"default\": ModelConfig(provider={}, model={}, temperature={temperature}, api_key_env={}, settings={})}}",
+        "{{\"default\": ModelConfig(provider={}, model={}, temperature={temperature}, api_key_env={}, base_url={base_url}, settings={})}}",
         python_string(&model.provider),
         python_string(&model.model),
         model
@@ -211,7 +255,57 @@ fn render_rust(config: &FabricConfig) -> String {
             "{{HARNESS_SETTINGS}}",
             &rust_settings(&config.harness.settings),
         )
+        .replace(
+            "{{SYSTEM_PROMPT}}",
+            &config
+                .system_prompt
+                .as_deref()
+                .map(|value| format!("Some({}.to_string())", rust_string(value)))
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{MAX_TURNS}}",
+            &config
+                .max_turns
+                .map(|value| format!("Some({value})"))
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{TIMEOUT_SECONDS}}",
+            &config
+                .runtime
+                .timeout_seconds
+                .map(|value| format!("Some({value})"))
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{ENVIRONMENT_ENV}}",
+            &rust_string_map(
+                config
+                    .environment
+                    .as_ref()
+                    .map(|environment| &environment.env),
+            ),
+        )
         .replace("{{MODELS}}", &rust_models(config.models.get("default")))
+}
+
+fn rust_string_map(values: Option<&std::collections::BTreeMap<String, String>>) -> String {
+    let Some(values) = values.filter(|values| !values.is_empty()) else {
+        return "BTreeMap::new()".to_string();
+    };
+    format!(
+        "BTreeMap::from_iter([{}])",
+        values
+            .iter()
+            .map(|(key, value)| format!(
+                "({}.to_string(), {}.to_string())",
+                rust_string(key),
+                rust_string(value)
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 fn rust_settings(settings: &serde_json::Map<String, Value>) -> String {
@@ -247,8 +341,13 @@ fn rust_models(model: Option<&ModelConfig>) -> String {
         .temperature
         .map(|value| format!("Some({value})"))
         .unwrap_or_else(|| "None".to_string());
+    let base_url = model
+        .base_url
+        .as_deref()
+        .map(|value| format!("Some({}.to_string())", rust_string(value)))
+        .unwrap_or_else(|| "None".to_string());
     format!(
-        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, api_key_env: {api_key}, settings: {}, extensions: BTreeMap::new() }})])",
+        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, api_key_env: {api_key}, base_url: {base_url}, settings: {}, extensions: BTreeMap::new() }})])",
         rust_string(&model.provider),
         rust_string(&model.model),
         rust_settings(&model.settings),
@@ -315,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn renderers_preserve_model_settings_and_temperature() {
+    fn renderers_preserve_model_base_url_and_temperature() {
         let mut config = presets::find("hermes").expect("hermes preset").config();
         config
             .models
@@ -325,15 +424,13 @@ mod tests {
 
         let python = render_python(&config);
         assert!(python.contains("temperature=0.2"));
-        assert!(
-            python.contains("settings={\"base_url\": \"https://integrate.api.nvidia.com/v1\"}")
-        );
+        assert!(python.contains("base_url=\"https://integrate.api.nvidia.com/v1\""));
 
         let rust = render_rust(&config);
         assert!(rust.contains("temperature: Some(0.2)"));
-        assert!(rust.contains(
-            "(\"base_url\".to_string(), serde_json::json!(\"https://integrate.api.nvidia.com/v1\"))"
-        ));
+        assert!(
+            rust.contains("base_url: Some(\"https://integrate.api.nvidia.com/v1\".to_string())")
+        );
     }
 
     #[test]

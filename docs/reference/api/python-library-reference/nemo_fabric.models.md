@@ -1,13 +1,13 @@
 ---
 title: "Models"
 slug: "/reference/api/python-library-reference/models"
-description: "Pydantic authoring models for Fabric config and request inputs."
+description: "Pydantic authoring models for NVIDIA NeMo Fabric config and request inputs."
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
 # <kbd>module</kbd> `nemo_fabric.models`
-Pydantic SDK models for NeMo Fabric configuration and requests.
+Pydantic SDK models for NVIDIA NeMo Fabric configuration and requests.
 
 The Rust core remains the source of truth for persisted schema snapshots. These models provide the Python SDK's typed authoring surface and intentionally keep extension fields so consumers can carry adapter- or application-owned data without waiting for a schema release.
 
@@ -319,7 +319,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `ModelConfig`
-Model alias configuration.
+Configuration for one model role.
 
 
 ---
@@ -1421,6 +1421,69 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `ToolsetConfig`
+
+Harness-defined toolset selection and blocking policy.
+
+``enabled=None`` preserves the selected harness default, while an empty ``enabled`` list exposes no toolsets. ``blocked`` excludes toolsets from either the enabled list or the harness default.
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(value: 'Mapping[str, Any]') → Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `ToolsConfig`
 
 Harness-neutral tool capability configuration.
@@ -1484,6 +1547,8 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 ## <kbd>class</kbd> `FabricConfig`
 SDK-facing typed Fabric agent configuration.
+
+Fabric-owned fields apply uniformly. Adapter-translated fields are checked against the selected descriptor; refer to the [normalized configuration compatibility table](/nemo/fabric/sdk/python-sdk#normalized-configuration-compatibility).
 
 
 ---
@@ -1553,7 +1618,21 @@ Add a skill path and return this config.
 block_tools(*tools: 'str') → Self
 ```
 
-Block adapter-native tool names or toolsets and return this config.
+Block adapter-native tool names and return this config.
+
+---
+
+
+### <kbd>method</kbd> `configure_toolsets`
+
+```python
+configure_toolsets(
+    enabled: 'Sequence[str] | None' = None,
+    blocked: 'Sequence[str]' = ()
+) → Self
+```
+
+Set harness-defined toolset selection and blocking policy.
 
 ---
 

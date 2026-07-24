@@ -39,8 +39,8 @@ perl -0pi -e 's/\A\s+//' "$out"/*.md
 # lazydocs nests properties at h4 directly under h2 class sections. Flatten
 # those headings to h3 so generated pages satisfy markdown heading order.
 perl -pi -e 's/^#### (<kbd>property<\/kbd>)/### $1/' "$out"/*.md
-# lazydocs emits the ToolsConfig class heading without a separating blank line.
-perl -0pi -e 's/(^## <kbd>class<\/kbd> `ToolsConfig`\n)(?!\n)/$1\n/m' "$out/nemo_fabric.models.md"
+# lazydocs emits these class headings without a separating blank line.
+perl -0pi -e 's/(^## <kbd>class<\/kbd> `(?:ToolsConfig|ToolsetConfig)`\n)(?!\n)/$1\n/gm' "$out/nemo_fabric.models.md"
 
 add_frontmatter() {
   local file="$1"
@@ -67,7 +67,7 @@ add_frontmatter \
 add_frontmatter \
   "$out/nemo_fabric.client.md" \
   "Client" \
-  "Resolve, plan, diagnose, and run agents with NeMo Fabric." \
+  "Resolve, plan, diagnose, and run agents with NVIDIA NeMo Fabric." \
   "/reference/api/python-library-reference/client"
 add_frontmatter \
   "$out/nemo_fabric.runtime.md" \
@@ -77,7 +77,7 @@ add_frontmatter \
 add_frontmatter \
   "$out/nemo_fabric.models.md" \
   "Models" \
-  "Pydantic authoring models for NeMo Fabric config and request inputs." \
+  "Pydantic authoring models for NVIDIA NeMo Fabric config and request inputs." \
   "/reference/api/python-library-reference/models"
 add_frontmatter \
   "$out/nemo_fabric.types.md" \

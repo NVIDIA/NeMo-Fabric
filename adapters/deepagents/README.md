@@ -23,22 +23,20 @@ pip install "nemo-fabric[deepagents, runtime]"
 
 ## Model and Authentication
 
-The adapter builds a LangChain chat model from NeMo Fabric's `models.default` config.
-For `nvidia` (or an unspecified provider) it targets NVIDIA-hosted,
-OpenAI-compatible endpoints (`https://integrate.api.nvidia.com/v1`) via
-`ChatOpenAI`; `openai` and `openai-compatible` also use `ChatOpenAI` with the
-provider's own default endpoint. Any other provider is constructed through
-`langchain.chat_models.init_chat_model`, so additional backends can be added
-without changing the adapter.
+The adapter builds a LangChain chat model from the selected NeMo Fabric model
+role: `models.default`, or the sole configured role when `default` is absent.
+The `openai`, `nvidia`, and `openai-compatible` providers use `ChatOpenAI`;
+`nvidia` and `openai-compatible` require an explicit compatible `base_url`.
+Any other provider is constructed through
+`langchain.chat_models.init_chat_model`, so LangChain-supported backends do not
+require adapter-specific branches.
 
-`models.default.api_key_env` names the environment variable holding the API key,
-and defaults **per provider** — `NVIDIA_API_KEY` for `nvidia` (or an unspecified
-provider) and `OPENAI_API_KEY` for `openai`. Every other provider — including
-`openai-compatible` and any `init_chat_model` backend — must set `api_key_env`
-explicitly (a missing one is a normalized configuration failure), so a key is
-never sent to the wrong endpoint.
+`models.<role>.api_key_env` names the environment variable holding the API key,
+and defaults to `OPENAI_API_KEY` only for the native `openai` provider. Every
+other provider must set `api_key_env` explicitly (a missing one is a normalized
+configuration failure), so a key is never sent to the wrong endpoint.
 
-Because `models.default.api_key_env` is provider-specific, the adapter declares no
+Because `models.<role>.api_key_env` is provider-specific, the adapter declares no
 static env requirement; a runtime **preflight** verifies that the `deepagents`
 package is importable and the configured credential is set. A failed preflight
 fails runtime start with a stable lifecycle error. `fabric doctor` validates
@@ -46,11 +44,10 @@ adapter resolution.
 
 NeMo Fabric maps the following into the harness:
 
-- `models.default.model` / `harness.settings.model_name` selects the model.
-- `models.default.provider` selects the client (`nvidia`/`openai` → OpenAI-compatible).
-- `models.default.temperature` / `harness.settings.temperature` sets sampling.
-- `harness.settings.base_url` overrides the model endpoint.
-- `harness.settings.system_prompt` becomes the Deep Agents `system_prompt`.
+- The selected `models` role supplies `model`, `provider`, `api_key_env`,
+  `base_url`, and `temperature`.
+- Top-level `system_prompt` becomes the Deep Agents `system_prompt`.
+- `runtime.timeout_seconds` sets the Fabric invocation deadline.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
   confines the agent to the workspace: absolute paths and `..` cannot escape
@@ -69,7 +66,7 @@ NeMo Fabric maps the following into the harness:
   instances, and Python callables cannot cross the boundary. NeMo Fabric-owned
   arguments (`model`, `tools`, `backend`, `skills`, `system_prompt`, `middleware`,
   `checkpointer`) cannot be overridden through this passthrough, and an unknown or
-  unsupported key is a normalized configuration failure rather than a silently
+  unsupported key is an adapter configuration failure rather than a silently
   dropped setting.
 
 ### Subagents
@@ -98,9 +95,8 @@ NeMo Fabric starts one local adapter host for every runtime. During runtime star
 the host compiles one Deep Agents graph, opens its async LangGraph checkpointer,
 and creates one thread ID. Every invocation reuses those native objects; later
 turns report `resumed` as `true`. The checkpointer lives under
-`harness.settings.state_dir` (default the runtime artifacts directory) and is
-closed during runtime stop. The live host owns the thread identity, and
-LangGraph owns the transcript.
+the Fabric artifact root, scoped by runtime ID, and is closed during runtime
+stop. The live host owns the thread identity, and LangGraph owns the transcript.
 
 `Fabric.run(...)` is a convenience over that same lifecycle: it starts the
 runtime, invokes it once, and stops it. It does not use a separate adapter

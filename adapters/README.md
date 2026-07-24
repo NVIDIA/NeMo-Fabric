@@ -43,19 +43,63 @@ provider should expose more precise provenance.
 
 ## Configuration Compatibility
 
-| Agent Harness | Models | Tools / Blocked Tools | MCP | Skills | Subagents |
+| Agent Harness | Models | Tool Policy | MCP | Skills | Subagents |
 | --- | --- | --- | --- | --- | --- |
-| [Claude](claude/README.md) | Anthropic and NVIDIA-hosted Anthropic Messages-compatible models | `allowed_tools` adapter setting / normalized `tools.blocked` | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
-| [Codex](codex/README.md) | OpenAI; NVIDIA Responses-compatible models without Relay | Codex-native tools / configuring `tools.blocked` is unsupported and raises `UnsupportedToolsPolicy` | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
-| [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | Built-ins and MCP / normalized middleware block list | Normalized through `langchain-mcp-adapters` | Normalized | Constrained declarative local delegation |
-| [Hermes Agent](hermes/README.md) | Normalized provider, model, and base URL | Toolsets / normalized disabled toolsets | Normalized | Normalized | Not exposed |
+| [Claude](claude/README.md) | Native Anthropic or a configured Anthropic Messages-compatible provider | `tools.blocked` maps to Claude `disallowed_tools`; toolsets unsupported | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
+| [Codex](codex/README.md) | Native OpenAI or a configured Responses-compatible provider | Per-tool blocking and toolsets unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
+| [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | `tools.blocked` middleware covers built-ins, MCP, and local subagents; toolsets unsupported | Normalized through `langchain-mcp-adapters` | Normalized | Constrained declarative local delegation |
+| [Hermes Agent](hermes/README.md) | Configurable provider, model, and base URL | `tools.toolsets` maps to Hermes toolset controls; per-tool blocking unsupported | Normalized | Normalized | Not exposed |
 
 "Normalized" means that the adapter accepts the corresponding `FabricConfig`
 field. "Not exposed" does not mean that the underlying harness lacks the
 feature; it means that NeMo Fabric does not provide a portable configuration surface
-for it. NeMo Fabric normalizes a blocked-tool list, not a portable tool-definition
-catalog. Deep Agents subagents are limited to declarative local subagents that
-inherit the parent agent's capabilities.
+for it. Individual tools and harness-defined toolsets are separate normalized
+policies. Planning fails when the selected adapter cannot enforce a configured
+policy; NeMo Fabric does not reinterpret one as the other. Deep Agents subagents
+are limited to declarative local subagents that inherit the parent agent's
+capabilities.
+
+### Complete `FabricConfig` Support
+
+`Core` means NeMo Fabric owns the behavior and applies it uniformly before or around
+adapter execution. `Yes` means the adapter translates the normalized field into
+its harness. `No` means an explicitly configured value fails planning instead
+of being ignored. Provider-specific Relay subfields and additive extension maps
+are grouped because their support does not vary by adapter.
+
+| `FabricConfig` field | Claude | Codex | Deep Agents | Hermes Agent |
+| --- | --- | --- | --- | --- |
+| `schema_version` | Core | Core | Core | Core |
+| `metadata.name`, `.description` | Core | Core | Core | Core |
+| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core |
+| `harness.settings` | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider |
+| `models.<role>.model` | Yes | Yes | Yes | Yes |
+| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes |
+| `models.<role>.base_url` | Yes | Yes | Yes | Yes |
+| `models.<role>.temperature` | No | No | Yes | Yes |
+| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared |
+| `system_prompt` | Yes | Yes; base instructions | Yes | Yes |
+| `max_turns` | Yes | No | No | Yes; iteration limit |
+| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core |
+| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core |
+| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core |
+| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
+| `tools.blocked` | Yes | No | Yes | No |
+| `tools.toolsets.enabled`, `.blocked` | No | No | No | Yes |
+| `skills.paths` | Yes | Yes | Yes | Yes |
+| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes |
+| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes |
+| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes |
+| Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics |
+
+The selected model role is `default`, or the sole configured role when no
+`default` exists. More than one role without `default` fails planning.
 
 ## Runtime and Observability Compatibility
 

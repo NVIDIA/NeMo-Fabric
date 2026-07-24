@@ -70,9 +70,7 @@ def test_relay_cli_contract_selects_compatible_contract(
 
 
 @pytest.mark.parametrize("output", ["nemo-relay 0.5.9", "nemo-relay 0.7.0"])
-def test_relay_cli_contract_rejects_unsupported_version(
-    monkeypatch, tmp_path, output
-):
+def test_relay_cli_contract_rejects_unsupported_version(monkeypatch, tmp_path, output):
     monkeypatch.setattr(
         relay_gateway.subprocess,
         "run",
@@ -85,9 +83,7 @@ def test_relay_cli_contract_rejects_unsupported_version(
         relay_gateway.relay_cli_contract(tmp_path / "nemo-relay")
 
 
-def test_relay_cli_contract_rejects_unparseable_output(
-    monkeypatch, tmp_path
-):
+def test_relay_cli_contract_rejects_unparseable_output(monkeypatch, tmp_path):
     monkeypatch.setattr(
         relay_gateway.subprocess,
         "run",
@@ -117,6 +113,8 @@ def test_start_relay_gateway_captures_logs_and_waits_for_health(monkeypatch, tmp
         bind="127.0.0.1:43210",
         url="http://127.0.0.1:43210",
         log_path=log_path,
+        openai_base_url="https://openai.example/v1",
+        anthropic_base_url="https://anthropic.example",
     )
 
     started = relay_gateway.start_relay_gateway(
@@ -131,6 +129,10 @@ def test_start_relay_gateway_captures_logs_and_waits_for_health(monkeypatch, tmp
         str(config_path),
         "--bind",
         "127.0.0.1:43210",
+        "--openai-base-url",
+        "https://openai.example/v1",
+        "--anthropic-base-url",
+        "https://anthropic.example",
     ]
     assert mock_popen.call_args.kwargs["cwd"] == tmp_path
     assert mock_popen.call_args.kwargs["stderr"] is subprocess.STDOUT
@@ -178,9 +180,7 @@ def test_start_relay_gateway_stops_failed_process_and_preserves_log(
     assert log_path.exists()
 
 
-def test_start_relay_gateway_reports_readiness_and_stop_failures(
-    monkeypatch, tmp_path
-):
+def test_start_relay_gateway_reports_readiness_and_stop_failures(monkeypatch, tmp_path):
     config_path = tmp_path / "config.toml"
     config_path.write_text("", encoding="utf-8")
     readiness_error = relay_gateway.RelayGatewayError("not ready")

@@ -17,13 +17,6 @@ import pytest
 from _utils.utils import assert_semantic_relay_artifacts
 
 
-def _select_codex_runtime(config):
-    codex_bin = os.environ.get("FABRIC_TEST_CODEX_BIN")
-    if codex_bin:
-        config.harness.settings["codex_bin"] = codex_bin
-    return config
-
-
 async def test_codex_sdk():
     if os.environ.get("RUN_FABRIC_CODEX_INTEGRATION") != "1":
         pytest.skip("set RUN_FABRIC_CODEX_INTEGRATION=1 to run")
@@ -46,14 +39,14 @@ async def test_codex_sdk_with_relay():
     )
     if relay_command is None:
         pytest.fail("the nemo-relay CLI is required")
-    await _run_relay(relay_command)
+    await _run_relay(str(relay_command))
 
 
 async def _run() -> None:
     from examples.code_review_agent import BASE_DIR, codex_config
     from nemo_fabric import Fabric
 
-    config = _select_codex_runtime(codex_config())
+    config = codex_config()
     nonce = f"fabric-{uuid.uuid4().hex[:8]}"
     client = Fabric()
     single = await client.run(
@@ -91,8 +84,9 @@ async def _run_relay(relay_command: str) -> None:
     from examples.code_review_agent import BASE_DIR, codex_config, with_relay
     from nemo_fabric import Fabric
 
-    config = _select_codex_runtime(with_relay(codex_config()))
-    config.harness.settings["nemo_relay_command"] = relay_command
+    config = with_relay(codex_config())
+    assert config.environment is not None
+    config.environment.env["FABRIC_TEST_NEMO_RELAY_COMMAND"] = relay_command
     client = Fabric()
     result = await client.run(
         config,
