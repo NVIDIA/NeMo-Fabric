@@ -61,22 +61,20 @@ impl Example {
 
     /// Construct one complete example config without staging its assets.
     pub fn config(self, variant: Option<&str>) -> Result<FabricConfig, String> {
-        let preset = self.preset(variant)?;
-        preset.validate_config_environment()?;
-        Ok(code_review_config(preset))
+        code_review_config(self.preset(variant)?)
     }
 
     /// Construct and stage one complete example variant.
     pub fn select(self, variant: Option<&str>) -> Result<SelectedExample, String> {
         let preset = self.preset(variant)?;
-        preset.validate_config_environment()?;
+        let config = code_review_config(preset)?;
         let files = self.embedded_files(preset);
         let assets = StagedAssets::create(&files)
             .map_err(|error| format!("failed to stage example {:?}: {error}", self.name))?;
         Ok(SelectedExample {
             example: self,
             variant: preset,
-            config: code_review_config(preset),
+            config,
             assets,
         })
     }
@@ -127,8 +125,8 @@ const EXAMPLES: [Example; 1] = [Example {
     variants: CODE_REVIEW_VARIANTS,
 }];
 
-fn code_review_config(preset: Preset) -> FabricConfig {
-    let mut config = preset.config();
+fn code_review_config(preset: Preset) -> Result<FabricConfig, String> {
+    let mut config = preset.config()?;
     config.metadata = MetadataConfig {
         name: "code-review-agent".to_string(),
         description: Some("Maintained example for reviewing a small Python workspace.".to_string()),
@@ -143,7 +141,7 @@ fn code_review_config(preset: Preset) -> FabricConfig {
         paths: vec![PathBuf::from("skills/code-review.md")],
         extensions: BTreeMap::new(),
     });
-    config
+    Ok(config)
 }
 
 #[cfg(test)]

@@ -65,22 +65,26 @@ pub struct Preset {
 
 impl Preset {
     /// Construct a fresh complete typed config.
-    pub fn config(self) -> FabricConfig {
-        (self.build)()
+    ///
+    /// Returns an error when a required configuration-time endpoint is unset or empty.
+    pub fn config(self) -> Result<FabricConfig, String> {
+        self.validate_config_environment()?;
+        Ok((self.build)())
     }
 
     /// Stage the adapter assets required to plan or run this preset.
     pub fn stage(self) -> std::io::Result<SelectedPreset> {
-        self.validate_config_environment()
+        let config = self
+            .config()
             .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
         Ok(SelectedPreset {
             preset: self,
-            config: self.config(),
+            config,
             assets: StagedAssets::create(self.assets)?,
         })
     }
 
-    pub(crate) fn validate_config_environment(self) -> Result<(), String> {
+    fn validate_config_environment(self) -> Result<(), String> {
         if !self.required_env.contains(&NVIDIA_FRONTIER_BASE_URL_ENV) {
             return Ok(());
         }
@@ -322,7 +326,7 @@ mod tests {
         let mut names = std::collections::BTreeSet::new();
         for preset in all() {
             assert!(names.insert(preset.name));
-            let config = preset.config();
+            let config = (preset.build)();
             assert_eq!(config.metadata.name, format!("{}-agent", preset.name));
             assert!(!config.harness.adapter_id.is_empty());
         }
@@ -354,7 +358,7 @@ mod tests {
     fn adapter_presets_use_nvidia_credentials() {
         for name in ["hermes", "claude", "codex", "deepagents"] {
             let preset = find(name).expect("adapter preset");
-            let config = preset.config();
+            let config = (preset.build)();
             let model = config.models.get("default").expect("default model");
 
             assert_eq!(model.provider, "nvidia");
@@ -363,7 +367,10 @@ mod tests {
         }
 
         for name in ["hermes", "deepagents"] {
-            let config = find(name).expect("catalog preset").config();
+            let config = find(name)
+                .expect("catalog preset")
+                .config()
+                .expect("construct catalog config");
             let model = config.models.get("default").expect("default model");
             assert_eq!(
                 model.settings.get("base_url").and_then(Value::as_str),
