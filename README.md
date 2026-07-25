@@ -16,7 +16,7 @@ SPDX-License-Identifier: Apache-2.0
   <img src="assets/fabric-hero-option2.png" alt="Diagram showing NeMo Fabric connecting applications, evaluations, and reinforcement learning rollouts to Hermes, Codex, Claude, and Deep Agents, with results, artifacts, and telemetry as outputs." width="1000">
 </p>
 
-NeMo Fabric gives applications one configurable, observable way to run applications
+NeMo Fabric gives users one configurable, observable way to run applications
 across multiple agent harnesses. It standardizes configuration, lifecycle
 management, and results without requiring a separate integration for every harness.
 
