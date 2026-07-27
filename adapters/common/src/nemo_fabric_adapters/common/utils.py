@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -191,6 +192,10 @@ def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in mapping.items() if value is not None}
 
 
+def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in mapping.items() if value is not None}
+
+
 def dump_yaml(value: dict[str, Any]) -> str:
     try:
         import yaml
@@ -303,6 +308,25 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
         for path in sorted(directory.glob("*.json")):
             artifacts.append({"kind": "atif", "path": str(path)})
     return artifacts
+
+
+def relay_cli_plugin_config(
+    plugin_config: dict[str, Any], *, observability_version: int
+) -> dict[str, Any]:
+    """Render normalized Relay intent for the current external CLI contract."""
+
+    rendered = copy.deepcopy(plugin_config)
+    if observability_version != 2:
+        raise ValueError(
+            "NeMo Relay 0.6 or newer is required; observability version 1 is unsupported"
+        )
+    for component in rendered.get("components", []):
+        if not isinstance(component, dict) or component.get("kind") != "observability":
+            continue
+        config = component.get("config")
+        if isinstance(config, dict) and int(config.get("version", 2)) != 2:
+            raise ValueError("NeMo Relay observability config version 2 is required")
+    return rendered
 
 
 def write_relay_configs(

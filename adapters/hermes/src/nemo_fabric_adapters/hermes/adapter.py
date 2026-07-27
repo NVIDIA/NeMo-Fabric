@@ -21,7 +21,9 @@ from pathlib import Path
 from typing import Any
 
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import relay_gateway
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.hermes import relay_cli
 
 # Default agent loop budget when harness.settings.max_iterations is unset.
 # Mirrors Hermes' own AIAgent default (agent/agent_init.py); a lower value such
@@ -66,7 +68,10 @@ def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
 
 
 def build_hermes_config(
-    payload: dict[str, Any], *, relay_enabled: bool = False
+    payload: dict[str, Any],
+    *,
+    relay_enabled: bool = False,
+    exclude_relay_plugin: bool = False,
 ) -> dict[str, Any]:
     settings = common_utils.settings_payload(payload)
     model_config = common_utils.selected_model_config(payload)
@@ -122,6 +127,8 @@ def build_hermes_config(
         }
 
     plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
+    if exclude_relay_plugin:
+        plugins = [plugin for plugin in plugins if plugin != "observability/nemo_relay"]
     if relay_enabled and "observability/nemo_relay" not in plugins:
         plugins.append("observability/nemo_relay")
     if plugins:
@@ -135,9 +142,14 @@ def write_hermes_config(
     hermes_home: Path,
     *,
     relay_enabled: bool = False,
+    exclude_relay_plugin: bool = False,
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
-    config = build_hermes_config(payload, relay_enabled=relay_enabled)
+    config = build_hermes_config(
+        payload,
+        relay_enabled=relay_enabled,
+        exclude_relay_plugin=exclude_relay_plugin,
+    )
     config_path = hermes_home / "config.yaml"
     config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")
     return config_path, config
@@ -210,13 +222,9 @@ class HermesRuntime:
         self._conversation_history: list[dict[str, Any]] | None = None
         self._session_db: Any = None
         self._agent: Any = None
-        self._invoke_hook: Any = None
         self._relay_plugin_config: dict[str, Any] | None = None
-        self._relay_context: Any = None
-        self._relay_context_entered = False
-        self._relay_session_pending = False
-        self._relay_finalize_hook_invoked = False
-        self._relay_model_name = "unknown"
+        self._relay_runner: relay_cli.HermesRelayRunner | None = None
+        self._hermes_cli_version: tuple[int, int, int] | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -226,8 +234,6 @@ class HermesRuntime:
             )
 
         try:
-            self._relay_session_pending = False
-            self._relay_finalize_hook_invoked = False
             validate_hermes_telemetry_provider(payload)
             self._settings = common_utils.settings_payload(payload)
             self._model_config = common_utils.selected_model_config(payload)
@@ -239,6 +245,36 @@ class HermesRuntime:
                 hermes_home_base, payload
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
+
+            relay_enabled = common_utils.relay_enabled(payload)
+            if relay_enabled:
+                self._relay_plugin_config = common_utils.load_relay_plugin_config(
+                    payload
+                )
+
+            self._hermes_config_path, self._hermes_config = write_hermes_config(
+                payload,
+                self._hermes_home,
+                relay_enabled=False,
+                exclude_relay_plugin=relay_enabled,
+            )
+            api_key_env = (
+                self._settings.get("api_key_env")
+                or self._model_config.get("api_key_env")
+                or "NVIDIA_API_KEY"
+            )
+            api_key = os.environ.get(api_key_env)
+            if not api_key:
+                raise RuntimeError(f"{api_key_env} is required for Hermes mode")
+            self._base_url = common_utils.get_base_url(
+                self._settings, self._model_config
+            )
+            if relay_enabled:
+                await self._start_relay_runtime(payload)
+                self._start_payload = payload
+                self._started = True
+                return
+
             os.environ["HOME"] = str(self._hermes_home)
             os.environ["HERMES_HOME"] = str(self._hermes_home)
             os.environ.setdefault("HERMES_YOLO_MODE", "1")
@@ -253,38 +289,8 @@ class HermesRuntime:
                 str(self._settings.get("terminal_timeout", 60)),
             )
 
-            relay_enabled = common_utils.relay_enabled(payload)
-            if relay_enabled:
-                self._relay_plugin_config = common_utils.load_relay_plugin_config(
-                    payload
-                )
-                from nemo_relay import plugin
-
-                self._relay_context = plugin.plugin(self._relay_plugin_config)
-                await self._relay_context.__aenter__()
-                self._relay_context_entered = True
-
-            self._hermes_config_path, self._hermes_config = write_hermes_config(
-                payload,
-                self._hermes_home,
-                relay_enabled=relay_enabled,
-            )
-            api_key_env = (
-                self._settings.get("api_key_env")
-                or self._model_config.get("api_key_env")
-                or "NVIDIA_API_KEY"
-            )
-            api_key = os.environ.get(api_key_env)
-            if not api_key:
-                raise RuntimeError(f"{api_key_env} is required for Hermes mode")
-            self._base_url = common_utils.get_base_url(
-                self._settings, self._model_config
-            )
-            self._relay_model_name = common_utils.relay_model_name(payload)
-
             from hermes_cli.config import load_config
             from hermes_cli.plugins import discover_plugins
-            from hermes_cli.plugins import invoke_hook
             from hermes_state import SessionDB
             from run_agent import AIAgent
 
@@ -333,16 +339,93 @@ class HermesRuntime:
                         session_db=self._session_db,
                     )
                 )
-            self._invoke_hook = invoke_hook
             self._start_payload = payload
             self._started = True
         except BaseException:
             await self.stop()
             raise
 
+    async def _start_relay_runtime(self, payload: dict[str, Any]) -> None:
+        if (
+            self._hermes_home is None
+            or self._hermes_config_path is None
+            or self._runtime_id is None
+            or self._relay_plugin_config is None
+        ):
+            raise RuntimeError("Hermes Relay runtime state is incomplete")
+        root = Path(common_utils.base_dir(payload)).resolve()
+        relay_command = (
+            self._settings.get("nemo_relay_command")
+            or self._settings.get("relay_cli_command")
+            or "nemo-relay"
+        )
+        hermes_command = (
+            self._settings.get("hermes_command")
+            or self._settings.get("command")
+            or "hermes"
+        )
+        relay_executable = relay_cli.resolve_executable(
+            root, relay_command, name="NeMo Relay CLI"
+        )
+        hermes_executable = relay_cli.resolve_executable(
+            root, hermes_command, name="Hermes CLI"
+        )
+        relay_contract, hermes_version = await asyncio.gather(
+            asyncio.to_thread(relay_gateway.relay_cli_contract, relay_executable),
+            asyncio.to_thread(relay_cli.hermes_cli_version, hermes_executable),
+        )
+        self._hermes_cli_version = hermes_version
+        base_url = relay_cli.validate_openai_upstream(
+            self._settings, self._model_config, self._base_url
+        )
+        model = str(
+            self._settings.get("model_name") or self._model_config.get("model") or ""
+        )
+        if not model:
+            raise relay_cli.HermesRelayError("Hermes Relay execution requires a model")
+        environment = common_utils.environment_payload(payload)
+        cwd = Path(self._settings.get("cwd") or environment.get("workspace") or root)
+        if not cwd.is_absolute():
+            cwd = root / cwd
+        env = relay_cli.child_environment(
+            self._settings,
+            self._model_config,
+            self._relay_plugin_config,
+            self._hermes_home,
+        )
+        await asyncio.to_thread(
+            _ensure_hermes_runtime_session,
+            self._hermes_home,
+            self._runtime_id,
+            model,
+            self._model_config,
+            str(cwd.resolve()),
+        )
+        self._relay_runner = relay_cli.HermesRelayRunner(
+            relay_cli.HermesRelayLaunch(
+                relay_executable=relay_executable,
+                relay_contract=relay_contract,
+                hermes_executable=hermes_executable,
+                hermes_config_path=self._hermes_config_path,
+                hermes_home=self._hermes_home,
+                cwd=cwd.resolve(),
+                env=env,
+                base_url=base_url,
+                model=model,
+                runtime_id=self._runtime_id,
+                settings=self._settings,
+                model_config=self._model_config,
+                plugin_config=self._relay_plugin_config,
+            )
+        )
+
     async def invoke(self, invocation: dict[str, Any]) -> dict[str, Any]:
         start_payload = self._start_payload
-        if not self._started or self._agent is None or start_payload is None:
+        if (
+            not self._started
+            or start_payload is None
+            or (self._agent is None and self._relay_runner is None)
+        ):
             raise lifecycle.LifecycleError(
                 "hermes_runtime_not_started",
                 "Hermes runtime is not started",
@@ -362,6 +445,8 @@ class HermesRuntime:
         user_message = request.get("input") or ""
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
+        if self._relay_runner is not None:
+            return await self._invoke_relay(payload, user_message)
 
         def invoke_turn() -> tuple[dict[str, Any], str]:
             return _invoke_hermes_turn(
@@ -431,43 +516,75 @@ class HermesRuntime:
             )
         return output
 
-    def _finalize_relay_session(self) -> None:
-        if (
-            self._relay_plugin_config is None
-            or self._agent is None
-            or self._invoke_hook is None
-            or not self._relay_session_pending
-        ):
-            return
-        if not self._relay_finalize_hook_invoked:
-            self._invoke_hook(
-                "on_session_finalize",
-                session_id=getattr(self._agent, "session_id", ""),
-                model=getattr(self._agent, "model", None) or self._relay_model_name,
-                platform=getattr(self._agent, "platform", None) or "fabric",
+    async def _invoke_relay(
+        self, payload: dict[str, Any], user_message: str
+    ) -> dict[str, Any]:
+        if self._relay_runner is None:
+            raise RuntimeError("Hermes Relay runtime is not initialized")
+        context = common_utils.runtime_context(payload)
+        invocation_id = str(
+            context.get("invocation_id")
+            or context.get("request_id")
+            or f"{self._runtime_id}-invocation"
+        )
+        result = await self._relay_runner.invoke(user_message, invocation_id)
+        response = relay_cli.quiet_response(result.stdout)
+        failed = result.returncode != 0
+        error = None
+        if failed:
+            error = (
+                "NeMo Relay/Hermes exited with status "
+                f"{result.returncode}; see {result.stderr_path}"
             )
-            self._relay_finalize_hook_invoked = True
-        # Relay subscriber callbacks are queued. The long-lived plugin context
-        # does not flush them until runtime shutdown, but invocation results
-        # must include artifacts produced by this turn.
-        from nemo_relay import subscribers
-
-        subscribers.flush()
-        self._relay_session_pending = False
-        self._relay_finalize_hook_invoked = False
+        return {
+            "harness": "hermes",
+            "adapter": "cli",
+            "mode": "hermes_relay_gateway",
+            "model": self._model_config.get("model"),
+            "base_url": self._base_url,
+            "response": response,
+            "completed": not failed or bool(response),
+            "failed": failed,
+            "api_calls": None,
+            "messages": [],
+            "message_count": 0,
+            "error": error,
+            "adapter_stdout": result.stdout,
+            "hermes_home": str(self._hermes_home),
+            "hermes_config_path": str(self._hermes_config_path),
+            "hermes_native_config": summarize_hermes_config(self._hermes_config),
+            "enabled_toolsets": common_utils.normalize_list(
+                self._settings.get("enabled_toolsets")
+            ),
+            "command": result.command,
+            "returncode": result.returncode,
+            "stdout_path": str(result.stdout_path),
+            "stderr_path": str(result.stderr_path),
+            "output_truncated": result.truncated,
+            "relay_runtime": {
+                "enabled": True,
+                "config_path": str(result.config_path),
+                "plugin_config_path": str(result.plugin_config_path),
+                "emitter": "nemo-relay.cli-gateway",
+                "model_event_source": "gateway",
+                "hook_event_policy": "lifecycle_context_only",
+                "relay_version": ".".join(
+                    str(value) for value in self._relay_runner.relay_version
+                ),
+                "hermes_version": ".".join(
+                    str(value) for value in self._hermes_cli_version or ()
+                ),
+            },
+            "relay_artifacts": common_utils.collect_relay_artifacts(
+                result.plugin_config
+            ),
+        }
 
     async def stop(self) -> None:
         agent = self._agent
         session_db = self._session_db
-        relay_context = self._relay_context
-        relay_context_entered = self._relay_context_entered
-        relay_plugin_config = self._relay_plugin_config
+        relay_runner = self._relay_runner
         errors: list[BaseException] = []
-        if relay_plugin_config is not None and agent is not None:
-            try:
-                self._finalize_relay_session()
-            except BaseException as error:
-                errors.append(error)
         self._agent = None
         self._session_db = None
         self._start_payload = None
@@ -480,15 +597,16 @@ class HermesRuntime:
         self._hermes_config = {}
         self._enabled_toolsets = None
         self._conversation_history = None
-        self._relay_context = None
-        self._relay_context_entered = False
-        self._relay_session_pending = False
-        self._relay_finalize_hook_invoked = False
-        self._invoke_hook = None
         self._relay_plugin_config = None
-        self._relay_model_name = "unknown"
+        self._relay_runner = None
+        self._hermes_cli_version = None
         self._started = False
 
+        if relay_runner is not None:
+            try:
+                await relay_runner.stop()
+            except BaseException as error:
+                errors.append(error)
         if agent is not None:
             try:
                 agent.close()
@@ -499,12 +617,6 @@ class HermesRuntime:
                 session_db.close()
             except BaseException as error:
                 errors.append(error)
-        if relay_context is not None and relay_context_entered:
-            try:
-                await relay_context.__aexit__(None, None, None)
-            except BaseException as error:
-                errors.append(error)
-
         if errors:
             for error in errors:
                 if isinstance(error, asyncio.CancelledError):
@@ -540,6 +652,30 @@ def _invoke_hermes_turn(
             **conversation_kwargs,
         )
     return result, hermes_stdout.getvalue()
+
+
+def _ensure_hermes_runtime_session(
+    hermes_home: Path,
+    runtime_id: str,
+    model: str,
+    model_config: dict[str, Any],
+    cwd: str,
+) -> None:
+    """Create the stable session that ``hermes chat --continue`` resumes."""
+
+    from hermes_state import SessionDB
+
+    session_db = SessionDB(db_path=hermes_home / "state.db")
+    try:
+        session_db.create_session(
+            runtime_id,
+            "fabric",
+            model=model,
+            model_config=model_config,
+            cwd=cwd,
+        )
+    finally:
+        session_db.close()
 
 
 def filter_supported_kwargs(callable_obj: Any, **kwargs: Any) -> dict[str, Any]:

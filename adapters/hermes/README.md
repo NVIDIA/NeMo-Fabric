@@ -5,7 +5,10 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Hermes Agent Adapter
 
-This adapter runs Hermes Agent through its Python SDK.
+This adapter runs Hermes Agent through its Python SDK when telemetry is disabled.
+When NeMo Relay telemetry is enabled, the same adapter uses the public
+`nemo-relay run` CLI so Relay owns the loopback gateway and Hermes child process.
+There is no user-selectable launch mode.
 
 ## Install
 
@@ -37,7 +40,7 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - NeMo Fabric MCP servers as Hermes Agent MCP server config;
 - `tools.blocked` as disabled toolsets for Hermes Agent, unioned with
   `harness.settings.disabled_toolsets`;
-- optional NeMo Relay telemetry plugin configuration.
+- optional NeMo Relay 0.6 telemetry configuration.
 
 `hermes_home` configures a base directory. The adapter creates a child under
 `runtimes/<runtime_id>` so invocations in one NeMo Fabric runtime share Hermes Agent state
@@ -45,16 +48,41 @@ without sharing config or the session database with another runtime.
 
 ## Execution Model
 
-Each NeMo Fabric runtime starts one local adapter host, constructs one Hermes Agent
-`AIAgent`, and opens one `SessionDB`. Ordered `Runtime.invoke(...)` calls reuse
-those native objects and pass the prior turn's returned transcript back to
-`run_conversation(...)`. Runtime stop calls the agent's idempotent `close()`
-method, closes the session database, and releases the Relay plugin context when
-enabled.
+For a runtime without Relay, the adapter constructs one Hermes Agent `AIAgent`
+and opens one `SessionDB`. Ordered `Runtime.invoke(...)` calls reuse those
+native objects and pass the prior transcript back to `run_conversation(...)`.
 
-Hermes Agent Relay telemetry is finalized after each NeMo Fabric invocation so its ATOF
-and ATIF artifacts are complete when that invocation returns. This telemetry
-boundary does not recreate the `AIAgent` or `SessionDB`.
+For a Relay-enabled runtime, Fabric writes a Hermes config that excludes the
+native `observability/nemo_relay` plugin. Each invocation gets a distinct
+directory containing colocated `config.toml` and `plugins.toml`, then executes:
+
+```text
+nemo-relay run --config <config.toml> --agent hermes -- <hermes chat args>
+```
+
+The Relay CLI owns gateway startup, the Hermes process, telemetry flush, and
+configuration-overlay restoration. Fabric sends cancellation to the whole
+process group and bounds captured stdout/stderr. The persistent Fabric runtime
+is mapped to a stable Hermes session, so separate invocation processes retain
+conversation history. Relay mode requires NeMo Relay `>=0.6,<0.7`, Hermes Agent
+`>=0.18.2,<0.19`, and an OpenAI-compatible upstream endpoint.
+
+The Relay gateway's `openai.chat_completions` scopes are the canonical source
+for model requests, cost, and cache accounting. Hermes hook scopes provide
+lifecycle and tool-call context only and must not be counted as another model
+request. Adapter output records this as `relay_runtime.model_event_source` and
+`relay_runtime.hook_event_policy`.
+
+The Relay/Hermes process receives an allowlisted child environment: portable
+process settings, `harness.settings.env`, the selected model credential, and
+environment variables explicitly referenced by Relay sinks. Unrelated host
+credentials are not inherited.
+
+Hermes 0.18.x accepts the non-interactive query only as an argument. Fabric
+redacts that argument from results and logs, but it can remain visible to
+same-host process inspection while the command is running. Do not place
+credentials in prompts on a shared host until Hermes exposes a versioned
+stdin/file-descriptor query surface.
 
 ## Maintaining The Adapter
 

@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -56,109 +56,6 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
         ValueError, match="only relay telemetry is supported for Hermes"
     ):
         adapter.validate_hermes_telemetry_provider(payload)
-
-
-def test_finalize_relay_session_flushes_before_artifact_collection(monkeypatch):
-    calls: list[str] = []
-    invoke_hook = MagicMock(side_effect=lambda *args, **kwargs: calls.append("hook"))
-    runtime = adapter.HermesRuntime()
-    runtime._relay_plugin_config = {"components": []}
-    runtime._agent = SimpleNamespace(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
-
-    from nemo_relay import subscribers
-
-    monkeypatch.setattr(subscribers, "flush", lambda: calls.append("flush"))
-
-    runtime._finalize_relay_session()
-
-    assert calls == ["hook", "flush"]
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-
-
-async def test_stop_does_not_refinalize_completed_relay_turn(monkeypatch):
-    invoke_hook = MagicMock()
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._relay_plugin_config = {"components": []}
-    agent = MagicMock(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    session_db = MagicMock()
-    runtime._agent = agent
-    runtime._session_db = session_db
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
-
-    from nemo_relay import subscribers
-
-    flush = MagicMock()
-    monkeypatch.setattr(subscribers, "flush", flush)
-
-    runtime._finalize_relay_session()
-    await runtime.stop()
-
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    flush.assert_called_once_with()
-    agent.close.assert_called_once_with()
-    session_db.close.assert_called_once_with()
-    assert runtime._started is False
-    assert runtime._relay_session_pending is False
-    assert runtime._relay_finalize_hook_invoked is False
-
-
-async def test_stop_retries_failed_relay_flush_without_refinalizing(monkeypatch):
-    invoke_hook = MagicMock()
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._relay_plugin_config = {"components": []}
-    runtime._agent = MagicMock(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    runtime._session_db = MagicMock()
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
-
-    from nemo_relay import subscribers
-
-    flush = MagicMock(side_effect=[RuntimeError("flush failed"), None])
-    monkeypatch.setattr(subscribers, "flush", flush)
-
-    with pytest.raises(RuntimeError, match="flush failed"):
-        runtime._finalize_relay_session()
-
-    assert runtime._relay_session_pending is True
-    assert runtime._relay_finalize_hook_invoked is True
-    await runtime.stop()
-
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    assert flush.call_count == 2
-    assert runtime._relay_session_pending is False
-    assert runtime._relay_finalize_hook_invoked is False
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -288,6 +185,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             {
                 "relay": {
                     "config": {
+                        "version": 2,
                         "atof": {
                             "enabled": True,
                             "sinks": [
@@ -401,6 +299,26 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     assert config_path.exists()
     assert config["model"]["default"] == "nvidia/test-model"
     assert "nvidia/test-model" in config_path.read_text(encoding="utf-8")
+
+
+def test_gateway_config_excludes_native_relay_plugin():
+    payload = {
+        "config": {
+            "harness": {
+                "settings": {
+                    "plugins_enabled": [
+                        "custom/plugin",
+                        "observability/nemo_relay",
+                    ]
+                }
+            },
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
+        }
+    }
+
+    config = adapter.build_hermes_config(payload, exclude_relay_plugin=True)
+
+    assert config["plugins"]["enabled"] == ["custom/plugin"]
 
 
 @pytest.mark.parametrize(

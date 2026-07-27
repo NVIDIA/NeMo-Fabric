@@ -1106,12 +1106,13 @@ wheels = [
 
 [[package]]
 name = "hermes-agent"
-version = "0.17.0"
+version = "0.18.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi", marker = "python_full_version < '3.14'" },
     { name = "concurrent-log-handler", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
     { name = "croniter", marker = "python_full_version < '3.14'" },
+    { name = "cryptography", version = "46.0.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "fastapi", marker = "python_full_version < '3.14'" },
     { name = "fire", marker = "python_full_version < '3.14'" },
     { name = "httpx", extra = ["socks"], marker = "python_full_version < '3.14'" },
@@ -1139,9 +1140,9 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"], marker = "python_full_version < '3.14'" },
     { name = "websockets", marker = "python_full_version < '3.14'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/99/c2/6b65b1c1d093eff415304472709479a392ac1422e36d007e32f3bb848f58/hermes_agent-0.17.0.tar.gz", hash = "sha256:5ceda2a131627fecf5fd52b05d0162b48032023a5d814bb5d1894db4aa146120", size = 12156176, upload-time = "2026-06-19T19:40:16.589Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/44/c2e588a0d49049aa3fa6833d52bd6e803dc62ac7369a7ecb483b9a7b9a3d/hermes_agent-0.18.2.tar.gz", hash = "sha256:1cc7ccb6bca6e6d2aef448bbf9b79d4bc31247288a8bf549231fc148a343c678", size = 13618103, upload-time = "2026-07-08T03:12:49.202Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e3/e2/d18d5ec6735b412fde47ecac3b6a63874c824c83e9821e1c1f4a07bcff85/hermes_agent-0.17.0-py3-none-any.whl", hash = "sha256:f11dcc1b168d2db626ef8b2175301741a86b5247c5ffaff4b0f0e24018d1b190", size = 8642279, upload-time = "2026-06-19T19:40:14.014Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/4c/91652c61450763bfe165c65b83026503de0ac9ddad2c11ee522490bf4c2d/hermes_agent-0.18.2-py3-none-any.whl", hash = "sha256:8f02155cfc84b28bd98551cd18dffec0efa9ec070dd08f90f1a850f1c779492f", size = 9569078, upload-time = "2026-07-08T03:12:46.369Z" },
 ]
 
 [[package]]
@@ -2119,7 +2120,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "harbor", marker = "python_full_version >= '3.12' and extra == 'harbor'", specifier = ">=0.18,<0.19" },
-    { name = "hermes-agent", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", specifier = ">=0.17.0" },
+    { name = "hermes-agent", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", specifier = ">=0.18.2,<0.19" },
     { name = "nemo-fabric-adapters-claude", marker = "extra == 'claude'", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", marker = "extra == 'codex'", editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
