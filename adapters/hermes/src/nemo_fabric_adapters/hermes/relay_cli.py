@@ -385,7 +385,12 @@ def _write_configs(
     except ImportError as error:
         raise HermesRelayError("tomli_w is required for Relay execution") from error
 
-    invocation_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        invocation_dir.mkdir(parents=True, exist_ok=False)
+    except OSError as error:
+        raise HermesRelayError(
+            f"NeMo Relay invocation directory could not be created: {invocation_dir}"
+        ) from error
     config_path = invocation_dir / "config.toml"
     plugin_config_path = invocation_dir / "plugins.toml"
     plugin_config = copy.deepcopy(launch.plugin_config)

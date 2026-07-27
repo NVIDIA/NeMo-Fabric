@@ -361,6 +361,28 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     ]
 
 
+@pytest.mark.parametrize("version", [None, [], "two", "2", 2.0, True])
+def test_relay_cli_plugin_config_rejects_malformed_observability_versions(
+    version: object,
+):
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {"version": version},
+            }
+        ]
+    }
+
+    with pytest.raises(
+        ValueError, match="NeMo Relay observability config version 2 is required"
+    ):
+        common_utils.relay_cli_plugin_config(
+            plugin_config,
+            observability_version=2,
+        )
+
+
 def test_collect_relay_artifacts(tmp_path: Path):
     atof_dir = tmp_path / "atof"
     atif_dir = tmp_path / "atif"

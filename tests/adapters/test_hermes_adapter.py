@@ -12,6 +12,7 @@ import os
 import sys
 from pathlib import Path
 from types import ModuleType
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
@@ -58,11 +59,52 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
         adapter.validate_hermes_telemetry_provider(payload)
 
 
-def test_build_hermes_config_maps_fabric_config_to_hermes_config():
+async def test_stop_stops_relay_runner_and_resets_runtime_state():
+    relay_runner = MagicMock()
+    relay_runner.stop = AsyncMock()
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-1"
+    runtime._settings = {"model": "test"}
+    runtime._relay_runner = relay_runner
+
+    await runtime.stop()
+
+    relay_runner.stop.assert_awaited_once_with()
+    assert runtime._relay_runner is None
+    assert runtime._runtime_id is None
+    assert runtime._settings == {}
+    assert runtime._started is False
+
+
+async def test_stop_resets_runtime_state_and_reports_relay_runner_failure():
+    relay_runner = MagicMock()
+    relay_runner.stop = AsyncMock(side_effect=RuntimeError("stop failed"))
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-1"
+    runtime._relay_runner = relay_runner
+
+    with pytest.raises(
+        adapter.lifecycle.LifecycleError,
+        match="Hermes runtime failed to stop cleanly",
+    ) as error:
+        await runtime.stop()
+
+    relay_runner.stop.assert_awaited_once_with()
+    assert error.value.code == "hermes_runtime_stop_failed"
+    assert runtime._relay_runner is None
+    assert runtime._runtime_id is None
+    assert runtime._started is False
+
+
+def test_build_hermes_config_maps_fabric_config_to_hermes_config(tmp_path: Path):
     os.environ["MCP_URL"] = "http://localhost:9000/mcp"
+    root = tmp_path / "fabric-root"
+    workspace = tmp_path / "workspace" / "repo"
     payload = {
-        "base_dir": "/fabric-root",
-        "runtime_context": {"environment": {"workspace": "/workspace/repo"}},
+        "base_dir": str(root),
+        "runtime_context": {"environment": {"workspace": str(workspace)}},
         "capability_plan": {
             "native": {
                 "skill_paths": ["skills/review"],
@@ -114,7 +156,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
         },
         "terminal": {
             "backend": "local",
-            "cwd": "/workspace/repo",
+            "cwd": str(workspace),
             "timeout": 90,
         },
         "skills": {"external_dirs": ["skills/review"]},
@@ -147,11 +189,13 @@ def test_default_max_iterations_matches_hermes_library_default():
     assert adapter.DEFAULT_MAX_ITERATIONS == hermes_default
 
 
-def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
+def test_build_hermes_config_omits_max_turns_when_max_iterations_unset(
+    tmp_path: Path,
+):
     # When max_iterations is unset the config layer must leave agent.max_turns
     # absent so Hermes applies its own default rather than a starving override.
     payload = {
-        "base_dir": "/fabric-root",
+        "base_dir": str(tmp_path / "fabric-root"),
         "config": {
             "harness": {"settings": {}},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
@@ -163,11 +207,13 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
     assert "max_turns" not in config["agent"]
 
 
-def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
+def test_build_hermes_config_omits_max_turns_when_max_iterations_null(
+    tmp_path: Path,
+):
     # An explicit null max_iterations is treated like unset: agent.max_turns is
     # omitted so Hermes applies its own default instead of a starving override.
     payload = {
-        "base_dir": "/fabric-root",
+        "base_dir": str(tmp_path / "fabric-root"),
         "config": {
             "harness": {"settings": {"max_iterations": None}},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
@@ -305,9 +351,9 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     assert "nvidia/test-model" in config_path.read_text(encoding="utf-8")
 
 
-def test_gateway_config_excludes_native_relay_plugin():
+def test_gateway_config_excludes_native_relay_plugin(tmp_path: Path):
     payload = {
-        "base_dir": "/fabric-root",
+        "base_dir": str(tmp_path / "fabric-root"),
         "config": {
             "harness": {
                 "settings": {

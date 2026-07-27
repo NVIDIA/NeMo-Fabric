@@ -12,42 +12,65 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("nemo_fabric_adapters.hermes")
+
 from nemo_fabric_adapters.common.relay_gateway import RelayCliContract
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.hermes import adapter
 from nemo_fabric_adapters.hermes import relay_cli
 
 
+requires_posix_processes = pytest.mark.skipif(
+    os.name != "posix",
+    reason="Relay CLI executable and process-group tests require POSIX",
+)
+
+
 @pytest.mark.parametrize(
-    ("environment_workspace", "settings_workspace", "settings_cwd", "expected"),
+    ("environment_workspace", "settings_workspace", "expected"),
     [
-        ("/environment", "/settings", "/legacy", Path("/environment")),
-        (None, "settings-relative", "/legacy", Path("/fabric-root/settings-relative")),
-        ("environment-relative", "/settings", "/legacy", Path("/fabric-root/environment-relative")),
-        (None, None, "/legacy", Path("/fabric-root")),
+        ("absolute-environment", "absolute-settings", "absolute-environment"),
+        (None, "settings-relative", "settings-relative"),
+        ("environment-relative", "absolute-settings", "environment-relative"),
+        (None, None, None),
     ],
 )
 def test_hermes_working_directory_uses_normalized_workspace_precedence(
     environment_workspace: str | None,
     settings_workspace: str | None,
-    settings_cwd: str,
-    expected: Path,
+    expected: str | None,
+    tmp_path: Path,
 ):
+    root = tmp_path / "fabric-root"
+    absolute_paths = {
+        "absolute-environment": tmp_path / "environment",
+        "absolute-settings": tmp_path / "settings",
+    }
+    resolved_environment_workspace = (
+        str(absolute_paths[environment_workspace])
+        if environment_workspace in absolute_paths
+        else environment_workspace
+    )
     environment = (
-        {"workspace": environment_workspace}
-        if environment_workspace is not None
+        {"workspace": resolved_environment_workspace}
+        if resolved_environment_workspace is not None
         else {}
     )
-    settings = {"cwd": settings_cwd}
+    settings = {"cwd": str(tmp_path / "legacy")}
     if settings_workspace is not None:
-        settings["workspace"] = settings_workspace
+        settings["workspace"] = str(
+            absolute_paths.get(settings_workspace, settings_workspace)
+        )
     payload = {
-        "base_dir": "/fabric-root",
+        "base_dir": str(root),
         "runtime_context": {"environment": environment},
         "config": {"harness": {"settings": settings}},
     }
+    expected_path = (
+        absolute_paths.get(expected, root / expected) if expected is not None else root
+    )
 
-    assert adapter.hermes_working_directory(payload) == expected
+    assert adapter.hermes_working_directory(payload) == expected_path
 
 
 @pytest.mark.parametrize(
@@ -129,6 +152,7 @@ def test_quiet_response_removes_only_pinned_hermes_startup_diagnostic():
         ("0.19.0", False),
     ],
 )
+@requires_posix_processes
 def test_hermes_cli_version_contract(tmp_path: Path, version: str, accepted: bool):
     executable = tmp_path / f"hermes-{version}"
     executable.write_text(
@@ -195,6 +219,18 @@ def test_child_environment_forwards_only_explicit_credentials(
     assert env["XDG_CONFIG_HOME"] == str(tmp_path / "hermes-home" / ".config")
 
 
+def test_write_configs_wraps_existing_invocation_directory(tmp_path: Path):
+    invocation_dir = tmp_path / "existing-invocation"
+    invocation_dir.mkdir()
+
+    with pytest.raises(
+        relay_cli.HermesRelayError,
+        match="NeMo Relay invocation directory could not be created",
+    ):
+        relay_cli._write_configs(_launch(tmp_path), invocation_dir)
+
+
+@requires_posix_processes
 async def test_runner_executes_colocated_relay_config_and_collects_artifacts(
     tmp_path: Path,
 ):
@@ -233,6 +269,7 @@ async def test_runner_executes_colocated_relay_config_and_collects_artifacts(
     )
 
 
+@requires_posix_processes
 async def test_runner_preserves_response_tail_when_output_is_truncated(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -257,6 +294,7 @@ async def test_runner_preserves_response_tail_when_output_is_truncated(
     assert "...[output truncated]..." in result.stdout
 
 
+@requires_posix_processes
 async def test_normalized_output_preserves_response_after_late_failure(
     tmp_path: Path,
 ):
@@ -295,6 +333,7 @@ async def test_normalized_output_preserves_response_after_late_failure(
     assert output["relay_runtime"]["hook_event_policy"] == "lifecycle_context_only"
 
 
+@requires_posix_processes
 async def test_concurrent_runtimes_isolate_config_and_child_environment(
     tmp_path: Path,
 ):
@@ -347,6 +386,7 @@ async def test_concurrent_runtimes_isolate_config_and_child_environment(
     assert "EXPECTED_CHILD_ONLY" not in os.environ
 
 
+@requires_posix_processes
 async def test_runner_cancellation_interrupts_process_group_and_restores_overlay(
     tmp_path: Path,
 ):

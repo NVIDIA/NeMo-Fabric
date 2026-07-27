@@ -52,12 +52,12 @@ For a runtime without Relay, the adapter constructs one Hermes Agent `AIAgent`
 and opens one `SessionDB`. Ordered `Runtime.invoke(...)` calls reuse those
 native objects and pass the prior transcript back to `run_conversation(...)`.
 
-When Fabric Relay telemetry is disabled, the adapter runs Hermes directly
-through its Python SDK without Fabric-managed Relay telemetry. Configuring the
-native `observability/nemo_relay` Hermes plugin in that mode is rejected; enable
-Relay through Fabric's telemetry configuration instead.
+When NeMo Fabric Relay telemetry is disabled, the adapter runs Hermes directly
+through its Python SDK without Relay telemetry managed by NeMo Fabric.
+Configuring the native `observability/nemo_relay` Hermes plugin in that mode is
+rejected; enable Relay through NeMo Fabric's telemetry configuration instead.
 
-For a Relay-enabled runtime, Fabric writes a Hermes config that excludes the
+For a Relay-enabled runtime, NeMo Fabric writes a Hermes config that excludes the
 native `observability/nemo_relay` plugin. Each invocation gets a distinct
 directory containing colocated `config.toml` and `plugins.toml`, then executes:
 
@@ -66,11 +66,11 @@ nemo-relay run --config <config.toml> --agent hermes -- <hermes chat args>
 ```
 
 The Relay CLI owns gateway startup, the Hermes process, telemetry flush, and
-configuration-overlay restoration. Fabric sends cancellation to the whole
-process group and bounds captured stdout/stderr. The persistent Fabric runtime
-is mapped to a stable Hermes session, so separate invocation processes retain
-conversation history. Relay mode requires NeMo Relay `>=0.6,<0.7`, Hermes Agent
-`>=0.18.2,<0.19`, and an OpenAI-compatible upstream endpoint.
+configuration-overlay restoration. NeMo Fabric sends cancellation to the whole
+process group and bounds captured stdout/stderr. The persistent NeMo Fabric
+runtime is mapped to a stable Hermes session, so separate invocation processes
+retain conversation history. Relay mode requires NeMo Relay `>=0.6,<0.7`,
+Hermes Agent `>=0.18.2,<0.19`, and an OpenAI-compatible upstream endpoint.
 
 The Relay gateway's `openai.chat_completions` scopes are the canonical source
 for model requests, cost, and cache accounting. Hermes hook scopes provide
@@ -83,7 +83,7 @@ process settings, `harness.settings.env`, the selected model credential, and
 environment variables explicitly referenced by Relay sinks. Unrelated host
 credentials are not inherited.
 
-Hermes 0.18.x accepts the non-interactive query only as an argument. Fabric
+Hermes 0.18.x accepts the non-interactive query only as an argument. NeMo Fabric
 redacts that argument from results and logs, but it can remain visible to
 same-host process inspection while the command is running. Do not place
 credentials in prompts on a shared host until Hermes exposes a versioned
