@@ -21,6 +21,7 @@ const CODEX_DESCRIPTOR: &str = include_str!("../assets/adapters/codex/fabric-ada
 const DEEPAGENTS_DESCRIPTOR: &str =
     include_str!("../assets/adapters/deepagents/fabric-adapter.json");
 const NVIDIA_API_CATALOG_BASE_URL: &str = "https://integrate.api.nvidia.com/v1";
+const NVIDIA_FRONTIER_BASE_URL_ENV: &str = "NVIDIA_FRONTIER_BASE_URL";
 
 const SCRIPTED_ASSETS: &[EmbeddedFile] = &[
     EmbeddedFile {
@@ -64,17 +65,36 @@ pub struct Preset {
 
 impl Preset {
     /// Construct a fresh complete typed config.
-    pub fn config(self) -> FabricConfig {
-        (self.build)()
+    ///
+    /// Returns an error when a required configuration-time endpoint is unset or empty.
+    pub fn config(self) -> Result<FabricConfig, String> {
+        self.validate_config_environment()?;
+        Ok((self.build)())
     }
 
     /// Stage the adapter assets required to plan or run this preset.
     pub fn stage(self) -> std::io::Result<SelectedPreset> {
+        let config = self
+            .config()
+            .map_err(|message| std::io::Error::new(std::io::ErrorKind::InvalidInput, message))?;
         Ok(SelectedPreset {
             preset: self,
-            config: self.config(),
+            config,
             assets: StagedAssets::create(self.assets)?,
         })
+    }
+
+    fn validate_config_environment(self) -> Result<(), String> {
+        if !self.required_env.contains(&NVIDIA_FRONTIER_BASE_URL_ENV) {
+            return Ok(());
+        }
+        if std::env::var(NVIDIA_FRONTIER_BASE_URL_ENV).is_ok_and(|value| !value.trim().is_empty()) {
+            return Ok(());
+        }
+        Err(format!(
+            "preset {:?} requires {NVIDIA_FRONTIER_BASE_URL_ENV} to be set to a non-empty endpoint before use",
+            self.name
+        ))
     }
 
     pub(crate) fn embedded_files(self) -> &'static [EmbeddedFile] {
@@ -127,14 +147,14 @@ const PRESETS: [Preset; 5] = [
     Preset {
         name: "claude",
         description: "Claude Code with an NVIDIA-hosted Claude model.",
-        required_env: &["NVIDIA_API_KEY", "NVIDIA_FRONTIER_BASE_URL"],
+        required_env: &["NVIDIA_API_KEY", NVIDIA_FRONTIER_BASE_URL_ENV],
         build: claude,
         assets: CLAUDE_ASSETS,
     },
     Preset {
         name: "codex",
         description: "Codex with an NVIDIA-hosted OpenAI model.",
-        required_env: &["NVIDIA_API_KEY", "NVIDIA_FRONTIER_BASE_URL"],
+        required_env: &["NVIDIA_API_KEY", NVIDIA_FRONTIER_BASE_URL_ENV],
         build: codex,
         assets: CODEX_ASSETS,
     },
@@ -181,7 +201,7 @@ fn claude() -> FabricConfig {
             "nvidia",
             "aws/anthropic/claude-opus-4-5",
             Some("NVIDIA_API_KEY"),
-            std::env::var("NVIDIA_FRONTIER_BASE_URL").ok().as_deref(),
+            std::env::var(NVIDIA_FRONTIER_BASE_URL_ENV).ok().as_deref(),
         )),
         Map::from_iter([("permission_mode".to_string(), json!("dontAsk"))]),
     )
@@ -196,7 +216,7 @@ fn codex() -> FabricConfig {
             "nvidia",
             "azure/openai/gpt-5.4",
             Some("NVIDIA_API_KEY"),
-            std::env::var("NVIDIA_FRONTIER_BASE_URL").ok().as_deref(),
+            std::env::var(NVIDIA_FRONTIER_BASE_URL_ENV).ok().as_deref(),
         )),
         Map::from_iter([
             ("sandbox".to_string(), json!("workspace-write")),
@@ -309,7 +329,7 @@ mod tests {
         let mut names = std::collections::BTreeSet::new();
         for preset in all() {
             assert!(names.insert(preset.name));
-            let config = preset.config();
+            let config = (preset.build)();
             assert_eq!(config.metadata.name, format!("{}-agent", preset.name));
             assert!(!config.harness.adapter_id.is_empty());
         }
@@ -341,7 +361,7 @@ mod tests {
     fn adapter_presets_use_nvidia_credentials() {
         for name in ["hermes", "claude", "codex", "deepagents"] {
             let preset = find(name).expect("adapter preset");
-            let config = preset.config();
+            let config = (preset.build)();
             let model = config.models.get("default").expect("default model");
 
             assert_eq!(model.provider, "nvidia");
@@ -350,7 +370,10 @@ mod tests {
         }
 
         for name in ["hermes", "deepagents"] {
-            let config = find(name).expect("catalog preset").config();
+            let config = find(name)
+                .expect("catalog preset")
+                .config()
+                .expect("construct catalog config");
             let model = config.models.get("default").expect("default model");
             assert_eq!(model.base_url.as_deref(), Some(NVIDIA_API_CATALOG_BASE_URL));
         }
@@ -360,7 +383,7 @@ mod tests {
                 find(name)
                     .expect("frontier preset")
                     .required_env
-                    .contains(&"NVIDIA_FRONTIER_BASE_URL")
+                    .contains(&NVIDIA_FRONTIER_BASE_URL_ENV)
             );
         }
     }
