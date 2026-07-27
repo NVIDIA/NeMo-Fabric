@@ -361,7 +361,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     ]
 
 
-@pytest.mark.parametrize("version", [None, [], "two", "2", 2.0, True])
+@pytest.mark.parametrize("version", [None, [], "two", "2", 1, 2.0, 3, True])
 def test_relay_cli_plugin_config_rejects_malformed_observability_versions(
     version: object,
 ):
@@ -370,6 +370,28 @@ def test_relay_cli_plugin_config_rejects_malformed_observability_versions(
             {
                 "kind": "observability",
                 "config": {"version": version},
+            }
+        ]
+    }
+
+    with pytest.raises(
+        ValueError, match="NeMo Relay observability config version 2 is required"
+    ):
+        common_utils.relay_cli_plugin_config(
+            plugin_config,
+            observability_version=2,
+        )
+
+
+@pytest.mark.parametrize("config", [None, [], "2"])
+def test_relay_cli_plugin_config_rejects_non_mapping_observability_config(
+    config: object,
+):
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": config,
             }
         ]
     }

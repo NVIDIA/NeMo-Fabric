@@ -323,17 +323,16 @@ def relay_cli_plugin_config(
     for component in rendered.get("components", []):
         if not isinstance(component, dict) or component.get("kind") != "observability":
             continue
-        config = component.get("config")
-        if isinstance(config, dict):
-            version = config.get("version", 2)
-            if (
-                not isinstance(version, int)
-                or isinstance(version, bool)
-                or version != 2
-            ):
-                raise ValueError(
-                    "NeMo Relay observability config version 2 is required"
-                )
+        config = component.get("config", {})
+        if not isinstance(config, dict):
+            raise ValueError("NeMo Relay observability config version 2 is required")
+        version = config.get("version", 2)
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version != 2
+        ):
+            raise ValueError("NeMo Relay observability config version 2 is required")
     return rendered
 
 
