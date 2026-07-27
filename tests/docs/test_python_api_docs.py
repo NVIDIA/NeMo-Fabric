@@ -5,9 +5,24 @@
 
 from __future__ import annotations
 
+import ast
+import importlib
 import re
 from collections import defaultdict
-from inspect import getdoc, getmembers, isclass, isfunction, ismethod, getattr_static
+from enum import Enum
+from inspect import (
+    Parameter,
+    formatannotation,
+    get_annotations,
+    getdoc,
+    getmembers,
+    getattr_static,
+    isclass,
+    iscoroutinefunction,
+    isfunction,
+    ismethod,
+    signature,
+)
 from pathlib import Path
 
 import nemo_fabric
@@ -26,6 +41,21 @@ MODULE_SLUGS = {
     "nemo_fabric.types": "/reference/api/python-library-reference/types",
     "nemo_fabric.errors": "/reference/api/python-library-reference/errors",
 }
+MEMBER_SIGNATURE = re.compile(
+    r"^### <kbd>(?:method|classmethod)</kbd> `([^`]+)`\n\n"
+    r"```python\n(.*?)\n```",
+    flags=re.MULTILINE | re.DOTALL,
+)
+MODEL_FIELD_ROW = re.compile(
+    r"^\| `(?P<name>[^`]+)` \| `(?P<annotation>[^`]*)` \| "
+    r"(?P<required>Yes|No) \| (?P<default>—|`[^`]*`) \| "
+    r"(?P<constraints>—|`[^`]*`) \| (?P<description>.*?) \|$",
+    flags=re.MULTILINE,
+)
+TYPED_FIELD_ROW = re.compile(
+    r"^\| `(?P<name>[^`]+)` \| `(?P<annotation>[^`]*)` \|$",
+    flags=re.MULTILINE,
+)
 
 
 def _exported_classes_by_module() -> dict[str, set[str]]:
@@ -46,13 +76,73 @@ def _documented_classes(page: Path) -> set[str]:
     )
 
 
+def _class_section(page: Path, class_name: str) -> str:
+    marker = f"## <kbd>class</kbd> `{class_name}`"
+    section = page.read_text(encoding="utf-8").split(marker, maxsplit=1)[1]
+    return section.split("\n## <kbd>class</kbd>", maxsplit=1)[0]
+
+
+def _annotation_text(annotation: object) -> str:
+    if isinstance(annotation, str):
+        if (
+            len(annotation) >= 2
+            and annotation[0] == annotation[-1]
+            and annotation[0] in {'"', "'"}
+        ):
+            annotation = annotation[1:-1]
+        return annotation.replace("|", r"\|")
+    return formatannotation(annotation).replace("|", r"\|")
+
+
+def _default_factory_text(factory: object) -> str:
+    name = getattr(factory, "__name__", type(factory).__name__)
+    if name == "<lambda>":
+        return "<generated>"
+    return f"{name}()"
+
+
+def _definition_ast(source: str) -> str:
+    node = ast.parse(f"{source}:\n    pass\n").body[0]
+
+    def normalize_annotation(annotation: ast.expr) -> ast.expr:
+        while isinstance(annotation, ast.Constant) and isinstance(
+            annotation.value, str
+        ):
+            annotation = ast.parse(annotation.value, mode="eval").body
+        return annotation
+
+    arguments = node.args
+    for argument in (
+        *arguments.posonlyargs,
+        *arguments.args,
+        *arguments.kwonlyargs,
+    ):
+        if argument.annotation is not None:
+            argument.annotation = normalize_annotation(argument.annotation)
+    for argument in (arguments.vararg, arguments.kwarg):
+        if argument is not None and argument.annotation is not None:
+            argument.annotation = normalize_annotation(argument.annotation)
+    if node.returns is not None:
+        node.returns = normalize_annotation(node.returns)
+
+    return ast.dump(node, include_attributes=False)
+
+
+def _documented_method_names(exported_class: type[object]) -> list[str]:
+    return [
+        name
+        for name, member in getmembers(exported_class)
+        if (not name.startswith("_") or name == "__init__")
+        and (isfunction(member) or ismethod(member))
+        and getattr(member, "__module__", None) == exported_class.__module__
+        and "lazydocs: ignore" not in (getdoc(member) or "")
+    ]
+
+
 def test_python_reference_exactly_covers_exported_sdk_classes() -> None:
     exports = _exported_classes_by_module()
     expected_pages = {f"{module}.md" for module in exports}
-    actual_pages = {
-        page.name
-        for page in REFERENCE_DIR.glob("nemo_fabric.*.md")
-    }
+    actual_pages = {page.name for page in REFERENCE_DIR.glob("nemo_fabric.*.md")}
 
     assert actual_pages == expected_pages
     for module, names in exports.items():
@@ -89,7 +179,146 @@ def test_generated_reference_uses_valid_heading_order() -> None:
         assert "#### <kbd>property</kbd>" not in text, page
 
 
-def test_generated_reference_uses_markdown_spdx_comments() -> None:
+def test_generated_signatures_preserve_python_callable_semantics():
+    signature_count = 0
+    async_count = 0
+    for module_name, class_names in _exported_classes_by_module().items():
+        module = importlib.import_module(module_name)
+        page = REFERENCE_DIR / f"{module_name}.md"
+
+        for class_name in class_names:
+            exported_class = getattr(module, class_name)
+            section = _class_section(page, class_name)
+            documented_members = re.findall(
+                r"^### <kbd>(?:method|classmethod)</kbd> `([^`]+)`$",
+                section,
+                flags=re.MULTILINE,
+            )
+            assert documented_members == _documented_method_names(exported_class)
+            rendered_signatures = list(MEMBER_SIGNATURE.finditer(section))
+            assert [
+                match.group(1) for match in rendered_signatures
+            ] == documented_members
+
+            for match in rendered_signatures:
+                member_name, rendered = match.groups()
+                member = getattr(exported_class, member_name)
+                member_signature = signature(member)
+                signature_count += 1
+                assert "→" not in rendered
+
+                is_async = iscoroutinefunction(member)
+                async_count += is_async
+                expected_prefix = "async def " if is_async else "def "
+                assert rendered.startswith(expected_prefix)
+
+                expected_signature = member_signature.replace(
+                    parameters=[
+                        parameter
+                        for parameter in member_signature.parameters.values()
+                        if parameter.name not in {"self", "cls"}
+                    ]
+                )
+                expected_declaration = (
+                    f"{expected_prefix}{member_name}{expected_signature}"
+                )
+                assert _definition_ast(rendered) == _definition_ast(
+                    expected_declaration
+                )
+
+                has_keyword_only = any(
+                    parameter.kind is Parameter.KEYWORD_ONLY
+                    for parameter in member_signature.parameters.values()
+                )
+                has_var_positional = any(
+                    parameter.kind is Parameter.VAR_POSITIONAL
+                    for parameter in member_signature.parameters.values()
+                )
+                if has_keyword_only and not has_var_positional:
+                    assert re.search(r"(?:\(\*,|, \*,|\n    \*,)", rendered)
+
+    assert signature_count > 0
+    assert async_count > 0
+
+
+def test_generated_reference_documents_pydantic_field_contracts():
+    for export_name in nemo_fabric.__all__:
+        exported = getattr(nemo_fabric, export_name)
+        if not isclass(exported) or not issubclass(exported, BaseModel):
+            continue
+        if not exported.model_fields:
+            continue
+
+        page = REFERENCE_DIR / f"{exported.__module__}.md"
+        section = _class_section(page, export_name)
+        rows = {
+            match.group("name"): match.groupdict()
+            for match in MODEL_FIELD_ROW.finditer(section)
+        }
+        assert set(rows) == set(exported.model_fields)
+        annotations = get_annotations(exported, eval_str=False)
+
+        for field_name, field in exported.model_fields.items():
+            row = rows[field_name]
+            assert row["annotation"] == _annotation_text(
+                annotations.get(field_name, field.annotation)
+            )
+            assert row["required"] == ("Yes" if field.is_required() else "No")
+            if field.is_required():
+                assert row["default"] == "—"
+            elif field.default_factory is not None:
+                assert row["default"] == (
+                    f"`{_default_factory_text(field.default_factory)}`"
+                )
+            else:
+                assert row["default"] == f"`{field.default!r}`"
+            if field.metadata:
+                constraints = ", ".join(repr(item) for item in field.metadata)
+                assert row["constraints"] == f"`{constraints}`"
+            else:
+                assert row["constraints"] == "—"
+            expected_description = " ".join((field.description or "—").split()).replace(
+                "|", r"\|"
+            )
+            assert row["description"] == expected_description
+
+
+def test_generated_reference_documents_typed_mapping_fields():
+    for export_name in nemo_fabric.__all__:
+        exported = getattr(nemo_fabric, export_name)
+        if not isclass(exported) or exported.__module__ != "nemo_fabric.types":
+            continue
+
+        annotations = get_annotations(exported, eval_str=False)
+        page = REFERENCE_DIR / f"{exported.__module__}.md"
+        section = _class_section(page, export_name)
+        rows = {
+            match.group("name"): match.group("annotation")
+            for match in TYPED_FIELD_ROW.finditer(section)
+        }
+        assert set(rows) == set(annotations)
+        for field_name, annotation in annotations.items():
+            assert rows[field_name] == _annotation_text(annotation)
+        assert "from_mapping(mapping: Mapping[str, Any]) -> Self" in section
+
+
+def test_generated_reference_documents_error_bases_and_enum_values():
+    for export_name in nemo_fabric.__all__:
+        exported = getattr(nemo_fabric, export_name)
+        if not isclass(exported):
+            continue
+
+        page = REFERENCE_DIR / f"{exported.__module__}.md"
+        section = _class_section(page, export_name)
+        if exported.__module__ == "nemo_fabric.errors":
+            for base in exported.__bases__:
+                assert f"`{base.__name__}`" in section
+        if issubclass(exported, Enum):
+            for member in exported:
+                assert f"| `{member.name}` | `{member.value}` |" in section
+
+
+def test_generated_reference_uses_markdown_spdx_comments():
     for page in REFERENCE_DIR.glob("*.md"):
         text = page.read_text(encoding="utf-8")
         assert "<!-- SPDX-FileCopyrightText:" in text, page
@@ -97,7 +326,7 @@ def test_generated_reference_uses_markdown_spdx_comments() -> None:
         assert "{/* SPDX-FileCopyrightText:" not in text, page
 
 
-def test_generated_reference_uses_full_relay_name_once_per_page() -> None:
+def test_generated_reference_uses_full_relay_name_once_per_page():
     for page in REFERENCE_DIR.glob("*.md"):
         text = page.read_text(encoding="utf-8")
         if "NeMo Relay" in text:
@@ -112,11 +341,15 @@ def test_streaming_reference_hides_constructor_and_preserves_async_methods():
     assert "async def result()" in reference
 
 
-def test_relay_sink_reference_uses_valid_class_heading_spacing():
-    reference = (REFERENCE_DIR / "nemo_fabric.models.md").read_text(encoding="utf-8")
-
-    for class_name in ("RelayAtofFileSinkConfig", "RelayAtofStreamSinkConfig"):
-        assert f"## <kbd>class</kbd> `{class_name}`\n\n" in reference
+def test_generated_module_and_class_headings_have_blank_lines():
+    heading = re.compile(
+        r"^#{1,2} <kbd>(?:module|class)</kbd> `[^`]+`\n",
+        flags=re.MULTILINE,
+    )
+    for page in REFERENCE_DIR.glob("*.md"):
+        text = page.read_text(encoding="utf-8")
+        for match in heading.finditer(text):
+            assert text.startswith("\n", match.end()), (page, match.group())
 
 
 def test_landing_page_routes_new_users_through_the_product() -> None:

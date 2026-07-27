@@ -13,6 +13,7 @@ from copy import deepcopy
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from typing import Self
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -817,7 +818,7 @@ class FabricMapping(Mapping[str, Any]):
         object.__setattr__(self, "_data", _freeze(data))
 
     @classmethod
-    def from_mapping(cls, mapping: Mapping[str, Any]) -> "FabricMapping":
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> Self:
         """Validate and copy a mapping into the requested typed model."""
 
         return cls(mapping)
