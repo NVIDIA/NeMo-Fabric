@@ -1,7 +1,7 @@
 ---
 title: "Module config"
 sidebar-title: "config"
-description: "Fabric config models and loading helpers."
+description: "NeMo Fabric config models and loading helpers."
 position: 65
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-Fabric config models and loading helpers.
+NeMo Fabric config models and loading helpers.
 
 ## Structs
 
@@ -23,7 +23,7 @@ Fabric config models and loading helpers.
 - [CapabilityTargetPlan](struct-capabilitytargetplan.mdx): Capabilities routed to one target.
 - [EnvironmentConfig](struct-environmentconfig.mdx): Execution environment configuration.
 - [EnvironmentPlan](struct-environmentplan.mdx): Resolved environment plan.
-- [FabricConfig](struct-fabricconfig.mdx): Versioned Fabric agent config.
+- [FabricConfig](struct-fabricconfig.mdx): Versioned NeMo Fabric agent config.
 - [HarnessConfig](struct-harnessconfig.mdx): Harness selection.
 - [McpConfig](struct-mcpconfig.mdx): MCP capability configuration.
 - [McpServerConfig](struct-mcpserverconfig.mdx): MCP server configuration.
@@ -37,9 +37,9 @@ Fabric config models and loading helpers.
 - [RelayConfigPolicy](struct-relayconfigpolicy.mdx): Relay validation policy.
 - [RelayObservabilityConfig](struct-relayobservabilityconfig.mdx): NeMo Relay observability component configuration.
 - [RelayOtlpConfig](struct-relayotlpconfig.mdx): Relay OpenTelemetry/OpenInference export configuration.
-- [ResolveContext](struct-resolvecontext.mdx): Source context used when resolving an in-memory Fabric config.
+- [ResolveContext](struct-resolvecontext.mdx): Source context used when resolving an in-memory NeMo Fabric config.
 - [ResolvedAdapterDescriptor](struct-resolvedadapterdescriptor.mdx): Adapter descriptor selected for a run plan.
-- [RunPlan](struct-runplan.mdx): Resolved Fabric run plan.
+- [RunPlan](struct-runplan.mdx): Resolved NeMo Fabric run plan.
 - [RuntimeCapabilities](struct-runtimecapabilities.mdx): Lifecycle behavior implemented by a resolved runtime path.
 - [RuntimeConfig](struct-runtimeconfig.mdx): Runtime input/output contract.
 - [SkillConfig](struct-skillconfig.mdx): Skill capability configuration.
@@ -51,12 +51,12 @@ Fabric config models and loading helpers.
 
 ## Enums
 
-- [AdapterDescriptorSource](enum-adapterdescriptorsource.mdx): Where Fabric resolved an adapter descriptor from.
+- [AdapterDescriptorSource](enum-adapterdescriptorsource.mdx): Where NeMo Fabric resolved an adapter descriptor from.
 - [AdapterKind](enum-adapterkind.mdx): Adapter implementation kind.
 - [CapabilityKind](enum-capabilitykind.mdx): Capability kind.
 - [CapabilityTarget](enum-capabilitytarget.mdx): Capability routing target.
-- [ControlLocation](enum-controllocation.mdx): Where Fabric control code runs relative to the environment.
-- [EnvironmentOwnership](enum-environmentownership.mdx): Whether Fabric owns the underlying environment resource.
+- [ControlLocation](enum-controllocation.mdx): Where NeMo Fabric control code runs relative to the environment.
+- [EnvironmentOwnership](enum-environmentownership.mdx): Whether NeMo Fabric owns the underlying environment resource.
 - [McpExposure](enum-mcpexposure.mdx): MCP exposure strategy.
 - [RelayAtifStorageConfig](enum-relayatifstorageconfig.mdx): Relay ATIF remote storage configuration.
 - [RelayAtofMode](enum-relayatofmode.mdx): Relay ATOF file mode.
@@ -75,4 +75,4 @@ Fabric config models and loading helpers.
 ## Functions
 
 - [load_adapter_descriptor](fn-load-adapter-descriptor.mdx): Load an adapter descriptor from JSON package metadata.
-- [resolve_run_plan_from_config](fn-resolve-run-plan-from-config.mdx): Resolve a typed Fabric config into a runnable plan.
+- [resolve_run_plan_from_config](fn-resolve-run-plan-from-config.mdx): Resolve a typed NeMo Fabric config into a runnable plan.

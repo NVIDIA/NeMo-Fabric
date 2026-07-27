@@ -1,7 +1,7 @@
 ---
 title: "Enum Control Location"
 sidebar-title: "ControlLocation"
-description: "Where Fabric control code runs relative to the environment."
+description: "Where NeMo Fabric control code runs relative to the environment."
 position: 10
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -16,7 +16,7 @@ pub enum ControlLocation {
 }
 ```
 
-Where Fabric control code runs relative to the environment.
+Where NeMo Fabric control code runs relative to the environment.
 
 ## Variants
 
@@ -24,13 +24,13 @@ Where Fabric control code runs relative to the environment.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ExternalControl"}} /></pre>
 
-Fabric runs on the host/control plane and starts or connects to the harness in the environment.
+NeMo Fabric runs on the host/control plane and starts or connects to the harness in the environment.
 
 ### `InEnvControl`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "InEnvControl"}} /></pre>
 
-Fabric runs inside the prepared environment with the harness.
+NeMo Fabric runs inside the prepared environment with the harness.
 
 ## Trait Implementations
 
