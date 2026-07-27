@@ -138,17 +138,17 @@ Pick the smallest lifecycle the consumer needs:
   prior-turn records therefore do not enter the next stream. If gateway and
   Fabric turn sequences do not align, the SDK discards the uncorrelated records
   and emits a `RuntimeWarning` after natural stream exhaustion. The listener
-  intentionally binds to the fixed loopback address `127.0.0.1` and is not
-  configurable, so Claude and Codex gateway processes must share the SDK's
-  network namespace. If async iteration reaches its post-turn drain
-  timeout without a NeMo Relay connection, or receives data without a matching
-  turn root, the SDK emits one `RuntimeWarning` for that failure mode; callers
-  that only await `stream.result()` do not run that warning check. The SDK also
-  warns when a NeMo Relay upload terminates before completing its chunked request
-  body because yielded records can be incomplete.
+  binds to `NEMO_FABRIC_STREAMING_HOST`, which defaults to `127.0.0.1`.
+  Override it when the gateway must reach the SDK through another network
+  interface, and restrict access to that interface. If async iteration reaches
+  its post-turn drain timeout without a NeMo Relay connection, or receives data
+  without a matching turn root, the SDK emits one `RuntimeWarning` for that
+  failure mode; callers that only await `stream.result()` do not run that
+  warning check. The SDK also warns when a NeMo Relay upload terminates before
+  completing its chunked request body because yielded records can be incomplete.
   The `streaming=True` flag does not enable NeMo Relay by itself. Without
   `streaming=True`, startup leaves the NeMo Relay configuration unchanged and
-  does not inject the loopback ATOF stream sink.
+  does not inject the SDK-owned ATOF stream sink.
 
 The selected adapter owns the execution topology. The bundled Claude, Codex,
 Deep Agents, and Hermes Agent adapters retain their native client, graph/checkpointer,

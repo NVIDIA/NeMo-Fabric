@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import warnings
 from typing import Any
@@ -248,6 +249,21 @@ async def test_start_runtime_injects_stream_sink_without_mutating_config(
     await runtime.stop()
 
 
+async def test_start_runtime_uses_streaming_host_environment_variable(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    os.environ["NEMO_FABRIC_STREAMING_HOST"] = "0.0.0.0"
+
+    runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
+
+    planned = json.loads(mock_native.plan_config.call_args.args[0])
+    stream_sink = planned["relay"]["observability"]["atof"]["sinks"][-1]
+    assert stream_sink["url"].startswith("http://0.0.0.0:")
+
+    await runtime.stop()
+
+
 async def test_start_runtime_without_streaming_preserves_disabled_atof(
     native_client: Fabric,
     mock_native: MagicMock,
@@ -467,7 +483,7 @@ async def test_invoke_stream_warns_only_once_when_relay_never_connects(
     runtime = await native_client.start_runtime(_config(relay=True), streaming=True)
 
     first = runtime.invoke_stream(input="first")
-    with pytest.warns(RuntimeWarning, match="same network namespace"):
+    with pytest.warns(RuntimeWarning, match="able to reach 127.0.0.1"):
         assert [record async for record in first] == []
     assert (await first.result()).status == "succeeded"
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import warnings
 from collections.abc import Coroutine
 from contextlib import suppress
@@ -27,6 +28,7 @@ _MAX_RECORD_BYTES = 1024 * 1024
 _QUEUE_MAX_BYTES = 16 * 1024 * 1024
 _QUEUE_MAXSIZE = 1024
 _READ_SIZE = 64 * 1024
+_STREAMING_HOST_ENV = "NEMO_FABRIC_STREAMING_HOST"
 _STREAM_SINK_NAME = "nemo-fabric-stream"
 
 
@@ -217,18 +219,18 @@ class InvokeStream:
 
 
 class _AtofStreamListener:
-    """Receive chunked NDJSON ATOF records on an SDK-owned loopback endpoint."""
+    """Receive chunked NDJSON ATOF records on an SDK-owned endpoint."""
 
     def __init__(
         self,
         *,
-        host: str = "127.0.0.1",
+        host: str | None = None,
         port: int = 0,
         maxsize: int = _QUEUE_MAXSIZE,
         max_bytes: int = _QUEUE_MAX_BYTES,
         max_record_bytes: int = _MAX_RECORD_BYTES,
     ) -> None:
-        self._host = host
+        self._host = host or os.environ.get(_STREAMING_HOST_ENV) or "127.0.0.1"
         self._port = port
         self._queue = _AtofRecordQueue(maxsize=maxsize, max_bytes=max_bytes)
         self._max_record_bytes = min(max_record_bytes, max_bytes)
@@ -265,7 +267,7 @@ class _AtofStreamListener:
         return self._queue
 
     async def start(self) -> _AtofStreamListener:
-        """Bind the loopback HTTP server."""
+        """Bind the HTTP server."""
 
         self._server = await asyncio.start_server(
             self._connected,
@@ -319,10 +321,9 @@ class _AtofStreamListener:
                 return
             self._warned_unconnected = True
             warnings.warn(
-                "No Relay ATOF connection reached the SDK loopback listener. "
+                "No Relay ATOF connection reached the SDK listener. "
                 "Relay-backed streaming yielded no records. Claude and Codex "
-                "gateways must run in the same network namespace as the SDK to "
-                "reach 127.0.0.1.",
+                f"gateways must be able to reach {self._host}.",
                 RuntimeWarning,
                 stacklevel=3,
             )
