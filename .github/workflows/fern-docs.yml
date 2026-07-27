@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Raw SemVer docs tag, such as 0.1.0 or 0.1.0-rc.1. Alpha tags are not published.'
+        description: 'Release tag, such as v0.1.0 or v0.1.0-rc1. Alpha tags are not published.'
         required: false
         type: string
 
@@ -314,6 +314,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout workflow tools
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          path: workflow-checkout
+          fetch-depth: 1
+          persist-credentials: false
+
       - name: Determine version tag
         id: version
         env:
@@ -326,23 +333,18 @@ jobs:
           else
             tag="$GITHUB_REF_NAME"
           fi
-          if [[ ! "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(beta|rc)\.[0-9]+)?$ ]]; then
-            echo "Error: docs tags must use raw SemVer such as 0.1.0, 0.1.0-beta.1, or 0.1.0-rc.1; alpha tags are not published" >&2
+          version="$(python workflow-checkout/scripts/ci/normalize_release_tag.py "$tag")"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(beta|rc)\.[0-9]+)?$ ]]; then
+            echo "Error: docs tags must identify a stable, beta, or RC release; alpha tags are not published" >&2
             exit 1
           fi
-          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout workflow tools
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          path: workflow-checkout
-          fetch-depth: 1
-          persist-credentials: false
+          printf 'source_tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
       - name: Checkout source tag
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ steps.version.outputs.tag }}
+          ref: ${{ steps.version.outputs.source_tag }}
           path: source-checkout
           fetch-depth: 1
           persist-credentials: false
@@ -409,7 +411,7 @@ jobs:
           git commit -m "docs(fern): release version v${{ steps.version.outputs.tag }}
 
           Automated documentation snapshot.
-          Source tag: ${{ steps.version.outputs.tag }}"
+          Source tag: ${{ steps.version.outputs.source_tag }}"
           git push origin docs-website
 
       - name: Publish docs
