@@ -37,29 +37,18 @@ from nemo_fabric import (
 )
 
 config = FabricConfig(
-    metadata=MetadataConfig(
-        name="quickstart-agent"
-    ),
-    harness=HarnessConfig(
-        adapter_id="nvidia.fabric.hermes",
-        resolution="preinstalled",
-        settings={
-            "base_url": "https://integrate.api.nvidia.com/v1",
-            "max_iterations": 1,
-        },
-    ),
+    metadata=MetadataConfig(name="quickstart-agent"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
     models={
         "default": ModelConfig(
             provider="nvidia",
             model="nvidia/nemotron-3-nano-30b-a3b",
-            temperature=0.0,
             api_key_env="NVIDIA_API_KEY",
         )
     },
 )
 
-fabric = Fabric()
-result = asyncio.run(fabric.run(config, input="Who are you?"))
+result = asyncio.run(Fabric().run(config, input="Who are you?"))
 print(result.output.response)
 ```
 

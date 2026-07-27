@@ -1,0 +1,23 @@
+---
+title: "Consumer Integrations"
+description: "Connect applications, evaluation systems, and platforms to NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+NVIDIA NeMo Fabric consumer integrations are northbound: they connect
+applications, services, evaluation systems, and platforms to NeMo Fabric
+through its public interfaces.
+
+## Harbor
+
+Harbor is a consumer integration because it uses NeMo Fabric to select and run
+an agent harness while Harbor owns task materialization, environments,
+verification, rewards, and retries. Refer to the
+[Harbor integration guide](./harbor.mdx) for the supported workflow.
+
+## Build a Consumer Integration
+
+Use the public NeMo Fabric Python SDK to construct `FabricConfig`, manage the
+runtime lifecycle, and consume normalized results and artifacts. Refer to the
+[Python SDK guide](../../sdk/python.mdx) for the public integration surface.
