@@ -94,16 +94,19 @@ def _python_sysconfig_path(python: Path, name: str) -> Path:
         )
     )
 
+def _create_venv(venv_dir: Path):
+    # Use `symlinks=True` on Posix systems to work-around for
+    # https://github.com/astral-sh/uv/issues/8879
+    venv.EnvBuilder(with_pip=False,
+                    symlinks=(os.name != "nt")).create(venv_dir)
+
 
 @pytest.fixture(name="adapter_python")
 def adapter_python_fixture(tmp_path: Path) -> tuple[Path, Path]:
     is_windows = os.name == "nt"
     adapter_env = tmp_path / "adapter-env"
 
-    # Use `symlinks=True`` on Posix systems to work-around for
-    # https://github.com/astral-sh/uv/issues/8879
-    venv.EnvBuilder(with_pip=False,
-                    symlinks=(not is_windows)).create(adapter_env)
+    _create_venv(adapter_env)
 
     python = adapter_env / ("Scripts/python.exe" if is_windows else "bin/python")
     data_root = _python_sysconfig_path(python, "data")
@@ -168,7 +171,7 @@ def test_adapter_python_data_directory_replaces_current_data_directory(
     patch_sysconfig_data(current_data_root)
 
     adapter_env = tmp_path / "adapter-env"
-    venv.EnvBuilder(with_pip=False).create(adapter_env)
+    _create_venv(adapter_env)
     adapter_python = adapter_env / (
         "Scripts/python.exe" if os.name == "nt" else "bin/python"
     )
@@ -241,7 +244,7 @@ def test_unset_harness_python_env_uses_sdk_interpreter(
 
 def test_adapter_python_data_path_query_times_out(tmp_path: Path):
     adapter_env = tmp_path / "slow-adapter-env"
-    venv.EnvBuilder(with_pip=False).create(adapter_env)
+    _create_venv(adapter_env)
     adapter_python = adapter_env / (
         "Scripts/python.exe" if os.name == "nt" else "bin/python"
     )
