@@ -609,7 +609,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayConfigPolicy`
-NeMo Relay config validation policy.
+NVIDIA NeMo Relay config validation policy.
 
 
 ---
@@ -669,6 +669,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayAtofFileSinkConfig`
+
 NeMo Relay ATOF file sink configuration.
 
 
@@ -729,6 +730,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayAtofStreamSinkConfig`
+
 NeMo Relay ATOF stream sink configuration.
 
 
