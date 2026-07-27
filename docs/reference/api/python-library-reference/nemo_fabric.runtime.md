@@ -68,7 +68,7 @@ Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 
 ### <kbd>property</kbd> supports_streaming
 
-Return whether Relay-backed ATOF streaming is enabled.
+Return whether NeMo Relay ATOF streaming is enabled.
 
 
 
@@ -118,7 +118,7 @@ invoke_stream(
 ) → InvokeStream
 ```
 
-Start one turn and stream raw Relay ATOF records as they arrive.
+Start one turn and stream raw NeMo Relay ATOF records as they arrive.
 
 ``input`` and ``request`` are mutually exclusive. The returned :class:`InvokeStream` yields raw ATOF dictionaries. Await ``stream.result()`` for the terminal normalized :class:`RunResult`.
 
@@ -126,7 +126,7 @@ Start one turn and stream raw Relay ATOF records as they arrive.
 
 **Raises:**
 
- - <b>`FabricCapabilityError`</b>:  If the runtime was not started with Relay  enabled and ``streaming=True``.
+ - <b>`FabricCapabilityError`</b>:  If the runtime was not started with NeMo Relay  enabled and ``streaming=True``.
  - <b>`FabricConfigError`</b>:  If request fields conflict or are not  JSON-compatible.
  - <b>`FabricStateError`</b>:  If another turn or stream is active.
 

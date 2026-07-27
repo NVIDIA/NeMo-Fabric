@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Relay-backed streaming support for the NVIDIA NeMo Fabric Python SDK."""
+"""NVIDIA NeMo Relay streaming support for the NVIDIA NeMo Fabric Python SDK."""
 
 from __future__ import annotations
 

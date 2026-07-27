@@ -195,7 +195,7 @@ class Fabric:
 
         Each call starts a new logical runtime. Runtime-scoped overrides are
         recursively merged below invocation-scoped overrides. Set
-        ``streaming=True`` with Relay enabled to provision the SDK-owned
+        ``streaming=True`` with NeMo Relay enabled to provision the SDK-owned
         loopback ATOF endpoint used by ``Runtime.invoke_stream()``.
 
         Args:
@@ -203,7 +203,7 @@ class Fabric:
             base_dir: Base directory for resolving relative paths.
             overrides: JSON-compatible overrides applied to every invocation
                 in the runtime unless superseded by invocation overrides.
-            streaming: Whether to provision Relay-backed ATOF streaming for
+            streaming: Whether to provision NeMo Relay ATOF streaming for
                 ``Runtime.invoke_stream()``.
 
         Returns:
@@ -212,7 +212,7 @@ class Fabric:
 
         Raises:
             FabricConfigError: If inputs or overrides are invalid, or streaming
-                is requested without Relay enabled.
+                is requested without NeMo Relay enabled.
             FabricNativeUnavailableError: If the native extension is not
                 installed.
             FabricRuntimeError: If runtime startup fails.

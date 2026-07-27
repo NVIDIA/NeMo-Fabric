@@ -31,10 +31,6 @@ DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
 
 
-def _without_none(mapping: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in mapping.items() if value is not None}
-
-
 def _fabric_stream_sink_enabled(config: dict[str, Any] | None) -> bool:
     if config is None:
         return False
@@ -83,20 +79,20 @@ def build_hermes_config(
     blocked_toolsets = disabled_toolsets(payload)
 
     config: dict[str, Any] = {
-        "model": _without_none(
+        "model": common_utils.without_none(
             {
                 "provider": provider,
                 "default": model_name,
                 "base_url": base_url,
             }
         ),
-        "agent": _without_none(
+        "agent": common_utils.without_none(
             {
                 "max_turns": settings.get("max_iterations"),
                 "disabled_toolsets": blocked_toolsets or None,
             }
         ),
-        "terminal": _without_none(
+        "terminal": common_utils.without_none(
             {
                 "backend": settings.get("terminal_backend", "local"),
                 "cwd": str(
@@ -155,7 +151,7 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("MCP server mapping requires a URL")
 
     if transport == "stdio":
-        return _without_none(
+        return common_utils.without_none(
             {
                 "enabled": True,
                 "command": target,

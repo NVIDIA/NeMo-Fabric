@@ -82,7 +82,7 @@ add_frontmatter \
 add_frontmatter \
   "$out/nemo_fabric.streaming.md" \
   "Streaming" \
-  "Consume Relay-backed raw ATOF records and terminal invocation results." \
+  "Consume raw NVIDIA NeMo Relay ATOF records and terminal invocation results." \
   "/reference/api/python-library-reference/streaming"
 add_frontmatter \
   "$out/nemo_fabric.models.md" \

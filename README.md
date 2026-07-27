@@ -177,7 +177,7 @@ flowchart TB
   Adapter["Selected NeMo Fabric adapter"]
   Harness["Agent harness runtime\nHermes Agent | Codex | Claude Code | LangChain Deep Agents | custom"]
   Artifacts["Normalized results and artifacts\nresponse | logs | patches | telemetry refs"]
-  Relay["NeMo Relay\nATOF | ATIF | OTel | OpenInference when enabled"]
+  Relay["NVIDIA NeMo Relay\nATOF | ATIF | OTel | OpenInference when enabled"]
 
   Consumer --> Core
   Config --> Core
@@ -198,7 +198,8 @@ Use the following resources to learn about NeMo Fabric:
 
 - [Example Notebooks](examples/notebooks/README.md) provide a guided tour of the Python SDK.
 - [Python SDK guide](docs/sdk/python.mdx): typed configuration, planning,
-  diagnostics, requests, multi-turn runtimes, parallelism, results, and errors.
+  diagnostics, requests, multi-turn runtimes, NeMo Relay streaming,
+  parallelism, results, and errors.
 - [Experimentation CLI](docs/experimentation/cli.mdx): presets, maintained
   examples, editable application scaffolds, and explicit non-goals.
 - [Getting Started overview](docs/about-nemo-fabric/overview.mdx): interface

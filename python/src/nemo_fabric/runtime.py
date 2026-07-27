@@ -108,7 +108,7 @@ class Runtime:
 
     @property
     def supports_streaming(self) -> bool:
-        """Return whether Relay-backed ATOF streaming is enabled."""
+        """Return whether NeMo Relay ATOF streaming is enabled."""
 
         return self._stream_listener is not None
 
@@ -229,14 +229,14 @@ class Runtime:
         input: Any = None,
         request: RunRequest | None = None,
     ) -> InvokeStream:
-        """Start one turn and stream raw Relay ATOF records as they arrive.
+        """Start one turn and stream raw NeMo Relay ATOF records as they arrive.
 
         ``input`` and ``request`` are mutually exclusive. The returned
         :class:`InvokeStream` yields raw ATOF dictionaries. Await
         ``stream.result()`` for the terminal normalized :class:`RunResult`.
 
         Raises:
-            FabricCapabilityError: If the runtime was not started with Relay
+            FabricCapabilityError: If the runtime was not started with NeMo Relay
                 enabled and ``streaming=True``.
             FabricConfigError: If request fields conflict or are not
                 JSON-compatible.

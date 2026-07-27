@@ -184,6 +184,10 @@ def merge_unique(*values: Any) -> list[str]:
     return merged
 
 
+def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in mapping.items() if value is not None}
+
+
 def dump_yaml(value: dict[str, Any]) -> str:
     try:
         import yaml
