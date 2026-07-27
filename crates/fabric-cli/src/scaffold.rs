@@ -316,7 +316,10 @@ mod tests {
 
     #[test]
     fn renderers_preserve_model_settings_and_temperature() {
-        let mut config = presets::find("hermes").expect("hermes preset").config();
+        let mut config = presets::find("hermes")
+            .expect("hermes preset")
+            .config()
+            .expect("construct Hermes config");
         config
             .models
             .get_mut("default")

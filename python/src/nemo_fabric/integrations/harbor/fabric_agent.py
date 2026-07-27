@@ -23,6 +23,7 @@ from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
+from nemo_fabric import RelayAtofFileSinkConfig
 from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
@@ -409,9 +410,13 @@ def build_harbor_config(
                 ),
                 atof=RelayAtofConfig(
                     enabled=True,
-                    output_directory=relay_output,
-                    filename="events.atof.jsonl",
-                    mode="overwrite",
+                    sinks=[
+                        RelayAtofFileSinkConfig(
+                            output_directory=relay_output,
+                            filename="events.atof.jsonl",
+                            mode="overwrite",
+                        )
+                    ],
                 ),
             ),
         )

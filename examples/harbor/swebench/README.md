@@ -42,7 +42,7 @@ export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 ```
 
 The preparation script builds the native runtime in a manylinux2014 container,
-builds the standalone Relay 0.5.0 CLI in Debian Bullseye, and writes the exact
+builds the standalone Relay 0.6.0 CLI in Debian Bullseye, and writes the exact
 task-local package requirement to `.fabric-package`. The generated files are
 ignored by Git. The uploaded bundle contains adapter descriptors, the example
 MCP server, generated wheels, and Relay; it does not contain a persisted

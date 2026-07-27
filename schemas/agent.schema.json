@@ -410,75 +410,128 @@
           "description": "Whether ATOF export is enabled.",
           "type": "boolean"
         },
-        "endpoints": {
-          "description": "Optional remote ATOF endpoints.",
+        "sinks": {
+          "description": "ATOF file and stream sinks.",
           "items": {
-            "$ref": "#/$defs/RelayAtofEndpointConfig"
+            "$ref": "#/$defs/RelayAtofSinkConfig"
           },
           "type": "array"
-        },
-        "filename": {
-          "description": "ATOF file name.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "mode": {
-          "$ref": "#/$defs/RelayAtofMode",
-          "default": "append",
-          "description": "File write mode."
-        },
-        "output_directory": {
-          "description": "Directory used for ATOF files.",
-          "type": [
-            "string",
-            "null"
-          ]
         }
       },
       "type": "object"
     },
-    "RelayAtofEndpointConfig": {
-      "additionalProperties": true,
-      "description": "Relay ATOF endpoint configuration.",
-      "properties": {
-        "field_name_policy": {
-          "$ref": "#/$defs/RelayAtofEndpointFieldNamePolicy",
-          "default": "preserve",
-          "description": "Field-name handling policy."
+    "RelayAtofMode": {
+      "description": "Relay ATOF file mode.",
+      "oneOf": [
+        {
+          "const": "append",
+          "description": "Append to an existing ATOF file.",
+          "type": "string"
         },
-        "headers": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "Endpoint headers.",
-          "type": "object"
-        },
-        "timeout_millis": {
-          "default": 3000,
-          "description": "Request timeout in milliseconds.",
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "transport": {
-          "$ref": "#/$defs/RelayAtofEndpointTransport",
-          "default": "http_post",
-          "description": "Endpoint transport."
-        },
-        "url": {
-          "description": "Endpoint URL.",
+        {
+          "const": "overwrite",
+          "description": "Overwrite an existing ATOF file.",
           "type": "string"
         }
-      },
-      "required": [
-        "url"
-      ],
-      "type": "object"
+      ]
     },
-    "RelayAtofEndpointFieldNamePolicy": {
-      "description": "Relay ATOF endpoint field-name policy.",
+    "RelayAtofSinkConfig": {
+      "description": "Relay ATOF sink configuration.",
+      "oneOf": [
+        {
+          "additionalProperties": true,
+          "description": "Write ATOF records to a local file.",
+          "properties": {
+            "filename": {
+              "description": "ATOF file name.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mode": {
+              "$ref": "#/$defs/RelayAtofMode",
+              "default": "append",
+              "description": "File write mode."
+            },
+            "output_directory": {
+              "description": "Directory used for ATOF files.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": true,
+          "description": "Send ATOF records to a remote stream.",
+          "properties": {
+            "field_name_policy": {
+              "$ref": "#/$defs/RelayAtofStreamFieldNamePolicy",
+              "default": "preserve",
+              "description": "Field-name handling policy."
+            },
+            "header_env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Environment-variable-backed stream headers.",
+              "type": "object"
+            },
+            "headers": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Static stream headers.",
+              "type": "object"
+            },
+            "name": {
+              "description": "Optional stream sink name.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "timeout_millis": {
+              "default": 3000,
+              "description": "Request timeout in milliseconds.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "transport": {
+              "$ref": "#/$defs/RelayAtofStreamTransport",
+              "default": "http_post",
+              "description": "Stream transport."
+            },
+            "type": {
+              "const": "stream",
+              "type": "string"
+            },
+            "url": {
+              "description": "Stream URL.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "RelayAtofStreamFieldNamePolicy": {
+      "description": "Relay ATOF stream field-name policy.",
       "oneOf": [
         {
           "const": "preserve",
@@ -492,8 +545,8 @@
         }
       ]
     },
-    "RelayAtofEndpointTransport": {
-      "description": "Relay ATOF endpoint transport.",
+    "RelayAtofStreamTransport": {
+      "description": "Relay ATOF stream transport.",
       "oneOf": [
         {
           "const": "http_post",
@@ -508,21 +561,6 @@
         {
           "const": "ndjson",
           "description": "NDJSON transport.",
-          "type": "string"
-        }
-      ]
-    },
-    "RelayAtofMode": {
-      "description": "Relay ATOF file mode.",
-      "oneOf": [
-        {
-          "const": "append",
-          "description": "Append to an existing ATOF file.",
-          "type": "string"
-        },
-        {
-          "const": "overwrite",
-          "description": "Overwrite an existing ATOF file.",
           "type": "string"
         }
       ]
@@ -682,7 +720,7 @@
           "description": "Relay config validation policy."
         },
         "version": {
-          "default": 1,
+          "default": 2,
           "description": "Relay observability config version.",
           "format": "uint32",
           "minimum": 0,

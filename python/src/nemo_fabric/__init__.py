@@ -20,7 +20,8 @@ from nemo_fabric.models import MetadataConfig
 from nemo_fabric.models import ModelConfig
 from nemo_fabric.models import RelayAtifConfig
 from nemo_fabric.models import RelayAtofConfig
-from nemo_fabric.models import RelayAtofEndpointConfig
+from nemo_fabric.models import RelayAtofFileSinkConfig
+from nemo_fabric.models import RelayAtofStreamSinkConfig
 from nemo_fabric.models import RelayComponentConfig
 from nemo_fabric.models import RelayConfig
 from nemo_fabric.models import RelayConfigPolicy
@@ -36,6 +37,7 @@ from nemo_fabric.models import TelemetryProviderConfig
 from nemo_fabric.models import ToolsConfig
 from nemo_fabric.runtime import Runtime
 from nemo_fabric.runtime import RuntimeStatus
+from nemo_fabric.streaming import InvokeStream
 from nemo_fabric.types import AdapterInfo
 from nemo_fabric.types import ArtifactManifest
 from nemo_fabric.types import ArtifactRef
@@ -66,13 +68,15 @@ __all__ = [
     "FabricError",
     "FabricEvent",
     "HarnessConfig",
+    "InvokeStream",
     "McpConfig",
     "McpServerConfig",
     "MetadataConfig",
     "ModelConfig",
     "RelayAtifConfig",
     "RelayAtofConfig",
-    "RelayAtofEndpointConfig",
+    "RelayAtofFileSinkConfig",
+    "RelayAtofStreamSinkConfig",
     "RelayComponentConfig",
     "RelayConfigPolicy",
     "RelayHttpStorageConfig",

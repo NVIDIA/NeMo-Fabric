@@ -1083,7 +1083,7 @@ class TelemetryRef(FabricMapping):
     """Reference to external or persisted telemetry for a run.
 
     Attributes:
-        provider: Telemetry provider, such as Relay.
+        provider: Telemetry provider, such as NVIDIA NeMo Relay.
         kind: Reference kind, such as ``trace``.
         uri: Optional location of persisted telemetry.
         trace_id: Optional provider trace identifier.

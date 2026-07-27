@@ -3,8 +3,8 @@ title: "Models"
 slug: "/reference/api/python-library-reference/models"
 description: "Pydantic authoring models for NVIDIA NeMo Fabric config and request inputs."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.models`
 Pydantic SDK models for NeMo Fabric configuration and requests.
@@ -609,7 +609,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayConfigPolicy`
-NeMo Relay config validation policy.
+NVIDIA NeMo Relay config validation policy.
 
 
 ---
@@ -668,8 +668,70 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `RelayAtofEndpointConfig`
-NeMo Relay ATOF remote endpoint configuration.
+## <kbd>class</kbd> `RelayAtofFileSinkConfig`
+
+NeMo Relay ATOF file sink configuration.
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+from_mapping(value: 'Mapping[str, Any]') → Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+to_mapping() → dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
+## <kbd>class</kbd> `RelayAtofStreamSinkConfig`
+
+NeMo Relay ATOF stream sink configuration.
 
 
 ---

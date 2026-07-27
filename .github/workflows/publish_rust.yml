@@ -52,11 +52,6 @@ jobs:
         with:
           tool: just@1.50.0
 
-      - name: Set project release version
-        env:
-          RELEASE_VERSION: ${{ github.ref_name }}
-        run: just set-version "$RELEASE_VERSION"
-
       - name: Authenticate to crates.io with trusted publishing
         id: crates-io-auth
         uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
@@ -64,11 +59,12 @@ jobs:
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
-          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
 
-          version="$RELEASE_VERSION"
+          just set-version "$RELEASE_TAG"
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
           packages=(
             nemo-fabric-core
             nemo-fabric-cli

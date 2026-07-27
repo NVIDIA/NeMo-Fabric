@@ -42,6 +42,14 @@ YAML_HEADER = (
     "# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n"
     "# SPDX-License-Identifier: Apache-2.0\n\n"
 )
+MARKDOWN_SPDX_HEADER = (
+    "<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n"
+    "SPDX-License-Identifier: Apache-2.0 -->"
+)
+MDX_SPDX_HEADER = (
+    "{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n"
+    "SPDX-License-Identifier: Apache-2.0 */}"
+)
 
 
 def read_yaml(path: Path) -> Any:
@@ -70,6 +78,17 @@ def copy_path(source: Path, destination: Path) -> None:
 
 def docs_ignore(_directory: str, names: list[str]) -> set[str]:
     return {name for name in names if name in COPY_EXCLUDES}
+
+
+def prepare_generated_python_references_for_fern(pages_directory: Path) -> None:
+    references = pages_directory / "reference" / "api" / "python-library-reference"
+    if not references.is_dir():
+        return
+    for path in references.glob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        updated = text.replace(MARKDOWN_SPDX_HEADER, MDX_SPDX_HEADER, 1)
+        if updated != text:
+            path.write_text(updated, encoding="utf-8")
 
 
 def prefixed_doc_path(value: str, pages_directory: str) -> str:
@@ -159,6 +178,7 @@ def sync_dev(source_root: Path, target_root: Path) -> None:
     if pages_dev.exists():
         shutil.rmtree(pages_dev)
     shutil.copytree(source_docs, pages_dev, ignore=docs_ignore)
+    prepare_generated_python_references_for_fern(pages_dev)
 
     navigation = read_yaml(source_docs / "index.yml")
     write_yaml(
@@ -214,6 +234,7 @@ def release_version(target_root: Path, tag: str, source_root: Path) -> None:
         version_yml.unlink()
 
     shutil.copytree(source_docs, pages_version, ignore=docs_ignore)
+    prepare_generated_python_references_for_fern(pages_version)
     update_github_links(pages_version, tag)
     version_navigation = rewrite_doc_references(
         read_yaml(source_docs / "index.yml"), f"pages-{display_tag}"

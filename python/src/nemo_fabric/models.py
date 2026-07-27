@@ -24,7 +24,9 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import SerializerFunctionWrapHandler
 from pydantic import field_validator
+from pydantic import model_serializer
 from pydantic import model_validator
 
 
@@ -233,31 +235,60 @@ class McpConfig(FabricBaseModel):
 
 
 class RelayConfigPolicy(FabricBaseModel):
-    """NeMo Relay config validation policy."""
+    """NVIDIA NeMo Relay config validation policy."""
 
     unknown_component: Literal["ignore", "warn", "error"] = "warn"
     unknown_field: Literal["ignore", "warn", "error"] = "warn"
     unsupported_value: Literal["ignore", "warn", "error"] = "error"
 
 
-class RelayAtofEndpointConfig(FabricBaseModel):
-    """NeMo Relay ATOF remote endpoint configuration."""
+class RelayAtofFileSinkConfig(FabricBaseModel):
+    """NeMo Relay ATOF file sink configuration."""
 
+    type: Literal["file"] = "file"
+    output_directory: str | Path | None = None
+    filename: str | None = None
+    mode: Literal["append", "overwrite"] = "append"
+
+
+class RelayAtofStreamSinkConfig(FabricBaseModel):
+    """NeMo Relay ATOF stream sink configuration."""
+
+    type: Literal["stream"] = "stream"
     url: str
     transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
     headers: dict[str, str] = Field(default_factory=dict)
+    header_env: dict[str, str] = Field(default_factory=dict)
     timeout_millis: int = 3000
     field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
+    name: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_header_maps(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Omit optional header maps when they are empty."""
+
+        data = handler(self)
+        if not self.headers:
+            data.pop("headers", None)
+        if not self.header_env:
+            data.pop("header_env", None)
+        return data
 
 
 class RelayAtofConfig(FabricBaseModel):
     """NeMo Relay ATOF export configuration."""
 
     enabled: bool = False
-    output_directory: str | Path | None = None
-    filename: str | None = None
-    mode: Literal["append", "overwrite"] = "append"
-    endpoints: list[RelayAtofEndpointConfig | dict[str, Any]] | None = None
+    sinks: (
+        list[
+            Annotated[
+                RelayAtofFileSinkConfig | RelayAtofStreamSinkConfig,
+                Field(discriminator="type"),
+            ]
+            | dict[str, Any]
+        ]
+        | None
+    ) = None
 
 
 class RelayS3StorageConfig(FabricBaseModel):
@@ -325,7 +356,7 @@ class RelayOtlpConfig(FabricBaseModel):
 class RelayObservabilityConfig(FabricBaseModel):
     """NeMo Relay observability component configuration."""
 
-    version: int = 1
+    version: int = 2
     atof: RelayAtofConfig | dict[str, Any] | None = None
     atif: RelayAtifConfig | dict[str, Any] | None = None
     opentelemetry: RelayOtlpConfig | dict[str, Any] | None = None

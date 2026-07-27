@@ -164,9 +164,16 @@ struct AdapterRegistry {
 }
 
 impl AdapterRegistry {
-    fn from_config(_config: &FabricConfig, base_dir: &Path) -> Result<Self> {
+    fn from_config(
+        _config: &FabricConfig,
+        base_dir: &Path,
+        additional_directories: &[PathBuf],
+    ) -> Result<Self> {
         let mut registry = Self::default();
         registry.register_repository_directory(&repository_adapter_dir())?;
+        for directory in additional_directories {
+            registry.register_local_directory(directory)?;
+        }
         registry.register_local_directory(&base_dir.join("adapters"))?;
         Ok(registry)
     }
@@ -625,43 +632,59 @@ pub struct RelayAtofConfig {
     /// Whether ATOF export is enabled.
     #[serde(default)]
     pub enabled: bool,
-    /// Directory used for ATOF files.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output_directory: Option<PathBuf>,
-    /// ATOF file name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub filename: Option<String>,
-    /// File write mode.
-    #[serde(default)]
-    pub mode: RelayAtofMode,
-    /// Optional remote ATOF endpoints.
+    /// ATOF file and stream sinks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub endpoints: Vec<RelayAtofEndpointConfig>,
+    pub sinks: Vec<RelayAtofSinkConfig>,
     /// Additive ATOF fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Relay ATOF endpoint configuration.
+/// Relay ATOF sink configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct RelayAtofEndpointConfig {
-    /// Endpoint URL.
-    pub url: String,
-    /// Endpoint transport.
-    #[serde(default)]
-    pub transport: RelayAtofEndpointTransport,
-    /// Endpoint headers.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub headers: BTreeMap<String, String>,
-    /// Request timeout in milliseconds.
-    #[serde(default = "default_relay_timeout_millis")]
-    pub timeout_millis: u64,
-    /// Field-name handling policy.
-    #[serde(default)]
-    pub field_name_policy: RelayAtofEndpointFieldNamePolicy,
-    /// Additive endpoint fields.
-    #[serde(default, flatten)]
-    pub extensions: BTreeMap<String, Value>,
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum RelayAtofSinkConfig {
+    /// Write ATOF records to a local file.
+    File {
+        /// Directory used for ATOF files.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        output_directory: Option<PathBuf>,
+        /// ATOF file name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        filename: Option<String>,
+        /// File write mode.
+        #[serde(default)]
+        mode: RelayAtofMode,
+        /// Additive file sink fields.
+        #[serde(default, flatten)]
+        extensions: BTreeMap<String, Value>,
+    },
+    /// Send ATOF records to a remote stream.
+    Stream {
+        /// Stream URL.
+        url: String,
+        /// Stream transport.
+        #[serde(default)]
+        transport: RelayAtofStreamTransport,
+        /// Static stream headers.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        headers: BTreeMap<String, String>,
+        /// Environment-variable-backed stream headers.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        header_env: BTreeMap<String, String>,
+        /// Request timeout in milliseconds.
+        #[serde(default = "default_relay_timeout_millis")]
+        timeout_millis: u64,
+        /// Field-name handling policy.
+        #[serde(default)]
+        field_name_policy: RelayAtofStreamFieldNamePolicy,
+        /// Optional stream sink name.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        /// Additive stream sink fields.
+        #[serde(default, flatten)]
+        extensions: BTreeMap<String, Value>,
+    },
 }
 
 /// Relay ATIF export configuration.
@@ -874,10 +897,10 @@ pub enum RelayAtofMode {
     Overwrite,
 }
 
-/// Relay ATOF endpoint transport.
+/// Relay ATOF stream transport.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum RelayAtofEndpointTransport {
+pub enum RelayAtofStreamTransport {
     /// HTTP POST transport.
     #[default]
     HttpPost,
@@ -887,10 +910,10 @@ pub enum RelayAtofEndpointTransport {
     Ndjson,
 }
 
-/// Relay ATOF endpoint field-name policy.
+/// Relay ATOF stream field-name policy.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum RelayAtofEndpointFieldNamePolicy {
+pub enum RelayAtofStreamFieldNamePolicy {
     /// Preserve field names.
     #[default]
     Preserve,
@@ -933,7 +956,7 @@ impl TelemetryProvider {
 }
 
 fn default_relay_config_version() -> u32 {
-    1
+    2
 }
 
 fn default_enabled() -> bool {
@@ -990,6 +1013,20 @@ pub fn resolve_run_plan_from_config(
     config: FabricConfig,
     context: ResolveContext,
 ) -> Result<RunPlan> {
+    resolve_run_plan_from_config_with_adapter_directories(config, context, &[])
+}
+
+/// Resolve a typed Fabric config with additional adapter descriptor directories.
+///
+/// This is an internal integration surface for hosts that know about
+/// environment-specific package data directories. Callers should otherwise use
+/// [`resolve_run_plan_from_config`].
+#[doc(hidden)]
+pub fn resolve_run_plan_from_config_with_adapter_directories(
+    config: FabricConfig,
+    context: ResolveContext,
+    adapter_directories: &[PathBuf],
+) -> Result<RunPlan> {
     validate_config(&config)?;
     let supplied_base_dir = context.base_dir;
     let base_dir = std::path::absolute(&supplied_base_dir)
@@ -998,7 +1035,7 @@ pub fn resolve_run_plan_from_config(
             path: supplied_base_dir,
             source,
         })?;
-    resolve_run_plan(config, base_dir)
+    resolve_run_plan(config, base_dir, adapter_directories)
 }
 
 fn read_json<T>(path: &Path) -> Result<T>
@@ -1015,8 +1052,12 @@ where
     })
 }
 
-fn resolve_run_plan(config: FabricConfig, base_dir: PathBuf) -> Result<RunPlan> {
-    let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir)?;
+fn resolve_run_plan(
+    config: FabricConfig,
+    base_dir: PathBuf,
+    adapter_directories: &[PathBuf],
+) -> Result<RunPlan> {
+    let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_directories)?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
@@ -1042,9 +1083,10 @@ fn resolve_run_plan(config: FabricConfig, base_dir: PathBuf) -> Result<RunPlan> 
 fn resolve_adapter_descriptor(
     config: &FabricConfig,
     base_dir: &Path,
+    adapter_directories: &[PathBuf],
 ) -> Result<Option<ResolvedAdapterDescriptor>> {
     let adapter_id = &config.harness.adapter_id;
-    let registry = AdapterRegistry::from_config(config, base_dir)?;
+    let registry = AdapterRegistry::from_config(config, base_dir, adapter_directories)?;
     let Some(entry) = registry.get(adapter_id) else {
         return Err(FabricError::UnknownAdapter {
             adapter_id: adapter_id.clone(),
@@ -1644,6 +1686,36 @@ mod tests {
     }
 
     #[test]
+    fn relay_observability_uses_v2_typed_atof_sinks() {
+        let observability: RelayObservabilityConfig = serde_json::from_value(serde_json::json!({
+            "atof": {
+                "enabled": true,
+                "sinks": [
+                    {
+                        "type": "file",
+                        "output_directory": "artifacts/relay",
+                        "filename": "events.atof.jsonl",
+                        "mode": "overwrite"
+                    },
+                    {
+                        "type": "stream",
+                        "url": "http://localhost:4319/events",
+                        "transport": "ndjson",
+                        "header_env": {"authorization": "RELAY_AUTHORIZATION"},
+                        "name": "live-events"
+                    }
+                ]
+            }
+        }))
+        .expect("Relay v2 observability config");
+
+        let value = serde_json::to_value(observability).expect("serialized observability");
+        assert_eq!(value["version"], 2);
+        assert_eq!(value["atof"]["sinks"][0]["type"], "file");
+        assert_eq!(value["atof"]["sinks"][1]["type"], "stream");
+    }
+
+    #[test]
     fn resolves_complete_typed_config_with_explicit_base_dir() {
         let base_dir = repository_root();
         let plan = resolve_run_plan_from_config(
@@ -1711,5 +1783,86 @@ mod tests {
 
         assert_eq!(descriptor.contract_version, ADAPTER_CONTRACT_VERSION);
         assert_eq!(descriptor.adapter_kind, AdapterKind::Python);
+    }
+
+    #[test]
+    fn resolves_additional_adapter_directory_before_agent_local_override() {
+        struct RemoveDirOnDrop(PathBuf);
+
+        impl Drop for RemoveDirOnDrop {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        let root = std::env::temp_dir().join(format!(
+            "nemo-fabric-adapter-discovery-{}",
+            std::process::id()
+        ));
+        let _cleanup = RemoveDirOnDrop(root.clone());
+        let installed_directory = root.join("installed");
+        let base_dir = root.join("agent");
+        let installed_descriptor = installed_directory.join("stopgap/fabric-adapter.json");
+        let local_descriptor = base_dir.join("adapters/stopgap/fabric-adapter.json");
+        let descriptor = |module: &str| {
+            serde_json::json!({
+                "contract_version": ADAPTER_CONTRACT_VERSION,
+                "adapter_id": "test.fabric.installed",
+                "harness": "installed-test",
+                "adapter_kind": "python",
+                "runner": {"module": module},
+                "config": {"accepts": ["skills"]}
+            })
+        };
+
+        std::fs::create_dir_all(installed_descriptor.parent().expect("installed parent"))
+            .expect("create installed adapter directory");
+        std::fs::write(
+            &installed_descriptor,
+            serde_json::to_vec_pretty(&descriptor("installed.adapter")).expect("descriptor JSON"),
+        )
+        .expect("write installed descriptor");
+
+        let plan = resolve_run_plan_from_config_with_adapter_directories(
+            typed_config("test.fabric.installed"),
+            ResolveContext::new(&base_dir),
+            std::slice::from_ref(&installed_directory),
+        )
+        .expect("installed adapter plan");
+        let expected_installed_descriptor = installed_descriptor
+            .canonicalize()
+            .expect("canonical installed descriptor");
+        assert_eq!(
+            plan.adapter_descriptor
+                .as_ref()
+                .map(|adapter| adapter.path.as_path()),
+            Some(expected_installed_descriptor.as_path())
+        );
+
+        std::fs::create_dir_all(local_descriptor.parent().expect("local parent"))
+            .expect("create local adapter directory");
+        std::fs::write(
+            &local_descriptor,
+            serde_json::to_vec_pretty(&descriptor("local.adapter")).expect("descriptor JSON"),
+        )
+        .expect("write local descriptor");
+
+        let plan = resolve_run_plan_from_config_with_adapter_directories(
+            typed_config("test.fabric.installed"),
+            ResolveContext::new(&base_dir),
+            &[installed_directory],
+        )
+        .expect("agent-local adapter plan");
+        let resolved = plan.adapter_descriptor.expect("resolved adapter");
+        assert_eq!(
+            resolved.path,
+            local_descriptor
+                .canonicalize()
+                .expect("canonical local descriptor")
+        );
+        assert_eq!(
+            resolved.descriptor.runner["module"],
+            serde_json::json!("local.adapter")
+        );
     }
 }

@@ -288,7 +288,15 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             {
                 "relay": {
                     "config": {
-                        "atof": {"enabled": True, "output_directory": "relay/atof"},
+                        "atof": {
+                            "enabled": True,
+                            "sinks": [
+                                {
+                                    "type": "file",
+                                    "output_directory": "relay/atof",
+                                }
+                            ],
+                        },
                         "atif": {"enabled": True, "output_directory": "relay/atif"},
                     }
                 }
@@ -369,7 +377,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     }
     assert config["platform_toolsets"] == {"cli": ["git", "shell"]}
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
-    assert observability["atof"]["output_directory"] == str(
+    assert observability["atof"]["sinks"][0]["output_directory"] == str(
         tmp_path / "relay" / "atof" / "runtime-matrix"
     )
     assert observability["atif"]["output_directory"] == str(

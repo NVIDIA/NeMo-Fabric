@@ -181,6 +181,7 @@ CLI flags are involved:
 from nemo_fabric import (
     RelayAtifConfig,
     RelayAtofConfig,
+    RelayAtofFileSinkConfig,
     RelayObservabilityConfig,
 )
 from examples.code_review_agent import deepagents_config
@@ -192,9 +193,13 @@ config.enable_relay(
     observability=RelayObservabilityConfig(
         atof=RelayAtofConfig(
             enabled=True,
-            output_directory="./artifacts/relay",
-            filename="events.atof.jsonl",
-            mode="overwrite",
+            sinks=[
+                RelayAtofFileSinkConfig(
+                    output_directory="./artifacts/relay",
+                    filename="events.atof.jsonl",
+                    mode="overwrite",
+                )
+            ],
         ),
         atif=RelayAtifConfig(
             enabled=True,
