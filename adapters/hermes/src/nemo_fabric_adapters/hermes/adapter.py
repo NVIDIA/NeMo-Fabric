@@ -81,6 +81,17 @@ def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
     )
 
 
+def hermes_working_directory(payload: dict[str, Any]) -> Path:
+    """Resolve the normalized Hermes workspace relative to the Fabric root."""
+
+    root = Path(common_utils.base_dir(payload)).resolve()
+    environment = common_utils.environment_payload(payload)
+    settings = common_utils.settings_payload(payload)
+    workspace = environment.get("workspace") or settings.get("workspace")
+    path = Path(workspace) if workspace else root
+    return path if path.is_absolute() else root / path
+
+
 def build_hermes_config(
     payload: dict[str, Any],
     *,
@@ -90,7 +101,6 @@ def build_hermes_config(
     settings = common_utils.settings_payload(payload)
     model_config = common_utils.selected_model_config(payload)
     native = common_utils.capability_plan(payload).get("native") or {}
-    environment = common_utils.environment_payload(payload)
 
     model_name = settings.get("model_name") or model_config.get("model", "")
     provider = settings.get("provider") or model_config.get("provider")
@@ -114,9 +124,7 @@ def build_hermes_config(
         "terminal": common_utils.without_none(
             {
                 "backend": settings.get("terminal_backend", "local"),
-                "cwd": str(
-                    environment.get("workspace") or settings.get("workspace") or "."
-                ),
+                "cwd": str(hermes_working_directory(payload)),
                 "timeout": settings.get("terminal_timeout", 60),
             }
         ),
@@ -398,10 +406,7 @@ class HermesRuntime:
         )
         if not model:
             raise relay_cli.HermesRelayError("Hermes Relay execution requires a model")
-        environment = common_utils.environment_payload(payload)
-        cwd = Path(self._settings.get("cwd") or environment.get("workspace") or root)
-        if not cwd.is_absolute():
-            cwd = root / cwd
+        cwd = hermes_working_directory(payload)
         env = relay_cli.child_environment(
             self._settings,
             self._model_config,

@@ -61,6 +61,7 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
     os.environ["MCP_URL"] = "http://localhost:9000/mcp"
     payload = {
+        "base_dir": "/fabric-root",
         "runtime_context": {"environment": {"workspace": "/workspace/repo"}},
         "capability_plan": {
             "native": {
@@ -150,6 +151,7 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_unset():
     # When max_iterations is unset the config layer must leave agent.max_turns
     # absent so Hermes applies its own default rather than a starving override.
     payload = {
+        "base_dir": "/fabric-root",
         "config": {
             "harness": {"settings": {}},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
@@ -165,6 +167,7 @@ def test_build_hermes_config_omits_max_turns_when_max_iterations_null():
     # An explicit null max_iterations is treated like unset: agent.max_turns is
     # omitted so Hermes applies its own default instead of a starving override.
     payload = {
+        "base_dir": "/fabric-root",
         "config": {
             "harness": {"settings": {"max_iterations": None}},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
@@ -287,6 +290,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
 
 def test_write_hermes_config_writes_file(tmp_path: Path):
     payload = {
+        "base_dir": str(tmp_path),
         "config": {
             "harness": {"settings": {}},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
@@ -303,6 +307,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
 
 def test_gateway_config_excludes_native_relay_plugin():
     payload = {
+        "base_dir": "/fabric-root",
         "config": {
             "harness": {
                 "settings": {

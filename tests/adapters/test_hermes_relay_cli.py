@@ -19,6 +19,38 @@ from nemo_fabric_adapters.hermes import relay_cli
 
 
 @pytest.mark.parametrize(
+    ("environment_workspace", "settings_workspace", "settings_cwd", "expected"),
+    [
+        ("/environment", "/settings", "/legacy", Path("/environment")),
+        (None, "settings-relative", "/legacy", Path("/fabric-root/settings-relative")),
+        ("environment-relative", "/settings", "/legacy", Path("/fabric-root/environment-relative")),
+        (None, None, "/legacy", Path("/fabric-root")),
+    ],
+)
+def test_hermes_working_directory_uses_normalized_workspace_precedence(
+    environment_workspace: str | None,
+    settings_workspace: str | None,
+    settings_cwd: str,
+    expected: Path,
+):
+    environment = (
+        {"workspace": environment_workspace}
+        if environment_workspace is not None
+        else {}
+    )
+    settings = {"cwd": settings_cwd}
+    if settings_workspace is not None:
+        settings["workspace"] = settings_workspace
+    payload = {
+        "base_dir": "/fabric-root",
+        "runtime_context": {"environment": environment},
+        "config": {"harness": {"settings": settings}},
+    }
+
+    assert adapter.hermes_working_directory(payload) == expected
+
+
+@pytest.mark.parametrize(
     ("relay_enabled", "plugins_enabled", "raises"),
     [
         (False, [], False),
