@@ -12,12 +12,11 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("nemo_fabric_adapters.hermes")
-
 from nemo_fabric_adapters.common.relay_gateway import RelayCliContract
 import nemo_fabric_adapters.common.utils as common_utils
-from nemo_fabric_adapters.hermes import adapter
-from nemo_fabric_adapters.hermes import relay_cli
+
+adapter = pytest.importorskip("nemo_fabric_adapters.hermes.adapter")
+relay_cli = pytest.importorskip("nemo_fabric_adapters.hermes.relay_cli")
 
 
 requires_posix_processes = pytest.mark.skipif(
