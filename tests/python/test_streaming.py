@@ -11,7 +11,7 @@ import os
 import threading
 import warnings
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -787,6 +787,67 @@ async def test_cancelled_aclose_keeps_turn_active_and_result_awaitable(
     await stream.aclose()
     assert (await stream.result()).status == "succeeded"
     await runtime.stop()
+
+
+async def test_cancelled_anext_does_not_consume_next_record():
+    listener = await _AtofStreamListener(maxsize=2).start()
+    invocation_finished = asyncio.Event()
+
+    async def invoke() -> RunResult:
+        await invocation_finished.wait()
+        return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
+
+    stream = InvokeStream(invoke(), listener)
+    pending = asyncio.create_task(stream.__anext__())
+    await asyncio.sleep(0)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+
+    records = [{"uuid": "first"}, {"uuid": "second"}]
+    await _post_chunked(listener.url, records)
+
+    assert await stream.__anext__() == records[0]
+    assert await stream.__anext__() == records[1]
+
+    invocation_finished.set()
+    await stream.aclose()
+    await listener.close()
+
+
+async def test_cancelled_anext_retains_record_consumed_during_cancellation():
+    listener = await _AtofStreamListener(maxsize=1).start()
+    invocation_finished = asyncio.Event()
+
+    async def invoke() -> RunResult:
+        await invocation_finished.wait()
+        return RunResult.from_mapping(_result({"request_id": "request-1"}, _runtime()))
+
+    stream = InvokeStream(invoke(), listener)
+    record = {"uuid": "first"}
+
+    async def cancel_after_getter_completes(
+        tasks: set[asyncio.Task[Any]],
+        *,
+        return_when: str,
+    ) -> None:
+        assert return_when == asyncio.FIRST_COMPLETED
+        getter = next(task for task in tasks if task is not stream._task)
+        listener.records.put_nowait(record)
+        assert await getter == record
+        raise asyncio.CancelledError
+
+    with (
+        patch.object(asyncio, "wait", new=cancel_after_getter_completes),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await stream.__anext__()
+
+    assert await stream.__anext__() == record
+
+    invocation_finished.set()
+    await stream.aclose()
+    await listener.close()
 
 
 async def test_aclose_drains_backpressure_while_invocation_finishes():

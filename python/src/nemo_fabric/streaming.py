@@ -121,6 +121,7 @@ class InvokeStream:
         self._listener = listener
         self._closed = False
         self._finalized = False
+        self._pending_record: dict[str, Any] | None = None
         listener.begin_stream(request_id=request_id, turn_index=turn_index)
         try:
             self._task = asyncio.create_task(invoke)
@@ -142,6 +143,10 @@ class InvokeStream:
             if self._closed:
                 await self._finalize()
                 raise StopAsyncIteration
+            if self._pending_record is not None:
+                record = self._pending_record
+                self._pending_record = None
+                return record
             if not queue.empty():
                 return queue.get_nowait()
             if self._task.done():
@@ -152,10 +157,19 @@ class InvokeStream:
                     raise StopAsyncIteration from None
 
             getter = asyncio.create_task(queue.get())
-            await asyncio.wait(
-                {getter, self._task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            try:
+                await asyncio.wait(
+                    {getter, self._task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            except asyncio.CancelledError:
+                if not getter.done():
+                    getter.cancel()
+                try:
+                    self._pending_record = await getter
+                except asyncio.CancelledError:
+                    pass
+                raise
             if getter.done() and not getter.cancelled():
                 return getter.result()
             getter.cancel()
@@ -212,6 +226,7 @@ class InvokeStream:
                 await asyncio.wait_for(queue.get(), remaining)
             except TimeoutError:
                 break
+        self._pending_record = None
         self._listener.end_stream()
         self._finalized = True
         if invocation_completed and warn_if_unavailable:
