@@ -54,7 +54,10 @@ def request_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return (
-        runtime_context(payload).get("environment") or payload.get("environment") or {}
+        runtime_context(payload).get("environment")
+        or fabric_config(payload).get("environment")
+        or payload.get("environment")
+        or {}
     )
 
 
