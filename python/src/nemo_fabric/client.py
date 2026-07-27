@@ -195,7 +195,7 @@ class Fabric:
 
         Each call starts a new logical runtime. Runtime-scoped overrides are
         recursively merged below invocation-scoped overrides. Set
-        ``streaming=True`` with NeMo Relay enabled to provision the SDK-owned
+        ``streaming=True`` with NVIDIA NeMo Relay enabled to provision the SDK-owned
         ATOF endpoint used by ``Runtime.invoke_stream()``.
 
         Args:

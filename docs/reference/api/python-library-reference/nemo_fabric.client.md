@@ -152,7 +152,7 @@ start_runtime(
 
 Start a stateful runtime for one or more ordered invocations.
 
-Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. Set ``streaming=True`` with NeMo Relay enabled to provision the SDK-owned ATOF endpoint used by ``Runtime.invoke_stream()``.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. Set ``streaming=True`` with NVIDIA NeMo Relay enabled to provision the SDK-owned ATOF endpoint used by ``Runtime.invoke_stream()``.
 
 
 

@@ -7,7 +7,7 @@ description: "Consume raw NVIDIA NeMo Relay ATOF records and terminal invocation
 SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.streaming`
-NVIDIA NeMo Relay streaming support for the NVIDIA NeMo Fabric Python SDK.
+NeMo Relay streaming support for the NVIDIA NeMo Fabric Python SDK.
 
 
 

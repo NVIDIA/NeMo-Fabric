@@ -68,7 +68,7 @@ Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 
 ### <kbd>property</kbd> supports_streaming
 
-Return whether NeMo Relay ATOF streaming is enabled.
+Return whether NVIDIA NeMo Relay ATOF streaming is enabled.
 
 
 

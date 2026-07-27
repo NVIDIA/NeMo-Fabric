@@ -100,6 +100,12 @@ add_frontmatter \
   "Structured exception hierarchy for config, capability, state, and runtime failures." \
   "/reference/api/python-library-reference/errors"
 
+# Use the full product name on first mention in each generated page and the
+# shortened product name on subsequent mentions.
+for file in "$out"/*.md; do
+  perl -0pi -e 'my $seen = 0; s/NVIDIA NeMo Relay/++$seen == 1 ? $& : "NeMo Relay"/ge' "$file"
+done
+
 # Drop the mkdocs-specific .pages file lazydocs emits; Fern does not use it.
 rm -f "$out"/.pages
 

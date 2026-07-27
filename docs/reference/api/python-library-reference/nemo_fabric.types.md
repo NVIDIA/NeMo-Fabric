@@ -576,7 +576,7 @@ Reference to external or persisted telemetry for a run.
 
 **Attributes:**
 
- - <b>`provider`</b>:  Telemetry provider, such as Relay.
+ - <b>`provider`</b>:  Telemetry provider, such as NVIDIA NeMo Relay.
  - <b>`kind`</b>:  Reference kind, such as ``trace``.
  - <b>`uri`</b>:  Optional location of persisted telemetry.
  - <b>`trace_id`</b>:  Optional provider trace identifier.

@@ -108,7 +108,7 @@ class Runtime:
 
     @property
     def supports_streaming(self) -> bool:
-        """Return whether NeMo Relay ATOF streaming is enabled."""
+        """Return whether NVIDIA NeMo Relay ATOF streaming is enabled."""
 
         return self._stream_listener is not None
 

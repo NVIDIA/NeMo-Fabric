@@ -97,6 +97,13 @@ def test_generated_reference_uses_markdown_spdx_comments() -> None:
         assert "{/* SPDX-FileCopyrightText:" not in text, page
 
 
+def test_generated_reference_uses_full_relay_name_once_per_page() -> None:
+    for page in REFERENCE_DIR.glob("*.md"):
+        text = page.read_text(encoding="utf-8")
+        if "NeMo Relay" in text:
+            assert text.count("NVIDIA NeMo Relay") == 1, page
+
+
 def test_streaming_reference_hides_constructor_and_preserves_async_methods():
     reference = (REFERENCE_DIR / "nemo_fabric.streaming.md").read_text(encoding="utf-8")
 

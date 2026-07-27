@@ -609,7 +609,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 
 ## <kbd>class</kbd> `RelayConfigPolicy`
-NeMo Relay config validation policy.
+NVIDIA NeMo Relay config validation policy.
 
 
 ---
