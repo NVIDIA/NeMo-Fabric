@@ -275,7 +275,7 @@ class McpConfig(FabricBaseModel):
 
 
 class RelayConfigPolicy(FabricBaseModel):
-    """NeMo Relay config validation policy."""
+    """NVIDIA NeMo Relay config validation policy."""
 
     unknown_component: Literal["ignore", "warn", "error"] = "warn"
     unknown_field: Literal["ignore", "warn", "error"] = "warn"

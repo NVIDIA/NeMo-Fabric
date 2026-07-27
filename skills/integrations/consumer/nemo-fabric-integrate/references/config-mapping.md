@@ -25,7 +25,7 @@ Import these from the top-level `nemo_fabric` package:
 | `McpConfig` / `McpServerConfig` | MCP servers and exposure. |
 | `SkillConfig` | Skill directories. |
 | `TelemetryConfig` | Telemetry providers. |
-| `RelayConfig` and `Relay*Config` | Relay observability under the top-level `relay` block. |
+| `RelayConfig` and `Relay*Config` | NVIDIA NeMo Relay observability under the top-level `relay` block. |
 
 The [models reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.models.md)
 indexes the public config models. The generated pages omit constructor fields and
@@ -39,7 +39,7 @@ methods that edit the typed config in place and return it:
 
 - `add_skill_path(path)` / `remove_skill_path(path)`
 - `add_mcp_server(name, *, transport, url, exposure, ...)` / `remove_mcp_server(name)`
-- `enable_relay(...)` for Relay observability in the `relay` block
+- `enable_relay(...)` for NVIDIA NeMo Relay observability in the `relay` block
 - `block_tools(...)` for per-tool deny policy
 - `configure_toolsets(enabled=..., blocked=...)` for toolset selection
 
@@ -70,7 +70,7 @@ def with_relay(base: FabricConfig) -> FabricConfig:
 Use this function-and-copy pattern for every variant; keep all variation in
 ordinary Python.
 
-For ATOF, author the Relay 0.6 sink model directly. Put
+For ATOF, author the NeMo Relay 0.6 sink model directly. Put
 `RelayAtofFileSinkConfig` and `RelayAtofStreamSinkConfig` instances in
 `RelayAtofConfig.sinks`, and set `RelayAtofConfig.enabled=True`.
 

@@ -3,8 +3,8 @@ title: "Types"
 slug: "/reference/api/python-library-reference/types"
 description: "Typed config, request, plan, result, artifact, telemetry, and runtime contracts."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.types`
 Public data contracts for the NeMo Fabric Python SDK.
@@ -576,7 +576,7 @@ Reference to external or persisted telemetry for a run.
 
 **Attributes:**
 
- - <b>`provider`</b>:  Telemetry provider, such as Relay.
+ - <b>`provider`</b>:  Telemetry provider, such as NVIDIA NeMo Relay.
  - <b>`kind`</b>:  Reference kind, such as ``trace``.
  - <b>`uri`</b>:  Optional location of persisted telemetry.
  - <b>`trace_id`</b>:  Optional provider trace identifier.

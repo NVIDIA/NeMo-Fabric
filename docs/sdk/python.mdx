@@ -138,10 +138,10 @@ use the descriptor contract values.
 
 | Adapter ID | Models | Tools / Blocked Tools | MCP | Skills | Subagents | Telemetry | Persistent Local Host | Remote Service |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `nvidia.fabric.claude` | Native Anthropic or a configured Anthropic Messages-compatible provider | Per-tool blocking through Claude `disallowed_tools`; toolsets unsupported | Normalized | Normalized | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway | Yes: connected `ClaudeSDKClient`, session, and optional Relay gateway | Not implemented |
-| `nvidia.fabric.codex` | Native OpenAI or a configured Responses-compatible provider | Per-tool blocking and toolsets unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized: `SKILL.md` directories | Not exposed | Relay: `atif`, `otel`, and `openinference` through hooks and gateway; native `otel` | Yes: `AsyncCodex` app-server client, thread, and optional Relay gateway | Not implemented |
-| `nvidia.fabric.langchain.deepagents` | NVIDIA, OpenAI, OpenAI-compatible, and other LangChain providers | Per-tool blocking across built-ins, MCP, and local subagents; toolsets unsupported | Normalized | Normalized | Constrained: declarative local subagents inherit parent capabilities | Relay SDK: `atif`, `otel`, and `openinference`; native `otel` and `openinference` | Yes: compiled graph and async LangGraph checkpointer | Not implemented |
-| `nvidia.fabric.hermes` | Configurable provider, model, and base URL | Hermes toolset selection and blocking; per-tool blocking unsupported | Normalized | Normalized | Not exposed | Relay plugin: `atif`, `otel`, and `openinference` | Yes: `AIAgent`, `SessionDB`, and Relay plugin context | Not implemented |
+| `nvidia.fabric.claude` | Native Anthropic or a configured Anthropic Messages-compatible provider | Per-tool blocking through Claude `disallowed_tools`; toolsets unsupported | Normalized | Normalized | Not exposed | NVIDIA NeMo Relay: `atif`, `otel`, and `openinference` through hooks and gateway | Yes: connected `ClaudeSDKClient`, session, and optional NeMo Relay gateway | Not implemented |
+| `nvidia.fabric.codex` | Native OpenAI or a configured Responses-compatible provider | Per-tool blocking and toolsets unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized: `SKILL.md` directories | Not exposed | NVIDIA NeMo Relay: `atif`, `otel`, and `openinference` through hooks and gateway; native `otel` | Yes: `AsyncCodex` app-server client, thread, and optional NeMo Relay gateway | Not implemented |
+| `nvidia.fabric.langchain.deepagents` | NVIDIA, OpenAI, OpenAI-compatible, and other LangChain providers | Per-tool blocking across built-ins, MCP, and local subagents; toolsets unsupported | Normalized | Normalized | Constrained: declarative local subagents inherit parent capabilities | NVIDIA NeMo Relay SDK: `atif`, `otel`, and `openinference`; native `otel` and `openinference` | Yes: compiled graph and async LangGraph checkpointer | Not implemented |
+| `nvidia.fabric.hermes` | Configurable provider, model, and base URL | Hermes toolset selection and blocking; per-tool blocking unsupported | Normalized | Normalized | Not exposed | NVIDIA NeMo Relay plugin: `atif`, `otel`, and `openinference` | Yes: `AIAgent`, `SessionDB`, and NeMo Relay plugin context | Not implemented |
 
 "Normalized" means the adapter accepts the corresponding `FabricConfig`
 field and maps it to the harness. "Not normalized" does not mean that the
@@ -265,8 +265,8 @@ def with_toolsets(hermes_config):
 Config helpers edit the typed config before planning or starting a runtime. They
 do not modify already-started runtimes. Use `remove_mcp_server(name)` and
 `remove_skill_path(path)` to remove capabilities from a copied config.
-Telemetry is enabled by adding entries to `telemetry.providers`; Relay-specific
-settings live in the top-level `relay` block.
+Telemetry is enabled by adding entries to `telemetry.providers`; settings
+specific to NeMo Relay live in the top-level `relay` block.
 
 For evaluation or deployment variations, use ordinary Python functions and
 copies of the typed config. Supply the complete final config to NeMo Fabric.
@@ -288,8 +288,8 @@ def review_agent_config(base, *, github_mcp: bool, relay: bool):
 variant = review_agent_config(config, github_mcp=True, relay=True)
 ```
 
-Relay observability is represented directly in the SDK config's top-level
-`relay` block. ATOF uses Relay 0.6 file and stream sinks:
+NeMo Relay observability is represented directly in the SDK config's top-level
+`relay` block. ATOF uses NeMo Relay 0.6 file and stream sinks:
 
 ```python
 from nemo_fabric import (
@@ -321,7 +321,7 @@ relay_config.enable_relay(
 )
 ```
 
-Additional Relay plugin components can be supplied generically with
+Additional NeMo Relay plugin components can be supplied generically with
 `RelayComponentConfig` when their component package is available in the runtime
 environment.
 
@@ -346,8 +346,9 @@ multiple independent runtimes.
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
 | `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
 | `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
-| `Fabric.start_runtime(config, ...)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use it as an async context manager. |
+| `Fabric.start_runtime(config, ..., streaming=False)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use `streaming=True` with NeMo Relay enabled to provision streaming. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
+| `Runtime.invoke_stream(...)` | No | You need live ATOF records generated by NeMo Relay for one turn. | Returns an async `InvokeStream`; await `stream.result()` for the terminal `RunResult`. |
 | `Runtime.stop()` | Yes | You need to stop or detach from the runtime. | Called automatically when using `async with`. |
 
 ## Single-Invocation Runs
@@ -410,6 +411,117 @@ on one live thread, Deep Agents invokes one compiled graph and checkpointer,
 Hermes Agent reuses one agent and session database, and Claude keeps one connected SDK
 client. Harness-native identifiers remain adapter-internal.
 
+## NeMo Relay Streaming
+
+Enable NeMo Relay before starting a runtime to consume raw ATOF records while a
+turn runs. `Runtime.supports_streaming` reports whether this NeMo Relay path is
+available. It is separate from `RuntimeCapabilities.streaming`, which describes
+adapter-native progressive output. This separation is intentional:
+`Runtime.invoke_stream()` exposes only ATOF records generated by NeMo Relay. A future
+normalized Fabric streaming contract will address adapter-native progressive
+output, such as Codex app-server message and item deltas.
+
+The following example streams one invocation and collects its terminal result:
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    EnvironmentConfig,
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+)
+
+
+async def main() -> None:
+    config = FabricConfig(
+        metadata=MetadataConfig(name="streaming-agent"),
+        harness=HarnessConfig(adapter_id="nvidia.fabric.codex"),
+        models={
+            "default": ModelConfig(provider="openai", model="openai/gpt-5.4")
+        },
+        environment=EnvironmentConfig(provider="local", workspace="."),
+    ).enable_relay()
+
+    async with await Fabric().start_runtime(config, streaming=True) as runtime:
+        stream = runtime.invoke_stream(input="Review the latest patch")
+        async for record in stream:
+            print(record)
+        result = await stream.result()
+        print(result.status, result.output)
+
+
+asyncio.run(main())
+```
+
+`invoke_stream(...)` is synchronous and starts the invocation in the background.
+The returned `InvokeStream` is an async iterator of raw NeMo Relay ATOF
+dictionaries. The terminal `RunResult` stays out of band and is available only
+through `await stream.result()`. Treat that terminal result as authoritative:
+replace any provisional rendering instead of appending it. Calling
+`stream.result()` does not finalize unread stream records. Calling
+`Runtime.stop()` after the result completes finalizes the stream and discards
+those unread records.
+
+Streaming has the following v0.1 constraints:
+
+- Streaming requires two explicit settings: enable NeMo Relay in `FabricConfig`
+  and pass `streaming=True` to `start_runtime(...)`. The `streaming=True` flag
+  does not enable NeMo Relay by itself; without NeMo Relay telemetry,
+  `start_runtime(...)` raises `FabricConfigError`. With both settings, the SDK
+  binds its HTTP listener and injects the reserved ATOF stream sink.
+- The default `streaming=False` leaves the existing NeMo Relay configuration
+  unchanged; it neither enables nor disables ATOF. It also avoids the additional
+  listener HTTP and JSON parsing cost for runtimes that use only ATIF,
+  OpenTelemetry, OpenInference, or application-configured ATOF sinks.
+- One invocation can be active on a runtime. Fully consume the stream or call
+  `await stream.aclose()` before starting another turn.
+- Breaking an `async for` loop does not finalize the stream. Call
+  `await stream.aclose()` explicitly. It waits for the invocation to finish and
+  discards unread records; it does not cancel the harness turn.
+- The end of async iteration only means that no more ATOF records are available.
+  It does not indicate invocation success. Always await `stream.result()`.
+  Invocation exceptions raise from that call, while harness-reported failures
+  are represented by the returned result's status and error fields.
+- The SDK limits its queue to 1,024 records and 16 MiB of encoded record data.
+  It rejects individual records larger than 1 MiB and applies TCP backpressure.
+  NeMo Relay can drop records if a consumer stalls longer than its delivery
+  timeout.
+- ATOF granularity depends on the NeMo Relay integration. Gateway harnesses expose
+  per-delta event structure, but current ATOF records keep token text in the
+  terminal scope. In-process harnesses expose scope-level progress.
+- Reconstruct nested and parallel work with `uuid` and `parent_uuid`. Stream
+  order alone does not define the Deep Agents scope tree.
+- The listener correlates records to one NeMo Relay scope tree. Deep Agents and
+  Hermes roots carry the Fabric request ID. For Claude and Codex, the SDK
+  matches NeMo Relay turn scopes by their role and 1-based turn index. Records
+  outside the matched root and its descendants are discarded, so delayed
+  records from another turn do not enter the active stream. If the gateway
+  turn sequence does not align with the Fabric invocation sequence, the SDK
+  yields no uncorrelated records and emits a `RuntimeWarning` after natural
+  stream exhaustion. A short drain window only collects late records from the
+  matched tree; it does not define turn ownership.
+- The SDK listener binds to the address in `NEMO_FABRIC_STREAMING_HOST`, which
+  defaults to `127.0.0.1`. Override it when a Claude or Codex gateway must reach
+  the SDK through another network interface. Because the listener accepts ATOF
+  HTTP posts, restrict access to the configured interface. If async iteration
+  reaches the post-turn drain timeout without a NeMo Relay connection, or if
+  NeMo Relay sends data but no record matches the active turn, the SDK emits
+  one `RuntimeWarning` for that failure mode. It also warns if a NeMo Relay
+  upload terminates before completing its chunked request body because the
+  yielded stream can be incomplete. A caller that only awaits
+  `stream.result()` still receives the terminal result and does not run this
+  warning check.
+
+Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and require a
+stream-sink-capable release, version 0.6.0 or later. Follow the
+[NeMo Relay CLI installation instructions](/getting-started/install#nemo-relay-cli)
+to provision it. Hermes Agent and Deep Agents use their in-process NeMo Relay
+integrations.
+
 ## Application-Owned Parallelism
 
 Applications create independent runtimes when they want parallel work. NeMo Fabric
@@ -462,7 +574,7 @@ Important fields:
 | `output` | Harness output normalized to the configured output schema. |
 | `error` | Structured failure metadata when available. |
 | `artifacts` | Output files, logs, patches, native artifacts, and other materialized references. |
-| `telemetry` | References to Relay or other telemetry streams produced by the run. |
+| `telemetry` | References to NeMo Relay or other telemetry streams produced by the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
 | `runtime_id`, `invocation_id`, `request_id` | IDs for correlation across runtimes, logs, telemetry, and artifacts. |
@@ -530,7 +642,7 @@ Runtime compatibility checks should validate:
 - selected adapter version;
 - selected harness version or version range;
 - required environment variables or secret references;
-- optional capability support such as Relay, MCP, or tool exposure.
+- optional capability support such as NeMo Relay, MCP, or tool exposure.
 
 ## Custom Fields And Adapter Settings
 
