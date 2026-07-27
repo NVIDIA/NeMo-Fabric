@@ -97,9 +97,15 @@ def _python_sysconfig_path(python: Path, name: str) -> Path:
 
 @pytest.fixture(name="adapter_python")
 def adapter_python_fixture(tmp_path: Path) -> tuple[Path, Path]:
+    is_windows = os.name == "nt"
     adapter_env = tmp_path / "adapter-env"
-    venv.EnvBuilder(with_pip=False).create(adapter_env)
-    python = adapter_env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+    # Use `symlinks=True`` on Posix systems to work-around for
+    # https://github.com/astral-sh/uv/issues/8879
+    venv.EnvBuilder(with_pip=False,
+                    symlinks=(not is_windows)).create(adapter_env)
+
+    python = adapter_env / ("Scripts/python.exe" if is_windows else "bin/python")
     data_root = _python_sysconfig_path(python, "data")
     descriptor = _write_descriptor(data_root, "configured.adapter")
     return python, descriptor
