@@ -2047,7 +2047,7 @@ wheels = [
 
 [[package]]
 name = "nemo-fabric"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "nemo-fabric-runtime" },
@@ -2169,7 +2169,7 @@ test = [
 
 [[package]]
 name = "nemo-fabric-adapters-claude"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "adapters/claude" }
 dependencies = [
     { name = "claude-agent-sdk" },
@@ -2186,7 +2186,7 @@ requires-dist = [
 
 [[package]]
 name = "nemo-fabric-adapters-codex"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "adapters/codex" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
@@ -2203,12 +2203,12 @@ requires-dist = [
 
 [[package]]
 name = "nemo-fabric-adapters-common"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "adapters/common" }
 
 [[package]]
 name = "nemo-fabric-adapters-deepagents"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "adapters/deepagents" }
 dependencies = [
     { name = "deepagents" },
@@ -2240,7 +2240,7 @@ provides-extras = ["relay"]
 
 [[package]]
 name = "nemo-fabric-adapters-hermes"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "adapters/hermes" }
 dependencies = [
     { name = "nemo-fabric-adapters-common", marker = "python_full_version < '3.14'" },

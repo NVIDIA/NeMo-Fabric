@@ -193,6 +193,14 @@ def _needs_explicit_slug(page: Page) -> bool:
     return "_" in page.url
 
 
+def _relative_page_link(page: Page, target_page: Page, fragment: str = "") -> str:
+    target = posixpath.relpath(
+        target_page.output_path.as_posix(),
+        start=page.output_path.parent.as_posix(),
+    )
+    return f"{target}#{fragment}" if fragment else target
+
+
 def _discover_pages(doc_root: Path, output_dir: Path) -> dict[Path, Page]:
     pages: dict[Path, Page] = {}
     for crate_name, crate_dir_name, _description in CRATES:
@@ -221,14 +229,14 @@ def _resolve_href(page: Page, href: str, pages_by_html: dict[Path, Page]) -> str
         return None
     if href.startswith(("http://", "https://")):
         return href
-    href_no_fragment, _fragment = urldefrag(href)
+    href_no_fragment, fragment = urldefrag(href)
     if href_no_fragment.startswith("../src/") or "/src/" in href_no_fragment:
         return None
     target = (page.html_path.parent / href_no_fragment).resolve()
     target_page = pages_by_html.get(target)
     if target_page is None:
         return None
-    return target_page.url
+    return _relative_page_link(page, target_page, fragment)
 
 
 def _tag_classes(node: Tag) -> set[str]:
@@ -289,10 +297,7 @@ def _heading_text(node: Tag) -> str:
 def _signature_link_target(page: Page, href: str, pages_by_html: dict[Path, Page]) -> str | None:
     if not href or href.startswith("#"):
         return None
-    target = _resolve_href(page, href, pages_by_html)
-    if target is None or not target.startswith("/"):
-        return target
-    return posixpath.relpath(target, start=posixpath.dirname(page.url))
+    return _resolve_href(page, href, pages_by_html)
 
 
 def _linked_signature_html(node: PageElement, page: Page, pages_by_html: dict[Path, Page]) -> str:
@@ -625,7 +630,8 @@ def _write_index(output_dir: Path) -> None:
         "## Crates\n\n",
     ]
     for crate_name, _crate_dir_name, description in CRATES:
-        lines.append(f"- [{crate_name}]({BASE_URL}/{_crate_slug(crate_name)}): {_escape_text(description)}\n")
+        target = f"{_crate_slug(crate_name)}/index.mdx"
+        lines.append(f"- [{crate_name}]({target}): {_escape_text(description)}\n")
     (output_dir / "index.mdx").write_text("".join(lines), encoding="utf-8")
 
 

@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python SDK distribution for NeMo Fabric"
 authors = [
   { name = "NVIDIA Corporation" },
@@ -25,7 +25,7 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = [
-  "nemo-fabric-runtime == 0.1.0",
+  "nemo-fabric-runtime == 0.2.0",
 ]
 
 [project.urls]
@@ -38,15 +38,15 @@ packages = []
 [project.optional-dependencies]
 
 codex = [
-  "nemo-fabric-adapters-codex == 0.1.0",
+  "nemo-fabric-adapters-codex == 0.2.0",
 ]
 
 claude = [
-  "nemo-fabric-adapters-claude == 0.1.0",
+  "nemo-fabric-adapters-claude == 0.2.0",
 ]
 
 deepagents = [
-  "nemo-fabric-adapters-deepagents == 0.1.0",
+  "nemo-fabric-adapters-deepagents == 0.2.0",
 ]
 
 harbor = [
@@ -55,11 +55,11 @@ harbor = [
 ]
 
 hermes = [
-  "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
+  "nemo-fabric-adapters-hermes == 0.2.0; python_version < '3.14'",
 ]
 
 hermes-agent = [
-    "nemo-fabric-adapters-hermes == 0.1.0; python_version < '3.14'",
+    "nemo-fabric-adapters-hermes == 0.2.0; python_version < '3.14'",
     "hermes-agent>=0.17.0; python_version < '3.14'",
 ]
 
@@ -69,7 +69,7 @@ relay = [
 ]
 
 runtime = [
-  "nemo-fabric-runtime == 0.1.0",
+  "nemo-fabric-runtime == 0.2.0",
 ]
 
 [dependency-groups]

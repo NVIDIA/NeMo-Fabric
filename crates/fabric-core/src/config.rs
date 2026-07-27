@@ -20,7 +20,7 @@ pub const ADAPTER_CONTRACT_VERSION: &str = "fabric.adapter/v1alpha1";
 ///
 /// NeMo Fabric-owned fields apply uniformly, while adapter-translated fields are
 /// validated against the selected adapter descriptor. See the
-/// [configuration compatibility matrix](/sdk/python#normalized-configuration-compatibility).
+/// [configuration compatibility matrix](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#normalized-configuration-compatibility).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FabricConfig {
     /// Config schema version.

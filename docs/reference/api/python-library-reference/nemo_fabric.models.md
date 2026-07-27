@@ -1548,7 +1548,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ## <kbd>class</kbd> `FabricConfig`
 SDK-facing typed Fabric agent configuration.
 
-Fabric-owned fields apply uniformly. Adapter-translated fields are checked against the selected descriptor; refer to the [normalized configuration compatibility table](/nemo/fabric/sdk/python-sdk#normalized-configuration-compatibility).
+Fabric-owned fields apply uniformly. Adapter-translated fields are checked against the selected descriptor; refer to the [normalized configuration compatibility table](../../../sdk/python.mdx#normalized-configuration-compatibility).
 
 
 ---

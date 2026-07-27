@@ -514,7 +514,7 @@ class FabricConfig(FabricBaseModel):
     Fabric-owned fields apply uniformly. Adapter-translated fields are checked
     against the selected descriptor; refer to the
     [normalized configuration compatibility
-    table](/nemo/fabric/sdk/python-sdk#normalized-configuration-compatibility).
+    table](../../../sdk/python.mdx#normalized-configuration-compatibility).
     """
 
     schema_version: str = "fabric.agent/v1alpha1"
