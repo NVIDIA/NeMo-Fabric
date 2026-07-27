@@ -13,7 +13,6 @@ import re
 import shutil
 import signal
 import subprocess
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -327,11 +326,6 @@ class HermesRelayRunner:
             stdout_path = invocation_dir / "stdout.log"
             stderr_path = invocation_dir / "stderr.log"
             try:
-                preexec_fn = (
-                    _linux_parent_death_signal
-                    if sys.platform.startswith("linux")
-                    else None
-                )
                 process = await asyncio.create_subprocess_exec(
                     *command,
                     cwd=self._launch.cwd,
@@ -339,7 +333,6 @@ class HermesRelayRunner:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,
-                    preexec_fn=preexec_fn,
                 )
             except OSError as error:
                 raise HermesRelayError(
@@ -517,15 +510,3 @@ def _safe_id(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-")[:48]
     digest = hashlib.sha256(value.encode()).hexdigest()[:8]
     return f"{normalized or 'invocation'}-{digest}"
-
-
-def _linux_parent_death_signal() -> None:
-    """Ask Linux to stop Relay if Fabric's Python host is killed on timeout."""
-
-    import ctypes
-
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(1, signal.SIGTERM) != 0:
-        raise OSError(ctypes.get_errno(), "prctl(PR_SET_PDEATHSIG) failed")
-    if os.getppid() == 1:
-        os.kill(os.getpid(), signal.SIGTERM)
