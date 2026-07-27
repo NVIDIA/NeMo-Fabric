@@ -18,6 +18,43 @@ from nemo_fabric_adapters.hermes import adapter
 from nemo_fabric_adapters.hermes import relay_cli
 
 
+@pytest.mark.parametrize(
+    ("relay_enabled", "plugins_enabled", "raises"),
+    [
+        (False, [], False),
+        (False, ["custom/plugin"], False),
+        (False, ["observability/nemo_relay"], True),
+        (True, ["observability/nemo_relay"], False),
+    ],
+)
+def test_validate_hermes_relay_plugin_mode(
+    relay_enabled: bool,
+    plugins_enabled: list[str],
+    raises: bool,
+):
+    payload = {
+        "telemetry_plan": {
+            "providers": ["relay"] if relay_enabled else [],
+            "relay_enabled": relay_enabled,
+        },
+        "config": {
+            "harness": {"settings": {"plugins_enabled": plugins_enabled}},
+        },
+    }
+
+    if raises:
+        with pytest.raises(
+            ValueError,
+            match=(
+                "observability/nemo_relay cannot be enabled directly; "
+                "enable Fabric Relay telemetry instead"
+            ),
+        ):
+            adapter.validate_hermes_relay_plugin_mode(payload)
+    else:
+        adapter.validate_hermes_relay_plugin_mode(payload)
+
+
 def test_build_hermes_args_uses_public_gateway_contract(tmp_path: Path):
     launch = _launch(tmp_path)
 

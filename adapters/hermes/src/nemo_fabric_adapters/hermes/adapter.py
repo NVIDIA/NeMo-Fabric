@@ -31,6 +31,7 @@ from nemo_fabric_adapters.hermes import relay_cli
 # answering while the trial still reports success). See FABRIC-85.
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
+NATIVE_RELAY_PLUGIN = "observability/nemo_relay"
 
 
 def _fabric_stream_sink_enabled(config: dict[str, Any] | None) -> bool:
@@ -57,6 +58,19 @@ def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
     providers = common_utils.telemetry_providers(payload)
     if any(provider != "relay" for provider in providers):
         raise ValueError("only relay telemetry is supported for Hermes")
+
+
+def validate_hermes_relay_plugin_mode(payload: dict[str, Any]) -> None:
+    """Reject the native Relay plugin outside Fabric-managed Relay telemetry."""
+
+    plugins = common_utils.normalize_list(
+        common_utils.settings_payload(payload).get("plugins_enabled")
+    )
+    if not common_utils.relay_enabled(payload) and NATIVE_RELAY_PLUGIN in plugins:
+        raise ValueError(
+            "observability/nemo_relay cannot be enabled directly; "
+            "enable Fabric Relay telemetry instead"
+        )
 
 
 def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
@@ -128,9 +142,9 @@ def build_hermes_config(
 
     plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
     if exclude_relay_plugin:
-        plugins = [plugin for plugin in plugins if plugin != "observability/nemo_relay"]
-    if relay_enabled and "observability/nemo_relay" not in plugins:
-        plugins.append("observability/nemo_relay")
+        plugins = [plugin for plugin in plugins if plugin != NATIVE_RELAY_PLUGIN]
+    if relay_enabled and NATIVE_RELAY_PLUGIN not in plugins:
+        plugins.append(NATIVE_RELAY_PLUGIN)
     if plugins:
         config["plugins"] = {"enabled": plugins}
 
@@ -235,6 +249,7 @@ class HermesRuntime:
 
         try:
             validate_hermes_telemetry_provider(payload)
+            validate_hermes_relay_plugin_mode(payload)
             self._settings = common_utils.settings_payload(payload)
             self._model_config = common_utils.selected_model_config(payload)
             self._runtime_id = common_utils.runtime_id(payload)

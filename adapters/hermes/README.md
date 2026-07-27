@@ -52,6 +52,11 @@ For a runtime without Relay, the adapter constructs one Hermes Agent `AIAgent`
 and opens one `SessionDB`. Ordered `Runtime.invoke(...)` calls reuse those
 native objects and pass the prior transcript back to `run_conversation(...)`.
 
+When Fabric Relay telemetry is disabled, the adapter runs Hermes directly
+through its Python SDK without Fabric-managed Relay telemetry. Configuring the
+native `observability/nemo_relay` Hermes plugin in that mode is rejected; enable
+Relay through Fabric's telemetry configuration instead.
+
 For a Relay-enabled runtime, Fabric writes a Hermes config that excludes the
 native `observability/nemo_relay` plugin. Each invocation gets a distinct
 directory containing colocated `config.toml` and `plugins.toml`, then executes:
