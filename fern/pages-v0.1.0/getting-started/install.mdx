@@ -1,0 +1,126 @@
+---
+title: "Install NVIDIA NeMo Fabric"
+description: "Install guide."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+## Package Installation Method
+
+NeMo Fabric is separated into two distinct parts:
+- NeMo Fabric Runtime: This contains the core functionality of NeMo Fabric.
+- NeMo Fabric Adapters: These provide integration with agent harnesses. These need to be installed into
+  the same environment as the agent harness which may or may not be the same environment as the NeMo Fabric runtime.
+
+### Supported Python Versions
+- Python version 3.11 - 3.14
+
+NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations and adapters may have
+additional requirements. Specifically the Hermes Agent adapter doesn't support Python 3.14 yet, and the Harbor
+integration requires Python 3.12 or later.
+
+### Installing NeMo Fabric Runtime
+
+Install the NeMo Fabric Runtime:
+
+```bash
+pip install "nemo-fabric[runtime]"
+```
+
+### Installing the NeMo Fabric Adapters
+
+This command installs a NeMo Fabric adapter and its dependencies. Adapters
+intentionally have minimal dependencies and belong in the same environment as
+the agent harness. That environment can differ from the NeMo Fabric runtime
+environment.
+
+The following adapter extras are available:
+
+- `claude`
+- `codex`
+- `deepagents`
+- `hermes`
+
+```bash
+pip install "nemo-fabric[<adapter_name>]"
+```
+
+For example, to install the Hermes Agent adapter:
+
+```bash
+pip install "nemo-fabric[hermes]"
+```
+
+### Install NeMo Relay
+
+[NeMo Relay](https://docs.nvidia.com/nemo/relay) integration occurs in two
+ways:
+
+- [Python library](https://pypi.org/project/nemo-relay/)
+- [NeMo Relay CLI](https://crates.io/crates/nemo-relay-cli)
+
+The required integration depends on the agent harness chosen. Relay-enabled runs with
+the Claude and Codex adapters require the [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli).
+
+#### NeMo Relay Python Library
+
+The `relay` dependency extra installs a version of the NeMo Relay Python library known to be compatible with the
+installed version of NeMo Fabric.
+
+```bash
+pip install "nemo-fabric[relay]"
+```
+
+#### NeMo Relay CLI
+
+**Shell installation method (Linux and macOS):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh | sh
+```
+
+**Windows PowerShell installation method:**
+
+```powershell
+irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
+```
+
+**Cargo installation method (requires `cargo-binstall`):**
+
+```bash
+cargo binstall nemo-relay-cli
+```
+
+## Source Installation Method
+
+**Prerequisites:**
+- Rust and Cargo
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- `just` 1.50.0+
+
+1. Create a Python virtual environment and activate it (replace `3.13` with your preferred Python version):
+
+```bash
+uv venv -p 3.13 --seed .venv
+source .venv/bin/activate
+```
+
+2. Build the Rust core and Python libraries.
+
+```bash
+just build-all
+```
+
+The above command will install only those dependencies that are strictly necessary for the build.
+Alternately If you want to install all optional dependencies, you can run:
+
+```bash
+uv sync --all-groups --all-extras
+```
+
+Then run the build command with the `no_uv=true` flag to avoid re-installing the dependencies:
+
+```bash
+just build-all no_uv=true
+```

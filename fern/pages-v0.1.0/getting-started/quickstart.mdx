@@ -1,0 +1,59 @@
+---
+title: "NVIDIA NeMo Fabric Quickstart"
+description: "Get started with NVIDIA NeMo Fabric."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+This guide demonstrates how to install and run a simple agent using NeMo Fabric.
+
+## Install NeMo Fabric
+
+Create a Python virtual environment and install NeMo Fabric with Hermes Agent and the Hermes Agent adapter.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install "nemo-fabric[hermes, hermes-agent]"
+```
+
+Refer to [the installation guide](https://github.com/NVIDIA/NeMo-Fabric#installation) for more details.
+
+## Obtaining API Keys
+
+The following code example uses an NVIDIA-hosted model and requires an NVIDIA API key defined with the `NVIDIA_API_KEY`
+environment variable. An API key can be obtained by creating an account on [`build.nvidia.com`](https://build.nvidia.com/).
+
+## Run a Simple Agent
+
+```python
+import asyncio
+
+from nemo_fabric import (
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+)
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="quickstart-agent"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
+    models={
+        "default": ModelConfig(
+            provider="nvidia",
+            model="nvidia/nemotron-3-nano-30b-a3b",
+            api_key_env="NVIDIA_API_KEY",
+        )
+    },
+)
+
+result = asyncio.run(Fabric().run(config, input="Who are you?"))
+print(result.output.response)
+```
+
+A more detailed version of this example is available as a [Jupyter Notebook](https://jupyter.org/)
+at [`examples/notebooks/01_quickstart.ipynb`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.1.0-rc.2/examples/notebooks/01_quickstart.ipynb).
+
+## Next Steps
+- [Python SDK](../sdk/python.mdx)
