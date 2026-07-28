@@ -171,11 +171,7 @@ def test_adapter_python_data_directory_replaces_current_data_directory(
     patch_sysconfig_data(current_data_root)
 
     adapter_env = tmp_path / "adapter-env"
-<<<<<<< HEAD
-    venv.EnvBuilder(with_pip=False, symlinks=os.name != "nt").create(adapter_env)
-=======
     _create_venv(adapter_env)
->>>>>>> 084ee300f3fdcb179676506181e4cc7c52e272ff
     adapter_python = adapter_env / (
         "Scripts/python.exe" if os.name == "nt" else "bin/python"
     )
@@ -248,11 +244,7 @@ def test_unset_harness_python_env_uses_sdk_interpreter(
 
 def test_adapter_python_data_path_query_times_out(tmp_path: Path):
     adapter_env = tmp_path / "slow-adapter-env"
-<<<<<<< HEAD
-    venv.EnvBuilder(with_pip=False, symlinks=os.name != "nt").create(adapter_env)
-=======
     _create_venv(adapter_env)
->>>>>>> 084ee300f3fdcb179676506181e4cc7c52e272ff
     adapter_python = adapter_env / (
         "Scripts/python.exe" if os.name == "nt" else "bin/python"
     )
