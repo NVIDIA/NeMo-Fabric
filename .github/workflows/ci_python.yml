@@ -91,9 +91,19 @@ jobs:
           uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes-agent' || '' }} --extra relay --extra runtime
 
       - name: Run pytest
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           set -euo pipefail
           just test-python
+
+      - name: Upload gateway logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gateway-logs-${{ matrix.python-version }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/**/gateway.log
+          if-no-files-found: ignore
 
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
