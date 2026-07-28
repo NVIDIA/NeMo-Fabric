@@ -250,7 +250,7 @@ def test_claude_calculator_run_uses_current_adapter_contract():
 
     assert config.harness.adapter_id == "nvidia.fabric.claude"
     assert settings["permission_mode"] == "bypassPermissions"
-    assert config.max_turns == 20
+    assert config.runtime.max_turns == 20
     assert config.runtime.timeout_seconds == 600
     assert config.models["default"].provider == "anthropic"
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
@@ -431,11 +431,11 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
         blocked_tools=["browser"],
         telemetry="relay",
     )
-    toolsets = build_harbor_config(
+    selected_tools = build_harbor_config(
         adapter_id="nvidia.fabric.hermes",
         workspace="/testbed",
-        enabled_toolsets=[],
-        blocked_toolsets=["browser"],
+        enabled_tools=[],
+        blocked_tools=["browser"],
         telemetry="relay",
     )
     claude = build_harbor_config(
@@ -461,12 +461,10 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     ]
     assert tools.tools is not None
     assert tools.tools.blocked == ["browser"]
-    assert tools.tools.toolsets is None
-    assert toolsets.tools is not None
-    assert toolsets.tools.blocked == []
-    assert toolsets.tools.toolsets is not None
-    assert toolsets.tools.toolsets.enabled == []
-    assert toolsets.tools.toolsets.blocked == ["browser"]
+    assert tools.tools.enabled is None
+    assert selected_tools.tools is not None
+    assert selected_tools.tools.enabled == []
+    assert selected_tools.tools.blocked == ["browser"]
     assert relay.telemetry is not None
     assert "relay" in relay.telemetry.providers
     assert relay.relay is not None

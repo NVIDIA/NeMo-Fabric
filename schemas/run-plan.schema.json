@@ -19,28 +19,23 @@
           "type": "string"
         },
         {
-          "const": "system_prompt",
+          "const": "instructions.system",
           "description": "Portable system instructions.",
           "type": "string"
         },
         {
-          "const": "max_turns",
+          "const": "runtime.max_turns",
           "description": "Per-invocation harness turn limit.",
+          "type": "string"
+        },
+        {
+          "const": "tools.enabled",
+          "description": "Adapter-native tool names to expose.",
           "type": "string"
         },
         {
           "const": "tools.blocked",
           "description": "Adapter-native tool names to block.",
-          "type": "string"
-        },
-        {
-          "const": "tools.toolsets.enabled",
-          "description": "Harness-defined toolsets to expose.",
-          "type": "string"
-        },
-        {
-          "const": "tools.toolsets.blocked",
-          "description": "Harness-defined toolsets to block.",
           "type": "string"
         },
         {
@@ -334,7 +329,7 @@
       "type": "object"
     },
     "CapabilityRoute": {
-      "description": "One capability routing decision.",
+      "description": "One capability execution assignment.\n\nRoutes apply to executable tool, skill, and MCP capabilities. Adapter-translated\nscalar configuration is validated separately against [`AdapterConfigSupport`].",
       "properties": {
         "kind": {
           "$ref": "#/$defs/CapabilityKind",
@@ -350,7 +345,7 @@
         },
         "target": {
           "$ref": "#/$defs/CapabilityTarget",
-          "description": "Routing target."
+          "description": "Component responsible for executing the capability."
         }
       },
       "required": [
@@ -362,21 +357,21 @@
       "type": "object"
     },
     "CapabilityTarget": {
-      "description": "Capability routing target.",
+      "description": "Component responsible for executing a configured capability.\n\nThis target describes execution ownership, not network routing.",
       "oneOf": [
         {
           "const": "harness_native",
-          "description": "Adapter maps the capability into harness-native config.",
+          "description": "The selected adapter maps and executes the capability through its harness.",
           "type": "string"
         },
         {
           "const": "fabric_managed",
-          "description": "NeMo Fabric exposes or manages the capability around the harness.",
+          "description": "NeMo Fabric executes the capability outside the harness-native surface.",
           "type": "string"
         },
         {
           "const": "unsupported",
-          "description": "Capability is configured but no executable surface exists.",
+          "description": "Neither the adapter nor NeMo Fabric can execute the configured capability.",
           "type": "string"
         }
       ]
@@ -574,14 +569,16 @@
           "$ref": "#/$defs/HarnessConfig",
           "description": "Harness selection and harness-specific settings."
         },
-        "max_turns": {
-          "description": "Maximum number of harness turns within one invocation.",
-          "format": "uint32",
-          "minimum": 1,
-          "type": [
-            "integer",
-            "null"
-          ]
+        "instructions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstructionsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Portable agent instructions for the selected harness."
         },
         "mcp": {
           "anyOf": [
@@ -618,7 +615,7 @@
         },
         "runtime": {
           "$ref": "#/$defs/RuntimeConfig",
-          "description": "Runtime input/output contract."
+          "description": "Invocation runtime contract."
         },
         "schema_version": {
           "description": "Config schema version.",
@@ -634,13 +631,6 @@
             }
           ],
           "description": "Skill capability configuration."
-        },
-        "system_prompt": {
-          "description": "Portable system instructions for the selected harness.",
-          "type": [
-            "string",
-            "null"
-          ]
         },
         "telemetry": {
           "anyOf": [
@@ -701,6 +691,53 @@
       "required": [
         "adapter_id"
       ],
+      "type": "object"
+    },
+    "InstructionConfig": {
+      "additionalProperties": true,
+      "description": "One portable instruction value.",
+      "properties": {
+        "content": {
+          "description": "Instruction text.",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/InstructionMode",
+          "default": "replace",
+          "description": "How the instruction is applied."
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "InstructionMode": {
+      "description": "How an instruction value is applied to the selected harness.",
+      "oneOf": [
+        {
+          "const": "replace",
+          "description": "Replace the harness default instruction value.",
+          "type": "string"
+        }
+      ]
+    },
+    "InstructionsConfig": {
+      "additionalProperties": true,
+      "description": "Harness-neutral agent instruction configuration.",
+      "properties": {
+        "system": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstructionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "System instructions for the selected harness."
+        }
+      },
       "type": "object"
     },
     "McpConfig": {
@@ -1556,7 +1593,7 @@
     },
     "RuntimeConfig": {
       "additionalProperties": true,
-      "description": "Runtime input/output contract.",
+      "description": "Invocation runtime contract.",
       "properties": {
         "artifacts": {
           "description": "Artifact directory.",
@@ -1569,6 +1606,15 @@
           "default": "text",
           "description": "Input schema label.",
           "type": "string"
+        },
+        "max_turns": {
+          "description": "Maximum number of harness turns within one invocation.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "output_schema": {
           "default": "text",
@@ -1699,16 +1745,15 @@
           },
           "type": "array"
         },
-        "toolsets": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ToolsetConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Harness-defined toolset selection and blocking policy."
+        "enabled": {
+          "description": "Adapter-native tool names to expose. `None` preserves the harness default.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -1723,33 +1768,8 @@
           },
           "type": "array"
         },
-        "toolsets": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ToolsetConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Harness-defined toolset selection and blocking policy."
-        }
-      },
-      "type": "object"
-    },
-    "ToolsetConfig": {
-      "additionalProperties": true,
-      "description": "Harness-defined toolset capability configuration.",
-      "properties": {
-        "blocked": {
-          "description": "Toolsets to exclude from the enabled or default harness toolset set.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "enabled": {
-          "description": "Toolsets to expose. `None` preserves the harness default; an empty list exposes none.",
+          "description": "Adapter-native tool names to expose. `None` preserves the harness default.",
           "items": {
             "type": "string"
           },

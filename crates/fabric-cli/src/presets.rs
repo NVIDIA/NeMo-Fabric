@@ -271,13 +271,13 @@ fn config(
         models: default_model
             .map(|model| BTreeMap::from_iter([("default".to_string(), model)]))
             .unwrap_or_default(),
-        system_prompt: None,
-        max_turns: None,
+        instructions: None,
         runtime: RuntimeConfig {
             input_schema: "text".to_string(),
             output_schema: "message".to_string(),
             artifacts: None,
             timeout_seconds: None,
+            max_turns: None,
             extensions: BTreeMap::new(),
         },
         environment: Some(EnvironmentConfig {

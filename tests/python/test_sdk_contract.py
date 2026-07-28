@@ -26,6 +26,8 @@ from nemo_fabric import FabricNativeUnavailableError
 from nemo_fabric import FabricRuntimeError
 from nemo_fabric import FabricStateError
 from nemo_fabric import HarnessConfig
+from nemo_fabric import InstructionConfig
+from nemo_fabric import InstructionsConfig
 from nemo_fabric import McpConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import RelayAtifConfig
@@ -45,7 +47,6 @@ from nemo_fabric import RuntimeConfig
 from nemo_fabric import RuntimeHandle
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
-from nemo_fabric import ToolsetConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.types import _FabricConfigSnapshot
 from nemo_fabric.types import _ToolsConfig
@@ -146,7 +147,8 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         output_dir="./artifacts/relay",
     )
     config.block_tools("browser", "shell", "browser")
-    config.configure_toolsets(enabled=["terminal"], blocked=["browser"])
+    assert config.tools is not None
+    config.tools.enabled = ["terminal"]
 
     assert isinstance(config.mcp, McpConfig)
     assert isinstance(config.skills, SkillConfig)
@@ -154,11 +156,8 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
     assert isinstance(config.tools, ToolsConfig)
 
     assert config.to_mapping()["tools"] == {
+        "enabled": ["terminal"],
         "blocked": ["browser", "shell"],
-        "toolsets": {
-            "enabled": ["terminal"],
-            "blocked": ["browser"],
-        },
     }
     assert config.to_mapping()["skills"] == {"paths": ["./skills/review"]}
     assert config.to_mapping()["mcp"] == {
@@ -213,9 +212,10 @@ def test_typed_config_serializes_normalized_execution_fields():
     config = FabricConfig(
         metadata=MetadataConfig(name="demo"),
         harness=HarnessConfig(adapter_id="test.fabric.shim"),
-        system_prompt="Be concise.",
-        max_turns=7,
-        runtime=RuntimeConfig(timeout_seconds=12.5),
+        instructions=InstructionsConfig(
+            system=InstructionConfig(content="Be concise.", mode="replace")
+        ),
+        runtime=RuntimeConfig(timeout_seconds=12.5, max_turns=7),
         environment=EnvironmentConfig(env={"VISIBLE": "yes"}),
         models={
             "default": {
@@ -224,36 +224,30 @@ def test_typed_config_serializes_normalized_execution_fields():
                 "base_url": "https://models.example/v1",
             }
         },
-        tools=ToolsConfig(
-            toolsets=ToolsetConfig(enabled=[], blocked=["browser"])
-        ),
+        tools=ToolsConfig(enabled=[], blocked=["browser"]),
     )
 
     mapping = config.to_mapping()
-    assert mapping["system_prompt"] == "Be concise."
-    assert mapping["max_turns"] == 7
+    assert mapping["instructions"]["system"] == {
+        "content": "Be concise.",
+        "mode": "replace",
+    }
+    assert mapping["runtime"]["max_turns"] == 7
     assert mapping["runtime"]["timeout_seconds"] == 12.5
     assert mapping["environment"]["env"] == {"VISIBLE": "yes"}
     assert mapping["models"]["default"]["base_url"] == (
         "https://models.example/v1"
     )
-    assert mapping["tools"]["toolsets"] == {
-        "enabled": [],
-        "blocked": ["browser"],
-    }
+    assert mapping["tools"] == {"enabled": [], "blocked": ["browser"]}
 
     with pytest.raises(ValidationError, match="greater than 0"):
         RuntimeConfig(timeout_seconds=0)
     with pytest.raises(ValidationError, match="finite number"):
         RuntimeConfig(timeout_seconds=float("inf"))
     with pytest.raises(ValidationError, match="greater than 0"):
-        FabricConfig(
-            metadata=MetadataConfig(name="demo"),
-            harness=HarnessConfig(adapter_id="test.fabric.shim"),
-            max_turns=0,
-        )
+        RuntimeConfig(max_turns=0)
     with pytest.raises(ValidationError, match="both enabled and blocked"):
-        ToolsetConfig(enabled=["browser"], blocked=["browser"])
+        ToolsConfig(enabled=["browser"], blocked=["browser"])
 
 
 def test_run_plan_config_block_tools_emits_canonical_shape():
@@ -264,27 +258,26 @@ def test_run_plan_config_block_tools_emits_canonical_shape():
     assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
 
 
-def test_run_plan_config_preserves_normalized_toolsets_and_execution_fields():
+def test_run_plan_config_preserves_normalized_tools_and_execution_fields():
     raw = _plan()["config"]
     raw.update(
         {
-            "system_prompt": "Be concise.",
-            "max_turns": 5,
-            "runtime": {"timeout_seconds": 9},
-            "environment": {"provider": "local", "env": {"VISIBLE": "yes"}},
-            "tools": {
-                "toolsets": {"enabled": [], "blocked": ["browser"]},
+            "instructions": {
+                "system": {"content": "Be concise.", "mode": "replace"}
             },
+            "runtime": {"timeout_seconds": 9, "max_turns": 5},
+            "environment": {"provider": "local", "env": {"VISIBLE": "yes"}},
+            "tools": {"enabled": [], "blocked": ["browser"]},
         }
     )
 
     config = _FabricConfigSnapshot.from_mapping(raw)
 
-    assert config.to_mapping()["system_prompt"] == "Be concise."
-    assert config.to_mapping()["max_turns"] == 5
+    assert config.to_mapping()["instructions"]["system"]["content"] == "Be concise."
+    assert config.to_mapping()["runtime"]["max_turns"] == 5
     assert config.to_mapping()["runtime"]["timeout_seconds"] == 9
     assert config.to_mapping()["environment"]["env"] == {"VISIBLE": "yes"}
-    assert config.to_mapping()["tools"]["toolsets"] == {
+    assert config.to_mapping()["tools"] == {
         "enabled": [],
         "blocked": ["browser"],
     }

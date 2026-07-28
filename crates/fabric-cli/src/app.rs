@@ -6,7 +6,8 @@
 use clap::error::ErrorKind;
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use nemo_fabric_core::{
-    ResolveContext, RunRequest, RunStatus, doctor_plan, resolve_run_plan_from_config, run_plan,
+    ResolveContext, RunRequest, RunStatus, doctor_plan, resolve_diagnostic_plan_from_config,
+    resolve_run_plan_from_config, run_plan,
 };
 
 use crate::examples;
@@ -238,7 +239,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Doctor(selector) => {
             let selected = select_source(&selector)?;
-            let plan = resolve_run_plan_from_config(
+            let plan = resolve_diagnostic_plan_from_config(
                 selected.config().clone(),
                 ResolveContext::new(selected.base_dir()),
             )?;

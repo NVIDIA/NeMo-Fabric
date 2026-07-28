@@ -105,8 +105,21 @@ class HarnessConfig(FabricBaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class InstructionConfig(FabricBaseModel):
+    """One portable instruction value."""
+
+    content: str
+    mode: Literal["replace"] = "replace"
+
+
+class InstructionsConfig(FabricBaseModel):
+    """Harness-neutral agent instructions."""
+
+    system: InstructionConfig | None = None
+
+
 class RuntimeConfig(FabricBaseModel):
-    """Runtime input/output contract."""
+    """Invocation runtime contract."""
 
     input_schema: str | None = None
     output_schema: str | None = None
@@ -116,6 +129,7 @@ class RuntimeConfig(FabricBaseModel):
         gt=0,
         allow_inf_nan=False,
     )
+    max_turns: int | None = Field(default=None, gt=0)
 
 
 class EnvironmentConfig(FabricBaseModel):
@@ -456,56 +470,33 @@ class TelemetryConfig(FabricBaseModel):
         return self
 
 
-class ToolsetConfig(FabricBaseModel):
-    """Harness-defined toolset selection and blocking policy.
-
-    ``enabled=None`` preserves the selected harness default, while an empty
-    ``enabled`` list exposes no toolsets. ``blocked`` excludes toolsets from
-    either the enabled list or the harness default.
-    """
+class ToolsConfig(FabricBaseModel):
+    """Harness-neutral tool capability configuration."""
 
     enabled: list[str] | None = Field(
         default=None,
         description=(
-            "Toolsets to expose. None preserves the harness default; an empty list "
-            "exposes no toolsets."
+            "Adapter-native tools to expose. None preserves the harness default; "
+            "an empty list exposes no tools."
         ),
     )
-    blocked: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Toolsets to exclude from the enabled or default harness toolset set."
-        ),
-    )
+    blocked: list[str] = Field(default_factory=list)
+
+    @field_validator("enabled", "blocked")
+    @classmethod
+    def _validate_tools(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and any(not tool.strip() for tool in value):
+            raise ValueError("tool names must not be empty")
+        return value
 
     @model_validator(mode="after")
     def _validate_policy(self) -> Self:
-        for field, values in (
-            ("enabled", self.enabled or []),
-            ("blocked", self.blocked),
-        ):
-            if any(not value.strip() for value in values):
-                raise ValueError(f"tools.toolsets.{field} entries must not be empty")
         if self.enabled is not None:
             overlap = set(self.enabled).intersection(self.blocked)
             if overlap:
                 name = sorted(overlap)[0]
-                raise ValueError(f"toolset {name!r} cannot be both enabled and blocked")
+                raise ValueError(f"tool {name!r} cannot be both enabled and blocked")
         return self
-
-
-class ToolsConfig(FabricBaseModel):
-    """Harness-neutral tool capability configuration."""
-
-    blocked: list[str] = Field(default_factory=list)
-    toolsets: ToolsetConfig | None = None
-
-    @field_validator("blocked")
-    @classmethod
-    def _validate_blocked(cls, value: list[str]) -> list[str]:
-        if any(not tool.strip() for tool in value):
-            raise ValueError("tools.blocked entries must not be empty")
-        return value
 
 
 class FabricConfig(FabricBaseModel):
@@ -523,8 +514,7 @@ class FabricConfig(FabricBaseModel):
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     environment: EnvironmentConfig | None = None
     models: dict[str, ModelConfig] = Field(default_factory=dict)
-    system_prompt: str | None = None
-    max_turns: int | None = Field(default=None, gt=0)
+    instructions: InstructionsConfig | None = None
     mcp: McpConfig | None = None
     skills: SkillConfig | None = None
     telemetry: TelemetryConfig | None = None
@@ -603,22 +593,6 @@ class FabricConfig(FabricBaseModel):
             if tool not in existing:
                 existing.append(tool)
         self.tools.blocked = existing
-        return self
-
-    def configure_toolsets(
-        self,
-        *,
-        enabled: Sequence[str] | None = None,
-        blocked: Sequence[str] = (),
-    ) -> Self:
-        """Set harness-defined toolset selection and blocking policy."""
-
-        if self.tools is None:
-            self.tools = ToolsConfig()
-        self.tools.toolsets = ToolsetConfig(
-            enabled=None if enabled is None else list(enabled),
-            blocked=list(blocked),
-        )
         return self
 
     def enable_relay(

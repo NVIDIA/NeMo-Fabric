@@ -75,7 +75,9 @@ def codex_payload_fixture(tmp_path):
                     "model": "openai/gpt-5.4",
                 }
             },
-            "system_prompt": "Review carefully.",
+            "instructions": {
+                "system": {"content": "Review carefully.", "mode": "replace"}
+            },
             "runtime": {},
         },
         "runtime_context": {
@@ -980,7 +982,7 @@ def test_descriptor_has_no_codex_binary_requirement():
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
-        "system_prompt",
+        "instructions.system",
         "mcp",
         "skills",
     ]

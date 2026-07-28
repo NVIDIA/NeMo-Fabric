@@ -64,11 +64,7 @@ def payload(tmpdir: str) -> dict:
                     "base_url": "https://integrate.api.nvidia.com/v1",
                 }
             },
-            "tools": {
-                "toolsets": {
-                    "enabled": [],
-                }
-            },
+            "tools": {"enabled": []},
         },
         "settings": {
             "terminal_timeout": 30,

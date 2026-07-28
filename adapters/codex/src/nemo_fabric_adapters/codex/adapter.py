@@ -877,7 +877,7 @@ def _thread_options(
     settings = _settings(payload)
     return {
         "approval_mode": approval_mode(payload),
-        "base_instructions": common_utils.system_prompt(payload),
+        "base_instructions": common_utils.system_instruction(payload),
         "config": thread_config(payload, relay) or None,
         "cwd": str(resolve_cwd(payload)),
         "developer_instructions": _optional_string(settings, "developer_instructions"),

@@ -123,13 +123,15 @@ def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
     return model_config
 
 
-def system_prompt(payload: dict[str, Any]) -> str | None:
-    value = fabric_config(payload).get("system_prompt")
+def system_instruction(payload: dict[str, Any]) -> str | None:
+    instructions = fabric_config(payload).get("instructions") or {}
+    system = instructions.get("system") or {}
+    value = system.get("content")
     return value if isinstance(value, str) else None
 
 
 def max_turns(payload: dict[str, Any]) -> int | None:
-    value = fabric_config(payload).get("max_turns")
+    value = (fabric_config(payload).get("runtime") or {}).get("max_turns")
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
@@ -186,25 +188,16 @@ def tools_config(payload: dict[str, Any]) -> dict[str, Any]:
     return tools if isinstance(tools, dict) else {}
 
 
+def enabled_tools(payload: dict[str, Any]) -> list[str] | None:
+    tools = tools_config(payload)
+    if "enabled" not in tools:
+        return None
+    return normalize_list(tools.get("enabled"))
+
+
 def blocked_tools(payload: dict[str, Any]) -> list[str]:
     blocked = tools_config(payload).get("blocked")
     return normalize_list(blocked)
-
-
-def toolsets_config(payload: dict[str, Any]) -> dict[str, Any]:
-    toolsets = tools_config(payload).get("toolsets") or {}
-    return toolsets if isinstance(toolsets, dict) else {}
-
-
-def enabled_toolsets(payload: dict[str, Any]) -> list[str] | None:
-    toolsets = toolsets_config(payload)
-    if "enabled" not in toolsets:
-        return None
-    return normalize_list(toolsets.get("enabled"))
-
-
-def blocked_toolsets(payload: dict[str, Any]) -> list[str]:
-    return normalize_list(toolsets_config(payload).get("blocked"))
 
 
 def normalize_list(value: Any) -> list[str]:

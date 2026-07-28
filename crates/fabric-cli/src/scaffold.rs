@@ -165,16 +165,23 @@ fn render_python(config: &FabricConfig) -> String {
             &python_value(&Value::Object(config.harness.settings.clone())),
         )
         .replace(
-            "{{SYSTEM_PROMPT}}",
+            "{{INSTRUCTIONS}}",
             &config
-                .system_prompt
-                .as_deref()
-                .map(python_string)
+                .instructions
+                .as_ref()
+                .and_then(|instructions| instructions.system.as_ref())
+                .map(|instruction| {
+                    format!(
+                        "InstructionsConfig(system=InstructionConfig(content={}, mode=\"replace\"))",
+                        python_string(&instruction.content)
+                    )
+                })
                 .unwrap_or_else(|| "None".to_string()),
         )
         .replace(
             "{{MAX_TURNS}}",
             &config
+                .runtime
                 .max_turns
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "None".to_string()),
@@ -274,16 +281,23 @@ fn render_rust(config: &FabricConfig) -> String {
             &rust_settings(&config.harness.settings),
         )
         .replace(
-            "{{SYSTEM_PROMPT}}",
+            "{{INSTRUCTIONS}}",
             &config
-                .system_prompt
-                .as_deref()
-                .map(|value| format!("Some({}.to_string())", rust_string(value)))
+                .instructions
+                .as_ref()
+                .and_then(|instructions| instructions.system.as_ref())
+                .map(|instruction| {
+                    format!(
+                        "Some(InstructionsConfig {{ system: Some(InstructionConfig {{ content: {}.to_string(), mode: InstructionMode::Replace, extensions: BTreeMap::new() }}), extensions: BTreeMap::new() }})",
+                        rust_string(&instruction.content)
+                    )
+                })
                 .unwrap_or_else(|| "None".to_string()),
         )
         .replace(
             "{{MAX_TURNS}}",
             &config
+                .runtime
                 .max_turns
                 .map(|value| format!("Some({value})"))
                 .unwrap_or_else(|| "None".to_string()),

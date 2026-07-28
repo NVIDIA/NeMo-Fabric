@@ -19,28 +19,23 @@
           "type": "string"
         },
         {
-          "const": "system_prompt",
+          "const": "instructions.system",
           "description": "Portable system instructions.",
           "type": "string"
         },
         {
-          "const": "max_turns",
+          "const": "runtime.max_turns",
           "description": "Per-invocation harness turn limit.",
+          "type": "string"
+        },
+        {
+          "const": "tools.enabled",
+          "description": "Adapter-native tool names to expose.",
           "type": "string"
         },
         {
           "const": "tools.blocked",
           "description": "Adapter-native tool names to block.",
-          "type": "string"
-        },
-        {
-          "const": "tools.toolsets.enabled",
-          "description": "Harness-defined toolsets to expose.",
-          "type": "string"
-        },
-        {
-          "const": "tools.toolsets.blocked",
-          "description": "Harness-defined toolsets to block.",
           "type": "string"
         },
         {

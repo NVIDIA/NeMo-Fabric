@@ -10,6 +10,8 @@ from pathlib import Path
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import FabricConfig
 from nemo_fabric import HarnessConfig
+from nemo_fabric import InstructionConfig
+from nemo_fabric import InstructionsConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RelayAtifConfig
@@ -19,6 +21,7 @@ from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RelayOtlpConfig
 from nemo_fabric import RuntimeConfig
 from nemo_fabric import TelemetryConfig
+from nemo_fabric import ToolsConfig
 
 BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE = "./repos/my-service"
@@ -77,13 +80,15 @@ def hermes_config() -> FabricConfig:
     model = config.models["default"]
     assert isinstance(model, ModelConfig)
     model.base_url = "https://integrate.api.nvidia.com/v1"
-    config.system_prompt = "You are a concise smoke test assistant."
-    config.max_turns = 1
-    config.configure_toolsets(enabled=[])
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content="You are a concise smoke test assistant.")
+    )
+    config.tools = ToolsConfig(enabled=[])
     config.runtime = RuntimeConfig(
         input_schema="chat",
         output_schema="message",
         artifacts="./artifacts/hermes",
+        max_turns=1,
     )
     config.environment = EnvironmentConfig(
         provider="local",
@@ -129,7 +134,9 @@ def deepagents_config() -> FabricConfig:
         resolution="preinstalled",
         settings={},
     )
-    config.system_prompt = "You are a concise smoke test assistant."
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content="You are a concise smoke test assistant.")
+    )
     config.runtime = RuntimeConfig(
         input_schema="chat",
         output_schema="message",
@@ -148,7 +155,7 @@ def claude_config() -> FabricConfig:
     """Return the complete Claude adapter variant.
 
     The Claude adapter reads the working directory from ``environment.workspace``
-    and reads portable instructions from ``FabricConfig.system_prompt``.
+    and reads portable instructions from ``FabricConfig.instructions.system``.
     Claude-specific controls such as ``permission_mode`` stay in
     ``harness.settings``.
     """
@@ -161,8 +168,12 @@ def claude_config() -> FabricConfig:
             "permission_mode": "dontAsk",
         },
     )
-    config.system_prompt = (
-        "You are a concise code reviewer. Point out correctness bugs and risks."
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(
+            content=(
+                "You are a concise code reviewer. Point out correctness bugs and risks."
+            )
+        )
     )
     config.models = {
         "default": ModelConfig(

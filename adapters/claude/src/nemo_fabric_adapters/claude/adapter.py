@@ -29,6 +29,7 @@ from claude_agent_sdk import CLINotFoundError
 from claude_agent_sdk import Message
 from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
+from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.common import relay_gateway
@@ -482,6 +483,39 @@ def discard_stderr(_: str) -> None:
     """Consume Claude Code stderr without exposing it through Fabric artifacts."""
 
 
+def tool_policy_hooks(payload: dict[str, Any]) -> dict[str, list[HookMatcher]] | None:
+    """Enforce the normalized tool policy across built-in, MCP, and plugin tools."""
+
+    enabled = common_utils.enabled_tools(payload)
+    blocked = set(common_utils.blocked_tools(payload))
+    if enabled is None and not blocked:
+        return None
+    enabled_set = None if enabled is None else set(enabled)
+
+    async def enforce_policy(
+        hook_input: dict[str, Any],
+        _tool_use_id: str | None,
+        _context: dict[str, Any],
+    ) -> dict[str, Any]:
+        tool_name = str(hook_input.get("tool_name") or "")
+        is_blocked = tool_name in blocked or (
+            enabled_set is not None and tool_name not in enabled_set
+        )
+        if not is_blocked:
+            return {}
+        return {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": (
+                    f"Tool '{tool_name}' is blocked by the configured tools policy."
+                ),
+            }
+        }
+
+    return {"PreToolUse": [HookMatcher(hooks=[enforce_policy])]}
+
+
 def build_options(
     payload: dict[str, Any],
     *,
@@ -505,7 +539,8 @@ def build_options(
         )
     cli_path = os.environ.get("FABRIC_TEST_CLAUDE_CLI_PATH")
 
-    system_prompt = common_utils.system_prompt(payload)
+    system_prompt = common_utils.system_instruction(payload)
+    enabled_tools = common_utils.enabled_tools(payload)
     plugins = _stage_skill_plugin(payload)
     has_skill_plugin = bool(plugins)
     if relay is not None:
@@ -515,9 +550,10 @@ def build_options(
         cwd=resolve_cwd(payload),
         model=selected_model(payload),
         system_prompt=system_prompt,
-        tools=None,
+        tools=enabled_tools,
         allowed_tools=_string_list(settings.get("allowed_tools"), name="allowed_tools"),
         disallowed_tools=common_utils.blocked_tools(payload),
+        hooks=tool_policy_hooks(payload),
         permission_mode=permission_mode,
         max_turns=max_turns,
         max_budget_usd=max_budget,

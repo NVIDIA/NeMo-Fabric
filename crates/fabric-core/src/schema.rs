@@ -216,7 +216,10 @@ mod tests {
     fn agent_schema_enforces_positive_invocation_limits() {
         let schema = generate_schema(SchemaName::Agent).expect("schema generation");
 
-        assert_eq!(schema["properties"]["max_turns"]["minimum"], 1);
+        assert_eq!(
+            schema["$defs"]["RuntimeConfig"]["properties"]["max_turns"]["minimum"],
+            1
+        );
         assert_eq!(
             schema["$defs"]["RuntimeConfig"]["properties"]["timeout_seconds"]["exclusiveMinimum"],
             0.0

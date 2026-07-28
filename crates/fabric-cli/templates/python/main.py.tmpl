@@ -12,6 +12,8 @@ from nemo_fabric import EnvironmentConfig
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import HarnessConfig
+from nemo_fabric import InstructionConfig
+from nemo_fabric import InstructionsConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RuntimeConfig
@@ -30,12 +32,12 @@ def build_config() -> FabricConfig:
             settings={{HARNESS_SETTINGS}},
         ),
         models={{MODELS}},
-        system_prompt={{SYSTEM_PROMPT}},
-        max_turns={{MAX_TURNS}},
+        instructions={{INSTRUCTIONS}},
         runtime=RuntimeConfig(
             input_schema="text",
             output_schema="message",
             timeout_seconds={{TIMEOUT_SECONDS}},
+            max_turns={{MAX_TURNS}},
         ),
         environment=EnvironmentConfig(
             provider="local",

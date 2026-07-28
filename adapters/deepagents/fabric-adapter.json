@@ -12,7 +12,8 @@
       "models",
       "models.base_url",
       "models.temperature",
-      "system_prompt",
+      "instructions.system",
+      "tools.enabled",
       "tools.blocked",
       "mcp",
       "skills"

@@ -120,6 +120,53 @@
       ],
       "type": "object"
     },
+    "InstructionConfig": {
+      "additionalProperties": true,
+      "description": "One portable instruction value.",
+      "properties": {
+        "content": {
+          "description": "Instruction text.",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/InstructionMode",
+          "default": "replace",
+          "description": "How the instruction is applied."
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "InstructionMode": {
+      "description": "How an instruction value is applied to the selected harness.",
+      "oneOf": [
+        {
+          "const": "replace",
+          "description": "Replace the harness default instruction value.",
+          "type": "string"
+        }
+      ]
+    },
+    "InstructionsConfig": {
+      "additionalProperties": true,
+      "description": "Harness-neutral agent instruction configuration.",
+      "properties": {
+        "system": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstructionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "System instructions for the selected harness."
+        }
+      },
+      "type": "object"
+    },
     "McpConfig": {
       "additionalProperties": true,
       "description": "MCP capability configuration.",
@@ -891,7 +938,7 @@
     },
     "RuntimeConfig": {
       "additionalProperties": true,
-      "description": "Runtime input/output contract.",
+      "description": "Invocation runtime contract.",
       "properties": {
         "artifacts": {
           "description": "Artifact directory.",
@@ -904,6 +951,15 @@
           "default": "text",
           "description": "Input schema label.",
           "type": "string"
+        },
+        "max_turns": {
+          "description": "Maximum number of harness turns within one invocation.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "output_schema": {
           "default": "text",
@@ -971,33 +1027,8 @@
           },
           "type": "array"
         },
-        "toolsets": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ToolsetConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Harness-defined toolset selection and blocking policy."
-        }
-      },
-      "type": "object"
-    },
-    "ToolsetConfig": {
-      "additionalProperties": true,
-      "description": "Harness-defined toolset capability configuration.",
-      "properties": {
-        "blocked": {
-          "description": "Toolsets to exclude from the enabled or default harness toolset set.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "enabled": {
-          "description": "Toolsets to expose. `None` preserves the harness default; an empty list exposes none.",
+          "description": "Adapter-native tool names to expose. `None` preserves the harness default.",
           "items": {
             "type": "string"
           },
@@ -1029,14 +1060,16 @@
       "$ref": "#/$defs/HarnessConfig",
       "description": "Harness selection and harness-specific settings."
     },
-    "max_turns": {
-      "description": "Maximum number of harness turns within one invocation.",
-      "format": "uint32",
-      "minimum": 1,
-      "type": [
-        "integer",
-        "null"
-      ]
+    "instructions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InstructionsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Portable agent instructions for the selected harness."
     },
     "mcp": {
       "anyOf": [
@@ -1073,7 +1106,7 @@
     },
     "runtime": {
       "$ref": "#/$defs/RuntimeConfig",
-      "description": "Runtime input/output contract."
+      "description": "Invocation runtime contract."
     },
     "schema_version": {
       "description": "Config schema version.",
@@ -1089,13 +1122,6 @@
         }
       ],
       "description": "Skill capability configuration."
-    },
-    "system_prompt": {
-      "description": "Portable system instructions for the selected harness.",
-      "type": [
-        "string",
-        "null"
-      ]
     },
     "telemetry": {
       "anyOf": [

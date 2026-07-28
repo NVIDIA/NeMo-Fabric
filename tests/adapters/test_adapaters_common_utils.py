@@ -134,15 +134,16 @@ def test_selected_model_config(
     assert common_utils.selected_model_config(payload) == expected
 
 
-def test_normalized_agent_and_toolset_accessors():
+def test_normalized_instruction_runtime_and_tool_accessors():
     payload = {
         "config": {
-            "system_prompt": "Be concise.",
-            "max_turns": 7,
-            "runtime": {"timeout_seconds": 12.5},
+            "instructions": {
+                "system": {"content": "Be concise.", "mode": "replace"}
+            },
+            "runtime": {"timeout_seconds": 12.5, "max_turns": 7},
             "tools": {
+                "enabled": [],
                 "blocked": ["Bash"],
-                "toolsets": {"enabled": [], "blocked": ["browser"]},
             },
         },
         "runtime_context": {
@@ -150,13 +151,12 @@ def test_normalized_agent_and_toolset_accessors():
         },
     }
 
-    assert common_utils.system_prompt(payload) == "Be concise."
+    assert common_utils.system_instruction(payload) == "Be concise."
     assert common_utils.max_turns(payload) == 7
     assert common_utils.timeout_seconds(payload, default=30) == 12.5
     assert common_utils.environment_env(payload) == {"VISIBLE": "yes"}
     assert common_utils.blocked_tools(payload) == ["Bash"]
-    assert common_utils.enabled_toolsets(payload) == []
-    assert common_utils.blocked_toolsets(payload) == ["browser"]
+    assert common_utils.enabled_tools(payload) == []
 
 
 def test_payload_accessors_use_canonical_plan_fields(tmp_path):

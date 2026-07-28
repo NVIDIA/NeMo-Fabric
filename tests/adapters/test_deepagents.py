@@ -152,7 +152,9 @@ def make_payload_fixture():
             "base_dir": str(tmp_path),
             "config": {
                 "harness": {"settings": {}},
-                "system_prompt": "be concise",
+                "instructions": {
+                    "system": {"content": "be concise", "mode": "replace"}
+                },
                 "models": {
                     "default": {
                         "provider": "nvidia",
@@ -620,11 +622,11 @@ async def test_mcp_servers_become_adapter_tools(
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
-async def test_blocked_tools_middleware_blocks_configured_tools():
+async def test_tool_policy_middleware_enforces_enabled_and_blocked_tools():
     pytest.importorskip("langchain.agents.middleware")
     from langchain_core.messages import ToolMessage
 
-    middleware = adapter.blocked_tools_middleware({"write_file"})
+    middleware = adapter.tool_policy_middleware({"read_file"}, {"write_file"})
 
     async def handler(_request: types.SimpleNamespace) -> str:
         return "executed"
@@ -640,6 +642,10 @@ async def test_blocked_tools_middleware_blocks_configured_tools():
 
     allowed = await middleware.awrap_tool_call(request("read_file"), handler)
     assert allowed == "executed"
+
+    unselected = await middleware.awrap_tool_call(request("search"), handler)
+    assert isinstance(unselected, ToolMessage)
+    assert unselected.status == "error"
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
@@ -931,17 +937,17 @@ async def test_blocked_tools_reject_unenforceable_subagents(
     [
         (
             {"name": "researcher"},
-            "harness.settings.deepagents.subagents must be a list when tools.blocked is configured.",
+            "harness.settings.deepagents.subagents must be a list when a tools policy is configured.",
         ),
         (
             [{"name": "researcher"}, "invalid"],
-            "Deep Agents subagents must be mappings when tools.blocked is configured.",
+            "Deep Agents subagents must be mappings when a tools policy is configured.",
         ),
     ],
 )
 def test_gated_subagents_reject_invalid_configuration(subagents, message):
     with pytest.raises(adapter.AdapterConfigError) as error:
-        adapter._gated_subagents(subagents, {"write_file"})
+        adapter._gated_subagents(subagents, None, {"write_file"})
 
     assert str(error.value) == message
 

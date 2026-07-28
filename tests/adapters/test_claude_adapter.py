@@ -90,8 +90,9 @@ def test_claude_descriptor_is_narrow_and_versioned():
             "accepts": [
                 "models",
                 "models.base_url",
-                "system_prompt",
-                "max_turns",
+                "instructions.system",
+                "runtime.max_turns",
+                "tools.enabled",
                 "tools.blocked",
                 "mcp",
                 "skills",
@@ -128,9 +129,10 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                     "setting_sources": [],
                 },
             },
-            "system_prompt": "Review carefully.",
-            "max_turns": 4,
-            "runtime": {"timeout_seconds": 30},
+            "instructions": {
+                "system": {"content": "Review carefully.", "mode": "replace"}
+            },
+            "runtime": {"timeout_seconds": 30, "max_turns": 4},
             "models": {
                 "default": {
                     "provider": "anthropic",
@@ -181,6 +183,7 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert options.tools is None
     assert options.allowed_tools == ["Read"]
     assert options.disallowed_tools == ["Bash"]
+    assert options.hooks is not None
     assert options.permission_mode == "dontAsk"
     assert options.max_turns == 4
     assert options.max_budget_usd == 1.5
@@ -202,6 +205,27 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     }
     assert "NEMO_RELAY_GATEWAY_URL" not in options.env
     assert "ANTHROPIC_BASE_URL" not in options.env
+
+
+async def test_tool_policy_hooks_gate_built_in_and_mcp_tools(claude_payload):
+    claude_payload["config"]["tools"] = {
+        "enabled": ["Read"],
+        "blocked": ["Bash"],
+    }
+
+    options = adapter.build_options(claude_payload)
+
+    assert options.tools == ["Read"]
+    assert options.hooks is not None
+    hook = options.hooks["PreToolUse"][0].hooks[0]
+    assert await hook({"tool_name": "Read"}, None, {"signal": None}) == {}
+    for tool_name in ("Bash", "mcp__repo__search"):
+        output = await hook(
+            {"tool_name": tool_name},
+            None,
+            {"signal": None},
+        )
+        assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 @pytest.fixture(name="relay_payload")

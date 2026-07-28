@@ -16,7 +16,13 @@ from unittest.mock import MagicMock
 
 import pytest
 from examples.code_review_agent import BASE_DIR, base_config
-from nemo_fabric import Fabric, HarnessConfig, ModelConfig
+from nemo_fabric import (
+    Fabric,
+    HarnessConfig,
+    InstructionConfig,
+    InstructionsConfig,
+    ModelConfig,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +40,8 @@ def _variation_harness_definitions(base_dir=BASE_DIR):
         "base_config": base_config,
         "BASE_DIR": base_dir,
         "HarnessConfig": HarnessConfig,
+        "InstructionConfig": InstructionConfig,
+        "InstructionsConfig": InstructionsConfig,
         "ModelConfig": ModelConfig,
         "os": os,
         "Path": Path,

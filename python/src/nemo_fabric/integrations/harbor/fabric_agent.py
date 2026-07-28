@@ -19,6 +19,8 @@ from typing import cast
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import FabricConfig
 from nemo_fabric import HarnessConfig
+from nemo_fabric import InstructionConfig
+from nemo_fabric import InstructionsConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RelayAtifConfig
@@ -28,7 +30,6 @@ from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 from nemo_fabric import RuntimeConfig
-from nemo_fabric import ToolsetConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric.integrations.harbor.models import FabricRunPayload
 from nemo_fabric.integrations.harbor.models import HarborMcpServer
@@ -101,13 +102,12 @@ else:
             fabric_workspace: str = HARBOR_DEFAULT_WORKSPACE,
             fabric_harness_settings: dict[str, Any] | None = None,
             fabric_model_base_url: str | None = None,
-            fabric_system_prompt: str | None = None,
+            fabric_system_instruction: str | None = None,
             fabric_max_turns: int | None = None,
             fabric_runtime_timeout_seconds: float | None = None,
             fabric_environment_env: dict[str, str] | None = None,
             fabric_blocked_tools: list[str] | None = None,
-            fabric_enabled_toolsets: list[str] | None = None,
-            fabric_blocked_toolsets: list[str] | None = None,
+            fabric_enabled_tools: list[str] | None = None,
             fabric_telemetry: Literal["none", "relay"] = "none",
             fabric_python: str = "python3",
             fabric_package: str | None = None,
@@ -145,17 +145,16 @@ else:
             self.fabric_workspace = str(workspace)
             self.fabric_harness_settings = dict(fabric_harness_settings or {})
             self.fabric_model_base_url = fabric_model_base_url
-            self.fabric_system_prompt = fabric_system_prompt
+            self.fabric_system_instruction = fabric_system_instruction
             self.fabric_max_turns = fabric_max_turns
             self.fabric_runtime_timeout_seconds = fabric_runtime_timeout_seconds
             self.fabric_environment_env = dict(fabric_environment_env or {})
             self.fabric_blocked_tools = blocked_tools
-            self.fabric_enabled_toolsets = (
-                list(fabric_enabled_toolsets)
-                if fabric_enabled_toolsets is not None
+            self.fabric_enabled_tools = (
+                list(fabric_enabled_tools)
+                if fabric_enabled_tools is not None
                 else None
             )
-            self.fabric_blocked_toolsets = list(fabric_blocked_toolsets or [])
             self.fabric_telemetry = fabric_telemetry
             self.fabric_python = fabric_python
             self.fabric_package = fabric_package
@@ -279,13 +278,12 @@ else:
                 workspace=self.fabric_workspace,
                 harness_settings=self.fabric_harness_settings,
                 model_base_url=self.fabric_model_base_url,
-                system_prompt=self.fabric_system_prompt,
+                system_instruction=self.fabric_system_instruction,
                 max_turns=self.fabric_max_turns,
                 timeout_seconds=self.fabric_runtime_timeout_seconds,
                 environment_env=self.fabric_environment_env,
                 blocked_tools=self.fabric_blocked_tools,
-                enabled_toolsets=self.fabric_enabled_toolsets,
-                blocked_toolsets=self.fabric_blocked_toolsets,
+                enabled_tools=self.fabric_enabled_tools,
                 telemetry=self.fabric_telemetry,
                 model_name=self.model_name,
                 skills_dir=self.skills_dir,
@@ -367,13 +365,12 @@ def build_harbor_config(
     workspace: str,
     harness_settings: dict[str, Any] | None = None,
     model_base_url: str | None = None,
-    system_prompt: str | None = None,
+    system_instruction: str | None = None,
     max_turns: int | None = None,
     timeout_seconds: float | None = None,
     environment_env: dict[str, str] | None = None,
     blocked_tools: list[str] | None = None,
-    enabled_toolsets: list[str] | None = None,
-    blocked_toolsets: list[str] | None = None,
+    enabled_tools: list[str] | None = None,
     telemetry: Literal["none", "relay"] = "none",
     model_name: str | None = None,
     skills_dir: str | Path | None = None,
@@ -394,14 +391,6 @@ def build_harbor_config(
             "IS_SANDBOX": "1",
             **(environment_env or {}),
         }
-    toolsets = (
-        ToolsetConfig(
-            enabled=enabled_toolsets,
-            blocked=list(blocked_toolsets or []),
-        )
-        if enabled_toolsets is not None or blocked_toolsets
-        else None
-    )
     config = FabricConfig(
         metadata=MetadataConfig(
             name=name,
@@ -417,6 +406,7 @@ def build_harbor_config(
             output_schema="message",
             artifacts=artifact_root,
             timeout_seconds=timeout_seconds,
+            max_turns=max_turns,
         ),
         environment=EnvironmentConfig(
             provider="local",
@@ -424,14 +414,19 @@ def build_harbor_config(
             artifacts=artifact_root,
             env=dict(environment_env or {}),
         ),
-        system_prompt=system_prompt,
-        max_turns=max_turns,
+        instructions=(
+            InstructionsConfig(
+                system=InstructionConfig(content=system_instruction),
+            )
+            if system_instruction is not None
+            else None
+        ),
         tools=(
             ToolsConfig(
+                enabled=enabled_tools,
                 blocked=list(blocked_tools or []),
-                toolsets=toolsets,
             )
-            if blocked_tools or toolsets is not None
+            if blocked_tools or enabled_tools is not None
             else None
         ),
     )

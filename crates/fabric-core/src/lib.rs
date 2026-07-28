@@ -13,11 +13,13 @@ pub use config::{
     ADAPTER_CONTRACT_VERSION, AdapterConfigField, AdapterConfigSupport, AdapterDescriptor,
     AdapterDescriptorSource, AdapterKind, AdapterRequirements, AdapterTelemetryProviderSupport,
     AdapterTelemetrySupport, CapabilityPlan, ControlLocation, EnvironmentConfig,
-    EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig, McpConfig, McpExposure,
-    McpServerPlan, MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext,
-    ResolvedAdapterDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
-    TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig, ToolsConfig,
-    ToolsetConfig, load_adapter_descriptor, resolve_run_plan_from_config,
+    EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig, InstructionConfig,
+    InstructionMode, InstructionsConfig, McpConfig, McpExposure, McpServerPlan, MetadataConfig,
+    ModelConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, RunPlan,
+    RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
+    TelemetryProvider, TelemetryProviderConfig, ToolsConfig, load_adapter_descriptor,
+    resolve_diagnostic_plan_from_config,
+    resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,
     resolve_run_plan_from_config_with_adapter_directories,
 };
 pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};

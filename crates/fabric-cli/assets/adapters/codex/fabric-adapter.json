@@ -10,7 +10,7 @@
     "accepts": [
       "models",
       "models.base_url",
-      "system_prompt",
+      "instructions.system",
       "mcp",
       "skills"
     ]

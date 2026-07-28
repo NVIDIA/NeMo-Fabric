@@ -23,7 +23,7 @@ from typing import Any
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
-# Default agent loop budget when FabricConfig.max_turns is unset.
+# Default agent loop budget when FabricConfig.runtime.max_turns is unset.
 # Mirrors Hermes' own AIAgent default (agent/agent_init.py); a lower value such
 # as 1 silently starves multi-step tasks (they run out of budget before
 # answering while the trial still reports success). See FABRIC-85.
@@ -77,7 +77,7 @@ def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
 
 
 def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
-    return common_utils.blocked_toolsets(payload)
+    return common_utils.blocked_tools(payload)
 
 
 def build_hermes_config(
@@ -92,7 +92,7 @@ def build_hermes_config(
     provider = model_config.get("provider")
     base_url = common_utils.get_base_url(model_config)
     blocked_toolsets = disabled_toolsets(payload)
-    enabled_toolsets = common_utils.enabled_toolsets(payload)
+    enabled_toolsets = common_utils.enabled_tools(payload)
 
     config: dict[str, Any] = {
         "model": common_utils.without_none(
@@ -194,7 +194,7 @@ def main() -> None:
 def resolve_hermes_toolsets(
     payload: dict[str, Any], config: dict[str, Any]
 ) -> list[str] | None:
-    enabled = common_utils.enabled_toolsets(payload)
+    enabled = common_utils.enabled_tools(payload)
     if enabled is not None:
         return enabled
 
@@ -364,7 +364,7 @@ class HermesRuntime:
         def invoke_turn() -> tuple[dict[str, Any], str]:
             return _invoke_hermes_turn(
                 agent=self._agent,
-                system_prompt=common_utils.system_prompt(start_payload),
+                system_prompt=common_utils.system_instruction(start_payload),
                 user_message=user_message,
                 conversation_history=self._conversation_history,
             )

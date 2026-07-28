@@ -185,12 +185,10 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                     "plugins_enabled": ["custom/plugin"],
                 }
             },
-            "max_turns": 4,
+            "runtime": {"max_turns": 4},
             "tools": {
-                "toolsets": {
-                    "enabled": ["git"],
-                    "blocked": ["browser"],
-                }
+                "enabled": ["git"],
+                "blocked": ["browser"],
             },
             "models": {
                 "review": {
@@ -270,7 +268,7 @@ def test_build_hermes_config_omits_max_turns_when_fabric_limit_null():
     payload = {
         "config": {
             "harness": {"settings": {}},
-            "max_turns": None,
+            "runtime": {"max_turns": None},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
     }
@@ -337,7 +335,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         "base_dir": str(tmp_path),
         "config": {
             "harness": {"settings": {}},
-            "tools": {"toolsets": {"enabled": ["git", "shell"]}},
+            "tools": {"enabled": ["git", "shell"]},
             "models": {
                 "review": {
                     "provider": "nvidia",
@@ -561,9 +559,11 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         "base_dir": str(tmp_path),
         "config": {
             "harness": {"settings": {}},
-            "system_prompt": "system",
-            "max_turns": None,
-            "tools": {"toolsets": {"enabled": []}},
+            "instructions": {
+                "system": {"content": "system", "mode": "replace"}
+            },
+            "runtime": {"max_turns": None},
+            "tools": {"enabled": []},
             "models": {
                 "default": {
                     "provider": "test-provider",

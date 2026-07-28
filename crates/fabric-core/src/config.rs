@@ -32,14 +32,10 @@ pub struct FabricConfig {
     /// Named model roles.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, ModelConfig>,
-    /// Portable system instructions for the selected harness.
+    /// Portable agent instructions for the selected harness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub system_prompt: Option<String>,
-    /// Maximum number of harness turns within one invocation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(range(min = 1))]
-    pub max_turns: Option<u32>,
-    /// Runtime input/output contract.
+    pub instructions: Option<InstructionsConfig>,
+    /// Invocation runtime contract.
     pub runtime: RuntimeConfig,
     /// Environment where the harness or its tools execute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -64,30 +60,49 @@ pub struct FabricConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Harness-neutral tool capability configuration.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct ToolsConfig {
-    /// Adapter-native tool names to block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub blocked: Vec<String>,
-    /// Harness-defined toolset selection and blocking policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub toolsets: Option<ToolsetConfig>,
-    /// Additive tool configuration fields.
+/// How an instruction value is applied to the selected harness.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InstructionMode {
+    /// Replace the harness default instruction value.
+    #[default]
+    Replace,
+}
+
+/// One portable instruction value.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct InstructionConfig {
+    /// Instruction text.
+    pub content: String,
+    /// How the instruction is applied.
+    #[serde(default)]
+    pub mode: InstructionMode,
+    /// Additive instruction fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Harness-defined toolset capability configuration.
+/// Harness-neutral agent instruction configuration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct ToolsetConfig {
-    /// Toolsets to expose. `None` preserves the harness default; an empty list exposes none.
+pub struct InstructionsConfig {
+    /// System instructions for the selected harness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<InstructionConfig>,
+    /// Additive instruction categories.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Harness-neutral tool capability configuration.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolsConfig {
+    /// Adapter-native tool names to expose. `None` preserves the harness default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<Vec<String>>,
-    /// Toolsets to exclude from the enabled or default harness toolset set.
+    /// Adapter-native tool names to block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked: Vec<String>,
-    /// Additive toolset configuration fields.
+    /// Additive tool configuration fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
@@ -382,20 +397,17 @@ pub enum AdapterConfigField {
     #[serde(rename = "models.temperature")]
     ModelTemperature,
     /// Portable system instructions.
-    #[serde(rename = "system_prompt")]
-    SystemPrompt,
+    #[serde(rename = "instructions.system")]
+    SystemInstructions,
     /// Per-invocation harness turn limit.
-    #[serde(rename = "max_turns")]
+    #[serde(rename = "runtime.max_turns")]
     MaxTurns,
+    /// Adapter-native tool names to expose.
+    #[serde(rename = "tools.enabled")]
+    EnabledTools,
     /// Adapter-native tool names to block.
     #[serde(rename = "tools.blocked")]
     BlockedTools,
-    /// Harness-defined toolsets to expose.
-    #[serde(rename = "tools.toolsets.enabled")]
-    EnabledToolsets,
-    /// Harness-defined toolsets to block.
-    #[serde(rename = "tools.toolsets.blocked")]
-    BlockedToolsets,
     /// Harness-native MCP servers.
     #[serde(rename = "mcp")]
     Mcp,
@@ -483,7 +495,7 @@ pub struct ModelConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Runtime input/output contract.
+/// Invocation runtime contract.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RuntimeConfig {
     /// Input schema label.
@@ -499,6 +511,10 @@ pub struct RuntimeConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(extend("exclusiveMinimum" = 0.0))]
     pub timeout_seconds: Option<f64>,
+    /// Maximum number of harness turns within one invocation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1))]
+    pub max_turns: Option<u32>,
     /// Additive normalized runtime fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
@@ -1081,8 +1097,8 @@ fn validate_config(config: &FabricConfig) -> Result<()> {
             available: Vec::new(),
         });
     }
-    if config.max_turns == Some(0) {
-        return invalid_config("max_turns", "must be greater than zero");
+    if config.runtime.max_turns == Some(0) {
+        return invalid_config("runtime.max_turns", "must be greater than zero");
     }
     if let Some(timeout) = config.runtime.timeout_seconds
         && (!timeout.is_finite()
@@ -1134,19 +1150,16 @@ fn validate_config(config: &FabricConfig) -> Result<()> {
         }
     }
     if let Some(tools) = &config.tools {
-        validate_names("tools.blocked", &tools.blocked)?;
-        if let Some(toolsets) = &tools.toolsets {
-            if let Some(enabled) = &toolsets.enabled {
-                validate_names("tools.toolsets.enabled", enabled)?;
-                if let Some(name) = enabled.iter().find(|name| toolsets.blocked.contains(name)) {
-                    return invalid_config(
-                        "tools.toolsets",
-                        format!("`{name}` cannot be both enabled and blocked"),
-                    );
-                }
+        if let Some(enabled) = &tools.enabled {
+            validate_names("tools.enabled", enabled)?;
+            if let Some(name) = enabled.iter().find(|name| tools.blocked.contains(name)) {
+                return invalid_config(
+                    "tools",
+                    format!("`{name}` cannot be both enabled and blocked"),
+                );
             }
-            validate_names("tools.toolsets.blocked", &toolsets.blocked)?;
         }
+        validate_names("tools.blocked", &tools.blocked)?;
     }
     Ok(())
 }
@@ -1187,6 +1200,44 @@ pub fn resolve_run_plan_from_config_with_adapter_directories(
     context: ResolveContext,
     adapter_directories: &[PathBuf],
 ) -> Result<RunPlan> {
+    resolve_run_plan_from_config_with_adapter_directories_mode(
+        config,
+        context,
+        adapter_directories,
+        true,
+    )
+}
+
+/// Resolve a typed Fabric config while retaining adapter incompatibilities for diagnostics.
+#[doc(hidden)]
+pub fn resolve_diagnostic_plan_from_config(
+    config: FabricConfig,
+    context: ResolveContext,
+) -> Result<RunPlan> {
+    resolve_diagnostic_plan_from_config_with_adapter_directories(config, context, &[])
+}
+
+/// Resolve a diagnostic plan with additional adapter descriptor directories.
+#[doc(hidden)]
+pub fn resolve_diagnostic_plan_from_config_with_adapter_directories(
+    config: FabricConfig,
+    context: ResolveContext,
+    adapter_directories: &[PathBuf],
+) -> Result<RunPlan> {
+    resolve_run_plan_from_config_with_adapter_directories_mode(
+        config,
+        context,
+        adapter_directories,
+        false,
+    )
+}
+
+fn resolve_run_plan_from_config_with_adapter_directories_mode(
+    config: FabricConfig,
+    context: ResolveContext,
+    adapter_directories: &[PathBuf],
+    enforce_compatibility: bool,
+) -> Result<RunPlan> {
     validate_config(&config)?;
     let supplied_base_dir = context.base_dir;
     let base_dir = std::path::absolute(&supplied_base_dir)
@@ -1195,7 +1246,7 @@ pub fn resolve_run_plan_from_config_with_adapter_directories(
             path: supplied_base_dir,
             source,
         })?;
-    resolve_run_plan(config, base_dir, adapter_directories)
+    resolve_run_plan(config, base_dir, adapter_directories, enforce_compatibility)
 }
 
 fn read_json<T>(path: &Path) -> Result<T>
@@ -1216,17 +1267,22 @@ fn resolve_run_plan(
     config: FabricConfig,
     base_dir: PathBuf,
     adapter_directories: &[PathBuf],
+    enforce_compatibility: bool,
 ) -> Result<RunPlan> {
     let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_directories)?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
-    validate_adapter_config_compatibility(&config, descriptor)?;
+    if enforce_compatibility {
+        validate_adapter_config_compatibility(&config, descriptor)?;
+    }
     let resolution = resolve_resolution(&config, descriptor)?;
     let environment_plan = resolve_environment_plan(&config, &base_dir);
     validate_control_location(descriptor, environment_plan.as_ref())?;
     let capability_plan = resolve_capability_plan(&config, &base_dir, adapter_descriptor.as_ref());
-    validate_capability_plan_compatibility(&capability_plan, descriptor)?;
+    if enforce_compatibility {
+        validate_capability_plan_compatibility(&capability_plan, descriptor)?;
+    }
     let capabilities = resolve_runtime_capabilities(&config, descriptor);
     let telemetry_plan = resolve_telemetry_plan(&config, descriptor)?;
     Ok(RunPlan {
@@ -1266,62 +1322,94 @@ fn validate_adapter_config_compatibility(
     config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
 ) -> Result<()> {
-    let Some(descriptor) = descriptor else {
+    let Some(issue) = adapter_config_compatibility_issues(config, descriptor)
+        .into_iter()
+        .next()
+    else {
         return Ok(());
     };
-    let accepts = |field: AdapterConfigField| descriptor.config.accepts.contains(&field);
-    let incompatible = |field: String, reason: String| {
-        Err(FabricError::AdapterCompatibility {
-            adapter_id: descriptor.adapter_id.clone(),
-            reason,
-            field,
-        })
-    };
+    Err(FabricError::AdapterCompatibility {
+        adapter_id: issue.adapter_id,
+        field: issue.field,
+        reason: issue.reason,
+    })
+}
 
-    if config.system_prompt.is_some() && !accepts(AdapterConfigField::SystemPrompt) {
-        return incompatible(
-            "system_prompt".to_string(),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AdapterCompatibilityIssue {
+    pub(crate) adapter_id: String,
+    pub(crate) field: String,
+    pub(crate) reason: String,
+}
+
+pub(crate) fn adapter_config_compatibility_issues(
+    config: &FabricConfig,
+    descriptor: Option<&AdapterDescriptor>,
+) -> Vec<AdapterCompatibilityIssue> {
+    let Some(descriptor) = descriptor else {
+        return Vec::new();
+    };
+    let accepts = |field: AdapterConfigField| descriptor.config.accepts.contains(&field);
+    let incompatible = |field: String, reason: String| AdapterCompatibilityIssue {
+        adapter_id: descriptor.adapter_id.clone(),
+        reason,
+        field,
+    };
+    let mut issues = Vec::new();
+
+    if config
+        .instructions
+        .as_ref()
+        .and_then(|instructions| instructions.system.as_ref())
+        .is_some()
+        && !accepts(AdapterConfigField::SystemInstructions)
+    {
+        issues.push(incompatible(
+            "instructions.system".to_string(),
             "the adapter does not declare an equivalent native mapping".to_string(),
-        );
+        ));
     }
-    if config.max_turns.is_some() && !accepts(AdapterConfigField::MaxTurns) {
-        return incompatible(
-            "max_turns".to_string(),
+    if config.runtime.max_turns.is_some() && !accepts(AdapterConfigField::MaxTurns) {
+        issues.push(incompatible(
+            "runtime.max_turns".to_string(),
             "the adapter does not declare an equivalent native mapping".to_string(),
-        );
+        ));
     }
     if !config.models.is_empty() && !accepts(AdapterConfigField::Models) {
-        return incompatible(
+        issues.push(incompatible(
             "models".to_string(),
             "the adapter does not consume normalized model configuration".to_string(),
-        );
-    }
+        ));
+        return issues;
+    };
+
     let selected_model = match (config.models.get_key_value("default"), config.models.len()) {
         (Some(model), _) => Some(model),
         (None, 0) => None,
         (None, 1) => config.models.first_key_value(),
         (None, _) => {
-            return incompatible(
+            issues.push(incompatible(
                 "models".to_string(),
                 "multiple model roles are configured and no default role selects one".to_string(),
-            );
+            ));
+            None
         }
     };
     if let Some((role, model)) = selected_model {
         if model.base_url.is_some() && !accepts(AdapterConfigField::ModelBaseUrl) {
-            return incompatible(
+            issues.push(incompatible(
                 format!("models.{role}.base_url"),
                 "the adapter does not declare custom endpoint support".to_string(),
-            );
+            ));
         }
         if model.temperature.is_some() && !accepts(AdapterConfigField::ModelTemperature) {
-            return incompatible(
+            issues.push(incompatible(
                 format!("models.{role}.temperature"),
                 "the adapter does not declare an equivalent native mapping".to_string(),
-            );
+            ));
         }
     }
-    Ok(())
+    issues
 }
 
 fn resolve_adapter_descriptor(
@@ -1489,61 +1577,35 @@ fn resolve_capability_plan(
                 .collect()
         })
         .unwrap_or_default();
+    let enabled_tools = config
+        .tools
+        .as_ref()
+        .and_then(|tools| tools.enabled.clone());
     let blocked_tools = config
         .tools
         .as_ref()
         .map(|tools| tools.blocked.clone())
         .unwrap_or_default();
-    let toolsets = config
-        .tools
-        .as_ref()
-        .and_then(|tools| tools.toolsets.clone());
+    let enabled_tools_configured = enabled_tools.is_some();
     let blocked_tools_configured = !blocked_tools.is_empty();
-    let enabled_toolsets_configured = toolsets
-        .as_ref()
-        .is_some_and(|toolsets| toolsets.enabled.is_some());
-    let blocked_toolsets_configured = toolsets
-        .as_ref()
-        .is_some_and(|toolsets| !toolsets.blocked.is_empty());
-    let tools_configured =
-        blocked_tools_configured || enabled_toolsets_configured || blocked_toolsets_configured;
+    let tools_configured = enabled_tools_configured || blocked_tools_configured;
     let mut native = CapabilityTargetPlan::default();
     let managed = CapabilityTargetPlan::default();
     let mut unsupported = CapabilityTargetPlan::default();
     let mut routes = Vec::new();
 
-    if blocked_tools_configured {
-        if accepts(AdapterConfigField::BlockedTools) {
-            native.tools_configured = true;
-            routes.push(CapabilityRoute {
-                kind: CapabilityKind::Tools,
-                name: "tools.blocked".to_string(),
-                target: CapabilityTarget::HarnessNative,
-                reason: "selected adapter explicitly supports the NeMo Fabric blocked-tools policy"
-                    .to_string(),
-            });
-        } else {
-            unsupported.tools_configured = true;
-            routes.push(CapabilityRoute {
-                kind: CapabilityKind::Tools,
-                name: "tools.blocked".to_string(),
-                target: CapabilityTarget::Unsupported,
-                reason: "selected adapter does not explicitly declare blocked-tools policy support and NeMo Fabric-managed enforcement is not implemented".to_string(),
-            });
-        }
-    }
     for (configured, support, field, description) in [
         (
-            enabled_toolsets_configured,
-            AdapterConfigField::EnabledToolsets,
-            "tools.toolsets.enabled",
-            "enabled-toolsets selection",
+            enabled_tools_configured,
+            AdapterConfigField::EnabledTools,
+            "tools.enabled",
+            "enabled-tools selection",
         ),
         (
-            blocked_toolsets_configured,
-            AdapterConfigField::BlockedToolsets,
-            "tools.toolsets.blocked",
-            "blocked-toolsets policy",
+            blocked_tools_configured,
+            AdapterConfigField::BlockedTools,
+            "tools.blocked",
+            "blocked-tools policy",
         ),
     ] {
         if !configured {
@@ -1555,7 +1617,9 @@ fn resolve_capability_plan(
                 kind: CapabilityKind::Tools,
                 name: field.to_string(),
                 target: CapabilityTarget::HarnessNative,
-                reason: format!("selected adapter explicitly supports the Fabric {description}"),
+                reason: format!(
+                    "selected adapter explicitly supports the NeMo Fabric {description}"
+                ),
             });
         } else {
             unsupported.tools_configured = true;
@@ -1564,7 +1628,7 @@ fn resolve_capability_plan(
                 name: field.to_string(),
                 target: CapabilityTarget::Unsupported,
                 reason: format!(
-                    "selected adapter does not explicitly declare {description} support"
+                    "selected adapter does not explicitly declare {description} support and NeMo Fabric-managed enforcement is not implemented"
                 ),
             });
         }
@@ -1622,8 +1686,8 @@ fn resolve_capability_plan(
 
     CapabilityPlan {
         tools: ToolsPlan {
+            enabled: enabled_tools,
             blocked: blocked_tools,
-            toolsets,
         },
         tools_configured,
         skill_paths,
@@ -1858,12 +1922,12 @@ pub struct CapabilityPlan {
 /// Normalized tool policy for a run.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ToolsPlan {
+    /// Adapter-native tool names to expose. `None` preserves the harness default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<Vec<String>>,
     /// Adapter-native tool names to block.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked: Vec<String>,
-    /// Harness-defined toolset selection and blocking policy.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub toolsets: Option<ToolsetConfig>,
 }
 
 /// Capabilities routed to one target.
@@ -1880,14 +1944,17 @@ pub struct CapabilityTargetPlan {
     pub mcp_servers: BTreeMap<String, McpServerPlan>,
 }
 
-/// One capability routing decision.
+/// One capability execution assignment.
+///
+/// Routes apply to executable tool, skill, and MCP capabilities. Adapter-translated
+/// scalar configuration is validated separately against [`AdapterConfigSupport`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CapabilityRoute {
     /// Capability kind.
     pub kind: CapabilityKind,
     /// Capability name.
     pub name: String,
-    /// Routing target.
+    /// Component responsible for executing the capability.
     pub target: CapabilityTarget,
     /// Human-readable reason for the selected route.
     pub reason: String,
@@ -1915,15 +1982,17 @@ pub enum CapabilityKind {
     Mcp,
 }
 
-/// Capability routing target.
+/// Component responsible for executing a configured capability.
+///
+/// This target describes execution ownership, not network routing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CapabilityTarget {
-    /// Adapter maps the capability into harness-native config.
+    /// The selected adapter maps and executes the capability through its harness.
     HarnessNative,
-    /// NeMo Fabric exposes or manages the capability around the harness.
+    /// NeMo Fabric executes the capability outside the harness-native surface.
     FabricManaged,
-    /// Capability is configured but no executable surface exists.
+    /// Neither the adapter nor NeMo Fabric can execute the configured capability.
     Unsupported,
 }
 
@@ -2081,8 +2150,15 @@ mod tests {
     #[test]
     fn normalized_fields_survive_planning() {
         let mut config = typed_config("nvidia.fabric.hermes");
-        config.system_prompt = Some("Be concise.".to_string());
-        config.max_turns = Some(7);
+        config.instructions = Some(InstructionsConfig {
+            system: Some(InstructionConfig {
+                content: "Be concise.".to_string(),
+                mode: InstructionMode::Replace,
+                extensions: BTreeMap::new(),
+            }),
+            extensions: BTreeMap::new(),
+        });
+        config.runtime.max_turns = Some(7);
         config.runtime.timeout_seconds = Some(12.5);
         config.environment.as_mut().expect("environment").env =
             BTreeMap::from([("VISIBLE".to_string(), "yes".to_string())]);
@@ -2099,12 +2175,8 @@ mod tests {
             },
         );
         config.tools = Some(ToolsConfig {
-            blocked: Vec::new(),
-            toolsets: Some(ToolsetConfig {
-                enabled: Some(vec!["terminal".to_string()]),
-                blocked: vec!["browser".to_string()],
-                extensions: BTreeMap::new(),
-            }),
+            enabled: Some(vec!["terminal".to_string()]),
+            blocked: vec!["browser".to_string()],
             extensions: BTreeMap::new(),
         });
 
@@ -2112,8 +2184,15 @@ mod tests {
             resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-normalized"))
                 .expect("normalized plan");
 
-        assert_eq!(plan.config.system_prompt.as_deref(), Some("Be concise."));
-        assert_eq!(plan.config.max_turns, Some(7));
+        assert_eq!(
+            plan.config
+                .instructions
+                .as_ref()
+                .and_then(|instructions| instructions.system.as_ref())
+                .map(|instruction| instruction.content.as_str()),
+            Some("Be concise.")
+        );
+        assert_eq!(plan.config.runtime.max_turns, Some(7));
         assert_eq!(plan.config.runtime.timeout_seconds, Some(12.5));
         assert_eq!(
             plan.environment_plan
@@ -2122,16 +2201,11 @@ mod tests {
             Some(&"yes".to_string())
         );
         assert_eq!(
-            plan.capability_plan
-                .tools
-                .toolsets
-                .as_ref()
-                .and_then(|toolsets| toolsets.enabled.as_ref()),
+            plan.capability_plan.tools.enabled.as_ref(),
             Some(&vec!["terminal".to_string()])
         );
         assert!(plan.capability_plan.routes.iter().any(|route| {
-            route.name == "tools.toolsets.enabled"
-                && route.target == CapabilityTarget::HarnessNative
+            route.name == "tools.enabled" && route.target == CapabilityTarget::HarnessNative
         }));
     }
 
@@ -2139,7 +2213,7 @@ mod tests {
     fn unsupported_normalized_scalar_reports_adapter_config_incompatibility() {
         for adapter_id in ["nvidia.fabric.codex", "nvidia.fabric.langchain.deepagents"] {
             let mut config = typed_config(adapter_id);
-            config.max_turns = Some(3);
+            config.runtime.max_turns = Some(3);
 
             let error = resolve_run_plan_from_config(
                 config,
@@ -2153,7 +2227,7 @@ mod tests {
                     adapter_id: actual,
                     field,
                     ..
-                } if actual == adapter_id && field == "max_turns"
+                } if actual == adapter_id && field == "runtime.max_turns"
             ));
         }
     }
@@ -2196,36 +2270,27 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_toolsets_report_canonical_field() {
-        for adapter_id in [
-            "nvidia.fabric.claude",
-            "nvidia.fabric.codex",
-            "nvidia.fabric.langchain.deepagents",
-        ] {
-            let mut config = typed_config(adapter_id);
-            config.tools = Some(ToolsConfig {
-                blocked: Vec::new(),
-                toolsets: Some(ToolsetConfig {
-                    enabled: Some(vec!["terminal".to_string()]),
-                    blocked: Vec::new(),
-                    extensions: BTreeMap::new(),
-                }),
-                extensions: BTreeMap::new(),
-            });
+    fn unsupported_enabled_tools_report_canonical_field() {
+        let adapter_id = "nvidia.fabric.codex";
+        let mut config = typed_config(adapter_id);
+        config.tools = Some(ToolsConfig {
+            enabled: Some(vec!["terminal".to_string()]),
+            blocked: Vec::new(),
+            extensions: BTreeMap::new(),
+        });
 
-            let error =
-                resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-toolsets"))
-                    .expect_err("adapter does not advertise enabled toolsets");
+        let error =
+            resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-enabled-tools"))
+                .expect_err("adapter does not advertise enabled tools");
 
-            assert!(matches!(
-                error,
-                FabricError::AdapterCompatibility {
-                    adapter_id: actual,
-                    field,
-                    ..
-                } if actual == adapter_id && field == "tools.toolsets.enabled"
-            ));
-        }
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility {
+                adapter_id: actual,
+                field,
+                ..
+            } if actual == adapter_id && field == "tools.enabled"
+        ));
     }
 
     #[test]
@@ -2278,15 +2343,11 @@ mod tests {
     }
 
     #[test]
-    fn tool_and_toolset_policies_are_routed_independently() {
+    fn enabled_and_blocked_tool_policies_are_routed_independently() {
         let mut config = typed_config("nvidia.fabric.hermes");
         config.tools = Some(ToolsConfig {
-            blocked: Vec::new(),
-            toolsets: Some(ToolsetConfig {
-                enabled: Some(Vec::new()),
-                blocked: vec!["browser".to_string()],
-                extensions: BTreeMap::new(),
-            }),
+            enabled: Some(Vec::new()),
+            blocked: vec!["browser".to_string()],
             extensions: BTreeMap::new(),
         });
 
@@ -2294,21 +2355,19 @@ mod tests {
             .expect("tool capability plan");
 
         assert!(plan.capability_plan.routes.iter().any(|route| {
-            route.name == "tools.toolsets.enabled"
-                && route.target == CapabilityTarget::HarnessNative
+            route.name == "tools.enabled" && route.target == CapabilityTarget::HarnessNative
         }));
         assert!(plan.capability_plan.routes.iter().any(|route| {
-            route.name == "tools.toolsets.blocked"
-                && route.target == CapabilityTarget::HarnessNative
+            route.name == "tools.blocked" && route.target == CapabilityTarget::HarnessNative
         }));
     }
 
     #[test]
     fn unsupported_tool_policy_fails_during_planning() {
-        let mut config = typed_config("nvidia.fabric.hermes");
+        let mut config = typed_config("nvidia.fabric.codex");
         config.tools = Some(ToolsConfig {
+            enabled: None,
             blocked: vec!["Bash".to_string()],
-            toolsets: None,
             extensions: BTreeMap::new(),
         });
 
@@ -2316,7 +2375,7 @@ mod tests {
             config,
             ResolveContext::new("/tmp/fabric-unsupported-tools"),
         )
-        .expect_err("Hermes does not support per-tool blocking");
+        .expect_err("Codex does not support per-tool blocking");
 
         assert!(matches!(
             error,
@@ -2324,7 +2383,7 @@ mod tests {
                 adapter_id,
                 field,
                 ..
-            } if adapter_id == "nvidia.fabric.hermes" && field == "tools.blocked"
+            } if adapter_id == "nvidia.fabric.codex" && field == "tools.blocked"
         ));
     }
 
@@ -2361,25 +2420,21 @@ mod tests {
     }
 
     #[test]
-    fn overlapping_toolset_policy_is_invalid() {
+    fn overlapping_tool_policy_is_invalid() {
         let mut config = typed_config("nvidia.fabric.hermes");
         config.tools = Some(ToolsConfig {
-            blocked: Vec::new(),
-            toolsets: Some(ToolsetConfig {
-                enabled: Some(vec!["browser".to_string()]),
-                blocked: vec!["browser".to_string()],
-                extensions: BTreeMap::new(),
-            }),
+            enabled: Some(vec!["browser".to_string()]),
+            blocked: vec!["browser".to_string()],
             extensions: BTreeMap::new(),
         });
 
         let error =
             resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-invalid-tools"))
-                .expect_err("overlapping toolset policy");
+                .expect_err("overlapping tool policy");
 
         assert!(matches!(
             error,
-            FabricError::InvalidConfig { field, .. } if field == "tools.toolsets"
+            FabricError::InvalidConfig { field, .. } if field == "tools"
         ));
     }
 

@@ -19,8 +19,10 @@ import tempfile
 from pathlib import Path
 from shutil import copytree
 
+import pytest
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
+from nemo_fabric import FabricConfigError
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 
@@ -130,7 +132,38 @@ async def runs_with_typed_config_and_adapter_directory(client: Fabric) -> None:
     assert result["output"]["received"] == "hello typed"
 
 
+async def diagnoses_adapter_incompatibility_without_weakening_plan(client: Fabric) -> None:
+    """Doctor reports unsupported config that strict planning rejects."""
+
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "incompatible-agent"},
+            "harness": {"adapter_id": "nvidia.fabric.codex"},
+            "runtime": {"max_turns": 3},
+            "tools": {"enabled": []},
+        }
+    )
+
+    with pytest.raises(FabricConfigError, match="runtime.max_turns"):
+        client.plan(config, base_dir=ROOT)
+
+    report = await client.doctor(config, base_dir=ROOT)
+
+    assert report.status == "fail"
+    assert any(
+        check.name == "config.unsupported"
+        and check.metadata.get("field") == "runtime.max_turns"
+        for check in report.checks
+    )
+    assert any(
+        check.name == "capability.unsupported"
+        and "tools.enabled" in check.message
+        for check in report.checks
+    )
+
+
 async def test_typed_config():
     client = Fabric()
     await resolves_and_diagnoses_typed_config(client)
     await runs_with_typed_config_and_adapter_directory(client)
+    await diagnoses_adapter_incompatibility_without_weakening_plan(client)

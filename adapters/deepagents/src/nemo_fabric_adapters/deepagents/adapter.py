@@ -233,17 +233,22 @@ def _blocked_tool_names(payload: dict[str, Any]) -> set[str]:
     return set(common_utils.blocked_tools(payload))
 
 
+def _enabled_tool_names(payload: dict[str, Any]) -> set[str] | None:
+    enabled = common_utils.enabled_tools(payload)
+    return None if enabled is None else set(enabled)
+
+
 def _tool_gate_middleware(
     is_blocked: Callable[[Any], bool], message: Callable[[Any], str]
 ) -> ToolGateMiddleware:
     return ToolGateMiddleware(is_blocked, message)
 
 
-def blocked_tools_middleware(blocked: set[str]) -> Any:
-    """Middleware that blocks explicitly denied tool calls across the full tool surface."""
+def tool_policy_middleware(enabled: set[str] | None, blocked: set[str]) -> Any:
+    """Enforce tool selection and blocking across the full tool surface."""
 
     return _tool_gate_middleware(
-        lambda name: name in blocked,
+        lambda name: name in blocked or (enabled is not None and name not in enabled),
         lambda name: f"Tool '{name}' is blocked by the configured tools policy.",
     )
 
@@ -344,7 +349,7 @@ async def build_agent_kwargs(
         "model": model,
         "tools": await resolve_tools(payload),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
-        "system_prompt": common_utils.system_prompt(payload),
+        "system_prompt": common_utils.system_instruction(payload),
         "skills": resolve_skills(payload),
         "backend": resolve_backend(payload),
     }
@@ -353,12 +358,15 @@ async def build_agent_kwargs(
     extra = settings.get("deepagents")
     if extra is not None:
         kwargs.update(_validated_passthrough(extra))
+    enabled = _enabled_tool_names(payload)
     blocked = _blocked_tool_names(payload)
-    if blocked:
+    if enabled is not None or blocked:
         middleware = list(kwargs.get("middleware") or [])
-        middleware.append(blocked_tools_middleware(blocked))
+        middleware.append(tool_policy_middleware(enabled, blocked))
         kwargs["middleware"] = middleware
-        kwargs["subagents"] = _gated_subagents(kwargs.get("subagents"), blocked)
+        kwargs["subagents"] = _gated_subagents(
+            kwargs.get("subagents"), enabled, blocked
+        )
     return {key: value for key, value in kwargs.items() if value is not None}
 
 
@@ -390,46 +398,52 @@ def _validated_passthrough(extra: Any) -> dict[str, Any]:
     return dict(extra)
 
 
-def _block_subagent(subagent: dict[str, Any], blocked: set[str]) -> dict[str, Any]:
+def _gate_subagent(
+    subagent: dict[str, Any], enabled: set[str] | None, blocked: set[str]
+) -> dict[str, Any]:
     gated = dict(subagent)
     gated["middleware"] = [
         *(gated.get("middleware") or []),
-        blocked_tools_middleware(blocked),
+        tool_policy_middleware(enabled, blocked),
     ]
     return gated
 
 
-def _gated_subagents(subagents: Any, blocked: set[str]) -> list[dict[str, Any]]:
+def _gated_subagents(
+    subagents: Any, enabled: set[str] | None, blocked: set[str]
+) -> list[dict[str, Any]]:
     if subagents is None:
         configured: list[Any] = []
     elif isinstance(subagents, list):
         configured = subagents
     else:
         raise AdapterConfigError(
-            "harness.settings.deepagents.subagents must be a list when tools.blocked is configured."
+            "harness.settings.deepagents.subagents must be a list when a tools policy is configured."
         )
 
     gated: list[dict[str, Any]] = []
     for subagent in configured:
         if not isinstance(subagent, dict):
             raise AdapterConfigError(
-                "Deep Agents subagents must be mappings when tools.blocked is configured."
+                "Deep Agents subagents must be mappings when a tools policy is configured."
             )
         name = str(subagent.get("name") or "<unnamed>")
         if "graph_id" in subagent:
             raise AdapterConfigError(
-                f"tools.blocked cannot be enforced for remote Deep Agents subagent '{name}'."
+                f"the tools policy cannot be enforced for remote Deep Agents subagent '{name}'."
             )
         if "runnable" in subagent:
             raise AdapterConfigError(
-                f"tools.blocked cannot be enforced for precompiled Deep Agents subagent '{name}'."
+                f"the tools policy cannot be enforced for precompiled Deep Agents subagent '{name}'."
             )
-        gated.append(_block_subagent(subagent, blocked))
+        gated.append(_gate_subagent(subagent, enabled, blocked))
 
     if not any(subagent.get("name") == "general-purpose" for subagent in gated):
         from deepagents.middleware.subagents import GENERAL_PURPOSE_SUBAGENT
 
-        gated.insert(0, _block_subagent(dict(GENERAL_PURPOSE_SUBAGENT), blocked))
+        gated.insert(
+            0, _gate_subagent(dict(GENERAL_PURPOSE_SUBAGENT), enabled, blocked)
+        )
     return gated
 
 
