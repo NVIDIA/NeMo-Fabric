@@ -537,7 +537,7 @@ def test_collect_relay_artifacts_ignores_path_resolution_runtime_errors(
 
     def resolve(path: Path, *, strict: bool = False) -> Path:
         if path.name == "loop":
-            raise RuntimeError("symlink loop")
+            raise RuntimeError
         return original_resolve(path, strict=strict)
 
     monkeypatch.setattr(Path, "resolve", resolve)
