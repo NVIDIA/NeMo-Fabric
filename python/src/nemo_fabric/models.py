@@ -24,7 +24,9 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import SerializerFunctionWrapHandler
 from pydantic import field_validator
+from pydantic import model_serializer
 from pydantic import model_validator
 
 
@@ -119,10 +121,10 @@ class EnvironmentConfig(FabricBaseModel):
     ``provider`` selects the environment implementation. ``workspace`` is the
     path visible to the harness, while ``artifacts`` is the provider-specific
     output location. ``settings`` configures the selected provider;
-    ``connection`` describes how Fabric reaches an existing environment; and
-    ``metadata`` carries consumer-owned values that Fabric does not interpret.
+    ``connection`` describes how NeMo Fabric reaches an existing environment; and
+    ``metadata`` carries consumer-owned values that NeMo Fabric does not interpret.
     ``ownership`` identifies who tears the environment down, and
-    ``control_location`` identifies whether Fabric control code runs inside or
+    ``control_location`` identifies whether NeMo Fabric control code runs inside or
     outside it.
     """
 
@@ -145,7 +147,7 @@ class EnvironmentConfig(FabricBaseModel):
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        description="Consumer-owned environment metadata passed through without Fabric semantics.",
+        description="Consumer-owned environment metadata passed through without NeMo Fabric semantics.",
     )
     connection: dict[str, Any] = Field(
         default_factory=dict,
@@ -153,11 +155,11 @@ class EnvironmentConfig(FabricBaseModel):
     )
     ownership: Literal["caller_owned", "fabric_owned"] = Field(
         default="caller_owned",
-        description="Whether the caller or Fabric owns environment teardown.",
+        description="Whether the caller or NeMo Fabric owns environment teardown.",
     )
     control_location: Literal["external_control", "in_env_control"] = Field(
         default="in_env_control",
-        description="Whether Fabric control code runs outside or inside the environment.",
+        description="Whether NeMo Fabric control code runs outside or inside the environment.",
     )
 
 
@@ -233,7 +235,7 @@ class McpConfig(FabricBaseModel):
 
 
 class RelayConfigPolicy(FabricBaseModel):
-    """NeMo Relay config validation policy."""
+    """NVIDIA NeMo Relay config validation policy."""
 
     unknown_component: Literal["ignore", "warn", "error"] = "warn"
     unknown_field: Literal["ignore", "warn", "error"] = "warn"
@@ -255,11 +257,22 @@ class RelayAtofStreamSinkConfig(FabricBaseModel):
     type: Literal["stream"] = "stream"
     url: str
     transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
-    headers: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
-    header_env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    headers: dict[str, str] = Field(default_factory=dict)
+    header_env: dict[str, str] = Field(default_factory=dict)
     timeout_millis: int = 3000
     field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
     name: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_header_maps(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Omit optional header maps when they are empty."""
+
+        data = handler(self)
+        if not self.headers:
+            data.pop("headers", None)
+        if not self.header_env:
+            data.pop("header_env", None)
+        return data
 
 
 class RelayAtofConfig(FabricBaseModel):
@@ -413,7 +426,7 @@ class ToolsConfig(FabricBaseModel):
 
 
 class FabricConfig(FabricBaseModel):
-    """SDK-facing typed Fabric agent configuration."""
+    """SDK-facing typed NeMo Fabric agent configuration."""
 
     schema_version: str = "fabric.agent/v1alpha1"
     metadata: MetadataConfig
@@ -538,7 +551,7 @@ class FabricConfig(FabricBaseModel):
 
 
 class RunRequest(FabricBaseModel):
-    """One validated Fabric invocation request."""
+    """One validated NeMo Fabric invocation request."""
 
     input: Any = ""
     request_id: str = Field(

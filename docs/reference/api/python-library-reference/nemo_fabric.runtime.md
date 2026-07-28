@@ -3,11 +3,12 @@ title: "Runtime"
 slug: "/reference/api/python-library-reference/runtime"
 description: "Drive stateful multi-turn execution through the Runtime API."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.runtime`
-Runtime lifecycle support for the Fabric Python SDK.
+
+Runtime lifecycle support for the NVIDIA NeMo Fabric Python SDK.
 
 
 
@@ -15,6 +16,7 @@ Runtime lifecycle support for the Fabric Python SDK.
 
 
 ## <kbd>class</kbd> `RuntimeStatus`
+
 Lifecycle state of a runtime.
 
 ``ACTIVE`` accepts invocations, ``STOPPED`` has released its runtime, and ``FAILED`` records a lifecycle failure that prevents further invocations but still permits cleanup.
@@ -23,10 +25,26 @@ Lifecycle state of a runtime.
 
 
 
+
+### Inheritance
+
+Direct bases: `str`, `Enum`.
+
+### Values
+
+The enum defines the following values:
+
+| Name | Value |
+| --- | --- |
+| `ACTIVE` | `active` |
+| `STOPPED` | `stopped` |
+| `FAILED` | `failed` |
+
 ---
 
 
 ## <kbd>class</kbd> `Runtime`
+
 One logical, stateful harness execution.
 
 Create runtimes with ``Fabric.start_runtime()`` rather than calling the constructor. A runtime serializes invocations and preserves adapter-owned harness state across turns. Use it as an asynchronous context manager to stop the runtime on exit.
@@ -64,6 +82,12 @@ Return the unique identifier for this started runtime lifecycle.
 
 Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 
+---
+
+### <kbd>property</kbd> supports_streaming
+
+Return whether NVIDIA NeMo Relay ATOF streaming is enabled.
+
 
 
 ---
@@ -72,7 +96,7 @@ Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 ### <kbd>method</kbd> `invoke`
 
 ```python
-invoke(input: 'Any' = None, request: 'RunRequest | None' = None) → RunResult
+async def invoke(*, input: Any = None, request: RunRequest | None = None) -> RunResult
 ```
 
 Run one turn on this runtime.
@@ -103,10 +127,35 @@ Run one turn on this runtime.
 ---
 
 
+### <kbd>method</kbd> `invoke_stream`
+
+```python
+def invoke_stream(
+    *,
+    input: Any = None,
+    request: RunRequest | None = None,
+) -> InvokeStream
+```
+
+Start one turn and stream raw NeMo Relay ATOF records as they arrive.
+
+``input`` and ``request`` are mutually exclusive. The returned :class:`InvokeStream` yields raw ATOF dictionaries. Await ``stream.result()`` for the terminal normalized :class:`RunResult`.
+
+
+
+**Raises:**
+
+ - <b>`FabricCapabilityError`</b>:  If the runtime was not started with NeMo Relay  enabled and ``streaming=True``.
+ - <b>`FabricConfigError`</b>:  If request fields conflict or are not  JSON-compatible.
+ - <b>`FabricStateError`</b>:  If another turn or stream is active.
+
+---
+
+
 ### <kbd>method</kbd> `stop`
 
 ```python
-stop() → None
+async def stop() -> None
 ```
 
 Destroy an idle runtime exactly once.

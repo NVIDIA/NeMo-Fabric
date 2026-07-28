@@ -1,12 +1,13 @@
 ---
 title: "Client"
 slug: "/reference/api/python-library-reference/client"
-description: "Resolve, plan, diagnose, and run agents with Fabric."
+description: "Resolve, plan, diagnose, and run agents with NVIDIA NeMo Fabric."
 ---
-{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0 */}
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.client`
+
 Native Python client for resolving and running NeMo Fabric agents.
 
 
@@ -15,6 +16,7 @@ Native Python client for resolving and running NeMo Fabric agents.
 
 
 ## <kbd>class</kbd> `Fabric`
+
 Primary Python entrypoint for NeMo Fabric.
 
 Every lifecycle method accepts a complete, typed ``FabricConfig`` plus an optional ``base_dir`` used to resolve relative paths. Compose variants in Python before calling the SDK. The ``doctor()``, ``plan()``, and ``run()`` results are typed, read-only mapping models. ``start_runtime()`` returns an active ``Runtime`` handle.
@@ -32,15 +34,16 @@ See the Getting Started overview for runnable single-invocation, typed-config, a
 ### <kbd>method</kbd> `doctor`
 
 ```python
-doctor(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None
-) → DoctorReport
+async def doctor(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> DoctorReport
 ```
 
 Diagnose a planned agent without starting its runtime.
 
-Doctor checks the resolved adapter, capability mappings, and declared environment requirements using the native Fabric core.
+Doctor checks the resolved adapter, capability mappings, and declared environment requirements using the native NeMo Fabric core.
 
 
 
@@ -67,10 +70,11 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 ### <kbd>method</kbd> `plan`
 
 ```python
-plan(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None
-) → RunPlan
+def plan(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> RunPlan
 ```
 
 Resolve a complete typed configuration into an immutable execution plan.
@@ -102,17 +106,18 @@ Planning resolves the selected adapter and reports optional runtime capabilities
 ### <kbd>method</kbd> `run`
 
 ```python
-run(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None,
-    input: 'Any' = None,
-    request: 'RunRequest | None' = None
-) → RunResult
+async def run(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+    input: Any = None,
+    request: RunRequest | None = None,
+) -> RunResult
 ```
 
 Execute one complete start, invoke, and stop lifecycle.
 
-``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. Fabric attempts to stop a started runtime even when invocation fails.
+``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. NeMo Fabric attempts to stop a started runtime even when invocation fails.
 
 
 
@@ -142,16 +147,18 @@ Execute one complete start, invoke, and stop lifecycle.
 ### <kbd>method</kbd> `start_runtime`
 
 ```python
-start_runtime(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None,
-    overrides: 'Mapping[str, Any] | None' = None
-) → Runtime
+async def start_runtime(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+    overrides: Mapping[str, Any] | None = None,
+    streaming: bool = False,
+) -> Runtime
 ```
 
 Start a stateful runtime for one or more ordered invocations.
 
-Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides.
+Each call starts a new logical runtime. Runtime-scoped overrides are recursively merged below invocation-scoped overrides. Set ``streaming=True`` with NVIDIA NeMo Relay enabled to provision the SDK-owned ATOF endpoint used by ``Runtime.invoke_stream()``.
 
 
 
@@ -160,6 +167,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
  - <b>`config`</b>:  Complete typed ``FabricConfig``.
  - <b>`base_dir`</b>:  Base directory for resolving relative paths.
  - <b>`overrides`</b>:  JSON-compatible overrides applied to every invocation  in the runtime unless superseded by invocation overrides.
+ - <b>`streaming`</b>:  Whether to provision NeMo Relay ATOF streaming for  ``Runtime.invoke_stream()``.
 
 
 
@@ -170,7 +178,7 @@ Each call starts a new logical runtime. Runtime-scoped overrides are recursively
 
 **Raises:**
 
- - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid.
+ - <b>`FabricConfigError`</b>:  If inputs or overrides are invalid, or streaming  is requested without NeMo Relay enabled.
  - <b>`FabricNativeUnavailableError`</b>:  If the native extension is not  installed.
  - <b>`FabricRuntimeError`</b>:  If runtime startup fails.
 

@@ -65,7 +65,10 @@ def _shim_adapter_config() -> FabricConfig:
     """Config referencing the test adapter (runs without secrets)."""
 
     config = _repository_adapter_config().to_mapping()
-    config["metadata"] = {"name": "typed-only-run"}
+    config["metadata"] = {
+        "name": "typed-only-run",
+        "caller_annotation": "sdk",
+    }
     config["harness"] = {
         "adapter_id": "test.fabric.hermes_shim",
         "resolution": "preinstalled",
@@ -106,6 +109,7 @@ async def runs_with_typed_config_and_adapter_directory(client: Fabric) -> None:
         base = Path(tmpdir) / "scratch"
         copytree(SHIM_ADAPTERS, base / "adapters")
         (base / "ws").mkdir()
+        plan = client.plan(config, base_dir=base)
         result = await client.run(
             config,
             base_dir=base,
@@ -118,10 +122,12 @@ async def runs_with_typed_config_and_adapter_directory(client: Fabric) -> None:
         )
 
     assert isinstance(result, RunResult)
-    assert result["status"] == "succeeded", result.get("status")
+    assert plan.config.metadata.extra_fields["caller_annotation"] == "sdk"
+    assert result["status"] == "succeeded", result["status"]
     assert result.request_id == "typed-request-1"
     assert result["adapter_kind"] == "python"
     assert result["metadata"]["adapter_runner"] == "persistent_local_host"
+    assert "caller_annotation" not in result.metadata
     assert result["output"]["received"] == "hello typed"
 
 

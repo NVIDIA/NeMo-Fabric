@@ -23,13 +23,14 @@ PYTHONPATH="python/src" lazydocs \
   --overview-file "index.md" \
   "nemo_fabric.client" \
   "nemo_fabric.runtime" \
+  "nemo_fabric.streaming" \
   "nemo_fabric.models" \
   "nemo_fabric.types" \
   "nemo_fabric.errors"
 
-# Make the lazydocs output MDX-safe for Fern (Fern parses .md as MDX):
+# Normalize the lazydocs output for Fern:
 #  - drop source badges (relative links don't resolve on the site)
-#  - strip HTML comments (<!-- ... -->), which are invalid in MDX
+#  - strip lazydocs HTML comments before adding the generated SPDX header
 #  - remove trailing whitespace emitted by lazydocs
 perl -ni -e 'print unless m{img\.shields\.io/badge/-source}' "$out"/*.md
 perl -0pi -e 's/<!--.*?-->//gs' "$out"/*.md
@@ -39,8 +40,16 @@ perl -0pi -e 's/\A\s+//' "$out"/*.md
 # lazydocs nests properties at h4 directly under h2 class sections. Flatten
 # those headings to h3 so generated pages satisfy markdown heading order.
 perl -pi -e 's/^#### (<kbd>property<\/kbd>)/### $1/' "$out"/*.md
-# lazydocs emits the ToolsConfig class heading without a separating blank line.
-perl -0pi -e 's/(^## <kbd>class<\/kbd> `ToolsConfig`\n)(?!\n)/$1\n/m' "$out/nemo_fabric.models.md"
+# lazydocs emits module and class headings without a separating blank line.
+perl -0pi -e 's/(^#{1,2} <kbd>(?:module|class)<\/kbd> `[^`]+`\n)(?!\n)/$1\n/gm' \
+  "$out"/*.md
+# lazydocs omits the async marker from generated method signatures.
+perl -0pi -e 's/(### <kbd>method<\/kbd> `(aclose|result)`\n\n```python\n)\2\(/${1}async def ${2}(/g' \
+  "$out/nemo_fabric.streaming.md"
+
+# Restore signature semantics that lazydocs drops and add field-level contracts
+# for the SDK's Pydantic and immutable mapping models.
+PYTHONPATH="python/src" python scripts/docs/enhance_python_api_reference.py "$out"
 
 add_frontmatter() {
   local file="$1"
@@ -52,8 +61,8 @@ add_frontmatter() {
   {
     printf -- '---\ntitle: "%s"\nslug: "%s"\ndescription: "%s"\n---\n' \
       "$title" "$slug" "$description"
-    printf '%s\n' '{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.'
-    printf '%s\n\n' 'SPDX-License-Identifier: Apache-2.0 */}'
+    printf '%s\n' '<!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.'
+    printf '%s\n\n' 'SPDX-License-Identifier: Apache-2.0 -->'
     command cat "$file"
   } > "$temporary"
   mv "$temporary" "$file"
@@ -67,7 +76,7 @@ add_frontmatter \
 add_frontmatter \
   "$out/nemo_fabric.client.md" \
   "Client" \
-  "Resolve, plan, diagnose, and run agents with NeMo Fabric." \
+  "Resolve, plan, diagnose, and run agents with NVIDIA NeMo Fabric." \
   "/reference/api/python-library-reference/client"
 add_frontmatter \
   "$out/nemo_fabric.runtime.md" \
@@ -75,9 +84,14 @@ add_frontmatter \
   "Drive stateful multi-turn execution through the Runtime API." \
   "/reference/api/python-library-reference/runtime"
 add_frontmatter \
+  "$out/nemo_fabric.streaming.md" \
+  "Streaming" \
+  "Consume raw NVIDIA NeMo Relay ATOF records and terminal invocation results." \
+  "/reference/api/python-library-reference/streaming"
+add_frontmatter \
   "$out/nemo_fabric.models.md" \
   "Models" \
-  "Pydantic authoring models for NeMo Fabric config and request inputs." \
+  "Pydantic authoring models for NVIDIA NeMo Fabric config and request inputs." \
   "/reference/api/python-library-reference/models"
 add_frontmatter \
   "$out/nemo_fabric.types.md" \
@@ -89,6 +103,12 @@ add_frontmatter \
   "Errors" \
   "Structured exception hierarchy for config, capability, state, and runtime failures." \
   "/reference/api/python-library-reference/errors"
+
+# Use the full product name on first mention in each generated page and the
+# shortened product name on subsequent mentions.
+for file in "$out"/*.md; do
+  perl -0pi -e 'my $seen = 0; s/NVIDIA NeMo Relay/++$seen == 1 ? $& : "NeMo Relay"/ge' "$file"
+done
 
 # Drop the mkdocs-specific .pages file lazydocs emits; Fern does not use it.
 rm -f "$out"/.pages

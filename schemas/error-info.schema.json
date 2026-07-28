@@ -1,7 +1,7 @@
 {
   "$defs": {
     "ErrorStage": {
-      "description": "Fabric lifecycle stage associated with an error.",
+      "description": "NeMo Fabric lifecycle stage associated with an error.",
       "oneOf": [
         {
           "const": "config",
@@ -64,12 +64,12 @@
     },
     "retryable": {
       "default": false,
-      "description": "Whether Fabric considers this failure safe for a consumer-level retry.",
+      "description": "Whether NeMo Fabric considers this failure safe for a consumer-level retry.",
       "type": "boolean"
     },
     "stage": {
       "$ref": "#/$defs/ErrorStage",
-      "description": "Fabric lifecycle stage where the failure surfaced."
+      "description": "NeMo Fabric lifecycle stage where the failure surfaced."
     }
   },
   "required": [

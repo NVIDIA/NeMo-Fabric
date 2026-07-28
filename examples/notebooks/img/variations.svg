@@ -1,6 +1,6 @@
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved. SPDX-License-Identifier: Apache-2.0 -->
 <svg viewBox="0 0 840 430" width="620" height="317" xmlns="http://www.w3.org/2000/svg" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
-  <title>Two ways to vary an agent with Fabric</title>
+  <title>Two ways to vary an agent with NeMo Fabric</title>
   <desc>One logical agent can be varied two ways: harness variation (run the same agent on Hermes, Codex, Claude, or Deep Agents) and agent configuration variation (vary FabricConfig fields such as skills, MCP servers, models, and telemetry).</desc>
   <defs>
     <marker id="av" markerWidth="10" markerHeight="10" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#76B900"/></marker>

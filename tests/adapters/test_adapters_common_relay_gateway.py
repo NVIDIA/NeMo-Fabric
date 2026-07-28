@@ -80,7 +80,8 @@ def test_relay_cli_contract_rejects_unsupported_version(
     )
 
     with pytest.raises(
-        relay_gateway.RelayGatewayError, match="Fabric requires >=0.6.0,<0.7.0"
+        relay_gateway.RelayGatewayError,
+        match=r"NeMo Fabric requires >=0\.6\.0,<0\.7\.0",
     ):
         relay_gateway.relay_cli_contract(tmp_path / "nemo-relay")
 

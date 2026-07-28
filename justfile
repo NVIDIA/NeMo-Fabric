@@ -360,7 +360,11 @@ lock-python:
         uv lock --project "$project"
     done
 
-# [version] or --set ref_name=<version>
+# Normalize a release tag to the version used by package metadata.
+normalize-release-tag tag:
+    @uv run --no-project --no-cache python scripts/ci/normalize_release_tag.py "{{ tag }}"
+
+# [version-or-tag] or --set ref_name=<version-or-tag>
 set-version version="":
     #!/usr/bin/env bash
     {{ bash_helpers }}
@@ -372,6 +376,7 @@ set-version version="":
         echo "Error: version is required for set-version" >&2
         exit 1
     fi
+    version="$(just normalize-release-tag "$version")"
     cd "$REPO_ROOT"
     set_project_version "$version"
     just lock-python
@@ -388,7 +393,15 @@ docs:
     PATH="{{ REPO_ROOT }}/.venv/bin:$PATH" bash scripts/generate_api_docs.sh
     uv run --no-sync python scripts/docs/generate_rust_library_reference.py
     npx --prefix docs --no-install fern check --warnings
-    npx --prefix docs --no-install fern docs broken-links --strict
+    fern_validation_root="$(mktemp -d)"
+    trap 'rm -rf "$fern_validation_root"' EXIT
+    uv run --no-sync python scripts/docs/sync_fern_docs_branch.py sync-dev \
+        --source-root "$REPO_ROOT" \
+        --target-root "$fern_validation_root"
+    (
+        cd "$fern_validation_root/fern"
+        "$REPO_ROOT/docs/node_modules/.bin/fern" docs broken-links --strict
+    )
 
 # Launch Jupyter Lab for the onboarding notebooks under examples/notebooks/.
 # Jupyter is fetched on demand so it stays out of the project lockfile.

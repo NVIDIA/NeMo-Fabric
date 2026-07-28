@@ -30,7 +30,7 @@ struct PythonDiscoverySettings {
     python_env: Option<String>,
 }
 
-/// Return the Fabric core version.
+/// Return the NeMo Fabric core version.
 #[pyfunction]
 fn version() -> PyResult<String> {
     Ok(nemo_fabric_core::version().to_string())
@@ -76,7 +76,7 @@ fn doctor_config(
     to_json(&doctor_plan(&plan))
 }
 
-/// Run typed config JSON through its Fabric adapter and return JSON.
+/// Run typed config JSON through its NeMo Fabric adapter and return JSON.
 #[pyfunction]
 #[pyo3(signature = (config_json, base_dir=None, input_text=None, input_file=None, request_json=None, request_file=None))]
 fn run_config(

@@ -5,7 +5,7 @@
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "Fabric config areas or policy paths accepted by this adapter.",
+          "description": "NeMo Fabric config areas or policy paths accepted by this adapter.",
           "items": {
             "type": "string"
           },
@@ -181,7 +181,7 @@
     "config": {
       "$ref": "#/$defs/AdapterConfigSupport",
       "default": {},
-      "description": "Fabric config areas this adapter consumes or generates."
+      "description": "NeMo Fabric config areas this adapter consumes or generates."
     },
     "contract_version": {
       "description": "Adapter descriptor contract version.",

@@ -164,7 +164,7 @@ def runtime_id(payload: dict[str, Any]) -> str:
     value = common_utils.runtime_context(payload).get("runtime_id")
     if not isinstance(value, str) or not value:
         raise AdapterInputError(
-            "codex_invalid_request", "Fabric runtime ID is required"
+            "codex_invalid_request", "NeMo Fabric runtime ID is required"
         )
     return value
 
@@ -259,14 +259,14 @@ def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
         if not skill_path.is_dir() or not skill_file.is_file():
             raise AdapterConfigError(
                 "codex_invalid_configuration",
-                "Fabric skill path must be a directory containing SKILL.md: "
+                "NeMo Fabric skill path must be a directory containing SKILL.md: "
                 f"{skill_path}",
             )
         name = skill_path.name
         if not name or name in names:
             raise AdapterConfigError(
                 "codex_invalid_configuration",
-                f"Fabric skill names must be unique: {name}",
+                f"NeMo Fabric skill names must be unique: {name}",
             )
         names.add(name)
         paths.append(skill_path)

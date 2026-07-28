@@ -26,16 +26,16 @@
       ]
     },
     "ControlLocation": {
-      "description": "Where Fabric control code runs relative to the environment.",
+      "description": "Where NeMo Fabric control code runs relative to the environment.",
       "oneOf": [
         {
           "const": "external_control",
-          "description": "Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
+          "description": "NeMo Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
           "type": "string"
         },
         {
           "const": "in_env_control",
-          "description": "Fabric runs inside the prepared environment with the harness.",
+          "description": "NeMo Fabric runs inside the prepared environment with the harness.",
           "type": "string"
         }
       ]
@@ -57,7 +57,7 @@
         },
         "control_location": {
           "$ref": "#/$defs/ControlLocation",
-          "description": "Where Fabric control code runs."
+          "description": "Where NeMo Fabric control code runs."
         },
         "environment_id": {
           "description": "Environment handle id.",
@@ -70,7 +70,7 @@
         },
         "ownership": {
           "$ref": "#/$defs/EnvironmentOwnership",
-          "description": "Whether Fabric owns the environment resource."
+          "description": "Whether NeMo Fabric owns the environment resource."
         },
         "provider": {
           "description": "Environment provider.",
@@ -93,7 +93,7 @@
       "type": "object"
     },
     "EnvironmentOwnership": {
-      "description": "Whether Fabric owns the underlying environment resource.",
+      "description": "Whether NeMo Fabric owns the underlying environment resource.",
       "oneOf": [
         {
           "const": "caller_owned",
@@ -102,7 +102,7 @@
         },
         {
           "const": "fabric_owned",
-          "description": "Fabric created or leased the environment resource and may release it.",
+          "description": "NeMo Fabric created or leased the environment resource and may release it.",
           "type": "string"
         }
       ]
@@ -135,7 +135,7 @@
       "type": "string"
     },
     "runtime_binding": {
-      "description": "Fabric-owned opaque binding for this runtime handle.",
+      "description": "NeMo Fabric-owned opaque binding for this runtime handle.",
       "type": "string"
     },
     "runtime_id": {

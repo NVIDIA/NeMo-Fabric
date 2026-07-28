@@ -271,6 +271,16 @@ def test_normalize_list(value: object, expected: list[str]):
     assert common_utils.normalize_list(value) == expected
 
 
+def test_without_none_preserves_falsey_values():
+    assert common_utils.without_none(
+        {"zero": 0, "false": False, "empty": "", "missing": None}
+    ) == {
+        "zero": 0,
+        "false": False,
+        "empty": "",
+    }
+
+
 def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config(
     tmp_path: Path,
 ):

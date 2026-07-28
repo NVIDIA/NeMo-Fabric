@@ -17,7 +17,7 @@ Every invocation that reaches the adapter boundary returns a normalized
 | `error` | Structured `ErrorInfo`, or `None` — may be `None` even when `status` is not `succeeded`, so do not use it as the success signal. |
 | `output` | Harness output normalized to the configured output schema. |
 | `artifacts` | Output files, logs, patches, and other materialized references. |
-| `telemetry` | References to Relay or other telemetry streams from the run. |
+| `telemetry` | References to NVIDIA NeMo Relay or other telemetry streams from the run. |
 | `events` | Ordered normalized lifecycle and invocation events. |
 | `metadata` | Result-specific structured metadata. |
 | `runtime_id`, `invocation_id`, `request_id` | Correlation IDs across runtimes, logs, telemetry, and artifacts. |

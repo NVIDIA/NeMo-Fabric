@@ -24,7 +24,7 @@ precedence:
    and queried from `ADAPTER_PYTHON` when set, otherwise from the current Python;
 3. `<base_dir>/adapters`, for agent-local and development overrides.
 
-Fabric resolves multi-component relative `ADAPTER_PYTHON` paths from
+NeMo Fabric resolves multi-component relative `ADAPTER_PYTHON` paths from
 `<base_dir>`. It resolves bare command names through `PATH`.
 
 This scan only discovers installed metadata. It is not the final registry

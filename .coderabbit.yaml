@@ -74,6 +74,7 @@ reviews:
     - path: "{docs/**,README.md,AGENTS.md}"
       instructions: |
         Review documentation for technical accuracy against the current API, command correctness, and consistency with generated schemas.
+        For links between files under docs/, require paths relative to the source file with the target file's .mdx extension so they work in both Fern builds and repository browsers. Flag Fern site-root links such as [NeMo Fabric overview](/nemo/fabric/about-nemo-fabric/overview); use the repository-relative equivalent, such as [NeMo Fabric overview](../about-nemo-fabric/overview.mdx).
     - path: "{*.md,**/*.md,**/*.mdx,**/*.ipynb}"
       instructions: |
         Enforce the product name in user-facing prose: use "NVIDIA NeMo Fabric" on first use and "NeMo Fabric" thereafter. Flag standalone capitalized "Fabric" when it refers to the product. Do not flag the lowercase `fabric` CLI command, package/import/crate names, code identifiers, API symbols, configuration keys, file paths, or unrelated generic uses of the word.
