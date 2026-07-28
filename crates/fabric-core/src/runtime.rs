@@ -464,7 +464,10 @@ pub fn run_plan(plan: &RunPlan, request: RunRequest) -> Result<RunResult> {
             return Err(error);
         }
     };
-    result.events.extend(stop_runtime(plan, &runtime)?);
+    match stop_runtime(plan, &runtime) {
+        Ok(events) => result.events.extend(events),
+        Err(error) => preserve_stop_failure(&mut result, &error),
+    }
     Ok(result)
 }
 
@@ -1548,12 +1551,14 @@ fn exchange_lifecycle_message(
                 diagnostics.push_str("adapter metadata: ");
                 diagnostics.push_str(&metadata);
             }
-            Err(lifecycle_error(
+            Err(lifecycle_error_with_details(
                 operation,
                 runtime_id,
                 error.code,
                 error.message,
                 diagnostics,
+                error.retryable,
+                error.metadata,
             ))
         }
     }
@@ -1566,12 +1571,96 @@ fn lifecycle_error(
     message: impl Into<String>,
     diagnostics: impl Into<String>,
 ) -> FabricError {
+    lifecycle_error_with_details(
+        operation,
+        runtime_id,
+        code,
+        message,
+        diagnostics,
+        false,
+        BTreeMap::new(),
+    )
+}
+
+fn lifecycle_error_with_details(
+    operation: AdapterLifecycleOperation,
+    runtime_id: &str,
+    code: impl Into<String>,
+    message: impl Into<String>,
+    diagnostics: impl Into<String>,
+    retryable: bool,
+    metadata: BTreeMap<String, Value>,
+) -> FabricError {
     FabricError::AdapterLifecycleOperation {
         operation: operation.as_str(),
         runtime_id: runtime_id.to_string(),
         code: code.into(),
         message: message.into(),
         diagnostics: diagnostics.into(),
+        retryable,
+        metadata,
+    }
+}
+
+fn preserve_stop_failure(result: &mut RunResult, error: &FabricError) {
+    let error = runtime_error_info(error, ErrorStage::Stop);
+    let serialized = serde_json::to_value(&error).unwrap_or_else(|_| {
+        serde_json::json!({
+            "stage": "stop",
+            "code": "runtime_stop_failed",
+            "message": "runtime cleanup failed",
+            "retryable": false,
+        })
+    });
+    let cleanup_errors = result
+        .metadata
+        .entry("cleanup_errors".to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    if let Some(cleanup_errors) = cleanup_errors.as_array_mut() {
+        cleanup_errors.push(serialized);
+    } else {
+        *cleanup_errors = Value::Array(vec![serialized]);
+    }
+    if result.status == RunStatus::Succeeded {
+        result.status = RunStatus::Failed;
+        result.error = Some(error);
+    }
+}
+
+fn runtime_error_info(error: &FabricError, stage: ErrorStage) -> ErrorInfo {
+    match error {
+        FabricError::AdapterLifecycleOperation {
+            runtime_id,
+            code,
+            message,
+            diagnostics,
+            retryable,
+            metadata,
+            ..
+        } => {
+            let mut metadata = metadata.clone();
+            metadata.insert("runtime_id".to_string(), Value::String(runtime_id.clone()));
+            if !diagnostics.is_empty() {
+                metadata.insert(
+                    "diagnostics".to_string(),
+                    Value::String(diagnostics.clone()),
+                );
+            }
+            ErrorInfo {
+                stage,
+                code: code.clone(),
+                message: message.clone(),
+                retryable: *retryable,
+                metadata,
+            }
+        }
+        _ => ErrorInfo {
+            stage,
+            code: "runtime_stop_failed".to_string(),
+            message: error.to_string(),
+            retryable: false,
+            metadata: BTreeMap::new(),
+        },
     }
 }
 
@@ -2460,13 +2549,16 @@ def response(operation, *, output=None, error=None):
         "outcome": outcome,
     }), flush=True)
 
-def failure(stage, code, message):
-    return {
+def failure(stage, code, message, *, retryable=False, metadata=None):
+    error = {
         "stage": stage,
         "code": code,
         "message": message,
-        "retryable": False,
+        "retryable": retryable,
     }
+    if metadata:
+        error["metadata"] = metadata
+    return error
 
 for line in sys.stdin:
     message = json.loads(line)
@@ -2520,7 +2612,13 @@ for line in sys.stdin:
         response("invoke", output=output)
     elif operation == "stop":
         if MODE == "stop_failure":
-            response("stop", error=failure("stop", "fake_stop", "stop rejected"))
+            response("stop", error=failure(
+                "stop",
+                "fake_stop",
+                "stop rejected",
+                retryable=True,
+                metadata={"source": "fake-host"},
+            ))
             sys.exit(18)
         response("stop")
         break
@@ -2947,6 +3045,28 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn run_plan_preserves_completed_output_when_stop_fails() {
+        let (root, plan) = local_host_plan("stop_failure");
+
+        let result = run_plan(&plan, RunRequest::text("completed")).expect("normalized result");
+
+        assert_eq!(result.status, RunStatus::Failed);
+        assert_eq!(result.output["input"], "completed");
+        let error = result.error.expect("stop error");
+        assert_eq!(error.stage, ErrorStage::Stop);
+        assert_eq!(error.code, "fake_stop");
+        assert_eq!(error.message, "stop rejected");
+        assert!(error.retryable);
+        assert_eq!(error.metadata["source"], "fake-host");
+        assert_eq!(
+            result.metadata["cleanup_errors"][0]["code"],
+            serde_json::json!("fake_stop")
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn local_host_crash_is_terminal_for_runtime() {
         let (root, plan) = local_host_plan("crash_after_start");
         let runtime = start_runtime(&plan).expect("start local host");
@@ -3001,6 +3121,14 @@ for line in sys.stdin:
 
         let error = stop_runtime(&plan, &runtime).expect_err("stop must fail");
         assert!(error.to_string().contains("fake_stop"), "{error}");
+        assert!(matches!(
+            error,
+            FabricError::AdapterLifecycleOperation {
+                retryable: true,
+                metadata,
+                ..
+            } if metadata["source"] == "fake-host"
+        ));
         let retry = stop_runtime(&plan, &runtime).expect("cleanup retry is idempotent");
         assert_eq!(retry[0].metadata["already_stopped"], true);
 

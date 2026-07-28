@@ -40,6 +40,27 @@ async def test_adapter_python_selects_python_adapter_interpreter(
     assert result["status"] == "succeeded"
 
 
+async def test_native_sdk_preserves_completed_output_when_stop_fails(
+    hermes_shim_agent_dir: Path,
+):
+    os.environ["FABRIC_TEST_SHIM_STOP_FAILURE"] = "1"
+
+    result = await Fabric().run(
+        hermes_shim_config(),
+        base_dir=hermes_shim_agent_dir,
+        input="completed before cleanup",
+    )
+
+    assert result.status == "failed"
+    assert result.output["received"] == "completed before cleanup"
+    assert result.error is not None
+    assert result.error.stage == "stop"
+    assert result.error.code == "shim_stop_failed"
+    assert result.error.retryable is True
+    assert result.error.metadata["component"] == "shim-cleanup"
+    assert result.metadata["cleanup_errors"][0]["code"] == "shim_stop_failed"
+
+
 def test_adapter_python_rejects_invalid_path_during_plan(
     hermes_shim_agent_dir: Path,
 ):

@@ -299,12 +299,13 @@ else:
   normalized result: `FabricConfigError`, `FabricCapabilityError`,
   `FabricRuntimeError`, `FabricStateError`, and `FabricNativeUnavailableError`.
 - The consumer owns retries and failure policy; NeMo Fabric does not retry by
-  default. `run(...)` and `async with` runtimes attempt cleanup automatically,
-  so prefer them over manual `stop()` — but shutdown is not guaranteed: `stop()`,
-  including the automatic call when an `async with` block exits, can raise
-  `FabricRuntimeError`. On a normal exit that error propagates; after an
-  invocation error the cleanup failure is attached to the original exception. Be
-  ready to handle a shutdown failure.
+  default. `run(...)` and `async with` runtimes attempt cleanup automatically.
+  When `run(...)` obtains a completed result before shutdown fails, it preserves
+  the output in a failed result and records the stop error in `error` and
+  `metadata.cleanup_errors`. Explicit `stop()`, including the automatic call
+  when an `async with` block exits, can raise `FabricRuntimeError`. On a normal
+  exit that error propagates; after an invocation error the cleanup failure is
+  attached to the original exception.
 
 See [results-and-errors.md](references/results-and-errors.md) for the full
 result-field and error inventory, and
@@ -337,7 +338,7 @@ result-field and error inventory, and
 - [ ] `plan(...)` and `doctor(...)` validate adapter selection, capabilities, and environment before execution.
 - [ ] Installation, adapter dependencies, and credentials are owned by the environment, not consumer code.
 - [ ] `RunResult` status, error, and events are inspected before output; artifacts and telemetry are captured.
-- [ ] `FabricError` subclasses are handled, including a `FabricRuntimeError` raised by shutdown; cleanup is delegated to `run(...)` or `async with` (attempted, not guaranteed).
+- [ ] `FabricError` subclasses and failed `RunResult` cleanup errors are handled; cleanup is delegated to `run(...)` or `async with`.
 - [ ] Correlation IDs are stored and logged as opaque strings.
 - [ ] Focused integration tests pass and NeMo Fabric validation (`plan`/`doctor`, tests) succeeds.
 

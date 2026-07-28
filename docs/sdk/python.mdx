@@ -575,9 +575,11 @@ request. NeMo Fabric-generated values use type-specific prefixes such as `runtim
 Consumers should store and log each field separately and otherwise treat its
 value as opaque rather than parsing the identifier encoding.
 
-If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized result,
-the SDK raises a `FabricError` subclass instead of returning a partial
-`RunResult`.
+If NeMo Fabric cannot resolve config, start a runtime, or obtain a normalized
+result, the SDK raises a `FabricError` subclass. If a single-invocation
+`Fabric.run(...)` obtains a completed result before shutdown fails, it preserves
+the output in a failed `RunResult`. The structured stop error is available in
+`result.error` and `result.metadata["cleanup_errors"]`.
 
 ## Events
 
@@ -675,15 +677,17 @@ All public SDK errors inherit from `FabricError`.
 | --- | --- |
 | `FabricConfigError` | Invalid config, request, or override. |
 | `FabricCapabilityError` | Selected adapter does not support the requested operation. |
-| `FabricRuntimeError` | Runtime startup, invocation, or shutdown failed before a normalized result could be returned. |
+| `FabricRuntimeError` | Runtime startup, invocation, or explicit shutdown failed before a normalized result could be returned. |
 | `FabricStateError` | Invalid runtime state transition, such as invoking after stop or starting overlapping invocations. |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
 Consumers own job-level retries and rollout-level failure policy.
-Single-invocation runs attempt to stop the runtime before returning. A `Runtime`
-used with `async with` also attempts cleanup after an invocation error; if cleanup
-fails, that failure is attached to the original exception rather than replacing
-it. NeMo Fabric records structured error metadata when possible and returns enough
+Single-invocation runs attempt to stop the runtime before returning. If stop
+fails after the invocation completed, the returned result is failed but retains
+the completed output and records the cleanup error. A `Runtime` used with
+`async with` also attempts cleanup after an invocation error; if cleanup fails,
+that failure is attached to the original exception rather than replacing it.
+NeMo Fabric records structured error metadata when possible and returns enough
 detail for the consumer to decide what to do next.
 
 ## SDK Contract Boundaries

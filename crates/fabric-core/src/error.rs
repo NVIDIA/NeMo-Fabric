@@ -120,6 +120,10 @@ pub enum FabricError {
         message: String,
         /// Bounded adapter-host diagnostics.
         diagnostics: String,
+        /// Whether the adapter considers retrying the operation safe.
+        retryable: bool,
+        /// Structured adapter-provided diagnostic metadata.
+        metadata: std::collections::BTreeMap<String, serde_json::Value>,
     },
     /// A runtime handle was used with a different run plan than the one that created it.
     #[error(

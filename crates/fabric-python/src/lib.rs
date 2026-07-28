@@ -183,7 +183,39 @@ where
 }
 
 fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
-    PyRuntimeError::new_err(error.to_string())
+    let structured = match &error {
+        nemo_fabric_core::FabricError::AdapterLifecycleOperation {
+            operation,
+            runtime_id,
+            code,
+            message,
+            diagnostics,
+            retryable,
+            metadata,
+        } => Some(serde_json::json!({
+            "stage": operation,
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+            "details": {
+                "runtime_id": runtime_id,
+                "diagnostics": diagnostics,
+                "metadata": metadata,
+            },
+        })),
+        _ => None,
+    };
+    let py_error = PyRuntimeError::new_err(error.to_string());
+    if let Some(structured) = structured
+        && let Ok(encoded) = serde_json::to_string(&structured)
+    {
+        Python::attach(|py| {
+            let _ = py_error
+                .value(py)
+                .setattr("_nemo_fabric_error_json", encoded);
+        });
+    }
+    py_error
 }
 
 fn resolve_context(

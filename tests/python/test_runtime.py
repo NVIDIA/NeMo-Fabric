@@ -83,6 +83,27 @@ def _config() -> FabricConfig:
     )
 
 
+def _structured_native_error(
+    *,
+    stage: str,
+    code: str,
+    message: str,
+    retryable: bool,
+    details: dict[str, Any],
+) -> RuntimeError:
+    error = RuntimeError(f"adapter lifecycle {stage} failed ({code}): {message}")
+    error._nemo_fabric_error_json = json.dumps(  # type: ignore[attr-defined]
+        {
+            "stage": stage,
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+            "details": details,
+        }
+    )
+    return error
+
+
 async def _wait_for(event: threading.Event, timeout: float = 2.0) -> bool:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -179,6 +200,30 @@ async def test_start_runtime_preserves_start_stage(
     assert caught.value.stage == "start"
 
 
+async def test_start_runtime_preserves_structured_native_error(
+    native_client: Fabric,
+    mock_native: MagicMock,
+):
+    mock_native.start_runtime.side_effect = _structured_native_error(
+        stage="start",
+        code="adapter_unavailable",
+        message="adapter could not start",
+        retryable=True,
+        details={"runtime_id": "runtime-1", "metadata": {"source": "adapter"}},
+    )
+
+    with pytest.raises(FabricRuntimeError, match="adapter could not start") as caught:
+        await native_client.start_runtime(_config())
+
+    assert caught.value.stage == "start"
+    assert caught.value.code == "adapter_unavailable"
+    assert caught.value.retryable is True
+    assert caught.value.details == {
+        "runtime_id": "runtime-1",
+        "metadata": {"source": "adapter"},
+    }
+
+
 async def test_start_runtime_rejects_invalid_overrides_before_start(
     native_client: Fabric,
     mock_native: MagicMock,
@@ -258,6 +303,29 @@ async def test_failed_cleanup_does_not_mask_invoke_failure(mock_native: MagicMoc
     assert runtime.status is RuntimeStatus.FAILED
     assert caught.value.__notes__ == ["runtime cleanup failed: stop failed"]
     mock_native.stop_runtime.assert_called_once()
+
+
+async def test_runtime_stop_preserves_structured_native_error(mock_native: MagicMock):
+    mock_native.stop_runtime.side_effect = _structured_native_error(
+        stage="stop",
+        code="adapter_stop_failed",
+        message="adapter did not stop",
+        retryable=False,
+        details={"runtime_id": "runtime-1", "metadata": {"source": "adapter"}},
+    )
+    runtime = _runtime_wrapper(mock_native)
+
+    with pytest.raises(FabricRuntimeError, match="adapter did not stop") as caught:
+        await runtime.stop()
+
+    assert caught.value.stage == "stop"
+    assert caught.value.code == "adapter_stop_failed"
+    assert caught.value.retryable is False
+    assert caught.value.details == {
+        "runtime_id": "runtime-1",
+        "metadata": {"source": "adapter"},
+    }
+    assert runtime.status is RuntimeStatus.FAILED
 
 
 async def test_runtime_preserves_non_mapping_message_values(mock_native: MagicMock):
@@ -527,12 +595,42 @@ async def test_run_surfaces_cleanup_failure_after_success(
     native_client: Fabric,
     mock_native: MagicMock,
 ):
-    mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
+    original_invoke = mock_native.invoke_runtime.side_effect
 
-    with pytest.raises(FabricRuntimeError, match="stop failed") as caught:
-        await native_client.run(_config(), input="hello")
+    def completed_invoke(*args: Any) -> str:
+        result = json.loads(original_invoke(*args))
+        result["output"]["response"] = "completed answer"
+        return json.dumps(result)
 
-    assert caught.value.stage == "run"
+    mock_native.invoke_runtime.side_effect = completed_invoke
+    mock_native.stop_runtime.side_effect = _structured_native_error(
+        stage="stop",
+        code="telemetry_shutdown_timeout",
+        message="telemetry shutdown timed out",
+        retryable=True,
+        details={
+            "runtime_id": "runtime-1",
+            "diagnostics": "exporter timed out",
+            "metadata": {"component": "otel"},
+        },
+    )
+
+    result = await native_client.run(_config(), input="hello")
+
+    assert result.status == "failed"
+    assert result.output["response"] == "completed answer"
+    assert result.error is not None
+    assert result.error.stage == "stop"
+    assert result.error.code == "telemetry_shutdown_timeout"
+    assert result.error.retryable is True
+    assert result.error.metadata == {
+        "component": "otel",
+        "runtime_id": "runtime-1",
+        "diagnostics": "exporter timed out",
+    }
+    assert result.metadata["cleanup_errors"][0]["code"] == (
+        "telemetry_shutdown_timeout"
+    )
     assert mock_native.stop_runtime.call_count == 1
 
 

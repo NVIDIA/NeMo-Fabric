@@ -213,7 +213,7 @@ class Runtime:
                 raise
             except Exception as error:
                 self._status = RuntimeStatus.FAILED
-                raise FabricRuntimeError(str(error), stage="invoke") from error
+                raise _runtime_error_from_native(error, "invoke") from error
             self._absorb(typed_result)
             return typed_result
         except FabricError:
@@ -328,7 +328,7 @@ class Runtime:
             raise
         except Exception as error:
             self._status = RuntimeStatus.FAILED
-            raise FabricRuntimeError(str(error), stage="stop") from error
+            raise _runtime_error_from_native(error, "stop") from error
         else:
             self._status = RuntimeStatus.STOPPED
         finally:
@@ -453,9 +453,11 @@ async def _run_native_lifecycle(
         finally:
             try:
                 stop_events = json.loads(native.stop_runtime(plan_json, runtime_json))
-            except Exception:
+            except Exception as error:
                 if invoke_error is None:
-                    raise
+                    if result is None:
+                        raise
+                    _preserve_stop_failure(result, error)
                 stop_events = []
             if result is not None and isinstance(stop_events, list):
                 result.setdefault("events", []).extend(stop_events)
@@ -465,7 +467,76 @@ async def _run_native_lifecycle(
     except FabricError:
         raise
     except Exception as error:
-        raise FabricRuntimeError(str(error), stage="run") from error
+        raise _runtime_error_from_native(error, "run") from error
+
+
+def _runtime_error_from_native(
+    error: Exception, default_stage: str
+) -> FabricRuntimeError:
+    info = _native_error_info(error, default_stage)
+    return FabricRuntimeError(
+        info["message"],
+        stage=info["stage"],
+        code=info["code"],
+        retryable=info["retryable"],
+        details=info["details"],
+    )
+
+
+def _native_error_info(error: Exception, default_stage: str) -> dict[str, Any]:
+    encoded = getattr(error, "_nemo_fabric_error_json", None)
+    payload: dict[str, Any] = {}
+    if isinstance(encoded, str):
+        try:
+            decoded = json.loads(encoded)
+        except (TypeError, ValueError):
+            decoded = None
+        if isinstance(decoded, dict):
+            payload = decoded
+    stage = payload.get("stage")
+    code = payload.get("code")
+    message = payload.get("message")
+    retryable = payload.get("retryable")
+    details = payload.get("details")
+    return {
+        "stage": stage if isinstance(stage, str) and stage else default_stage,
+        "code": code
+        if isinstance(code, str) and code
+        else f"runtime_{default_stage}_failed",
+        "message": message if isinstance(message, str) and message else str(error),
+        "retryable": retryable if isinstance(retryable, bool) else False,
+        "details": deepcopy(details) if isinstance(details, dict) else {},
+    }
+
+
+def _preserve_stop_failure(result: dict[str, Any], error: Exception) -> None:
+    info = _native_error_info(error, "stop")
+    details = info["details"]
+    metadata = deepcopy(details.get("metadata", {}))
+    if not isinstance(metadata, dict):
+        metadata = {}
+    runtime_id = details.get("runtime_id")
+    if isinstance(runtime_id, str) and runtime_id:
+        metadata["runtime_id"] = runtime_id
+    diagnostics = details.get("diagnostics")
+    if isinstance(diagnostics, str) and diagnostics:
+        metadata["diagnostics"] = diagnostics
+    normalized = {
+        "stage": info["stage"],
+        "code": info["code"],
+        "message": info["message"],
+        "retryable": info["retryable"],
+        "metadata": metadata,
+    }
+    result_metadata = result.setdefault("metadata", {})
+    cleanup_errors = result_metadata.setdefault("cleanup_errors", [])
+    if not isinstance(cleanup_errors, list):
+        cleanup_errors = []
+        result_metadata["cleanup_errors"] = cleanup_errors
+    cleanup_errors.append(deepcopy(normalized))
+    if result.get("status") == "succeeded":
+        result["status"] = "failed"
+        result["error"] = normalized
 
 
 async def _call_blocking(func: Any) -> Any:

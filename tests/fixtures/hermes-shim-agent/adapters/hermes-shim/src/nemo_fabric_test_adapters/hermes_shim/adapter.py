@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,13 @@ class ShimRuntime:
 
     async def stop(self) -> None:
         self._start_payload = None
+        if os.environ.get("FABRIC_TEST_SHIM_STOP_FAILURE") == "1":
+            raise lifecycle.LifecycleError(
+                "shim_stop_failed",
+                "shim runtime stop failed",
+                retryable=True,
+                metadata={"component": "shim-cleanup"},
+            )
 
 
 def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:

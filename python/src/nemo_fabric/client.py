@@ -24,6 +24,7 @@ from nemo_fabric.runtime import (
     _json_mapping,
     _run_native_lifecycle,
     _run_request_payload,
+    _runtime_error_from_native,
 )
 from nemo_fabric.streaming import (
     _AtofStreamListener,
@@ -163,6 +164,9 @@ class Fabric:
         Returns:
             The normalized ``RunResult``, including output, artifacts,
             telemetry references, lifecycle events, and structured error data.
+            If shutdown fails after invocation completes, the result is marked
+            failed while preserving its output and recording the stop error in
+            ``error`` and ``metadata.cleanup_errors``.
 
         Raises:
             FabricConfigError: If input and request are combined, request data is not
@@ -279,7 +283,7 @@ class Fabric:
         except Exception as error:
             if stream_listener is not None:
                 await stream_listener.close()
-            raise FabricRuntimeError(str(error), stage="start") from error
+            raise _runtime_error_from_native(error, "start") from error
         return Runtime(
             client=self,
             plan=plan,

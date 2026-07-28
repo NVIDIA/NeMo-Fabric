@@ -43,24 +43,30 @@ reuse the encoding.
 ## Error Hierarchy
 
 All public SDK errors inherit from `FabricError`. NeMo Fabric raises these when it
-cannot return a normalized result; it does not return a partial `RunResult`. See
+cannot return a normalized result. If a single-invocation `run(...)` completes
+before shutdown fails, it instead returns the completed output in a failed
+`RunResult`; the primary stop error is in `error` and is also recorded in
+`metadata.cleanup_errors`. See
 the [errors reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.errors.md).
 
 | Error | Meaning |
 | --- | --- |
 | `FabricConfigError` | Invalid config, request, or override. |
 | `FabricCapabilityError` | Selected adapter does not support the requested operation. |
-| `FabricRuntimeError` | Startup, invocation, or shutdown failed before a normalized result. |
+| `FabricRuntimeError` | Startup, invocation, or explicit runtime shutdown failed before a normalized result. |
 | `FabricStateError` | Invalid runtime state transition (invoking after stop, overlapping invocations). |
 | `FabricNativeUnavailableError` | Native extension is not installed or importable. |
 
 ## Cleanup And Resilience
 
 - Prefer `run(...)` and `async with` runtimes: both attempt cleanup
-  automatically. Shutdown is attempted, not guaranteed — `stop()`, including the
-  automatic call at `async with` exit, can raise `FabricRuntimeError`. On a
-  normal block exit that error propagates; when an invocation already failed, the
-  cleanup failure is attached to the original exception rather than replacing it.
+  automatically. If shutdown fails after `run(...)` has obtained a result, the
+  returned result has `status == "failed"` while preserving its output and
+  recording the structured stop error in both `error` and
+  `metadata.cleanup_errors`. Explicit `stop()`, including the automatic call at
+  `async with` exit, can raise `FabricRuntimeError`. On a normal block exit that
+  error propagates; when an invocation already failed, the cleanup failure is
+  attached to the original exception rather than replacing it.
 - The consumer owns job-level retries and rollout failure policy. NeMo Fabric marks a
   runtime or invocation failed and returns structured error metadata when
   possible, but does not retry by default.
