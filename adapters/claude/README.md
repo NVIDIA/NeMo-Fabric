@@ -28,9 +28,12 @@ runtime, use the adapter package's `harness` extra:
 pip install "nemo-fabric-adapters-claude[harness]"
 ```
 
-The adapter package's `full` extra installs the same dependencies as `harness`.
-Claude Relay support requires an external `nemo-relay` CLI, so the package does
-not provide a `relay` extra.
+The adapter package's `full` extra installs the same dependencies as `harness`;
+it does not install the NeMo Fabric runtime. Claude Relay support uses the
+external `nemo-relay` CLI, not the Python `nemo-relay` package, so this adapter
+does not provide a `relay` extra. Install the CLI separately by following the
+[NeMo Relay CLI install guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli).
+After installation, ensure `nemo-relay` is on `PATH`.
 
 If the environment already manages a compatible Claude Agent SDK, install only
 the adapter:
@@ -86,14 +89,6 @@ so an empty API credential prevents fallback to a federation profile.
 Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/integrations/harness/claude)
 for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
-
-Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the
-[NeMo Relay CLI install guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli)
-for installation instructions.
-
-The Python `nemo-relay` package does not install this executable. Refer to the
-[NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)
-for other supported installation methods.
 
 ## Execution Model
 

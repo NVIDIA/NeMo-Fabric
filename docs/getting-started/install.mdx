@@ -34,11 +34,12 @@ already exist in the environment or be managed separately.
 | `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes |
 | `nemo-fabric-adapters-claude` | No | Yes | No | No |
 
-The `full` extra installs every dependency that an adapter package can provide.
-For Claude and Codex, `full` is equivalent to `harness` because their Relay
-integration requires an external executable. For LangChain Deep Agents and
-Hermes Agent, `full` installs both the harness and the NeMo Relay Python
-package.
+An adapter package's `full` extra is scoped to the adapter environment. It
+installs the supported harness and any Python Relay dependency, but it does not
+install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
+`harness` because their Relay integration requires an external executable. For
+LangChain Deep Agents and Hermes Agent, `full` installs both the harness and the
+NeMo Relay Python package.
 
 ### Install the NeMo Fabric Runtime
 
@@ -172,6 +173,10 @@ irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
 ```bash
 cargo binstall nemo-relay-cli
 ```
+
+After installation, ensure `nemo-relay` is on `PATH`. When Relay is enabled
+with `FabricConfig.enable_relay(...)`, the Claude and Codex adapters start and
+supervise the CLI gateway automatically.
 
 ## Source Installation Method
 

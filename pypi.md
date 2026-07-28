@@ -60,9 +60,10 @@ pip install "nemo-fabric-adapters-deepagents[harness]"
 pip install "nemo-fabric-adapters-hermes[harness]"
 ```
 
-Every adapter package also provides a `full` extra. For Claude and Codex,
-`full` installs the same dependencies as `harness`. For LangChain Deep Agents
-and Hermes Agent, `full` also installs the NeMo Relay Python package.
+Every adapter package also provides an adapter-scoped `full` extra, which does
+not install the NeMo Fabric runtime. For Claude and Codex, `full` installs the
+same dependencies as `harness`. For LangChain Deep Agents and Hermes Agent,
+`full` also installs the NeMo Relay Python package.
 
 If the environment already manages a compatible harness, install only the
 adapter package:

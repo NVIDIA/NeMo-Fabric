@@ -51,10 +51,11 @@ adapter package's `harness` extra when the runtime runs in another environment,
 or install the adapter package without an extra when that environment already
 manages the harness. If the runtime and host-managed harness share an
 environment, install `nemo-fabric` and the bare adapter package together. Every
-adapter package also provides a `full` extra. For Claude and Codex, `full` is
-equivalent to `harness` because Relay requires a separately installed
-`nemo-relay` CLI. For Hermes Agent and LangChain Deep Agents, `full` also
-installs the NeMo Relay Python package.
+adapter package also provides an adapter-scoped `full` extra, which does not
+install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
+`harness` because Relay requires a separately installed `nemo-relay` CLI. For
+Hermes Agent and LangChain Deep Agents, `full` also installs the NeMo Relay
+Python package.
 
 Capabilities vary by harness. Review the compatibility matrix and use plan()
 and doctor() before relying on optional capabilities such as MCP, skills,

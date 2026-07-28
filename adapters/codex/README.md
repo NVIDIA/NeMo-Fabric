@@ -26,9 +26,12 @@ use the adapter package's `harness` extra:
 pip install "nemo-fabric-adapters-codex[harness]"
 ```
 
-The adapter package's `full` extra installs the same dependencies as `harness`.
-Codex Relay support requires an external `nemo-relay` CLI, so the package does
-not provide a `relay` extra.
+The adapter package's `full` extra installs the same dependencies as `harness`;
+it does not install the NeMo Fabric runtime. Codex Relay support uses the
+external `nemo-relay` CLI, not the Python `nemo-relay` package, so this adapter
+does not provide a `relay` extra. Install the CLI separately by following the
+[NeMo Relay CLI install guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli).
+After installation, ensure `nemo-relay` is on `PATH`.
 
 If the environment already manages a compatible Codex SDK, install only the
 adapter:
@@ -158,7 +161,8 @@ Codex state variables, the selected model's `api_key_env`, and explicit
 
 ## Relay Integration
 
-Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the
-[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
+Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
+installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway
+separately.
 NeMo Fabric routes the selected Responses-compatible provider through the
 gateway and passes its explicit `base_url` to Relay as the upstream endpoint.

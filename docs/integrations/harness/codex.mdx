@@ -25,9 +25,12 @@ use the adapter package's `harness` extra:
 pip install "nemo-fabric-adapters-codex[harness]"
 ```
 
-The adapter package's `full` extra installs the same dependencies as `harness`.
-Codex Relay integration requires an external `nemo-relay` CLI, so the adapter
-package does not provide a `relay` extra.
+The adapter package's `full` extra installs the same dependencies as `harness`;
+it does not install the NeMo Fabric runtime. Codex Relay integration uses the
+external `nemo-relay` CLI, not the Python `nemo-relay` package, so this adapter
+does not provide a `relay` extra. Follow the
+[NeMo Relay CLI installation procedure](../../getting-started/install.mdx#nemo-relay-cli),
+then ensure `nemo-relay` is on `PATH`.
 
 If the environment already manages a compatible Codex SDK, install only the
 adapter:
