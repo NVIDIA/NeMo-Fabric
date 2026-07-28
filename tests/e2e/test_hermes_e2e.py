@@ -22,13 +22,13 @@ from nemo_fabric import Fabric
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
 
-@pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
 async def test_hermes_persistent_host_reuses_native_session(
     code_review_agent_dir: Path,
     api_server: str,
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
-    config = hermes_config()
+    config = with_relay(hermes_config())
     config.harness.settings["base_url"] = f"{api_server}/v1"
 
     with warnings.catch_warnings():
