@@ -489,6 +489,41 @@ def test_collect_relay_artifacts_missing_configured_atof_file_returns_empty(
     assert common_utils.collect_relay_artifacts(plugin_config) == []
 
 
+def test_collect_relay_artifacts_configured_atof_directory_returns_empty(
+    tmp_path: Path,
+):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    configured = atof_dir / "directory.jsonl"
+    configured.mkdir()
+    plugin_config = _atof_artifact_config(atof_dir, filename=configured.name)
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def test_collect_relay_artifacts_ignores_path_resolution_runtime_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    artifact_dir = tmp_path / "atof"
+    artifact_dir.mkdir()
+    original_resolve = Path.resolve
+
+    def resolve(path: Path, *, strict: bool = False) -> Path:
+        if path.name == "loop":
+            raise RuntimeError("symlink loop")
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+
+    assert common_utils.collect_relay_artifacts(
+        _atof_artifact_config(tmp_path / "loop")
+    ) == []
+    assert common_utils.collect_relay_artifacts(
+        _atof_artifact_config(artifact_dir, filename="loop")
+    ) == []
+
+
 def test_collect_relay_artifacts_non_string_atof_filename_uses_glob(tmp_path: Path):
     atof_dir = tmp_path / "atof"
     atof_dir.mkdir()

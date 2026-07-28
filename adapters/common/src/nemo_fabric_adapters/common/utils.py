@@ -276,7 +276,7 @@ def _artifact_directory(value: Any) -> Path | None:
         return None
     try:
         directory = Path(value).resolve(strict=True)
-    except (OSError, TypeError, ValueError):
+    except (OSError, RuntimeError, TypeError, ValueError):
         return None
     return directory if directory.is_dir() else None
 
@@ -284,7 +284,7 @@ def _artifact_directory(value: Any) -> Path | None:
 def _artifact_file(value: Any, *, directory: Path) -> Path | None:
     try:
         path = Path(value).resolve(strict=True)
-    except (OSError, TypeError, ValueError):
+    except (OSError, RuntimeError, TypeError, ValueError):
         return None
     if not path.is_file() or not path.is_relative_to(directory):
         return None
