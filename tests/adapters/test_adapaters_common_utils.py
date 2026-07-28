@@ -8,6 +8,7 @@ import sys
 import tomllib
 from io import StringIO
 from pathlib import Path
+from typing import Any
 
 import nemo_fabric_adapters.common.utils as common_utils
 import pytest
@@ -369,9 +370,15 @@ def test_collect_relay_artifacts(tmp_path: Path):
     atof_file = atof_dir / "events.atof.jsonl"
     atif_file = atif_dir / "trajectory-1.atif.json"
     ignored_file = atif_dir / "ignored.txt"
+    unrelated_atif = atif_dir / "config.json"
+    atof_directory = atof_dir / "directory.jsonl"
+    atif_directory = atif_dir / "trajectory-directory.atif.json"
     atof_file.write_text("{}", encoding="utf-8")
     atif_file.write_text("{}", encoding="utf-8")
     ignored_file.write_text("ignored", encoding="utf-8")
+    unrelated_atif.write_text("{}", encoding="utf-8")
+    atof_directory.mkdir()
+    atif_directory.mkdir()
     plugin_config = {
         "components": [
             {
@@ -390,7 +397,11 @@ def test_collect_relay_artifacts(tmp_path: Path):
                             },
                         ],
                     },
-                    "atif": {"enabled": True, "output_directory": str(atif_dir)},
+                    "atif": {
+                        "enabled": True,
+                        "output_directory": str(atif_dir),
+                        "filename_template": "trajectory-{session_id}.atif.json",
+                    },
                 },
             }
         ]
@@ -422,6 +433,95 @@ def test_collect_relay_artifacts_ignores_missing_output_directories(
                 },
             }
         ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def _atof_artifact_config(
+    output_directory: object,
+    *,
+    filename: object | None = None,
+) -> dict[str, Any]:
+    sink: dict[str, Any] = {
+        "type": "file",
+        "output_directory": output_directory,
+    }
+    if filename is not None:
+        sink["filename"] = filename
+    return {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [sink],
+                    }
+                },
+            }
+        ]
+    }
+
+
+def test_collect_relay_artifacts_honors_configured_atof_filename(tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    configured = atof_dir / "configured.jsonl"
+    ignored = atof_dir / "ignored.jsonl"
+    configured.write_text("{}", encoding="utf-8")
+    ignored.write_text("{}", encoding="utf-8")
+    plugin_config = _atof_artifact_config(atof_dir, filename=configured.name)
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "atof", "path": str(configured)}
+    ]
+
+
+def test_collect_relay_artifacts_missing_configured_atof_file_returns_empty(
+    tmp_path: Path,
+):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    (atof_dir / "unrelated.jsonl").write_text("{}", encoding="utf-8")
+    plugin_config = _atof_artifact_config(atof_dir, filename="missing.jsonl")
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def test_collect_relay_artifacts_non_string_atof_filename_uses_glob(tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    artifact = atof_dir / "events.jsonl"
+    artifact.write_text("{}", encoding="utf-8")
+    plugin_config = _atof_artifact_config(atof_dir, filename=123)
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "atof", "path": str(artifact)}
+    ]
+
+
+def test_collect_relay_artifacts_rejects_escaping_atof_filenames(tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("{}", encoding="utf-8")
+
+    for filename in (str(outside), "../outside.jsonl"):
+        plugin_config = _atof_artifact_config(atof_dir, filename=filename)
+        assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def test_collect_relay_artifacts_ignores_malformed_paths(tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    plugin_config = _atof_artifact_config(
+        atof_dir,
+        filename="invalid\0name.jsonl",
+    )
+    plugin_config["components"][0]["config"]["atif"] = {
+        "enabled": True,
+        "output_directory": "invalid\0directory",
     }
 
     assert common_utils.collect_relay_artifacts(plugin_config) == []
