@@ -31,8 +31,8 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.codex")
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, and telemetry. The Codex adapter does not support normalized
 `tools.enabled` or `tools.blocked` policy. Use `harness.settings` for supported Codex-specific
-options such as `sandbox`, `approval_mode`, `base_instructions`,
-`developer_instructions`, and `output_schema`.
+options such as `sandbox`, `approval_mode`, `developer_instructions`, and
+`output_schema`. Configure base instructions through `instructions.system`.
 
 ## Configure MCP and Skills
 

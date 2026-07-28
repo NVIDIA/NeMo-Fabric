@@ -144,7 +144,7 @@ async def diagnoses_adapter_incompatibility_without_weakening_plan(client: Fabri
         }
     )
 
-    with pytest.raises(FabricConfigError, match="runtime.max_turns"):
+    with pytest.raises(FabricConfigError, match=r"runtime\.max_turns"):
         client.plan(config, base_dir=ROOT)
 
     report = await client.doctor(config, base_dir=ROOT)

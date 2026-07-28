@@ -250,6 +250,19 @@ def test_typed_config_serializes_normalized_execution_fields():
         ToolsConfig(enabled=["browser"], blocked=["browser"])
 
 
+@pytest.mark.parametrize("content", ["", " "])
+def test_instruction_content_must_be_non_empty(content: str):
+    with pytest.raises(ValidationError):
+        InstructionConfig(content=content)
+
+    raw = _plan()["config"]
+    raw["instructions"] = {
+        "system": {"content": content, "mode": "replace"}
+    }
+    with pytest.raises(FabricConfigError, match="non-empty string"):
+        _FabricConfigSnapshot.from_mapping(raw)
+
+
 def test_run_plan_config_block_tools_emits_canonical_shape():
     config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
 

@@ -492,6 +492,15 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
         await adapter.HermesRuntime().start(payload)
 
 
+def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
+    payload = {
+        "base_dir": str(tmp_path),
+        "runtime_context": {"artifacts": {"root": "run-artifacts"}},
+    }
+
+    assert adapter._artifact_root(payload) == (tmp_path / "run-artifacts").resolve()
+
+
 async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,
@@ -568,6 +577,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
                     "provider": "test-provider",
                     "model": "test-model",
                     "api_key_env": "TEST_API_KEY",
+                    "temperature": 0.2,
                 }
             },
         },
@@ -616,6 +626,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         skip_memory=True,
         save_trajectories=False,
         max_tokens=512,
+        request_overrides={"temperature": 0.2},
         reasoning_config={"effort": "none"},
         platform="fabric",
         session_id="runtime-fabric-123",

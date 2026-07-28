@@ -233,7 +233,7 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `content` | `str` | Yes | — | — | — |
+| `content` | `str` | Yes | — | `MinLen(min_length=1)` | — |
 | `mode` | `Literal['replace']` | No | `'replace'` | — | — |
 
 ---
@@ -1863,7 +1863,7 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `enabled` | `list[str] \| None` | No | `None` | — | Adapter-native tools to expose. None preserves the harness default; an empty list exposes no tools. |
-| `blocked` | `list[str]` | No | `list()` | — | — |
+| `blocked` | `list[str]` | No | `list()` | — | Adapter-native tool names to deny. |
 
 ---
 

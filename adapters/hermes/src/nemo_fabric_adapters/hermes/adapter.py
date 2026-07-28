@@ -207,7 +207,10 @@ def _artifact_root(payload: dict[str, Any]) -> Path:
     artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
     root = artifacts.get("root") if isinstance(artifacts, dict) else None
     if root:
-        return Path(str(root)).resolve()
+        artifact_root = Path(str(root))
+        if not artifact_root.is_absolute():
+            artifact_root = Path(common_utils.base_dir(payload)) / artifact_root
+        return artifact_root.resolve()
     return Path(common_utils.base_dir(payload)).resolve() / "artifacts"
 
 
@@ -305,6 +308,7 @@ class HermesRuntime:
                 max_iterations = common_utils.max_turns(payload)
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
+                temperature = self._model_config.get("temperature")
                 self._agent = AIAgent(
                     **filter_supported_kwargs(
                         AIAgent,
@@ -322,7 +326,11 @@ class HermesRuntime:
                             self._settings.get("save_trajectories", False)
                         ),
                         max_tokens=self._settings.get("max_tokens", 512),
-                        temperature=self._model_config.get("temperature", 0.0),
+                        request_overrides=(
+                            {"temperature": temperature}
+                            if temperature is not None
+                            else None
+                        ),
                         reasoning_config=self._settings.get(
                             "reasoning_config", {"effort": "none"}
                         ),

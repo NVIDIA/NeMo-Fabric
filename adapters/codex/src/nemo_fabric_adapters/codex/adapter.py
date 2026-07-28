@@ -730,7 +730,6 @@ def validate_runtime_payload(payload: dict[str, Any]) -> str:
     approval_mode(payload)
     timeout_seconds(payload)
     for name in (
-        "base_instructions",
         "developer_instructions",
         "service_tier",
     ):

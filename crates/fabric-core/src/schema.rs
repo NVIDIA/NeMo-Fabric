@@ -217,6 +217,10 @@ mod tests {
         let schema = generate_schema(SchemaName::Agent).expect("schema generation");
 
         assert_eq!(
+            schema["$defs"]["InstructionConfig"]["properties"]["content"]["minLength"],
+            1
+        );
+        assert_eq!(
             schema["$defs"]["RuntimeConfig"]["properties"]["max_turns"]["minimum"],
             1
         );

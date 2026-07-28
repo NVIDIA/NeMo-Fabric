@@ -230,9 +230,7 @@ class _InstructionConfig(_ConfigMapping):
             raise FabricConfigError("instruction mode must be replace")
         super().__init__(
             {
-                "content": content
-                if isinstance(content, str)
-                else _required_text(content, "instruction content"),
+                "content": _required_text(content, "instruction content"),
                 "mode": mode,
             },
             extra_fields=extra_fields,

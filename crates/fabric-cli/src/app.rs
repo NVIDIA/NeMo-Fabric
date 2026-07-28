@@ -48,7 +48,7 @@ enum Command {
         #[arg(long, default_value = "")]
         input: String,
     },
-    /// Print the NeMo Fabric core version.
+    /// Print the NVIDIA NeMo Fabric core version.
     Version,
 }
 

@@ -908,6 +908,12 @@ fn run_local_host_adapter(
     request: RunRequest,
 ) -> Result<RunResult> {
     let timeout = match plan.config.runtime.timeout_seconds {
+        Some(seconds) if seconds <= 0.0 => {
+            return Err(FabricError::InvalidConfig {
+                field: "runtime.timeout_seconds".to_string(),
+                reason: "must be a finite number greater than zero".to_string(),
+            });
+        }
         Some(seconds) => {
             Duration::try_from_secs_f64(seconds).map_err(|_| FabricError::InvalidConfig {
                 field: "runtime.timeout_seconds".to_string(),
@@ -2742,6 +2748,25 @@ for line in sys.stdin:
         let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
         assert_eq!(stopped[0].metadata["already_stopped"], true);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_rejects_zero_timeout_from_deserialized_plan() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let mut invalid_plan = plan.clone();
+        invalid_plan.config.runtime.timeout_seconds = Some(0.0);
+
+        let error = run_local_host_adapter(&invalid_plan, &runtime, RunRequest::text("first"))
+            .expect_err("zero timeout must be rejected");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. }
+                if field == "runtime.timeout_seconds"
+        ));
+        stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
     }
 

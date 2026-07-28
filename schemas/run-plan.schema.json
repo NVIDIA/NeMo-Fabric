@@ -699,6 +699,7 @@
       "properties": {
         "content": {
           "description": "Instruction text.",
+          "minLength": 1,
           "type": "string"
         },
         "mode": {

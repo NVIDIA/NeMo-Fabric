@@ -73,6 +73,7 @@ pub enum InstructionMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct InstructionConfig {
     /// Instruction text.
+    #[schemars(length(min = 1))]
     pub content: String,
     /// How the instruction is applied.
     #[serde(default)]
@@ -1109,6 +1110,14 @@ fn validate_config(config: &FabricConfig) -> Result<()> {
             "runtime.timeout_seconds",
             "must be a finite number greater than zero",
         );
+    }
+    if let Some(system) = config
+        .instructions
+        .as_ref()
+        .and_then(|instructions| instructions.system.as_ref())
+        && system.content.trim().is_empty()
+    {
+        return invalid_config("instructions.system.content", "must be a non-empty string");
     }
     for (role, model) in &config.models {
         if model.provider.trim().is_empty()
@@ -2207,6 +2216,31 @@ mod tests {
         assert!(plan.capability_plan.routes.iter().any(|route| {
             route.name == "tools.enabled" && route.target == CapabilityTarget::HarnessNative
         }));
+    }
+
+    #[test]
+    fn empty_system_instruction_is_rejected() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.instructions = Some(InstructionsConfig {
+            system: Some(InstructionConfig {
+                content: " ".to_string(),
+                mode: InstructionMode::Replace,
+                extensions: BTreeMap::new(),
+            }),
+            extensions: BTreeMap::new(),
+        });
+
+        let error = resolve_run_plan_from_config(
+            config,
+            ResolveContext::new("/tmp/fabric-empty-instruction"),
+        )
+        .expect_err("blank instruction must be rejected");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. }
+                if field == "instructions.system.content"
+        ));
     }
 
     #[test]

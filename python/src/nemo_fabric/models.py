@@ -108,8 +108,15 @@ class HarnessConfig(FabricBaseModel):
 class InstructionConfig(FabricBaseModel):
     """One portable instruction value."""
 
-    content: str
+    content: str = Field(min_length=1)
     mode: Literal["replace"] = "replace"
+
+    @field_validator("content")
+    @classmethod
+    def _validate_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("instruction content must be a non-empty string")
+        return value
 
 
 class InstructionsConfig(FabricBaseModel):
@@ -480,7 +487,10 @@ class ToolsConfig(FabricBaseModel):
             "an empty list exposes no tools."
         ),
     )
-    blocked: list[str] = Field(default_factory=list)
+    blocked: list[str] = Field(
+        default_factory=list,
+        description="Adapter-native tool names to deny.",
+    )
 
     @field_validator("enabled", "blocked")
     @classmethod
