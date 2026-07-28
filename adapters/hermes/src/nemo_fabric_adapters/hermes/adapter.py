@@ -84,7 +84,8 @@ def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
 def hermes_working_directory(payload: dict[str, Any]) -> Path:
     """Resolve the normalized Hermes workspace relative to the Fabric root."""
 
-    root = Path(common_utils.base_dir(payload)).resolve()
+    base_dir = payload.get("base_dir")
+    root = Path(base_dir).resolve() if isinstance(base_dir, str) and base_dir else Path()
     environment = common_utils.environment_payload(payload)
     settings = common_utils.settings_payload(payload)
     workspace = environment.get("workspace") or settings.get("workspace")
@@ -244,7 +245,11 @@ class HermesRuntime:
         self._conversation_history: list[dict[str, Any]] | None = None
         self._session_db: Any = None
         self._agent: Any = None
+        self._invoke_hook: Any = None
         self._relay_plugin_config: dict[str, Any] | None = None
+        self._relay_session_pending = False
+        self._relay_finalize_hook_invoked = False
+        self._relay_model_name = "unknown"
         self._relay_runner: relay_cli.HermesRelayRunner | None = None
         self._hermes_cli_version: tuple[int, int, int] | None = None
 
@@ -314,6 +319,7 @@ class HermesRuntime:
 
             from hermes_cli.config import load_config
             from hermes_cli.plugins import discover_plugins
+            from hermes_cli.plugins import invoke_hook
             from hermes_state import SessionDB
             from run_agent import AIAgent
 
@@ -362,6 +368,8 @@ class HermesRuntime:
                         session_db=self._session_db,
                     )
                 )
+            self._invoke_hook = invoke_hook
+            self._relay_model_name = common_utils.relay_model_name(payload)
             self._start_payload = payload
             self._started = True
         except BaseException:
@@ -600,11 +608,38 @@ class HermesRuntime:
             ),
         }
 
+    def _finalize_relay_session(self) -> None:
+        if (
+            self._relay_plugin_config is None
+            or self._agent is None
+            or self._invoke_hook is None
+            or not self._relay_session_pending
+        ):
+            return
+        if not self._relay_finalize_hook_invoked:
+            self._invoke_hook(
+                "on_session_finalize",
+                session_id=getattr(self._agent, "session_id", ""),
+                model=getattr(self._agent, "model", None) or self._relay_model_name,
+                platform=getattr(self._agent, "platform", None) or "fabric",
+            )
+            self._relay_finalize_hook_invoked = True
+        from nemo_relay import subscribers
+
+        subscribers.flush()
+        self._relay_session_pending = False
+        self._relay_finalize_hook_invoked = False
+
     async def stop(self) -> None:
         agent = self._agent
         session_db = self._session_db
         relay_runner = self._relay_runner
         errors: list[BaseException] = []
+        if self._relay_plugin_config is not None and agent is not None:
+            try:
+                self._finalize_relay_session()
+            except BaseException as error:
+                errors.append(error)
         self._agent = None
         self._session_db = None
         self._start_payload = None
@@ -617,7 +652,11 @@ class HermesRuntime:
         self._hermes_config = {}
         self._enabled_toolsets = None
         self._conversation_history = None
+        self._invoke_hook = None
         self._relay_plugin_config = None
+        self._relay_session_pending = False
+        self._relay_finalize_hook_invoked = False
+        self._relay_model_name = "unknown"
         self._relay_runner = None
         self._hermes_cli_version = None
         self._started = False
