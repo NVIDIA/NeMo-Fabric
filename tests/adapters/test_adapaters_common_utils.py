@@ -8,6 +8,7 @@ import sys
 import tomllib
 from io import StringIO
 from pathlib import Path
+from typing import Any
 
 import nemo_fabric_adapters.common.utils as common_utils
 import pytest
@@ -71,82 +72,92 @@ def test_virtualenv_subprocess_env_preserves_environment_outside_virtualenv(
 
 
 def test_request_payload():
-    assert common_utils.request_payload({"request": {"input": "hello"}}) == {"input": "hello"}
+    assert common_utils.request_payload({"request": {"input": "hello"}}) == {
+        "input": "hello"
+    }
     assert common_utils.request_payload({}) == {}
 
 
 @pytest.mark.parametrize(
-    ("provider", "expected"),
-    [
-        ("nvidia", "https://integrate.api.nvidia.com/v1"),
-        ("openai", None),
-        (None, None),
-    ],
-)
-def test_default_base_url(
-    provider: str | None,
-    expected: str | None,
-):
-    assert common_utils.default_base_url(provider) == expected
-
-
-@pytest.mark.parametrize(
-    ("settings", "model_config", "expected"),
+    ("model_config", "expected"),
     [
         (
-            {"base_url": "https://settings.example/v1"},
-            {"provider": "nvidia", "settings": {"base_url": "https://model.example/v1"}},
-            "https://settings.example/v1",
-        ),
-        (
-            {},
-            {"provider": "openai", "settings": {"base_url": "https://model.example/v1"}},
+            {"provider": "nvidia", "base_url": "https://model.example/v1"},
             "https://model.example/v1",
         ),
-        ({}, {"provider": "nvidia"}, "https://integrate.api.nvidia.com/v1"),
-        ({}, {"provider": "other"}, None),
+        (
+            {"provider": "openai", "base_url": "https://model.example/v1"},
+            "https://model.example/v1",
+        ),
+        ({"provider": "nvidia"}, None),
+        ({"provider": "other"}, None),
     ],
 )
 def test_get_base_url(
-    settings: dict[str, object],
     model_config: dict[str, object],
     expected: str | None,
 ):
-    assert common_utils.get_base_url(settings, model_config) == expected
+    assert common_utils.get_base_url(model_config) == expected
 
 
 @pytest.mark.parametrize(
-    ("selected_model", "models", "expected"),
+    ("models", "expected"),
     [
         (
-            "fast",
             {"fast": {"provider": "nvidia", "model": "fast-model"}},
             {"provider": "nvidia", "model": "fast-model"},
         ),
         (
-            None,
             {"default": {"provider": "nvidia", "model": "default-model"}},
             {"provider": "nvidia", "model": "default-model"},
         ),
-        ("bad", {"bad": "not-a-model-config"}, {}),
+        ({"bad": "not-a-model-config"}, {}),
+        (
+            {
+                "fast": {"provider": "nvidia", "model": "fast-model"},
+                "slow": {"provider": "nvidia", "model": "slow-model"},
+            },
+            {},
+        ),
     ],
 )
 def test_selected_model_config(
-    selected_model: str | None,
     models: dict[str, object],
     expected: dict[str, object],
 ):
-    settings = {}
-    if selected_model is not None:
-        settings["model"] = selected_model
     payload = {
         "config": {
-            "harness": {"settings": settings},
+            "harness": {"settings": {}},
             "models": models,
         }
     }
 
     assert common_utils.selected_model_config(payload) == expected
+
+
+def test_normalized_instruction_runtime_and_tool_accessors():
+    payload = {
+        "config": {
+            "instructions": {
+                "system": {"content": "Be concise.", "mode": "replace"}
+            },
+            "runtime": {"timeout_seconds": 12.5, "max_turns": 7},
+            "tools": {
+                "enabled": [],
+                "blocked": ["Bash"],
+            },
+        },
+        "runtime_context": {
+            "environment": {"env": {"VISIBLE": "yes"}},
+        },
+    }
+
+    assert common_utils.system_instruction(payload) == "Be concise."
+    assert common_utils.max_turns(payload) == 7
+    assert common_utils.timeout_seconds(payload, default=30) == 12.5
+    assert common_utils.environment_env(payload) == {"VISIBLE": "yes"}
+    assert common_utils.blocked_tools(payload) == ["Bash"]
+    assert common_utils.enabled_tools(payload) == []
 
 
 def test_payload_accessors_use_canonical_plan_fields(tmp_path):
@@ -173,10 +184,14 @@ def test_payload_accessors_use_canonical_plan_fields(tmp_path):
     assert common_utils.agent_name(payload) == "outer-agent"
     assert common_utils.base_dir(payload) == base_dir
     assert common_utils.runtime_context(payload) == payload["runtime_context"]
-    assert common_utils.environment_payload(payload) == {"workspace": "/runtime-workspace"}
+    assert common_utils.environment_payload(payload) == {
+        "workspace": "/runtime-workspace"
+    }
     assert common_utils.settings_payload(payload) == {"inner": True}
     assert common_utils.models_payload(payload) == {"inner": {"model": "inner-model"}}
-    assert common_utils.capability_plan(payload) == {"native": {"skill_paths": ["skills"]}}
+    assert common_utils.capability_plan(payload) == {
+        "native": {"skill_paths": ["skills"]}
+    }
 
 
 @pytest.mark.parametrize("value", [None, "", "relative/path"])
@@ -251,11 +266,15 @@ def test_dump_yaml_falls_back_to_json_when_yaml_is_unavailable(
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
-    assert common_utils.dump_yaml({"model": {"default": "demo"}}) == json.dumps(
-        {"model": {"default": "demo"}},
-        indent=2,
-        sort_keys=False,
-    ) + "\n"
+    assert (
+        common_utils.dump_yaml({"model": {"default": "demo"}})
+        == json.dumps(
+            {"model": {"default": "demo"}},
+            indent=2,
+            sort_keys=False,
+        )
+        + "\n"
+    )
 
 
 @pytest.mark.parametrize(
@@ -316,9 +335,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     previous_atof_dir.mkdir(parents=True)
     previous_atif_dir.mkdir(parents=True)
     (previous_atof_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
-    (previous_atif_dir / "trajectory-old.atif.json").write_text(
-        "{}", encoding="utf-8"
-    )
+    (previous_atif_dir / "trajectory-old.atif.json").write_text("{}", encoding="utf-8")
     payload = {
         "agent_name": "review-agent",
         "base_dir": str(tmp_path),
@@ -336,7 +353,9 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     assert plugin_config["components"][0]["kind"] == "observability"
     assert observability["version"] == 2
     file_sink, stream_sink = observability["atof"]["sinks"]
-    assert file_sink["output_directory"] == str(tmp_path / "custom-relay" / "runtime-current")
+    assert file_sink["output_directory"] == str(
+        tmp_path / "custom-relay" / "runtime-current"
+    )
     assert file_sink["filename"] == "events.atof.jsonl"
     assert file_sink["mode"] == "overwrite"
     assert Path(file_sink["output_directory"]).is_dir()
@@ -344,14 +363,21 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         "type": "stream",
         "url": "https://example.test/events",
     }
-    assert observability["atif"]["output_directory"] == str(tmp_path / "artifacts" / "relay" / "runtime-current")
-    assert observability["atif"]["filename_template"] == "trajectory-{session_id}.atif.json"
+    assert observability["atif"]["output_directory"] == str(
+        tmp_path / "artifacts" / "relay" / "runtime-current"
+    )
+    assert (
+        observability["atif"]["filename_template"]
+        == "trajectory-{session_id}.atif.json"
+    )
     assert observability["atif"]["agent_name"] == "review-agent"
     assert observability["atif"]["model_name"] == "nvidia/review-model"
     assert Path(observability["atif"]["output_directory"]).is_dir()
 
     atof_file = Path(file_sink["output_directory"]) / "events.atof.jsonl"
-    atif_file = Path(observability["atif"]["output_directory"]) / "trajectory-current.atif.json"
+    atif_file = (
+        Path(observability["atif"]["output_directory"]) / "trajectory-current.atif.json"
+    )
     atof_file.write_text("{}", encoding="utf-8")
     atif_file.write_text("{}", encoding="utf-8")
 
@@ -369,9 +395,15 @@ def test_collect_relay_artifacts(tmp_path: Path):
     atof_file = atof_dir / "events.atof.jsonl"
     atif_file = atif_dir / "trajectory-1.atif.json"
     ignored_file = atif_dir / "ignored.txt"
+    unrelated_atif = atif_dir / "config.json"
+    atof_directory = atof_dir / "directory.jsonl"
+    atif_directory = atif_dir / "trajectory-directory.atif.json"
     atof_file.write_text("{}", encoding="utf-8")
     atif_file.write_text("{}", encoding="utf-8")
     ignored_file.write_text("ignored", encoding="utf-8")
+    unrelated_atif.write_text("{}", encoding="utf-8")
+    atof_directory.mkdir()
+    atif_directory.mkdir()
     plugin_config = {
         "components": [
             {
@@ -390,7 +422,11 @@ def test_collect_relay_artifacts(tmp_path: Path):
                             },
                         ],
                     },
-                    "atif": {"enabled": True, "output_directory": str(atif_dir)},
+                    "atif": {
+                        "enabled": True,
+                        "output_directory": str(atif_dir),
+                        "filename_template": "trajectory-{session_id}.atif.json",
+                    },
                 },
             }
         ]
@@ -399,6 +435,59 @@ def test_collect_relay_artifacts(tmp_path: Path):
     assert common_utils.collect_relay_artifacts(plugin_config) == [
         {"kind": "atof", "path": str(atof_file)},
         {"kind": "atif", "path": str(atif_file)},
+    ]
+
+
+@pytest.mark.parametrize("filename_template", [None, "", 123])
+def test_collect_relay_artifacts_requires_valid_atif_filename_template(
+    tmp_path: Path,
+    filename_template: object,
+):
+    atif_dir = tmp_path / "atif"
+    atif_dir.mkdir()
+    (atif_dir / "config.json").write_text("{}", encoding="utf-8")
+    atif_config: dict[str, Any] = {
+        "enabled": True,
+        "output_directory": str(atif_dir),
+    }
+    if filename_template is not None:
+        atif_config["filename_template"] = filename_template
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {"atif": atif_config},
+            }
+        ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def test_collect_relay_artifacts_treats_atif_template_as_literal(tmp_path: Path):
+    atif_dir = tmp_path / "atif"
+    atif_dir.mkdir()
+    configured = atif_dir / "[team]-session.json"
+    unrelated = atif_dir / "t-session.json"
+    configured.write_text("{}", encoding="utf-8")
+    unrelated.write_text("{}", encoding="utf-8")
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "atif": {
+                        "enabled": True,
+                        "output_directory": str(atif_dir),
+                        "filename_template": "[team]-{session_id}.json",
+                    }
+                },
+            }
+        ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "atif", "path": str(configured)}
     ]
 
 
@@ -422,6 +511,130 @@ def test_collect_relay_artifacts_ignores_missing_output_directories(
                 },
             }
         ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def _atof_artifact_config(
+    output_directory: object,
+    *,
+    filename: object | None = None,
+) -> dict[str, Any]:
+    sink: dict[str, Any] = {
+        "type": "file",
+        "output_directory": output_directory,
+    }
+    if filename is not None:
+        sink["filename"] = filename
+    return {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "atof": {
+                        "enabled": True,
+                        "sinks": [sink],
+                    }
+                },
+            }
+        ]
+    }
+
+
+def test_collect_relay_artifacts_honors_configured_atof_filename(tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    configured = atof_dir / "configured.jsonl"
+    ignored = atof_dir / "ignored.jsonl"
+    configured.write_text("{}", encoding="utf-8")
+    ignored.write_text("{}", encoding="utf-8")
+    plugin_config = _atof_artifact_config(atof_dir, filename=configured.name)
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "atof", "path": str(configured)}
+    ]
+
+
+def test_collect_relay_artifacts_missing_configured_atof_file_returns_empty(
+    tmp_path: Path,
+):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    (atof_dir / "unrelated.jsonl").write_text("{}", encoding="utf-8")
+    plugin_config = _atof_artifact_config(atof_dir, filename="missing.jsonl")
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def test_collect_relay_artifacts_configured_atof_directory_returns_empty(
+    tmp_path: Path,
+):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    configured = atof_dir / "directory.jsonl"
+    configured.mkdir()
+    plugin_config = _atof_artifact_config(atof_dir, filename=configured.name)
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def test_collect_relay_artifacts_ignores_path_resolution_runtime_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    artifact_dir = tmp_path / "atof"
+    artifact_dir.mkdir()
+    original_resolve = Path.resolve
+
+    def resolve(path: Path, *, strict: bool = False) -> Path:
+        if path.name == "loop":
+            raise RuntimeError
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+
+    assert common_utils.collect_relay_artifacts(
+        _atof_artifact_config(tmp_path / "loop")
+    ) == []
+    assert common_utils.collect_relay_artifacts(
+        _atof_artifact_config(artifact_dir, filename="loop")
+    ) == []
+
+
+def test_collect_relay_artifacts_non_string_atof_filename_uses_glob(tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    artifact = atof_dir / "events.jsonl"
+    artifact.write_text("{}", encoding="utf-8")
+    plugin_config = _atof_artifact_config(atof_dir, filename=123)
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "atof", "path": str(artifact)}
+    ]
+
+
+def test_collect_relay_artifacts_rejects_escaping_atof_filenames(tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("{}", encoding="utf-8")
+
+    for filename in (str(outside), "../outside.jsonl"):
+        plugin_config = _atof_artifact_config(atof_dir, filename=filename)
+        assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
+def test_collect_relay_artifacts_ignores_malformed_paths(tmp_path: Path):
+    atof_dir = tmp_path / "atof"
+    atof_dir.mkdir()
+    plugin_config = _atof_artifact_config(
+        atof_dir,
+        filename="invalid\0name.jsonl",
+    )
+    plugin_config["components"][0]["config"]["atif"] = {
+        "enabled": True,
+        "output_directory": "invalid\0directory",
     }
 
     assert common_utils.collect_relay_artifacts(plugin_config) == []

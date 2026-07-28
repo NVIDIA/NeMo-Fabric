@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::config::{
     AdapterKind, CapabilityKind, CapabilityTarget, ControlLocation, EnvironmentOwnership,
-    ResolutionStrategy, RunPlan,
+    ResolutionStrategy, RunPlan, adapter_config_compatibility_issues,
 };
 
 /// Diagnostic status.
@@ -56,6 +56,7 @@ pub struct DoctorReport {
 pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
     let mut checks = Vec::new();
     checks.push(check_adapter_descriptor(plan));
+    checks.extend(check_adapter_config_compatibility(plan));
     checks.push(check_resolution(plan));
     checks.extend(check_runtime_execution_surface(plan));
     checks.push(check_environment_context(plan));
@@ -69,6 +70,31 @@ pub fn doctor_plan(plan: &RunPlan) -> DoctorReport {
         status,
         checks,
     }
+}
+
+fn check_adapter_config_compatibility(plan: &RunPlan) -> Vec<DoctorCheck> {
+    adapter_config_compatibility_issues(
+        &plan.config,
+        plan.adapter_descriptor
+            .as_ref()
+            .map(|adapter| &adapter.descriptor),
+    )
+    .into_iter()
+    .map(|issue| {
+        let mut metadata = BTreeMap::new();
+        metadata.insert("adapter_id".to_string(), Value::String(issue.adapter_id));
+        metadata.insert("field".to_string(), Value::String(issue.field.clone()));
+        check_with_metadata(
+            "config.unsupported",
+            DoctorStatus::Fail,
+            format!(
+                "configuration at `{}` cannot be implemented by the selected adapter: {}",
+                issue.field, issue.reason
+            ),
+            metadata,
+        )
+    })
+    .collect()
 }
 
 fn check_adapter_descriptor(plan: &RunPlan) -> DoctorCheck {
@@ -467,7 +493,11 @@ fn worst(left: DoctorStatus, right: DoctorStatus) -> DoctorStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{FabricConfig, ResolveContext, resolve_run_plan_from_config};
+    use crate::config::{
+        FabricConfig, ResolveContext, resolve_diagnostic_plan_from_config,
+        resolve_run_plan_from_config,
+    };
+    use crate::error::FabricError;
 
     #[test]
     fn diagnoses_a_typed_plan_without_file_source_fields() {
@@ -503,5 +533,46 @@ mod tests {
                 .iter()
                 .any(|check| check.message.contains(&expected_command))
         );
+    }
+
+    #[test]
+    fn diagnoses_unsupported_config_without_weakening_strict_planning() {
+        let config: FabricConfig = serde_json::from_value(serde_json::json!({
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "incompatible-agent"},
+            "harness": {
+                "adapter_id": "nvidia.fabric.codex",
+                "resolution": "preinstalled"
+            },
+            "runtime": {"max_turns": 3},
+            "tools": {"enabled": []}
+        }))
+        .expect("typed config");
+        let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+
+        let strict_error =
+            resolve_run_plan_from_config(config.clone(), ResolveContext::new(&base_dir))
+                .expect_err("strict planning must reject unsupported config");
+        assert!(matches!(
+            strict_error,
+            FabricError::AdapterCompatibility { .. }
+        ));
+
+        let plan = resolve_diagnostic_plan_from_config(config, ResolveContext::new(base_dir))
+            .expect("diagnostic plan");
+        let report = doctor_plan(&plan);
+
+        assert_eq!(report.status, DoctorStatus::Fail);
+        assert!(report.checks.iter().any(|check| {
+            check.name == "config.unsupported"
+                && check.status == DoctorStatus::Fail
+                && check.metadata.get("field")
+                    == Some(&Value::String("runtime.max_turns".to_string()))
+        }));
+        assert!(report.checks.iter().any(|check| {
+            check.name == "capability.unsupported"
+                && check.status == DoctorStatus::Fail
+                && check.message.contains("tools.enabled")
+        }));
     }
 }

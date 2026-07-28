@@ -31,17 +31,24 @@ pip install "nemo-fabric[hermes, hermes-agent]"
 
 The adapter receives a normalized payload from NeMo Fabric and materializes a native Hermes Agent configuration for:
 
-- model provider, model name, base URL, temperature, and token settings;
-- workspace and terminal settings;
+- selected model provider, model name, base URL, and temperature through
+  `models`;
+- `instructions.system` and `runtime.max_turns`;
+- workspace and explicit environment variables through `environment`;
+- invocation timeout through `runtime.timeout_seconds`;
 - NeMo Fabric skills as external skill directories for Hermes Agent;
 - NeMo Fabric MCP servers as Hermes Agent MCP server config;
-- `tools.blocked` as disabled toolsets for Hermes Agent, unioned with
-  `harness.settings.disabled_toolsets`;
+- `tools.enabled` and `tools.blocked` as Hermes-native toolset selection and
+  blocking policy;
 - optional NeMo Relay telemetry plugin configuration.
 
-`hermes_home` configures a base directory. The adapter creates a child under
-`runtimes/<runtime_id>` so invocations in one NeMo Fabric runtime share Hermes Agent state
-without sharing config or the session database with another runtime.
+Tool selectors are Hermes toolset names because that is the native policy
+surface Hermes exposes. Keep Hermes-specific controls such as
+terminal timeout, reasoning configuration, and plugin configuration in
+`harness.settings`. The adapter derives Hermes state from the NeMo Fabric
+artifact root and creates a child under `runtimes/<runtime_id>`, so invocations
+in one NeMo Fabric runtime share state without sharing config or the session
+database with another runtime.
 
 ## Execution Model
 

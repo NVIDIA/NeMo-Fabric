@@ -13,6 +13,7 @@ from copy import deepcopy
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from typing import Self
 from typing import TypeVar
 
 from pydantic import BaseModel
@@ -213,17 +214,82 @@ class _HarnessConfig(_ConfigMapping):
         )
 
 
+class _InstructionConfig(_ConfigMapping):
+    """One portable instruction value."""
+
+    _fields = frozenset({"content", "mode"})
+
+    def __init__(
+        self,
+        *,
+        content: str,
+        mode: str = "replace",
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        if mode != "replace":
+            raise FabricConfigError("instruction mode must be replace")
+        super().__init__(
+            {
+                "content": _required_text(content, "instruction content"),
+                "mode": mode,
+            },
+            extra_fields=extra_fields,
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_InstructionConfig":
+        """Validate an instruction mapping and preserve extension fields."""
+
+        data = _mapping(value, "instruction")
+        return cls(
+            content=data.get("content"),
+            mode=data.get("mode", "replace"),
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+
+class _InstructionsConfig(_ConfigMapping):
+    """Harness-neutral agent instructions."""
+
+    _fields = frozenset({"system"})
+
+    def __init__(
+        self,
+        *,
+        system: _InstructionConfig | Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        values: dict[str, Any] = {}
+        if system is not None:
+            values["system"] = _coerce(_InstructionConfig, system, "system instruction")
+        super().__init__(values, extra_fields=extra_fields)
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_InstructionsConfig":
+        """Validate an instructions mapping and preserve extension fields."""
+
+        data = _mapping(value, "instructions")
+        return cls(
+            system=data.get("system"),
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+
 class _RuntimeConfig(_ConfigMapping):
-    """Runtime input/output contract.
+    """Invocation runtime contract.
 
     Attributes:
         input_schema: Optional logical input contract identifier.
         output_schema: Optional logical output contract identifier.
         artifacts: Optional artifact-root path.
+        timeout_seconds: Optional invocation deadline in seconds.
+        max_turns: Optional harness turn limit.
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
 
-    _fields = frozenset({"input_schema", "output_schema", "artifacts"})
+    _fields = frozenset(
+        {"input_schema", "output_schema", "artifacts", "timeout_seconds", "max_turns"}
+    )
 
     def __init__(
         self,
@@ -231,6 +297,8 @@ class _RuntimeConfig(_ConfigMapping):
         input_schema: str | None = None,
         output_schema: str | None = None,
         artifacts: str | Path | None = None,
+        timeout_seconds: float | None = None,
+        max_turns: int | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         values: dict[str, Any] = {}
@@ -241,6 +309,28 @@ class _RuntimeConfig(_ConfigMapping):
         ):
             if item is not None:
                 values[key] = item
+        if timeout_seconds is not None:
+            if (
+                isinstance(timeout_seconds, bool)
+                or not isinstance(timeout_seconds, (int, float))
+                or not math.isfinite(timeout_seconds)
+                or timeout_seconds <= 0
+            ):
+                raise FabricConfigError(
+                    "runtime timeout_seconds must be a finite number greater than zero"
+                )
+            values["timeout_seconds"] = float(timeout_seconds)
+        if max_turns is not None:
+            if (
+                isinstance(max_turns, bool)
+                or not isinstance(max_turns, int)
+                or max_turns <= 0
+                or max_turns > (1 << 32) - 1
+            ):
+                raise FabricConfigError(
+                    "runtime max_turns must be between 1 and 4294967295"
+                )
+            values["max_turns"] = max_turns
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
@@ -252,6 +342,8 @@ class _RuntimeConfig(_ConfigMapping):
             input_schema=data.get("input_schema"),
             output_schema=data.get("output_schema"),
             artifacts=data.get("artifacts"),
+            timeout_seconds=data.get("timeout_seconds"),
+            max_turns=data.get("max_turns"),
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
         )
 
@@ -263,13 +355,14 @@ class _EnvironmentConfig(_ConfigMapping):
         provider: Environment provider identifier; defaults to ``local``.
         workspace: Optional workspace path visible to the harness.
         artifacts: Optional environment-specific artifact path.
+        env: Environment variables visible to the harness and its tools.
         settings: JSON-compatible provider settings.
         metadata: JSON-compatible caller metadata.
         extra_fields: Preserved extension fields not recognized by this SDK.
     """
 
-    _fields = frozenset({"provider", "workspace", "artifacts", "settings", "metadata"})
-    _omit_if_empty = frozenset({"settings", "metadata"})
+    _fields = frozenset({"provider", "workspace", "artifacts", "env", "settings", "metadata"})
+    _omit_if_empty = frozenset({"env", "settings", "metadata"})
 
     def __init__(
         self,
@@ -277,12 +370,14 @@ class _EnvironmentConfig(_ConfigMapping):
         provider: str = "local",
         workspace: str | Path | None = None,
         artifacts: str | Path | None = None,
+        env: Mapping[str, str] | None = None,
         settings: Mapping[str, Any] | None = None,
         metadata: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         values: dict[str, Any] = {
             "provider": _required_text(provider, "environment provider"),
+            "env": {},
             "settings": _mapping(
                 {} if settings is None else settings,
                 "environment settings",
@@ -291,6 +386,13 @@ class _EnvironmentConfig(_ConfigMapping):
                 {} if metadata is None else metadata,
                 "environment metadata",
             ),
+        }
+        raw_env = _mapping({} if env is None else env, "environment env")
+        if any(not isinstance(value, str) for value in raw_env.values()):
+            raise FabricConfigError("environment env values must be strings")
+        values["env"] = {
+            _required_text(name, "environment variable name"): value
+            for name, value in raw_env.items()
         }
         if workspace is not None:
             values["workspace"] = workspace
@@ -307,6 +409,7 @@ class _EnvironmentConfig(_ConfigMapping):
             provider=data.get("provider", "local"),
             workspace=data.get("workspace"),
             artifacts=data.get("artifacts"),
+            env=data.get("env"),
             settings=data.get("settings"),
             metadata=data.get("metadata"),
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
@@ -363,35 +466,53 @@ class _SkillConfig(_ConfigMapping):
 class _ToolsConfig(_ConfigMapping):
     """Harness-neutral tool capability configuration."""
 
-    _fields = frozenset({"blocked"})
+    _fields = frozenset({"enabled", "blocked"})
     _omit_if_empty = frozenset({"blocked"})
 
     def __init__(
         self,
         *,
+        enabled: Sequence[str] | None = None,
         blocked: Sequence[str] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
-        if blocked is not None and (isinstance(blocked, (str, bytes)) or not isinstance(blocked, Sequence)):
-            raise FabricConfigError("tools blocked must be an ordered sequence of strings")
-        values: dict[str, Any] = {"blocked": [_required_text(tool, "blocked tool") for tool in (blocked or [])]}
+        for name, values in (("enabled", enabled), ("blocked", blocked)):
+            if values is not None and (
+                isinstance(values, (str, bytes)) or not isinstance(values, Sequence)
+            ):
+                raise FabricConfigError(
+                    f"tools {name} must be an ordered sequence of strings"
+                )
+        enabled_values = (
+            None
+            if enabled is None
+            else [_required_text(tool, "enabled tool") for tool in enabled]
+        )
+        blocked_values = [
+            _required_text(tool, "blocked tool") for tool in (blocked or [])
+        ]
+        overlap = set(enabled_values or []).intersection(blocked_values)
+        if overlap:
+            name = sorted(overlap)[0]
+            raise FabricConfigError(f"tool {name!r} cannot be both enabled and blocked")
+        values: dict[str, Any] = {"blocked": blocked_values}
+        if enabled_values is not None:
+            values["enabled"] = enabled_values
         super().__init__(values, extra_fields=extra_fields)
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> _ToolsConfig:
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_ToolsConfig":
         """Validate a tools mapping and preserve extension fields."""
 
         data = _mapping(value, "tools")
-        blocked = data.get("blocked", [])
-        if isinstance(blocked, (str, bytes)) or not isinstance(blocked, Sequence):
-            raise FabricConfigError("tools blocked must be an ordered sequence of strings")
         return cls(
-            blocked=blocked,
+            enabled=data.get("enabled"),
+            blocked=data.get("blocked", []),
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
         )
 
     def block(self, *tools: str) -> _ToolsConfig:
-        """Block adapter-native tool names or toolsets."""
+        """Block adapter-native tool names."""
 
         blocked = list(self.get("blocked", []))
         for tool in tools:
@@ -552,9 +673,10 @@ class _FabricConfigSnapshot(_ConfigMapping):
         schema_version: Agent schema identifier.
         metadata: Required ``MetadataConfig`` agent identity.
         harness: Required ``HarnessConfig`` adapter selection.
-        runtime: Runtime input/output configuration.
+        runtime: Invocation runtime configuration.
         environment: Optional execution environment configuration.
         models: Named, JSON-compatible model configurations.
+        instructions: Optional portable agent instructions.
         mcp: Optional MCP configuration.
         skills: Optional skill configuration.
         telemetry: Optional telemetry configuration.
@@ -571,6 +693,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
             "runtime",
             "environment",
             "models",
+            "instructions",
             "mcp",
             "skills",
             "telemetry",
@@ -589,6 +712,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         schema_version: str = "fabric.agent/v1alpha1",
         environment: _EnvironmentConfig | Mapping[str, Any] | None = None,
         models: Mapping[str, Any] | None = None,
+        instructions: _InstructionsConfig | Mapping[str, Any] | None = None,
         mcp: Mapping[str, Any] | None = None,
         skills: Mapping[str, Any] | None = None,
         telemetry: Mapping[str, Any] | None = None,
@@ -604,6 +728,11 @@ class _FabricConfigSnapshot(_ConfigMapping):
             "runtime",
         )
         environment_value = None if environment is None else _coerce(_EnvironmentConfig, environment, "environment")
+        instructions_value = (
+            None
+            if instructions is None
+            else _coerce(_InstructionsConfig, instructions, "instructions")
+        )
         mcp_value = None if mcp is None else _coerce(_McpConfig, mcp, "mcp")
         skills_value = None if skills is None else _coerce(_SkillConfig, skills, "skills")
         telemetry_value = None if telemetry is None else _coerce(_TelemetryConfig, telemetry, "telemetry")
@@ -618,6 +747,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         }
         for key, item in (
             ("environment", environment_value),
+            ("instructions", instructions_value),
             ("mcp", mcp_value),
             ("skills", skills_value),
             ("telemetry", telemetry_value),
@@ -649,6 +779,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
             runtime=data.get("runtime"),
             environment=data.get("environment"),
             models=data.get("models"),
+            instructions=data.get("instructions"),
             mcp=data.get("mcp"),
             skills=data.get("skills"),
             telemetry=data.get("telemetry"),
@@ -734,7 +865,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         return self
 
     def block_tools(self, *tools: str) -> _FabricConfigSnapshot:
-        """Block adapter-native tool names or toolsets and return this config."""
+        """Block adapter-native tool names and return this config."""
 
         self.tools.block(*tools)
         return self
@@ -817,7 +948,7 @@ class FabricMapping(Mapping[str, Any]):
         object.__setattr__(self, "_data", _freeze(data))
 
     @classmethod
-    def from_mapping(cls, mapping: Mapping[str, Any]) -> "FabricMapping":
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> Self:
         """Validate and copy a mapping into the requested typed model."""
 
         return cls(mapping)

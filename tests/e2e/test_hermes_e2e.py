@@ -29,7 +29,7 @@ async def test_hermes_persistent_host_reuses_native_session(
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = with_relay(hermes_config())
-    config.harness.settings["base_url"] = f"{api_server}/v1"
+    config.models["default"].base_url = f"{api_server}/v1"
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
@@ -61,7 +61,7 @@ async def test_hermes_persistent_host_with_relay(
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     config = with_relay(hermes_config())
-    config.harness.settings["base_url"] = f"{api_server}/v1"
+    config.models["default"].base_url = f"{api_server}/v1"
 
     async with await Fabric().start_runtime(
         config, base_dir=code_review_agent_dir
@@ -115,7 +115,7 @@ class TestHermesE2E:
         self.code_review_agent_dir = code_review_agent_dir
         self.api_server = api_server
         config = self.config_builder()
-        config.harness.settings["base_url"] = f"{api_server}/v1"
+        config.models["default"].base_url = f"{api_server}/v1"
         config = with_relay(config)
 
         self.result = await Fabric().run(
@@ -260,5 +260,6 @@ class TestHermesE2E:
         last_step = steps[-1]
         assert last_step["source"] == "agent"
         assert last_step["message"] == self.output["response"]
+        assert last_step["model_name"] == "nvidia/nemotron-3-nano-30b-a3b"
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"

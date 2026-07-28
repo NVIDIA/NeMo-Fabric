@@ -7,6 +7,7 @@ description: "Structured exception hierarchy for config, capability, state, and 
 SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.errors`
+
 Public exception hierarchy for the NeMo Fabric Python SDK.
 
 
@@ -15,6 +16,7 @@ Public exception hierarchy for the NeMo Fabric Python SDK.
 
 
 ## <kbd>class</kbd> `FabricError`
+
 Base class for structured SDK-level NeMo Fabric errors.
 
 Catch this type to handle any SDK failure while preserving machine-readable stage, code, retryability, and detail fields.
@@ -29,16 +31,22 @@ Catch this type to handle any SDK failure while preserving machine-readable stag
  - <b>`details`</b>:  Detached structured error details.
 
 
+
+### Inheritance
+
+Direct base: `RuntimeError`.
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+def __init__(
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured NeMo Fabric exception.
@@ -61,19 +69,26 @@ Initialize a structured NeMo Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricConfigError`
+
 Invalid SDK input, request shape, factory, or resolved config.
 
+
+
+### Inheritance
+
+Direct base: `FabricError`.
 
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+def __init__(
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured NeMo Fabric exception.
@@ -96,19 +111,26 @@ Initialize a structured NeMo Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricRuntimeError`
+
 Failure while starting, invoking, stopping, or otherwise driving a runtime.
 
+
+
+### Inheritance
+
+Direct base: `FabricError`.
 
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+def __init__(
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured NeMo Fabric exception.
@@ -131,19 +153,26 @@ Initialize a structured NeMo Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricStateError`
+
 Operation rejected because a local runtime is in the wrong state.
 
+
+
+### Inheritance
+
+Direct base: `FabricRuntimeError`.
 
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+def __init__(
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured NeMo Fabric exception.
@@ -166,19 +195,26 @@ Initialize a structured NeMo Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricCapabilityError`
+
 Operation rejected by resolved runtime capabilities or implementation status.
 
+
+
+### Inheritance
+
+Direct base: `FabricRuntimeError`.
 
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+def __init__(
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured NeMo Fabric exception.
@@ -201,19 +237,26 @@ Initialize a structured NeMo Fabric exception.
 
 
 ## <kbd>class</kbd> `FabricNativeUnavailableError`
+
 SDK call requires the PyO3 extension, but it is not installed or importable.
 
+
+
+### Inheritance
+
+Direct base: `FabricRuntimeError`.
 
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(
-    message: 'str',
-    stage: 'str | None' = None,
-    code: 'str | None' = None,
-    retryable: 'bool' = False,
-    details: 'Mapping[str, Any] | None' = None
-) → None
+def __init__(
+    message: str,
+    *,
+    stage: str | None = None,
+    code: str | None = None,
+    retryable: bool = False,
+    details: Mapping[str, Any] | None = None,
+) -> None
 ```
 
 Initialize a structured NeMo Fabric exception.

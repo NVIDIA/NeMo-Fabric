@@ -78,14 +78,15 @@ Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra runtime --extra harbor --extra hermes-agent harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
-  --ak 'fabric_harness_settings={"base_url":"https://integrate.api.nvidia.com/v1","max_iterations":20}' \
+  --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
+  --ak fabric_max_turns=20 \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-hermes \
   --jobs-dir "$RUNS_DIR" \
@@ -102,7 +103,7 @@ typed config. The API key is passed separately as a task credential.
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra runtime --extra harbor --extra hermes-agent --extra relay harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
@@ -110,7 +111,9 @@ uv run --extra runtime --extra harbor harbor run \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
   --ak fabric_telemetry=relay \
-  --ak 'fabric_harness_settings={"base_url":"https://integrate.api.nvidia.com/v1","max_iterations":4,"terminal_timeout":120}' \
+  --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
+  --ak fabric_max_turns=4 \
+  --ak 'fabric_harness_settings={"terminal_timeout":120}' \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-hermes-relay \
   --jobs-dir "$RUNS_DIR" \
@@ -142,14 +145,15 @@ Claude authentication variables selected by the adapter; this command uses
 ```bash
 : "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
 
-uv run --extra runtime --extra harbor harbor run \
+uv run --extra runtime --extra harbor --extra claude harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model anthropic/claude-sonnet-4-5 \
   --ak fabric_adapter_id=nvidia.fabric.claude \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
-  --ak 'fabric_harness_settings={"max_turns":20,"timeout_seconds":600}' \
+  --ak fabric_max_turns=20 \
+  --ak fabric_runtime_timeout_seconds=600 \
   --ae "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
   --job-name fabric-claude \
   --jobs-dir "$RUNS_DIR" \
