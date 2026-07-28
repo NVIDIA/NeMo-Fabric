@@ -6878,7 +6878,7 @@ ISC LICENSE
     OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-## pillow (12.2.0)
+## pillow (12.3.0)
 
 ### Licenses
 License: `MIT-CMU`
