@@ -65,10 +65,24 @@ with the public models and helper methods:
 from nemo_fabric import (
     FabricConfig,
     HarnessConfig,
+    InstructionConfig,
+    InstructionsConfig,
     MetadataConfig,
     ModelConfig,
     RuntimeConfig,
+    ToolsConfig,
 )
+
+
+def to_tools_config(job) -> ToolsConfig | None:
+    enabled = job.enabled_tools
+    blocked = list(job.blocked_tools)
+    if enabled is None and not blocked:
+        return None
+    return ToolsConfig(
+        enabled=None if enabled is None else list(enabled),
+        blocked=blocked,
+    )
 
 
 def to_fabric_config(job) -> FabricConfig:
@@ -80,9 +94,23 @@ def to_fabric_config(job) -> FabricConfig:
                 provider=job.provider,
                 model=job.model,
                 api_key_env=job.api_key_env,
+                base_url=job.base_url,
             )
         },
-        runtime=RuntimeConfig(input_schema="chat", output_schema="message"),
+        instructions=(
+            InstructionsConfig(
+                system=InstructionConfig(content=job.system_instruction),
+            )
+            if job.system_instruction is not None
+            else None
+        ),
+        runtime=RuntimeConfig(
+            input_schema="chat",
+            output_schema="message",
+            timeout_seconds=job.timeout_seconds,
+            max_turns=job.max_turns,
+        ),
+        tools=to_tools_config(job),
     )
     config.add_skill_path(job.skill_dir)
     config.add_mcp_server(
@@ -94,7 +122,8 @@ def to_fabric_config(job) -> FabricConfig:
     return config
 ```
 
-- Shape capabilities with `add_skill_path`, `remove_skill_path`,
+- Shape capabilities with `ToolsConfig`, `block_tools`, `add_skill_path`,
+  `remove_skill_path`,
   `add_mcp_server`, `remove_mcp_server`, and `enable_relay`.
 - Create deployment or evaluation variants with `model_copy(deep=True)` and
   ordinary Python functions; each copy plans and runs independently.

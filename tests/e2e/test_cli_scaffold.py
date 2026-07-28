@@ -70,7 +70,7 @@ def test_generated_rust_scaffold_builds(tmp_path: Path):
     manifest = (destination / "Cargo.toml").read_text()
     assert "[workspace]" in manifest
     core_dependency = tomllib.loads(manifest)["dependencies"]["nemo-fabric-core"]
-    assert Path(core_dependency["path"]) == ROOT / "crates/fabric-core"
+    assert Path(core_dependency["path"]).samefile(ROOT / "crates/fabric-core")
     expected_version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"][
         "package"
     ]["version"]

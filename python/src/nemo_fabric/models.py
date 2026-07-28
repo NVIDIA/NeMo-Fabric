@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pydantic SDK models for NeMo Fabric configuration and requests.
+"""Pydantic SDK models for NVIDIA NeMo Fabric configuration and requests.
 
 The Rust core remains the source of truth for persisted schema snapshots. These
 models provide the Python SDK's typed authoring surface and intentionally keep
@@ -24,9 +24,7 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
-from pydantic import SerializerFunctionWrapHandler
 from pydantic import field_validator
-from pydantic import model_serializer
 from pydantic import model_validator
 
 
@@ -107,12 +105,38 @@ class HarnessConfig(FabricBaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class InstructionConfig(FabricBaseModel):
+    """One portable instruction value."""
+
+    content: str = Field(min_length=1, pattern=r"\S")
+    mode: Literal["replace"] = "replace"
+
+    @field_validator("content")
+    @classmethod
+    def _validate_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("instruction content must be a non-empty string")
+        return value
+
+
+class InstructionsConfig(FabricBaseModel):
+    """Harness-neutral agent instructions."""
+
+    system: InstructionConfig | None = None
+
+
 class RuntimeConfig(FabricBaseModel):
-    """Runtime input/output contract."""
+    """Invocation runtime contract."""
 
     input_schema: str | None = None
     output_schema: str | None = None
     artifacts: str | Path | None = None
+    timeout_seconds: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+    )
+    max_turns: int | None = Field(default=None, gt=0, le=(1 << 32) - 1)
 
 
 class EnvironmentConfig(FabricBaseModel):
@@ -141,6 +165,15 @@ class EnvironmentConfig(FabricBaseModel):
         default=None,
         description="Environment-specific artifact path.",
     )
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Environment variables visible to the harness and its tools. Values are "
+            "serialized into configuration and run plans; prefer api_key_env-style "
+            "environment-variable-name indirection for credentials."
+        ),
+        json_schema_extra={"propertyNames": {"pattern": r"\S"}},
+    )
     settings: dict[str, Any] = Field(
         default_factory=dict,
         description="Provider-specific configuration interpreted by the environment provider.",
@@ -162,15 +195,44 @@ class EnvironmentConfig(FabricBaseModel):
         description="Whether NeMo Fabric control code runs outside or inside the environment.",
     )
 
+    @field_validator("env")
+    @classmethod
+    def _validate_env_names(cls, value: dict[str, str]) -> dict[str, str]:
+        if any(not name.strip() for name in value):
+            raise ValueError("environment.env variable names must not be empty")
+        return value
+
 
 class ModelConfig(FabricBaseModel):
-    """Model alias configuration."""
+    """Configuration for one model role."""
 
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
     api_key_env: str | None = None
     temperature: float | None = None
+    base_url: str | None = Field(default=None, min_length=1)
     settings: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("provider")
+    @classmethod
+    def _validate_provider(cls, value: str) -> str:
+        if not value.strip() or value != value.strip() or value != value.lower():
+            raise ValueError("provider must be a non-empty lowercase identifier")
+        return value
+
+    @field_validator("model", "api_key_env")
+    @classmethod
+    def _validate_nonempty_model_fields(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("model fields must be non-empty strings")
+        return value
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("base_url must be a non-empty string")
+        return value
 
 
 class SkillConfig(FabricBaseModel):
@@ -257,22 +319,15 @@ class RelayAtofStreamSinkConfig(FabricBaseModel):
     type: Literal["stream"] = "stream"
     url: str
     transport: Literal["http_post", "websocket", "ndjson"] = "http_post"
-    headers: dict[str, str] = Field(default_factory=dict)
-    header_env: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
+    header_env: dict[str, str] = Field(
+        default_factory=dict, exclude_if=lambda value: not value
+    )
     timeout_millis: int = 3000
     field_name_policy: Literal["preserve", "replace_dots"] = "preserve"
     name: str | None = None
-
-    @model_serializer(mode="wrap")
-    def _omit_empty_header_maps(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """Omit optional header maps when they are empty."""
-
-        data = handler(self)
-        if not self.headers:
-            data.pop("headers", None)
-        if not self.header_env:
-            data.pop("header_env", None)
-        return data
 
 
 class RelayAtofConfig(FabricBaseModel):
@@ -378,7 +433,9 @@ class RelayConfig(FabricBaseModel):
     project: str | None = None
     output_dir: str | Path | None = None
     observability: RelayObservabilityConfig | dict[str, Any] | None = None
-    components: list[RelayComponentConfig | dict[str, Any]] = Field(default_factory=list)
+    components: list[RelayComponentConfig | dict[str, Any]] = Field(
+        default_factory=list
+    )
     policy: RelayConfigPolicy | dict[str, Any] | None = None
 
 
@@ -391,7 +448,9 @@ class TelemetryProviderConfig(FabricBaseModel):
 class TelemetryConfig(FabricBaseModel):
     """Telemetry configuration."""
 
-    providers: dict[Literal["relay", "native"], TelemetryProviderConfig | dict[str, Any]] = Field(default_factory=dict)
+    providers: dict[
+        Literal["relay", "native"], TelemetryProviderConfig | dict[str, Any]
+    ] = Field(default_factory=dict)
 
     def enable_relay(
         self,
@@ -422,23 +481,56 @@ class TelemetryConfig(FabricBaseModel):
 class ToolsConfig(FabricBaseModel):
     """Harness-neutral tool capability configuration."""
 
-    blocked: list[str] = Field(default_factory=list)
+    enabled: list[str] | None = Field(
+        default=None,
+        description=(
+            "Adapter-native tools to expose. None preserves the harness default; "
+            "an empty list exposes no tools."
+        ),
+    )
+    blocked: list[str] = Field(
+        default_factory=list,
+        description="Adapter-native tool names to deny.",
+    )
+
+    @field_validator("enabled", "blocked")
+    @classmethod
+    def _validate_tools(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and any(not tool.strip() for tool in value):
+            raise ValueError("tool names must not be empty")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_policy(self) -> Self:
+        if self.enabled is not None:
+            overlap = set(self.enabled).intersection(self.blocked)
+            if overlap:
+                name = sorted(overlap)[0]
+                raise ValueError(f"tool {name!r} cannot be both enabled and blocked")
+        return self
 
 
 class FabricConfig(FabricBaseModel):
-    """SDK-facing typed NeMo Fabric agent configuration."""
+    """SDK-facing typed NeMo Fabric agent configuration.
+
+    NeMo Fabric-owned fields apply uniformly. Adapter-translated fields are
+    checked against the selected descriptor; refer to the [normalized
+    configuration compatibility
+    table](../../../sdk/python.mdx#normalized-configuration-compatibility).
+    """
 
     schema_version: str = "fabric.agent/v1alpha1"
     metadata: MetadataConfig
     harness: HarnessConfig
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     environment: EnvironmentConfig | None = None
-    models: dict[str, ModelConfig | dict[str, Any]] = Field(default_factory=dict)
+    models: dict[str, ModelConfig] = Field(default_factory=dict)
+    instructions: InstructionsConfig | None = None
     mcp: McpConfig | None = None
     skills: SkillConfig | None = None
     telemetry: TelemetryConfig | None = None
     relay: RelayConfig | dict[str, Any] | None = None
-    tools: ToolsConfig | dict[str, Any] | None = None
+    tools: ToolsConfig | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> Self:
@@ -503,10 +595,10 @@ class FabricConfig(FabricBaseModel):
         return self
 
     def block_tools(self, *tools: str) -> Self:
-        """Block adapter-native tool names or toolsets and return this config."""
+        """Block adapter-native tool names and return this config."""
 
-        if self.tools is None or isinstance(self.tools, dict):
-            self.tools = ToolsConfig.model_validate(self.tools or {})
+        if self.tools is None:
+            self.tools = ToolsConfig()
         existing = list(self.tools.blocked)
         for tool in tools:
             if tool not in existing:
@@ -540,12 +632,19 @@ class FabricConfig(FabricBaseModel):
             relay.output_dir = output_dir
         if observability is not None:
             relay.observability = (
-                observability if isinstance(observability, RelayObservabilityConfig) else dict(observability)
+                observability
+                if isinstance(observability, RelayObservabilityConfig)
+                else dict(observability)
             )
         if components is not None:
-            relay.components = [item if isinstance(item, RelayComponentConfig) else dict(item) for item in components]
+            relay.components = [
+                item if isinstance(item, RelayComponentConfig) else dict(item)
+                for item in components
+            ]
         if policy is not None:
-            relay.policy = policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
+            relay.policy = (
+                policy if isinstance(policy, RelayConfigPolicy) else dict(policy)
+            )
         self.relay = relay
         return self
 

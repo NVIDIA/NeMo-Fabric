@@ -6,19 +6,18 @@
   "runner": {
     "module": "nemo_fabric_adapters.hermes.adapter"
   },
-  "requirements": {
-    "env": [
-      "NVIDIA_API_KEY"
-    ]
-  },
+  "requirements": {},
   "config": {
     "accepts": [
       "models",
-      "tools",
+      "models.base_url",
+      "models.temperature",
+      "instructions.system",
+      "runtime.max_turns",
+      "tools.enabled",
       "tools.blocked",
       "mcp",
-      "skills",
-      "telemetry"
+      "skills"
     ]
   },
   "telemetry": {

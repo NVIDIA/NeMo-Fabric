@@ -93,16 +93,19 @@ from nemo_fabric import (
     HarnessConfig,
     MetadataConfig,
     ModelConfig,
+    RuntimeConfig,
 )
 
 config = FabricConfig(
     metadata=MetadataConfig(name="quickstart-agent"),
     harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
+    runtime=RuntimeConfig(max_turns=1),
     models={
         "default": ModelConfig(
             provider="nvidia",
             model="nvidia/nemotron-3-nano-30b-a3b",
             api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
         )
     },
 )
@@ -130,7 +133,7 @@ harness inside an isolated task container. Refer to the
 [Harbor execution model](examples/harbor/README.md#execution-model) for details.
 
 NeMo Fabric can also operate with the NeMo Fabric runtime and the agent harness
-in separate Python environments. This setup can match existing deployment 
+in separate Python environments. This setup can match existing deployment
 boundaries and isolate their dependencies.
 
 Create an environment for the NeMo Fabric runtime:

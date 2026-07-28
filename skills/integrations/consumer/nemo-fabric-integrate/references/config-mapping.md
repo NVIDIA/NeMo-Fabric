@@ -18,9 +18,11 @@ Import these from the top-level `nemo_fabric` package:
 | `FabricConfig` | Root config passed to every `Fabric` call. |
 | `MetadataConfig` | Agent name and description. |
 | `HarnessConfig` | `adapter_id`, `resolution`, and adapter-owned `settings`. |
-| `ModelConfig` | Provider, model, credentials (`api_key_env`), and sampling. |
-| `RuntimeConfig` | `input_schema`, `output_schema`, and artifact locations. |
-| `EnvironmentConfig` | Execution environment (`local`, sandbox, control location). |
+| `ModelConfig` | Provider, model, credentials (`api_key_env`), endpoint, and sampling. |
+| `InstructionsConfig` / `InstructionConfig` | Portable agent instructions and replacement mode. |
+| `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, and harness turn limit. |
+| `EnvironmentConfig` | Execution environment, workspace, and harness-visible variables. |
+| `ToolsConfig` | Adapter-native tool selection and blocking policy. |
 | `McpConfig` / `McpServerConfig` | MCP servers and exposure. |
 | `SkillConfig` | Skill directories. |
 | `TelemetryConfig` | Telemetry providers. |
@@ -38,14 +40,28 @@ methods that edit the typed config in place and return it:
 
 - `add_skill_path(path)` / `remove_skill_path(path)`
 - `add_mcp_server(name, *, transport, url, exposure, ...)` / `remove_mcp_server(name)`
-- `enable_relay(...)` for NeMo Relay observability in the `relay` block
+- `enable_relay(...)` for NVIDIA NeMo Relay observability in the `relay` block
+- `ToolsConfig(enabled=..., blocked=...)` for tool policy
+- `block_tools(...)` for additive deny policy
 
 ```python
 config = FabricConfig(
     metadata=MetadataConfig(name=job.name),
     harness=HarnessConfig(adapter_id=job.adapter_id, resolution="preinstalled"),
-    models={"default": ModelConfig(provider=job.provider, model=job.model, api_key_env=job.api_key_env)},
-    runtime=RuntimeConfig(input_schema="chat", output_schema="message"),
+    models={"default": ModelConfig(provider=job.provider, model=job.model, api_key_env=job.api_key_env, base_url=job.base_url)},
+    instructions=(
+        InstructionsConfig(
+            system=InstructionConfig(content=job.system_instruction),
+        )
+        if job.system_instruction is not None
+        else None
+    ),
+    runtime=RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        timeout_seconds=job.timeout_seconds,
+        max_turns=job.max_turns,
+    ),
 )
 config.add_skill_path(job.skill_dir)
 ```
@@ -78,13 +94,16 @@ package or job layout, so nothing depends on the process working directory.
 
 ## Adapter-Owned And Caller-Owned Data
 
-- Use normalized fields for portable behavior: models, runtime, environment,
-  skills, MCP, telemetry, and request context.
+- Use normalized fields for portable behavior: models, instructions, turn
+  limit, runtime, environment, tools, skills, MCP, and telemetry.
+- Supply request context through `RunRequest.context` for each invocation;
+  request context is not part of `FabricConfig`.
 - Use `harness.settings` for adapter-owned configuration the selected adapter
-  understands (for example Hermes Agent launch options or Codex settings). Adapter
-  settings are not portable, and `doctor(...)` does not validate their contents —
-  an unknown or misspelled key still passes and is silently ignored unless the
-  adapter reads it. Validate settings against the adapter's docs and your
+  understands (for example Claude permission policy, Codex sandbox controls, or
+  Deep Agents subagent definitions). Executable paths, state directories, and
+  Relay command discovery are runtime implementation details, not adapter
+  settings. Adapter settings are not portable, and `doctor(...)` does not yet
+  validate their contents. Validate them against the adapter's docs and your
   integration tests.
 - Use `metadata` and extension fields for caller-owned annotations NeMo Fabric carries
   but does not interpret. Config `metadata` is not echoed into
