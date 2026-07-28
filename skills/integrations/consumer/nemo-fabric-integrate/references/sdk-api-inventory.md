@@ -17,7 +17,7 @@ static analysis.
 
 ## `Fabric` Methods
 
-The following table lists the `Fabric` methods and when to use each.
+The following table lists the `Fabric` methods and when to use each:
 
 | Method | Async | Use When | Returns |
 | --- | --- | --- | --- |
