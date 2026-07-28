@@ -46,12 +46,6 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
     response.raise_for_status()
     projects = response.json()
 
-    if len(projects) < len(published_wheels):
-        print(
-            f"Warning: KitMaker returned {len(projects)} projects for {len(published_wheels)} published wheels.",
-            flush=True,
-        )
-
     project_ids = {project["name"]: project["id"] for project in projects}
 
     # Group published wheels by package name
@@ -59,6 +53,13 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
     for (wheel_file, wheel_url) in published_wheels:
         package_name = pkginfo.Wheel(str(wheel_file)).name
         packages[package_name].append(wheel_url)
+
+    if len(projects) < len(packages):
+        print(
+            f"Warning: KitMaker returned {len(projects)} projects for {len(packages)} packages.",
+            flush=True,
+        )
+
 
     for package_name, wheel_urls in packages.items():
         package_id = project_ids[package_name]
