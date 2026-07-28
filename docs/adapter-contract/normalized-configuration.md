@@ -54,6 +54,8 @@ The descriptor controls the projection:
 
 - Scalar normalized fields are included only when `config.accepts` declares
   that the adapter can apply them.
+- Every configured model role is validated against `model_schema` when the
+  selected descriptor publishes one.
 - Resolved native skills and MCP servers come from the capability plan.
 - `harness.settings` and a configured `workflow` are validated against the
   selected descriptor before startup.
@@ -68,6 +70,11 @@ Unsupported configured behavior fails planning; it is not silently dropped.
 An absent optional field preserves the adapter target's default where the
 field's contract says so. For example, `tools.enabled: null` preserves the
 target default, while an empty list explicitly selects no named tools.
+
+`model_schema` uses the same self-contained JSON Schema vocabulary as the other
+descriptor schemas. Use it for statically knowable provider compatibility and
+closed `ModelConfig.settings` validation. Do not use it for credential checks,
+provider reachability, or model availability; those remain startup concerns.
 
 ## Extensions
 

@@ -68,6 +68,8 @@ def test_native_run_rejects_multiple_request_sources(hermes_shim_agent_dir: Path
 def test_plan_rejects_adapter_incompatible_normalized_tool_policy():
     config = base_config()
     config.harness.adapter_id = "nvidia.fabric.codex"
+    config.models["default"].provider = "openai"
+    config.models["default"].model = "openai/gpt-5.4"
     config.models["default"].temperature = None
     config.block_tools("Bash")
 
