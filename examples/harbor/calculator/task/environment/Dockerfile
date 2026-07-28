@@ -19,7 +19,7 @@ RUN pip install --no-cache-dir \
         -e /opt/nemo-fabric/adapters/common \
         -e /opt/nemo-fabric/adapters/claude \
         -e /opt/nemo-fabric/adapters/hermes \
-        -e "/opt/nemo-fabric[claude,harbor,hermes-agent,relay]"
+        -e "/opt/nemo-fabric[claude,hermes-agent,relay]"
 
 COPY calculator.py /app/calculator.py
 COPY fabric /opt/fabric-calculator
