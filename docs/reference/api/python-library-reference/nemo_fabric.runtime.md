@@ -7,7 +7,8 @@ description: "Drive stateful multi-turn execution through the Runtime API."
 SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.runtime`
-Runtime lifecycle support for the Fabric Python SDK.
+
+Runtime lifecycle support for the NVIDIA NeMo Fabric Python SDK.
 
 
 
@@ -15,6 +16,7 @@ Runtime lifecycle support for the Fabric Python SDK.
 
 
 ## <kbd>class</kbd> `RuntimeStatus`
+
 Lifecycle state of a runtime.
 
 ``ACTIVE`` accepts invocations, ``STOPPED`` has released its runtime, and ``FAILED`` records a lifecycle failure that prevents further invocations but still permits cleanup.
@@ -23,10 +25,26 @@ Lifecycle state of a runtime.
 
 
 
+
+### Inheritance
+
+Direct bases: `str`, `Enum`.
+
+### Values
+
+The enum defines the following values:
+
+| Name | Value |
+| --- | --- |
+| `ACTIVE` | `active` |
+| `STOPPED` | `stopped` |
+| `FAILED` | `failed` |
+
 ---
 
 
 ## <kbd>class</kbd> `Runtime`
+
 One logical, stateful harness execution.
 
 Create runtimes with ``Fabric.start_runtime()`` rather than calling the constructor. A runtime serializes invocations and preserves adapter-owned harness state across turns. Use it as an asynchronous context manager to stop the runtime on exit.
@@ -78,7 +96,7 @@ Return whether NVIDIA NeMo Relay ATOF streaming is enabled.
 ### <kbd>method</kbd> `invoke`
 
 ```python
-invoke(input: 'Any' = None, request: 'RunRequest | None' = None) → RunResult
+async def invoke(*, input: Any = None, request: RunRequest | None = None) -> RunResult
 ```
 
 Run one turn on this runtime.
@@ -112,10 +130,11 @@ Run one turn on this runtime.
 ### <kbd>method</kbd> `invoke_stream`
 
 ```python
-invoke_stream(
-    input: 'Any' = None,
-    request: 'RunRequest | None' = None
-) → InvokeStream
+def invoke_stream(
+    *,
+    input: Any = None,
+    request: RunRequest | None = None,
+) -> InvokeStream
 ```
 
 Start one turn and stream raw NeMo Relay ATOF records as they arrive.
@@ -136,7 +155,7 @@ Start one turn and stream raw NeMo Relay ATOF records as they arrive.
 ### <kbd>method</kbd> `stop`
 
 ```python
-stop() → None
+async def stop() -> None
 ```
 
 Destroy an idle runtime exactly once.

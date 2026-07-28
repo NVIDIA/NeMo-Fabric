@@ -351,7 +351,7 @@ class _AtofStreamListener:
             self._warned_uncorrelated = True
             warnings.warn(
                 "Relay ATOF data reached the SDK listener, but no record matched "
-                "the active Fabric turn. Relay-backed streaming yielded no "
+                "the active NeMo Fabric turn. Relay-backed streaming yielded no "
                 "records. Verify the Relay turn correlation metadata and record "
                 "size limits.",
                 RuntimeWarning,
@@ -366,7 +366,7 @@ class _AtofStreamListener:
         ):
             self._warned_interrupted = True
             warnings.warn(
-                "The Relay ATOF connection closed during the active Fabric "
+                "The Relay ATOF connection closed during the active NeMo Fabric "
                 "turn. Relay-backed streaming may be incomplete.",
                 RuntimeWarning,
                 stacklevel=3,

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Fabric lifecycle or progress event.",
+  "description": "NeMo Fabric lifecycle or progress event.",
   "properties": {
     "event_id": {
       "description": "Event id.",

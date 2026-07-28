@@ -40,12 +40,16 @@ perl -0pi -e 's/\A\s+//' "$out"/*.md
 # lazydocs nests properties at h4 directly under h2 class sections. Flatten
 # those headings to h3 so generated pages satisfy markdown heading order.
 perl -pi -e 's/^#### (<kbd>property<\/kbd>)/### $1/' "$out"/*.md
-# lazydocs emits these class headings without a separating blank line.
-perl -0pi -e 's/(^## <kbd>class<\/kbd> `(?:ToolsConfig|ToolsetConfig|RelayAtofFileSinkConfig|RelayAtofStreamSinkConfig)`\n)(?!\n)/$1\n/gm' \
-  "$out/nemo_fabric.models.md"
+# lazydocs emits module and class headings without a separating blank line.
+perl -0pi -e 's/(^#{1,2} <kbd>(?:module|class)<\/kbd> `[^`]+`\n)(?!\n)/$1\n/gm' \
+  "$out"/*.md
 # lazydocs omits the async marker from generated method signatures.
 perl -0pi -e 's/(### <kbd>method<\/kbd> `(aclose|result)`\n\n```python\n)\2\(/${1}async def ${2}(/g' \
   "$out/nemo_fabric.streaming.md"
+
+# Restore signature semantics that lazydocs drops and add field-level contracts
+# for the SDK's Pydantic and immutable mapping models.
+PYTHONPATH="python/src" python scripts/docs/enhance_python_api_reference.py "$out"
 
 add_frontmatter() {
   local file="$1"

@@ -11,9 +11,9 @@ independent runtimes. The generated
 [client reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.client.md)
 and [runtime reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.runtime.md)
 and [streaming reference](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/reference/api/python-library-reference/nemo_fabric.streaming.md)
-document the public methods, but they omit `async` and keyword-only markers —
-this inventory records those, and the installed `nemo_fabric` package ships type
-information (`py.typed`) for exact signatures.
+document the public methods with their `async` and keyword-only markers. The
+installed `nemo_fabric` package also ships type information (`py.typed`) for
+static analysis.
 
 ## `Fabric` Methods
 
@@ -22,7 +22,7 @@ The following table lists the `Fabric` methods and when to use each.
 | Method | Async | Use When | Returns |
 | --- | --- | --- | --- |
 | `plan(config, *, base_dir=...)` | No | You need the selected adapter, capability routing, and runtime capabilities before running. | `RunPlan` |
-| `doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | `DoctorReport` |
+| `doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter resolution, capability routing, declared requirements, and environment assumptions. | `DoctorReport` |
 | `run(config, *, base_dir=..., input=... \| request=...)` | Yes | You need one complete start, invoke, result, and stop cycle. | `RunResult` |
 | `start_runtime(config, *, base_dir=..., overrides=..., streaming=False)` | Yes | You need state across multiple ordered invocations. Pass `streaming=True` with NVIDIA NeMo Relay enabled to provision `invoke_stream(...)`. | `Runtime` |
 

@@ -112,7 +112,25 @@ fn language_files(language: Language, config: &FabricConfig, example: &str) -> V
 }
 
 fn rust_core_dependency() -> String {
-    rust_string(env!("CARGO_PKG_VERSION"))
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fabric-core");
+    rust_core_dependency_for_path(&source_path)
+}
+
+fn rust_core_dependency_for_path(source_path: &Path) -> String {
+    let version = rust_string(env!("CARGO_PKG_VERSION"));
+    if !source_path.join("Cargo.toml").is_file() {
+        return version;
+    }
+    let Ok(source_path) = source_path.canonicalize() else {
+        return version;
+    };
+    let Some(source_path) = source_path.to_str() else {
+        return version;
+    };
+    format!(
+        "{{ path = {}, version = {version} }}",
+        rust_string(source_path)
+    )
 }
 
 fn write_files(destination: &Path, files: &[ScaffoldFile]) -> Result<(), String> {
@@ -407,14 +425,73 @@ mod tests {
                 assert!(
                     manifest.contains(&format!("nemo-fabric-core = {}", rust_core_dependency()))
                 );
-                assert!(!manifest.contains("path ="));
+                assert!(manifest.contains("[workspace]"));
             }
             fs::remove_dir_all(destination).expect("remove scaffold");
         }
     }
 
     #[test]
-    fn renderers_preserve_model_base_url_and_temperature() {
+    fn source_checkout_rust_scaffold_builds_inside_the_repository() {
+        let destination = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            ".nemo-fabric-scaffold-test-{}-build",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&destination);
+        init(
+            examples::find("code-review").expect("example"),
+            None,
+            Language::Rust,
+            &destination,
+        )
+        .expect("generate scaffold");
+
+        let output = std::process::Command::new(env!("CARGO"))
+            .args(["check", "--offline"])
+            .current_dir(&destination)
+            .output()
+            .expect("run cargo check");
+        assert!(
+            output.status.success(),
+            "generated Rust scaffold did not build:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fs::remove_dir_all(destination).expect("remove scaffold");
+    }
+
+    #[test]
+    fn rust_core_dependency_uses_local_checkout_when_available() {
+        let source_path = destination("core-dependency-local", Language::Rust);
+        let _ = fs::remove_dir_all(&source_path);
+        fs::create_dir_all(&source_path).expect("create source checkout");
+        fs::write(source_path.join("Cargo.toml"), "").expect("write Cargo manifest");
+        let canonical_path = source_path.canonicalize().expect("canonicalize checkout");
+
+        assert_eq!(
+            rust_core_dependency_for_path(&source_path),
+            format!(
+                "{{ path = {}, version = {} }}",
+                rust_string(canonical_path.to_str().expect("UTF-8 checkout path")),
+                rust_string(env!("CARGO_PKG_VERSION"))
+            )
+        );
+
+        fs::remove_dir_all(source_path).expect("remove source checkout");
+    }
+
+    #[test]
+    fn rust_core_dependency_falls_back_when_checkout_is_unavailable() {
+        let source_path = destination("core-dependency-missing", Language::Rust);
+        let _ = fs::remove_dir_all(&source_path);
+
+        assert_eq!(
+            rust_core_dependency_for_path(&source_path),
+            rust_string(env!("CARGO_PKG_VERSION"))
+        );
+    }
+
+    #[test]
+    fn renderers_preserve_model_settings_and_temperature() {
         let mut config = presets::find("hermes")
             .expect("hermes preset")
             .config()

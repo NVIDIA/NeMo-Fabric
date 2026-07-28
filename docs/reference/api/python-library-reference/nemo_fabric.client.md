@@ -7,6 +7,7 @@ description: "Resolve, plan, diagnose, and run agents with NVIDIA NeMo Fabric."
 SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.client`
+
 Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 
 
@@ -15,6 +16,7 @@ Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 
 
 ## <kbd>class</kbd> `Fabric`
+
 Primary Python entrypoint for NeMo Fabric.
 
 Every lifecycle method accepts a complete, typed ``FabricConfig`` plus an optional ``base_dir`` used to resolve relative paths. Compose variants in Python before calling the SDK. The ``doctor()``, ``plan()``, and ``run()`` results are typed, read-only mapping models. ``start_runtime()`` returns an active ``Runtime`` handle.
@@ -32,15 +34,16 @@ See the Getting Started overview for runnable single-invocation, typed-config, a
 ### <kbd>method</kbd> `doctor`
 
 ```python
-doctor(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None
-) → DoctorReport
+async def doctor(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> DoctorReport
 ```
 
 Diagnose a planned agent without starting its runtime.
 
-Doctor checks the resolved adapter, capability mappings, and declared environment requirements using the native Fabric core.
+Doctor checks the resolved adapter, capability mappings, and declared environment requirements using the native NeMo Fabric core.
 
 
 
@@ -67,10 +70,11 @@ Doctor checks the resolved adapter, capability mappings, and declared environmen
 ### <kbd>method</kbd> `plan`
 
 ```python
-plan(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None
-) → RunPlan
+def plan(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+) -> RunPlan
 ```
 
 Resolve a complete typed configuration into an immutable execution plan.
@@ -102,17 +106,18 @@ Planning resolves the selected adapter and reports optional runtime capabilities
 ### <kbd>method</kbd> `run`
 
 ```python
-run(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None,
-    input: 'Any' = None,
-    request: 'RunRequest | None' = None
-) → RunResult
+async def run(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+    input: Any = None,
+    request: RunRequest | None = None,
+) -> RunResult
 ```
 
 Execute one complete start, invoke, and stop lifecycle.
 
-``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. Fabric attempts to stop a started runtime even when invocation fails.
+``input`` and ``request`` are mutually exclusive. Omitting both produces an empty text input. Use ``RunRequest`` when the invocation needs a caller-owned request ID, context, or overrides. NeMo Fabric attempts to stop a started runtime even when invocation fails.
 
 
 
@@ -142,12 +147,13 @@ Execute one complete start, invoke, and stop lifecycle.
 ### <kbd>method</kbd> `start_runtime`
 
 ```python
-start_runtime(
-    config: 'FabricConfig',
-    base_dir: 'str | PathLike[str] | None' = None,
-    overrides: 'Mapping[str, Any] | None' = None,
-    streaming: 'bool' = False
-) → Runtime
+async def start_runtime(
+    config: FabricConfig,
+    *,
+    base_dir: str | os.PathLike[str] | None = None,
+    overrides: Mapping[str, Any] | None = None,
+    streaming: bool = False,
+) -> Runtime
 ```
 
 Start a stateful runtime for one or more ordered invocations.

@@ -93,12 +93,12 @@
         },
         "retryable": {
           "default": false,
-          "description": "Whether Fabric considers this failure safe for a consumer-level retry.",
+          "description": "Whether NeMo Fabric considers this failure safe for a consumer-level retry.",
           "type": "boolean"
         },
         "stage": {
           "$ref": "#/$defs/ErrorStage",
-          "description": "Fabric lifecycle stage where the failure surfaced."
+          "description": "NeMo Fabric lifecycle stage where the failure surfaced."
         }
       },
       "required": [
@@ -109,7 +109,7 @@
       "type": "object"
     },
     "ErrorStage": {
-      "description": "Fabric lifecycle stage associated with an error.",
+      "description": "NeMo Fabric lifecycle stage associated with an error.",
       "oneOf": [
         {
           "const": "config",
@@ -154,7 +154,7 @@
       ]
     },
     "FabricEvent": {
-      "description": "Fabric lifecycle or progress event.",
+      "description": "NeMo Fabric lifecycle or progress event.",
       "properties": {
         "event_id": {
           "description": "Event id.",
@@ -228,7 +228,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Result from a Fabric-managed harness invocation.",
+  "description": "Result from a NeMo Fabric-managed harness invocation.",
   "properties": {
     "adapter_id": {
       "description": "Adapter implementation id when an adapter descriptor was resolved.",
@@ -262,7 +262,7 @@
       "description": "Error metadata when applicable."
     },
     "events": {
-      "description": "Fabric lifecycle/progress events emitted during the run.",
+      "description": "NeMo Fabric lifecycle/progress events emitted during the run.",
       "items": {
         "$ref": "#/$defs/FabricEvent"
       },

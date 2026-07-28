@@ -124,10 +124,10 @@ class EnvironmentConfig(FabricBaseModel):
     ``provider`` selects the environment implementation. ``workspace`` is the
     path visible to the harness, while ``artifacts`` is the provider-specific
     output location. ``settings`` configures the selected provider;
-    ``connection`` describes how Fabric reaches an existing environment; and
-    ``metadata`` carries consumer-owned values that Fabric does not interpret.
+    ``connection`` describes how NeMo Fabric reaches an existing environment; and
+    ``metadata`` carries consumer-owned values that NeMo Fabric does not interpret.
     ``ownership`` identifies who tears the environment down, and
-    ``control_location`` identifies whether Fabric control code runs inside or
+    ``control_location`` identifies whether NeMo Fabric control code runs inside or
     outside it.
     """
 
@@ -158,7 +158,7 @@ class EnvironmentConfig(FabricBaseModel):
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        description="Consumer-owned environment metadata passed through without Fabric semantics.",
+        description="Consumer-owned environment metadata passed through without NeMo Fabric semantics.",
     )
     connection: dict[str, Any] = Field(
         default_factory=dict,
@@ -166,11 +166,11 @@ class EnvironmentConfig(FabricBaseModel):
     )
     ownership: Literal["caller_owned", "fabric_owned"] = Field(
         default="caller_owned",
-        description="Whether the caller or Fabric owns environment teardown.",
+        description="Whether the caller or NeMo Fabric owns environment teardown.",
     )
     control_location: Literal["external_control", "in_env_control"] = Field(
         default="in_env_control",
-        description="Whether Fabric control code runs outside or inside the environment.",
+        description="Whether NeMo Fabric control code runs outside or inside the environment.",
     )
 
     @field_validator("env")
@@ -509,11 +509,11 @@ class ToolsConfig(FabricBaseModel):
 
 
 class FabricConfig(FabricBaseModel):
-    """SDK-facing typed Fabric agent configuration.
+    """SDK-facing typed NeMo Fabric agent configuration.
 
-    Fabric-owned fields apply uniformly. Adapter-translated fields are checked
-    against the selected descriptor; refer to the
-    [normalized configuration compatibility
+    NeMo Fabric-owned fields apply uniformly. Adapter-translated fields are
+    checked against the selected descriptor; refer to the [normalized
+    configuration compatibility
     table](../../../sdk/python.mdx#normalized-configuration-compatibility).
     """
 
@@ -665,7 +665,7 @@ class FabricConfig(FabricBaseModel):
 
 
 class RunRequest(FabricBaseModel):
-    """One validated Fabric invocation request."""
+    """One validated NeMo Fabric invocation request."""
 
     input: Any = ""
     request_id: str = Field(

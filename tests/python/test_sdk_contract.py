@@ -511,7 +511,7 @@ def test_environment_model_defines_extension_field_ownership():
 
     assert "environment provider" in properties["settings"]["description"]
     assert "harness and its tools" in properties["env"]["description"]
-    assert "without Fabric semantics" in properties["metadata"]["description"]
+    assert "without NeMo Fabric semantics" in properties["metadata"]["description"]
     assert "existing environment" in properties["connection"]["description"]
     assert "environment teardown" in properties["ownership"]["description"]
     assert "outside or inside" in properties["control_location"]["description"]

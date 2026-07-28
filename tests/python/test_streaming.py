@@ -680,7 +680,9 @@ async def test_invoke_stream_warns_when_records_do_not_match_active_turn(
         ],
     )
 
-    with pytest.warns(RuntimeWarning, match="no record matched the active Fabric turn"):
+    with pytest.warns(
+        RuntimeWarning, match="no record matched the active NeMo Fabric turn"
+    ):
         assert [record async for record in stream] == []
 
     assert (await stream.result()).status == "succeeded"
@@ -963,7 +965,9 @@ async def test_listener_rejects_oversized_record():
         b"HTTP/1.1 413 Content Too Large\r\n"
     )
     listener.end_stream()
-    with pytest.warns(RuntimeWarning, match="no record matched the active Fabric turn"):
+    with pytest.warns(
+        RuntimeWarning, match="no record matched the active NeMo Fabric turn"
+    ):
         listener.warn_if_unavailable()
     await listener.close()
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "A request passed to a Fabric-managed harness runtime.",
+  "description": "A request passed to a NeMo Fabric-managed harness runtime.",
   "properties": {
     "context": {
       "additionalProperties": true,

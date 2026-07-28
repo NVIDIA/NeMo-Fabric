@@ -360,7 +360,11 @@ lock-python:
         uv lock --project "$project"
     done
 
-# [version] or --set ref_name=<version>
+# Normalize a release tag to the version used by package metadata.
+normalize-release-tag tag:
+    @uv run --no-project --no-cache python scripts/ci/normalize_release_tag.py "{{ tag }}"
+
+# [version-or-tag] or --set ref_name=<version-or-tag>
 set-version version="":
     #!/usr/bin/env bash
     {{ bash_helpers }}
@@ -372,6 +376,7 @@ set-version version="":
         echo "Error: version is required for set-version" >&2
         exit 1
     fi
+    version="$(just normalize-release-tag "$version")"
     cd "$REPO_ROOT"
     set_project_version "$version"
     just lock-python

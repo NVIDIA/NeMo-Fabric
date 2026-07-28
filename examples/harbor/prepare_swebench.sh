@@ -69,4 +69,4 @@ printf '%s\n' \
     > "$bundle_dir/.fabric-package"
 
 echo "Prepared $bundle_dir"
-echo "Fabric requirement: $(< "$bundle_dir/.fabric-package")"
+echo "NeMo Fabric requirement: $(< "$bundle_dir/.fabric-package")"

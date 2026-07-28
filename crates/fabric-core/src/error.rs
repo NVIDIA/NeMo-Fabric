@@ -1,16 +1,16 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//! Error types for Fabric core.
+//! Error types for NeMo Fabric core.
 
 use std::path::PathBuf;
 
 use crate::config::AdapterKind;
 
-/// Core Fabric result type.
+/// Core NeMo Fabric result type.
 pub type Result<T> = std::result::Result<T, FabricError>;
 
-/// Errors raised by Fabric config loading and validation.
+/// Errors raised by NeMo Fabric config loading and validation.
 #[derive(Debug, thiserror::Error)]
 pub enum FabricError {
     /// The base directory could not be resolved to an absolute path.
