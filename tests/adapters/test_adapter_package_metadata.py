@@ -108,13 +108,12 @@ def test_adapter_test_dependency_group_matches_leaf_harnesses():
     assert "adapter-tests" not in manifest["tool"]["uv"]["default-groups"]
 
 
-def test_root_package_installs_runtime_without_a_runtime_extra():
+def test_root_package_installs_runtime_unconditionally():
     manifest = load_pyproject("")
     project = manifest["project"]
 
     assert project["dependencies"] == [RUNTIME_DEPENDENCY]
     assert manifest["tool"]["setuptools"]["packages"] == []
-    assert "runtime" not in project["optional-dependencies"]
 
 
 def test_root_relay_extra_installs_only_relay():

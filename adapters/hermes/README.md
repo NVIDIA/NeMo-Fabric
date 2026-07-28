@@ -75,8 +75,8 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
 - `adapter_kind` is `python` because NeMo Fabric can invoke it through Python.
 - `runner.module` names the persistent host module that NeMo Fabric invokes with
   `python -m`.
-- `requirements` powers `fabric doctor`; keep required env vars, binaries, or
-  packages current.
+- `requirements` supplies dependency checks to NeMo Fabric diagnostics; keep
+  required env vars, binaries, or packages current.
 - `config.accepts` must match the NeMo Fabric sections this adapter maps into Hermes Agent.
 - `telemetry.providers` declares provider-specific outputs and integration modes
   the adapter can produce or forward.

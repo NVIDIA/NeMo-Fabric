@@ -46,8 +46,7 @@ configuration failure), so a key is never sent to the wrong endpoint.
 Because `models.<role>.api_key_env` is provider-specific, the adapter declares no
 static env requirement; a runtime **preflight** verifies that the `deepagents`
 package is importable and the configured credential is set. A failed preflight
-fails runtime start with a stable lifecycle error. `fabric doctor` validates
-adapter resolution.
+fails runtime start with a stable lifecycle error.
 
 NeMo Fabric maps the following into the harness:
 

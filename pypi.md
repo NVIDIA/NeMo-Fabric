@@ -41,7 +41,7 @@ pip install nemo-fabric
 ```
 
 To install the NeMo Fabric runtime, adapter, and supported harness in one
-environment, install the corresponding `nemo-fabric` harness extra:
+environment, choose one of the following `nemo-fabric` harness extras:
 
 ```bash
 pip install "nemo-fabric[claude]"
@@ -50,8 +50,8 @@ pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[hermes-agent]"
 ```
 
-To install an adapter and its harness without the NeMo Fabric runtime, use the
-adapter package's `harness` extra:
+To install an adapter and its harness without the NeMo Fabric runtime, choose
+one of the following adapter package `harness` extras:
 
 ```bash
 pip install "nemo-fabric-adapters-claude[harness]"
@@ -65,8 +65,8 @@ not install the NeMo Fabric runtime. For Claude and Codex, `full` installs the
 same dependencies as `harness`. For LangChain Deep Agents and Hermes Agent,
 `full` also installs the NeMo Relay Python package.
 
-If the environment already manages a compatible harness, install only the
-adapter package:
+If the environment already manages a compatible harness, choose one of the
+following bare adapter packages:
 
 ```bash
 pip install nemo-fabric-adapters-claude
