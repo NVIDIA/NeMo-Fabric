@@ -112,7 +112,25 @@ fn language_files(language: Language, config: &FabricConfig, example: &str) -> V
 }
 
 fn rust_core_dependency() -> String {
-    rust_string(env!("CARGO_PKG_VERSION"))
+    let source_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fabric-core");
+    rust_core_dependency_for_path(&source_path)
+}
+
+fn rust_core_dependency_for_path(source_path: &Path) -> String {
+    let version = rust_string(env!("CARGO_PKG_VERSION"));
+    if !source_path.join("Cargo.toml").is_file() {
+        return version;
+    }
+    let Ok(source_path) = source_path.canonicalize() else {
+        return version;
+    };
+    let Some(source_path) = source_path.to_str() else {
+        return version;
+    };
+    format!(
+        "{{ path = {}, version = {version} }}",
+        rust_string(source_path)
+    )
 }
 
 fn write_files(destination: &Path, files: &[ScaffoldFile]) -> Result<(), String> {
@@ -146,6 +164,52 @@ fn render_python(config: &FabricConfig) -> String {
             "{{HARNESS_SETTINGS}}",
             &python_value(&Value::Object(config.harness.settings.clone())),
         )
+        .replace(
+            "{{INSTRUCTIONS}}",
+            &config
+                .instructions
+                .as_ref()
+                .and_then(|instructions| instructions.system.as_ref())
+                .map(|instruction| {
+                    format!(
+                        "InstructionsConfig(system=InstructionConfig(content={}, mode=\"replace\"))",
+                        python_string(&instruction.content)
+                    )
+                })
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{MAX_TURNS}}",
+            &config
+                .runtime
+                .max_turns
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{TIMEOUT_SECONDS}}",
+            &config
+                .runtime
+                .timeout_seconds
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{ENVIRONMENT_ENV}}",
+            &python_value(&Value::Object(
+                config
+                    .environment
+                    .as_ref()
+                    .map(|environment| {
+                        environment
+                            .env
+                            .iter()
+                            .map(|(name, value)| (name.clone(), Value::String(value.clone())))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            )),
+        )
         .replace("{{MODELS}}", &python_models(config.models.get("default")))
 }
 
@@ -157,8 +221,13 @@ fn python_models(model: Option<&ModelConfig>) -> String {
         .temperature
         .map(|value| value.to_string())
         .unwrap_or_else(|| "None".to_string());
+    let base_url = model
+        .base_url
+        .as_deref()
+        .map(python_string)
+        .unwrap_or_else(|| "None".to_string());
     format!(
-        "{{\"default\": ModelConfig(provider={}, model={}, temperature={temperature}, api_key_env={}, settings={})}}",
+        "{{\"default\": ModelConfig(provider={}, model={}, temperature={temperature}, api_key_env={}, base_url={base_url}, settings={})}}",
         python_string(&model.provider),
         python_string(&model.model),
         model
@@ -211,7 +280,64 @@ fn render_rust(config: &FabricConfig) -> String {
             "{{HARNESS_SETTINGS}}",
             &rust_settings(&config.harness.settings),
         )
+        .replace(
+            "{{INSTRUCTIONS}}",
+            &config
+                .instructions
+                .as_ref()
+                .and_then(|instructions| instructions.system.as_ref())
+                .map(|instruction| {
+                    format!(
+                        "Some(nemo_fabric_core::InstructionsConfig {{ system: Some(nemo_fabric_core::InstructionConfig {{ content: {}.to_string(), mode: nemo_fabric_core::InstructionMode::Replace, extensions: BTreeMap::new() }}), extensions: BTreeMap::new() }})",
+                        rust_string(&instruction.content)
+                    )
+                })
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{MAX_TURNS}}",
+            &config
+                .runtime
+                .max_turns
+                .map(|value| format!("Some({value})"))
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{TIMEOUT_SECONDS}}",
+            &config
+                .runtime
+                .timeout_seconds
+                .map(|value| format!("Some({value})"))
+                .unwrap_or_else(|| "None".to_string()),
+        )
+        .replace(
+            "{{ENVIRONMENT_ENV}}",
+            &rust_string_map(
+                config
+                    .environment
+                    .as_ref()
+                    .map(|environment| &environment.env),
+            ),
+        )
         .replace("{{MODELS}}", &rust_models(config.models.get("default")))
+}
+
+fn rust_string_map(values: Option<&std::collections::BTreeMap<String, String>>) -> String {
+    let Some(values) = values.filter(|values| !values.is_empty()) else {
+        return "BTreeMap::new()".to_string();
+    };
+    format!(
+        "BTreeMap::from_iter([{}])",
+        values
+            .iter()
+            .map(|(key, value)| format!(
+                "({}.to_string(), {}.to_string())",
+                rust_string(key),
+                rust_string(value)
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 fn rust_settings(settings: &serde_json::Map<String, Value>) -> String {
@@ -247,8 +373,13 @@ fn rust_models(model: Option<&ModelConfig>) -> String {
         .temperature
         .map(|value| format!("Some({value})"))
         .unwrap_or_else(|| "None".to_string());
+    let base_url = model
+        .base_url
+        .as_deref()
+        .map(|value| format!("Some({}.to_string())", rust_string(value)))
+        .unwrap_or_else(|| "None".to_string());
     format!(
-        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, api_key_env: {api_key}, settings: {}, extensions: BTreeMap::new() }})])",
+        "BTreeMap::from_iter([(\"default\".to_string(), nemo_fabric_core::ModelConfig {{ provider: {}.to_string(), model: {}.to_string(), temperature: {temperature}, api_key_env: {api_key}, base_url: {base_url}, settings: {}, extensions: BTreeMap::new() }})])",
         rust_string(&model.provider),
         rust_string(&model.model),
         rust_settings(&model.settings),
@@ -308,10 +439,69 @@ mod tests {
                 assert!(
                     manifest.contains(&format!("nemo-fabric-core = {}", rust_core_dependency()))
                 );
-                assert!(!manifest.contains("path ="));
+                assert!(manifest.contains("[workspace]"));
             }
             fs::remove_dir_all(destination).expect("remove scaffold");
         }
+    }
+
+    #[test]
+    fn source_checkout_rust_scaffold_builds_inside_the_repository() {
+        let destination = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            ".nemo-fabric-scaffold-test-{}-build",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&destination);
+        init(
+            examples::find("code-review").expect("example"),
+            None,
+            Language::Rust,
+            &destination,
+        )
+        .expect("generate scaffold");
+
+        let output = std::process::Command::new(env!("CARGO"))
+            .args(["check", "--offline"])
+            .current_dir(&destination)
+            .output()
+            .expect("run cargo check");
+        assert!(
+            output.status.success(),
+            "generated Rust scaffold did not build:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        fs::remove_dir_all(destination).expect("remove scaffold");
+    }
+
+    #[test]
+    fn rust_core_dependency_uses_local_checkout_when_available() {
+        let source_path = destination("core-dependency-local", Language::Rust);
+        let _ = fs::remove_dir_all(&source_path);
+        fs::create_dir_all(&source_path).expect("create source checkout");
+        fs::write(source_path.join("Cargo.toml"), "").expect("write Cargo manifest");
+        let canonical_path = source_path.canonicalize().expect("canonicalize checkout");
+
+        assert_eq!(
+            rust_core_dependency_for_path(&source_path),
+            format!(
+                "{{ path = {}, version = {} }}",
+                rust_string(canonical_path.to_str().expect("UTF-8 checkout path")),
+                rust_string(env!("CARGO_PKG_VERSION"))
+            )
+        );
+
+        fs::remove_dir_all(source_path).expect("remove source checkout");
+    }
+
+    #[test]
+    fn rust_core_dependency_falls_back_when_checkout_is_unavailable() {
+        let source_path = destination("core-dependency-missing", Language::Rust);
+        let _ = fs::remove_dir_all(&source_path);
+
+        assert_eq!(
+            rust_core_dependency_for_path(&source_path),
+            rust_string(env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]
@@ -328,15 +518,13 @@ mod tests {
 
         let python = render_python(&config);
         assert!(python.contains("temperature=0.2"));
-        assert!(
-            python.contains("settings={\"base_url\": \"https://integrate.api.nvidia.com/v1\"}")
-        );
+        assert!(python.contains("base_url=\"https://integrate.api.nvidia.com/v1\""));
 
         let rust = render_rust(&config);
         assert!(rust.contains("temperature: Some(0.2)"));
-        assert!(rust.contains(
-            "(\"base_url\".to_string(), serde_json::json!(\"https://integrate.api.nvidia.com/v1\"))"
-        ));
+        assert!(
+            rust.contains("base_url: Some(\"https://integrate.api.nvidia.com/v1\".to_string())")
+        );
     }
 
     #[test]

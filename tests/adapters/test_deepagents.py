@@ -151,12 +151,16 @@ def make_payload_fixture():
         return {
             "base_dir": str(tmp_path),
             "config": {
-                "harness": {"settings": {"system_prompt": "be concise"}},
+                "harness": {"settings": {}},
+                "instructions": {
+                    "system": {"content": "be concise", "mode": "replace"}
+                },
                 "models": {
                     "default": {
                         "provider": "nvidia",
                         "model": "nvidia/nemotron-3-nano-30b-a3b",
                         "api_key_env": "NVIDIA_API_KEY",
+                        "base_url": "https://integrate.api.nvidia.com/v1",
                     }
                 },
             },
@@ -415,9 +419,7 @@ async def test_native_telemetry_exports_without_artifacts(
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
-    assert fake_relay["plugin_configs"] == [
-        payload["telemetry_plan"]["native_config"]
-    ]
+    assert fake_relay["plugin_configs"] == [payload["telemetry_plan"]["native_config"]]
     assert output["telemetry"] == {
         "enabled": True,
         "provider": "native",
@@ -620,11 +622,11 @@ async def test_mcp_servers_become_adapter_tools(
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
-async def test_blocked_tools_middleware_blocks_configured_tools():
+async def test_tool_policy_middleware_enforces_enabled_and_blocked_tools():
     pytest.importorskip("langchain.agents.middleware")
     from langchain_core.messages import ToolMessage
 
-    middleware = adapter.blocked_tools_middleware({"write_file"})
+    middleware = adapter.tool_policy_middleware({"read_file"}, {"write_file"})
 
     async def handler(_request: types.SimpleNamespace) -> str:
         return "executed"
@@ -640,6 +642,10 @@ async def test_blocked_tools_middleware_blocks_configured_tools():
 
     allowed = await middleware.awrap_tool_call(request("read_file"), handler)
     assert allowed == "executed"
+
+    unselected = await middleware.awrap_tool_call(request("search"), handler)
+    assert isinstance(unselected, ToolMessage)
+    assert unselected.status == "error"
 
 
 @pytest.mark.usefixtures("use_real_langgraph")
@@ -931,17 +937,17 @@ async def test_blocked_tools_reject_unenforceable_subagents(
     [
         (
             {"name": "researcher"},
-            "harness.settings.deepagents.subagents must be a list when tools.blocked is configured.",
+            "harness.settings.deepagents.subagents must be a list when a tools policy is configured.",
         ),
         (
             [{"name": "researcher"}, "invalid"],
-            "Deep Agents subagents must be mappings when tools.blocked is configured.",
+            "Deep Agents subagents must be mappings when a tools policy is configured.",
         ),
     ],
 )
 def test_gated_subagents_reject_invalid_configuration(subagents, message):
     with pytest.raises(adapter.AdapterConfigError) as error:
-        adapter._gated_subagents(subagents, {"write_file"})
+        adapter._gated_subagents(subagents, None, {"write_file"})
 
     assert str(error.value) == message
 
@@ -1099,6 +1105,19 @@ async def test_openai_compatible_provider_requires_api_key_env(tmp_path, make_pa
     }
 
     with pytest.raises(adapter.AdapterConfigError, match="api_key_env"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+
+async def test_openai_compatible_provider_requires_base_url(tmp_path, make_payload):
+    os.environ["CUSTOM_API_KEY"] = "sk-test"
+    payload = make_payload(tmp_path)
+    payload["config"]["models"]["default"] = {
+        "provider": "openai-compatible",
+        "model": "some/model",
+        "api_key_env": "CUSTOM_API_KEY",
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="base_url"):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 

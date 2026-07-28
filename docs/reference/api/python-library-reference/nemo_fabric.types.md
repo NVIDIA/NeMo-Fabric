@@ -7,6 +7,7 @@ description: "Typed config, request, plan, result, artifact, telemetry, and runt
 SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.types`
+
 Public data contracts for the NeMo Fabric Python SDK.
 
 
@@ -15,6 +16,7 @@ Public data contracts for the NeMo Fabric Python SDK.
 
 
 ## <kbd>class</kbd> `AdapterInfo`
+
 Resolved adapter identity attached to a run plan.
 
 
@@ -27,10 +29,22 @@ Resolved adapter identity attached to a run plan.
  - <b>`metadata`</b>:  Adapter-specific, JSON-compatible metadata.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `adapter_id` | `str` |
+| `harness` | `str` |
+| `adapter_kind` | `str` |
+| `metadata` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -52,7 +66,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -63,7 +77,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -74,7 +88,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -84,6 +98,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RuntimeCapabilities`
+
 Operations declared by the resolved runtime and adapter.
 
 Capabilities describe what the selected runtime can support; callers should still expect a capability-specific error when a transport is modeled but not implemented.
@@ -99,10 +114,23 @@ Capabilities describe what the selected runtime can support; callers should stil
  - <b>`metadata`</b>:  Additional capability details.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `service` | `bool` |
+| `streaming` | `bool` |
+| `updates` | `bool` |
+| `cancellation` | `bool` |
+| `metadata` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -124,7 +152,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -135,7 +163,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -146,7 +174,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -156,6 +184,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunPlan`
+
 Immutable execution plan produced before a runtime is started.
 
 
@@ -169,10 +198,23 @@ Immutable execution plan produced before a runtime is started.
  - <b>`capabilities`</b>:  Operations declared by the resolved runtime.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `agent_name` | `str` |
+| `base_dir` | `Path` |
+| `config` | `_FabricConfigSnapshot` |
+| `adapter` | `AdapterInfo` |
+| `capabilities` | `RuntimeCapabilities` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -194,7 +236,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -205,7 +247,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -216,7 +258,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -226,6 +268,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `DoctorCheck`
+
 One diagnostic check in a ``DoctorReport``.
 
 
@@ -238,10 +281,22 @@ One diagnostic check in a ``DoctorReport``.
  - <b>`metadata`</b>:  Structured check details.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `name` | `str` |
+| `status` | `str` |
+| `message` | `str` |
+| `metadata` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -263,7 +318,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -274,7 +329,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -285,7 +340,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -295,6 +350,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `DoctorReport`
+
 Aggregate preflight diagnostics for a resolved run plan.
 
 
@@ -306,10 +362,21 @@ Aggregate preflight diagnostics for a resolved run plan.
  - <b>`checks`</b>:  Ordered ``DoctorCheck`` results.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `agent_name` | `str` |
+| `status` | `str` |
+| `checks` | `Sequence[DoctorCheck]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -331,7 +398,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -342,7 +409,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -353,7 +420,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -363,6 +430,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `ErrorInfo`
+
 Structured failure returned inside a normalized ``RunResult``.
 
 
@@ -376,10 +444,23 @@ Structured failure returned inside a normalized ``RunResult``.
  - <b>`metadata`</b>:  Adapter- or runtime-specific details.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `stage` | `str` |
+| `code` | `str` |
+| `message` | `str` |
+| `retryable` | `bool` |
+| `metadata` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -401,7 +482,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -412,7 +493,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -423,7 +504,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -433,6 +514,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `ArtifactRef`
+
 Reference to one artifact produced by a run.
 
 
@@ -446,10 +528,23 @@ Reference to one artifact produced by a run.
  - <b>`metadata`</b>:  Artifact-specific details.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `name` | `str` |
+| `kind` | `str` |
+| `path` | `Path` |
+| `media_type` | `str \| None` |
+| `metadata` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -471,7 +566,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -482,7 +577,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -493,7 +588,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -503,6 +598,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `ArtifactManifest`
+
 Normalized collection of artifacts produced by a run.
 
 
@@ -513,10 +609,20 @@ Normalized collection of artifacts produced by a run.
  - <b>`artifacts`</b>:  Ordered ``ArtifactRef`` entries.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `root` | `Path \| None` |
+| `artifacts` | `Sequence[ArtifactRef]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -538,7 +644,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -549,7 +655,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -560,7 +666,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -570,6 +676,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `TelemetryRef`
+
 Reference to external or persisted telemetry for a run.
 
 
@@ -583,10 +690,23 @@ Reference to external or persisted telemetry for a run.
  - <b>`metadata`</b>:  Provider-specific details.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `provider` | `str` |
+| `kind` | `str` |
+| `uri` | `str \| None` |
+| `trace_id` | `str \| None` |
+| `metadata` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -608,7 +728,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -619,7 +739,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -630,7 +750,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -640,6 +760,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `FabricEvent`
+
 One normalized lifecycle or invocation event.
 
 
@@ -653,10 +774,23 @@ One normalized lifecycle or invocation event.
  - <b>`metadata`</b>:  Event-specific structured details.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `event_id` | `str` |
+| `timestamp_millis` | `int` |
+| `kind` | `str` |
+| `message` | `str` |
+| `metadata` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -678,7 +812,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -689,7 +823,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -700,7 +834,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -710,6 +844,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RuntimeHandle`
+
 Opaque identity and binding for one started runtime.
 
 Applications should treat ``runtime_binding`` as opaque. NeMo Fabric validates the handle against the run plan before invocation or shutdown.
@@ -727,10 +862,25 @@ Applications should treat ``runtime_binding`` as opaque. NeMo Fabric validates t
  - <b>`environment`</b>:  Prepared environment snapshot.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `runtime_id` | `str` |
+| `runtime_binding` | `str` |
+| `agent_name` | `str` |
+| `harness` | `str` |
+| `adapter_kind` | `str` |
+| `adapter_id` | `str \| None` |
+| `environment` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -752,7 +902,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -763,7 +913,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -774,7 +924,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -784,15 +934,25 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunOutput`
+
 Normalized adapter output.
 
 ``response`` is a known adapter response field whose value follows the core NeMo Fabric JSON contract. Other keys are adapter-specific extensions.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `response` | `JSONValue \| None` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -820,7 +980,7 @@ Return the raw ``response`` JSON value, or ``None`` when absent.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -831,7 +991,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -842,7 +1002,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.
@@ -852,6 +1012,7 @@ Return a detached, JSON-compatible mapping for serialization.
 
 
 ## <kbd>class</kbd> `RunResult`
+
 Normalized terminal result from one NeMo Fabric invocation.
 
 The model is both attribute-accessible and mapping-compatible. A harness failure can be represented by ``status`` and ``error`` without raising when the adapter successfully returns a normalized result.
@@ -876,10 +1037,32 @@ The model is both attribute-accessible and mapping-compatible. A harness failure
  - <b>`metadata`</b>:  Result-specific structured details.
 
 
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `agent_name` | `str` |
+| `harness` | `str` |
+| `adapter_kind` | `str` |
+| `adapter_id` | `str` |
+| `runtime_id` | `str` |
+| `invocation_id` | `str` |
+| `request_id` | `str` |
+| `status` | `str` |
+| `output` | `RunOutput \| JSONValue` |
+| `error` | `ErrorInfo \| None` |
+| `artifacts` | `ArtifactManifest` |
+| `telemetry` | `Sequence[TelemetryRef]` |
+| `events` | `Sequence[FabricEvent]` |
+| `metadata` | `Mapping[str, Any]` |
+
 ### <kbd>method</kbd> `__init__`
 
 ```python
-__init__(mapping: 'Mapping[str, Any]') → None
+def __init__(mapping: Mapping[str, Any]) -> None
 ```
 
 
@@ -901,7 +1084,7 @@ Return an immutable view of preserved extension fields.
 ### <kbd>classmethod</kbd> `from_mapping`
 
 ```python
-from_mapping(mapping: 'Mapping[str, Any]') → 'FabricMapping'
+def from_mapping(mapping: Mapping[str, Any]) -> Self
 ```
 
 Validate and copy a mapping into the requested typed model.
@@ -912,7 +1095,7 @@ Validate and copy a mapping into the requested typed model.
 ### <kbd>method</kbd> `to_dict`
 
 ```python
-to_dict() → dict[str, Any]
+def to_dict() -> dict[str, Any]
 ```
 
 Return the same detached representation as ``to_mapping()``.
@@ -923,7 +1106,7 @@ Return the same detached representation as ``to_mapping()``.
 ### <kbd>method</kbd> `to_mapping`
 
 ```python
-to_mapping() → dict[str, Any]
+def to_mapping() -> dict[str, Any]
 ```
 
 Return a detached, JSON-compatible mapping for serialization.

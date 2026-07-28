@@ -37,7 +37,7 @@ fn frontier_presets_require_an_explicit_endpoint() {
         let plan: serde_json::Value =
             serde_json::from_slice(&configured.stdout).expect("parse CLI plan");
         assert_eq!(
-            plan["config"]["models"]["default"]["settings"]["base_url"].as_str(),
+            plan["config"]["models"]["default"]["base_url"].as_str(),
             Some("https://frontier.example/v1"),
             "{preset} did not preserve the Frontier endpoint"
         );

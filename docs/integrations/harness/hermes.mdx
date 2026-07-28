@@ -32,9 +32,9 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
 ```
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
-MCP servers, blocked toolsets, and telemetry. Use `harness.settings` only for
-Hermes Agent-specific options such as `hermes_home` or
-`disabled_toolsets`.
+MCP servers, instructions, turn limit, native tool selectors, and telemetry.
+Use `harness.settings` only for Hermes Agent-specific options such as terminal
+timeout or reasoning configuration.
 
 ## Understand the Runtime Lifecycle
 

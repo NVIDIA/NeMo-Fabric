@@ -14,6 +14,8 @@ from nemo_fabric.models import EnvironmentConfig
 from nemo_fabric.models import FabricBaseModel
 from nemo_fabric.models import FabricConfig
 from nemo_fabric.models import HarnessConfig
+from nemo_fabric.models import InstructionConfig
+from nemo_fabric.models import InstructionsConfig
 from nemo_fabric.models import McpConfig
 from nemo_fabric.models import McpServerConfig
 from nemo_fabric.models import MetadataConfig
@@ -68,6 +70,8 @@ __all__ = [
     "FabricError",
     "FabricEvent",
     "HarnessConfig",
+    "InstructionConfig",
+    "InstructionsConfig",
     "InvokeStream",
     "McpConfig",
     "McpServerConfig",

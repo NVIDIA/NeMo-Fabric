@@ -19,8 +19,10 @@ import tempfile
 from pathlib import Path
 from shutil import copytree
 
+import pytest
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
+from nemo_fabric import FabricConfigError
 from nemo_fabric import RunRequest
 from nemo_fabric import RunResult
 
@@ -65,11 +67,13 @@ def _shim_adapter_config() -> FabricConfig:
     """Config referencing the test adapter (runs without secrets)."""
 
     config = _repository_adapter_config().to_mapping()
-    config["metadata"] = {"name": "typed-only-run"}
+    config["metadata"] = {
+        "name": "typed-only-run",
+        "caller_annotation": "sdk",
+    }
     config["harness"] = {
         "adapter_id": "test.fabric.hermes_shim",
         "resolution": "preinstalled",
-        "settings": {"workspace": "./ws"},
     }
     config["models"] = {
         "default": {"provider": "test", "model": "test-model", "temperature": 0.0}
@@ -106,6 +110,7 @@ async def runs_with_typed_config_and_adapter_directory(client: Fabric) -> None:
         base = Path(tmpdir) / "scratch"
         copytree(SHIM_ADAPTERS, base / "adapters")
         (base / "ws").mkdir()
+        plan = client.plan(config, base_dir=base)
         result = await client.run(
             config,
             base_dir=base,
@@ -118,14 +123,47 @@ async def runs_with_typed_config_and_adapter_directory(client: Fabric) -> None:
         )
 
     assert isinstance(result, RunResult)
-    assert result["status"] == "succeeded", result.get("status")
+    assert plan.config.metadata.extra_fields["caller_annotation"] == "sdk"
+    assert result["status"] == "succeeded", result["status"]
     assert result.request_id == "typed-request-1"
     assert result["adapter_kind"] == "python"
     assert result["metadata"]["adapter_runner"] == "persistent_local_host"
+    assert "caller_annotation" not in result.metadata
     assert result["output"]["received"] == "hello typed"
+
+
+async def diagnoses_adapter_incompatibility_without_weakening_plan(client: Fabric) -> None:
+    """Doctor reports unsupported config that strict planning rejects."""
+
+    config = FabricConfig.from_mapping(
+        {
+            "metadata": {"name": "incompatible-agent"},
+            "harness": {"adapter_id": "nvidia.fabric.codex"},
+            "runtime": {"max_turns": 3},
+            "tools": {"enabled": []},
+        }
+    )
+
+    with pytest.raises(FabricConfigError, match=r"runtime\.max_turns"):
+        client.plan(config, base_dir=ROOT)
+
+    report = await client.doctor(config, base_dir=ROOT)
+
+    assert report.status == "fail"
+    assert any(
+        check.name == "config.unsupported"
+        and check.metadata.get("field") == "runtime.max_turns"
+        for check in report.checks
+    )
+    assert any(
+        check.name == "capability.unsupported"
+        and "tools.enabled" in check.message
+        for check in report.checks
+    )
 
 
 async def test_typed_config():
     client = Fabric()
     await resolves_and_diagnoses_typed_config(client)
     await runs_with_typed_config_and_adapter_directory(client)
+    await diagnoses_adapter_incompatibility_without_weakening_plan(client)

@@ -10,6 +10,8 @@ from pathlib import Path
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import FabricConfig
 from nemo_fabric import HarnessConfig
+from nemo_fabric import InstructionConfig
+from nemo_fabric import InstructionsConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RelayAtifConfig
@@ -19,6 +21,7 @@ from nemo_fabric import RelayObservabilityConfig
 from nemo_fabric import RelayOtlpConfig
 from nemo_fabric import RuntimeConfig
 from nemo_fabric import TelemetryConfig
+from nemo_fabric import ToolsConfig
 
 BASE_DIR = Path(__file__).resolve().parent
 WORKSPACE = "./repos/my-service"
@@ -36,7 +39,7 @@ def base_config() -> FabricConfig:
         harness=HarnessConfig(
             adapter_id="nvidia.fabric.hermes",
             resolution="preinstalled",
-            settings={"workspace": WORKSPACE},
+            settings={},
         ),
         models={
             "default": ModelConfig(
@@ -70,21 +73,22 @@ def hermes_config() -> FabricConfig:
         adapter_id="nvidia.fabric.hermes",
         resolution="preinstalled",
         settings={
-            "workspace": WORKSPACE,
-            "hermes_home": "./artifacts/hermes-home",
-            "base_url": "https://integrate.api.nvidia.com/v1",
-            "max_iterations": 1,
             "max_tokens": 512,
-            "temperature": 0.0,
             "reasoning_config": {"effort": "none"},
-            "enabled_toolsets": [],
-            "system_prompt": "You are a concise smoke test assistant.",
         },
     )
+    model = config.models["default"]
+    assert isinstance(model, ModelConfig)
+    model.base_url = "https://integrate.api.nvidia.com/v1"
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content="You are a concise smoke test assistant.")
+    )
+    config.tools = ToolsConfig(enabled=[])
     config.runtime = RuntimeConfig(
         input_schema="chat",
         output_schema="message",
         artifacts="./artifacts/hermes",
+        max_turns=1,
     )
     config.environment = EnvironmentConfig(
         provider="local",
@@ -128,10 +132,10 @@ def deepagents_config() -> FabricConfig:
     config.harness = HarnessConfig(
         adapter_id="nvidia.fabric.langchain.deepagents",
         resolution="preinstalled",
-        settings={
-            "workspace": WORKSPACE,
-            "system_prompt": "You are a concise smoke test assistant.",
-        },
+        settings={},
+    )
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(content="You are a concise smoke test assistant.")
     )
     config.runtime = RuntimeConfig(
         input_schema="chat",
@@ -151,8 +155,9 @@ def claude_config() -> FabricConfig:
     """Return the complete Claude adapter variant.
 
     The Claude adapter reads the working directory from ``environment.workspace``
-    and rejects ``cwd`` in ``harness.settings``; only Claude-specific controls
-    such as ``system_prompt`` and ``permission_mode`` belong there.
+    and reads portable instructions from ``FabricConfig.instructions.system``.
+    Claude-specific controls such as ``permission_mode`` stay in
+    ``harness.settings``.
     """
 
     config = base_config().model_copy(deep=True)
@@ -160,9 +165,15 @@ def claude_config() -> FabricConfig:
         adapter_id="nvidia.fabric.claude",
         resolution="preinstalled",
         settings={
-            "system_prompt": "You are a concise code reviewer. Point out correctness bugs and risks.",
             "permission_mode": "dontAsk",
         },
+    )
+    config.instructions = InstructionsConfig(
+        system=InstructionConfig(
+            content=(
+                "You are a concise code reviewer. Point out correctness bugs and risks."
+            )
+        )
     )
     config.models = {
         "default": ModelConfig(

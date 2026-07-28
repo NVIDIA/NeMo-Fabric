@@ -213,6 +213,36 @@ mod tests {
     }
 
     #[test]
+    fn agent_schema_enforces_positive_invocation_limits() {
+        let schema = generate_schema(SchemaName::Agent).expect("schema generation");
+
+        assert_eq!(
+            schema["$defs"]["InstructionConfig"]["properties"]["content"]["minLength"],
+            1
+        );
+        assert_eq!(
+            schema["$defs"]["InstructionConfig"]["properties"]["content"]["pattern"],
+            r"\S"
+        );
+        assert_eq!(
+            schema["$defs"]["EnvironmentConfig"]["properties"]["env"]["propertyNames"]["pattern"],
+            r"\S"
+        );
+        assert_eq!(
+            schema["$defs"]["RuntimeConfig"]["properties"]["max_turns"]["minimum"],
+            1
+        );
+        assert_eq!(
+            schema["$defs"]["RuntimeConfig"]["properties"]["max_turns"]["maximum"],
+            u32::MAX
+        );
+        assert_eq!(
+            schema["$defs"]["RuntimeConfig"]["properties"]["timeout_seconds"]["exclusiveMinimum"],
+            0.0
+        );
+    }
+
+    #[test]
     fn adapter_descriptor_schema_rejects_empty_identifiers() {
         let schema = generate_schema(SchemaName::AdapterDescriptor).expect("schema generation");
 

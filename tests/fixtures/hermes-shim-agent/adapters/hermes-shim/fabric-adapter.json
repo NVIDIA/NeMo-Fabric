@@ -17,10 +17,10 @@
   },
   "config": {
     "accepts": [
-      "tools",
+      "models",
+      "models.temperature",
       "mcp",
-      "skills",
-      "telemetry"
+      "skills"
     ]
   },
   "telemetry": {

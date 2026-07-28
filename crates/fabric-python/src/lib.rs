@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
     FabricConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
+    resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
@@ -66,7 +67,7 @@ fn doctor_config(
     let (context, adapter_directories) = resolve_context(py, base_dir, &config)?;
     let plan = py
         .detach(|| {
-            resolve_run_plan_from_config_with_adapter_directories(
+            resolve_diagnostic_plan_from_config_with_adapter_directories(
                 config,
                 context,
                 &adapter_directories,
