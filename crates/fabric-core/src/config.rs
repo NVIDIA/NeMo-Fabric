@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -73,7 +73,7 @@ pub enum InstructionMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct InstructionConfig {
     /// Instruction text.
-    #[schemars(length(min = 1))]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub content: String,
     /// How the instruction is applied.
     #[serde(default)]
@@ -514,7 +514,7 @@ pub struct RuntimeConfig {
     pub timeout_seconds: Option<f64>,
     /// Maximum number of harness turns within one invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = 1, max = u32::MAX))]
     pub max_turns: Option<u32>,
     /// Additive normalized runtime fields.
     #[serde(default, flatten)]
@@ -552,6 +552,7 @@ pub struct EnvironmentConfig {
     /// or plans are logged or persisted. Prefer `api_key_env`-style
     /// environment-variable-name indirection for credentials.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[schemars(schema_with = "environment_variables_schema")]
     pub env: BTreeMap<String, String>,
     /// Provider connection metadata, such as server URL, credential reference, or namespace.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
@@ -565,6 +566,15 @@ pub struct EnvironmentConfig {
     /// Additive normalized environment fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+fn environment_variables_schema(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema = BTreeMap::<String, String>::json_schema(generator);
+    schema.insert(
+        "propertyNames".into(),
+        serde_json::json!({"pattern": r"\S"}),
+    );
+    schema
 }
 
 fn default_control_location() -> ControlLocation {
@@ -1327,7 +1337,7 @@ fn validate_capability_plan_compatibility(
     })
 }
 
-fn validate_adapter_config_compatibility(
+pub(crate) fn validate_adapter_config_compatibility(
     config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
 ) -> Result<()> {

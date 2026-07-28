@@ -263,6 +263,21 @@ def test_instruction_content_must_be_non_empty(content: str):
         _FabricConfigSnapshot.from_mapping(raw)
 
 
+def test_max_turns_matches_rust_u32_range():
+    maximum = (1 << 32) - 1
+
+    assert RuntimeConfig(max_turns=maximum).max_turns == maximum
+    with pytest.raises(ValidationError):
+        RuntimeConfig(max_turns=maximum + 1)
+
+    raw = _plan()["config"]
+    raw["runtime"] = {"max_turns": maximum}
+    assert _FabricConfigSnapshot.from_mapping(raw).runtime.max_turns == maximum
+    raw["runtime"]["max_turns"] = maximum + 1
+    with pytest.raises(FabricConfigError, match="between 1 and 4294967295"):
+        _FabricConfigSnapshot.from_mapping(raw)
+
+
 def test_run_plan_config_block_tools_emits_canonical_shape():
     config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
 
@@ -521,6 +536,7 @@ def test_environment_model_defines_extension_field_ownership():
     assert "existing environment" in properties["connection"]["description"]
     assert "environment teardown" in properties["ownership"]["description"]
     assert "outside or inside" in properties["control_location"]["description"]
+    assert properties["env"]["propertyNames"]["pattern"] == r"\S"
 
 
 def test_inspection_models_are_typed_read_only_mappings():

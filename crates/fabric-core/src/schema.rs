@@ -221,8 +221,20 @@ mod tests {
             1
         );
         assert_eq!(
+            schema["$defs"]["InstructionConfig"]["properties"]["content"]["pattern"],
+            r"\S"
+        );
+        assert_eq!(
+            schema["$defs"]["EnvironmentConfig"]["properties"]["env"]["propertyNames"]["pattern"],
+            r"\S"
+        );
+        assert_eq!(
             schema["$defs"]["RuntimeConfig"]["properties"]["max_turns"]["minimum"],
             1
+        );
+        assert_eq!(
+            schema["$defs"]["RuntimeConfig"]["properties"]["max_turns"]["maximum"],
+            u32::MAX
         );
         assert_eq!(
             schema["$defs"]["RuntimeConfig"]["properties"]["timeout_seconds"]["exclusiveMinimum"],

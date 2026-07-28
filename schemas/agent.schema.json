@@ -41,6 +41,9 @@
             "type": "string"
           },
           "description": "Environment variables visible to the harness and its tools.\n\nValues are serialized into the run plan and can appear wherever configs\nor plans are logged or persisted. Prefer `api_key_env`-style\nenvironment-variable-name indirection for credentials.",
+          "propertyNames": {
+            "pattern": "\\S"
+          },
           "type": "object"
         },
         "metadata": {
@@ -127,6 +130,7 @@
         "content": {
           "description": "Instruction text.",
           "minLength": 1,
+          "pattern": "\\S",
           "type": "string"
         },
         "mode": {
@@ -956,6 +960,7 @@
         "max_turns": {
           "description": "Maximum number of harness turns within one invocation.",
           "format": "uint32",
+          "maximum": 4294967295,
           "minimum": 1,
           "type": [
             "integer",

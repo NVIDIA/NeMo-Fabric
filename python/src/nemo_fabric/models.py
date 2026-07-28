@@ -108,7 +108,7 @@ class HarnessConfig(FabricBaseModel):
 class InstructionConfig(FabricBaseModel):
     """One portable instruction value."""
 
-    content: str = Field(min_length=1)
+    content: str = Field(min_length=1, pattern=r"\S")
     mode: Literal["replace"] = "replace"
 
     @field_validator("content")
@@ -136,7 +136,7 @@ class RuntimeConfig(FabricBaseModel):
         gt=0,
         allow_inf_nan=False,
     )
-    max_turns: int | None = Field(default=None, gt=0)
+    max_turns: int | None = Field(default=None, gt=0, le=(1 << 32) - 1)
 
 
 class EnvironmentConfig(FabricBaseModel):
@@ -172,6 +172,7 @@ class EnvironmentConfig(FabricBaseModel):
             "serialized into configuration and run plans; prefer api_key_env-style "
             "environment-variable-name indirection for credentials."
         ),
+        json_schema_extra={"propertyNames": {"pattern": r"\S"}},
     )
     settings: dict[str, Any] = Field(
         default_factory=dict,

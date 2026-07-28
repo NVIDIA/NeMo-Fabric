@@ -21,7 +21,7 @@ use serde_json::{Map, Value};
 
 use crate::config::{
     AdapterKind, CapabilityPlan, CapabilityTarget, ControlLocation, EnvironmentOwnership,
-    FabricConfig, RunPlan, TelemetryPlan,
+    FabricConfig, RunPlan, TelemetryPlan, validate_adapter_config_compatibility,
 };
 use crate::error::{FabricError, Result};
 
@@ -568,6 +568,12 @@ pub fn invoke_runtime(
 }
 
 fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
+    validate_adapter_config_compatibility(
+        &plan.config,
+        plan.adapter_descriptor
+            .as_ref()
+            .map(|adapter| &adapter.descriptor),
+    )?;
     if let Some(route) = plan
         .capability_plan
         .routes
@@ -2766,6 +2772,33 @@ for line in sys.stdin:
             FabricError::InvalidConfig { field, .. }
                 if field == "runtime.timeout_seconds"
         ));
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_revalidates_scalar_compatibility_at_runtime_boundaries() {
+        let (root, plan) = local_host_plan("success");
+        let mut incompatible_plan = plan.clone();
+        incompatible_plan.config.runtime.max_turns = Some(1);
+
+        let start_error =
+            start_runtime(&incompatible_plan).expect_err("start must reject incompatibility");
+        assert!(matches!(
+            start_error,
+            FabricError::AdapterCompatibility { field, .. }
+                if field == "runtime.max_turns"
+        ));
+
+        let runtime = start_runtime(&plan).expect("start local host");
+        let invoke_error = invoke_runtime(&incompatible_plan, &runtime, RunRequest::text("first"))
+            .expect_err("invoke must reject incompatibility");
+        assert!(matches!(
+            invoke_error,
+            FabricError::AdapterCompatibility { field, .. }
+                if field == "runtime.max_turns"
+        ));
+
         stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
     }

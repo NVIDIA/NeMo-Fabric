@@ -233,7 +233,7 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `content` | `str` | Yes | — | `MinLen(min_length=1)` | — |
+| `content` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
 | `mode` | `Literal['replace']` | No | `'replace'` | — | — |
 
 ---
@@ -378,7 +378,7 @@ The model defines the following fields:
 | `output_schema` | `str \| None` | No | `None` | — | — |
 | `artifacts` | `str \| Path \| None` | No | `None` | — | — |
 | `timeout_seconds` | `float \| None` | No | `None` | `Gt(gt=0), _PydanticGeneralMetadata(allow_inf_nan=False)` | — |
-| `max_turns` | `int \| None` | No | `None` | `Gt(gt=0)` | — |
+| `max_turns` | `int \| None` | No | `None` | `Gt(gt=0), Le(le=4294967295)` | — |
 
 ---
 

@@ -325,8 +325,11 @@ class _RuntimeConfig(_ConfigMapping):
                 isinstance(max_turns, bool)
                 or not isinstance(max_turns, int)
                 or max_turns <= 0
+                or max_turns > (1 << 32) - 1
             ):
-                raise FabricConfigError("runtime max_turns must be greater than zero")
+                raise FabricConfigError(
+                    "runtime max_turns must be between 1 and 4294967295"
+                )
             values["max_turns"] = max_turns
         super().__init__(values, extra_fields=extra_fields)
 
