@@ -22,6 +22,7 @@ use serde_json::{Map, Value};
 use crate::config::{
     AdapterKind, CapabilityPlan, CapabilityTarget, ControlLocation, EnvironmentOwnership,
     FabricConfig, RunPlan, TelemetryPlan, validate_adapter_config_compatibility,
+    validate_harness_settings,
 };
 use crate::error::{FabricError, Result};
 
@@ -539,6 +540,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
 
 /// Start or connect to a harness runtime.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
+    validate_harness_settings(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_adapter_compatibility(plan)?;
     let environment = prepare_environment(plan)?;
     if uses_local_host(plan) {
@@ -2431,6 +2433,18 @@ mod tests {
   "harness": "local-host-test",
   "adapter_kind": "python",
   "runner": {"module": "fake_host"},
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "python": {"type": "string"},
+      "cwd": {"type": "string"},
+      "env": {
+        "type": "object",
+        "additionalProperties": {"type": "string"}
+      }
+    },
+    "additionalProperties": false
+  },
   "telemetry": {
     "providers": {
       "relay": {"outputs": ["atif"]}
@@ -2773,6 +2787,31 @@ for line in sys.stdin:
                 if field == "runtime.timeout_seconds"
         ));
         stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_revalidates_harness_settings_before_runtime_start() {
+        let (root, plan) = local_host_plan("success");
+        let mut invalid_plan = plan.clone();
+        invalid_plan
+            .config
+            .harness
+            .settings
+            .insert("unknown".to_string(), Value::Bool(true));
+
+        let error =
+            start_runtime(&invalid_plan).expect_err("start must reject invalid harness settings");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidHarnessSettings {
+                adapter_id,
+                settings_path,
+                ..
+            } if adapter_id == "acme.fabric.local-host"
+                && settings_path == "harness.settings.unknown"
+        ));
         let _ = fs::remove_dir_all(root);
     }
 

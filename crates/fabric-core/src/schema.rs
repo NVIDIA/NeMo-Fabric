@@ -249,5 +249,9 @@ mod tests {
         assert_eq!(schema["properties"]["contract_version"]["minLength"], 1);
         assert_eq!(schema["properties"]["adapter_id"]["minLength"], 1);
         assert_eq!(schema["properties"]["harness"]["minLength"], 1);
+        assert_eq!(
+            schema["properties"]["settings_schema"]["type"],
+            serde_json::json!(["object", "null"])
+        );
     }
 }

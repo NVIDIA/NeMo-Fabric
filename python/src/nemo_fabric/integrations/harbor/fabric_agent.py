@@ -491,10 +491,6 @@ def model_provider(model_name: str) -> str:
 def harbor_harness_defaults(adapter_id: str) -> dict[str, Any]:
     """Return the minimal unattended settings required in a Harbor task."""
 
-    if adapter_id == "nvidia.fabric.hermes":
-        return {
-            "terminal_timeout": 300,
-        }
     if adapter_id == "nvidia.fabric.claude":
         return {
             "permission_mode": "bypassPermissions",

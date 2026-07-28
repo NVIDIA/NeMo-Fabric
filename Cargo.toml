@@ -23,6 +23,13 @@ repository = "https://github.com/NVIDIA/nemo-fabric"
 nemo-fabric-core = { path = "crates/fabric-core", version = "0.1.0" }
 
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "suggestions"] }
+# Validate adapter-owned JSON Schema in Rust while preserving precise instance paths.
+# `schemars` only generates schemas, and delegating validation to Python would cross
+# the language-neutral core boundary. The smaller validator evaluated for this path
+# misreported array indices after `prefixItems`, making `jsonschema` the narrowest
+# option with correct diagnostics. Keep remote and local `$ref` retrieval disabled for
+# untrusted adapter schemas.
+jsonschema = { version = "0.49", default-features = false }
 schemars = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

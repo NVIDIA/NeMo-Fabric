@@ -58,10 +58,9 @@ runtime assumptions but never installs harnesses or credentials at run time.
   supported harness dependencies without the NeMo Fabric runtime. Use `full`
   instead when that adapter package provides package-installable optional
   integrations.
-- Point the runtime to a separate adapter environment with `ADAPTER_PYTHON` or
-  `harness.settings.python`. Use matching NeMo Fabric release versions for the
-  runtime and adapter package unless a different pairing has been explicitly
-  validated.
+- Point the runtime to a separate adapter environment with `ADAPTER_PYTHON`.
+  Use matching NeMo Fabric release versions for the runtime and adapter package
+  unless a different pairing has been explicitly validated.
 - If the adapter environment already manages a compatible harness, install the
   bare `nemo-fabric-adapters-<adapter>` distribution. Bare adapter
   distributions contain only adapter-owned runtime dependencies.
@@ -265,13 +264,14 @@ print(plan.adapter.adapter_id, report.status)
 ```
 
 - Use `plan(...)` to confirm adapter selection and capability routing before
-  running.
+  running. Planning also validates `harness.settings` against the schema in the
+  exact resolved adapter descriptor.
 - Use `doctor(...)` to check adapter availability, resolution, environment
   context, and declared requirements such as required environment variables. Its
-  aggregate `status` is `pass`, `warn`, or `fail`. It does **not** validate the
-  contents of `harness.settings`: an unknown or misspelled adapter setting still
-  passes and is silently ignored unless the adapter reads it, so validate
-  settings against the adapter's own docs and your integration tests.
+  aggregate `status` is `pass`, `warn`, or `fail`. Invalid, unknown, or
+  misspelled adapter settings fail before diagnostics or runtime startup. A
+  resolved descriptor without a settings schema accepts only an empty settings
+  map.
 
 ## Consume Results And Handle Errors
 

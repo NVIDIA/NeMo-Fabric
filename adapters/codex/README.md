@@ -21,9 +21,9 @@ The following table shows which components each installation provides:
 | `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
 For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
-and adapter environments, configure `ADAPTER_PYTHON` or
-`harness.settings.python` and use matching NeMo Fabric release versions. Refer
-to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
+and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo
+Fabric release versions. Refer to the
+[installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 The `full` extra is equivalent to `harness`. Relay is optional for ordinary
 runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
@@ -108,26 +108,36 @@ deny boundary for built-in, local, MCP, and hosted tools. NeMo Fabric therefore
 routes normalized blocked-tool policy as unsupported instead of applying a
 partial policy.
 
-Codex-specific controls belong in `harness.settings`:
+Only Codex-specific controls belong in `harness.settings`:
 
-- `sandbox`: `read-only`, `workspace-write`, or `danger-full-access`
-- `approval_mode`: `auto_review` or `deny_all`
-- `developer_instructions`
-- `personality`, `reasoning_effort`, and `service_tier`
-- `output_schema` for SDK-native structured output
-- `config_overrides` as dotted Codex configuration keys applied when the SDK
-  runtime starts, such as Codex-only MCP timeout or required-server options
+| Setting | Type | Required | Static Default |
+| --- | --- | --- | --- |
+| `sandbox` | One of `read-only`, `workspace-write`, or `danger-full-access` | No | `read-only` |
+| `approval_mode` | One of `auto_review` or `deny_all` | No | `auto_review` |
+| `developer_instructions` | Nonempty string | No | No default |
+| `personality` | One of `none`, `friendly`, or `pragmatic` | No | No default |
+| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No | No default |
+| `service_tier` | Nonempty string | No | No default |
+| `output_schema` | JSON Schema object for the final assistant message | No | No default |
+| `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | No | `{}` |
+
+Planning validates these settings against the schema in the resolved Codex
+descriptor. Unknown keys, empty dotted-key segments, invalid types, and invalid
+enum values fail before the adapter starts. Schema defaults are documentation
+only; planning preserves the supplied settings without adding defaults.
+`config_overrides` is the intentional adapter-specific escape hatch for Codex
+configuration that has no normalized NeMo Fabric field.
 
 Set model selection and endpoints through `models`, system instructions through
 `instructions.system`, the invocation deadline through
 `runtime.timeout_seconds`, and the working directory and explicit environment
-through `environment`.
+through `environment`. In particular, the SDK's `base_instructions` value comes
+from `instructions.system`, not `harness.settings`.
 
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
 roots, and `config_overrides` are fixed when the runtime starts and cannot vary
 between `Runtime.invoke(...)` calls. Start a new runtime to change them.
-`Fabric.run(...)` starts the same runtime, invokes it once, and stops it, so the
-same settings are scoped to that single invocation.
+`Fabric.run(...)` starts the same runtime, invokes it once, and stops it.
 
 The adapter filters the inherited environment. It retains portable OS and
 Codex state variables, the selected model's `api_key_env`, and explicit
