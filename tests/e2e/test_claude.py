@@ -171,8 +171,8 @@ async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
 
 
 @pytest.mark.skipif(
-    sys.platform in {"darwin", "win32"},
-    reason="the mock Relay gateway is not supported on macOS or Windows",
+    sys.platform in {"win32",},
+    reason="the mock Relay gateway is not supported on Windows",
 )
 async def test_fabric_claude_relay_supervises_gateway_and_injects_plugin(tmp_path):
     mock_relay = tmp_path / "nemo-relay"
