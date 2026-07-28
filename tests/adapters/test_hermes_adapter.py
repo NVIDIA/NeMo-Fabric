@@ -501,6 +501,70 @@ def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
     assert adapter._artifact_root(payload) == (tmp_path / "run-artifacts").resolve()
 
 
+async def test_incomplete_hermes_result_is_failed():
+    mock_ai_agent = MagicMock(spec=AIAgent)
+    mock_ai_agent.run_conversation.__signature__ = inspect.signature(
+        AIAgent.run_conversation
+    )
+    mock_ai_agent.run_conversation.return_value = {
+        "final_response": None,
+        "completed": False,
+        "partial": True,
+        "error": "Response remained truncated after 4 continuation attempts",
+        "messages": [],
+    }
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._start_payload = {}
+    runtime._runtime_id = "runtime-incomplete"
+    runtime._agent = mock_ai_agent
+    runtime._model_config = {"model": "test-model"}
+
+    output = await runtime.invoke(
+        {
+            "runtime_context": {"runtime_id": "runtime-incomplete"},
+            "request": {"input": "complete the task"},
+        }
+    )
+
+    assert output["completed"] is False
+    assert output["failed"] is True
+    assert output["response"] is None
+    assert output["error"] == (
+        "Response remained truncated after 4 continuation attempts"
+    )
+
+
+async def test_hermes_completed_flag_alone_does_not_report_failure():
+    mock_ai_agent = MagicMock(spec=AIAgent)
+    mock_ai_agent.run_conversation.__signature__ = inspect.signature(
+        AIAgent.run_conversation
+    )
+    mock_ai_agent.run_conversation.return_value = {
+        "final_response": "done",
+        "completed": False,
+        "messages": [],
+    }
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._start_payload = {}
+    runtime._runtime_id = "runtime-legacy-result"
+    runtime._agent = mock_ai_agent
+    runtime._model_config = {"model": "test-model"}
+
+    output = await runtime.invoke(
+        {
+            "runtime_context": {"runtime_id": "runtime-legacy-result"},
+            "request": {"input": "complete the task"},
+        }
+    )
+
+    assert output["completed"] is False
+    assert output["failed"] is False
+    assert output["response"] == "done"
+    assert output["error"] is None
+
+
 async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch,
     tmp_path: Path,

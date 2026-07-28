@@ -406,6 +406,11 @@ class HermesRuntime:
         messages = result.get("messages") or []
         if isinstance(messages, list):
             self._conversation_history = messages
+        failed = (
+            bool(result.get("failed"))
+            or bool(result.get("partial"))
+            or bool(result.get("error"))
+        )
 
         output = {
             "harness": "hermes",
@@ -415,7 +420,7 @@ class HermesRuntime:
             "base_url": self._base_url,
             "response": result.get("response") or result.get("final_response"),
             "completed": bool(result.get("completed")),
-            "failed": bool(result.get("failed")),
+            "failed": failed,
             "api_calls": result.get("api_calls"),
             "messages": messages,
             "message_count": len(messages),
