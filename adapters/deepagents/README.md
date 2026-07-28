@@ -59,35 +59,28 @@ NeMo Fabric maps the following into the harness:
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
-- `harness.settings.deepagents` forwards a small set of **documented,
-  JSON-serializable** `create_deep_agent` options (currently `subagents` and
-  `interrupt_on`). It is not a general Python-object escape hatch: the SDK config
-  round-trips through JSON and Rust planning, so `AgentMiddleware`, `BaseTool`
-  instances, and Python callables cannot cross the boundary. NeMo Fabric-owned
-  arguments (`model`, `tools`, `backend`, `skills`, `system_prompt`, `middleware`,
-  `checkpointer`) cannot be overridden through this passthrough, and an unknown or
-  unsupported key is an adapter configuration failure rather than a silently
-  dropped setting.
+- The current Deep Agents descriptor does not declare `settings_schema`, so
+  `harness.settings` must remain empty. Planning rejects non-empty settings.
+  Caller-defined `subagents` and `interrupt_on` controls remain unavailable
+  through the public NeMo Fabric configuration until a follow-up descriptor
+  schema declares them.
 
 ### Subagents
 
-Deep Agents can delegate to subagents through its built-in `task` tool. Subagents
-**inherit** the parent run's model, tools, skills, workspace, telemetry, and
-permissions. When a normalized tools policy is configured, NeMo Fabric supplies
-an explicitly gated `general-purpose` subagent and gates every declarative local
-subagent, so delegation cannot broaden capabilities beyond the parent. Remote
-and precompiled subagents are rejected in that case because their execution
-cannot be governed by the local middleware. Independently configured subagent tools, skills, models,
-MCP servers, middleware, or permissions are **not** exposed through the NeMo Fabric SDK
-yet; a `subagents` definition here only carries JSON-shaped fields.
+Deep Agents can delegate through its built-in `task` tool. The built-in
+subagent **inherits** the parent run's model, tools, skills, workspace,
+telemetry, and permissions. When a normalized tools policy is configured,
+NeMo Fabric supplies an explicitly gated `general-purpose` subagent so
+delegation cannot broaden capabilities beyond the parent. Caller-defined,
+remote, and precompiled subagents are not exposed through the public NeMo Fabric
+SDK.
 
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
 reports it), and errors. Usage aggregates the current turn across the main agent
 and any delegated subagents (streamed with `subgraphs=True`). Configuration and
-preflight failures (a missing credential, an absent `deepagents` package, an
-invalid MCP server, or a passthrough option) fail runtime start before an
-invocation is accepted.
+preflight failures (a missing credential, an absent `deepagents` package, or an
+invalid MCP server) fail runtime start before an invocation is accepted.
 
 ## Runtime Lifecycle
 
@@ -163,11 +156,10 @@ pip install "nemo-fabric-adapters-deepagents[relay]"   # -> nemo-relay[deepagent
   OpenTelemetry/OpenInference exporter is applied and spans export directly to
   the configured collector, without writing ATOF/ATIF relay artifacts.
 
-**Subagent boundary.** In-process, dictionary-style subagents are instrumented
-with the same Relay middleware, so their model/tool calls appear under the same
-trajectory. Remote and precompiled subagents (those defined with `graph_id` or
-`url`) are **out of scope**: their internals execute in a separate runtime and
-must be instrumented there with their own Relay integration.
+**Subagent boundary.** The built-in subagent is instrumented with the same
+Relay middleware, so its model and tool calls appear under the same trajectory.
+Caller-defined, remote, and precompiled subagents are not currently exposed
+through the public NeMo Fabric configuration.
 
 ### Typed Relay configuration
 

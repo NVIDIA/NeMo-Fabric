@@ -86,6 +86,43 @@ def test_claude_descriptor_is_narrow_and_versioned():
         "runner": {
             "module": "nemo_fabric_adapters.claude.adapter",
         },
+        "settings_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "setting_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["user", "project", "local"],
+                    },
+                    "default": [],
+                    "description": "Claude settings scopes to load.",
+                },
+                "max_budget_usd": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": (
+                        "Maximum amount in US dollars that Claude may spend during "
+                        "one invocation."
+                    ),
+                },
+                "permission_mode": {
+                    "type": "string",
+                    "enum": [
+                        "default",
+                        "acceptEdits",
+                        "bypassPermissions",
+                        "plan",
+                        "dontAsk",
+                        "auto",
+                    ],
+                    "description": "Claude permission handling mode.",
+                },
+            },
+            "required": [],
+            "additionalProperties": False,
+        },
         "config": {
             "accepts": [
                 "models",
@@ -123,7 +160,6 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
             "harness": {
                 "adapter_id": "nvidia.fabric.claude",
                 "settings": {
-                    "allowed_tools": ["Read"],
                     "permission_mode": "dontAsk",
                     "max_budget_usd": 1.5,
                     "setting_sources": [],
@@ -181,7 +217,7 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert options.model == "claude-test-model"
     assert options.system_prompt == "Review carefully."
     assert options.tools is None
-    assert options.allowed_tools == ["Read"]
+    assert options.allowed_tools == []
     assert options.disallowed_tools == ["Bash"]
     assert options.hooks is not None
     assert options.permission_mode == "dontAsk"
@@ -209,16 +245,18 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
 
 async def test_tool_policy_hooks_gate_built_in_and_mcp_tools(claude_payload):
     claude_payload["config"]["tools"] = {
-        "enabled": ["Read"],
+        "enabled": ["Read", "Edit"],
         "blocked": ["Bash"],
     }
 
     options = adapter.build_options(claude_payload)
 
-    assert options.tools == ["Read"]
+    assert options.tools == ["Read", "Edit"]
+    assert options.allowed_tools == ["Read", "Edit"]
     assert options.hooks is not None
     hook = options.hooks["PreToolUse"][0].hooks[0]
-    assert await hook({"tool_name": "Read"}, None, {"signal": None}) == {}
+    for tool_name in ("Read", "Edit"):
+        assert await hook({"tool_name": tool_name}, None, {"signal": None}) == {}
     for tool_name in ("Bash", "mcp__repo__search"):
         output = await hook(
             {"tool_name": tool_name},

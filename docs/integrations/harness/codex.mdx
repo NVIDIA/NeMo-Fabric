@@ -30,9 +30,12 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.codex")
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, and telemetry. The Codex adapter does not support normalized
-`tools.enabled` or `tools.blocked` policy. Use `harness.settings` for supported Codex-specific
-options such as `sandbox`, `approval_mode`, `developer_instructions`, and
-`output_schema`. Configure base instructions through `instructions.system`.
+`tools.enabled` or `tools.blocked` policy. Configure base instructions through
+`instructions.system`. The current Codex descriptor does not declare
+`settings_schema`, so `harness.settings` must remain empty. Planning rejects
+non-empty settings. Codex-specific controls remain unavailable through the
+public NeMo Fabric configuration until a follow-up descriptor schema declares
+them.
 
 ## Configure MCP and Skills
 
@@ -64,11 +67,10 @@ that it contains `SKILL.md`, and registers it as a process-scoped Codex skill
 root. Codex uses its normal skill discovery behavior. Invalid skill directories
 and MCP transports fail before the SDK runtime starts.
 
-For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
-roots, and `harness.settings.config_overrides` are fixed when the runtime starts
-and cannot vary between `Runtime.invoke(...)` calls. Start a new runtime to
-change them. `Fabric.run(...)` starts the same runtime, invokes it once, and
-stops it, so the same settings are scoped to that single invocation.
+For `Fabric.start_runtime(...)`, the model provider, MCP configuration, and
+skill roots are fixed when the runtime starts and cannot vary between
+`Runtime.invoke(...)` calls. Start a new runtime to change them.
+`Fabric.run(...)` starts the same runtime, invokes it once, and stops it.
 
 The Codex adapter does not declare `tools.enabled` or `tools.blocked` support. Codex can filter
 individual MCP server tools, but the pinned runtime does not provide one deny

@@ -541,6 +541,11 @@ def build_options(
 
     system_prompt = common_utils.system_instruction(payload)
     enabled_tools = common_utils.enabled_tools(payload)
+    allowed_tools = (
+        enabled_tools
+        if permission_mode == "dontAsk" and enabled_tools is not None
+        else []
+    )
     plugins = _stage_skill_plugin(payload)
     has_skill_plugin = bool(plugins)
     if relay is not None:
@@ -551,7 +556,7 @@ def build_options(
         model=selected_model(payload),
         system_prompt=system_prompt,
         tools=enabled_tools,
-        allowed_tools=_string_list(settings.get("allowed_tools"), name="allowed_tools"),
+        allowed_tools=allowed_tools,
         disallowed_tools=common_utils.blocked_tools(payload),
         hooks=tool_policy_hooks(payload),
         permission_mode=permission_mode,

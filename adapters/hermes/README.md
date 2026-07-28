@@ -43,12 +43,14 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 - optional NeMo Relay telemetry plugin configuration.
 
 Tool selectors are Hermes toolset names because that is the native policy
-surface Hermes exposes. Keep Hermes-specific controls such as
-terminal timeout, reasoning configuration, and plugin configuration in
-`harness.settings`. The adapter derives Hermes state from the NeMo Fabric
-artifact root and creates a child under `runtimes/<runtime_id>`, so invocations
-in one NeMo Fabric runtime share state without sharing config or the session
-database with another runtime.
+surface Hermes exposes. The current Hermes descriptor does not declare
+`settings_schema`, so `harness.settings` must remain empty. Planning rejects
+non-empty settings. Hermes-specific controls such as terminal timeout and
+reasoning configuration remain unavailable through the public NeMo Fabric
+configuration until a follow-up descriptor schema declares them. The adapter
+derives Hermes state from the NeMo Fabric artifact root and creates a child under
+`runtimes/<runtime_id>`, so invocations in one NeMo Fabric runtime share state
+without sharing config or the session database with another runtime.
 
 ## Execution Model
 

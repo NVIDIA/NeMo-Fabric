@@ -72,10 +72,7 @@ def hermes_config() -> FabricConfig:
     config.harness = HarnessConfig(
         adapter_id="nvidia.fabric.hermes",
         resolution="preinstalled",
-        settings={
-            "max_tokens": 512,
-            "reasoning_config": {"effort": "none"},
-        },
+        settings={},
     )
     model = config.models["default"]
     assert isinstance(model, ModelConfig)
@@ -105,10 +102,7 @@ def codex_config() -> FabricConfig:
     config.harness = HarnessConfig(
         adapter_id="nvidia.fabric.codex",
         resolution="preinstalled",
-        settings={
-            "sandbox": "workspace-write",
-            "reasoning_effort": "high",
-        },
+        settings={},
     )
     config.models = {"default": ModelConfig(provider="openai", model="openai/gpt-5.4")}
     config.runtime = RuntimeConfig(

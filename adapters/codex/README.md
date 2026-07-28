@@ -103,26 +103,21 @@ deny boundary for built-in, local, MCP, and hosted tools. NeMo Fabric therefore
 routes normalized blocked-tool policy as unsupported instead of applying a
 partial policy.
 
-Codex-specific controls belong in `harness.settings`:
-
-- `sandbox`: `read-only`, `workspace-write`, or `danger-full-access`
-- `approval_mode`: `auto_review` or `deny_all`
-- `developer_instructions`
-- `personality`, `reasoning_effort`, and `service_tier`
-- `output_schema` for SDK-native structured output
-- `config_overrides` as dotted Codex configuration keys applied when the SDK
-  runtime starts, such as Codex-only MCP timeout or required-server options
+The current Codex descriptor does not declare `settings_schema`, so
+`harness.settings` must remain empty. Planning rejects non-empty settings.
+Codex-native controls such as sandbox mode, approval mode, reasoning effort,
+and configuration overrides remain unavailable through the public NeMo Fabric
+configuration until a follow-up descriptor schema declares them.
 
 Set model selection and endpoints through `models`, system instructions through
 `instructions.system`, the invocation deadline through
 `runtime.timeout_seconds`, and the working directory and explicit environment
 through `environment`.
 
-For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
-roots, and `config_overrides` are fixed when the runtime starts and cannot vary
-between `Runtime.invoke(...)` calls. Start a new runtime to change them.
-`Fabric.run(...)` starts the same runtime, invokes it once, and stops it, so the
-same settings are scoped to that single invocation.
+For `Fabric.start_runtime(...)`, the model provider, MCP configuration, and
+skill roots are fixed when the runtime starts and cannot vary between
+`Runtime.invoke(...)` calls. Start a new runtime to change them.
+`Fabric.run(...)` starts the same runtime, invokes it once, and stops it.
 
 The adapter filters the inherited environment. It retains portable OS and
 Codex state variables, the selected model's `api_key_env`, and explicit

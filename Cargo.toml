@@ -23,6 +23,8 @@ repository = "https://github.com/NVIDIA/nemo-fabric"
 nemo-fabric-core = { path = "crates/fabric-core", version = "0.1.0" }
 
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context", "suggestions"] }
+# Keep remote and local `$ref` retrieval disabled for untrusted adapter schemas.
+jsonschema = { version = "0.49", default-features = false }
 schemars = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -11,7 +11,7 @@ compare the bundled adapters and then open the linked package guide for
 installation, authentication, and configuration details.
 
 The adapter descriptor selected in `RunPlan` is authoritative for normalized
-configuration and telemetry support.
+configuration, its adapter-owned settings schema, and telemetry support.
 
 ## Descriptor Discovery
 
@@ -26,6 +26,12 @@ precedence:
 
 NeMo Fabric resolves multi-component relative `ADAPTER_PYTHON` paths from
 `<base_dir>`. It resolves bare command names through `PATH`.
+
+The winning descriptor supplies its runner metadata and `settings_schema`
+atomically. Planning validates `harness.settings` against that exact schema.
+An agent-local descriptor therefore replaces an installed schema rather than
+merging with it. Settings schemas must be self-contained; NeMo Fabric does not
+resolve HTTP or file references from adapter descriptors.
 
 This scan only discovers installed metadata. It is not the final registry
 contract for resolving or installing third-party adapters. Installed and
@@ -47,7 +53,7 @@ provider should expose more precise provenance.
 | --- | --- | --- | --- | --- | --- |
 | [Claude](claude/README.md) | Native Anthropic or a configured Anthropic Messages-compatible provider | `tools.enabled` selects built-ins; a pre-tool hook enforces enabled and blocked names across built-in, MCP, and plugin tools | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
 | [Codex](codex/README.md) | Native OpenAI or a configured Responses-compatible provider | `tools.enabled` and `tools.blocked` unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
-| [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | Middleware enforces `tools.enabled` and `tools.blocked` across built-ins, MCP, and local subagents | Normalized through `langchain-mcp-adapters` | Normalized | Constrained declarative local delegation |
+| [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | Middleware enforces `tools.enabled` and `tools.blocked` across built-ins, MCP, and built-in delegation | Normalized through `langchain-mcp-adapters` | Normalized | Built-in delegation only |
 | [Hermes Agent](hermes/README.md) | Configurable provider, model, and base URL | `tools.enabled` and `tools.blocked` map to Hermes native toolset selectors | Normalized | Normalized | Not exposed |
 
 "Normalized" means that the adapter accepts the corresponding `FabricConfig`
@@ -55,8 +61,8 @@ field. "Not exposed" does not mean that the underlying harness lacks the
 feature; it means that NeMo Fabric does not provide a portable configuration
 surface for it. Tool values are adapter-native selectors; NeMo Fabric does not
 define a cross-harness tool-name catalog. Planning fails when the selected
-adapter cannot enforce a configured policy. Deep Agents subagents are limited
-to declarative local subagents that inherit the parent agent's capabilities.
+adapter cannot enforce a configured policy. Deep Agents delegation is limited
+to its built-in subagent, which inherits the parent agent's capabilities.
 
 `RunPlan.capability_plan.routes` records execution ownership, not network
 routing. `harness_native` assigns a capability to the selected adapter,
@@ -77,7 +83,7 @@ and additive extension maps because their support does not vary by adapter:
 | `schema_version` | Core | Core | Core | Core |
 | `metadata.name`, `.description` | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core |
-| `harness.settings` | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch |
+| `harness.settings` | Closed Claude schema | No schema; must be empty | No schema; must be empty | No schema; must be empty |
 | `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes |

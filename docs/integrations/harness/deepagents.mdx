@@ -8,8 +8,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 The NVIDIA NeMo Fabric `nvidia.fabric.langchain.deepagents` adapter runs
 LangChain Deep Agents in the persistent NeMo Fabric Python adapter host. The
 adapter maps normalized NeMo Fabric configuration into the model, tools,
-skills, Model Context Protocol (MCP) servers, workspace, subagents, and
-telemetry.
+skills, Model Context Protocol (MCP) servers, workspace, and telemetry.
 
 ## Install the Adapter
 
@@ -31,15 +30,17 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.langchain.deepagents")
 ```
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
-MCP servers, blocked tools, and telemetry. Use `harness.settings` for
-supported JSON-serializable Deep Agents options such as `subagents` and
-`interrupt_on`.
+MCP servers, blocked tools, and telemetry. The current Deep Agents descriptor
+does not declare `settings_schema`, so `harness.settings` must remain empty.
+Planning rejects non-empty settings. Caller-defined subagents and interrupt
+controls remain unavailable through the public Fabric configuration until a
+follow-up descriptor schema declares them.
 
 ## Understand the Runtime Lifecycle
 
 Each NeMo Fabric runtime compiles one Deep Agents graph and retains its
-checkpointer and LangGraph thread across ordered invocations. In-process
-subagents inherit the parent run's model, tools, skills, workspace, telemetry,
+checkpointer and LangGraph thread across ordered invocations. The built-in
+subagent inherits the parent run's model, tools, skills, workspace, telemetry,
 and permissions.
 
 NeMo Relay provides the SDK-native observability integration for this adapter.

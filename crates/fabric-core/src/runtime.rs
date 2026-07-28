@@ -2431,6 +2431,18 @@ mod tests {
   "harness": "local-host-test",
   "adapter_kind": "python",
   "runner": {"module": "fake_host"},
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "python": {"type": "string"},
+      "cwd": {"type": "string"},
+      "env": {
+        "type": "object",
+        "additionalProperties": {"type": "string"}
+      }
+    },
+    "additionalProperties": false
+  },
   "telemetry": {
     "providers": {
       "relay": {"outputs": ["atif"]}

@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::config::AdapterKind;
+use crate::config::{AdapterDescriptorSource, AdapterKind};
 
 /// Core NeMo Fabric result type.
 pub type Result<T> = std::result::Result<T, FabricError>;
@@ -63,6 +63,22 @@ pub enum FabricError {
         path: PathBuf,
         /// Validation message.
         message: String,
+    },
+    /// Adapter-owned harness settings do not satisfy the resolved descriptor schema.
+    #[error(
+        "invalid harness settings for adapter `{adapter_id}` from {descriptor_source:?} descriptor {descriptor_path} at `{settings_path}`: {reason}"
+    )]
+    InvalidHarnessSettings {
+        /// Selected adapter id.
+        adapter_id: String,
+        /// Registry source of the selected descriptor.
+        descriptor_source: AdapterDescriptorSource,
+        /// Path to the selected descriptor.
+        descriptor_path: PathBuf,
+        /// Canonical path to the invalid setting.
+        settings_path: String,
+        /// Schema validation failure.
+        reason: String,
     },
     /// A normalized Fabric config field is invalid.
     #[error("invalid Fabric configuration at `{field}`: {reason}")]
@@ -162,8 +178,7 @@ pub enum FabricError {
     /// The resolved Python adapter interpreter could not be used.
     #[error(
         "python adapter interpreter {path} (from {origin}) is unusable: {reason}; \
-         set `harness.settings.python` or the `ADAPTER_PYTHON` environment variable \
-         to a valid interpreter"
+         set the `ADAPTER_PYTHON` environment variable to a valid interpreter"
     )]
     PythonInterpreterUnavailable {
         /// Resolved interpreter path.

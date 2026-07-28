@@ -173,7 +173,7 @@ by adapter:
 | `schema_version` | Core | Core | Core | Core |
 | `metadata.name`, `.description` | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core |
-| `harness.settings` | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch |
+| `harness.settings` | Closed Claude schema | No schema; must be empty | No schema; must be empty | No schema; must be empty |
 | `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes |
@@ -650,11 +650,11 @@ and artifacts.
 Supply request context through `RunRequest.context` for each invocation. Request
 context is not part of `FabricConfig`.
 
-Use `harness.settings` only for stable, harness-native behavior that the selected
-adapter understands, such as Claude permission policy, Codex sandbox controls,
-or Deep Agents subagent definitions. Executable paths, Relay command discovery,
-state directories, and similar launch mechanics are runtime implementation
-details rather than public adapter settings.
+Use `harness.settings` only for stable, harness-native behavior declared by the
+selected descriptor. Of the bundled adapters, only Claude currently declares a
+settings schema. Executable paths, Relay command discovery, state directories,
+and similar launch mechanics are runtime implementation details rather than
+public adapter settings.
 
 Use `FabricConfig.metadata` for human-readable agent identity and caller-owned
 annotations. NeMo Fabric preserves these values in the resolved configuration
@@ -662,10 +662,13 @@ but does not copy them into `RunResult.metadata`. Use `request_id` and
 `RunRequest.context` for per-invocation correlation. `RunResult.metadata`
 contains adapter-specific result details.
 
-Adapter settings are not portable by default. An adapter must explicitly read
-and implement a setting before it affects runtime behavior. Planning and doctor
-fail for normalized fields the selected adapter does not support. Validation of
-all adapter-specific `harness.settings` keys remains adapter-owned.
+Adapter settings are not portable by default. The exact descriptor selected
+during planning owns their JSON Schema. Planning and doctor reject settings
+that do not satisfy that schema. A descriptor without `settings_schema` accepts
+an empty settings map and rejects a non-empty map. Validation does not apply
+schema defaults or otherwise change the settings preserved in `RunPlan`.
+Validation errors identify the adapter, descriptor source and path, and
+offending settings path.
 
 ## Errors
 
@@ -701,6 +704,7 @@ generated API reference for exact Python signatures.
 | --- | --- |
 | SDK Pydantic models | `nemo_fabric.models`; refer to the generated [Models reference](../reference/api/python-library-reference/nemo_fabric.models.md) |
 | Agent config | `schemas/agent.schema.json` |
+| Adapter descriptor | `schemas/adapter-descriptor.schema.json` |
 | Run plan | `schemas/run-plan.schema.json` |
 | Request, result, and events | `schemas/run-request.schema.json`, `schemas/run-result.schema.json`, `schemas/fabric-event.schema.json` |
 | Runtime and invocation handles | `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
@@ -731,8 +735,10 @@ contract for independently maintained adapters.
 The public schema has typed fields for stable NeMo Fabric concepts and controlled
 extension points for adapter- or application-owned data. Use known fields for
 portable concepts such as harness selection, models, runtime, skills, MCP,
-telemetry, and artifacts. Use adapter-owned `harness.settings`, metadata, or
-preserved extension fields for data NeMo Fabric should carry but not interpret.
+telemetry, and artifacts. Use adapter-owned `harness.settings` for settings
+validated by the selected descriptor and interpreted by its adapter. Use
+metadata or preserved extension fields for data NeMo Fabric should carry but
+not interpret.
 
 Additive optional fields may be introduced within the existing document schema
 version when old configs remain valid. Required fields, removed fields, or

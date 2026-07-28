@@ -154,6 +154,9 @@ pub struct AdapterDescriptor {
     /// Generic runner defaults consumed by the selected runtime adapter.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
     pub runner: serde_json::Map<String, Value>,
+    /// JSON Schema for adapter-owned `harness.settings`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_schema: Option<serde_json::Map<String, Value>>,
     /// Runtime requirements.
     #[serde(default)]
     pub requirements: AdapterRequirements,
@@ -1289,6 +1292,7 @@ fn resolve_run_plan(
     enforce_compatibility: bool,
 ) -> Result<RunPlan> {
     let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_directories)?;
+    validate_harness_settings(&config, adapter_descriptor.as_ref())?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
@@ -1487,6 +1491,21 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     if descriptor.harness.trim().is_empty() {
         return invalid_adapter_descriptor(path, "harness must not be empty");
     }
+    if let Some(schema) = &descriptor.settings_schema {
+        let schema = Value::Object(schema.clone());
+        jsonschema::meta::options()
+            .validate(&schema)
+            .map_err(|error| FabricError::InvalidAdapterDescriptor {
+                path: path.to_path_buf(),
+                message: format!("settings_schema is not valid JSON Schema: {error}"),
+            })?;
+        jsonschema::validator_for(&schema).map_err(|error| {
+            FabricError::InvalidAdapterDescriptor {
+                path: path.to_path_buf(),
+                message: format!("settings_schema could not be compiled: {error}"),
+            }
+        })?;
+    }
     Ok(())
 }
 
@@ -1495,6 +1514,115 @@ fn invalid_adapter_descriptor<T>(path: &Path, message: impl Into<String>) -> Res
         path: path.to_path_buf(),
         message: message.into(),
     })
+}
+
+fn validate_harness_settings(
+    config: &FabricConfig,
+    resolved: Option<&ResolvedAdapterDescriptor>,
+) -> Result<()> {
+    let Some(resolved) = resolved else {
+        return Ok(());
+    };
+    let Some(schema) = &resolved.descriptor.settings_schema else {
+        if config.harness.settings.is_empty() {
+            return Ok(());
+        }
+        let name = config
+            .harness
+            .settings
+            .keys()
+            .min()
+            .expect("non-empty settings have a key");
+        return invalid_harness_settings(
+            resolved,
+            format!("harness.settings.{name}"),
+            "the resolved descriptor does not declare a settings_schema",
+        );
+    };
+
+    let schema = Value::Object(schema.clone());
+    let settings = Value::Object(config.harness.settings.clone());
+    let validator = jsonschema::validator_for(&schema).map_err(|error| {
+        FabricError::InvalidAdapterDescriptor {
+            path: resolved.path.clone(),
+            message: format!("settings_schema could not be compiled: {error}"),
+        }
+    })?;
+    if let Some(error) = validator.iter_errors(&settings).next() {
+        let settings_path = harness_settings_error_path(&error);
+        let reason = harness_settings_error_reason(&error);
+        return invalid_harness_settings(resolved, settings_path, reason);
+    }
+    Ok(())
+}
+
+fn invalid_harness_settings<T>(
+    resolved: &ResolvedAdapterDescriptor,
+    settings_path: String,
+    reason: impl Into<String>,
+) -> Result<T> {
+    Err(FabricError::InvalidHarnessSettings {
+        adapter_id: resolved.descriptor.adapter_id.clone(),
+        descriptor_source: resolved.source,
+        descriptor_path: resolved.path.clone(),
+        settings_path,
+        reason: reason.into(),
+    })
+}
+
+fn harness_settings_error_path(error: &jsonschema::ValidationError<'_>) -> String {
+    let mut segments = error
+        .instance_path()
+        .as_str()
+        .split('/')
+        .skip(1)
+        .map(decode_json_pointer_segment)
+        .collect::<Vec<_>>();
+    match error.kind() {
+        jsonschema::error::ValidationErrorKind::AdditionalProperties { unexpected }
+        | jsonschema::error::ValidationErrorKind::UnevaluatedProperties { unexpected } => {
+            if let Some(name) = unexpected.iter().min() {
+                segments.push(name.clone());
+            }
+        }
+        jsonschema::error::ValidationErrorKind::Required { property } => {
+            if let Some(name) = property.as_str() {
+                segments.push(name.to_string());
+            }
+        }
+        _ => {}
+    }
+    if segments.is_empty() {
+        "harness.settings".to_string()
+    } else {
+        format!("harness.settings.{}", segments.join("."))
+    }
+}
+
+fn decode_json_pointer_segment(segment: &str) -> String {
+    segment.replace("~1", "/").replace("~0", "~")
+}
+
+fn harness_settings_error_reason(error: &jsonschema::ValidationError<'_>) -> String {
+    match error.kind() {
+        jsonschema::error::ValidationErrorKind::AdditionalProperties { .. }
+        | jsonschema::error::ValidationErrorKind::UnevaluatedProperties { .. } => {
+            "is not declared by the adapter settings schema".to_string()
+        }
+        jsonschema::error::ValidationErrorKind::Required { .. } => {
+            "is required by the adapter settings schema".to_string()
+        }
+        jsonschema::error::ValidationErrorKind::Type { .. } => {
+            "has a type that is not accepted by the adapter settings schema".to_string()
+        }
+        jsonschema::error::ValidationErrorKind::Enum { .. } => {
+            "is not one of the values accepted by the adapter settings schema".to_string()
+        }
+        jsonschema::error::ValidationErrorKind::ExclusiveMinimum { .. } => {
+            "must be greater than the minimum declared by the adapter settings schema".to_string()
+        }
+        _ => format!("does not satisfy the adapter settings schema ({error})"),
+    }
 }
 
 fn validate_control_location(
@@ -2493,6 +2621,293 @@ mod tests {
     }
 
     #[test]
+    fn validates_repository_claude_settings_without_applying_defaults() {
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.harness.settings = serde_json::Map::from_iter([
+            (
+                "setting_sources".to_string(),
+                serde_json::json!(["user", "project", "local"]),
+            ),
+            ("max_budget_usd".to_string(), serde_json::json!(1.5)),
+            ("permission_mode".to_string(), serde_json::json!("dontAsk")),
+        ]);
+        let expected = config.harness.settings.clone();
+
+        let plan = resolve_run_plan_from_config(
+            config,
+            ResolveContext::new("/tmp/nemo-fabric-claude-settings"),
+        )
+        .expect("valid Claude settings");
+
+        assert_eq!(plan.config.harness.settings, expected);
+        let resolved = plan.adapter_descriptor.expect("resolved Claude descriptor");
+        assert_eq!(resolved.source, AdapterDescriptorSource::Repository);
+        assert_eq!(resolved.descriptor.adapter_id, "nvidia.fabric.claude");
+
+        let mut config_without_default = typed_config("nvidia.fabric.claude");
+        config_without_default
+            .harness
+            .settings
+            .insert("permission_mode".to_string(), serde_json::json!("default"));
+        let plan = resolve_run_plan_from_config(
+            config_without_default,
+            ResolveContext::new("/tmp/nemo-fabric-claude-settings"),
+        )
+        .expect("valid Claude settings without optional default");
+        assert!(!plan.config.harness.settings.contains_key("setting_sources"));
+    }
+
+    #[test]
+    fn validates_empty_settings_against_a_present_schema() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor.settings_schema = Some(
+            serde_json::json!({
+                "type": "object",
+                "$defs": {
+                    "token": {"type": "string"}
+                },
+                "properties": {
+                    "token": {"$ref": "#/$defs/token"}
+                },
+                "required": ["token"],
+                "additionalProperties": false
+            })
+            .as_object()
+            .expect("object schema")
+            .clone(),
+        );
+        let resolved = ResolvedAdapterDescriptor {
+            descriptor,
+            source: AdapterDescriptorSource::Repository,
+            path: path.clone(),
+            root: path.parent().expect("descriptor directory").to_path_buf(),
+        };
+
+        let mut valid_config = typed_config("nvidia.fabric.claude");
+        valid_config
+            .harness
+            .settings
+            .insert("token".to_string(), serde_json::json!("valid"));
+        validate_harness_settings(&valid_config, Some(&resolved))
+            .expect("self-contained schema reference");
+
+        let error =
+            validate_harness_settings(&typed_config("nvidia.fabric.claude"), Some(&resolved))
+                .expect_err("required setting");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidHarnessSettings {
+                adapter_id,
+                descriptor_source: AdapterDescriptorSource::Repository,
+                descriptor_path,
+                settings_path,
+                ..
+            } if adapter_id == "nvidia.fabric.claude"
+                && descriptor_path == path
+                && settings_path == "harness.settings.token"
+        ));
+    }
+
+    #[test]
+    fn reports_item_path_after_prefix_items() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor.settings_schema = Some(
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "values": {
+                        "type": "array",
+                        "prefixItems": [
+                            {"type": "string"},
+                            {"type": "string"}
+                        ],
+                        "items": {"type": "boolean"}
+                    }
+                },
+                "additionalProperties": false
+            })
+            .as_object()
+            .expect("object schema")
+            .clone(),
+        );
+        let resolved = ResolvedAdapterDescriptor {
+            descriptor,
+            source: AdapterDescriptorSource::Repository,
+            path,
+            root: repository_root().join("adapters/claude"),
+        };
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.harness.settings.insert(
+            "values".to_string(),
+            serde_json::json!(["first", "second", "invalid"]),
+        );
+
+        let error = validate_harness_settings(&config, Some(&resolved))
+            .expect_err("item after prefixItems has the wrong type");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidHarnessSettings { settings_path, .. }
+                if settings_path == "harness.settings.values.2"
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_repository_claude_settings_with_descriptor_context() {
+        let cases = [
+            (
+                "unknown",
+                serde_json::json!(true),
+                "harness.settings.unknown",
+            ),
+            (
+                "permission_mode",
+                serde_json::json!("invalid"),
+                "harness.settings.permission_mode",
+            ),
+            (
+                "permission_mode",
+                serde_json::json!(false),
+                "harness.settings.permission_mode",
+            ),
+            (
+                "max_budget_usd",
+                serde_json::json!(0),
+                "harness.settings.max_budget_usd",
+            ),
+            (
+                "setting_sources",
+                serde_json::json!(["user", "invalid"]),
+                "harness.settings.setting_sources.1",
+            ),
+        ];
+
+        for (name, value, expected_path) in cases {
+            let mut config = typed_config("nvidia.fabric.claude");
+            config.harness.settings.insert(name.to_string(), value);
+
+            let error = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/nemo-fabric-claude-settings"),
+            )
+            .expect_err("invalid Claude settings");
+
+            assert!(matches!(
+                error,
+                FabricError::InvalidHarnessSettings {
+                    adapter_id,
+                    descriptor_source: AdapterDescriptorSource::Repository,
+                    descriptor_path,
+                    settings_path,
+                    ..
+                } if adapter_id == "nvidia.fabric.claude"
+                    && descriptor_path.ends_with("adapters/claude/fabric-adapter.json")
+                    && settings_path == expected_path
+            ));
+        }
+    }
+
+    #[test]
+    fn unknown_adapter_precedes_harness_settings_validation() {
+        let mut config = typed_config("test.fabric.missing");
+        config
+            .harness
+            .settings
+            .insert("unknown".to_string(), serde_json::json!(true));
+
+        let error = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect_err("missing adapter");
+
+        assert!(matches!(
+            error,
+            FabricError::UnknownAdapter { adapter_id, .. } if adapter_id == "test.fabric.missing"
+        ));
+    }
+
+    #[test]
+    fn malformed_adapter_settings_schema_fails_descriptor_loading() {
+        struct RemoveFileOnDrop(PathBuf);
+
+        impl Drop for RemoveFileOnDrop {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+
+        let path = std::env::temp_dir().join(format!(
+            "nemo-fabric-malformed-settings-schema-{}.json",
+            std::process::id()
+        ));
+        let _cleanup = RemoveFileOnDrop(path.clone());
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "contract_version": ADAPTER_CONTRACT_VERSION,
+                "adapter_id": "test.fabric.malformed",
+                "harness": "malformed-test",
+                "adapter_kind": "python",
+                "settings_schema": {"type": 7}
+            }))
+            .expect("descriptor JSON"),
+        )
+        .expect("write malformed descriptor");
+
+        let error = load_adapter_descriptor(&path).expect_err("malformed settings schema");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidAdapterDescriptor {
+                path: error_path,
+                message,
+            } if error_path == path && message.contains("settings_schema")
+        ));
+    }
+
+    #[test]
+    fn external_settings_schema_reference_fails_descriptor_loading() {
+        struct RemoveFileOnDrop(PathBuf);
+
+        impl Drop for RemoveFileOnDrop {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+
+        let path = std::env::temp_dir().join(format!(
+            "nemo-fabric-external-settings-schema-{}.json",
+            std::process::id()
+        ));
+        let _cleanup = RemoveFileOnDrop(path.clone());
+        std::fs::write(
+            &path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "contract_version": ADAPTER_CONTRACT_VERSION,
+                "adapter_id": "test.fabric.external-schema",
+                "harness": "external-schema-test",
+                "adapter_kind": "python",
+                "settings_schema": {
+                    "$ref": "https://schemas.example.test/settings.json"
+                }
+            }))
+            .expect("descriptor JSON"),
+        )
+        .expect("write descriptor with external schema reference");
+
+        let error = load_adapter_descriptor(&path).expect_err("external settings schema");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidAdapterDescriptor {
+                path: error_path,
+                message,
+            } if error_path == path && message.contains("settings_schema")
+        ));
+    }
+
+    #[test]
     fn resolves_additional_adapter_directory_before_agent_local_override() {
         struct RemoveDirOnDrop(PathBuf);
 
@@ -2511,14 +2926,21 @@ mod tests {
         let base_dir = root.join("agent");
         let installed_descriptor = installed_directory.join("stopgap/fabric-adapter.json");
         let local_descriptor = base_dir.join("adapters/stopgap/fabric-adapter.json");
-        let descriptor = |module: &str| {
+        let descriptor = |module: &str, setting: &str| {
             serde_json::json!({
                 "contract_version": ADAPTER_CONTRACT_VERSION,
                 "adapter_id": "test.fabric.installed",
                 "harness": "installed-test",
                 "adapter_kind": "python",
                 "runner": {"module": module},
-                "config": {"accepts": ["skills"]}
+                "config": {"accepts": ["skills"]},
+                "settings_schema": {
+                    "type": "object",
+                    "properties": {
+                        (setting): {"type": "boolean"}
+                    },
+                    "additionalProperties": false
+                }
             })
         };
 
@@ -2526,12 +2948,18 @@ mod tests {
             .expect("create installed adapter directory");
         std::fs::write(
             &installed_descriptor,
-            serde_json::to_vec_pretty(&descriptor("installed.adapter")).expect("descriptor JSON"),
+            serde_json::to_vec_pretty(&descriptor("installed.adapter", "installed_only"))
+                .expect("descriptor JSON"),
         )
         .expect("write installed descriptor");
 
+        let mut installed_config = typed_config("test.fabric.installed");
+        installed_config
+            .harness
+            .settings
+            .insert("installed_only".to_string(), serde_json::json!(true));
         let plan = resolve_run_plan_from_config_with_adapter_directories(
-            typed_config("test.fabric.installed"),
+            installed_config.clone(),
             ResolveContext::new(&base_dir),
             std::slice::from_ref(&installed_directory),
         )
@@ -2550,14 +2978,20 @@ mod tests {
             .expect("create local adapter directory");
         std::fs::write(
             &local_descriptor,
-            serde_json::to_vec_pretty(&descriptor("local.adapter")).expect("descriptor JSON"),
+            serde_json::to_vec_pretty(&descriptor("local.adapter", "local_only"))
+                .expect("descriptor JSON"),
         )
         .expect("write local descriptor");
 
+        let mut local_config = typed_config("test.fabric.installed");
+        local_config
+            .harness
+            .settings
+            .insert("local_only".to_string(), serde_json::json!(true));
         let plan = resolve_run_plan_from_config_with_adapter_directories(
-            typed_config("test.fabric.installed"),
+            local_config,
             ResolveContext::new(&base_dir),
-            &[installed_directory],
+            std::slice::from_ref(&installed_directory),
         )
         .expect("agent-local adapter plan");
         let resolved = plan.adapter_descriptor.expect("resolved adapter");
@@ -2571,5 +3005,22 @@ mod tests {
             resolved.descriptor.runner["module"],
             serde_json::json!("local.adapter")
         );
+
+        let error = resolve_run_plan_from_config_with_adapter_directories(
+            installed_config,
+            ResolveContext::new(&base_dir),
+            &[installed_directory],
+        )
+        .expect_err("local schema replaces installed schema");
+        assert!(matches!(
+            error,
+            FabricError::InvalidHarnessSettings {
+                descriptor_source: AdapterDescriptorSource::Local,
+                descriptor_path,
+                settings_path,
+                ..
+            } if descriptor_path == resolved.path
+                && settings_path == "harness.settings.installed_only"
+        ));
     }
 }

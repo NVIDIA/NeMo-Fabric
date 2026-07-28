@@ -32,9 +32,18 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.claude")
 ```
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
-MCP servers, instructions, turn limit, tool policy, and telemetry. Use
-`harness.settings` for supported Claude-specific options such as
-`allowed_tools`, `permission_mode`, `max_budget_usd`, and `setting_sources`.
+MCP servers, instructions, turn limit, tool policy, and telemetry. The
+resolved Claude descriptor accepts only these Claude-specific
+`harness.settings` keys:
+
+- `permission_mode`: `default`, `acceptEdits`, `bypassPermissions`, `plan`,
+  `dontAsk`, or `auto`
+- `max_budget_usd`: a number greater than `0`
+- `setting_sources`: an array containing `user`, `project`, or `local`
+
+Planning rejects unknown keys, invalid types, and invalid values before the
+Claude runtime starts. When `permission_mode` is `dontAsk`, tools listed in
+`tools.enabled` are pre-approved so headless runs can invoke them.
 
 ## Choose an Authentication Mode
 

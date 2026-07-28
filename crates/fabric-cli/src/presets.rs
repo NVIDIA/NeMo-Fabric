@@ -218,18 +218,7 @@ fn codex() -> FabricConfig {
             Some("NVIDIA_API_KEY"),
             std::env::var(NVIDIA_FRONTIER_BASE_URL_ENV).ok().as_deref(),
         )),
-        Map::from_iter([
-            ("sandbox".to_string(), json!("workspace-write")),
-            (
-                "config_overrides".to_string(),
-                json!({
-                    "features.apps": false,
-                    "features.multi_agent": false,
-                    "features.plugins": false,
-                    "web_search": "disabled",
-                }),
-            ),
-        ]),
+        Map::new(),
     )
 }
 
