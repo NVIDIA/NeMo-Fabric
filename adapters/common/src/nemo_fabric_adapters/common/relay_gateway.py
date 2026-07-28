@@ -109,6 +109,7 @@ def wait_for_relay_gateway(
 ) -> None:
     """Wait until the Relay health endpoint succeeds or startup fails."""
 
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         returncode = process.poll()
@@ -117,7 +118,7 @@ def wait_for_relay_gateway(
                 f"NeMo Relay gateway exited with status {returncode} before becoming ready"
             )
         try:
-            with urllib.request.urlopen(health_url, timeout=1) as response:
+            with opener.open(health_url, timeout=1) as response:
                 if 200 <= response.status < 300:
                     return
         except (OSError, urllib.error.URLError):

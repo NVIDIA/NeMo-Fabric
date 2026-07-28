@@ -226,6 +226,40 @@ def test_wait_for_relay_gateway_reports_early_exit():
         )
 
 
+def test_wait_for_relay_gateway_bypasses_ambient_proxies(monkeypatch):
+    process = MagicMock()
+    process.poll.return_value = None
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_opener = MagicMock()
+    mock_opener.open.return_value.__enter__.return_value = mock_response
+    mock_proxy_handler = MagicMock()
+    mock_proxy_handler_factory = MagicMock(return_value=mock_proxy_handler)
+    mock_build_opener = MagicMock(return_value=mock_opener)
+    monkeypatch.setattr(
+        relay_gateway.urllib.request,
+        "ProxyHandler",
+        mock_proxy_handler_factory,
+    )
+    monkeypatch.setattr(
+        relay_gateway.urllib.request,
+        "build_opener",
+        mock_build_opener,
+    )
+
+    relay_gateway.wait_for_relay_gateway(
+        process,
+        "http://127.0.0.1:43210/healthz",
+    )
+
+    mock_proxy_handler_factory.assert_called_once_with({})
+    mock_build_opener.assert_called_once_with(mock_proxy_handler)
+    mock_opener.open.assert_called_once_with(
+        "http://127.0.0.1:43210/healthz",
+        timeout=1,
+    )
+
+
 def test_wait_for_relay_gateway_times_out():
     process = MagicMock()
     process.poll.return_value = None
