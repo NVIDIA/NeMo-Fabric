@@ -114,8 +114,7 @@ test = [
 
 [tool.uv]
 default-groups = ["adapters", "dev", "test"]
-# hermes-agent pins Pillow 12.2.0, which is affected by CVE-2026-54058
-# and CVE-2026-59197. Keep this override until hermes-agent adopts 12.3.0+.
+# Keep this override until hermes-agent adopts 12.3.0+.
 override-dependencies = [
   "pillow==12.3.0; python_version < '3.14'",
 ]
