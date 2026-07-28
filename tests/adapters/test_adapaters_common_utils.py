@@ -413,6 +413,32 @@ def test_collect_relay_artifacts(tmp_path: Path):
     ]
 
 
+@pytest.mark.parametrize("filename_template", [None, "", 123])
+def test_collect_relay_artifacts_requires_valid_atif_filename_template(
+    tmp_path: Path,
+    filename_template: object,
+):
+    atif_dir = tmp_path / "atif"
+    atif_dir.mkdir()
+    (atif_dir / "config.json").write_text("{}", encoding="utf-8")
+    atif_config: dict[str, Any] = {
+        "enabled": True,
+        "output_directory": str(atif_dir),
+    }
+    if filename_template is not None:
+        atif_config["filename_template"] = filename_template
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {"atif": atif_config},
+            }
+        ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == []
+
+
 def test_collect_relay_artifacts_ignores_missing_output_directories(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -340,11 +340,9 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
             directory = _artifact_directory(atif.get("output_directory"))
             if directory is not None:
                 template = atif.get("filename_template")
-                pattern = (
-                    template.replace("{session_id}", "*")
-                    if isinstance(template, str) and template
-                    else "*.json"
-                )
+                if not isinstance(template, str) or not template:
+                    continue
+                pattern = template.replace("{session_id}", "*")
                 for path in _artifact_glob(directory, pattern):
                     resolved = _artifact_file(path, directory=directory)
                     if resolved is not None:
