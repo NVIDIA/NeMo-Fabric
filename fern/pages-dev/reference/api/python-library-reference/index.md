@@ -10,10 +10,10 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 ## Modules
 
-- [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NeMo Fabric agents.
+- [`nemo_fabric.client`](./nemo_fabric.client.md#module-nemo_fabricclient): Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 - [`nemo_fabric.runtime`](./nemo_fabric.runtime.md#module-nemo_fabricruntime): Runtime lifecycle support for the NVIDIA NeMo Fabric Python SDK.
 - [`nemo_fabric.streaming`](./nemo_fabric.streaming.md#module-nemo_fabricstreaming): NVIDIA NeMo Relay streaming support for the NVIDIA NeMo Fabric Python SDK.
-- [`nemo_fabric.models`](./nemo_fabric.models.md#module-nemo_fabricmodels): Pydantic SDK models for NeMo Fabric configuration and requests.
+- [`nemo_fabric.models`](./nemo_fabric.models.md#module-nemo_fabricmodels): Pydantic SDK models for NVIDIA NeMo Fabric configuration and requests.
 - [`nemo_fabric.types`](./nemo_fabric.types.md#module-nemo_fabrictypes): Public data contracts for the NeMo Fabric Python SDK.
 - [`nemo_fabric.errors`](./nemo_fabric.errors.md#module-nemo_fabricerrors): Public exception hierarchy for the NeMo Fabric Python SDK.
 
@@ -27,10 +27,12 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.FabricBaseModel`](./nemo_fabric.models.md#class-fabricbasemodel): Base class for SDK-facing Pydantic models.
 - [`models.FabricConfig`](./nemo_fabric.models.md#class-fabricconfig): SDK-facing typed NeMo Fabric agent configuration.
 - [`models.HarnessConfig`](./nemo_fabric.models.md#class-harnessconfig): Harness adapter selection plus adapter-owned settings.
+- [`models.InstructionConfig`](./nemo_fabric.models.md#class-instructionconfig): One portable instruction value.
+- [`models.InstructionsConfig`](./nemo_fabric.models.md#class-instructionsconfig): Harness-neutral agent instructions.
 - [`models.McpConfig`](./nemo_fabric.models.md#class-mcpconfig): MCP capability configuration.
 - [`models.McpServerConfig`](./nemo_fabric.models.md#class-mcpserverconfig): MCP server configuration.
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
-- [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Model alias configuration.
+- [`models.ModelConfig`](./nemo_fabric.models.md#class-modelconfig): Configuration for one model role.
 - [`models.RelayAtifConfig`](./nemo_fabric.models.md#class-relayatifconfig): NeMo Relay ATIF export configuration.
 - [`models.RelayAtofConfig`](./nemo_fabric.models.md#class-relayatofconfig): NeMo Relay ATOF export configuration.
 - [`models.RelayAtofFileSinkConfig`](./nemo_fabric.models.md#class-relayatoffilesinkconfig): NeMo Relay ATOF file sink configuration.
@@ -43,7 +45,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 - [`models.RelayOtlpConfig`](./nemo_fabric.models.md#class-relayotlpconfig): NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference.
 - [`models.RelayS3StorageConfig`](./nemo_fabric.models.md#class-relays3storageconfig): NeMo Relay ATIF S3 storage configuration.
 - [`models.RunRequest`](./nemo_fabric.models.md#class-runrequest): One validated NeMo Fabric invocation request.
-- [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Runtime input/output contract.
+- [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Invocation runtime contract.
 - [`models.SkillConfig`](./nemo_fabric.models.md#class-skillconfig): Skill capability configuration.
 - [`models.TelemetryConfig`](./nemo_fabric.models.md#class-telemetryconfig): Telemetry configuration.
 - [`models.TelemetryProviderConfig`](./nemo_fabric.models.md#class-telemetryproviderconfig): Provider-specific telemetry configuration.

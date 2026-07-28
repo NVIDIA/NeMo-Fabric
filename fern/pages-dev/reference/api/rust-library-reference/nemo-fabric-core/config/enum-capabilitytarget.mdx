@@ -1,8 +1,8 @@
 ---
 title: "Enum Capability Target"
 sidebar-title: "CapabilityTarget"
-description: "Capability routing target."
-position: 39
+description: "Component responsible for executing a configured capability."
+position: 42
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -17,7 +17,9 @@ pub enum CapabilityTarget {
 }
 ```
 
-Capability routing target.
+Component responsible for executing a configured capability.
+
+This target describes execution ownership, not network routing.
 
 ## Variants
 
@@ -25,19 +27,19 @@ Capability routing target.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "HarnessNative"}} /></pre>
 
-Adapter maps the capability into harness-native config.
+The selected adapter maps and executes the capability through its harness.
 
 ### `FabricManaged`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "FabricManaged"}} /></pre>
 
-NeMo Fabric exposes or manages the capability around the harness.
+NeMo Fabric executes the capability outside the harness-native surface.
 
 ### `Unsupported`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Unsupported"}} /></pre>
 
-Capability is configured but no executable surface exists.
+Neither the adapter nor NeMo Fabric can execute the configured capability.
 
 ## Trait Implementations
 

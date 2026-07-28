@@ -1,7 +1,7 @@
 ---
 title: "Struct Capability Route"
 sidebar-title: "CapabilityRoute"
-description: "One capability routing decision."
+description: "One capability execution assignment."
 position: 7
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
@@ -11,7 +11,9 @@ Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct CapabilityRoute &#123;\n    pub kind: <a href=\"enum-capabilitykind.mdx\">CapabilityKind</a>,\n    pub name: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub target: <a href=\"enum-capabilitytarget.mdx\">CapabilityTarget</a>,\n    pub reason: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n&#125;"}} /></pre>
 
-One capability routing decision.
+One capability execution assignment.
+
+Routes apply to executable tool, skill, and MCP capabilities. Adapter-translated scalar configuration is validated separately against [`AdapterConfigSupport`](struct-adapterconfigsupport.mdx).
 
 ## Fields
 
@@ -25,7 +27,7 @@ Capability name.
 
 ### `target: CapabilityTarget`
 
-Routing target.
+Component responsible for executing the capability.
 
 ### `reason: String`
 
