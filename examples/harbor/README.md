@@ -76,9 +76,8 @@ version `0.1.0`.
 | Claude task with Relay | `nemo-fabric[claude]==0.1.0` plus a NeMo Relay 0.6.x CLI on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
 | Hermes Agent task with Relay | `nemo-fabric[hermes-agent,relay]==0.1.0` | NeMo Fabric runner, Hermes Agent adapter and harness, and the NeMo Relay Python package |
 
-The `nemo-fabric` package already installs the runtime, so do not add a
-`runtime` extra. The `relay` extra installs the NeMo Relay Python package, not
-the CLI required by Claude.
+The `nemo-fabric` package installs the runtime. The `relay` extra installs the
+NeMo Relay Python package, not the CLI required by Claude.
 
 ## How Harbor Inputs Become FabricConfig
 

@@ -59,9 +59,8 @@ Decide the following before implementation:
   versions its SDK/module or provides its external executable or service; the
   adapter must not install or upgrade it.
 - Keep `nemo-fabric-runtime` as an exact-version unconditional dependency of the
-  root `nemo-fabric` metapackage. Do not provide a redundant `runtime` extra.
-  Give every installable Python harness adapter one canonical root extra
-  `<extra>` that depends on the matching version of
+  root `nemo-fabric` metapackage. Give every installable Python harness adapter
+  one canonical root extra `<extra>` that depends on the matching version of
   `nemo-fabric-adapters-<adapter>[harness]`; the extra name does not need to
   match the adapter directory.
 - Keep a leaf adapter's base installation limited to adapter-owned dependencies.
@@ -79,9 +78,9 @@ Decide the following before implementation:
   constraint for leaf-only installations. Derive exact pins or bounded ranges
   from the supported upstream contract and test evidence; do not claim a
   broader range than the evidence supports. Verify the unconditional root
-  runtime dependency, the absence of `runtime` and `-min` extras, root-to-leaf
-  harness delegation, `adapter-tests` delegation, and leaf `harness`, `relay`,
-  and `full` metadata. Inspect the built root and leaf wheel metadata.
+  runtime dependency, root-to-leaf harness delegation, `adapter-tests`
+  delegation, and leaf `harness`, `relay`, and `full` metadata. Inspect the
+  built root and leaf wheel metadata.
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.

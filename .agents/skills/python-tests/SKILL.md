@@ -42,8 +42,7 @@ When adapter installation metadata changes, assert the published composition
 directly:
 
 - The root project unconditionally depends on the exact-version
-  `nemo-fabric-runtime` distribution and does not provide `runtime` or `-min`
-  extras.
+  `nemo-fabric-runtime` distribution.
 - Each root harness extra delegates to the matching version of the leaf
   adapter's `harness` extra.
 - Bare leaf dependencies remain adapter-owned, and the root `adapter-tests`
