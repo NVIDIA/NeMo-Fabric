@@ -11,13 +11,16 @@ compiled graph, checkpointer, and LangGraph thread across ordered invocations.
 
 ## Install
 
-Choose the installation that matches the environment:
+The following table shows which components each installation provides:
 
-| Use Case | Installation |
-| --- | --- |
-| Runtime, adapter, and supported Deep Agents stack | `pip install "nemo-fabric[deepagents]"` |
-| Adapter and supported stack without the runtime | `pip install "nemo-fabric-adapters-deepagents[harness]"` |
-| Adapter for an existing compatible stack | `pip install nemo-fabric-adapters-deepagents` |
+| Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
+| --- | --- | --- | --- | --- |
+| `pip install "nemo-fabric[deepagents]"` | Yes | Yes | Yes | No |
+| `pip install "nemo-fabric[deepagents,relay]"` | Yes | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-deepagents[harness]"` | No | Yes | Yes | No |
+| `pip install "nemo-fabric-adapters-deepagents[full]"` | No | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-deepagents[relay]"` | No | Yes | No | Yes |
+| `pip install nemo-fabric-adapters-deepagents` | No | Yes | No | No |
 
 For an environment-managed stack, use `deepagents>=0.6.12,<0.7.0`,
 `langchain>=1.3,<2.0`, and `langgraph>=1.2,<2.0`. For split runtime and adapter
@@ -138,14 +141,9 @@ async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
 NeMo Relay is Deep Agents' single, SDK-native observability path — the adapter
 does not expose gateway, CLI, or plugin launch modes for this harness. Relay is
 **optional**: `nemo_relay` is imported lazily and only when telemetry is enabled,
-so the core install stays Relay-neutral at import time. Choose the Relay
-installation that matches the environment:
-
-| Use Case | Installation |
-| --- | --- |
-| Runtime, adapter, supported stack, and Relay | `pip install "nemo-fabric[deepagents,relay]"` |
-| Adapter and Relay for an existing compatible stack | `pip install "nemo-fabric-adapters-deepagents[relay]"` |
-| Adapter, supported stack, and Relay without the runtime | `pip install "nemo-fabric-adapters-deepagents[full]"` |
+so the core install stays Relay-neutral at import time. Relay telemetry and
+`Runtime.invoke_stream()` require one of the installations in the table that
+includes the NeMo Relay Python package.
 
 - **Relay** (`telemetry.providers.relay`): the SDK-native integration attaches
   three complementary pieces around `create_deep_agent`, applied uniformly to

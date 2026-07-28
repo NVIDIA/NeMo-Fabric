@@ -12,20 +12,21 @@ app-server runtime and typed JSON-RPC protocol.
 
 ## Install
 
-Choose the installation that matches the environment:
+The following table shows which components each installation provides:
 
-| Use Case | Installation |
-| --- | --- |
-| Runtime, adapter, and supported Codex SDK | `pip install "nemo-fabric[codex]"` |
-| Adapter and supported SDK without the runtime | `pip install "nemo-fabric-adapters-codex[harness]"` |
-| Adapter for an existing compatible SDK | `pip install nemo-fabric-adapters-codex` |
+| Installation | Runtime | Adapter | Harness | NeMo Relay CLI |
+| --- | --- | --- | --- | --- |
+| `pip install "nemo-fabric[codex]"` | Yes | Yes | Yes | No |
+| `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | No |
+| `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
 For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
 and adapter environments, configure `ADAPTER_PYTHON` or
 `harness.settings.python` and use matching NeMo Fabric release versions. Refer
 to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-The `full` extra is equivalent to `harness`. Relay requires the external CLI
+The `full` extra is equivalent to `harness`. Relay is optional for ordinary
+runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
 described under [Relay Integration](#relay-integration).
 
 ## Authentication

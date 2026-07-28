@@ -27,7 +27,7 @@ already exist in the environment or be managed separately.
 | --- | --- | --- | --- | --- |
 | `nemo-fabric` | Yes | No | No | No |
 | `nemo-fabric[relay]` | Yes | No | No | Yes |
-| `nemo-fabric[claude,harbor,relay]` | Yes | Yes | Yes | Yes |
+| `nemo-fabric[hermes-agent,relay]` | Yes | Yes | Yes | Yes |
 | `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No |
 | `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No |
 | `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes |
@@ -40,6 +40,9 @@ install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
 `harness` because their Relay integration requires an external executable. For
 LangChain Deep Agents and Hermes Agent, `full` installs both the harness and the
 NeMo Relay Python package.
+
+For Claude and Codex, no Python package extra installs the external
+`nemo-relay` CLI required by Relay telemetry and `Runtime.invoke_stream()`.
 
 ### Install the NeMo Fabric Runtime
 

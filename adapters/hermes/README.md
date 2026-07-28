@@ -9,27 +9,26 @@ This adapter runs Hermes Agent through its Python SDK.
 
 ## Install
 
-Hermes Agent and this adapter require Python 3.11 through 3.13. Choose the
-installation that matches the environment:
+Hermes Agent and this adapter require Python 3.11 through 3.13. The following
+table shows which components each installation provides:
 
-| Use Case | Installation |
-| --- | --- |
-| Runtime, adapter, and supported Hermes Agent | `pip install "nemo-fabric[hermes-agent]"` |
-| Adapter and supported Hermes Agent without the runtime | `pip install "nemo-fabric-adapters-hermes[harness]"` |
-| Adapter for an existing compatible Hermes Agent | `pip install nemo-fabric-adapters-hermes` |
+| Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
+| --- | --- | --- | --- | --- |
+| `pip install "nemo-fabric[hermes-agent]"` | Yes | Yes | Yes | No |
+| `pip install "nemo-fabric[hermes-agent,relay]"` | Yes | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-hermes[harness]"` | No | Yes | Yes | No |
+| `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
+| `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
 For an environment-managed harness, use `hermes-agent>=0.17.0`. For split
 runtime and adapter environments, configure `ADAPTER_PYTHON` or
 `harness.settings.python` and use matching NeMo Fabric release versions. Refer
 to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-Choose the Relay installation separately:
-
-| Use Case | Installation |
-| --- | --- |
-| Runtime, adapter, supported Hermes Agent, and Relay | `pip install "nemo-fabric[hermes-agent,relay]"` |
-| Adapter and Relay for an existing compatible Hermes Agent | `pip install "nemo-fabric-adapters-hermes[relay]"` |
-| Adapter, supported Hermes Agent, and Relay without the runtime | `pip install "nemo-fabric-adapters-hermes[full]"` |
+Relay is optional for ordinary runs. Relay telemetry and
+`Runtime.invoke_stream()` require one of the installations in the table that
+includes the NeMo Relay Python package.
 
 ## What It Maps
 

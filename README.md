@@ -132,18 +132,35 @@ For a guided version of this example, refer to the
 [example notebooks overview](examples/notebooks/README.md) describes the other
 available notebooks.
 
-## Use Separate Environments
+## Deployment Scenarios
 
-The quick start uses one Python environment. Real-world deployments commonly
-separate the application or evaluation host from the task environment where
-NeMo Fabric and the selected harness run. For example, Harbor constructs
-`FabricConfig` in its host process, then runs NeMo Fabric, the adapter, and the
-harness inside an isolated task container. Refer to the
+### Scenario 1: Runtime and Harness in the Same Environment
+
+This is the simplest deployment. The `nemo-fabric` package, selected adapter,
+and supported harness share one Python environment. The quick start above uses
+this model with `nemo-fabric[hermes-agent]`.
+
+### Scenario 2: Isolated Sandbox for Task Execution
+
+This is the Harbor deployment model. The Harbor host constructs and serializes
+the final typed `FabricConfig`. Harbor then installs and runs NeMo Fabric, the
+selected adapter, and the harness inside an isolated task environment such as a
+Docker container or Daytona sandbox. Adapter discovery and task-path resolution
+occur inside that sandbox.
+
+Install `nemo-fabric[harbor]==0.1.0` in the host environment. Install a complete
+harness composition such as `nemo-fabric[claude]==0.1.0` or
+`nemo-fabric[hermes-agent,relay]==0.1.0` in the task environment. For Claude or
+Codex Relay streaming, also provision the external NeMo Relay CLI in the task
+environment. Refer to the
 [Harbor execution model](examples/harbor/README.md#execution-model) for details.
 
-NeMo Fabric can also operate with the NeMo Fabric runtime and the agent harness
-in separate Python environments. This setup can match existing deployment
-boundaries and isolate their dependencies.
+### Scenario 3: Runtime and Harness in Separate Python Environments
+
+NeMo Fabric can run the runtime and agent harness in separate, locally
+accessible Python environments. This setup isolates their Python dependencies
+while the runtime launches the adapter through the adapter environment's
+interpreter.
 
 Create an environment for the NeMo Fabric runtime:
 
