@@ -34,6 +34,5 @@ def test_build_hermes_config_omits_unset_values_without_hermes_agent():
     assert config["model"] == {
         "provider": "nvidia",
         "default": "nvidia/test-model",
-        "base_url": "https://integrate.api.nvidia.com/v1",
     }
     assert config["agent"] == {}

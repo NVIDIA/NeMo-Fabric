@@ -242,13 +242,15 @@ def test_claude_calculator_run_uses_current_adapter_contract():
         adapter_id="nvidia.fabric.claude",
         workspace="/app",
         model_name="anthropic/claude-sonnet-4-5",
-        harness_settings={"max_turns": 20, "timeout_seconds": 600},
+        max_turns=20,
+        timeout_seconds=600,
     )
     settings = config.harness.settings
 
     assert config.harness.adapter_id == "nvidia.fabric.claude"
     assert settings["permission_mode"] == "bypassPermissions"
-    assert settings["max_turns"] == 20
+    assert config.runtime.max_turns == 20
+    assert config.runtime.timeout_seconds == 600
     assert config.models["default"].provider == "anthropic"
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     assert "-e /opt/nemo-fabric/adapters/claude" in dockerfile
@@ -311,6 +313,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
         in swebench
     )
     assert "PIP_FIND_LINKS" not in swebench
+    assert 'PATH=/tmp/nemo-fabric-config/.relay/bin:$PATH' in swebench
     assert "--dataset swe-bench/swe-bench-verified" in swebench
     for flag in (
         "--path",
@@ -424,17 +427,22 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
         ),
     )
     tools = build_harbor_config(
+        adapter_id="nvidia.fabric.deepagents",
+        workspace="/testbed",
+        blocked_tools=["browser"],
+        telemetry="relay",
+    )
+    selected_tools = build_harbor_config(
         adapter_id="nvidia.fabric.hermes",
         workspace="/testbed",
+        enabled_tools=[],
         blocked_tools=["browser"],
         telemetry="relay",
     )
     claude = build_harbor_config(
         adapter_id="nvidia.fabric.claude",
         workspace="/testbed",
-        harness_settings={
-            "nemo_relay_command": "/tmp/nemo-fabric-config/.relay/bin/nemo-relay"
-        },
+        harness_settings={"allowed_tools": ["Read"]},
     )
 
     assert base.environment is not None
@@ -454,17 +462,19 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     ]
     assert tools.tools is not None
     assert tools.tools.blocked == ["browser"]
-    assert "enabled_toolsets" not in tools.harness.settings
+    assert tools.tools.enabled is None
+    assert selected_tools.tools is not None
+    assert selected_tools.tools.enabled == []
+    assert selected_tools.tools.blocked == ["browser"]
     assert relay.telemetry is not None
     assert "relay" in relay.telemetry.providers
     assert relay.relay is not None
     assert relay.relay.observability.atif.enabled is True
     assert relay.relay.observability.atof.enabled is True
     assert claude.harness.settings["permission_mode"] == "bypassPermissions"
-    assert claude.harness.settings["env"] == {"IS_SANDBOX": "1"}
-    assert claude.harness.settings["nemo_relay_command"] == (
-        "/tmp/nemo-fabric-config/.relay/bin/nemo-relay"
-    )
+    assert claude.environment is not None
+    assert claude.environment.env == {"IS_SANDBOX": "1"}
+    assert claude.harness.settings["allowed_tools"] == ["Read"]
     assert not list(SWEBENCH_ROOT.rglob("*.yaml"))
     assert not (SWEBENCH_ROOT / "harbor_swebench_config.py").exists()
 

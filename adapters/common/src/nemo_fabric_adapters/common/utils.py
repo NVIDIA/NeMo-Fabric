@@ -91,7 +91,12 @@ def runtime_state_directory(base: str | Path, payload: dict[str, Any]) -> Path:
 
 
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return runtime_context(payload).get("environment") or payload.get("environment") or {}
+    return (
+        runtime_context(payload).get("environment")
+        or fabric_config(payload).get("environment")
+        or payload.get("environment")
+        or {}
+    )
 
 
 def settings_payload(payload: dict[str, Any]) -> dict[str, Any]:
@@ -103,31 +108,54 @@ def models_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return fabric_config(payload).get("models") or payload.get("models") or {}
 
 
-def default_base_url(provider: str | None) -> str | None:
-    if provider == "nvidia":
-        return "https://integrate.api.nvidia.com/v1"
-    return None
+def get_base_url(model_config: dict[str, Any]) -> str | None:
+    """Return the explicitly configured model endpoint."""
 
-
-def get_base_url(settings: dict[str, Any], model_config: dict[str, Any]) -> str | None:
-    return (
-        settings.get("base_url")
-        or (model_config.get("settings") or {}).get("base_url")
-        or default_base_url(model_config.get("provider"))
-    )
+    return model_config.get("base_url")
 
 
 def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = settings_payload(payload)
     models = models_payload(payload)
-    model_config = models.get(settings.get("model", "default"), {})
+    model_config = models.get("default")
+    if model_config is None and len(models) == 1:
+        model_config = next(iter(models.values()))
     if not isinstance(model_config, dict):
         return {}
     return model_config
 
 
+def system_instruction(payload: dict[str, Any]) -> str | None:
+    instructions = fabric_config(payload).get("instructions") or {}
+    system = instructions.get("system") or {}
+    value = system.get("content")
+    return value if isinstance(value, str) else None
+
+
+def max_turns(payload: dict[str, Any]) -> int | None:
+    value = (fabric_config(payload).get("runtime") or {}).get("max_turns")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def timeout_seconds(payload: dict[str, Any], *, default: float) -> float:
+    value = (fabric_config(payload).get("runtime") or {}).get("timeout_seconds")
+    return float(default if value is None else value)
+
+
+def environment_env(payload: dict[str, Any]) -> dict[str, str]:
+    value = environment_payload(payload).get("env") or {}
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(name): str(item)
+        for name, item in value.items()
+        if isinstance(name, str) and isinstance(item, str)
+    }
+
+
 def telemetry_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    telemetry = fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    telemetry = (
+        fabric_config(payload).get("telemetry") or payload.get("telemetry") or {}
+    )
     return telemetry if isinstance(telemetry, dict) else {}
 
 
@@ -159,6 +187,13 @@ def capability_plan(payload: dict[str, Any]) -> dict[str, Any]:
 def tools_config(payload: dict[str, Any]) -> dict[str, Any]:
     tools = fabric_config(payload).get("tools") or {}
     return tools if isinstance(tools, dict) else {}
+
+
+def enabled_tools(payload: dict[str, Any]) -> list[str] | None:
+    tools = tools_config(payload)
+    if "enabled" not in tools:
+        return None
+    return normalize_list(tools.get("enabled"))
 
 
 def blocked_tools(payload: dict[str, Any]) -> list[str]:
@@ -223,7 +258,9 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
     return plugin_config
 
 
-def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str, Any]) -> None:
+def normalize_relay_output_dirs(
+    plugin_config: dict[str, Any], payload: dict[str, Any]
+) -> None:
     base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
@@ -357,7 +394,9 @@ def write_relay_configs(
 
         config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
         if not config_path:
-            raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
+            raise RuntimeError(
+                "FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled"
+            )
 
         config_path = Path(config_path)
         config_dir = config_path.parent / "relay-config"
@@ -385,9 +424,5 @@ def write_relay_configs(
         raise RuntimeError("tomli_w is not installed") from e
 
 
-
 def relay_model_name(payload: dict[str, Any]) -> str:
-    settings = settings_payload(payload)
-    models = models_payload(payload)
-    model_config = models.get(settings.get("model", "default"), {})
-    return settings.get("model_name") or model_config.get("model") or "unknown"
+    return selected_model_config(payload).get("model") or "unknown"

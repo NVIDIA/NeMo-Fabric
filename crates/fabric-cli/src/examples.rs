@@ -120,7 +120,7 @@ pub fn find(name: &str) -> Option<Example> {
 
 const EXAMPLES: [Example; 1] = [Example {
     name: "code-review",
-    description: "Review a small Python workspace using a maintained skill.",
+    description: "Review a small Python workspace with a deterministic default or a skill-capable harness.",
     default_variant: "scripted",
     variants: CODE_REVIEW_VARIANTS,
 }];
@@ -137,10 +137,12 @@ fn code_review_config(preset: Preset) -> Result<FabricConfig, String> {
         .as_mut()
         .expect("CLI presets always define an execution environment");
     environment.workspace = Some(PathBuf::from("repo"));
-    config.skills = Some(SkillConfig {
-        paths: vec![PathBuf::from("skills/code-review.md")],
-        extensions: BTreeMap::new(),
-    });
+    if preset.name != "scripted" {
+        config.skills = Some(SkillConfig {
+            paths: vec![PathBuf::from("skills/code-review.md")],
+            extensions: BTreeMap::new(),
+        });
+    }
     Ok(config)
 }
 
@@ -166,6 +168,20 @@ mod tests {
             .expect("select example");
         assert!(selected.base_dir().join("repo/calculator.py").is_file());
         assert!(selected.base_dir().join("skills/code-review.md").is_file());
+        assert!(
+            selected.config.skills.is_none(),
+            "the scripted smoke variant does not declare skill support"
+        );
+        assert!(
+            find("code-review")
+                .expect("code review example")
+                .select(Some("hermes"))
+                .expect("select Hermes example")
+                .config
+                .skills
+                .is_some(),
+            "maintained harness variants consume the staged skill"
+        );
         let plan = resolve_run_plan_from_config(
             selected.config.clone(),
             ResolveContext::new(selected.base_dir()),

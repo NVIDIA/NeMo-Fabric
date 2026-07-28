@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "NeMo Fabric config models and loading helpers."
-position: 65
+position: 70
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -19,12 +19,14 @@ NeMo Fabric config models and loading helpers.
 - [AdapterTelemetryProviderSupport](struct-adaptertelemetryprovidersupport.mdx): Telemetry capabilities for one adapter-supported provider.
 - [AdapterTelemetrySupport](struct-adaptertelemetrysupport.mdx): Adapter telemetry support.
 - [CapabilityPlan](struct-capabilityplan.mdx): Resolved capability configuration.
-- [CapabilityRoute](struct-capabilityroute.mdx): One capability routing decision.
+- [CapabilityRoute](struct-capabilityroute.mdx): One capability execution assignment.
 - [CapabilityTargetPlan](struct-capabilitytargetplan.mdx): Capabilities routed to one target.
 - [EnvironmentConfig](struct-environmentconfig.mdx): Execution environment configuration.
 - [EnvironmentPlan](struct-environmentplan.mdx): Resolved environment plan.
-- [FabricConfig](struct-fabricconfig.mdx): Versioned NeMo Fabric agent config.
+- [FabricConfig](struct-fabricconfig.mdx): Versioned NVIDIA NeMo Fabric agent config.
 - [HarnessConfig](struct-harnessconfig.mdx): Harness selection.
+- [InstructionConfig](struct-instructionconfig.mdx): One portable instruction value.
+- [InstructionsConfig](struct-instructionsconfig.mdx): Harness-neutral agent instruction configuration.
 - [McpConfig](struct-mcpconfig.mdx): MCP capability configuration.
 - [McpServerConfig](struct-mcpserverconfig.mdx): MCP server configuration.
 - [McpServerPlan](struct-mcpserverplan.mdx): Resolved MCP server exposure.
@@ -41,7 +43,7 @@ NeMo Fabric config models and loading helpers.
 - [ResolvedAdapterDescriptor](struct-resolvedadapterdescriptor.mdx): Adapter descriptor selected for a run plan.
 - [RunPlan](struct-runplan.mdx): Resolved NeMo Fabric run plan.
 - [RuntimeCapabilities](struct-runtimecapabilities.mdx): Lifecycle behavior implemented by a resolved runtime path.
-- [RuntimeConfig](struct-runtimeconfig.mdx): Runtime input/output contract.
+- [RuntimeConfig](struct-runtimeconfig.mdx): Invocation runtime contract.
 - [SkillConfig](struct-skillconfig.mdx): Skill capability configuration.
 - [TelemetryConfig](struct-telemetryconfig.mdx): Telemetry configuration.
 - [TelemetryPlan](struct-telemetryplan.mdx): Resolved telemetry plan.
@@ -51,12 +53,14 @@ NeMo Fabric config models and loading helpers.
 
 ## Enums
 
+- [AdapterConfigField](enum-adapterconfigfield.mdx): Adapter-translated normalized NVIDIA NeMo Fabric configuration fields.
 - [AdapterDescriptorSource](enum-adapterdescriptorsource.mdx): Where NeMo Fabric resolved an adapter descriptor from.
 - [AdapterKind](enum-adapterkind.mdx): Adapter implementation kind.
 - [CapabilityKind](enum-capabilitykind.mdx): Capability kind.
-- [CapabilityTarget](enum-capabilitytarget.mdx): Capability routing target.
+- [CapabilityTarget](enum-capabilitytarget.mdx): Component responsible for executing a configured capability.
 - [ControlLocation](enum-controllocation.mdx): Where NeMo Fabric control code runs relative to the environment.
 - [EnvironmentOwnership](enum-environmentownership.mdx): Whether NeMo Fabric owns the underlying environment resource.
+- [InstructionMode](enum-instructionmode.mdx): How an instruction value is applied to the selected harness.
 - [McpExposure](enum-mcpexposure.mdx): MCP exposure strategy.
 - [RelayAtifStorageConfig](enum-relayatifstorageconfig.mdx): Relay ATIF remote storage configuration.
 - [RelayAtofMode](enum-relayatofmode.mdx): Relay ATOF file mode.
@@ -75,4 +79,4 @@ NeMo Fabric config models and loading helpers.
 ## Functions
 
 - [load_adapter_descriptor](fn-load-adapter-descriptor.mdx): Load an adapter descriptor from JSON package metadata.
-- [resolve_run_plan_from_config](fn-resolve-run-plan-from-config.mdx): Resolve a typed NeMo Fabric config into a runnable plan.
+- [resolve_run_plan_from_config](fn-resolve-run-plan-from-config.mdx): Resolve a typed NVIDIA NeMo Fabric config into a runnable plan.

@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.models`
 
-Pydantic SDK models for NeMo Fabric configuration and requests.
+Pydantic SDK models for NVIDIA NeMo Fabric configuration and requests.
 
 The Rust core remains the source of truth for persisted schema snapshots. These models provide the Python SDK's typed authoring surface and intentionally keep extension fields so consumers can carry adapter- or application-owned data without waiting for a schema release.
 
@@ -221,9 +221,150 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `InstructionConfig`
+
+One portable instruction value.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `content` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
+| `mode` | `Literal['replace']` | No | `'replace'` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
+## <kbd>class</kbd> `InstructionsConfig`
+
+Harness-neutral agent instructions.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `system` | `InstructionConfig \| None` | No | `None` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `RuntimeConfig`
 
-Runtime input/output contract.
+Invocation runtime contract.
 
 
 
@@ -236,6 +377,8 @@ The model defines the following fields:
 | `input_schema` | `str \| None` | No | `None` | — | — |
 | `output_schema` | `str \| None` | No | `None` | — | — |
 | `artifacts` | `str \| Path \| None` | No | `None` | — | — |
+| `timeout_seconds` | `float \| None` | No | `None` | `Gt(gt=0), _PydanticGeneralMetadata(allow_inf_nan=False)` | — |
+| `max_turns` | `int \| None` | No | `None` | `Gt(gt=0), Le(le=4294967295)` | — |
 
 ---
 
@@ -310,6 +453,7 @@ The model defines the following fields:
 | `provider` | `str` | No | `'local'` | `MinLen(min_length=1)` | Environment provider, such as local, docker, opensandbox, or k8s. |
 | `workspace` | `str \| Path \| None` | No | `None` | — | Workspace path visible to the harness. |
 | `artifacts` | `str \| Path \| None` | No | `None` | — | Environment-specific artifact path. |
+| `env` | `dict[str, str]` | No | `dict()` | — | Environment variables visible to the harness and its tools. Values are serialized into configuration and run plans; prefer api_key_env-style environment-variable-name indirection for credentials. |
 | `settings` | `dict[str, Any]` | No | `dict()` | — | Provider-specific configuration interpreted by the environment provider. |
 | `metadata` | `dict[str, Any]` | No | `dict()` | — | Consumer-owned environment metadata passed through without NeMo Fabric semantics. |
 | `connection` | `dict[str, Any]` | No | `dict()` | — | Connection data for an existing environment, such as URL, namespace, or credential reference. |
@@ -374,7 +518,7 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 ## <kbd>class</kbd> `ModelConfig`
 
-Model alias configuration.
+Configuration for one model role.
 
 
 
@@ -388,6 +532,7 @@ The model defines the following fields:
 | `model` | `str` | Yes | — | `MinLen(min_length=1)` | — |
 | `api_key_env` | `str \| None` | No | `None` | — | — |
 | `temperature` | `float \| None` | No | `None` | — | — |
+| `base_url` | `str \| None` | No | `None` | `MinLen(min_length=1)` | — |
 | `settings` | `dict[str, Any]` | No | `dict()` | — | — |
 
 ---
@@ -1717,7 +1862,8 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `blocked` | `list[str]` | No | `list()` | — | — |
+| `enabled` | `list[str] \| None` | No | `None` | — | Adapter-native tools to expose. None preserves the harness default; an empty list exposes no tools. |
+| `blocked` | `list[str]` | No | `list()` | — | Adapter-native tool names to deny. |
 
 ---
 
@@ -1779,6 +1925,8 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 
 SDK-facing typed NeMo Fabric agent configuration.
 
+NeMo Fabric-owned fields apply uniformly. Adapter-translated fields are checked against the selected descriptor; refer to the [normalized configuration compatibility table](../../../sdk/python.mdx#normalized-configuration-compatibility).
+
 
 
 ### Fields
@@ -1792,12 +1940,13 @@ The model defines the following fields:
 | `harness` | `HarnessConfig` | Yes | — | — | — |
 | `runtime` | `RuntimeConfig` | No | `RuntimeConfig()` | — | — |
 | `environment` | `EnvironmentConfig \| None` | No | `None` | — | — |
-| `models` | `dict[str, ModelConfig \| dict[str, Any]]` | No | `dict()` | — | — |
+| `models` | `dict[str, ModelConfig]` | No | `dict()` | — | — |
+| `instructions` | `InstructionsConfig \| None` | No | `None` | — | — |
 | `mcp` | `McpConfig \| None` | No | `None` | — | — |
 | `skills` | `SkillConfig \| None` | No | `None` | — | — |
 | `telemetry` | `TelemetryConfig \| None` | No | `None` | — | — |
 | `relay` | `RelayConfig \| dict[str, Any] \| None` | No | `None` | — | — |
-| `tools` | `ToolsConfig \| dict[str, Any] \| None` | No | `None` | — | — |
+| `tools` | `ToolsConfig \| None` | No | `None` | — | — |
 
 ---
 
@@ -1867,7 +2016,7 @@ Add a skill path and return this config.
 def block_tools(*tools: str) -> Self
 ```
 
-Block adapter-native tool names or toolsets and return this config.
+Block adapter-native tool names and return this config.
 
 ---
 

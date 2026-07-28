@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::config::{
-    AdapterKind, CapabilityKind, CapabilityPlan, CapabilityTarget, ControlLocation,
-    EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
+    AdapterKind, CapabilityPlan, CapabilityTarget, ControlLocation, EnvironmentOwnership,
+    FabricConfig, RunPlan, TelemetryPlan, validate_adapter_config_compatibility,
 };
 use crate::error::{FabricError, Result};
 
@@ -242,6 +242,9 @@ pub struct EnvironmentHandle {
     /// Artifact root visible to the harness runtime.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifacts: Option<PathBuf>,
+    /// Environment variables visible to the harness and its tools.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
     /// Whether NeMo Fabric owns the environment resource.
     pub ownership: EnvironmentOwnership,
     /// Provider connection metadata.
@@ -475,6 +478,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
         ownership,
         workspace,
         artifacts,
+        environment_env,
         connection_settings,
         environment_metadata,
         settings,
@@ -485,6 +489,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
             environment.ownership,
             environment.workspace.clone(),
             environment.artifacts.clone(),
+            environment.env.clone(),
             environment.connection.clone(),
             environment.metadata.clone(),
             environment.settings.clone(),
@@ -500,6 +505,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
                 .artifacts
                 .as_ref()
                 .map(|artifacts| resolve_path(&plan.base_dir, artifacts)),
+            BTreeMap::new(),
             serde_json::Map::new(),
             serde_json::Map::new(),
             serde_json::Map::new(),
@@ -524,6 +530,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
         control_location,
         workspace,
         artifacts,
+        env: environment_env,
         ownership,
         connection,
         metadata,
@@ -532,7 +539,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
 
 /// Start or connect to a harness runtime.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
-    validate_blocked_tools_support(plan)?;
+    validate_adapter_compatibility(plan)?;
     let environment = prepare_environment(plan)?;
     if uses_local_host(plan) {
         return LocalHostAdapter.start(plan, environment);
@@ -549,7 +556,7 @@ pub fn invoke_runtime(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
-    validate_blocked_tools_support(plan)?;
+    validate_adapter_compatibility(plan)?;
     validate_runtime_handle(plan, runtime)?;
     if uses_local_host(plan) {
         return LocalHostAdapter.invoke(plan, runtime, request);
@@ -560,12 +567,22 @@ pub fn invoke_runtime(
     })
 }
 
-fn validate_blocked_tools_support(plan: &RunPlan) -> Result<()> {
-    if let Some(route) = plan.capability_plan.routes.iter().find(|route| {
-        route.kind == CapabilityKind::Tools && route.target == CapabilityTarget::Unsupported
-    }) {
-        return Err(FabricError::UnsupportedToolsPolicy {
-            harness: harness(plan),
+fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
+    validate_adapter_config_compatibility(
+        &plan.config,
+        plan.adapter_descriptor
+            .as_ref()
+            .map(|adapter| &adapter.descriptor),
+    )?;
+    if let Some(route) = plan
+        .capability_plan
+        .routes
+        .iter()
+        .find(|route| route.target == CapabilityTarget::Unsupported)
+    {
+        return Err(FabricError::AdapterCompatibility {
+            adapter_id: adapter_id(plan).unwrap_or_else(|| harness(plan)),
+            field: route.config_field(),
             reason: route.reason.clone(),
         });
     }
@@ -647,6 +664,7 @@ struct RuntimeEnvironmentBinding<'a> {
     control_location: ControlLocation,
     workspace: &'a Option<PathBuf>,
     artifacts: &'a Option<PathBuf>,
+    env: &'a BTreeMap<String, String>,
     ownership: EnvironmentOwnership,
     connection: &'a BTreeMap<String, Value>,
     metadata: &'a BTreeMap<String, Value>,
@@ -658,6 +676,7 @@ fn runtime_environment_binding(environment: &EnvironmentHandle) -> RuntimeEnviro
         control_location: environment.control_location,
         workspace: &environment.workspace,
         artifacts: &environment.artifacts,
+        env: &environment.env,
         ownership: environment.ownership,
         connection: &environment.connection,
         metadata: &environment.metadata,
@@ -894,7 +913,22 @@ fn run_local_host_adapter(
     runtime: &RuntimeHandle,
     request: RunRequest,
 ) -> Result<RunResult> {
-    run_local_host_adapter_with_timeout(plan, runtime, request, LOCAL_HOST_INVOKE_TIMEOUT)
+    let timeout = match plan.config.runtime.timeout_seconds {
+        Some(seconds) if seconds <= 0.0 => {
+            return Err(FabricError::InvalidConfig {
+                field: "runtime.timeout_seconds".to_string(),
+                reason: "must be a finite number greater than zero".to_string(),
+            });
+        }
+        Some(seconds) => {
+            Duration::try_from_secs_f64(seconds).map_err(|_| FabricError::InvalidConfig {
+                field: "runtime.timeout_seconds".to_string(),
+                reason: "must be a finite number greater than zero".to_string(),
+            })?
+        }
+        None => LOCAL_HOST_INVOKE_TIMEOUT,
+    };
+    run_local_host_adapter_with_timeout(plan, runtime, request, timeout)
 }
 
 fn run_local_host_adapter_with_timeout(
@@ -937,7 +971,16 @@ fn run_local_host_adapter_with_timeout(
             &artifacts,
             relay_config.as_ref(),
         )?;
-        let adapter_payload = serde_json::to_string_pretty(&adapter_invocation)
+        let mut persisted_invocation = adapter_invocation.clone();
+        for value in persisted_invocation
+            .runtime_context
+            .environment
+            .env
+            .values_mut()
+        {
+            *value = "[REDACTED]".to_string();
+        }
+        let adapter_payload = serde_json::to_string_pretty(&persisted_invocation)
             .map_err(FabricError::SerializeJson)?;
         let fabric_invocation = write_fabric_invocation(&fabric_home, &adapter_payload)?;
         let lifecycle_request = AdapterLifecycleRequest::new(AdapterLifecycleRequestKind::Invoke(
@@ -1336,7 +1379,8 @@ fn process_local_host_command(
     command
         .args(&command_args)
         .current_dir(cwd)
-        .envs(&settings.env);
+        .envs(&settings.env)
+        .envs(&runtime.environment.env);
     let display = std::iter::once(command_path.to_string_lossy().into_owned())
         .chain(command_args)
         .collect::<Vec<_>>()
@@ -1359,7 +1403,8 @@ fn python_local_host_command(plan: &RunPlan, runtime: &RuntimeHandle) -> Result<
         .arg(&settings.module)
         .args(&settings.args)
         .current_dir(cwd)
-        .envs(&settings.env);
+        .envs(&settings.env)
+        .envs(&runtime.environment.env);
     Ok((
         command,
         format!("{} -m {}", python.to_string_lossy(), settings.module),
@@ -2460,6 +2505,7 @@ for line in sys.stdin:
             "runtime_id": invocation["runtime_context"]["runtime_id"],
             "invocation_id": invocation["runtime_context"]["invocation_id"],
             "request_id": invocation["runtime_context"]["request_id"],
+            "normalized_env": os.environ.get("FABRIC_NORMALIZED_ENV"),
         }
         if MODE == "adapter_reported_failure":
             output.update({
@@ -2494,16 +2540,14 @@ for line in sys.stdin:
                     "env": {"FABRIC_FAKE_HOST_MODE": mode},
                 },
             },
-            "models": {
-                "default": {
-                    "provider": "test",
-                    "model": "test-model",
-                },
-            },
             "runtime": {
                 "input_schema": "text",
                 "output_schema": "text",
                 "artifacts": "./artifacts",
+            },
+            "environment": {
+                "provider": "local",
+                "env": {"FABRIC_NORMALIZED_ENV": "visible"},
             },
         });
         if relay {
@@ -2538,8 +2582,22 @@ for line in sys.stdin:
         assert_eq!(first.output["invocation_count"], serde_json::json!(1));
         assert_eq!(second.output["invocation_count"], serde_json::json!(2));
         assert_eq!(first.output["input"], serde_json::json!("first"));
+        assert_eq!(first.output["normalized_env"], serde_json::json!("visible"));
         assert_eq!(second.output["input"], serde_json::json!("second"));
         assert_eq!(first.metadata["host_pid"], second.metadata["host_pid"]);
+        let persisted_invocation: Value = serde_json::from_str(
+            &fs::read_to_string(
+                first.metadata["fabric_invocation"]
+                    .as_str()
+                    .expect("invocation path"),
+            )
+            .expect("read persisted invocation"),
+        )
+        .expect("parse persisted invocation");
+        assert_eq!(
+            persisted_invocation["runtime_context"]["environment"]["env"]["FABRIC_NORMALIZED_ENV"],
+            serde_json::json!("[REDACTED]")
+        );
         assert_eq!(
             first.metadata["adapter_runner"],
             serde_json::json!("persistent_local_host")
@@ -2696,6 +2754,52 @@ for line in sys.stdin:
         let stopped = stop_runtime(&plan, &runtime).expect("stop after timeout is idempotent");
         assert_eq!(stopped[0].metadata["already_stopped"], true);
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_rejects_zero_timeout_from_deserialized_plan() {
+        let (root, plan) = local_host_plan("success");
+        let runtime = start_runtime(&plan).expect("start local host");
+        let mut invalid_plan = plan.clone();
+        invalid_plan.config.runtime.timeout_seconds = Some(0.0);
+
+        let error = run_local_host_adapter(&invalid_plan, &runtime, RunRequest::text("first"))
+            .expect_err("zero timeout must be rejected");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. }
+                if field == "runtime.timeout_seconds"
+        ));
+        stop_runtime(&plan, &runtime).expect("stop local host");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_revalidates_scalar_compatibility_at_runtime_boundaries() {
+        let (root, plan) = local_host_plan("success");
+        let mut incompatible_plan = plan.clone();
+        incompatible_plan.config.runtime.max_turns = Some(1);
+
+        let start_error =
+            start_runtime(&incompatible_plan).expect_err("start must reject incompatibility");
+        assert!(matches!(
+            start_error,
+            FabricError::AdapterCompatibility { field, .. }
+                if field == "runtime.max_turns"
+        ));
+
+        let runtime = start_runtime(&plan).expect("start local host");
+        let invoke_error = invoke_runtime(&incompatible_plan, &runtime, RunRequest::text("first"))
+            .expect_err("invoke must reject incompatibility");
+        assert!(matches!(
+            invoke_error,
+            FabricError::AdapterCompatibility { field, .. }
+                if field == "runtime.max_turns"
+        ));
+
+        stop_runtime(&plan, &runtime).expect("stop local host");
         let _ = fs::remove_dir_all(root);
     }
 

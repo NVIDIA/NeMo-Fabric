@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 
 # <kbd>module</kbd> `nemo_fabric.client`
 
-Native Python client for resolving and running NeMo Fabric agents.
+Native Python client for resolving and running NVIDIA NeMo Fabric agents.
 
 
 

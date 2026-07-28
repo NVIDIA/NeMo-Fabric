@@ -1,13 +1,63 @@
 {
   "$defs": {
+    "AdapterConfigField": {
+      "description": "Adapter-translated normalized NVIDIA NeMo Fabric configuration fields.",
+      "oneOf": [
+        {
+          "const": "models",
+          "description": "Normalized model selection and credentials.",
+          "type": "string"
+        },
+        {
+          "const": "models.base_url",
+          "description": "Custom model endpoint.",
+          "type": "string"
+        },
+        {
+          "const": "models.temperature",
+          "description": "Model temperature.",
+          "type": "string"
+        },
+        {
+          "const": "instructions.system",
+          "description": "Portable system instructions.",
+          "type": "string"
+        },
+        {
+          "const": "runtime.max_turns",
+          "description": "Per-invocation harness turn limit.",
+          "type": "string"
+        },
+        {
+          "const": "tools.enabled",
+          "description": "Adapter-native tool names to expose.",
+          "type": "string"
+        },
+        {
+          "const": "tools.blocked",
+          "description": "Adapter-native tool names to block.",
+          "type": "string"
+        },
+        {
+          "const": "mcp",
+          "description": "Harness-native MCP servers.",
+          "type": "string"
+        },
+        {
+          "const": "skills",
+          "description": "Harness-native skills.",
+          "type": "string"
+        }
+      ]
+    },
     "AdapterConfigSupport": {
       "additionalProperties": true,
       "description": "Adapter config support.",
       "properties": {
         "accepts": {
-          "description": "NeMo Fabric config areas or policy paths accepted by this adapter.",
+          "description": "Normalized NVIDIA NeMo Fabric config areas or policy paths accepted by this adapter.",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/AdapterConfigField"
           },
           "type": "array"
         },
@@ -279,7 +329,7 @@
       "type": "object"
     },
     "CapabilityRoute": {
-      "description": "One capability routing decision.",
+      "description": "One capability execution assignment.\n\nRoutes apply to executable tool, skill, and MCP capabilities. Adapter-translated\nscalar configuration is validated separately against [`AdapterConfigSupport`].",
       "properties": {
         "kind": {
           "$ref": "#/$defs/CapabilityKind",
@@ -295,7 +345,7 @@
         },
         "target": {
           "$ref": "#/$defs/CapabilityTarget",
-          "description": "Routing target."
+          "description": "Component responsible for executing the capability."
         }
       },
       "required": [
@@ -307,21 +357,21 @@
       "type": "object"
     },
     "CapabilityTarget": {
-      "description": "Capability routing target.",
+      "description": "Component responsible for executing a configured capability.\n\nThis target describes execution ownership, not network routing.",
       "oneOf": [
         {
           "const": "harness_native",
-          "description": "Adapter maps the capability into harness-native config.",
+          "description": "The selected adapter maps and executes the capability through its harness.",
           "type": "string"
         },
         {
           "const": "fabric_managed",
-          "description": "NeMo Fabric exposes or manages the capability around the harness.",
+          "description": "NeMo Fabric executes the capability outside the harness-native surface.",
           "type": "string"
         },
         {
           "const": "unsupported",
-          "description": "Capability is configured but no executable surface exists.",
+          "description": "Neither the adapter nor NeMo Fabric can execute the configured capability.",
           "type": "string"
         }
       ]
@@ -386,6 +436,16 @@
           "$ref": "#/$defs/ControlLocation",
           "default": "in_env_control",
           "description": "Where NeMo Fabric control code runs relative to the environment."
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables visible to the harness and its tools.\n\nValues are serialized into the run plan and can appear wherever configs\nor plans are logged or persisted. Prefer `api_key_env`-style\nenvironment-variable-name indirection for credentials.",
+          "propertyNames": {
+            "pattern": "\\S"
+          },
+          "type": "object"
         },
         "metadata": {
           "additionalProperties": true,
@@ -453,6 +513,13 @@
           "$ref": "#/$defs/ControlLocation",
           "description": "NeMo Fabric control location."
         },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables visible to the harness and its tools.",
+          "type": "object"
+        },
         "metadata": {
           "additionalProperties": true,
           "description": "Consumer-provided environment metadata.",
@@ -488,7 +555,7 @@
     },
     "FabricConfig": {
       "additionalProperties": true,
-      "description": "Versioned NeMo Fabric agent config.",
+      "description": "Versioned NVIDIA NeMo Fabric agent config.\n\nNeMo Fabric-owned fields apply uniformly, while adapter-translated fields are\nvalidated against the selected adapter descriptor. See the\n[configuration compatibility matrix](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/sdk/python.mdx#normalized-configuration-compatibility).",
       "properties": {
         "environment": {
           "anyOf": [
@@ -504,6 +571,17 @@
         "harness": {
           "$ref": "#/$defs/HarnessConfig",
           "description": "Harness selection and harness-specific settings."
+        },
+        "instructions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstructionsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Portable agent instructions for the selected harness."
         },
         "mcp": {
           "anyOf": [
@@ -524,7 +602,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/ModelConfig"
           },
-          "description": "Model aliases.",
+          "description": "Named model roles.",
           "type": "object"
         },
         "relay": {
@@ -540,7 +618,7 @@
         },
         "runtime": {
           "$ref": "#/$defs/RuntimeConfig",
-          "description": "Runtime input/output contract."
+          "description": "Invocation runtime contract."
         },
         "schema_version": {
           "description": "Config schema version.",
@@ -616,6 +694,55 @@
       "required": [
         "adapter_id"
       ],
+      "type": "object"
+    },
+    "InstructionConfig": {
+      "additionalProperties": true,
+      "description": "One portable instruction value.",
+      "properties": {
+        "content": {
+          "description": "Instruction text.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/InstructionMode",
+          "default": "replace",
+          "description": "How the instruction is applied."
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "InstructionMode": {
+      "description": "How an instruction value is applied to the selected harness.",
+      "oneOf": [
+        {
+          "const": "replace",
+          "description": "Replace the harness default instruction value.",
+          "type": "string"
+        }
+      ]
+    },
+    "InstructionsConfig": {
+      "additionalProperties": true,
+      "description": "Harness-neutral agent instruction configuration.",
+      "properties": {
+        "system": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InstructionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "System instructions for the selected harness."
+        }
+      },
       "type": "object"
     },
     "McpConfig": {
@@ -721,6 +848,13 @@
       "properties": {
         "api_key_env": {
           "description": "Optional environment variable containing an API key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_url": {
+          "description": "Optional provider endpoint URL.",
           "type": [
             "string",
             "null"
@@ -1464,7 +1598,7 @@
     },
     "RuntimeConfig": {
       "additionalProperties": true,
-      "description": "Runtime input/output contract.",
+      "description": "Invocation runtime contract.",
       "properties": {
         "artifacts": {
           "description": "Artifact directory.",
@@ -1478,10 +1612,29 @@
           "description": "Input schema label.",
           "type": "string"
         },
+        "max_turns": {
+          "description": "Maximum number of harness turns within one invocation.",
+          "format": "uint32",
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "output_schema": {
           "default": "text",
           "description": "Output schema label.",
           "type": "string"
+        },
+        "timeout_seconds": {
+          "description": "Maximum duration of one invocation in seconds.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -1592,11 +1745,21 @@
       "description": "Harness-neutral tool capability configuration.",
       "properties": {
         "blocked": {
-          "description": "Adapter-native tool names or toolset names to block.",
+          "description": "Adapter-native tool names to block.",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "enabled": {
+          "description": "Adapter-native tool names to expose. `None` preserves the harness default.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -1605,11 +1768,21 @@
       "description": "Normalized tool policy for a run.",
       "properties": {
         "blocked": {
-          "description": "Adapter-native tool names or toolset names to block.",
+          "description": "Adapter-native tool names to block.",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "enabled": {
+          "description": "Adapter-native tool names to expose. `None` preserves the harness default.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         }
       },
       "type": "object"
