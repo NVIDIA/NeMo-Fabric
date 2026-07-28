@@ -288,7 +288,7 @@ fn render_rust(config: &FabricConfig) -> String {
                 .and_then(|instructions| instructions.system.as_ref())
                 .map(|instruction| {
                     format!(
-                        "Some(InstructionsConfig {{ system: Some(InstructionConfig {{ content: {}.to_string(), mode: InstructionMode::Replace, extensions: BTreeMap::new() }}), extensions: BTreeMap::new() }})",
+                        "Some(nemo_fabric_core::InstructionsConfig {{ system: Some(nemo_fabric_core::InstructionConfig {{ content: {}.to_string(), mode: nemo_fabric_core::InstructionMode::Replace, extensions: BTreeMap::new() }}), extensions: BTreeMap::new() }})",
                         rust_string(&instruction.content)
                     )
                 })
