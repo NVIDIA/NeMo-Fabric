@@ -439,6 +439,33 @@ def test_collect_relay_artifacts_requires_valid_atif_filename_template(
     assert common_utils.collect_relay_artifacts(plugin_config) == []
 
 
+def test_collect_relay_artifacts_treats_atif_template_as_literal(tmp_path: Path):
+    atif_dir = tmp_path / "atif"
+    atif_dir.mkdir()
+    configured = atif_dir / "[team]-session.json"
+    unrelated = atif_dir / "t-session.json"
+    configured.write_text("{}", encoding="utf-8")
+    unrelated.write_text("{}", encoding="utf-8")
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "atif": {
+                        "enabled": True,
+                        "output_directory": str(atif_dir),
+                        "filename_template": "[team]-{session_id}.json",
+                    }
+                },
+            }
+        ]
+    }
+
+    assert common_utils.collect_relay_artifacts(plugin_config) == [
+        {"kind": "atif", "path": str(configured)}
+    ]
+
+
 def test_collect_relay_artifacts_ignores_missing_output_directories(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

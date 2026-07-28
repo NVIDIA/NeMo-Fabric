@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import sys
@@ -342,7 +343,7 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
                 template = atif.get("filename_template")
                 if not isinstance(template, str) or not template:
                     continue
-                pattern = template.replace("{session_id}", "*")
+                pattern = glob.escape(template).replace("{session_id}", "*")
                 for path in _artifact_glob(directory, pattern):
                     resolved = _artifact_file(path, directory=directory)
                     if resolved is not None:
