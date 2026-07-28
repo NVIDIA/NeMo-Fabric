@@ -14,6 +14,7 @@ Core config and runtime contract for NeMo Fabric.
 ## Re-exports
 
 - `pub use config::ADAPTER_CONTRACT_VERSION;`
+- `pub use config::AdapterConfigField;`
 - `pub use config::AdapterConfigSupport;`
 - `pub use config::AdapterDescriptor;`
 - `pub use config::AdapterDescriptorSource;`
@@ -28,6 +29,9 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::EnvironmentPlan;`
 - `pub use config::FabricConfig;`
 - `pub use config::HarnessConfig;`
+- `pub use config::InstructionConfig;`
+- `pub use config::InstructionMode;`
+- `pub use config::InstructionsConfig;`
 - `pub use config::McpConfig;`
 - `pub use config::McpExposure;`
 - `pub use config::McpServerPlan;`
@@ -44,6 +48,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::TelemetryPlan;`
 - `pub use config::TelemetryProvider;`
 - `pub use config::TelemetryProviderConfig;`
+- `pub use config::ToolsConfig;`
 - `pub use config::load_adapter_descriptor;`
 - `pub use config::resolve_run_plan_from_config;`
 - `pub use doctor::DoctorCheck;`
@@ -80,11 +85,11 @@ Core config and runtime contract for NeMo Fabric.
 
 ## Modules
 
-- [config](config/index.mdx): Fabric config models and loading helpers.
-- [doctor](doctor/index.mdx): Plan diagnostics for Fabric.
-- [error](error/index.mdx): Error types for Fabric core.
+- [config](config/index.mdx): NeMo Fabric config models and loading helpers.
+- [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
+- [error](error/index.mdx): Error types for NeMo Fabric core.
 - [runtime](runtime/index.mdx): Runtime invocation helpers.
-- [schema](schema/index.mdx): JSON Schema generation for the public Fabric contract.
+- [schema](schema/index.mdx): JSON Schema generation for the public NeMo Fabric contract.
 
 ## Functions
 

@@ -34,16 +34,22 @@ from nemo_fabric import (
     HarnessConfig,
     MetadataConfig,
     ModelConfig,
+    RuntimeConfig,
 )
 
 config = FabricConfig(
     metadata=MetadataConfig(name="quickstart-agent"),
-    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
+    harness=HarnessConfig(
+        adapter_id="nvidia.fabric.hermes",
+        resolution="preinstalled",
+    ),
+    runtime=RuntimeConfig(max_turns=1),
     models={
         "default": ModelConfig(
             provider="nvidia",
             model="nvidia/nemotron-3-nano-30b-a3b",
             api_key_env="NVIDIA_API_KEY",
+            base_url="https://integrate.api.nvidia.com/v1",
         )
     },
 )
@@ -53,7 +59,7 @@ print(result.output.response)
 ```
 
 A more detailed version of this example is available as a [Jupyter Notebook](https://jupyter.org/)
-at [`examples/notebooks/01_quickstart.ipynb`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.1.0-rc.2/examples/notebooks/01_quickstart.ipynb).
+at [`examples/notebooks/01_quickstart.ipynb`](https://github.com/NVIDIA/NeMo-Fabric/blob/0.1.0-rc.3/examples/notebooks/01_quickstart.ipynb).
 
 ## Next Steps
 - [Python SDK](../sdk/python.mdx)

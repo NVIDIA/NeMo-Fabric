@@ -40,13 +40,23 @@ from nemo_fabric import (
     Fabric,
     FabricConfig,
     HarnessConfig,
+    InstructionConfig,
+    InstructionsConfig,
     MetadataConfig,
     ModelConfig,
+    RuntimeConfig,
 )
 
 config = FabricConfig(
     metadata=MetadataConfig(name="review-agent"),
     harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
+    instructions=InstructionsConfig(
+        system=InstructionConfig(
+            content="Review code for concrete correctness risks.",
+            mode="replace",
+        )
+    ),
+    runtime=RuntimeConfig(max_turns=8),
     models={
         "default": ModelConfig(
             provider="nvidia",
@@ -130,28 +140,6 @@ invocations, and attempts to release them during `stop()`. The lifecycle start
 operation carries the resolved configuration and capability plan. Each
 subsequent `AdapterInvocation` carries only `runtime_context` and `request`.
 
-### Bundled Adapter Capability Matrix
-
-The following matrix summarizes the current bundled adapter descriptors. The
-descriptor selected in `RunPlan` remains authoritative. Telemetry output names
-use the descriptor contract values.
-
-| Adapter ID | Models | Tools / Blocked Tools | MCP | Skills | Subagents | Telemetry | Persistent Local Host | Remote Service |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `nvidia.fabric.claude` | Anthropic provider and Claude models | `allowed_tools` adapter setting / normalized `tools.blocked` | Normalized | Normalized | Not exposed | NVIDIA NeMo Relay: `atif`, `otel`, and `openinference` through hooks and gateway | Yes: connected `ClaudeSDKClient`, session, and optional NeMo Relay gateway | Not implemented |
-| `nvidia.fabric.codex` | Built-in OpenAI and custom NVIDIA Responses providers with Codex-compatible models | Not normalized | Normalized: stdio, HTTP, and streamable HTTP | Normalized: `SKILL.md` directories | Not exposed | NeMo Relay: `atif`, `otel`, and `openinference` through hooks and gateway; native `otel` | Yes: `AsyncCodex` app-server client, thread, and optional NeMo Relay gateway | Not implemented |
-| `nvidia.fabric.langchain.deepagents` | NVIDIA, OpenAI, OpenAI-compatible, and other LangChain providers | Built-ins and MCP / normalized middleware block list | Normalized | Normalized | Constrained: declarative local subagents inherit parent capabilities | NeMo Relay SDK: `atif`, `otel`, and `openinference`; native `otel` and `openinference` | Yes: compiled graph and async LangGraph checkpointer | Not implemented |
-| `nvidia.fabric.hermes` | Normalized provider, model, and base URL | Toolsets / normalized disabled toolsets | Normalized | Normalized | Not exposed | NeMo Relay plugin: `atif`, `otel`, and `openinference` | Yes: `AIAgent`, `SessionDB`, and NeMo Relay plugin context | Not implemented |
-
-"Normalized" means the adapter accepts the corresponding `FabricConfig`
-field and maps it to the harness. "Not normalized" does not mean that the
-underlying harness lacks the feature; it means that NeMo Fabric does not expose a
-portable configuration surface for it. NeMo Fabric currently normalizes
-`tools.blocked`, not a portable tool definition catalog. Deep Agents supports
-only JSON-shaped, in-process subagent definitions through
-`harness.settings.deepagents.subagents`; independently configured or remote
-subagent capabilities are not exposed.
-
 Third-party local adapters must implement the persistent local-host contract.
 NeMo Fabric does not currently define a remote-service adapter contract. A
 crashed persistent host is terminal for that runtime. The same applies when the
@@ -166,6 +154,59 @@ NeMo Fabric provides the runtime contract. Applications own scheduling, queues,
 retries, worker scaling, and the number of runtimes to run.
 
 ## Configure Agents In Code
+
+### Normalized Configuration Compatibility
+
+NeMo Fabric-owned fields such as workspace, environment variables, and the
+invocation deadline apply to every local adapter. Adapter-translated fields are
+validated against the selected adapter descriptor during planning.
+
+`Core` means NeMo Fabric owns the behavior and applies it uniformly before or
+around adapter execution. `Yes` means the adapter translates the normalized
+field into its harness. `No` means an explicitly configured value fails
+planning instead of being ignored. The following table groups provider-specific
+Relay subfields and additive extension maps because their support does not vary
+by adapter:
+
+| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent |
+| --- | --- | --- | --- | --- |
+| `schema_version` | Core | Core | Core | Core |
+| `metadata.name`, `.description` | Core | Core | Core | Core |
+| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core |
+| `harness.settings` | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch | Adapter-owned escape hatch |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider |
+| `models.<role>.model` | Yes | Yes | Yes | Yes |
+| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes |
+| `models.<role>.base_url` | Yes | Yes | Yes | Yes |
+| `models.<role>.temperature` | No | No | Yes | Yes |
+| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared |
+| `instructions.system` | Yes | Yes; maps to Codex base instructions | Yes | Yes |
+| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core |
+| `runtime.max_turns` | Yes | No | No | Yes; maps to Hermes iterations |
+| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core |
+| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core |
+| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
+| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names |
+| `skills.paths` | Yes | Yes | Yes | Yes |
+| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes |
+| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes |
+| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes |
+| Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics |
+
+Model selection is deterministic: the `default` role wins; otherwise a single
+named role is selected. More than one role without `default` fails planning.
+
+If a normalized field has no complete mapping, `plan(...)` and runtime start
+fail with a configuration compatibility error naming the adapter and field.
+`doctor(...)` retains the incompatibility and returns a failed diagnostic check
+so callers can inspect all preflight findings. NeMo Fabric does not silently
+drop the field. `runtime.max_turns` is optional, so a config that omits it
+remains portable across adapters with different native turn-limit support.
 
 Build the complete nested `FabricConfig` directly, or start with a base
 config and use helpers to add capabilities. For example, extend the config from
@@ -186,9 +227,30 @@ capability_config.enable_relay(
 )
 ```
 
-Config helpers edit the typed config before planning or starting a runtime. They
-do not modify already-started runtimes. Use `remove_mcp_server(name)` and
-`remove_skill_path(path)` to remove capabilities from a copied config.
+Tool names are adapter-native selectors. NeMo Fabric does not define a portable
+catalog that translates names between harnesses. Configure an allowlist, a
+blocklist, or both:
+
+```python
+from nemo_fabric import ToolsConfig
+
+def with_tool_policy(base):
+    tool_config = base.model_copy(deep=True)
+    tool_config.tools = ToolsConfig(
+        enabled=["Read", "Edit", "Bash"],
+        blocked=["WebFetch"],
+    )
+    return tool_config
+```
+
+`tools.enabled=None` preserves the harness default. An empty list disables every
+executable tool. A tool cannot appear in both lists. The selected adapter must
+enforce the complete configured policy or planning fails. Hermes interprets
+these adapter-native selectors as Hermes toolset names.
+
+Config helpers edit the typed config before planning or starting a runtime.
+They do not modify already-started runtimes. Use `block_tools(...)`,
+`remove_mcp_server(name)`, and `remove_skill_path(path)` to edit a copied config.
 Telemetry is enabled by adding entries to `telemetry.providers`; settings
 specific to NeMo Relay live in the top-level `relay` block.
 
@@ -250,7 +312,7 @@ Additional NeMo Relay plugin components can be supplied generically with
 environment.
 
 The repository's
-[code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/0.1.0-rc.2/examples/code_review_agent)
+[code-review example](https://github.com/NVIDIA/NeMo-Fabric/tree/0.1.0-rc.3/examples/code_review_agent)
 uses this pattern for complete Hermes Agent, Codex, Deep Agents,
 environment, MCP, and telemetry variants.
 
@@ -265,10 +327,12 @@ Create `Fabric()` as the primary SDK entrypoint. It is a regular Python object,
 not a lifecycle context manager, and may be reused to plan, diagnose, or start
 multiple independent runtimes.
 
+The following table summarizes the SDK entry points and runtime methods:
+
 | API | Async | Use When | Notes |
 | --- | --- | --- | --- |
 | `Fabric.plan(config, base_dir=...)` | No | You need to inspect the selected adapter, capability mapping, and runtime capabilities before running. | Does not start a runtime. |
-| `Fabric.doctor(config, base_dir=...)` | Yes | You need preflight diagnostics for adapter availability, config support, and environment assumptions. | Checks may touch runtime dependencies. |
+| `Fabric.doctor(config, *, base_dir=...)` | Yes | You need preflight diagnostics for adapter resolution, capability routing, declared requirements, and environment assumptions. | Checks can inspect local binaries, environment variables, and files without starting a runtime. |
 | `Fabric.run(config, base_dir=..., input=...)` | Yes | You need one complete start, invoke, result, stop lifecycle. | `base_dir` is optional. Pass a `RunRequest` instead when the invocation needs IDs, context, or overrides. |
 | `Fabric.start_runtime(config, ..., streaming=False)` | Yes | You need state across multiple ordered invocations. | Returns a `Runtime`. Use `streaming=True` with NeMo Relay enabled to provision streaming. |
 | `Runtime.invoke(...)` | Yes | You need one turn on an existing runtime. | A runtime permits one active invocation at a time. |
@@ -342,7 +406,7 @@ turn runs. `Runtime.supports_streaming` reports whether this NeMo Relay path is
 available. It is separate from `RuntimeCapabilities.streaming`, which describes
 adapter-native progressive output. This separation is intentional:
 `Runtime.invoke_stream()` exposes only ATOF records generated by NeMo Relay. A future
-normalized Fabric streaming contract will address adapter-native progressive
+normalized NeMo Fabric streaming contract will address adapter-native progressive
 output, such as Codex app-server message and item deltas.
 
 The following example streams one invocation and collects its terminal result:
@@ -420,11 +484,11 @@ Streaming has the following v0.1 constraints:
 - Reconstruct nested and parallel work with `uuid` and `parent_uuid`. Stream
   order alone does not define the Deep Agents scope tree.
 - The listener correlates records to one NeMo Relay scope tree. Deep Agents and
-  Hermes roots carry the Fabric request ID. For Claude and Codex, the SDK
+  Hermes roots carry the NeMo Fabric request ID. For Claude and Codex, the SDK
   matches NeMo Relay turn scopes by their role and 1-based turn index. Records
   outside the matched root and its descendants are discarded, so delayed
   records from another turn do not enter the active stream. If the gateway
-  turn sequence does not align with the Fabric invocation sequence, the SDK
+  turn sequence does not align with the NeMo Fabric invocation sequence, the SDK
   yields no uncorrelated records and emits a `RuntimeWarning` after natural
   stream exhaustion. A short drain window only collects late records from the
   matched tree; it does not define turn ownership.
@@ -441,8 +505,8 @@ Streaming has the following v0.1 constraints:
   warning check.
 
 Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and require a
-stream-sink-capable release, version 0.6.0 or later. Follow the
-[NeMo Relay CLI installation instructions](/getting-started/install#nemo-relay-cli)
+stream-sink-capable release from `0.6.0` up to, but not including, `0.7.0`. Follow
+the [NeMo Relay CLI installation instructions](../getting-started/install.mdx#nemo-relay-cli)
 to provision it. Hermes Agent and Deep Agents use their in-process NeMo Relay
 integrations.
 
@@ -545,8 +609,17 @@ print(report.status)
 ```
 
 Use the plan to confirm adapter selection and capability routing. Use the doctor
-report to catch missing dependencies, unsupported settings, and environment
-problems before starting a runtime.
+report to catch unresolved adapter descriptors, unsupported normalized
+capabilities, missing declared requirements, and environment problems before
+starting a runtime.
+
+Capability routes assign execution ownership; they do not describe network
+routing. `harness_native` means the selected adapter executes the capability
+through its harness. `fabric_managed` means NeMo Fabric executes it outside the
+harness-native surface. `unsupported` means neither side can execute it.
+Routes apply to tools, skills, and MCP servers. Scalar fields such as
+`instructions.system` and `runtime.max_turns` are validated separately against
+the adapter descriptor.
 
 ## Install And Runtime Responsibilities
 
@@ -570,19 +643,29 @@ Runtime compatibility checks should validate:
 
 ## Custom Fields And Adapter Settings
 
-Use normalized NeMo Fabric fields for portable behavior: models, runtime,
-environment, skills, MCP, telemetry, tools, artifacts, and request context.
+Use normalized NeMo Fabric fields for portable behavior: models, system
+instructions, turn limit, runtime, environment, skills, MCP, telemetry, tools,
+and artifacts.
 
-Use `harness.settings` for adapter-owned configuration that the selected adapter
-understands. Examples include Hermes Agent-specific launch options, Codex controls,
-or adapter-specific launch paths.
+Supply request context through `RunRequest.context` for each invocation. Request
+context is not part of `FabricConfig`.
 
-Use `metadata` for caller-owned annotations that NeMo Fabric should preserve and echo
-back, but not interpret.
+Use `harness.settings` only for stable, harness-native behavior that the selected
+adapter understands, such as Claude permission policy, Codex sandbox controls,
+or Deep Agents subagent definitions. Executable paths, Relay command discovery,
+state directories, and similar launch mechanics are runtime implementation
+details rather than public adapter settings.
+
+Use `FabricConfig.metadata` for human-readable agent identity and caller-owned
+annotations. NeMo Fabric preserves these values in the resolved configuration
+but does not copy them into `RunResult.metadata`. Use `request_id` and
+`RunRequest.context` for per-invocation correlation. `RunResult.metadata`
+contains adapter-specific result details.
 
 Adapter settings are not portable by default. An adapter must explicitly read
-and implement a setting before it affects runtime behavior. Use `doctor(...)` to
-catch unsupported, ignored, or malformed adapter settings before launching a run.
+and implement a setting before it affects runtime behavior. Planning and doctor
+fail for normalized fields the selected adapter does not support. Validation of
+all adapter-specific `harness.settings` keys remains adapter-owned.
 
 ## Errors
 
@@ -677,4 +760,4 @@ structured error or event such as busy, rate limited, capacity exceeded, or
 backpressure. The consumer decides whether to wait, retry, scale out, or fail.
 
 ## Next Steps
-- Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/0.1.0-rc.2/examples).
+- Review the examples in the GitHub repo [`examples/`](https://github.com/NVIDIA/NeMo-Fabric/tree/0.1.0-rc.3/examples).
