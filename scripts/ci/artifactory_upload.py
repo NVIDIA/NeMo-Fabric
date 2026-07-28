@@ -4,6 +4,7 @@
 
 import os
 import sys
+from collections import defaultdict
 from pathlib import Path
 from urllib.parse import quote
 
@@ -52,17 +53,26 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
         )
 
     project_ids = {project["name"]: project["id"] for project in projects}
-    for wheel_file, wheel_url in published_wheels:
+
+    # Group published wheels by package name
+    packages = defaultdict(list)
+    for (wheel_file, wheel_url) in published_wheels:
         package_name = pkginfo.Wheel(str(wheel_file)).name
+        packages[package_name].append(wheel_url)
+
+    for package_name, wheel_urls in packages.items():
         package_id = project_ids[package_name]
+        wheels_payload = [{
+                            "pic": kitmaker_owner,
+                            "job_type": "wheel-release-job",
+                            "url": wheel_url,
+                            "upload": True,
+                        }
+                        for wheel_url in wheel_urls]
+
         payload = {
             "project_name": package_name,
-            "payload": [{
-                "pic": kitmaker_owner,
-                "job_type": "wheel-release-job",
-                "url": wheel_url,
-                "upload": True,
-            }],
+            "payload": wheels_payload,
         }
 
         response = requests.post(
