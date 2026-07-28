@@ -260,5 +260,6 @@ class TestHermesE2E:
         last_step = steps[-1]
         assert last_step["source"] == "agent"
         assert last_step["message"] == self.output["response"]
+        assert last_step["model_name"] == "nvidia/nemotron-3-nano-30b-a3b"
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"
