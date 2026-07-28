@@ -15,7 +15,7 @@ resolution-markers = [
 ]
 
 [manifest]
-overrides = [{ name = "pillow", marker = "python_full_version < '3.14'", specifier = "==12.3.0" }]
+overrides = [{ name = "pillow", marker = "python_full_version < '3.14'", specifier = ">=12.3.0" }]
 
 [[package]]
 name = "aiohappyeyeballs"

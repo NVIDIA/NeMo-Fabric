@@ -116,7 +116,7 @@ test = [
 default-groups = ["adapters", "dev", "test"]
 # Keep this override until hermes-agent adopts 12.3.0+.
 override-dependencies = [
-  "pillow==12.3.0; python_version < '3.14'",
+  "pillow>=12.3.0; python_version < '3.14'",
 ]
 
 [tool.uv.sources]
