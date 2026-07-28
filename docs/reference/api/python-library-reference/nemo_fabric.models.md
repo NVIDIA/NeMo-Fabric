@@ -221,9 +221,150 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `InstructionConfig`
+
+One portable instruction value.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `content` | `str` | Yes | — | — | — |
+| `mode` | `Literal['replace']` | No | `'replace'` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
+## <kbd>class</kbd> `InstructionsConfig`
+
+Harness-neutral agent instructions.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `system` | `InstructionConfig \| None` | No | `None` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `RuntimeConfig`
 
-Runtime input/output contract.
+Invocation runtime contract.
 
 
 
@@ -237,6 +378,7 @@ The model defines the following fields:
 | `output_schema` | `str \| None` | No | `None` | — | — |
 | `artifacts` | `str \| Path \| None` | No | `None` | — | — |
 | `timeout_seconds` | `float \| None` | No | `None` | `Gt(gt=0), _PydanticGeneralMetadata(allow_inf_nan=False)` | — |
+| `max_turns` | `int \| None` | No | `None` | `Gt(gt=0)` | — |
 
 ---
 
@@ -1708,79 +1850,6 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `ToolsetConfig`
-
-Harness-defined toolset selection and blocking policy.
-
-``enabled=None`` preserves the selected harness default, while an empty ``enabled`` list exposes no toolsets. ``blocked`` excludes toolsets from either the enabled list or the harness default.
-
-
-
-### Fields
-
-The model defines the following fields:
-
-| Field | Type | Required | Default | Constraints | Description |
-| --- | --- | --- | --- | --- | --- |
-| `enabled` | `list[str] \| None` | No | `None` | — | Toolsets to expose. None preserves the harness default; an empty list exposes no toolsets. |
-| `blocked` | `list[str]` | No | `list()` | — | Toolsets to exclude from the enabled or default harness toolset set. |
-
----
-
-### <kbd>property</kbd> extra_fields
-
-Return fields preserved by the extension point for this model.
-
----
-
-### <kbd>property</kbd> model_extra
-
-Get extra fields set during validation.
-
-
-
-**Returns:**
-  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
-
----
-
-### <kbd>property</kbd> model_fields_set
-
-Returns the set of fields that have been explicitly set on this model instance.
-
-
-
-**Returns:**
-  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
-
-
-
----
-
-
-### <kbd>classmethod</kbd> `from_mapping`
-
-```python
-def from_mapping(value: Mapping[str, Any]) -> Self
-```
-
-Validate a mapping using this Pydantic model.
-
----
-
-
-### <kbd>method</kbd> `to_mapping`
-
-```python
-def to_mapping() -> dict[str, Any]
-```
-
-Return a detached JSON-compatible mapping for Rust/core calls.
-
-
----
-
-
 ## <kbd>class</kbd> `ToolsConfig`
 
 Harness-neutral tool capability configuration.
@@ -1793,8 +1862,8 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
+| `enabled` | `list[str] \| None` | No | `None` | — | Adapter-native tools to expose. None preserves the harness default; an empty list exposes no tools. |
 | `blocked` | `list[str]` | No | `list()` | — | — |
-| `toolsets` | `ToolsetConfig \| None` | No | `None` | — | — |
 
 ---
 
@@ -1872,8 +1941,7 @@ The model defines the following fields:
 | `runtime` | `RuntimeConfig` | No | `RuntimeConfig()` | — | — |
 | `environment` | `EnvironmentConfig \| None` | No | `None` | — | — |
 | `models` | `dict[str, ModelConfig]` | No | `dict()` | — | — |
-| `system_prompt` | `str \| None` | No | `None` | — | — |
-| `max_turns` | `int \| None` | No | `None` | `Gt(gt=0)` | — |
+| `instructions` | `InstructionsConfig \| None` | No | `None` | — | — |
 | `mcp` | `McpConfig \| None` | No | `None` | — | — |
 | `skills` | `SkillConfig \| None` | No | `None` | — | — |
 | `telemetry` | `TelemetryConfig \| None` | No | `None` | — | — |
@@ -1949,21 +2017,6 @@ def block_tools(*tools: str) -> Self
 ```
 
 Block adapter-native tool names and return this config.
-
----
-
-
-### <kbd>method</kbd> `configure_toolsets`
-
-```python
-def configure_toolsets(
-    *,
-    enabled: Sequence[str] | None = None,
-    blocked: Sequence[str] = (),
-) -> Self
-```
-
-Set harness-defined toolset selection and blocking policy.
 
 ---
 

@@ -34,6 +34,7 @@ from nemo_fabric import (
     HarnessConfig,
     MetadataConfig,
     ModelConfig,
+    RuntimeConfig,
 )
 
 config = FabricConfig(
@@ -42,7 +43,7 @@ config = FabricConfig(
         adapter_id="nvidia.fabric.hermes",
         resolution="preinstalled",
     ),
-    max_turns=1,
+    runtime=RuntimeConfig(max_turns=1),
     models={
         "default": ModelConfig(
             provider="nvidia",

@@ -19,9 +19,10 @@ Import these from the top-level `nemo_fabric` package:
 | `MetadataConfig` | Agent name and description. |
 | `HarnessConfig` | `adapter_id`, `resolution`, and adapter-owned `settings`. |
 | `ModelConfig` | Provider, model, credentials (`api_key_env`), endpoint, and sampling. |
-| `RuntimeConfig` | Input/output labels, artifact location, and invocation timeout. |
+| `InstructionsConfig` / `InstructionConfig` | Portable agent instructions and replacement mode. |
+| `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, and harness turn limit. |
 | `EnvironmentConfig` | Execution environment, workspace, and harness-visible variables. |
-| `ToolsConfig` / `ToolsetConfig` | Per-tool blocking and harness-defined toolset policy. |
+| `ToolsConfig` | Adapter-native tool selection and blocking policy. |
 | `McpConfig` / `McpServerConfig` | MCP servers and exposure. |
 | `SkillConfig` | Skill directories. |
 | `TelemetryConfig` | Telemetry providers. |
@@ -40,17 +41,27 @@ methods that edit the typed config in place and return it:
 - `add_skill_path(path)` / `remove_skill_path(path)`
 - `add_mcp_server(name, *, transport, url, exposure, ...)` / `remove_mcp_server(name)`
 - `enable_relay(...)` for NVIDIA NeMo Relay observability in the `relay` block
-- `block_tools(...)` for per-tool deny policy
-- `configure_toolsets(enabled=..., blocked=...)` for toolset selection
+- `ToolsConfig(enabled=..., blocked=...)` for tool policy
+- `block_tools(...)` for additive deny policy
 
 ```python
 config = FabricConfig(
     metadata=MetadataConfig(name=job.name),
     harness=HarnessConfig(adapter_id=job.adapter_id, resolution="preinstalled"),
     models={"default": ModelConfig(provider=job.provider, model=job.model, api_key_env=job.api_key_env, base_url=job.base_url)},
-    system_prompt=job.system_prompt,
-    max_turns=job.max_turns,
-    runtime=RuntimeConfig(input_schema="chat", output_schema="message", timeout_seconds=job.timeout_seconds),
+    instructions=(
+        InstructionsConfig(
+            system=InstructionConfig(content=job.system_instruction),
+        )
+        if job.system_instruction is not None
+        else None
+    ),
+    runtime=RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        timeout_seconds=job.timeout_seconds,
+        max_turns=job.max_turns,
+    ),
 )
 config.add_skill_path(job.skill_dir)
 ```
@@ -83,8 +94,8 @@ package or job layout, so nothing depends on the process working directory.
 
 ## Adapter-Owned And Caller-Owned Data
 
-- Use normalized fields for portable behavior: models, system prompt, turn
-  limit, runtime, environment, tools and toolsets, skills, MCP, and telemetry.
+- Use normalized fields for portable behavior: models, instructions, turn
+  limit, runtime, environment, tools, skills, MCP, and telemetry.
 - Supply request context through `RunRequest.context` for each invocation;
   request context is not part of `FabricConfig`.
 - Use `harness.settings` for adapter-owned configuration the selected adapter

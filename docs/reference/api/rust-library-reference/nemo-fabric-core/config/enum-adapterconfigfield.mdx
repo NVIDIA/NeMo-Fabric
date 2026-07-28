@@ -14,11 +14,10 @@ pub enum AdapterConfigField {
     Models,
     ModelBaseUrl,
     ModelTemperature,
-    SystemPrompt,
+    SystemInstructions,
     MaxTurns,
+    EnabledTools,
     BlockedTools,
-    EnabledToolsets,
-    BlockedToolsets,
     Mcp,
     Skills,
 }
@@ -46,9 +45,9 @@ Custom model endpoint.
 
 Model temperature.
 
-### `SystemPrompt`
+### `SystemInstructions`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "SystemPrompt"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "SystemInstructions"}} /></pre>
 
 Portable system instructions.
 
@@ -58,23 +57,17 @@ Portable system instructions.
 
 Per-invocation harness turn limit.
 
+### `EnabledTools`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "EnabledTools"}} /></pre>
+
+Adapter-native tool names to expose.
+
 ### `BlockedTools`
 
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "BlockedTools"}} /></pre>
 
 Adapter-native tool names to block.
-
-### `EnabledToolsets`
-
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "EnabledToolsets"}} /></pre>
-
-Harness-defined toolsets to expose.
-
-### `BlockedToolsets`
-
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "BlockedToolsets"}} /></pre>
-
-Harness-defined toolsets to block.
 
 ### `Mcp`
 

@@ -27,6 +27,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.FabricBaseModel`](./nemo_fabric.models.md#class-fabricbasemodel): Base class for SDK-facing Pydantic models.
 - [`models.FabricConfig`](./nemo_fabric.models.md#class-fabricconfig): SDK-facing typed NeMo Fabric agent configuration.
 - [`models.HarnessConfig`](./nemo_fabric.models.md#class-harnessconfig): Harness adapter selection plus adapter-owned settings.
+- [`models.InstructionConfig`](./nemo_fabric.models.md#class-instructionconfig): One portable instruction value.
+- [`models.InstructionsConfig`](./nemo_fabric.models.md#class-instructionsconfig): Harness-neutral agent instructions.
 - [`models.McpConfig`](./nemo_fabric.models.md#class-mcpconfig): MCP capability configuration.
 - [`models.McpServerConfig`](./nemo_fabric.models.md#class-mcpserverconfig): MCP server configuration.
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.
@@ -43,12 +45,11 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.RelayOtlpConfig`](./nemo_fabric.models.md#class-relayotlpconfig): NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference.
 - [`models.RelayS3StorageConfig`](./nemo_fabric.models.md#class-relays3storageconfig): NeMo Relay ATIF S3 storage configuration.
 - [`models.RunRequest`](./nemo_fabric.models.md#class-runrequest): One validated NeMo Fabric invocation request.
-- [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Runtime input/output contract.
+- [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Invocation runtime contract.
 - [`models.SkillConfig`](./nemo_fabric.models.md#class-skillconfig): Skill capability configuration.
 - [`models.TelemetryConfig`](./nemo_fabric.models.md#class-telemetryconfig): Telemetry configuration.
 - [`models.TelemetryProviderConfig`](./nemo_fabric.models.md#class-telemetryproviderconfig): Provider-specific telemetry configuration.
 - [`models.ToolsConfig`](./nemo_fabric.models.md#class-toolsconfig): Harness-neutral tool capability configuration.
-- [`models.ToolsetConfig`](./nemo_fabric.models.md#class-toolsetconfig): Harness-defined toolset selection and blocking policy.
 - [`types.AdapterInfo`](./nemo_fabric.types.md#class-adapterinfo): Resolved adapter identity attached to a run plan.
 - [`types.ArtifactManifest`](./nemo_fabric.types.md#class-artifactmanifest): Normalized collection of artifacts produced by a run.
 - [`types.ArtifactRef`](./nemo_fabric.types.md#class-artifactref): Reference to one artifact produced by a run.

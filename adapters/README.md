@@ -45,19 +45,24 @@ provider should expose more precise provenance.
 
 | Agent Harness | Models | Tool Policy | MCP | Skills | Subagents |
 | --- | --- | --- | --- | --- | --- |
-| [Claude](claude/README.md) | Native Anthropic or a configured Anthropic Messages-compatible provider | `tools.blocked` maps to Claude `disallowed_tools`; toolsets unsupported | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
-| [Codex](codex/README.md) | Native OpenAI or a configured Responses-compatible provider | Per-tool blocking and toolsets unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
-| [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | `tools.blocked` middleware covers built-ins, MCP, and local subagents; toolsets unsupported | Normalized through `langchain-mcp-adapters` | Normalized | Constrained declarative local delegation |
-| [Hermes Agent](hermes/README.md) | Configurable provider, model, and base URL | `tools.toolsets` maps to Hermes toolset controls; per-tool blocking unsupported | Normalized | Normalized | Not exposed |
+| [Claude](claude/README.md) | Native Anthropic or a configured Anthropic Messages-compatible provider | `tools.enabled` selects built-ins; a pre-tool hook enforces enabled and blocked names across built-in, MCP, and plugin tools | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
+| [Codex](codex/README.md) | Native OpenAI or a configured Responses-compatible provider | `tools.enabled` and `tools.blocked` unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
+| [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | Middleware enforces `tools.enabled` and `tools.blocked` across built-ins, MCP, and local subagents | Normalized through `langchain-mcp-adapters` | Normalized | Constrained declarative local delegation |
+| [Hermes Agent](hermes/README.md) | Configurable provider, model, and base URL | `tools.enabled` and `tools.blocked` map to Hermes native toolset selectors | Normalized | Normalized | Not exposed |
 
 "Normalized" means that the adapter accepts the corresponding `FabricConfig`
 field. "Not exposed" does not mean that the underlying harness lacks the
-feature; it means that NeMo Fabric does not provide a portable configuration surface
-for it. Individual tools and harness-defined toolsets are separate normalized
-policies. Planning fails when the selected adapter cannot enforce a configured
-policy; NeMo Fabric does not reinterpret one as the other. Deep Agents subagents
-are limited to declarative local subagents that inherit the parent agent's
-capabilities.
+feature; it means that NeMo Fabric does not provide a portable configuration
+surface for it. Tool values are adapter-native selectors; NeMo Fabric does not
+define a cross-harness tool-name catalog. Planning fails when the selected
+adapter cannot enforce a configured policy. Deep Agents subagents are limited
+to declarative local subagents that inherit the parent agent's capabilities.
+
+`RunPlan.capability_plan.routes` records execution ownership, not network
+routing. `harness_native` assigns a capability to the selected adapter,
+`fabric_managed` assigns it to NeMo Fabric, and `unsupported` means neither can
+execute it. Scalar fields are validated separately against
+`adapter_descriptor.config.accepts`.
 
 ### Complete FabricConfig Support
 
@@ -79,15 +84,14 @@ and additive extension maps because their support does not vary by adapter:
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes |
 | `models.<role>.temperature` | No | No | Yes | Yes |
 | `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared |
-| `system_prompt` | Yes | Yes; base instructions | Yes | Yes |
-| `max_turns` | Yes | No | No | Yes; iteration limit |
+| `instructions.system` | Yes | Yes; base instructions | Yes | Yes |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core |
+| `runtime.max_turns` | Yes | No | No | Yes; iteration limit |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
-| `tools.blocked` | Yes | No | Yes | No |
-| `tools.toolsets.enabled`, `.blocked` | No | No | No | Yes |
+| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names |
 | `skills.paths` | Yes | Yes | Yes | Yes |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented |
@@ -100,6 +104,8 @@ and additive extension maps because their support does not vary by adapter:
 
 The selected model role is `default`, or the sole configured role when no
 `default` exists. More than one role without `default` fails planning.
+`runtime.max_turns` is optional; omitting it preserves adapter-native defaults
+without creating a compatibility requirement.
 
 ## Runtime and Observability Compatibility
 

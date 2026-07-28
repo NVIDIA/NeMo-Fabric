@@ -46,7 +46,7 @@ NeMo Fabric maps the following into the harness:
 
 - The selected `models` role supplies `model`, `provider`, `api_key_env`,
   `base_url`, and `temperature`.
-- Top-level `system_prompt` becomes the Deep Agents `system_prompt`.
+- `instructions.system` becomes the Deep Agents `system_prompt`.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
@@ -56,9 +56,9 @@ NeMo Fabric maps the following into the harness:
 - Configured MCP servers are loaded as Deep Agents tools via
   `langchain-mcp-adapters`. A misconfigured server (non-mapping, empty target,
   unsupported transport) is a normalized configuration failure, not a silent drop.
-- `tools.blocked` is enforced by middleware across the full tool surface — Deep
-  Agents built-ins (including `task`), MCP tools, and **delegated subagents**
-  alike. Use Deep Agents/native tool names in the blocked list.
+- `tools.enabled` and `tools.blocked` are enforced by middleware across the full
+  tool surface: Deep Agents built-ins (including `task`), MCP tools, and
+  **delegated subagents** alike. Use Deep Agents-native tool names.
 - `harness.settings.deepagents` forwards a small set of **documented,
   JSON-serializable** `create_deep_agent` options (currently `subagents` and
   `interrupt_on`). It is not a general Python-object escape hatch: the SDK config
@@ -73,11 +73,11 @@ NeMo Fabric maps the following into the harness:
 
 Deep Agents can delegate to subagents through its built-in `task` tool. Subagents
 **inherit** the parent run's model, tools, skills, workspace, telemetry, and
-permissions. When `tools.blocked` is configured, NeMo Fabric supplies an explicitly
-gated `general-purpose` subagent and gates every declarative local subagent, so
-delegation cannot broaden capabilities beyond the parent. Remote and precompiled
-subagents are rejected in that case because their execution cannot be governed by
-the local middleware. Independently configured subagent tools, skills, models,
+permissions. When a normalized tools policy is configured, NeMo Fabric supplies
+an explicitly gated `general-purpose` subagent and gates every declarative local
+subagent, so delegation cannot broaden capabilities beyond the parent. Remote
+and precompiled subagents are rejected in that case because their execution
+cannot be governed by the local middleware. Independently configured subagent tools, skills, models,
 MCP servers, middleware, or permissions are **not** exposed through the NeMo Fabric SDK
 yet; a `subagents` definition here only carries JSON-shaped fields.
 

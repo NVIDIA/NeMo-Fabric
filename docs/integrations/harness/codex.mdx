@@ -30,7 +30,7 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.codex")
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, and telemetry. The Codex adapter does not support normalized
-`tools.blocked` policy. Use `harness.settings` for supported Codex-specific
+`tools.enabled` or `tools.blocked` policy. Use `harness.settings` for supported Codex-specific
 options such as `sandbox`, `approval_mode`, `base_instructions`,
 `developer_instructions`, and `output_schema`.
 
@@ -70,7 +70,7 @@ and cannot vary between `Runtime.invoke(...)` calls. Start a new runtime to
 change them. `Fabric.run(...)` starts the same runtime, invokes it once, and
 stops it, so the same settings are scoped to that single invocation.
 
-The Codex adapter does not declare `tools.blocked` support. Codex can filter
+The Codex adapter does not declare `tools.enabled` or `tools.blocked` support. Codex can filter
 individual MCP server tools, but the pinned runtime does not provide one deny
 mechanism that covers built-in, local, MCP, and hosted tools. NeMo Fabric
 reports normalized blocked-tool policy as unsupported instead of enforcing

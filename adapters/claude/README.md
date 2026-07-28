@@ -86,13 +86,15 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 - `models` selects the Claude model. The native `anthropic` provider retains
   Claude authentication and endpoint discovery. Any other provider name must
   configure an Anthropic Messages-compatible `base_url` and `api_key_env`.
-- `system_prompt` supplies the Claude system instructions.
-- `max_turns` sets the Claude turn limit.
+- `instructions.system` supplies the Claude system instructions.
+- `runtime.max_turns` sets the Claude turn limit.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` sets the Claude working directory, and
   `environment.env` supplies explicit harness-visible variables.
-- `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool
-  names.
+- `tools.enabled` selects Claude built-in tools. `None` preserves the Claude
+  default, while an empty list disables every tool.
+- `tools.blocked` maps to Claude `disallowed_tools`. A pre-tool hook enforces
+  both lists across built-in, MCP, and plugin tools.
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
   NeMo Fabric parses `url` as a command plus arguments.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
@@ -148,6 +150,8 @@ from nemo_fabric import (
     Fabric,
     FabricConfig,
     HarnessConfig,
+    InstructionConfig,
+    InstructionsConfig,
     McpConfig,
     McpServerConfig,
     MetadataConfig,
@@ -174,11 +178,22 @@ config = FabricConfig(
             api_key_env="ANTHROPIC_API_KEY",
         )
     },
-    system_prompt="Review changes for correctness and regressions.",
-    max_turns=8,
-    runtime=RuntimeConfig(artifacts="./artifacts", timeout_seconds=600),
+    instructions=InstructionsConfig(
+        system=InstructionConfig(
+            content="Review changes for correctness and regressions.",
+            mode="replace",
+        )
+    ),
+    runtime=RuntimeConfig(
+        artifacts="./artifacts",
+        timeout_seconds=600,
+        max_turns=8,
+    ),
     environment=EnvironmentConfig(provider="local", workspace="."),
-    tools=ToolsConfig(blocked=["WebFetch"]),
+    tools=ToolsConfig(
+        enabled=["Read", "Edit", "Bash"],
+        blocked=["WebFetch"],
+    ),
     mcp=McpConfig(
         servers={
             "repo": McpServerConfig(

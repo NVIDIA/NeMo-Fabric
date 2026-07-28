@@ -32,9 +32,9 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.claude")
 ```
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
-MCP servers, blocked tools, and telemetry. Use `harness.settings` for supported
-Claude-specific options such as `system_prompt`, `allowed_tools`,
-`permission_mode`, `max_turns`, and `max_budget_usd`.
+MCP servers, instructions, turn limit, tool policy, and telemetry. Use
+`harness.settings` for supported Claude-specific options such as
+`allowed_tools`, `permission_mode`, `max_budget_usd`, and `setting_sources`.
 
 ## Choose an Authentication Mode
 

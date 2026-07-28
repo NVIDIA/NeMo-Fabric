@@ -65,42 +65,24 @@ with the public models and helper methods:
 from nemo_fabric import (
     FabricConfig,
     HarnessConfig,
+    InstructionConfig,
+    InstructionsConfig,
     MetadataConfig,
     ModelConfig,
     RuntimeConfig,
-    ToolsetConfig,
     ToolsConfig,
 )
 
 
 def to_tools_config(job) -> ToolsConfig | None:
-    blocked_tools = list(job.blocked_tools)
-    enabled_toolsets = job.enabled_toolsets
-    blocked_toolsets = list(job.blocked_toolsets)
-
-    if job.adapter_id in {
-        "nvidia.fabric.claude",
-        "nvidia.fabric.langchain.deepagents",
-    }:
-        if enabled_toolsets is not None or blocked_toolsets:
-            raise ValueError(f"{job.adapter_id} does not support toolset policy")
-        return ToolsConfig(blocked=blocked_tools) if blocked_tools else None
-
-    if job.adapter_id == "nvidia.fabric.hermes":
-        if blocked_tools:
-            raise ValueError("nvidia.fabric.hermes does not support per-tool blocking")
-        if enabled_toolsets is None and not blocked_toolsets:
-            return None
-        return ToolsConfig(
-            toolsets=ToolsetConfig(
-                enabled=enabled_toolsets,
-                blocked=blocked_toolsets,
-            )
-        )
-
-    if blocked_tools or enabled_toolsets is not None or blocked_toolsets:
-        raise ValueError(f"{job.adapter_id} does not support normalized tool policy")
-    return None
+    enabled = job.enabled_tools
+    blocked = list(job.blocked_tools)
+    if enabled is None and not blocked:
+        return None
+    return ToolsConfig(
+        enabled=None if enabled is None else list(enabled),
+        blocked=blocked,
+    )
 
 
 def to_fabric_config(job) -> FabricConfig:
@@ -115,12 +97,18 @@ def to_fabric_config(job) -> FabricConfig:
                 base_url=job.base_url,
             )
         },
-        system_prompt=job.system_prompt,
-        max_turns=job.max_turns,
+        instructions=(
+            InstructionsConfig(
+                system=InstructionConfig(content=job.system_instruction),
+            )
+            if job.system_instruction is not None
+            else None
+        ),
         runtime=RuntimeConfig(
             input_schema="chat",
             output_schema="message",
             timeout_seconds=job.timeout_seconds,
+            max_turns=job.max_turns,
         ),
         tools=to_tools_config(job),
     )
@@ -134,8 +122,8 @@ def to_fabric_config(job) -> FabricConfig:
     return config
 ```
 
-- Shape capabilities with `block_tools`, `configure_toolsets`,
-  `add_skill_path`, `remove_skill_path`,
+- Shape capabilities with `ToolsConfig`, `block_tools`, `add_skill_path`,
+  `remove_skill_path`,
   `add_mcp_server`, `remove_mcp_server`, and `enable_relay`.
 - Create deployment or evaluation variants with `model_copy(deep=True)` and
   ordinary Python functions; each copy plans and runs independently.

@@ -93,12 +93,13 @@ from nemo_fabric import (
     HarnessConfig,
     MetadataConfig,
     ModelConfig,
+    RuntimeConfig,
 )
 
 config = FabricConfig(
     metadata=MetadataConfig(name="quickstart-agent"),
     harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
-    max_turns=1,
+    runtime=RuntimeConfig(max_turns=1),
     models={
         "default": ModelConfig(
             provider="nvidia",

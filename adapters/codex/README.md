@@ -85,7 +85,7 @@ Use normalized `FabricConfig` fields for portable configuration:
 - `models` selects the Codex model. The native `openai` provider retains Codex
   authentication and endpoint discovery. Any other provider name must configure
   a Responses-compatible `base_url` and `api_key_env`.
-- `system_prompt` maps to Codex base instructions.
+- `instructions.system` maps to Codex base instructions.
 - `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` sets the working directory, and `environment.env`
   supplies explicit harness-visible variables.
@@ -114,8 +114,9 @@ Codex-specific controls belong in `harness.settings`:
   runtime starts, such as Codex-only MCP timeout or required-server options
 
 Set model selection and endpoints through `models`, system instructions through
-`system_prompt`, the invocation deadline through `runtime.timeout_seconds`, and
-the working directory and explicit environment through `environment`.
+`instructions.system`, the invocation deadline through
+`runtime.timeout_seconds`, and the working directory and explicit environment
+through `environment`.
 
 For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
 roots, and `config_overrides` are fixed when the runtime starts and cannot vary

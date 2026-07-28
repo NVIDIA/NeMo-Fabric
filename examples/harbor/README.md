@@ -77,13 +77,12 @@ container boundary:
 | `--mcp-config` | `mcp.servers` |
 | `--ak fabric_telemetry=relay` | `telemetry.providers.relay` and `relay.observability` |
 | `--ak fabric_model_base_url=<url>` | `models.default.base_url` |
-| `--ak fabric_system_prompt=<text>` | `system_prompt` |
-| `--ak fabric_max_turns=<count>` | `max_turns` |
+| `--ak fabric_system_instruction=<text>` | `instructions.system` |
+| `--ak fabric_max_turns=<count>` | `runtime.max_turns` |
 | `--ak fabric_runtime_timeout_seconds=<seconds>` | `runtime.timeout_seconds` |
 | `--ak fabric_environment_env='{...}'` | `environment.env` |
 | `--ak fabric_blocked_tools='[...]'` | `tools.blocked` |
-| `--ak fabric_enabled_toolsets='[...]'` | `tools.toolsets.enabled` |
-| `--ak fabric_blocked_toolsets='[...]'` | `tools.toolsets.blocked` |
+| `--ak fabric_enabled_tools='[...]'` | `tools.enabled` |
 | `--ak fabric_harness_settings='{...}'` | `harness.settings` |
 
 The result is the complete `FabricConfig` uploaded with the `RunRequest` and
