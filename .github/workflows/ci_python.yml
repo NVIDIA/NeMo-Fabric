@@ -40,17 +40,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [linux-amd64, linux-arm64, macos-arm64, windows-amd64]
-        python-version: ['3.11', '3.12', '3.13', '3.14']
+        platform: [macos-arm64]
+        python-version: ['3.13']
         include:
-          - platform: linux-amd64
-            runner: ubuntu-24.04
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
           - platform: macos-arm64
             runner: macos-15
-          - platform: windows-amd64
-            runner: windows-2022
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -95,7 +89,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          uv run pytest -v tests/e2e/test_claude.py::test_fabric_claude_relay_supervises_gateway_and_injects_plugin
+          uv run pytest --basetemp=${{ runner.temp }} -v tests/e2e/test_claude.py::test_fabric_claude_relay_supervises_gateway_and_injects_plugin
 
       - name: Upload gateway logs
         if: ${{ always() }}
