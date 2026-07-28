@@ -95,7 +95,7 @@ jobs:
           TMPDIR: ${{ runner.temp }}
         run: |
           set -euo pipefail
-          pytest -v tests/e2e/test_claude.py::test_fabric_claude_relay_supervises_gateway_and_injects_plugin
+          uv run pytest -v tests/e2e/test_claude.py::test_fabric_claude_relay_supervises_gateway_and_injects_plugin
 
       - name: Upload gateway logs
         if: ${{ always() }}
