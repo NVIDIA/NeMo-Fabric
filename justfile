@@ -343,7 +343,7 @@ build-python:
             --group adapters \
             "${editable_projects[@]}"
     else
-        uv sync --no-default-groups --group adapters --extra claude --extra runtime \
+        uv sync --no-default-groups --group adapters \
             --reinstall-package nemo-fabric \
             --reinstall-package nemo-fabric-runtime
     fi
@@ -414,7 +414,7 @@ test-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
-        uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents --extra harbor --extra hermes --extra hermes-agent --extra relay --extra runtime
+        uv sync --no-default-groups --group adapters --group adapter-tests --group test --extra harbor --extra relay
     fi
     uv run --no-sync pytest
 

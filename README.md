@@ -35,14 +35,21 @@ It provides:
 
 ## Supported Harnesses
 
-NeMo Fabric provides the following harness integrations:
+NeMo Fabric provides the following harness integrations. The package
+expressions install the components shown in each column:
 
-| Agent Harness | Package Extra |
-| --- | --- |
-| [Claude Code](docs/integrations/harness/claude.mdx) | `nemo-fabric[claude]` |
-| [Codex](docs/integrations/harness/codex.mdx) | `nemo-fabric[codex]` |
-| [Hermes Agent](docs/integrations/harness/hermes.mdx) | `nemo-fabric[hermes]` |
-| [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` |
+| Agent Harness | Runtime, Adapter, and Harness | Adapter and Harness | Adapter Only |
+| --- | --- | --- | --- |
+| [Claude Code](docs/integrations/harness/claude.mdx) | `nemo-fabric[claude]` | `nemo-fabric-adapters-claude[harness]` | `nemo-fabric-adapters-claude` |
+| [Codex](docs/integrations/harness/codex.mdx) | `nemo-fabric[codex]` | `nemo-fabric-adapters-codex[harness]` | `nemo-fabric-adapters-codex` |
+| [Hermes Agent](docs/integrations/harness/hermes.mdx) | `nemo-fabric[hermes-agent]` | `nemo-fabric-adapters-hermes[harness]` | `nemo-fabric-adapters-hermes` |
+| [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
+
+The `nemo-fabric` package always installs the runtime, and each root harness
+extra adds the corresponding adapter and supported harness. Use the
+adapter-package forms for split environments or environments that already
+manage the harness. For `harness`, `full`, and Relay behavior, refer to the
+[installation guide](docs/getting-started/install.mdx).
 
 Capabilities vary by harness. Review the compatibility matrix and use plan()
 and doctor() before relying on optional capabilities such as MCP, skills,
@@ -63,12 +70,14 @@ Agent in one Python environment.
 
 ### Install NeMo Fabric and Hermes Agent
 
-Create and activate a virtual environment, then install the required packages:
+Hermes Agent supports Python 3.11 through 3.13. With a supported Python
+version, create and activate a virtual environment, then install the required
+packages:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install "nemo-fabric[runtime, hermes-agent]"
+pip install "nemo-fabric[hermes-agent]"
 ```
 
 ### Set the API Key
@@ -123,25 +132,42 @@ For a guided version of this example, refer to the
 [example notebooks overview](examples/notebooks/README.md) describes the other
 available notebooks.
 
-## Use Separate Environments
+## Deployment Scenarios
 
-The quick start uses one Python environment. Real-world deployments commonly
-separate the application or evaluation host from the task environment where
-NeMo Fabric and the selected harness run. For example, Harbor constructs
-`FabricConfig` in its host process, then runs NeMo Fabric, the adapter, and the
-harness inside an isolated task container. Refer to the
+### Scenario 1: Runtime and Harness in the Same Environment
+
+This is the simplest deployment. The `nemo-fabric` package, selected adapter,
+and supported harness share one Python environment. The quick start above uses
+this model with `nemo-fabric[hermes-agent]`.
+
+### Scenario 2: Isolated Sandbox for Task Execution
+
+This is the Harbor deployment model. The Harbor host constructs and serializes
+the final typed `FabricConfig`. Harbor then installs and runs NeMo Fabric, the
+selected adapter, and the harness inside an isolated task environment such as a
+Docker container or Daytona sandbox. Adapter discovery and task-path resolution
+occur inside that sandbox.
+
+Install `nemo-fabric[harbor]==0.1.0` in the host environment. Install a complete
+harness composition such as `nemo-fabric[claude]==0.1.0` or
+`nemo-fabric[hermes-agent,relay]==0.1.0` in the task environment. For Claude or
+Codex Relay streaming, also provision the external NeMo Relay CLI in the task
+environment. Refer to the
 [Harbor execution model](examples/harbor/README.md#execution-model) for details.
 
-NeMo Fabric can also operate with the NeMo Fabric runtime and the agent harness
-in separate Python environments. This setup can match existing deployment
-boundaries and isolate their dependencies.
+### Scenario 3: Runtime and Harness in Separate Python Environments
+
+NeMo Fabric can run the runtime and agent harness in separate, locally
+accessible Python environments. This setup isolates their Python dependencies
+while the runtime launches the adapter through the adapter environment's
+interpreter.
 
 Create an environment for the NeMo Fabric runtime:
 
 ```bash
 python -m venv .venv-fabric
 source .venv-fabric/bin/activate
-pip install "nemo-fabric[runtime]"
+pip install nemo-fabric==0.1.0
 ```
 
 Create another environment for the adapter and harness. For example, install
@@ -150,11 +176,14 @@ the Hermes Agent integration:
 ```bash
 python -m venv .venv-hermes
 source .venv-hermes/bin/activate
-pip install "nemo-fabric[hermes-agent]"
+pip install "nemo-fabric-adapters-hermes[harness]==0.1.0"
 ```
 
-**Note:** The `nemo-fabric[hermes-agent]` package extra installs the Hermes Agent adapter and Hermes Agent itself, to install just the adapter, use `nemo-fabric[hermes]`.
-
+The adapter package keeps this environment independent from the
+`nemo-fabric` distribution. Its `harness` extra installs the compatible Hermes
+Agent dependency alongside the adapter. Use matching NeMo Fabric release
+versions for the runtime and adapter package unless a different pairing has
+been explicitly validated.
 
 Run NeMo Fabric from its environment and set `ADAPTER_PYTHON` to the interpreter
 that contains the adapter and harness:

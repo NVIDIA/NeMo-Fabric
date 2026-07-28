@@ -9,22 +9,26 @@ The `nvidia.fabric.claude` adapter uses the official Claude Agent SDK for
 Python behind NeMo Fabric's normalized invocation contract. The SDK is an
 implementation detail; consumers select the Claude harness by adapter ID.
 
-This adapter pins `claude-agent-sdk==0.2.120`. The SDK supplies and selects its
-compatible Claude Code runtime.
+The `harness` extra pins `claude-agent-sdk==0.2.120`; use the same version for an
+environment-managed SDK. The SDK supplies a compatible Claude Code runtime.
 
 ## Install
 
-To install just the Claude adapter by itself:
+The following table shows which components each installation provides:
 
-```bash
-pip install "nemo-fabric[claude]"
-```
+| Installation | Runtime | Adapter | Harness | NeMo Relay CLI |
+| --- | --- | --- | --- | --- |
+| `pip install "nemo-fabric[claude]"` | Yes | Yes | Yes | No |
+| `pip install "nemo-fabric-adapters-claude[harness]"` | No | Yes | Yes | No |
+| `pip install nemo-fabric-adapters-claude` | No | Yes | No | No |
 
-To install just the Claude adapter along with the NeMo Fabric Runtime:
+For split runtime and adapter environments, configure `ADAPTER_PYTHON` or
+`harness.settings.python` and use matching NeMo Fabric release versions. Refer
+to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-```bash
-pip install "nemo-fabric[claude, runtime]"
-```
+The `full` extra is equivalent to `harness`. Relay is optional for ordinary
+runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
+described under [Relay Observability](#relay-observability).
 
 ## Authentication
 
@@ -57,12 +61,6 @@ so an empty API credential prevents fallback to a federation profile.
 Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/integrations/harness/claude)
 for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
-
-Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the [NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
-
-The Python `nemo-relay` package does not install this executable. Refer to the
-[NeMo Relay installation guide](https://docs.nvidia.com/nemo/relay/getting-started/installation)
-for other supported installation methods.
 
 ## Execution Model
 
@@ -113,6 +111,10 @@ by the SDK and is not persisted as a NeMo Fabric artifact.
 
 ## Relay Observability
 
+Relay requires a separately installed NeMo Relay 0.6.x CLI on `PATH`; the Python
+`nemo-relay` package does not provide the executable. Follow the
+[NeMo Relay installation instructions](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-nemo-relay).
+
 Enable Relay through the normalized NeMo Fabric configuration:
 
 ```python
@@ -134,8 +136,7 @@ gateway has the same lifecycle as that single invocation.
 The NeMo Fabric result includes `relay_runtime.gateway_config_path`,
 `relay_runtime.gateway_log_path`, and the collected `relay_artifacts`. Relay
 startup failures return a stable adapter error and retain the gateway log for
-diagnosis. The default Claude Agent SDK dependency bundles a compatible Claude
-Code executable.
+diagnosis.
 
 ## Typed Configuration
 

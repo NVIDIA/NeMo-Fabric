@@ -356,7 +356,7 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
     agent = FabricAgent(
         logs_dir=tmp_path,
         fabric_adapter_id="nvidia.fabric.hermes",
-        fabric_package="nemo-fabric[codex,harbor,runtime]==0.1.0",
+        fabric_package="nemo-fabric[codex,harbor]==0.1.0",
         extra_env={
             "NVIDIA_API_KEY": "test-key",
             "PIP_FIND_LINKS": "/tmp/nemo-fabric-config/wheelhouse",
@@ -370,7 +370,7 @@ async def test_harbor_structured_package_install_is_shell_safe(tmp_path: Path):
     assert environment.commands[1] == (
         "python3 -m venv /tmp/nemo-fabric-venv && "
         "/tmp/nemo-fabric-venv/bin/python -m pip install "
-        "--disable-pip-version-check 'nemo-fabric[codex,harbor,runtime]==0.1.0'"
+        "--disable-pip-version-check 'nemo-fabric[codex,harbor]==0.1.0'"
     )
     assert environment.environments[1] == {
         "PIP_FIND_LINKS": "/tmp/nemo-fabric-config/wheelhouse",

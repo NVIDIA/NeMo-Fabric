@@ -31,24 +31,60 @@ It provides:
 
 ## Install
 
+NeMo Fabric supports Python 3.11 through 3.14. Use Python 3.11 through 3.13 for
+Hermes Agent; the Harbor integration requires Python 3.12 or later.
+
 Install the core runtime and Python SDK:
 
 ```bash
 pip install nemo-fabric
 ```
 
-To use a supported agent harness, install its adapter extra:
+To install the NeMo Fabric runtime, adapter, and supported harness in one
+environment, choose one of the following `nemo-fabric` harness extras:
 
 ```bash
 pip install "nemo-fabric[claude]"
 pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
-pip install "nemo-fabric[hermes]"
+pip install "nemo-fabric[hermes-agent]"
 ```
 
-NeMo Fabric supports running an agent harness in a different virtual environment than the one used to run NeMo Fabric itself. This is useful for running agents that have conflicting dependencies with NeMo Fabric or other agents.
+To install an adapter and its harness without the NeMo Fabric runtime, choose
+one of the following adapter package `harness` extras:
 
-The adapter must be installed into the virtual environment that the harness is installed in. For this reason adapters intentionally have minimal dependencies.
+```bash
+pip install "nemo-fabric-adapters-claude[harness]"
+pip install "nemo-fabric-adapters-codex[harness]"
+pip install "nemo-fabric-adapters-deepagents[harness]"
+pip install "nemo-fabric-adapters-hermes[harness]"
+```
+
+Every adapter package also provides an adapter-scoped `full` extra, which does
+not install the NeMo Fabric runtime. For Claude and Codex, `full` installs the
+same dependencies as `harness`. For LangChain Deep Agents and Hermes Agent,
+`full` also installs the NeMo Relay Python package.
+
+If the environment already manages a compatible harness, choose one of the
+following bare adapter packages:
+
+```bash
+pip install nemo-fabric-adapters-claude
+pip install nemo-fabric-adapters-codex
+pip install nemo-fabric-adapters-deepagents
+pip install nemo-fabric-adapters-hermes
+```
+
+The adapter distribution contains only adapter-owned runtime dependencies. It
+does not install the NeMo Fabric runtime. Select `harness` or `full` to install
+the harness. If the runtime shares an environment with an existing compatible
+harness, install `nemo-fabric` and the bare adapter package together.
+
+NeMo Fabric supports running an agent harness in a different virtual
+environment from the NeMo Fabric runtime. This separation can isolate harnesses
+that have conflicting dependencies. Use matching NeMo Fabric release versions
+for the runtime and adapter package unless a different pairing has been
+explicitly validated.
 
 ### Integrations
 
@@ -64,16 +100,17 @@ pip install "nemo-fabric[harbor]"
 pip install "nemo-fabric[relay]"
 ```
 
-This installs a version of [NeMo Relay](https://docs.nvidia.com/nemo/relay) Python library known to be compatible with the installed version of NeMo Fabric.
+This installs a version of the
+[NeMo Relay Python package](https://docs.nvidia.com/nemo/relay) known to be
+compatible with the installed version of NeMo Fabric.
 
-Some adapters, such as Claude and Codex, require the
-[`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli) tool instead of the
-NeMo Relay Python library. Refer to the
-[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
-
-### Python Versions
-
-NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations and adapters may have additional requirements. Specifically Hermes Agent doesn't support Python 3.14 yet, and the Harbor integration requires Python 3.12 or later.
+The LangChain Deep Agents and Hermes Agent adapter packages also provide
+`relay` and `full` extras for environments that do not install `nemo-fabric`.
+Claude and Codex require the
+[`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli) instead of the NeMo
+Relay Python package. They do not provide a `relay` extra. Refer to the
+[NeMo Relay CLI](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-nemo-relay)
+install guide for instructions on installing the CLI tool.
 
 ## Core Concepts
 

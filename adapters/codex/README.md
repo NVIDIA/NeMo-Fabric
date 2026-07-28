@@ -12,17 +12,22 @@ app-server runtime and typed JSON-RPC protocol.
 
 ## Install
 
-To install just the Codex adapter by itself:
+The following table shows which components each installation provides:
 
-```bash
-pip install "nemo-fabric[codex]"
-```
+| Installation | Runtime | Adapter | Harness | NeMo Relay CLI |
+| --- | --- | --- | --- | --- |
+| `pip install "nemo-fabric[codex]"` | Yes | Yes | Yes | No |
+| `pip install "nemo-fabric-adapters-codex[harness]"` | No | Yes | Yes | No |
+| `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
-To install just the Codex adapter along with the NeMo Fabric Runtime:
+For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
+and adapter environments, configure `ADAPTER_PYTHON` or
+`harness.settings.python` and use matching NeMo Fabric release versions. Refer
+to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-```bash
-pip install "nemo-fabric[codex, runtime]"
-```
+The `full` extra is equivalent to `harness`. Relay is optional for ordinary
+runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
+described under [Relay Integration](#relay-integration).
 
 ## Authentication
 
@@ -58,7 +63,7 @@ NeMo Fabric artifact root, so execution does not depend on or modify a user's
 Codex login. Provider names identify configuration; the adapter does not
 maintain a provider allowlist.
 
-The adapter depends on the Codex SDK, which installs and selects its matching
+The adapter uses the Codex SDK, which installs and selects its matching
 app-server runtime. NeMo Fabric does not declare the runtime package directly or
 treat it as a user-installed command or adapter descriptor requirement.
 
@@ -130,7 +135,12 @@ Codex state variables, the selected model's `api_key_env`, and explicit
 
 ## Relay Integration
 
-Relay-enabled runs also require the external `nemo-relay` CLI. Refer to the
-[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
+Relay requires a separately installed NeMo Relay 0.6.x CLI on `PATH`; the Python
+`nemo-relay` package does not provide the executable. Follow the
+[NeMo Relay installation instructions](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-nemo-relay).
+
+Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
+installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway
+separately.
 NeMo Fabric routes the selected Responses-compatible provider through the
 gateway and passes its explicit `base_url` to Relay as the upstream endpoint.

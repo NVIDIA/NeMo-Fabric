@@ -7,48 +7,120 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 ## Package Installation Method
 
-NeMo Fabric is separated into two distinct parts:
-- NeMo Fabric Runtime: This contains the core functionality of NeMo Fabric.
-- NeMo Fabric Adapters: These provide integration with agent harnesses. These need to be installed into
-  the same environment as the agent harness which may or may not be the same environment as the NeMo Fabric runtime.
+The `nemo-fabric` package installs the NeMo Fabric runtime. Harness adapters can
+run in that environment or in a separate environment with their harness
+dependencies.
 
 ### Supported Python Versions
-- Python version 3.11 - 3.14
 
-NeMo Fabric supports Python versions 3.11-3.14, however some of the integrations and adapters may have
-additional requirements. Specifically the Hermes Agent adapter doesn't support Python 3.14 yet, and the Harbor
-integration requires Python 3.12 or later.
+NeMo Fabric supports Python 3.11 through 3.14. Some integrations and adapters
+have additional requirements. The Hermes Agent adapter does not support Python
+3.14, and the Harbor integration requires Python 3.12 or later.
 
-### Installing NeMo Fabric Runtime
+### Choose an Installation
 
-Install the NeMo Fabric Runtime:
+The following table shows a representative subset of package expressions and
+the components they install. The sections that follow describe the complete
+installation alternatives. A **No** entry means that the expression does not
+install that component; the component can already exist in the environment or
+be managed separately.
+
+| Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
+| --- | --- | --- | --- | --- |
+| `nemo-fabric` | Yes | No | No | No |
+| `nemo-fabric[relay]` | Yes | No | No | Yes |
+| `nemo-fabric[hermes-agent,relay]` | Yes | Yes | Yes | Yes |
+| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No |
+| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No |
+| `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes |
+| `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes |
+| `nemo-fabric-adapters-claude` | No | Yes | No | No |
+
+An adapter package's `full` extra is scoped to the adapter environment. It
+installs the supported harness and any Python Relay dependency, but it does not
+install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
+`harness` because their Relay integration requires an external executable. For
+LangChain Deep Agents and Hermes Agent, `full` installs both the harness and the
+NeMo Relay Python package.
+
+For Claude and Codex, no Python package extra installs the external
+`nemo-relay` CLI required by Relay telemetry and `Runtime.invoke_stream()`.
+
+### Install the NeMo Fabric Runtime
+
+Install the NeMo Fabric runtime:
 
 ```bash
-pip install "nemo-fabric[runtime]"
+pip install nemo-fabric
 ```
 
-### Installing the NeMo Fabric Adapters
+The `nemo-fabric` package installs the matching NeMo Fabric runtime
+unconditionally.
 
-This command installs a NeMo Fabric adapter and its dependencies. Adapters
-intentionally have minimal dependencies and belong in the same environment as
-the agent harness. That environment can differ from the NeMo Fabric runtime
-environment.
+### Install a Complete Runtime and Harness
 
-The following adapter extras are available:
-
-- `claude`
-- `codex`
-- `deepagents`
-- `hermes`
+Use a `nemo-fabric` harness extra when the runtime, adapter, and harness run in
+the same Python environment:
 
 ```bash
-pip install "nemo-fabric[<adapter_name>]"
+pip install "nemo-fabric[claude]"
+pip install "nemo-fabric[codex]"
+pip install "nemo-fabric[deepagents]"
+pip install "nemo-fabric[hermes-agent]"
 ```
 
-For example, to install the Hermes Agent adapter:
+Each `nemo-fabric` harness extra installs the corresponding adapter package
+with its `harness` extra. You can combine independent `nemo-fabric` extras. For
+example, the following command also installs Harbor and the NeMo Relay Python
+package:
 
 ```bash
-pip install "nemo-fabric[hermes]"
+pip install "nemo-fabric[claude,harbor,relay]"
+```
+
+The `relay` extra does not install the external `nemo-relay` CLI that Claude and
+Codex require for Relay-enabled runs.
+
+### Install an Adapter and Harness Without the Runtime
+
+Use an adapter package's `harness` extra when a different environment runs NeMo
+Fabric:
+
+```bash
+pip install "nemo-fabric-adapters-claude[harness]"
+pip install "nemo-fabric-adapters-codex[harness]"
+pip install "nemo-fabric-adapters-deepagents[harness]"
+pip install "nemo-fabric-adapters-hermes[harness]"
+```
+
+This installation mode keeps the runtime dependencies out of the adapter
+environment. Set `ADAPTER_PYTHON` or `harness.settings.python` in the runtime
+environment to the adapter environment's Python interpreter. A Python adapter
+and its Python harness must use the same interpreter. Use matching NeMo Fabric
+release versions for the runtime and adapter package unless a different pairing
+has been explicitly validated.
+
+### Add an Adapter to an Existing Harness Environment
+
+Install an adapter package without an extra when the environment already
+supplies and manages a compatible harness:
+
+```bash
+pip install nemo-fabric-adapters-claude
+pip install nemo-fabric-adapters-codex
+pip install nemo-fabric-adapters-deepagents
+pip install nemo-fabric-adapters-hermes
+```
+
+Bare adapter distributions install only adapter-owned dependencies. They do not
+install the NeMo Fabric runtime or the harness.
+
+If the existing harness and runtime share an environment, install the runtime
+and bare adapter together. The following example preserves the existing Codex
+SDK instead of installing the adapter's supported SDK version:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-codex
 ```
 
 ### Install NeMo Relay
@@ -56,20 +128,36 @@ pip install "nemo-fabric[hermes]"
 [NeMo Relay](https://docs.nvidia.com/nemo/relay) integration occurs in two
 ways:
 
-- [Python library](https://pypi.org/project/nemo-relay/)
+- [Python package](https://pypi.org/project/nemo-relay/)
 - [NeMo Relay CLI](https://crates.io/crates/nemo-relay-cli)
 
-The required integration depends on the agent harness chosen. Relay-enabled runs with
-the Claude and Codex adapters require the [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli).
+The required integration depends on the agent harness. Relay-enabled runs with
+the Claude and Codex adapters require the
+[`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli).
 
-#### NeMo Relay Python Library
+#### NeMo Relay Python Package
 
-The `relay` dependency extra installs a version of the NeMo Relay Python library known to be compatible with the
-installed version of NeMo Fabric.
+The root `relay` extra installs a version of the NeMo Relay Python package known
+to be compatible with the installed version of NeMo Fabric:
 
 ```bash
 pip install "nemo-fabric[relay]"
 ```
+
+LangChain Deep Agents and Hermes Agent import the NeMo Relay Python package
+directly. Their adapter packages provide `relay` and `full` extras:
+
+```bash
+pip install "nemo-fabric-adapters-deepagents[relay]"
+pip install "nemo-fabric-adapters-hermes[relay]"
+pip install "nemo-fabric-adapters-deepagents[full]"
+pip install "nemo-fabric-adapters-hermes[full]"
+```
+
+Use `relay` when the environment already manages the harness. Use `full` to
+install the harness and Relay package together. Claude and Codex do not provide
+a `relay` extra because their adapters launch the external CLI instead of
+importing this Python package.
 
 #### NeMo Relay CLI
 
@@ -91,11 +179,15 @@ irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
 cargo binstall nemo-relay-cli
 ```
 
+After installation, ensure `nemo-relay` is on `PATH`. When Relay is enabled
+with `FabricConfig.enable_relay(...)`, the Claude and Codex adapters start and
+supervise the CLI gateway automatically.
+
 ## Source Installation Method
 
 **Prerequisites:**
 - Rust and Cargo
-- Python 3.11+
+- Python 3.11 through 3.14
 - [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - `just` 1.50.0+
 

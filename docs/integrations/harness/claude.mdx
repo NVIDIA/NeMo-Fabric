@@ -10,16 +10,53 @@ Claude Code runtime. NeMo Fabric preserves Claude's native credential precedence
 forwards only supported operating-system, configuration, and authentication
 variables plus values explicitly configured in `environment.env`.
 
-The adapter pins `claude-agent-sdk==0.2.120`. The SDK owns and selects its
-compatible Claude Code runtime.
+The adapter package's `harness` and `full` extras pin
+`claude-agent-sdk==0.2.120`. Use the same version for an environment-managed
+SDK. The SDK owns and selects its compatible Claude Code runtime.
 
 ## Install the Adapter
 
-Install the adapter for Claude Code:
+To install the NeMo Fabric runtime, Claude adapter, and supported Claude Agent
+SDK in one environment:
 
 ```bash
 pip install "nemo-fabric[claude]"
 ```
+
+To install the adapter and supported Claude Agent SDK without the NeMo Fabric
+runtime, use the adapter package's `harness` extra:
+
+```bash
+pip install "nemo-fabric-adapters-claude[harness]"
+```
+
+The adapter package's `full` extra installs the same dependencies as `harness`;
+it does not install the NeMo Fabric runtime. Claude Relay integration uses the
+external `nemo-relay` CLI, not the Python `nemo-relay` package, so this adapter
+does not provide a `relay` extra. Follow the
+[NeMo Relay CLI installation procedure](../../getting-started/install.mdx#install-nemo-relay),
+then ensure `nemo-relay` is on `PATH`.
+
+If the environment already manages a compatible Claude Agent SDK, install only
+the adapter:
+
+```bash
+pip install nemo-fabric-adapters-claude
+```
+
+The bare adapter package does not install the NeMo Fabric runtime or SDK.
+
+If the existing compatible Claude Agent SDK and NeMo Fabric runtime share an
+environment, install the runtime and bare adapter together:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-claude
+```
+
+For separate environments, set `ADAPTER_PYTHON` or `harness.settings.python` in
+the runtime environment to the adapter environment's Python interpreter. Use
+matching NeMo Fabric release versions for the runtime and adapter package
+unless a different pairing has been explicitly validated.
 
 ## Configure the Adapter
 

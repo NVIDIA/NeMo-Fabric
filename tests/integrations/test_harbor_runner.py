@@ -3,6 +3,8 @@
 
 import asyncio
 import json
+import re
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,6 +27,13 @@ SDK_INTEGRATION_README = (
 HARBOR_PACKAGE_INIT = SDK_INTEGRATION_README.parent / "__init__.py"
 
 pytestmark = pytest.mark.usefixtures("requires_harbor")
+
+
+def documented_root_extras(text: str) -> set[str]:
+    extras = set(re.findall(r"--extra\s+([a-z0-9-]+)", text))
+    for selector in re.findall(r"nemo-fabric\[([^]]+)\]", text):
+        extras.update(extra.strip() for extra in selector.split(","))
+    return extras
 
 
 def load_codex_adapter():
@@ -255,7 +264,7 @@ def test_claude_calculator_run_uses_current_adapter_contract():
     dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     assert "-e /opt/nemo-fabric/adapters/claude" in dockerfile
     assert "-e /opt/nemo-fabric/adapters/hermes" in dockerfile
-    assert "nemo-fabric[harbor,hermes,hermes-agent,relay,runtime]" in dockerfile
+    assert "nemo-fabric[claude,hermes-agent,relay]" in dockerfile
     assert "@openai/codex" not in dockerfile
 
 
@@ -284,13 +293,18 @@ def test_harbor_smoke_config_resolves_its_local_adapter():
 
 def test_harbor_calculator_documents_explicit_cli_commands():
     calculator = CALCULATOR_README.read_text(encoding="utf-8")
+    dockerfile = CALCULATOR_DOCKERFILE.read_text(encoding="utf-8")
     landing = INTEGRATION_README.read_text(encoding="utf-8")
     swebench = SWEBENCH_README.read_text(encoding="utf-8")
+    with (ROOT / "pyproject.toml").open("rb") as file:
+        declared_extras = set(tomllib.load(file)["project"]["optional-dependencies"])
 
     assert "run.sh" not in calculator
     assert calculator.count(" harbor run \\") == 4
-    assert landing.count("uv run --extra runtime --extra harbor harbor run") == 0
-    assert swebench.count("uv run --extra runtime --extra harbor harbor run") == 5
+    assert calculator.count("uv run --extra harbor harbor run \\") == 4
+    assert "uv run --extra harbor --extra" not in calculator
+    assert landing.count("uv run --extra harbor harbor run") == 0
+    assert swebench.count("uv run --extra harbor harbor run") == 5
     assert "--agent-import-path" not in landing + calculator + swebench
     assert "fabric_config_path" not in calculator
     assert "fabric_config_path" not in landing
@@ -304,12 +318,18 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert 'CALCULATOR_DIR="$PWD/examples/harbor/calculator"' in calculator
     assert "calculator/README.md" in landing
     assert "swebench/README.md" in landing
+    assert "nemo-fabric[harbor]==0.1.0" in landing
+    assert "nemo-fabric[claude]==0.1.0" in landing
+    assert "nemo-fabric[hermes-agent,relay]==0.1.0" in landing
+    assert documented_root_extras(
+        "\n".join((calculator, dockerfile, landing, swebench))
+    ) <= declared_extras
     assert "fabric_adapter_id" in landing
     assert 'export TMPDIR="$HOME/harbor-tmp"' in landing
     assert "raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh" in swebench
     assert (
         "FABRIC_PACKAGE="
-        "'nemo-fabric[claude,harbor,hermes-agent,relay,runtime]==0.1.0a20260724'"
+        "'nemo-fabric[claude,hermes-agent,relay]==0.1.0a20260724'"
         in swebench
     )
     assert "PIP_FIND_LINKS" not in swebench

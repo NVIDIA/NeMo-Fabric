@@ -118,10 +118,11 @@ def main() -> None:
 def preflight_check(payload: dict[str, Any]) -> None:
     """Validate invocation-time prerequisites and fail fast with clear errors.
 
-    These are runtime preflight checks, not ``fabric doctor`` checks: Fabric core
-    has no adapter-doctor hook, so doctor cannot verify these. At invocation time
-    the ``deepagents`` package must be importable and the configured
-    model-provider credential must be present in the environment.
+    These checks run during adapter startup. Core descriptor diagnostics do not
+    invoke adapter-specific preflight hooks, so they cannot verify these
+    prerequisites. At invocation time the ``deepagents`` package must be
+    importable and the configured model-provider credential must be present in
+    the environment.
     """
 
     import importlib.util
@@ -129,7 +130,7 @@ def preflight_check(payload: dict[str, Any]) -> None:
     if importlib.util.find_spec("deepagents") is None:
         raise RuntimeError(
             "the 'deepagents' package is required for the Deep Agents adapter; install "
-            "it with the 'deepagents' extra (pip install nemo-fabric-adapters-deepagents)."
+            "a compatible Deep Agents harness in the adapter environment."
         )
 
     model_config = selected_model_config(payload)

@@ -34,6 +34,13 @@ consumed outside the source tree.
 Treat every direct dependency as a long-lived API, supply-chain, and licensing
 commitment.
 
+- Keep `nemo-fabric` as a metapackage that unconditionally installs the
+  exact-version `nemo-fabric-runtime` distribution. Root harness extras delegate
+  to version-matched leaf adapter `harness` extras. Do not add root adapter-only
+  aliases.
+- Keep leaf adapters adapter-only by default. Every leaf provides `harness` and
+  `full`; provide `relay` only when the adapter imports the NeMo Relay Python
+  package. For external Relay executables, `full` equals `harness`.
 - First prefer the standard library, an existing dependency, or a small local
   implementation when it keeps the behavior clear and maintainable.
 - When multiple dependencies satisfy the technical requirement, prefer the
