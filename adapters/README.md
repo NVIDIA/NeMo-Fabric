@@ -59,15 +59,15 @@ policy; NeMo Fabric does not reinterpret one as the other. Deep Agents subagents
 are limited to declarative local subagents that inherit the parent agent's
 capabilities.
 
-### Complete `FabricConfig` Support
+### Complete FabricConfig Support
 
 `Core` means NeMo Fabric owns the behavior and applies it uniformly before or around
 adapter execution. `Yes` means the adapter translates the normalized field into
 its harness. `No` means an explicitly configured value fails planning instead
-of being ignored. Provider-specific Relay subfields and additive extension maps
-are grouped because their support does not vary by adapter.
+of being ignored. The following table groups provider-specific Relay subfields
+and additive extension maps because their support does not vary by adapter:
 
-| `FabricConfig` field | Claude | Codex | Deep Agents | Hermes Agent |
+| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent |
 | --- | --- | --- | --- | --- |
 | `schema_version` | Core | Core | Core | Core |
 | `metadata.name`, `.description` | Core | Core | Core | Core |

@@ -88,7 +88,7 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
   configure an Anthropic Messages-compatible `base_url` and `api_key_env`.
 - `system_prompt` supplies the Claude system instructions.
 - `max_turns` sets the Claude turn limit.
-- `runtime.timeout_seconds` sets the Fabric invocation deadline.
+- `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` sets the Claude working directory, and
   `environment.env` supplies explicit harness-visible variables.
 - `tools.blocked` maps to Claude `disallowed_tools` using Claude-native tool

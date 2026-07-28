@@ -86,7 +86,7 @@ Use normalized `FabricConfig` fields for portable configuration:
   authentication and endpoint discovery. Any other provider name must configure
   a Responses-compatible `base_url` and `api_key_env`.
 - `system_prompt` maps to Codex base instructions.
-- `runtime.timeout_seconds` sets the Fabric invocation deadline.
+- `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` sets the working directory, and `environment.env`
   supplies explicit harness-visible variables.
 - `mcp` maps stdio, HTTP, and streamable HTTP servers into the Codex thread's

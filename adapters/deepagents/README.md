@@ -47,7 +47,7 @@ NeMo Fabric maps the following into the harness:
 - The selected `models` role supplies `model`, `provider`, `api_key_env`,
   `base_url`, and `temperature`.
 - Top-level `system_prompt` becomes the Deep Agents `system_prompt`.
-- `runtime.timeout_seconds` sets the Fabric invocation deadline.
+- `runtime.timeout_seconds` sets the NeMo Fabric invocation deadline.
 - `environment.workspace` roots the Deep Agents filesystem backend
   (`FilesystemBackend(root_dir=..., virtual_mode=True)`). `virtual_mode`
   confines the agent to the workspace: absolute paths and `..` cannot escape
@@ -95,8 +95,9 @@ NeMo Fabric starts one local adapter host for every runtime. During runtime star
 the host compiles one Deep Agents graph, opens its async LangGraph checkpointer,
 and creates one thread ID. Every invocation reuses those native objects; later
 turns report `resumed` as `true`. The checkpointer lives under
-the Fabric artifact root, scoped by runtime ID, and is closed during runtime
-stop. The live host owns the thread identity, and LangGraph owns the transcript.
+the NeMo Fabric artifact root, scoped by runtime ID, and is closed during
+runtime stop. The live host owns the thread identity, and LangGraph owns the
+transcript.
 
 `Fabric.run(...)` is a convenience over that same lifecycle: it starts the
 runtime, invokes it once, and stops it. It does not use a separate adapter

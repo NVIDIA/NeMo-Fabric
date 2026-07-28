@@ -45,10 +45,10 @@ The adapter receives a normalized payload from NeMo Fabric and materializes a na
 Per-tool `tools.blocked` is not accepted by Hermes because Hermes exposes
 toolset-level policy at this boundary. Keep Hermes-specific controls such as
 terminal timeout, reasoning configuration, and plugin configuration in
-`harness.settings`. The adapter derives Hermes state from the Fabric artifact
-root and creates a child under `runtimes/<runtime_id>`, so invocations in one
-NeMo Fabric runtime share state without sharing config or the session database
-with another runtime.
+`harness.settings`. The adapter derives Hermes state from the NeMo Fabric
+artifact root and creates a child under `runtimes/<runtime_id>`, so invocations
+in one NeMo Fabric runtime share state without sharing config or the session
+database with another runtime.
 
 ## Execution Model
 
