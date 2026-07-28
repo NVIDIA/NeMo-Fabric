@@ -12,8 +12,10 @@ sessions, and telemetry.
 
 ## Install the Adapter
 
-For the complete supported composition, install NeMo Fabric with the Hermes Agent
-adapter and Hermes Agent dependencies:
+Hermes Agent and the adapter support Python 3.11 through 3.13.
+
+To install the NeMo Fabric runtime, Hermes Agent adapter, and supported Hermes
+Agent dependencies in one environment:
 
 ```bash
 pip install "nemo-fabric[hermes-agent]"
@@ -37,20 +39,20 @@ adapter:
 pip install nemo-fabric-adapters-hermes
 ```
 
-The bare adapter package does not install the NeMo Fabric runtime or Hermes Agent.
-Use `hermes-agent>=0.17.0`, the constraint supported by this release. Hermes
-Agent and the adapter support Python 3.11 through 3.13.
+The bare adapter package does not install the NeMo Fabric runtime or Hermes
+Agent. Use `hermes-agent>=0.17.0`, the constraint supported by this release.
 
-If the host-managed Hermes Agent and NeMo Fabric runtime share an environment,
-install the runtime and bare adapter together:
+If the existing compatible Hermes Agent and NeMo Fabric runtime share an
+environment, install the runtime and bare adapter together:
 
 ```bash
 pip install nemo-fabric nemo-fabric-adapters-hermes
 ```
 
-For separate environments, use matching NeMo Fabric release versions for the
-runtime and adapter package unless a different pairing has been explicitly
-validated.
+For separate environments, set `ADAPTER_PYTHON` or `harness.settings.python` in
+the runtime environment to the adapter environment's Python interpreter. Use
+matching NeMo Fabric release versions for the runtime and adapter package
+unless a different pairing has been explicitly validated.
 
 ## Configure the Adapter
 

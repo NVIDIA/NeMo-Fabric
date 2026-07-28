@@ -99,9 +99,10 @@ def test_adapter_runtime_dependencies(path: str, expected: list[str]):
 def test_adapter_test_dependency_group_matches_leaf_harnesses():
     manifest = load_pyproject("")
     expected = [
-        dependency
-        for extra in ADAPTER_EXTRAS.values()
-        for dependency in extra["harness"]
+        "nemo-fabric-adapters-claude[harness]",
+        "nemo-fabric-adapters-codex[harness]",
+        "nemo-fabric-adapters-deepagents[harness]",
+        "nemo-fabric-adapters-hermes[harness]; python_version < '3.14'",
     ]
     assert sorted(manifest["dependency-groups"]["adapter-tests"]) == sorted(expected)
     assert "adapter-tests" not in manifest["tool"]["uv"]["default-groups"]

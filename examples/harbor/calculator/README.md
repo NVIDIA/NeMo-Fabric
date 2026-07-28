@@ -78,7 +78,7 @@ Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra harbor --extra hermes-agent harbor run \
+uv run --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
@@ -103,7 +103,7 @@ typed config. The API key is passed separately as a task credential.
 ```bash
 : "${NVIDIA_API_KEY:?Export NVIDIA_API_KEY before running Hermes Agent}"
 
-uv run --extra harbor --extra hermes-agent --extra relay harbor run \
+uv run --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model nvidia/nemotron-3-nano-30b-a3b \
@@ -145,7 +145,7 @@ Claude authentication variables selected by the adapter; this command uses
 ```bash
 : "${ANTHROPIC_API_KEY:?Export ANTHROPIC_API_KEY before running Claude}"
 
-uv run --extra harbor --extra claude harbor run \
+uv run --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
   --model anthropic/claude-sonnet-4-5 \

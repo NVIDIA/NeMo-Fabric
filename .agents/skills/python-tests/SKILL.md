@@ -46,8 +46,8 @@ directly:
   extras.
 - Each root harness extra delegates to the matching version of the leaf
   adapter's `harness` extra.
-- Bare leaf dependencies remain adapter-owned, and leaf `harness` constraints
-  match the root `adapter-tests` dependency group.
+- Bare leaf dependencies remain adapter-owned, and the root `adapter-tests`
+  dependency group installs each leaf through its `harness` extra.
 - Every leaf provides `full`. Only adapters that import NeMo Relay Python APIs
   provide `relay`; for adapters that use an external Relay executable, `full`
   equals `harness`.

@@ -13,8 +13,8 @@ telemetry.
 
 ## Install the Adapter
 
-For the complete supported composition, install NeMo Fabric with the adapter and
-LangChain Deep Agents dependencies:
+To install the NeMo Fabric runtime, adapter, and supported LangChain Deep Agents
+dependencies in one environment:
 
 ```bash
 pip install "nemo-fabric[deepagents]"
@@ -42,16 +42,17 @@ The bare adapter package does not install the NeMo Fabric runtime or harness. Us
 `deepagents>=0.6.12,<0.7.0`, `langchain>=1.3,<2.0`, and
 `langgraph>=1.2,<2.0`, the constraints supported by this release.
 
-If the host-managed Deep Agents stack and NeMo Fabric runtime share an
+If the existing compatible Deep Agents stack and NeMo Fabric runtime share an
 environment, install the runtime and bare adapter together:
 
 ```bash
 pip install nemo-fabric nemo-fabric-adapters-deepagents
 ```
 
-For separate environments, use matching NeMo Fabric release versions for the
-runtime and adapter package unless a different pairing has been explicitly
-validated.
+For separate environments, set `ADAPTER_PYTHON` or `harness.settings.python` in
+the runtime environment to the adapter environment's Python interpreter. Use
+matching NeMo Fabric release versions for the runtime and adapter package
+unless a different pairing has been explicitly validated.
 
 ## Configure the Adapter
 

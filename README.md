@@ -45,17 +45,11 @@ expressions install the components shown in each column:
 | [Hermes Agent](docs/integrations/harness/hermes.mdx) | `nemo-fabric[hermes-agent]` | `nemo-fabric-adapters-hermes[harness]` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
 
-The `nemo-fabric` package always installs the NeMo Fabric runtime. Its harness
-extras add the corresponding adapter and supported harness dependencies. Use an
-adapter package's `harness` extra when the runtime runs in another environment,
-or install the adapter package without an extra when that environment already
-manages the harness. If the runtime and host-managed harness share an
-environment, install `nemo-fabric` and the bare adapter package together. Every
-adapter package also provides an adapter-scoped `full` extra, which does not
-install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
-`harness` because Relay requires a separately installed `nemo-relay` CLI. For
-Hermes Agent and LangChain Deep Agents, `full` also installs the NeMo Relay
-Python package.
+The `nemo-fabric` package always installs the runtime, and each root harness
+extra adds the corresponding adapter and supported harness. Use the
+adapter-package forms for split environments or environments that already
+manage the harness. For `harness`, `full`, and Relay behavior, refer to the
+[installation guide](docs/getting-started/install.mdx).
 
 Capabilities vary by harness. Review the compatibility matrix and use plan()
 and doctor() before relying on optional capabilities such as MCP, skills,
@@ -76,7 +70,9 @@ Agent in one Python environment.
 
 ### Install NeMo Fabric and Hermes Agent
 
-Create and activate a virtual environment, then install the required packages:
+Hermes Agent supports Python 3.11 through 3.13. With a supported Python
+version, create and activate a virtual environment, then install the required
+packages:
 
 ```bash
 python -m venv .venv

@@ -72,16 +72,16 @@ Decide the following before implementation:
   leaf `relay` extra, and make `full` equivalent to `harness`. Document external
   executable or service prerequisites separately. Do not add directory-name or
   legacy aliases unless compatibility explicitly requires them.
-- Put wrapped-harness packages required by repository tests in the root
-  `adapter-tests` dependency group and other test-only packages in an
+- Install leaf adapters through their `harness` extras in the root
+  `adapter-tests` dependency group, and put other test-only packages in an
   appropriate non-published group. For packaged harnesses, "compatible" means
-  satisfying the same constraint used by the leaf `harness` extra and
-  `adapter-tests`; document that constraint for leaf-only installations. Derive
-  exact pins or bounded ranges from the supported upstream contract and test
-  evidence; do not claim a broader range than the evidence supports. Verify the
-  unconditional root runtime dependency, the absence of `runtime` and `-min`
-  extras, root-to-leaf harness delegation, and leaf `harness`, `relay`, and
-  `full` metadata. Inspect the built root and leaf wheel metadata.
+  satisfying the constraint declared by the leaf `harness` extra; document that
+  constraint for leaf-only installations. Derive exact pins or bounded ranges
+  from the supported upstream contract and test evidence; do not claim a
+  broader range than the evidence supports. Verify the unconditional root
+  runtime dependency, the absence of `runtime` and `-min` extras, root-to-leaf
+  harness delegation, `adapter-tests` delegation, and leaf `harness`, `relay`,
+  and `full` metadata. Inspect the built root and leaf wheel metadata.
 - Start with the narrowest truthful `fabric-adapter.json`. Keep
   `config.accepts`, `config.generates`, requirements, telemetry declarations,
   and lifecycle capabilities synchronized with implementation and tests.

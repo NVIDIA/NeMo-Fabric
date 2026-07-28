@@ -289,6 +289,8 @@ def test_harbor_calculator_documents_explicit_cli_commands():
 
     assert "run.sh" not in calculator
     assert calculator.count(" harbor run \\") == 4
+    assert calculator.count("uv run --extra harbor harbor run \\") == 4
+    assert "uv run --extra harbor --extra" not in calculator
     assert landing.count("uv run --extra harbor harbor run") == 0
     assert swebench.count("uv run --extra harbor harbor run") == 5
     assert "--agent-import-path" not in landing + calculator + swebench

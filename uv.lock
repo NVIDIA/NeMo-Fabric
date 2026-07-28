@@ -2079,12 +2079,10 @@ relay = [
 
 [package.dev-dependencies]
 adapter-tests = [
-    { name = "claude-agent-sdk" },
-    { name = "deepagents" },
-    { name = "hermes-agent", marker = "python_full_version < '3.14'" },
-    { name = "langchain" },
-    { name = "langgraph" },
-    { name = "openai-codex" },
+    { name = "nemo-fabric-adapters-claude", extra = ["harness"] },
+    { name = "nemo-fabric-adapters-codex", extra = ["harness"] },
+    { name = "nemo-fabric-adapters-deepagents", extra = ["harness"] },
+    { name = "nemo-fabric-adapters-hermes", extra = ["harness"], marker = "python_full_version < '3.14'" },
 ]
 adapters = [
     { name = "nemo-fabric-adapters-claude" },
@@ -2134,12 +2132,10 @@ provides-extras = ["claude", "codex", "deepagents", "harbor", "hermes-agent", "r
 
 [package.metadata.requires-dev]
 adapter-tests = [
-    { name = "claude-agent-sdk", specifier = "==0.2.120" },
-    { name = "deepagents", specifier = ">=0.6.12,<0.7.0" },
-    { name = "hermes-agent", marker = "python_full_version < '3.14'", specifier = ">=0.17.0" },
-    { name = "langchain", specifier = ">=1.3,<2.0" },
-    { name = "langgraph", specifier = ">=1.2,<2.0" },
-    { name = "openai-codex", specifier = "==0.144.4" },
+    { name = "nemo-fabric-adapters-claude", extras = ["harness"], editable = "adapters/claude" },
+    { name = "nemo-fabric-adapters-codex", extras = ["harness"], editable = "adapters/codex" },
+    { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-hermes", extras = ["harness"], marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
 ]
 adapters = [
     { name = "nemo-fabric-adapters-claude", editable = "adapters/claude" },

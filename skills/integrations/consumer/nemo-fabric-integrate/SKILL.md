@@ -44,13 +44,15 @@ that stay hidden behind this boundary.
 The consumer or its execution environment owns installation; NeMo Fabric validates
 runtime assumptions but never installs harnesses or credentials at run time.
 
+- NeMo Fabric supports Python 3.11 through 3.14. Use Python 3.11 through 3.13
+  for Hermes Agent; the Harbor integration requires Python 3.12 or later.
 - Install the runtime with `uv pip install nemo-fabric` (add the `harbor` extra
   for the Harbor integration). Refer to the
   [installation guide](https://github.com/NVIDIA/NeMo-Fabric/blob/main/docs/getting-started/install.mdx).
-- Select the harness adapter through `HarnessConfig.adapter_id`. For the
-  complete supported composition, install `nemo-fabric[claude]`,
-  `nemo-fabric[codex]`, `nemo-fabric[deepagents]`, or
-  `nemo-fabric[hermes-agent]`.
+- Select the harness adapter through `HarnessConfig.adapter_id`. To install the
+  NeMo Fabric runtime, adapter, and supported harness in one environment, use
+  `nemo-fabric[claude]`, `nemo-fabric[codex]`,
+  `nemo-fabric[deepagents]`, or `nemo-fabric[hermes-agent]`.
 - In a separate adapter environment, install
   `nemo-fabric-adapters-<adapter>[harness]`. This installs the adapter and
   supported harness dependencies without the NeMo Fabric runtime. Use `full`

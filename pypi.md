@@ -31,14 +31,17 @@ It provides:
 
 ## Install
 
+NeMo Fabric supports Python 3.11 through 3.14. Use Python 3.11 through 3.13 for
+Hermes Agent; the Harbor integration requires Python 3.12 or later.
+
 Install the core runtime and Python SDK:
 
 ```bash
 pip install nemo-fabric
 ```
 
-For a complete, supported adapter composition, install the corresponding
-`nemo-fabric` harness extra:
+To install the NeMo Fabric runtime, adapter, and supported harness in one
+environment, install the corresponding `nemo-fabric` harness extra:
 
 ```bash
 pip install "nemo-fabric[claude]"
@@ -46,9 +49,6 @@ pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
 pip install "nemo-fabric[hermes-agent]"
 ```
-
-These extras install the NeMo Fabric runtime, the adapter, and the harness
-dependencies supported by that adapter release.
 
 To install an adapter and its harness without the NeMo Fabric runtime, use the
 adapter package's `harness` extra:
@@ -77,8 +77,8 @@ pip install nemo-fabric-adapters-hermes
 
 The adapter distribution contains only adapter-owned runtime dependencies. It
 does not install the NeMo Fabric runtime. Select `harness` or `full` to install
-the harness. If the runtime shares an environment with a host-managed harness,
-install `nemo-fabric` and the bare adapter package together.
+the harness. If the runtime shares an environment with an existing compatible
+harness, install `nemo-fabric` and the bare adapter package together.
 
 NeMo Fabric supports running an agent harness in a different virtual
 environment from the NeMo Fabric runtime. This separation can isolate harnesses
@@ -109,13 +109,8 @@ The LangChain Deep Agents and Hermes Agent adapter packages also provide
 Claude and Codex require the
 [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli) instead of the NeMo
 Relay Python package. They do not provide a `relay` extra. Refer to the
-[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli) install guide for instructions on installing the CLI tool.
-
-### Python Versions
-
-NeMo Fabric supports Python versions 3.11-3.14. Some integrations and adapters
-have additional requirements. Hermes Agent does not support Python 3.14, and
-the Harbor integration requires Python 3.12 or later.
+[NeMo Relay CLI](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-nemo-relay)
+install guide for instructions on installing the CLI tool.
 
 ## Core Concepts
 

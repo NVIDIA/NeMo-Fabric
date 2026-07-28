@@ -9,51 +9,27 @@ This adapter runs Hermes Agent through its Python SDK.
 
 ## Install
 
-For the complete supported composition, install NeMo Fabric with the Hermes Agent
-adapter and Hermes Agent dependencies:
+Hermes Agent and this adapter require Python 3.11 through 3.13. Choose the
+installation that matches the environment:
 
-```bash
-pip install "nemo-fabric[hermes-agent]"
-```
+| Use Case | Installation |
+| --- | --- |
+| Runtime, adapter, and supported Hermes Agent | `pip install "nemo-fabric[hermes-agent]"` |
+| Adapter and supported Hermes Agent without the runtime | `pip install "nemo-fabric-adapters-hermes[harness]"` |
+| Adapter for an existing compatible Hermes Agent | `pip install nemo-fabric-adapters-hermes` |
 
-To install the adapter and supported Hermes Agent without the NeMo Fabric
-runtime, use the adapter package's `harness` extra:
+For an environment-managed harness, use `hermes-agent>=0.17.0`. For split
+runtime and adapter environments, configure `ADAPTER_PYTHON` or
+`harness.settings.python` and use matching NeMo Fabric release versions. Refer
+to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-```bash
-pip install "nemo-fabric-adapters-hermes[harness]"
-```
+Choose the Relay installation separately:
 
-If the environment already manages a compatible Hermes Agent, install only the
-adapter:
-
-```bash
-pip install nemo-fabric-adapters-hermes
-```
-
-The bare adapter distribution installs only adapter-owned dependencies. It does
-not install the NeMo Fabric runtime or Hermes Agent. For a host-managed install,
-use `hermes-agent>=0.17.0`, the constraint supported by this release. Hermes
-Agent and the adapter support Python 3.11 through 3.13.
-
-If the host-managed Hermes Agent and NeMo Fabric runtime share an environment,
-install the runtime and bare adapter together:
-
-```bash
-pip install nemo-fabric nemo-fabric-adapters-hermes
-```
-
-For separate environments, use matching NeMo Fabric release versions for the
-runtime and adapter package unless a different pairing has been explicitly
-validated.
-
-The adapter package also provides `relay` and `full` extras. Use `relay` when
-the environment already manages Hermes Agent, or use `full` to install Hermes
-Agent and the NeMo Relay Python package together:
-
-```bash
-pip install "nemo-fabric-adapters-hermes[relay]"
-pip install "nemo-fabric-adapters-hermes[full]"
-```
+| Use Case | Installation |
+| --- | --- |
+| Runtime, adapter, supported Hermes Agent, and Relay | `pip install "nemo-fabric[hermes-agent,relay]"` |
+| Adapter and Relay for an existing compatible Hermes Agent | `pip install "nemo-fabric-adapters-hermes[relay]"` |
+| Adapter, supported Hermes Agent, and Relay without the runtime | `pip install "nemo-fabric-adapters-hermes[full]"` |
 
 ## What It Maps
 

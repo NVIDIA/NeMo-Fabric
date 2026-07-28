@@ -11,42 +11,19 @@ compiled graph, checkpointer, and LangGraph thread across ordered invocations.
 
 ## Install
 
-For the complete supported composition, install NeMo Fabric with the Deep Agents
-adapter and harness dependencies:
+Choose the installation that matches the environment:
 
-```bash
-pip install "nemo-fabric[deepagents]"
-```
+| Use Case | Installation |
+| --- | --- |
+| Runtime, adapter, and supported Deep Agents stack | `pip install "nemo-fabric[deepagents]"` |
+| Adapter and supported stack without the runtime | `pip install "nemo-fabric-adapters-deepagents[harness]"` |
+| Adapter for an existing compatible stack | `pip install nemo-fabric-adapters-deepagents` |
 
-To install the adapter and supported Deep Agents stack without the NeMo Fabric
-runtime, use the adapter package's `harness` extra:
-
-```bash
-pip install "nemo-fabric-adapters-deepagents[harness]"
-```
-
-If the environment already manages a compatible Deep Agents stack, install only
-the adapter:
-
-```bash
-pip install nemo-fabric-adapters-deepagents
-```
-
-The bare adapter distribution installs only adapter-owned dependencies. It does
-not install the NeMo Fabric runtime or Deep Agents harness. For a host-managed
-install, use `deepagents>=0.6.12,<0.7.0`, `langchain>=1.3,<2.0`, and
-`langgraph>=1.2,<2.0`, the constraints supported by this release.
-
-If the host-managed Deep Agents stack and NeMo Fabric runtime share an
-environment, install the runtime and bare adapter together:
-
-```bash
-pip install nemo-fabric nemo-fabric-adapters-deepagents
-```
-
-For separate environments, use matching NeMo Fabric release versions for the
-runtime and adapter package unless a different pairing has been explicitly
-validated.
+For an environment-managed stack, use `deepagents>=0.6.12,<0.7.0`,
+`langchain>=1.3,<2.0`, and `langgraph>=1.2,<2.0`. For split runtime and adapter
+environments, configure `ADAPTER_PYTHON` or `harness.settings.python` and use
+matching NeMo Fabric release versions. Refer to the
+[installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 ## Model and Authentication
 
@@ -161,23 +138,14 @@ async with await client.start_runtime(config, base_dir=BASE_DIR) as runtime:
 NeMo Relay is Deep Agents' single, SDK-native observability path — the adapter
 does not expose gateway, CLI, or plugin launch modes for this harness. Relay is
 **optional**: `nemo_relay` is imported lazily and only when telemetry is enabled,
-so the core install stays Relay-neutral at import time. Install the Deep Agents
-harness and NeMo Relay Python package with NeMo Fabric:
+so the core install stays Relay-neutral at import time. Choose the Relay
+installation that matches the environment:
 
-```bash
-pip install "nemo-fabric[deepagents,relay]"
-```
-
-The `nemo-fabric[deepagents]` extra supplies the tested Deep Agents and LangGraph
-stack.
-For an environment without the NeMo Fabric runtime, use the adapter package's
-`relay` extra when the environment already manages that stack, or use `full` to
-install the stack and Relay together:
-
-```bash
-pip install "nemo-fabric-adapters-deepagents[relay]"
-pip install "nemo-fabric-adapters-deepagents[full]"
-```
+| Use Case | Installation |
+| --- | --- |
+| Runtime, adapter, supported stack, and Relay | `pip install "nemo-fabric[deepagents,relay]"` |
+| Adapter and Relay for an existing compatible stack | `pip install "nemo-fabric-adapters-deepagents[relay]"` |
+| Adapter, supported stack, and Relay without the runtime | `pip install "nemo-fabric-adapters-deepagents[full]"` |
 
 - **Relay** (`telemetry.providers.relay`): the SDK-native integration attaches
   three complementary pieces around `create_deep_agent`, applied uniformly to

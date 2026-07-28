@@ -69,16 +69,16 @@ Use the following package requirements for the two-environment model. Pin the
 host and task packages to the same NeMo Fabric release. These examples use
 version `0.1.0`.
 
-| Environment | Example Installation | Purpose |
+| Environment | Required Dependencies | Purpose |
 | --- | --- | --- |
 | Harbor host | `nemo-fabric[harbor]==0.1.0` | Harbor CLI, `FabricAgent`, and typed `FabricConfig` construction |
 | Claude task without Relay | `nemo-fabric[claude]==0.1.0` | NeMo Fabric runner, Claude adapter, and supported Claude harness |
-| Claude task with Relay | `nemo-fabric[claude]==0.1.0` plus a compatible `nemo-relay` CLI on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
+| Claude task with Relay | `nemo-fabric[claude]==0.1.0` plus a NeMo Relay 0.6.x CLI on `PATH` | NeMo Fabric runner, Claude adapter and harness, and the adapter-managed Relay gateway and hooks |
 | Hermes Agent task with Relay | `nemo-fabric[hermes-agent,relay]==0.1.0` | NeMo Fabric runner, Hermes Agent adapter and harness, and the NeMo Relay Python package |
 
-The `nemo-fabric` package already installs the NeMo Fabric runtime; do not add a
-`runtime` extra. The `relay` extra installs the NeMo Relay Python package. It
-does not install the external CLI used by Claude and Codex.
+The `nemo-fabric` package already installs the runtime, so do not add a
+`runtime` extra. The `relay` extra installs the NeMo Relay Python package, not
+the CLI required by Claude.
 
 ## How Harbor Inputs Become FabricConfig
 
