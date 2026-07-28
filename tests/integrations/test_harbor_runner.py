@@ -17,7 +17,6 @@ CALCULATOR_SOLUTION = CALCULATOR_ROOT / "task" / "solution" / "solve.sh"
 CALCULATOR_FABRIC_ROOT = CALCULATOR_ROOT / "task" / "environment" / "fabric"
 SWEBENCH_ROOT = ROOT / "examples" / "harbor" / "swebench"
 SWEBENCH_README = SWEBENCH_ROOT / "README.md"
-SWEBENCH_PREPARE = ROOT / "examples" / "harbor" / "prepare_swebench.sh"
 SWEBENCH_MCP_CONFIG = SWEBENCH_ROOT / "mcp" / "repo-inspector.mcp.json"
 INTEGRATION_README = ROOT / "examples" / "harbor" / "README.md"
 SDK_INTEGRATION_README = (
@@ -287,7 +286,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     swebench = SWEBENCH_README.read_text(encoding="utf-8")
 
     assert "run.sh" not in calculator
-    assert calculator.count("uv run --extra runtime --extra harbor harbor run") == 4
+    assert calculator.count(" harbor run \\") == 4
     assert landing.count("uv run --extra runtime --extra harbor harbor run") == 0
     assert swebench.count("uv run --extra runtime --extra harbor harbor run") == 5
     assert "--agent-import-path" not in landing + calculator + swebench
@@ -305,9 +304,13 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "swebench/README.md" in landing
     assert "fabric_adapter_id" in landing
     assert 'export TMPDIR="$HOME/harbor-tmp"' in landing
-    assert "./examples/harbor/prepare_swebench.sh" in swebench
-    assert 'FABRIC_PACKAGE="$(< "$FABRIC_BUNDLE/.fabric-package")"' in swebench
-    assert '--ae "PIP_FIND_LINKS=$FABRIC_FIND_LINKS"' in swebench
+    assert "raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh" in swebench
+    assert (
+        "FABRIC_PACKAGE="
+        "'nemo-fabric[claude,harbor,hermes-agent,relay,runtime]==0.1.0a20260724'"
+        in swebench
+    )
+    assert "PIP_FIND_LINKS" not in swebench
     assert "--dataset swe-bench/swe-bench-verified" in swebench
     for flag in (
         "--path",
@@ -340,17 +343,14 @@ def test_harbor_generated_paths_are_ignored():
     assert "task/environment/.vendor.*/" in ignore
 
 
-def test_swebench_bootstrap_pins_a_supported_relay_cli():
+def test_swebench_setup_pins_a_supported_relay_cli():
     from nemo_fabric_adapters.common.relay_gateway import RELAY_MINIMUM_VERSION
 
-    prepare = SWEBENCH_PREPARE.read_text(encoding="utf-8")
+    swebench = SWEBENCH_README.read_text(encoding="utf-8")
     minimum = ".".join(str(part) for part in RELAY_MINIMUM_VERSION)
 
-    assert f'relay_cli_version="{minimum}"' in prepare
-    assert '"nemo-relay $relay_cli_version"' in prepare
-    assert 'nemo-relay-cli --version "$relay_cli_version" --locked' in prepare
-    assert '"$(uname -s)" != "Linux"' in prepare
-    assert '"$(uname -m)" != "x86_64"' in prepare
+    assert f"NEMO_RELAY_VERSION={minimum}" in swebench
+    assert '--install-dir "$FABRIC_BUNDLE/.relay/bin"' in swebench
 
 
 def test_harbor_calculator_setup_and_solution_fail_fast():

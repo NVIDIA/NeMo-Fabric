@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import sys
@@ -186,11 +187,6 @@ def merge_unique(*values: Any) -> list[str]:
 def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in mapping.items() if value is not None}
 
-
-def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in mapping.items() if value is not None}
-
-
 def dump_yaml(value: dict[str, Any]) -> str:
     try:
         import yaml
@@ -271,7 +267,44 @@ def normalize_relay_output_dirs(plugin_config: dict[str, Any], payload: dict[str
         atif.setdefault("model_name", relay_model_name(payload))
 
 
+def _artifact_directory(value: Any) -> Path | None:
+    if not value:
+        return None
+    try:
+        directory = Path(value).resolve(strict=True)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+    return directory if directory.is_dir() else None
+
+
+def _artifact_file(value: Any, *, directory: Path) -> Path | None:
+    try:
+        path = Path(value).resolve(strict=True)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return None
+    if not path.is_file() or not path.is_relative_to(directory):
+        return None
+    return path
+
+
+def _artifact_name_is_local(value: str) -> bool:
+    try:
+        return Path(value).name == value
+    except (OSError, ValueError):
+        return False
+
+
+def _artifact_glob(directory: Path, pattern: str) -> list[Path]:
+    if not _artifact_name_is_local(pattern):
+        return []
+    try:
+        return sorted(directory.glob(pattern))
+    except (OSError, ValueError):
+        return []
+
+
 def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str]]:
+
     artifacts: list[dict[str, str]] = []
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":
@@ -282,26 +315,34 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
             for sink in atof.get("sinks") or []:
                 if not isinstance(sink, dict) or sink.get("type") != "file":
                     continue
-                output_directory = sink.get("output_directory")
-                if not output_directory:
-                    continue
-                directory = Path(output_directory)
-                if not directory.exists():
-                    continue
-                for path in sorted(directory.glob("*.jsonl")):
-                    artifacts.append({"kind": "atof", "path": str(path)})
+                directory = _artifact_directory(sink.get("output_directory"))
+                if directory is not None:
+                    filename = sink.get("filename")
+                    if isinstance(filename, str) and filename:
+                        paths = (
+                            [directory / filename]
+                            if _artifact_name_is_local(filename)
+                            else []
+                        )
+                    else:
+                        paths = _artifact_glob(directory, "*.jsonl")
+                    for path in paths:
+                        resolved = _artifact_file(path, directory=directory)
+                        if resolved is not None:
+                            artifacts.append({"kind": "atof", "path": str(resolved)})
 
         atif = config.get("atif")
-        if not isinstance(atif, dict) or not atif.get("enabled"):
-            continue
-        output_directory = atif.get("output_directory")
-        if not output_directory:
-            continue
-        directory = Path(output_directory)
-        if not directory.exists():
-            continue
-        for path in sorted(directory.glob("*.json")):
-            artifacts.append({"kind": "atif", "path": str(path)})
+        if isinstance(atif, dict) and atif.get("enabled"):
+            directory = _artifact_directory(atif.get("output_directory"))
+            if directory is not None:
+                template = atif.get("filename_template")
+                if not isinstance(template, str) or not template:
+                    continue
+                pattern = glob.escape(template).replace("{session_id}", "*")
+                for path in _artifact_glob(directory, pattern):
+                    resolved = _artifact_file(path, directory=directory)
+                    if resolved is not None:
+                        artifacts.append({"kind": "atif", "path": str(resolved)})
     return artifacts
 
 

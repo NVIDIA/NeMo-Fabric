@@ -684,6 +684,7 @@ async def test_runtime_reports_relay_artifacts(relay_payload, monkeypatch, tmp_p
                         "atif": {
                             "enabled": True,
                             "output_directory": str(tmp_path / "atif"),
+                            "filename_template": "trajectory-{session_id}.atif.json",
                         }
                     },
                 }
