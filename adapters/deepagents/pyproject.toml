@@ -46,7 +46,7 @@ full = [
   "deepagents>=0.6.12,<0.7.0",
   "langchain>=1.3,<2.0",
   "langgraph>=1.2,<2.0",
-  "nemo-relay>=0.6.0,<0.7",
+  "nemo-relay[deepagents]>=0.6.0,<0.7",
 ]
 
 [project.urls]

@@ -42,6 +42,7 @@ ADAPTER_EXTRAS = {
             "langgraph>=1.2,<2.0",
         ],
         "relay": ["nemo-relay>=0.6.0,<0.7"],
+        "full_relay": ["nemo-relay[deepagents]>=0.6.0,<0.7"],
     },
     "hermes-agent": {
         "path": "adapters/hermes",
@@ -133,9 +134,10 @@ def test_leaf_adapter_extras_separate_harness_and_relay(name: str):
     expected = ADAPTER_EXTRAS[name]
     extras = load_pyproject(expected["path"])["project"]["optional-dependencies"]
     relay = expected.get("relay", [])
+    full_relay = expected.get("full_relay", relay)
 
     assert extras["harness"] == expected["harness"]
-    assert sorted(extras["full"]) == sorted([*expected["harness"], *relay])
+    assert sorted(extras["full"]) == sorted([*expected["harness"], *full_relay])
 
     expected_names = {"harness", "full"}
     if relay:

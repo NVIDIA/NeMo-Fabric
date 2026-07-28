@@ -853,7 +853,7 @@ full = [
     { name = "deepagents" },
     { name = "langchain" },
     { name = "langgraph" },
-    { name = "nemo-relay" },
+    { name = "nemo-relay", extra = ["deepagents"] },
 ]
 harness = [
     { name = "deepagents" },
@@ -876,8 +876,8 @@ requires-dist = [
     { name = "langgraph", marker = "extra == 'harness'", specifier = ">=1.2,<2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0,<4.0" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
-    { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.6.0,<0.7" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
+    { name = "nemo-relay", extras = ["deepagents"], marker = "extra == 'full'", specifier = ">=0.6.0,<0.7" },
 ]
 provides-extras = ["harness", "relay", "full"]
 
@@ -891,6 +891,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/f4/d1dfaed022da0f6f14765a122867f976a69cc520fe1faaf99757f5719d1f/nemo_relay-0.6.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:849daa9e45158ac581e54506e0fcc7a24f557d1ed06dbdc074f5de7a00393cbc", size = 9336372, upload-time = "2026-07-22T20:07:53.224Z" },
     { url = "https://files.pythonhosted.org/packages/3a/b0/908d77f75b9054e1e403da78f7d9430249a45939070d4298abbb41a04b5b/nemo_relay-0.6.0-cp311-abi3-win_amd64.whl", hash = "sha256:bfbbedfd130fa95c9b8c04643c30910df850e0ed3500beeab82b00ca2d94e7ea", size = 9613425, upload-time = "2026-07-22T20:07:55.175Z" },
     { url = "https://files.pythonhosted.org/packages/cd/71/c438b9d746303ff7f270d99f13b250bf947cdac3e52de2a83fd132cbca0b/nemo_relay-0.6.0-cp311-abi3-win_arm64.whl", hash = "sha256:82fe132943399d89e6ec34dc28df0be7bbe41b84f6698c545928b8816b6010f6", size = 9034810, upload-time = "2026-07-22T20:07:57.467Z" },
+]
+
+[package.optional-dependencies]
+deepagents = [
+    { name = "deepagents" },
+    { name = "langchain" },
+    { name = "langchain-anthropic" },
+    { name = "langchain-core" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint" },
+    { name = "langsmith" },
 ]
 
 [[package]]
