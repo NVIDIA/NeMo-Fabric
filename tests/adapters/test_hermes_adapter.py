@@ -352,7 +352,6 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     assert config["model"] == {
         "provider": "nvidia",
         "default": "nvidia/review-model",
-        "base_url": "https://integrate.api.nvidia.com/v1",
     }
     assert config["terminal"]["cwd"] == str(tmp_path / "workspace")
     assert config["skills"]["external_dirs"] == [str(tmp_path / "skills" / "review")]
