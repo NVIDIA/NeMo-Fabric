@@ -15,7 +15,7 @@ Provides a NeMo Fabric adapter for use with [Codex](https://openai.com/codex/).
 
 ## Install
 
-Installation can be performed using the `nemo-fabric` meta package with the `codex` extra,  or by installing the adapter and harness packages separately. The following table shows which components each installation provides:
+Installation can be performed using the `nemo-fabric` meta package with the `codex` extra, or by installing the adapter and harness packages separately. The following table shows which components each installation provides:
 
 | Installation | Runtime | Adapter | Harness | NeMo Relay CLI |
 | --- | --- | --- | --- | --- |
