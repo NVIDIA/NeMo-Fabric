@@ -20,7 +20,7 @@ Typically this is installed using the [`nemo-fabric`](https://pypi.org/project/n
 pip install nemo-fabric
 ```
 
-Is equivalent to:
+Installing the runtime package directly is equivalent:
 
 ```bash
 pip install nemo-fabric-runtime
