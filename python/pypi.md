@@ -12,7 +12,7 @@ SPDX-License-Identifier: Apache-2.0
 `nemo-fabric-runtime` provides the Python SDK and native Rust bindings for
 NVIDIA NeMo Fabric, a runtime execution layer for agents.
 
-Typically this is installed using the [`nemo-fabric`](https://pypi.org/project/nemo-fabric/) meta-package.
+Typically this is installed using the [`nemo-fabric`](https://pypi.org/project/nemo-fabric/) meta package.
 
 ```bash
 pip install nemo-fabric
