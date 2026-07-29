@@ -9,6 +9,8 @@ SPDX-License-Identifier: Apache-2.0
 [![GitHub](https://img.shields.io/badge/github-repo-blue?logo=github)](https://github.com/NVIDIA/NeMo-Fabric/)
 [![Release](https://img.shields.io/github/v/release/NVIDIA/NeMo-Fabric?color=green)](https://github.com/NVIDIA/NeMo-Fabric/releases)
 
+![Diagram showing NeMo Fabric connecting applications, evaluations, and reinforcement learning rollouts to Hermes, Codex, Claude, and Deep Agents, with results, artifacts, and telemetry as outputs.](https://raw.githubusercontent.com/NVIDIA/NeMo-Fabric/refs/heads/main/assets/fabric-hero-option2.png)
+
 Provides a NeMo Fabric adapter for use with [Claude Code](https://claude.com/).
 
 ## Install
@@ -25,4 +27,3 @@ The `full` extra is equivalent to `harness`. Relay is optional for ordinary
 runs. NeMo Relay telemetry and streaming require the `nemo-relay` CLI tool to be installed, refer to the [NeMo Relay installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#nemo-relay-cli).
 
 Refer to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install) for more details.
-
