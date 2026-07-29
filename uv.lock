@@ -2050,7 +2050,7 @@ wheels = [
 
 [[package]]
 name = "nemo-fabric"
-version = "0.2.0"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "nemo-fabric-runtime" },
@@ -2172,7 +2172,7 @@ test = [
 
 [[package]]
 name = "nemo-fabric-adapters-claude"
-version = "0.2.0"
+version = "0.1.0"
 source = { editable = "adapters/claude" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
@@ -2195,7 +2195,7 @@ provides-extras = ["harness", "full"]
 
 [[package]]
 name = "nemo-fabric-adapters-codex"
-version = "0.2.0"
+version = "0.1.0"
 source = { editable = "adapters/codex" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
@@ -2218,12 +2218,12 @@ provides-extras = ["harness", "full"]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
-version = "0.2.0"
+version = "0.1.0"
 source = { editable = "adapters/common" }
 
 [[package]]
 name = "nemo-fabric-adapters-deepagents"
-version = "0.2.0"
+version = "0.1.0"
 source = { editable = "adapters/deepagents" }
 dependencies = [
     { name = "langchain-mcp-adapters" },
@@ -2261,7 +2261,7 @@ provides-extras = ["harness", "relay", "full"]
 
 [[package]]
 name = "nemo-fabric-adapters-hermes"
-version = "0.2.0"
+version = "0.1.0"
 source = { editable = "adapters/hermes" }
 dependencies = [
     { name = "nemo-fabric-adapters-common", marker = "python_full_version < '3.14'" },
