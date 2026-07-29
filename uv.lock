@@ -2058,34 +2058,32 @@ dependencies = [
 
 [package.optional-dependencies]
 claude = [
-    { name = "nemo-fabric-adapters-claude" },
+    { name = "nemo-fabric-adapters-claude", extra = ["harness"] },
 ]
 codex = [
-    { name = "nemo-fabric-adapters-codex" },
+    { name = "nemo-fabric-adapters-codex", extra = ["harness"] },
 ]
 deepagents = [
-    { name = "nemo-fabric-adapters-deepagents" },
+    { name = "nemo-fabric-adapters-deepagents", extra = ["harness"] },
 ]
 harbor = [
     { name = "harbor", marker = "python_full_version >= '3.12'" },
     { name = "pyyaml" },
 ]
-hermes = [
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
-]
 hermes-agent = [
-    { name = "hermes-agent", marker = "python_full_version < '3.14'" },
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
+    { name = "nemo-fabric-adapters-hermes", extra = ["harness"], marker = "python_full_version < '3.14'" },
 ]
 relay = [
     { name = "nemo-relay" },
-    { name = "tomli-w" },
-]
-runtime = [
-    { name = "nemo-fabric-runtime" },
 ]
 
 [package.dev-dependencies]
+adapter-tests = [
+    { name = "nemo-fabric-adapters-claude", extra = ["harness"] },
+    { name = "nemo-fabric-adapters-codex", extra = ["harness"] },
+    { name = "nemo-fabric-adapters-deepagents", extra = ["harness"] },
+    { name = "nemo-fabric-adapters-hermes", extra = ["harness"], marker = "python_full_version < '3.14'" },
+]
 adapters = [
     { name = "nemo-fabric-adapters-claude" },
     { name = "nemo-fabric-adapters-codex" },
@@ -2122,21 +2120,23 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "harbor", marker = "python_full_version >= '3.12' and extra == 'harbor'", specifier = ">=0.18,<0.19" },
-    { name = "hermes-agent", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", specifier = ">=0.17.0" },
-    { name = "nemo-fabric-adapters-claude", marker = "extra == 'claude'", editable = "adapters/claude" },
-    { name = "nemo-fabric-adapters-codex", marker = "extra == 'codex'", editable = "adapters/codex" },
-    { name = "nemo-fabric-adapters-deepagents", marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes'", editable = "adapters/hermes" },
-    { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-claude", extras = ["harness"], marker = "extra == 'claude'", editable = "adapters/claude" },
+    { name = "nemo-fabric-adapters-codex", extras = ["harness"], marker = "extra == 'codex'", editable = "adapters/codex" },
+    { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-hermes", extras = ["harness"], marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "adapters/hermes" },
     { name = "nemo-fabric-runtime", editable = "python" },
-    { name = "nemo-fabric-runtime", marker = "extra == 'runtime'", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
-    { name = "tomli-w", marker = "extra == 'relay'", specifier = "~=1.2" },
 ]
-provides-extras = ["codex", "claude", "deepagents", "harbor", "hermes", "hermes-agent", "relay", "runtime"]
+provides-extras = ["claude", "codex", "deepagents", "harbor", "hermes-agent", "relay"]
 
 [package.metadata.requires-dev]
+adapter-tests = [
+    { name = "nemo-fabric-adapters-claude", extras = ["harness"], editable = "adapters/claude" },
+    { name = "nemo-fabric-adapters-codex", extras = ["harness"], editable = "adapters/codex" },
+    { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], editable = "adapters/deepagents" },
+    { name = "nemo-fabric-adapters-hermes", extras = ["harness"], marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
+]
 adapters = [
     { name = "nemo-fabric-adapters-claude", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", editable = "adapters/codex" },
@@ -2175,17 +2175,23 @@ name = "nemo-fabric-adapters-claude"
 version = "0.2.0"
 source = { editable = "adapters/claude" }
 dependencies = [
-    { name = "claude-agent-sdk" },
     { name = "nemo-fabric-adapters-common" },
     { name = "tomli-w" },
 ]
 
+[package.optional-dependencies]
+harness = [
+    { name = "claude-agent-sdk" },
+]
+
 [package.metadata]
 requires-dist = [
-    { name = "claude-agent-sdk", specifier = "==0.2.120" },
+    { name = "claude-agent-sdk", marker = "extra == 'full'", specifier = "==0.2.120" },
+    { name = "claude-agent-sdk", marker = "extra == 'harness'", specifier = "==0.2.120" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
+provides-extras = ["harness", "full"]
 
 [[package]]
 name = "nemo-fabric-adapters-codex"
@@ -2193,16 +2199,22 @@ version = "0.2.0"
 source = { editable = "adapters/codex" }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
-    { name = "openai-codex" },
     { name = "tomli-w" },
+]
+
+[package.optional-dependencies]
+harness = [
+    { name = "openai-codex" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "openai-codex", specifier = "==0.144.4" },
+    { name = "openai-codex", marker = "extra == 'full'", specifier = "==0.144.4" },
+    { name = "openai-codex", marker = "extra == 'harness'", specifier = "==0.144.4" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
+provides-extras = ["harness", "full"]
 
 [[package]]
 name = "nemo-fabric-adapters-common"
@@ -2214,32 +2226,38 @@ name = "nemo-fabric-adapters-deepagents"
 version = "0.2.0"
 source = { editable = "adapters/deepagents" }
 dependencies = [
-    { name = "deepagents" },
-    { name = "langchain" },
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
-    { name = "langgraph" },
     { name = "langgraph-checkpoint-sqlite" },
     { name = "nemo-fabric-adapters-common" },
 ]
 
 [package.optional-dependencies]
+harness = [
+    { name = "deepagents" },
+    { name = "langchain" },
+    { name = "langgraph" },
+]
 relay = [
-    { name = "nemo-relay", extra = ["deepagents"] },
+    { name = "nemo-relay" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "deepagents", specifier = ">=0.6.12,<0.7.0" },
-    { name = "langchain", specifier = ">=1.3,<2.0" },
+    { name = "deepagents", marker = "extra == 'full'", specifier = ">=0.6.12,<0.7.0" },
+    { name = "deepagents", marker = "extra == 'harness'", specifier = ">=0.6.12,<0.7.0" },
+    { name = "langchain", marker = "extra == 'full'", specifier = ">=1.3,<2.0" },
+    { name = "langchain", marker = "extra == 'harness'", specifier = ">=1.3,<2.0" },
     { name = "langchain-mcp-adapters", specifier = ">=0.1,<0.3.0" },
     { name = "langchain-openai", specifier = ">=0.3" },
-    { name = "langgraph", specifier = ">=1.2,<2.0" },
+    { name = "langgraph", marker = "extra == 'full'", specifier = ">=1.2,<2.0" },
+    { name = "langgraph", marker = "extra == 'harness'", specifier = ">=1.2,<2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0,<4.0" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-relay", extras = ["deepagents"], marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
+    { name = "nemo-relay", extras = ["deepagents"], marker = "extra == 'full'", specifier = ">=0.6.0,<0.7" },
 ]
-provides-extras = ["relay"]
+provides-extras = ["harness", "relay", "full"]
 
 [[package]]
 name = "nemo-fabric-adapters-hermes"
@@ -2247,14 +2265,22 @@ version = "0.2.0"
 source = { editable = "adapters/hermes" }
 dependencies = [
     { name = "nemo-fabric-adapters-common", marker = "python_full_version < '3.14'" },
-    { name = "pyyaml", marker = "python_full_version < '3.14'" },
+]
+
+[package.optional-dependencies]
+harness = [
+    { name = "hermes-agent", marker = "python_full_version < '3.14'" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "hermes-agent", marker = "python_full_version < '3.14' and extra == 'full'", specifier = ">=0.17.0" },
+    { name = "hermes-agent", marker = "python_full_version < '3.14' and extra == 'harness'", specifier = ">=0.17.0" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.6.0,<0.7" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
 ]
+provides-extras = ["harness", "relay", "full"]
 
 [[package]]
 name = "nemo-fabric-runtime"
@@ -2280,17 +2306,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/a3/f4/d1dfaed022da0f6f14765a122867f976a69cc520fe1faaf99757f5719d1f/nemo_relay-0.6.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:849daa9e45158ac581e54506e0fcc7a24f557d1ed06dbdc074f5de7a00393cbc", size = 9336372, upload-time = "2026-07-22T20:07:53.224Z" },
     { url = "https://files.pythonhosted.org/packages/3a/b0/908d77f75b9054e1e403da78f7d9430249a45939070d4298abbb41a04b5b/nemo_relay-0.6.0-cp311-abi3-win_amd64.whl", hash = "sha256:bfbbedfd130fa95c9b8c04643c30910df850e0ed3500beeab82b00ca2d94e7ea", size = 9613425, upload-time = "2026-07-22T20:07:55.175Z" },
     { url = "https://files.pythonhosted.org/packages/cd/71/c438b9d746303ff7f270d99f13b250bf947cdac3e52de2a83fd132cbca0b/nemo_relay-0.6.0-cp311-abi3-win_arm64.whl", hash = "sha256:82fe132943399d89e6ec34dc28df0be7bbe41b84f6698c545928b8816b6010f6", size = 9034810, upload-time = "2026-07-22T20:07:57.467Z" },
-]
-
-[package.optional-dependencies]
-deepagents = [
-    { name = "deepagents" },
-    { name = "langchain" },
-    { name = "langchain-anthropic" },
-    { name = "langchain-core" },
-    { name = "langgraph" },
-    { name = "langgraph-checkpoint" },
-    { name = "langsmith" },
 ]
 
 [[package]]

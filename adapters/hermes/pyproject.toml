@@ -27,7 +27,18 @@ readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "nemo-fabric-adapters-common == 0.2.0",
-  "pyyaml>=6.0", # needed for writing hermes config files
+]
+
+[project.optional-dependencies]
+harness = [
+  "hermes-agent>=0.17.0; python_version < '3.14'",
+]
+relay = [
+  "nemo-relay>=0.6.0,<0.7",
+]
+full = [
+  "hermes-agent>=0.17.0; python_version < '3.14'",
+  "nemo-relay>=0.6.0,<0.7",
 ]
 
 [project.urls]

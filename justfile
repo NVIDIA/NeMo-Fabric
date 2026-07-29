@@ -203,7 +203,7 @@ PY
 
     local metadata_file=""
     metadata_file="$(mktemp)"
-    if ! cargo metadata --no-deps --format-version 1 > "$metadata_file"; then
+    if ! cargo metadata --format-version 1 > "$metadata_file"; then
         rm -f "$metadata_file"
         return 1
     fi
@@ -257,7 +257,11 @@ project_paths = (
     Path("pyproject.toml"),
     *sorted(Path("adapters").glob("**/pyproject.toml")),
 )
-pin_pattern = re.compile(r'(nemo-fabric-[a-z0-9-]+\s*==\s*)([^"\s,;]+)')
+pin_pattern = re.compile(
+    r'(nemo-fabric-[a-z0-9-]+'
+    r'(?:\[[a-z0-9-]+(?:\s*,\s*[a-z0-9-]+)*\])?'
+    r'\s*==\s*)([^"\s,;]+)'
+)
 
 for path in project_paths:
     text = path.read_text()
@@ -343,7 +347,7 @@ build-python:
             --group adapters \
             "${editable_projects[@]}"
     else
-        uv sync --no-default-groups --group adapters --extra claude --extra runtime \
+        uv sync --no-default-groups --group adapters \
             --reinstall-package nemo-fabric \
             --reinstall-package nemo-fabric-runtime
     fi
@@ -414,7 +418,7 @@ test-python:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ "{{ no_uv }}" != "true" ]]; then
-        uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents --extra harbor --extra hermes --extra hermes-agent --extra relay --extra runtime
+        uv sync --no-default-groups --group adapters --group adapter-tests --group test --extra harbor --extra relay
     fi
     uv run --no-sync pytest
 

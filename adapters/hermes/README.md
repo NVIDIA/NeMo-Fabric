@@ -9,23 +9,26 @@ This adapter runs Hermes Agent through its Python SDK.
 
 ## Install
 
-To install just the Hermes Agent adapter by itself:
+Hermes Agent and this adapter require Python 3.11 through 3.13. The following
+table shows which components each installation provides:
 
-```bash
-pip install "nemo-fabric[hermes]"
-```
+| Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
+| --- | --- | --- | --- | --- |
+| `pip install "nemo-fabric[hermes-agent]"` | Yes | Yes | Yes | No |
+| `pip install "nemo-fabric[hermes-agent,relay]"` | Yes | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-hermes[harness]"` | No | Yes | Yes | No |
+| `pip install "nemo-fabric-adapters-hermes[full]"` | No | Yes | Yes | Yes |
+| `pip install "nemo-fabric-adapters-hermes[relay]"` | No | Yes | No | Yes |
+| `pip install nemo-fabric-adapters-hermes` | No | Yes | No | No |
 
-To install the Hermes Agent adapter along with the NeMo Fabric Runtime:
+For an environment-managed harness, use `hermes-agent>=0.17.0`. For split
+runtime and adapter environments, configure `ADAPTER_PYTHON` or
+`harness.settings.python` and use matching NeMo Fabric release versions. Refer
+to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
-```bash
-pip install "nemo-fabric[hermes, runtime]"
-```
-
-To install the Hermes Agent adapter along with a compatible version of Hermes Agent:
-
-```bash
-pip install "nemo-fabric[hermes, hermes-agent]"
-```
+Relay is optional for ordinary runs. Relay telemetry and
+`Runtime.invoke_stream()` require one of the installations in the table that
+includes the NeMo Relay Python package.
 
 ## What It Maps
 
@@ -72,8 +75,8 @@ Keep `fabric-adapter.json` aligned with the Python implementation:
 - `adapter_kind` is `python` because NeMo Fabric can invoke it through Python.
 - `runner.module` names the persistent host module that NeMo Fabric invokes with
   `python -m`.
-- `requirements` powers `fabric doctor`; keep required env vars, binaries, or
-  packages current.
+- `requirements` supplies dependency checks to NeMo Fabric diagnostics; keep
+  required env vars, binaries, or packages current.
 - `config.accepts` must match the NeMo Fabric sections this adapter maps into Hermes Agent.
 - `telemetry.providers` declares provider-specific outputs and integration modes
   the adapter can produce or forward.

@@ -36,6 +36,21 @@ license: Apache-2.0
   ```
   Simply allow the resulting KeyError to be raised if the "data" key is not present in the results dictionary, as this will provide a clear indication of what went wrong in the test.
 
+## Packaging Metadata Tests
+
+When adapter installation metadata changes, assert the published composition
+directly:
+
+- The root project unconditionally depends on the exact-version
+  `nemo-fabric-runtime` distribution.
+- Each root harness extra delegates to the matching version of the leaf
+  adapter's `harness` extra.
+- Bare leaf dependencies remain adapter-owned, and the root `adapter-tests`
+  dependency group installs each leaf through its `harness` extra.
+- Every leaf provides `full`. Only adapters that import NeMo Relay Python APIs
+  provide `relay`; for adapters that use an external Relay executable, `full`
+  equals `harness`.
+
 ## Common Commands
 
 ```bash

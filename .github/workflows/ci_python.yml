@@ -83,12 +83,13 @@ jobs:
         with:
           shared-key: fabric-rust-${{ runner.os }}-${{ runner.arch }}
 
-      # PyYAML is not a project dependency, but test_hermes_config_mapping
-      # imports it to read Hermes Agent config fixtures, so install it for the tests.
+      # Exercise the supported root adapter and harness compositions. The
+      # adapter-tests group also keeps local test dependencies independently
+      # installable for leaf adapter development.
       - name: Build SDK with native extension
         run: |
           uv venv --python "${UV_PYTHON:-${{ matrix.python-version }}}" .venv
-          uv sync --group test --no-group dev --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes-agent' || '' }} --extra relay --extra runtime
+          uv sync --no-default-groups --group adapter-tests --group test --extra claude --extra codex --extra deepagents ${{ matrix.python-version != '3.11' && '--extra harbor' || '' }} ${{ matrix.python-version != '3.14' && '--extra hermes-agent' || '' }} --extra relay
 
       - name: Run pytest
         run: |

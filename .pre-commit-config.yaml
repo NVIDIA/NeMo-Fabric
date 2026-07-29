@@ -31,7 +31,7 @@ repos:
     hooks:
       - id: cargo-lockfile-check
         name: Cargo.lock is up to date
-        entry: bash -c 'cargo metadata --format-version 1 --no-deps >/dev/null'
+        entry: bash -c 'cargo metadata --format-version 1 --locked >/dev/null'
         language: system
         files: '^(Cargo\.toml|Cargo\.lock|crates/.*/Cargo\.toml)$'
         pass_filenames: false
