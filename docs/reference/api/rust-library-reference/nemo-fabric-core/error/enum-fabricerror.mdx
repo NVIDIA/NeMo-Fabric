@@ -187,6 +187,13 @@ Adapter kind.
 
 A persistent local-host lifecycle operation failed.
 
+#### Source compatibility
+
+Starting with NeMo Fabric 0.2.0, this variant includes the `retryable`
+and `metadata` fields. Downstream code that constructs the variant must
+provide both fields. Pattern matches should bind them when needed or use
+`..` to remain compatible with future diagnostic fields.
+
 #### Fields
 
 ### `operation: &'static str`

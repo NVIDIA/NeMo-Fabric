@@ -101,6 +101,13 @@ pub enum FabricError {
         adapter_kind: AdapterKind,
     },
     /// A persistent local-host lifecycle operation failed.
+    ///
+    /// # Source compatibility
+    ///
+    /// Starting with NeMo Fabric 0.2.0, this variant includes the `retryable`
+    /// and `metadata` fields. Downstream code that constructs the variant must
+    /// provide both fields. Pattern matches should bind them when needed or use
+    /// `..` to remain compatible with future diagnostic fields.
     #[error(
         "adapter lifecycle {operation} failed for runtime `{runtime_id}` ({code}): {message}{diagnostics_suffix}",
         diagnostics_suffix = if diagnostics.is_empty() {
