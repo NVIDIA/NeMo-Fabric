@@ -241,7 +241,7 @@ stopped or crashed local host.
 
 ## Testing
 
-The default suite uses deterministic mock Claude Code and Relay CLIs and
+The default suite uses deterministic mock Claude Code and NeMo Relay CLIs and
 requires no credentials. Test a current `nemo-relay` CLI with the mock Claude
 client, or run the live integrations on an authenticated developer host:
 
@@ -254,6 +254,6 @@ RUN_FABRIC_CLAUDE_RELAY_INTEGRATION=1 uv run --no-sync pytest tests/e2e/test_cla
 Set `FABRIC_TEST_CLAUDE_MODEL` to override the default live-test model,
 `claude-sonnet-4-5`.
 
-The live Relay test applies the same semantic artifact contract as Codex: ATOF
+The live NeMo Relay test applies the same semantic artifact contract as Codex: ATOF
 must contain structured LLM requests and token usage, and ATIF must contain the
 expected agent response.
