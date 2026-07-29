@@ -501,8 +501,8 @@ def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
     assert adapter._artifact_root(payload) == (tmp_path / "run-artifacts").resolve()
 
 
-@pytest.fixture
-def started_hermes_runtime() -> tuple[adapter.HermesRuntime, MagicMock]:
+@pytest.fixture(name="started_hermes_runtime")
+def started_hermes_runtime_fixture() -> tuple[adapter.HermesRuntime, MagicMock]:
     mock_ai_agent = MagicMock(spec=AIAgent)
     mock_ai_agent.run_conversation.__signature__ = inspect.signature(
         AIAgent.run_conversation
@@ -529,6 +529,7 @@ def started_hermes_runtime() -> tuple[adapter.HermesRuntime, MagicMock]:
 async def test_hermes_failure_indicators_are_independent(
     started_hermes_runtime: tuple[adapter.HermesRuntime, MagicMock],
     result_update: dict[str, object],
+    *,
     expected_failed: bool,
 ):
     runtime, mock_ai_agent = started_hermes_runtime
