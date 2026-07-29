@@ -245,58 +245,7 @@ set_python_project_versions() {
     local python_executable=""
     version="$(semver_to_pep440 "$1")"
     python_executable="$(uv_python_executable)"
-
-    "$python_executable" - "$version" <<'PY'
-from pathlib import Path
-import re
-import sys
-import tomllib
-
-version = sys.argv[1]
-project_paths = (
-    Path("pyproject.toml"),
-    *sorted(Path("adapters").glob("**/pyproject.toml")),
-)
-pin_pattern = re.compile(r'(nemo-fabric-[a-z0-9-]+\s*==\s*)([^"\s,;]+)')
-
-for path in project_paths:
-    text = path.read_text()
-    updated, count = re.subn(
-        r'^version\s*=\s*"[^"]+"$',
-        f'version = "{version}"',
-        text,
-        count=1,
-        flags=re.MULTILINE,
-    )
-    if count != 1:
-        raise SystemExit(f"Failed to find exactly one project version in {path}")
-    updated = pin_pattern.sub(rf"\g<1>{version}", updated)
-    if updated != text:
-        path.write_text(updated)
-        print(f"{path} version and internal pins updated to {version}")
-    else:
-        print(f"{path} already set to {version}")
-
-runtime_path = Path("python/pyproject.toml")
-runtime = tomllib.loads(runtime_path.read_text())
-project = runtime.get("project", {})
-if "version" in project or "version" not in project.get("dynamic", []):
-    raise SystemExit(
-        "python/pyproject.toml must keep a dynamic version derived from Cargo.toml"
-    )
-
-mismatched_pins = []
-for path in project_paths:
-    for match in pin_pattern.finditer(path.read_text()):
-        if match.group(2) != version:
-            mismatched_pins.append(f"{path}: {match.group(0)}")
-if mismatched_pins:
-    raise SystemExit(
-        "Internal Python dependency pins are not synchronized: "
-        + ", ".join(mismatched_pins)
-    )
-print("python/pyproject.toml continues to derive its version from Cargo.toml")
-PY
+    "$python_executable" scripts/ci/set_python_project_versions.py "$version"
 }
 
 set_project_version() {
