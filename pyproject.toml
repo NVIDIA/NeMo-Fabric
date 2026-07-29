@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nemo-fabric"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python SDK distribution for NeMo Fabric"
 authors = [
   { name = "NVIDIA Corporation" },
@@ -25,7 +25,7 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = [
-  "nemo-fabric-runtime == 0.1.0",
+  "nemo-fabric-runtime == 0.2.0",
 ]
 
 [project.urls]

@@ -543,12 +543,12 @@ wheels = [
 
 [[package]]
 name = "nemo-fabric-adapters-common"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "../common" }
 
 [[package]]
 name = "nemo-fabric-adapters-hermes"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "nemo-fabric-adapters-common" },
