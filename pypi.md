@@ -38,6 +38,8 @@ pip install nemo-fabric
 
 ### Supported Harnesses
 
+The following table shows the install target for each supported agent harness:
+
 | Agent Harness | Runtime, Adapter, and Harness | Adapter and Harness | Adapter Only |
 | --- | --- | --- | --- |
 | [Claude Code](https://pypi.org/project/nemo-fabric-adapters-claude/) | `nemo-fabric[claude]` | `nemo-fabric-adapters-claude[harness]` | `nemo-fabric-adapters-claude` |
