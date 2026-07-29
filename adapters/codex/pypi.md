@@ -24,6 +24,7 @@ Installation can be performed using the `nemo-fabric` meta package with the `cod
 | `pip install nemo-fabric-adapters-codex` | No | Yes | No | No |
 
 The `full` extra is equivalent to `harness`. NeMo Relay is optional for ordinary
-runs. NeMo Relay telemetry and streaming require the `nemo-relay` CLI tool to be installed, refer to the [NeMo Relay installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#nemo-relay-cli).
+runs. NeMo Relay telemetry and streaming require the `nemo-relay` CLI tool.
+Refer to the [NeMo Relay installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#nemo-relay-cli) for instructions.
 
 Refer to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install) for more details.
