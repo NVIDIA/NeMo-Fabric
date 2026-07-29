@@ -32,4 +32,4 @@ normalized results, artifacts, diagnostics, and telemetry references.
 
 Refer to the [NeMo Fabric documentation](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric)
 for installation and usage guidance. Source code is available in the
-[NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).
+[NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/NeMo-Fabric).
