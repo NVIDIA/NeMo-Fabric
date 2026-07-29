@@ -36,6 +36,13 @@ Install the core runtime and Python SDK:
 pip install nemo-fabric
 ```
 
+### Supported Python Versions
+
+NeMo Fabric supports Python 3.11 through 3.14. However some harnesses and
+and integrations have more restrictive requirements. Hermes Agent requires
+Python 3.11 through 3.13, and the Harbor integration requires Python 3.12 or later.
+
+
 ### Supported Harnesses
 
 The following table shows the install target for each supported agent harness:
