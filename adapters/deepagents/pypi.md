@@ -11,7 +11,7 @@ SPDX-License-Identifier: Apache-2.0
 
 ![Diagram showing NeMo Fabric connecting applications, evaluations, and reinforcement learning rollouts to Hermes, Codex, Claude, and Deep Agents, with results, artifacts, and telemetry as outputs.](https://raw.githubusercontent.com/NVIDIA/NeMo-Fabric/refs/heads/main/assets/fabric-hero-option2.png)
 
-Provides a NeMo Fabric adapter for use with [LangChain Deep Agents](https://www.langchain.com/deep-agents).
+`nemo-fabric-adapters-deepagents` provides a NeMo Fabric adapter for use with [LangChain Deep Agents](https://www.langchain.com/deep-agents).
 
 ## Install
 

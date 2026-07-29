@@ -97,7 +97,7 @@ harness, install `nemo-fabric` and the bare adapter package together.
 pip install "nemo-fabric[harbor]"
 ```
 
-#### Relay Integration
+#### NeMo Relay Integration
 
 ```bash
 pip install "nemo-fabric[relay]"
