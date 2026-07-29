@@ -11,11 +11,9 @@ SPDX-License-Identifier: Apache-2.0
 
 Provides a NeMo Fabric adapter for use with [Claude Code](https://claude.com/).
 
-The `nvidia.fabric.claude` adapter uses the official [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk)using a NeMo Fabric normalized invocation contract.
-
 ## Install
 
-Installation can be performed using the `nemo-fabric` meta-package with the `claude` extra, or by installing the adapter and harness packages separately. The following table shows which components each installation provides:
+Installation can be performed using the `nemo-fabric` meta package with the `claude` extra, or by installing the adapter and harness packages separately. The following table shows which components each installation provides:
 
 | Installation | Runtime | Adapter | Harness | NeMo Relay CLI |
 | --- | --- | --- | --- | --- |
@@ -23,10 +21,8 @@ Installation can be performed using the `nemo-fabric` meta-package with the `cla
 | `pip install "nemo-fabric-adapters-claude[harness]"` | No | Yes | Yes | No |
 | `pip install nemo-fabric-adapters-claude` | No | Yes | No | No |
 
-For split runtime and adapter environments, configure `ADAPTER_PYTHON` or
-`harness.settings.python` and use matching NeMo Fabric release versions. Refer
-to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
-
 The `full` extra is equivalent to `harness`. Relay is optional for ordinary
-runs. Relay telemetry and `Runtime.invoke_stream()` require the `nemo-relay` CLI tool to be installed, refer to the [Relay installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#nemo-relay-cli).
+runs. NeMo Relay telemetry and streaming require the `nemo-relay` CLI tool to be installed, refer to the [NeMo Relay installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#nemo-relay-cli).
+
+Refer to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install) for more details.
 
