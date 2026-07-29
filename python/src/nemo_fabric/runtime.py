@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from enum import Enum
@@ -24,6 +25,8 @@ from nemo_fabric.errors import (
 from nemo_fabric.models import RunRequest
 from nemo_fabric.streaming import InvokeStream, _AtofStreamListener
 from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeStatus(str, Enum):
@@ -458,6 +461,11 @@ async def _run_native_lifecycle(
                     if result is None:
                         raise
                     _preserve_stop_failure(result, error)
+                else:
+                    logger.debug(
+                        "stop_runtime failed after invoke error",
+                        exc_info=error,
+                    )
                 stop_events = []
             if result is not None and isinstance(stop_events, list):
                 result.setdefault("events", []).extend(stop_events)

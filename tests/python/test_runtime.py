@@ -560,15 +560,20 @@ async def test_cancelling_one_shot_run_waits_for_stop(
 async def test_run_stops_runtime_after_success_and_failure(
     native_client: Fabric,
     mock_native: MagicMock,
+    caplog: pytest.LogCaptureFixture,
 ):
     result = await native_client.run(_config(), input="hello")
     assert result.status == "succeeded"
     assert mock_native.stop_runtime.call_count == 1
 
     mock_native.invoke_runtime.side_effect = RuntimeError("invoke failed")
-    with pytest.raises(FabricRuntimeError, match="invoke failed"):
-        await native_client.run(_config(), input="hello")
+    mock_native.stop_runtime.side_effect = RuntimeError("stop failed")
+    with caplog.at_level("DEBUG", logger="nemo_fabric.runtime"):
+        with pytest.raises(FabricRuntimeError, match="invoke failed"):
+            await native_client.run(_config(), input="hello")
     assert mock_native.stop_runtime.call_count == 2
+    assert "stop_runtime failed after invoke error" in caplog.text
+    assert "RuntimeError: stop failed" in caplog.text
 
 
 async def test_async_lifecycle_methods_resolve_plans(
@@ -597,7 +602,7 @@ async def test_run_surfaces_cleanup_failure_after_success(
 ):
     original_invoke = mock_native.invoke_runtime.side_effect
 
-    def completed_invoke(*args: Any) -> str:
+    def completed_invoke(*args: str) -> str:
         result = json.loads(original_invoke(*args))
         result["output"]["response"] = "completed answer"
         return json.dumps(result)

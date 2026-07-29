@@ -1541,22 +1541,12 @@ fn exchange_lifecycle_message(
                     local_host_diagnostics(host),
                 ));
             }
-            let mut diagnostics = local_host_diagnostics(host);
-            if !error.metadata.is_empty()
-                && let Ok(metadata) = serde_json::to_string(&error.metadata)
-            {
-                if !diagnostics.is_empty() {
-                    diagnostics.push('\n');
-                }
-                diagnostics.push_str("adapter metadata: ");
-                diagnostics.push_str(&metadata);
-            }
             Err(lifecycle_error_with_details(
                 operation,
                 runtime_id,
                 error.code,
                 error.message,
-                diagnostics,
+                local_host_diagnostics(host),
                 error.retryable,
                 error.metadata,
             ))
@@ -1639,12 +1629,13 @@ fn runtime_error_info(error: &FabricError, stage: ErrorStage) -> ErrorInfo {
             ..
         } => {
             let mut metadata = metadata.clone();
-            metadata.insert("runtime_id".to_string(), Value::String(runtime_id.clone()));
+            metadata
+                .entry("runtime_id".to_string())
+                .or_insert_with(|| Value::String(runtime_id.clone()));
             if !diagnostics.is_empty() {
-                metadata.insert(
-                    "diagnostics".to_string(),
-                    Value::String(diagnostics.clone()),
-                );
+                metadata
+                    .entry("diagnostics".to_string())
+                    .or_insert_with(|| Value::String(diagnostics.clone()));
             }
             ErrorInfo {
                 stage,
@@ -2806,6 +2797,33 @@ for line in sys.stdin:
     }
 
     #[test]
+    fn runtime_error_info_preserves_adapter_metadata_collisions() {
+        let error = FabricError::AdapterLifecycleOperation {
+            operation: "stop",
+            runtime_id: "fabric-runtime".to_string(),
+            code: "adapter_stop_failed".to_string(),
+            message: "adapter did not stop".to_string(),
+            diagnostics: "fabric diagnostics".to_string(),
+            retryable: true,
+            metadata: BTreeMap::from([
+                (
+                    "runtime_id".to_string(),
+                    serde_json::json!("adapter-runtime"),
+                ),
+                (
+                    "diagnostics".to_string(),
+                    serde_json::json!("adapter diagnostics"),
+                ),
+            ]),
+        };
+
+        let info = runtime_error_info(&error, ErrorStage::Stop);
+
+        assert_eq!(info.metadata["runtime_id"], "adapter-runtime");
+        assert_eq!(info.metadata["diagnostics"], "adapter diagnostics");
+    }
+
+    #[test]
     fn local_host_invoke_timeout_evicts_and_terminates_host() {
         let (root, plan) = local_host_plan("invoke_timeout");
         let runtime = start_runtime(&plan).expect("start local host");
@@ -3121,6 +3139,7 @@ for line in sys.stdin:
 
         let error = stop_runtime(&plan, &runtime).expect_err("stop must fail");
         assert!(error.to_string().contains("fake_stop"), "{error}");
+        assert!(!error.to_string().contains("adapter metadata:"), "{error}");
         assert!(matches!(
             error,
             FabricError::AdapterLifecycleOperation {
