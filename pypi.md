@@ -112,3 +112,9 @@ Claude and Codex require the
 Relay Python package. They do not provide a `relay` extra. Refer to the
 [NeMo Relay CLI](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-nemo-relay)
 install guide for instructions on installing the CLI tool.
+
+## Learn More
+
+Refer to the [NVIDIA NeMo Fabric documentation](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric)
+for installation, configuration, and usage guidance. Source code is available
+in the [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).
