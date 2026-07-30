@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Do Not Merge
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, opened, reopened, synchronize]
+
+jobs:
+  label-check:
+    name: DO NOT MERGE label
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Check label
+        env:
+          BLOCK_MERGE: ${{ contains(github.event.pull_request.labels.*.name, 'DO NOT MERGE') }}
+        run: |
+          if [[ "$BLOCK_MERGE" == "true" ]]; then
+            echo "::error::Remove the DO NOT MERGE label before merging."
+            exit 1
+          fi
