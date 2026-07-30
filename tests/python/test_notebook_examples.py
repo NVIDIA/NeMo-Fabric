@@ -26,7 +26,26 @@ from nemo_fabric import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
+QUICKSTART_NOTEBOOK = ROOT / "examples" / "notebooks" / "01_quickstart.ipynb"
 VARIATIONS_NOTEBOOK = ROOT / "examples" / "notebooks" / "02_variations.ipynb"
+
+
+def test_quickstart_notebook_hermes_config_plans_without_adapter_settings():
+    notebook = json.loads(QUICKSTART_NOTEBOOK.read_text(encoding="utf-8"))
+    source = next(
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if "config = FabricConfig(" in "".join(cell["source"])
+    )
+    namespace = {"REPO_ROOT": ROOT}
+    # Execute only the checked-in notebook source controlled by this repository.
+    exec(compile(source, str(QUICKSTART_NOTEBOOK), "exec"), namespace)  # noqa: S102
+    config = namespace["config"]
+
+    plan = Fabric().plan(config, base_dir=ROOT)
+
+    assert plan.adapter.adapter_id == "nvidia.fabric.hermes"
+    assert plan.config.harness.settings == {}
 
 
 def _variation_harness_definitions(base_dir=BASE_DIR):
@@ -71,13 +90,21 @@ def test_variations_notebook_harnesses_plan_with_current_adapters():
         "Codex": "nvidia.fabric.codex",
         "Claude": "nvidia.fabric.claude",
     }
+    assert plans["Hermes"].config.harness.settings == {
+        "max_tokens": 512,
+        "reasoning_config": {"effort": "none"},
+    }
+    assert plans["Deep Agents"].config.harness.settings == {}
     codex = next(harness for harness in harnesses if harness["name"] == "Codex")
     assert "binary" not in codex
     assert "key" not in codex
     assert "skip_git_repo_check" not in codex["settings"]
     assert "validated when the adapter starts" in codex["needs"]
-    assert plans["Codex"].config.harness.settings["sandbox"] == "workspace-write"
-    assert plans["Codex"].config.harness.settings["reasoning_effort"] == "high"
+    assert codex["settings"] == {
+        "sandbox": "workspace-write",
+        "reasoning_effort": "high",
+    }
+    assert plans["Codex"].config.harness.settings == codex["settings"]
     assert plans["Codex"].config.runtime.input_schema == "text"
 
 
@@ -96,6 +123,112 @@ def test_variations_notebook_accepts_adapter_commands_and_relative_paths(
     assert blocker({"python": "adapter/missing"}) == "adapter interpreter not found"
 
 
+async def test_variations_notebook_skips_blocked_harness_before_planning(capsys):
+    notebook = json.loads(VARIATIONS_NOTEBOOK.read_text(encoding="utf-8"))
+    source = next(
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if "run_failures = []" in "".join(cell["source"])
+    )
+    harness = {
+        "name": "Unavailable",
+        "needs": "install the adapter interpreter",
+    }
+    blocker = MagicMock(return_value="adapter interpreter not found")
+    fabric = MagicMock()
+    fabric.run = AsyncMock()
+    for_harness = MagicMock()
+    namespace = {
+        "BASE_DIR": BASE_DIR,
+        "HARNESSES": [harness],
+        "blocker": blocker,
+        "fabric": fabric,
+        "failure_detail": MagicMock(),
+        "for_harness": for_harness,
+        "json": json,
+        "oneline": MagicMock(),
+        "os": os,
+    }
+    code = compile(
+        source,
+        str(VARIATIONS_NOTEBOOK),
+        "exec",
+        flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
+    )
+
+    await eval(code, namespace)  # noqa: S307
+
+    blocker.assert_called_once_with(harness)
+    for_harness.assert_not_called()
+    fabric.plan.assert_not_called()
+    fabric.run.assert_not_awaited()
+    assert "NOT RUN here (adapter interpreter not found)." in capsys.readouterr().out
+
+
+async def test_variations_notebook_continues_after_planning_failure_and_restores_env(
+    capsys,
+):
+    notebook = json.loads(VARIATIONS_NOTEBOOK.read_text(encoding="utf-8"))
+    source = next(
+        "".join(cell["source"])
+        for cell in notebook["cells"]
+        if "run_failures = []" in "".join(cell["source"])
+    )
+    harnesses = [
+        {"name": "Broken", "python": "/broken/python"},
+        {"name": "Runnable", "python": "/runnable/python"},
+    ]
+    plan = MagicMock()
+    plan.adapter.adapter_id = "test.adapter"
+    plan.config.runtime.input_schema = "chat"
+    plan.config.models = {"default": {"model": "test-model"}}
+    plan_adapter_python = []
+
+    def plan_side_effect(*_args: object, **_kwargs: object) -> MagicMock:
+        plan_adapter_python.append(os.environ.get("ADAPTER_PYTHON"))
+        if len(plan_adapter_python) == 1:
+            raise RuntimeError("plan boom")
+        return plan
+
+    fabric = MagicMock()
+    fabric.plan.side_effect = plan_side_effect
+    fabric.run = AsyncMock(
+        return_value=MagicMock(
+            status="succeeded",
+            output=MagicMock(response="ok"),
+        )
+    )
+    namespace = {
+        "BASE_DIR": BASE_DIR,
+        "HARNESSES": harnesses,
+        "blocker": MagicMock(return_value=None),
+        "fabric": fabric,
+        "failure_detail": MagicMock(),
+        "for_harness": MagicMock(return_value=MagicMock(name="config")),
+        "json": json,
+        "oneline": lambda value, _limit=200: str(value),
+        "os": os,
+    }
+    code = compile(
+        source,
+        str(VARIATIONS_NOTEBOOK),
+        "exec",
+        flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
+    )
+    os.environ["ADAPTER_PYTHON"] = "original-python"
+
+    await eval(code, namespace)  # noqa: S307
+
+    assert plan_adapter_python == ["/broken/python", "/runnable/python"]
+    assert os.environ["ADAPTER_PYTHON"] == "original-python"
+    fabric.run.assert_awaited_once()
+    assert namespace["run_failures"] == ["Broken: RuntimeError: plan boom"]
+    assert (
+        "Attempted planning failed; continuing with remaining variants."
+        in capsys.readouterr().out
+    )
+
+
 async def test_variations_notebook_relay_failure_preserves_prior_failures(tmp_path):
     notebook = json.loads(VARIATIONS_NOTEBOOK.read_text(encoding="utf-8"))
     source = next(
@@ -104,11 +237,19 @@ async def test_variations_notebook_relay_failure_preserves_prior_failures(tmp_pa
         if "relay_dir =" in "".join(cell["source"])
     )
     traced = MagicMock()
+
+    def relay_failure(*_args: object, **_kwargs: object) -> None:
+        assert os.environ["ADAPTER_PYTHON"] == "/deepagents/python"
+        raise RuntimeError("relay boom")
+
     fabric = MagicMock()
-    fabric.run = AsyncMock(side_effect=RuntimeError("relay boom"))
+    fabric.run = AsyncMock(side_effect=relay_failure)
     namespace = {
         "BASE_DIR": BASE_DIR,
-        "HARNESSES": [{}, {"name": "Deep Agents"}],
+        "HARNESSES": [
+            {},
+            {"name": "Deep Agents", "python": "/deepagents/python"},
+        ],
         "PROMPT": "test",
         "RELAY_AVAILABLE": True,
         "REPO_ROOT": tmp_path,
@@ -121,6 +262,7 @@ async def test_variations_notebook_relay_failure_preserves_prior_failures(tmp_pa
         "for_harness": MagicMock(return_value=traced),
         "json": json,
         "oneline": lambda error, _limit: str(error),
+        "os": os,
         "run_failures": ["Codex: prior authentication failure"],
         "shutil": shutil,
     }
@@ -130,10 +272,12 @@ async def test_variations_notebook_relay_failure_preserves_prior_failures(tmp_pa
         "exec",
         flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
     )
+    os.environ["ADAPTER_PYTHON"] = "original-python"
 
     with pytest.raises(RuntimeError) as caught:
         await eval(code, namespace)  # noqa: S307
 
+    assert os.environ["ADAPTER_PYTHON"] == "original-python"
     assert "Codex: prior authentication failure" in str(caught.value)
     assert "Deep Agents Relay: RuntimeError: relay boom" in str(caught.value)
 

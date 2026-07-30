@@ -113,7 +113,6 @@ uv run --extra harbor harbor run \
   --ak fabric_telemetry=relay \
   --ak fabric_model_base_url=https://integrate.api.nvidia.com/v1 \
   --ak fabric_max_turns=4 \
-  --ak 'fabric_harness_settings={"terminal_timeout":120}' \
   --ae "NVIDIA_API_KEY=$NVIDIA_API_KEY" \
   --job-name fabric-hermes-relay \
   --jobs-dir "$RUNS_DIR" \

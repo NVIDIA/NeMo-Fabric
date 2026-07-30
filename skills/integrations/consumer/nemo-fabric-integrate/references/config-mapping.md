@@ -98,13 +98,13 @@ package or job layout, so nothing depends on the process working directory.
   limit, runtime, environment, tools, skills, MCP, and telemetry.
 - Supply request context through `RunRequest.context` for each invocation;
   request context is not part of `FabricConfig`.
-- Use `harness.settings` for adapter-owned configuration the selected adapter
-  understands (for example Claude permission policy, Codex sandbox controls, or
-  Deep Agents subagent definitions). Executable paths, state directories, and
-  Relay command discovery are runtime implementation details, not adapter
-  settings. Adapter settings are not portable, and `doctor(...)` does not yet
-  validate their contents. Validate them against the adapter's docs and your
-  integration tests.
+- Use `harness.settings` for adapter-owned configuration declared by the
+  selected descriptor. Each bundled adapter declares a closed settings schema.
+  Executable paths, state directories, and Relay command discovery are runtime
+  implementation details, not adapter settings. Adapter settings are not
+  portable. Planning and `doctor(...)` validate them against the schema embedded
+  in the exact resolved adapter descriptor; a descriptor without a schema
+  accepts only an empty settings map.
 - Use `metadata` and extension fields for caller-owned annotations NeMo Fabric carries
   but does not interpret. Config `metadata` is not echoed into
   `RunResult.metadata`: the name surfaces as `RunResult.agent_name`, and for

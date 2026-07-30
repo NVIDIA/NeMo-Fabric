@@ -49,8 +49,8 @@ environment, install the runtime and bare adapter together:
 pip install nemo-fabric nemo-fabric-adapters-hermes
 ```
 
-For separate environments, set `ADAPTER_PYTHON` or `harness.settings.python` in
-the runtime environment to the adapter environment's Python interpreter. Use
+For separate environments, set `ADAPTER_PYTHON` in the runtime environment to
+the adapter environment's Python interpreter. Use
 matching NeMo Fabric release versions for the runtime and adapter package
 unless a different pairing has been explicitly validated.
 
@@ -66,8 +66,37 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, instructions, turn limit, native tool selectors, and telemetry.
-Use `harness.settings` only for Hermes Agent-specific options such as terminal
-timeout or reasoning configuration.
+
+The Hermes descriptor validates the following `harness.settings` fields:
+
+| Setting | Type | Default | Description |
+| --- | --- | --- | --- |
+| `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
+| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. NeMo Fabric adds `observability/nemo_relay` when Relay telemetry is enabled. |
+| `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
+| `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
+| `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
+
+For example:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.hermes",
+    settings={
+        "reasoning_config": {"enabled": True, "effort": "medium"},
+        "plugins_enabled": ["disk-cleanup"],
+        "save_trajectories": True,
+        "max_tokens": 1024,
+        "terminal_timeout": 90,
+    },
+)
+```
+
+Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
+that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
+Hermes harness setting.
 
 ## Understand the Runtime Lifecycle
 

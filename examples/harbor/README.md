@@ -99,7 +99,7 @@ container boundary:
 | `--ak fabric_environment_env='{...}'` | `environment.env` |
 | `--ak fabric_blocked_tools='[...]'` | `tools.blocked` |
 | `--ak fabric_enabled_tools='[...]'` | `tools.enabled` |
-| `--ak fabric_harness_settings='{...}'` | `harness.settings` |
+| `--ak fabric_harness_settings='{...}'` | Merged into `harness.settings`; planning rejects non-empty settings when the selected descriptor does not declare `settings_schema` |
 
 The result is the complete `FabricConfig` uploaded with the `RunRequest` and
 task-local `base_dir`. The container-side runner deserializes that payload and

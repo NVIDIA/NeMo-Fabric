@@ -23,14 +23,6 @@ const PYTHON_DATA_PATH_QUERY_POLL_INTERVAL: Duration = Duration::from_millis(10)
 const PYTHON_DATA_PATH_SCRIPT: &str =
     "import json, sysconfig; print(json.dumps(sysconfig.get_path('data')))";
 
-#[derive(serde::Deserialize)]
-struct PythonDiscoverySettings {
-    #[serde(default)]
-    python: Option<PathBuf>,
-    #[serde(default)]
-    python_env: Option<String>,
-}
-
 /// Return the NeMo Fabric core version.
 #[pyfunction]
 fn version() -> PyResult<String> {
@@ -42,7 +34,7 @@ fn version() -> PyResult<String> {
 #[pyo3(signature = (config_json, base_dir=None))]
 fn plan_config(py: Python<'_>, config_json: String, base_dir: Option<String>) -> PyResult<String> {
     let config = parse_config(config_json)?;
-    let (context, adapter_directories) = resolve_context(py, base_dir, &config)?;
+    let (context, adapter_directories) = resolve_context(py, base_dir)?;
     let plan = py
         .detach(|| {
             resolve_run_plan_from_config_with_adapter_directories(
@@ -64,7 +56,7 @@ fn doctor_config(
     base_dir: Option<String>,
 ) -> PyResult<String> {
     let config = parse_config(config_json)?;
-    let (context, adapter_directories) = resolve_context(py, base_dir, &config)?;
+    let (context, adapter_directories) = resolve_context(py, base_dir)?;
     let plan = py
         .detach(|| {
             resolve_diagnostic_plan_from_config_with_adapter_directories(
@@ -90,7 +82,7 @@ fn run_config(
     request_file: Option<String>,
 ) -> PyResult<String> {
     let config = parse_config(config_json)?;
-    let (context, adapter_directories) = resolve_context(py, base_dir, &config)?;
+    let (context, adapter_directories) = resolve_context(py, base_dir)?;
     let plan = py
         .detach(|| {
             resolve_run_plan_from_config_with_adapter_directories(
@@ -189,10 +181,9 @@ fn to_py_error(error: nemo_fabric_core::FabricError) -> PyErr {
 fn resolve_context(
     py: Python<'_>,
     base_dir: Option<String>,
-    config: &FabricConfig,
 ) -> PyResult<(ResolveContext, Vec<PathBuf>)> {
     let base_dir = PathBuf::from(base_dir.unwrap_or_else(|| ".".to_string()));
-    let data_path = match discovery_python(config, &base_dir)? {
+    let data_path = match discovery_python(&base_dir) {
         Some((python, origin)) => py
             .detach(|| query_python_data_path(&python, &origin))
             .map_err(PyRuntimeError::new_err)?,
@@ -202,9 +193,9 @@ fn resolve_context(
             .extract()?,
     };
     // Stopgap: Python adapter wheels install descriptors under the interpreter's
-    // data root. Use the runtime's explicit interpreter precedence so descriptor
-    // metadata matches the adapter code that will execute. A provider-backed
-    // adapter registry should replace this implicit environment scan.
+    // data root. Use ADAPTER_PYTHON when set so descriptor metadata matches the
+    // adapter code that will execute. A provider-backed adapter registry should
+    // replace this implicit environment scan.
     let installed_adapters = PathBuf::from(data_path)
         .join("share")
         .join("nemo-fabric")
@@ -212,34 +203,15 @@ fn resolve_context(
     Ok((ResolveContext::new(base_dir), vec![installed_adapters]))
 }
 
-fn discovery_python(config: &FabricConfig, base_dir: &Path) -> PyResult<Option<(PathBuf, String)>> {
-    let settings: PythonDiscoverySettings =
-        serde_json::from_value(serde_json::Value::Object(config.harness.settings.clone()))
-            .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-    if let Some(python) = settings.python {
-        return Ok(Some((
-            resolve_adapter_python(base_dir, python.into_os_string()),
-            "harness.settings.python".to_string(),
-        )));
-    }
-    if let Some(env_name) = settings.python_env {
-        return Ok(std::env::var_os(&env_name)
-            .filter(|python| !python.is_empty())
-            .map(|python| {
-                (
-                    resolve_adapter_python(base_dir, python),
-                    format!("harness.settings.python_env (`{env_name}`)"),
-                )
-            }));
-    }
-    Ok(std::env::var_os(ADAPTER_PYTHON_ENV)
+fn discovery_python(base_dir: &Path) -> Option<(PathBuf, String)> {
+    std::env::var_os(ADAPTER_PYTHON_ENV)
         .filter(|python| !python.is_empty())
         .map(|python| {
             (
                 resolve_adapter_python(base_dir, python),
                 ADAPTER_PYTHON_ENV.to_string(),
             )
-        }))
+        })
 }
 
 fn resolve_adapter_python(base_dir: &Path, adapter_python: OsString) -> PathBuf {

@@ -129,6 +129,7 @@ def deepagents_config() -> FabricConfig:
     """Return the complete LangChain Deep Agents variant."""
 
     config = base_config().model_copy(deep=True)
+    config.models["default"].base_url = "https://integrate.api.nvidia.com/v1"
     config.harness = HarnessConfig(
         adapter_id="nvidia.fabric.langchain.deepagents",
         resolution="preinstalled",

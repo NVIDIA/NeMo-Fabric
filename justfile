@@ -203,7 +203,8 @@ PY
 
     local metadata_file=""
     metadata_file="$(mktemp)"
-    if ! cargo metadata --no-deps --format-version 1 > "$metadata_file"; then
+    # Resolve dependencies so Cargo refreshes workspace package versions in Cargo.lock.
+    if ! cargo metadata --format-version 1 > "$metadata_file"; then
         rm -f "$metadata_file"
         return 1
     fi
