@@ -22,14 +22,12 @@ then continue in the same shell. Export `NVIDIA_API_KEY` for Hermes Agent runs o
 Build the standalone Relay executable that will be uploaded into the isolated
 task container for the Claude walkthrough:
 
-> **TEMP — replace the pre-release alpha tag with a stable release once available.**
-
 ```bash
 cd "$(git rev-parse --show-toplevel)"
 
 export FABRIC_AGENT='nemo_fabric.integrations.harbor:FabricAgent'
 export FABRIC_BUNDLE="$PWD/examples/harbor/swebench"
-export FABRIC_PACKAGE='nemo-fabric[claude,hermes-agent,relay]==0.1.0a20260724'
+export FABRIC_PACKAGE='nemo-fabric[claude,hermes-agent,relay]==0.1.0'
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 
 curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |

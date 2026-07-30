@@ -329,7 +329,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh" in swebench
     assert (
         "FABRIC_PACKAGE="
-        "'nemo-fabric[claude,hermes-agent,relay]==0.1.0a20260724'"
+        "'nemo-fabric[claude,hermes-agent,relay]==0.1.0'"
         in swebench
     )
     assert "PIP_FIND_LINKS" not in swebench
