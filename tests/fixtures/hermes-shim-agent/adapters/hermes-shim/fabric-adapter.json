@@ -10,6 +10,33 @@
       "PYTHONPATH": "adapters/hermes-shim/src"
     }
   },
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "python3_command": {
+        "type": "string"
+      },
+      "mode": {
+        "type": "string"
+      },
+      "target_file": {
+        "type": "string"
+      },
+      "expected_before": {
+        "type": "string"
+      },
+      "replacement": {
+        "type": "string"
+      },
+      "new_file": {
+        "type": "string"
+      },
+      "new_file_contents": {
+        "type": "string"
+      }
+    },
+    "additionalProperties": false
+  },
   "requirements": {
     "binaries": [
       "python3"

@@ -6,6 +6,59 @@
   "runner": {
     "module": "nemo_fabric_adapters.codex.adapter"
   },
+  "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "sandbox": {
+        "type": "string",
+        "enum": ["read-only", "workspace-write", "danger-full-access"],
+        "default": "read-only",
+        "description": "Codex filesystem access level."
+      },
+      "approval_mode": {
+        "type": "string",
+        "enum": ["auto_review", "deny_all"],
+        "default": "auto_review",
+        "description": "Codex approval handling mode for escalated permission requests."
+      },
+      "developer_instructions": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Additional developer instructions for the Codex thread."
+      },
+      "personality": {
+        "type": "string",
+        "enum": ["none", "friendly", "pragmatic"],
+        "description": "Codex response personality."
+      },
+      "reasoning_effort": {
+        "type": "string",
+        "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],
+        "description": "Codex reasoning effort for each turn."
+      },
+      "service_tier": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Codex service tier for the thread."
+      },
+      "output_schema": {
+        "type": "object",
+        "description": "JSON Schema that constrains the final assistant message for each turn."
+      },
+      "config_overrides": {
+        "type": "object",
+        "propertyNames": {
+          "pattern": "^[^.]+(?:\\.[^.]+)*$"
+        },
+        "additionalProperties": {},
+        "default": {},
+        "description": "Dotted Codex configuration keys mapped to JSON-compatible values."
+      }
+    },
+    "required": [],
+    "additionalProperties": false
+  },
   "config": {
     "accepts": [
       "models",

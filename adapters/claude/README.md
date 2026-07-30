@@ -22,9 +22,9 @@ The following table shows which components each installation provides:
 | `pip install "nemo-fabric-adapters-claude[harness]"` | No | Yes | Yes | No |
 | `pip install nemo-fabric-adapters-claude` | No | Yes | No | No |
 
-For split runtime and adapter environments, configure `ADAPTER_PYTHON` or
-`harness.settings.python` and use matching NeMo Fabric release versions. Refer
-to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
+For split runtime and adapter environments, configure `ADAPTER_PYTHON` and use
+matching NeMo Fabric release versions. Refer to the
+[installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 The `full` extra is equivalent to `harness`. Relay is optional for ordinary
 runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
@@ -90,7 +90,9 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 - `environment.workspace` sets the Claude working directory, and
   `environment.env` supplies explicit harness-visible variables.
 - `tools.enabled` selects Claude built-in tools. `None` preserves the Claude
-  default, while an empty list disables every tool.
+  default, while an empty list disables every tool. With `permission_mode` set
+  to `dontAsk`, explicitly enabled tools are also pre-approved so headless runs
+  can invoke them.
 - `tools.blocked` maps to Claude `disallowed_tools`. A pre-tool hook enforces
   both lists across built-in, MCP, and plugin tools.
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
@@ -100,9 +102,16 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 
 Only Claude-specific controls belong in `harness.settings`:
 
-- `allowed_tools` and `permission_mode`
-- `max_budget_usd`
-- `setting_sources` (defaults to `[]` for deterministic isolation)
+| Setting | Type | Required | Static default |
+| --- | --- | --- | --- |
+| `permission_mode` | One of `default`, `acceptEdits`, `bypassPermissions`, `plan`, `dontAsk`, or `auto` | No | No default |
+| `max_budget_usd` | Number greater than `0` | No | No default |
+| `setting_sources` | Array containing `user`, `project`, or `local` | No | `[]` |
+
+Planning validates these settings against the schema in the resolved Claude
+descriptor. Unknown keys and invalid values fail before the adapter starts.
+Schema defaults are documentation only; planning preserves the supplied settings
+without adding `setting_sources`.
 
 The adapter filters the inherited environment before launching Claude Code.
 It retains portable OS/config variables, the selected model's `api_key_env`,
@@ -237,3 +246,23 @@ assert first.output["session_id"] == second.output["session_id"]
 The runtime must remain on the same local host for its lifetime. A persisted
 NeMo Fabric-to-Claude correlation record is not an attach token and cannot recover a
 stopped or crashed local host.
+
+
+## Testing
+
+The default suite uses deterministic mock Claude Code and NeMo Relay CLIs and
+requires no credentials. Test a current `nemo-relay` CLI with the mock Claude
+client, or run the live integrations on an authenticated developer host:
+
+```bash
+FABRIC_NEMO_RELAY_COMMAND="$(command -v nemo-relay)" uv run --no-sync pytest tests/e2e/test_claude.py -q -k real_relay_gateway
+RUN_FABRIC_CLAUDE_INTEGRATION=1 uv run --no-sync pytest tests/e2e/test_claude.py -q -k live
+RUN_FABRIC_CLAUDE_RELAY_INTEGRATION=1 uv run --no-sync pytest tests/e2e/test_claude.py -q -k live_claude_relay
+```
+
+Set `FABRIC_TEST_CLAUDE_MODEL` to override the default live-test model,
+`claude-sonnet-4-5`.
+
+The live NeMo Relay test applies the same semantic artifact contract as Codex: ATOF
+must contain structured LLM requests and token usage, and ATIF must contain the
+expected agent response.

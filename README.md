@@ -125,7 +125,8 @@ print(result.output.response)
 
 `HarnessConfig.adapter_id` selects the Hermes Agent adapter. To use another
 supported harness, install its package extra and set the corresponding adapter
-ID. Pass harness-specific options through `HarnessConfig.settings`.
+ID. Pass harness-specific options through `HarnessConfig.settings` only when
+the selected adapter descriptor declares them in `settings_schema`.
 
 For a guided version of this example, refer to the
 [`01_quickstart.ipynb` notebook](examples/notebooks/01_quickstart.ipynb). The

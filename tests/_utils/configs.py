@@ -5,7 +5,31 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from nemo_fabric import EnvironmentConfig, FabricConfig, HarnessConfig, MetadataConfig, ModelConfig, RuntimeConfig
+
+
+def minimal_config(
+    settings: dict[str, Any] | None = None,
+    *,
+    name: str,
+    adapter_id: str,
+    resolution: str | None = None,
+) -> FabricConfig:
+    """Build a minimal config for adapter resolution and settings tests."""
+    harness: dict[str, Any] = {
+        "adapter_id": adapter_id,
+        "settings": settings or {},
+    }
+    if resolution is not None:
+        harness["resolution"] = resolution
+    return FabricConfig.from_mapping(
+        {
+            "metadata": {"name": name},
+            "harness": harness,
+        }
+    )
 
 
 def hermes_shim_config() -> FabricConfig:

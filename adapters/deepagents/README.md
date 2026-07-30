@@ -24,8 +24,8 @@ The following table shows which components each installation provides:
 
 For an environment-managed stack, use `deepagents>=0.6.12,<0.7.0`,
 `langchain>=1.3,<2.0`, and `langgraph>=1.2,<2.0`. For split runtime and adapter
-environments, configure `ADAPTER_PYTHON` or `harness.settings.python` and use
-matching NeMo Fabric release versions. Refer to the
+environments, configure `ADAPTER_PYTHON` and use matching NeMo Fabric release
+versions. Refer to the
 [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 ## Model and Authentication
@@ -65,35 +65,80 @@ NeMo Fabric maps the following into the harness:
 - `tools.enabled` and `tools.blocked` are enforced by middleware across the full
   tool surface: Deep Agents built-ins (including `task`), MCP tools, and
   **delegated subagents** alike. Use Deep Agents-native tool names.
-- `harness.settings.deepagents` forwards a small set of **documented,
-  JSON-serializable** `create_deep_agent` options (currently `subagents` and
-  `interrupt_on`). It is not a general Python-object escape hatch: the SDK config
-  round-trips through JSON and Rust planning, so `AgentMiddleware`, `BaseTool`
-  instances, and Python callables cannot cross the boundary. NeMo Fabric-owned
-  arguments (`model`, `tools`, `backend`, `skills`, `system_prompt`, `middleware`,
-  `checkpointer`) cannot be overridden through this passthrough, and an unknown or
-  unsupported key is an adapter configuration failure rather than a silently
-  dropped setting.
+- `harness.settings.deepagents` accepts the JSON-serializable Deep Agents
+  `interrupt_on` and `subagents` options. The descriptor schema rejects unknown
+  settings and fields before runtime start.
+
+### Harness Settings
+
+Use `harness.settings.deepagents` for Deep Agents-native controls that do not
+have a normalized NeMo Fabric field:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.langchain.deepagents",
+    settings={
+        "deepagents": {
+            "interrupt_on": {
+                "write_file": {
+                    "allowed_decisions": ["approve", "edit", "reject"],
+                    "description": "Review this file write.",
+                }
+            },
+            "subagents": [
+                {
+                    "name": "researcher",
+                    "description": "Researches the workspace before implementation.",
+                    "system_prompt": "Investigate the request and return concise findings.",
+                }
+            ],
+        }
+    },
+)
+```
+
+The `deepagents` object is closed and supports the following properties:
+
+- `interrupt_on` maps a Deep Agents tool name to a boolean or an object with
+  required `allowed_decisions`. Decisions are `approve`, `edit`, `reject`, or
+  `respond`. The object can also contain a static `description` and an
+  `args_schema` JSON Schema. An omitted map defaults to no caller-defined
+  interrupts. Callable descriptions and `when` predicates cannot cross the
+  JSON configuration boundary.
+- `subagents` defaults to no caller-defined subagents and accepts declarative
+  synchronous or Agent Protocol asynchronous subagents. A declarative subagent
+  requires `name`, `description`, and `system_prompt`; it can also contain
+  a `provider:model` override, its own `interrupt_on` map, skill source paths,
+  and a JSON `response_format`. An asynchronous subagent requires `name`,
+  `description`, and `graph_id`; it can also contain `url` and string-valued
+  `headers`.
+
+Python middleware, `FilesystemPermission` objects, Python tool objects, and
+precompiled `runnable` subagents are not exposed through `harness.settings`.
+When `tools.enabled` or `tools.blocked` is configured, NeMo Fabric applies the
+policy to declarative subagents and rejects asynchronous subagents because
+their remote tools cannot be gated locally.
 
 ### Subagents
 
-Deep Agents can delegate to subagents through its built-in `task` tool. Subagents
-**inherit** the parent run's model, tools, skills, workspace, telemetry, and
-permissions. When a normalized tools policy is configured, NeMo Fabric supplies
-an explicitly gated `general-purpose` subagent and gates every declarative local
-subagent, so delegation cannot broaden capabilities beyond the parent. Remote
-and precompiled subagents are rejected in that case because their execution
-cannot be governed by the local middleware. Independently configured subagent tools, skills, models,
-MCP servers, middleware, or permissions are **not** exposed through the NeMo Fabric SDK
-yet; a `subagents` definition here only carries JSON-shaped fields.
+Deep Agents can delegate through its built-in `task` tool. The built-in
+subagent **inherits** the parent run's model, tools, skills, workspace,
+telemetry, and permissions. When a normalized tools policy is configured,
+NeMo Fabric supplies an explicitly gated `general-purpose` subagent so
+delegation cannot broaden capabilities beyond the parent. Caller-defined
+declarative subagents run through the same local graph. Agent Protocol
+subagents run asynchronously on their configured server. Precompiled
+subagents are not exposed through the public NeMo Fabric SDK because their
+`runnable` objects cannot cross the JSON configuration boundary.
 
 The normalized result includes the final response, buffered messages and
 per-step events, LangGraph thread id, token usage (and cost when the provider
 reports it), and errors. Usage aggregates the current turn across the main agent
 and any delegated subagents (streamed with `subgraphs=True`). Configuration and
-preflight failures (a missing credential, an absent `deepagents` package, an
-invalid MCP server, or a passthrough option) fail runtime start before an
-invocation is accepted.
+preflight failures (a missing credential, an absent `deepagents` package, or an
+invalid MCP server) fail runtime start before an invocation is accepted.
 
 ## Runtime Lifecycle
 
@@ -166,11 +211,12 @@ includes the NeMo Relay Python package.
   OpenTelemetry/OpenInference exporter is applied and spans export directly to
   the configured collector, without writing ATOF/ATIF relay artifacts.
 
-**Subagent boundary.** In-process, dictionary-style subagents are instrumented
-with the same Relay middleware, so their model/tool calls appear under the same
-trajectory. Remote and precompiled subagents (those defined with `graph_id` or
-`url`) are **out of scope**: their internals execute in a separate runtime and
-must be instrumented there with their own Relay integration.
+**Subagent boundary.** The built-in and caller-defined declarative subagents
+are instrumented with the same Relay middleware, so their model and tool calls
+appear under the same trajectory. Agent Protocol subagents execute on their
+configured server and are outside the local adapter's Relay instrumentation.
+Precompiled subagents are not exposed through the public NeMo Fabric
+configuration.
 
 ### Typed Relay configuration
 

@@ -7,6 +7,60 @@
     "module": "nemo_fabric_adapters.hermes.adapter"
   },
   "requirements": {},
+  "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "reasoning_config": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether Hermes model reasoning is enabled."
+          },
+          "effort": {
+            "type": "string",
+            "enum": ["none", "minimal", "low", "medium", "high", "xhigh"],
+            "description": "Hermes model reasoning effort."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "default": {
+          "effort": "none"
+        },
+        "description": "Hermes model reasoning configuration."
+      },
+      "plugins_enabled": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "default": [],
+        "description": "Hermes plugin identifiers to enable."
+      },
+      "save_trajectories": {
+        "type": "boolean",
+        "default": false,
+        "description": "Whether Hermes saves its native conversation trajectories as JSONL."
+      },
+      "max_tokens": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 512,
+        "description": "Maximum number of tokens in each Hermes model response."
+      },
+      "terminal_timeout": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "default": 60,
+        "description": "Maximum number of seconds for a Hermes terminal operation."
+      }
+    },
+    "required": [],
+    "additionalProperties": false
+  },
   "config": {
     "accepts": [
       "models",

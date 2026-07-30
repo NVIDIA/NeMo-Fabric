@@ -865,7 +865,13 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
     payload = make_payload(tmp_path)
     payload["config"]["tools"] = {"blocked": ["write_file"]}
     payload["config"]["harness"]["settings"]["deepagents"] = {
-        "subagents": [{"name": "researcher", "prompt": "research"}]
+        "subagents": [
+            {
+                "name": "researcher",
+                "description": "Researches the workspace.",
+                "system_prompt": "Research.",
+            }
+        ]
     }
 
     settings = payload["config"]["harness"]["settings"]

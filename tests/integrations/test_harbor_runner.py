@@ -312,6 +312,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "fabric_config_factory" not in calculator
     assert "fabric_config_factory" not in landing
     assert "fabric_config_factory" not in swebench
+    assert "fabric_harness_settings" not in calculator
     assert "fabric_workspace=/app" in calculator
     assert "--model nvidia/nemotron-3-nano-30b-a3b" in calculator
     assert "--model anthropic/claude-sonnet-4-5" in calculator
@@ -389,6 +390,7 @@ def test_harbor_calculator_setup_and_solution_fail_fast():
 
 
 def test_harbor_relay_telemetry_exports_direct_atof_and_atif():
+    from nemo_fabric import Fabric
     from nemo_fabric.integrations.harbor.fabric_agent import build_harbor_config
 
     config = build_harbor_config(
@@ -396,9 +398,14 @@ def test_harbor_relay_telemetry_exports_direct_atof_and_atif():
         workspace="/app",
         model_name="nvidia/nemotron-3-nano-30b-a3b",
         telemetry="relay",
-    ).to_mapping()
-    assert "relay" in config["telemetry"]["providers"]
-    observability = config["relay"]["observability"]
+    )
+    assert config.harness.settings == {}
+    plan = Fabric().plan(config, base_dir=CALCULATOR_FABRIC_ROOT)
+    assert plan.adapter.adapter_id == "nvidia.fabric.hermes"
+
+    mapping = config.to_mapping()
+    assert "relay" in mapping["telemetry"]["providers"]
+    observability = mapping["relay"]["observability"]
     swebench = SWEBENCH_README.read_text(encoding="utf-8")
 
     assert "openinference" not in observability
@@ -462,7 +469,6 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     claude = build_harbor_config(
         adapter_id="nvidia.fabric.claude",
         workspace="/testbed",
-        harness_settings={"allowed_tools": ["Read"]},
     )
 
     assert base.environment is not None
@@ -494,7 +500,6 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     assert claude.harness.settings["permission_mode"] == "bypassPermissions"
     assert claude.environment is not None
     assert claude.environment.env == {"IS_SANDBOX": "1"}
-    assert claude.harness.settings["allowed_tools"] == ["Read"]
     assert not list(SWEBENCH_ROOT.rglob("*.yaml"))
     assert not (SWEBENCH_ROOT / "harbor_swebench_config.py").exists()
 

@@ -6,6 +6,40 @@
   "runner": {
     "module": "nemo_fabric_adapters.claude.adapter"
   },
+  "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "setting_sources": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["user", "project", "local"]
+        },
+        "default": [],
+        "description": "Claude settings scopes to load."
+      },
+      "max_budget_usd": {
+        "type": "number",
+        "exclusiveMinimum": 0,
+        "description": "Maximum amount in US dollars that Claude may spend during one invocation."
+      },
+      "permission_mode": {
+        "type": "string",
+        "enum": [
+          "default",
+          "acceptEdits",
+          "bypassPermissions",
+          "plan",
+          "dontAsk",
+          "auto"
+        ],
+        "description": "Claude permission handling mode."
+      }
+    },
+    "required": [],
+    "additionalProperties": false
+  },
   "config": {
     "accepts": [
       "models",

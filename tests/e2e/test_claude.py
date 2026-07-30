@@ -32,6 +32,11 @@ MOCK_CLAUDE_CLI = ROOT / "tests" / "fixtures" / "claude" / "mock-claude-cli.py"
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
 
 
+@pytest.fixture(name="use_current_python_for_adapter_discovery", autouse=True)
+def use_current_python_for_adapter_discovery_fixture(restore_environ) -> None:
+    restore_environ["ADAPTER_PYTHON"] = sys.executable
+
+
 def write_mock_relay_gateway(path: Path, log_path: Path) -> None:
     path.write_text(
         f"""#!{sys.executable}
@@ -72,7 +77,6 @@ def fabric_config(
 ):
     tmp_path.mkdir(parents=True, exist_ok=True)
     settings = {
-        "python": sys.executable,
         "setting_sources": [],
         "permission_mode": "dontAsk",
     }

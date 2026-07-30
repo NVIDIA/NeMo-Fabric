@@ -8,11 +8,10 @@ SPDX-License-Identifier: Apache-2.0
 [![License](https://img.shields.io/github/license/NVIDIA/NeMo-Fabric)](https://github.com/NVIDIA/NeMo-Fabric/blob/main/LICENSE)
 [![GitHub](https://img.shields.io/badge/github-repo-blue?logo=github)](https://github.com/NVIDIA/NeMo-Fabric/)
 [![Release](https://img.shields.io/github/v/release/NVIDIA/NeMo-Fabric?color=green)](https://github.com/NVIDIA/NeMo-Fabric/releases)
-[![PyPI](https://img.shields.io/pypi/v/nemo-fabric?color=4B8BBE&logo=pypi)](https://pypi.org/project/nemo-fabric/)
-[![Crates.io](https://img.shields.io/crates/v/nemo-fabric-core?label=nemo-fabric-core&color=B7410E&logo=rust)](https://crates.io/crates/nemo-fabric-core)
-[![Crates.io](https://img.shields.io/crates/v/nemo-fabric-cli?label=nemo-fabric-cli&color=B7410E&logo=rust)](https://crates.io/crates/nemo-fabric-cli)
 
-NeMo Fabric gives applications one configurable, observable way to run applications
+![Diagram showing NeMo Fabric connecting applications, evaluations, and reinforcement learning rollouts to Hermes, Codex, Claude, and Deep Agents, with results, artifacts, and telemetry as outputs.](https://raw.githubusercontent.com/NVIDIA/NeMo-Fabric/refs/heads/main/assets/fabric-hero-option2.png)
+
+NeMo Fabric gives users one configurable, observable way to run applications
 across multiple agent harnesses. It standardizes configuration, lifecycle
 management, and results without requiring a separate integration for every harness.
 
@@ -31,14 +30,30 @@ It provides:
 
 ## Install
 
-NeMo Fabric supports Python 3.11 through 3.14. Use Python 3.11 through 3.13 for
-Hermes Agent; the Harbor integration requires Python 3.12 or later.
-
 Install the core runtime and Python SDK:
 
 ```bash
 pip install nemo-fabric
 ```
+
+### Supported Python Versions
+
+NeMo Fabric supports Python 3.11 through 3.14. However some harnesses and
+and integrations have more restrictive requirements. Hermes Agent requires
+Python 3.11 through 3.13, and the Harbor integration requires Python 3.12 or later.
+
+
+### Supported Harnesses
+
+The following table shows the install target for each supported agent harness:
+
+| Agent Harness | Runtime, Adapter, and Harness | Adapter and Harness | Adapter Only |
+| --- | --- | --- | --- |
+| [Claude Code](https://pypi.org/project/nemo-fabric-adapters-claude/) | `nemo-fabric[claude]` | `nemo-fabric-adapters-claude[harness]` | `nemo-fabric-adapters-claude` |
+| [Codex](https://pypi.org/project/nemo-fabric-adapters-codex/) | `nemo-fabric[codex]` | `nemo-fabric-adapters-codex[harness]` | `nemo-fabric-adapters-codex` |
+| [Hermes Agent](https://pypi.org/project/nemo-fabric-adapters-hermes/) | `nemo-fabric[hermes-agent]` | `nemo-fabric-adapters-hermes[harness]` | `nemo-fabric-adapters-hermes` |
+| [LangChain Deep Agents](https://pypi.org/project/nemo-fabric-adapters-deepagents/) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
+
 
 To install the NeMo Fabric runtime, adapter, and supported harness in one
 environment, choose one of the following `nemo-fabric` harness extras:
@@ -80,11 +95,6 @@ does not install the NeMo Fabric runtime. Select `harness` or `full` to install
 the harness. If the runtime shares an environment with an existing compatible
 harness, install `nemo-fabric` and the bare adapter package together.
 
-NeMo Fabric supports running an agent harness in a different virtual
-environment from the NeMo Fabric runtime. This separation can isolate harnesses
-that have conflicting dependencies. Use matching NeMo Fabric release versions
-for the runtime and adapter package unless a different pairing has been
-explicitly validated.
 
 ### Integrations
 
@@ -94,7 +104,7 @@ explicitly validated.
 pip install "nemo-fabric[harbor]"
 ```
 
-#### Relay Integration
+#### NeMo Relay Integration
 
 ```bash
 pip install "nemo-fabric[relay]"
@@ -109,22 +119,8 @@ The LangChain Deep Agents and Hermes Agent adapter packages also provide
 Claude and Codex require the
 [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli) instead of the NeMo
 Relay Python package. They do not provide a `relay` extra. Refer to the
-[NeMo Relay CLI](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-nemo-relay)
+[NeMo Relay CLI](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#nemo-relay-cli)
 install guide for instructions on installing the CLI tool.
-
-## Core Concepts
-
-- **Typed configuration:** Construct a complete `FabricConfig` in Python and
-  use ordinary functions to create experiment variants.
-- **Adapters:** Select harness-specific integrations with
-  `harness.adapter_id`.
-- **Artifacts:** Receive normalized output, logs, patches, and telemetry
-  references through an `ArtifactManifest`.
-
-The experimental `nemo-fabric` CLI is distributed separately from the Python
-package. It selects complete typed configs from built-in presets and maintained
-examples. Applications that need a stable integration surface should use the
-Python SDK.
 
 ## Learn More
 

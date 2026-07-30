@@ -253,6 +253,14 @@
       "description": "Generic runner defaults consumed by the selected runtime adapter.",
       "type": "object"
     },
+    "settings_schema": {
+      "additionalProperties": true,
+      "description": "JSON Schema for adapter-owned `harness.settings`.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "telemetry": {
       "$ref": "#/$defs/AdapterTelemetrySupport",
       "default": {},
