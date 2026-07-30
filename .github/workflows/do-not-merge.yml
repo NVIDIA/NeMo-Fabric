@@ -10,15 +10,12 @@ on:
 jobs:
   label-check:
     name: DO NOT MERGE label
+    if: contains(github.event.pull_request.labels.*.name, 'DO NOT MERGE')
     runs-on: ubuntu-24.04
     timeout-minutes: 1
     permissions: {}
     steps:
-      - name: Check label
-        env:
-          BLOCK_MERGE: ${{ contains(github.event.pull_request.labels.*.name, 'DO NOT MERGE') }}
+      - name: Block merge
         run: |
-          if [[ "$BLOCK_MERGE" == "true" ]]; then
-            echo "::error::Remove the DO NOT MERGE label before merging."
-            exit 1
-          fi
+          echo "::error::Remove the DO NOT MERGE label before merging."
+          exit 1
