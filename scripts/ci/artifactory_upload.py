@@ -83,6 +83,12 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
             timeout=(30, 600),
         )
         response.raise_for_status()
+        release = response.json()
+        print(
+            f"Release accepted for {package_name}: "
+            f"project_id={release['project_id']}, release_uuid={release['release_uuid']}",
+            flush=True,
+        )
 
 
 def main() -> int:
