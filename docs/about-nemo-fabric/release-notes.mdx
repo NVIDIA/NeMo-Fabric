@@ -49,12 +49,12 @@ of silently dropping them.
 
 All four bundled adapters integrate with NVIDIA NeMo Relay. Runs can produce
 raw Agent Trajectory Observability Format (ATOF) events and normalized Agent
-Trajectory Interchange Format (ATIF) trajectories. Relay-enabled runtimes can
-also stream live ATOF records while keeping the normalized terminal result
-separate.
+Trajectory Interchange Format (ATIF) trajectories, and export OpenTelemetry and
+OpenInference through Relay. Relay-enabled runtimes can also stream live ATOF
+records while keeping the normalized terminal result separate.
 
-Native observability is also available where the harness supports it, including
-OpenTelemetry for Codex and OpenTelemetry and OpenInference for Deep Agents.
+Codex and Deep Agents additionally support native OpenTelemetry. Deep Agents
+also supports native OpenInference.
 
 ### Evaluation and Experimentation Workflows
 
