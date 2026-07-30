@@ -38,7 +38,8 @@ cleanup behavior.
 ### Portable Configuration With Fail-Closed Validation
 
 The typed configuration model covers models, instructions, runtime limits,
-environments, tool policy, skills, MCP servers, telemetry, and NeMo Relay.
+environments, tool policy, skills, MCP servers, telemetry, and
+[NVIDIA NeMo Relay](https://github.com/NVIDIA/NeMo-Relay/tree/main).
 Adapters declare the configuration and capabilities they support. NeMo Fabric
 reports incompatible settings before execution instead of silently ignoring
 them.
@@ -58,8 +59,9 @@ OpenTelemetry for Codex and OpenTelemetry and OpenInference for Deep Agents.
 
 The Harbor integration brings the shared NeMo Fabric contract into isolated
 evaluation environments and returns normalized result and telemetry evidence.
-This release includes a deterministic calculator workflow and a qualified
-SWE-Bench example for comparing harness behavior on the same task.
+This release includes a deterministic calculator workflow anda SWE-Bench
+walkthrough built on a single Harbor task for comparing harness behavior on
+the same task.
 
 Guided notebooks and the experimentation CLI provide additional paths for
 exploring harness and model variations, running maintained examples, and
