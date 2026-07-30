@@ -26,7 +26,7 @@ experiment variations without rewriting each integration.
 The first release includes integrations for Claude Code, Codex, LangChain Deep
 Agents, and Hermes Agent. Each adapter translates the shared NeMo Fabric
 contract into the models, tools, skills, MCP servers, runtime state, and
-observability capabilities supported by its harness.
+observability capabilities supported by the harness.
 
 ### Persistent Multi-Turn Runtimes
 
@@ -35,14 +35,15 @@ session or thread state across turns. Single-invocation and multi-turn work use
 the same lifecycle, with consistent startup, invocation, failure handling, and
 cleanup behavior.
 
-### Portable Configuration With Fail-Closed Validation
+### Portable Configuration With Compatibility Validation
 
 The typed configuration model covers models, instructions, runtime limits,
 environments, tool policy, skills, MCP servers, telemetry, and
 [NVIDIA NeMo Relay](https://github.com/NVIDIA/NeMo-Relay/tree/main).
-Adapters declare the configuration and capabilities they support. NeMo Fabric
-reports incompatible settings before execution instead of silently ignoring
-them.
+Adapters declare the normalized configuration, telemetry, and runtime
+capabilities they support. NeMo Fabric rejects incompatible normalized
+settings and unsupported capability routes before harness invocation instead
+of silently dropping them.
 
 ### NeMo Relay Observability and Live Streaming
 
@@ -59,7 +60,7 @@ OpenTelemetry for Codex and OpenTelemetry and OpenInference for Deep Agents.
 
 The Harbor integration brings the shared NeMo Fabric contract into isolated
 evaluation environments and returns normalized result and telemetry evidence.
-This release includes a deterministic calculator workflow anda SWE-Bench
+This release includes a deterministic calculator workflow and a SWE-Bench
 walkthrough built on a single Harbor task for comparing harness behavior on
 the same task.
 
