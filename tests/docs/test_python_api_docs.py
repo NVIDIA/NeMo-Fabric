@@ -32,6 +32,8 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_DIR = ROOT / "docs" / "reference" / "api" / "python-library-reference"
 LANDING_PAGE = ROOT / "docs" / "about-nemo-fabric" / "overview.mdx"
+INSTALL_PAGE = ROOT / "docs" / "getting-started" / "install.mdx"
+QUICKSTART_PAGE = ROOT / "docs" / "getting-started" / "quickstart.mdx"
 NAVIGATION = ROOT / "docs" / "index.yml"
 MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
@@ -354,33 +356,33 @@ def test_generated_module_and_class_headings_have_blank_lines():
 
 def test_landing_page_routes_new_users_through_the_product() -> None:
     landing = LANDING_PAGE.read_text(encoding="utf-8")
+    installation = INSTALL_PAGE.read_text(encoding="utf-8")
+    quickstart = QUICKSTART_PAGE.read_text(encoding="utf-8")
     navigation = NAVIGATION.read_text(encoding="utf-8")
 
     assert "      - section: API\n" in navigation
     assert "      - section: APIs\n" not in navigation
+    assert 'title: "NVIDIA NeMo Fabric Documentation"' in landing
+    assert 'title: "NVIDIA NeMo Fabric Installation"' in installation
+    assert 'title: "NVIDIA NeMo Fabric Quickstart"' in quickstart
+    assert 'template-library-version: "1.0.0"' in landing
+    assert 'template-library-version: "1.0.0"' in quickstart
 
     for heading in (
         "## What NeMo Fabric Gives You",
-        "## How NeMo Fabric Fits",
-        "## Quick Start",
         "## Choose Your Interface",
         "## Core Workflow",
-        "## Next Steps",
+        "## Learn More",
     ):
         assert heading in landing
 
     for destination in (
-        "/reference/api/python-library-reference/client",
-        "/reference/api/python-library-reference/runtime",
-        "/reference/api/python-library-reference/streaming",
-        "/reference/api/python-library-reference/types",
-        "/reference/api/python-library-reference/errors",
+        "../getting-started/install.mdx",
+        "../getting-started/quickstart.mdx",
+        "../experimentation/cli.mdx",
+        "../sdk/python.mdx",
+        "../reference/api/python-library-reference/nemo_fabric.client.md",
+        "../reference/api/python-library-reference/nemo_fabric.runtime.md",
+        "../reference/api/python-library-reference/nemo_fabric.streaming.md",
     ):
         assert destination in landing
-
-    quick_start = landing.split("## Quick Start", maxsplit=1)[1].split(
-        "## Choose Your Interface", maxsplit=1
-    )[0]
-    assert "client.plan(" not in quick_start
-    assert "client.doctor(" not in quick_start
-    assert "/sdk/python" in quick_start
