@@ -84,3 +84,4 @@ jobs:
       ref: refs/tags/${{ needs.tag-nightly-alpha.outputs.tag }}
       ref_name: ${{ needs.tag-nightly-alpha.outputs.tag }}
       ref_type: tag
+      skip_tests: true

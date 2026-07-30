@@ -21,6 +21,11 @@ on:
         required: false
         default: ''
         type: string
+      skip_tests:
+        description: 'Skip the Python test matrix and only build wheels'
+        required: false
+        default: false
+        type: boolean
   pull_request:
   push:
     branches: [main]
@@ -37,6 +42,7 @@ defaults:
 jobs:
   test:
     name: Test (Python ${{ matrix.python-version }}, ${{ matrix.platform }})
+    if: ${{ (inputs.ref_type || github.ref_type) != 'tag' && !inputs.skip_tests }}
     strategy:
       fail-fast: false
       matrix:
@@ -99,6 +105,7 @@ jobs:
   build-wheels:
     name: Build wheels (${{ matrix.platform }})
     needs: [test]
+    if: ${{ always() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     strategy:
       fail-fast: false
       matrix:
