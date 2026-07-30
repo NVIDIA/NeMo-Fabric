@@ -12,14 +12,47 @@ sessions, and telemetry.
 
 ## Install the Adapter
 
-Install the adapter and a compatible Hermes Agent version in the environment
-that runs the agent harness:
+Hermes Agent and the adapter support Python 3.11 through 3.13.
+
+To install the NeMo Fabric runtime, Hermes Agent adapter, and supported Hermes
+Agent dependencies in one environment:
 
 ```bash
-pip install "nemo-fabric[hermes,hermes-agent]"
+pip install "nemo-fabric[hermes-agent]"
 ```
 
-Hermes Agent currently supports Python 3.11 through 3.13.
+To install the adapter and supported Hermes Agent without the NeMo Fabric
+runtime, use the adapter package's `harness` extra:
+
+```bash
+pip install "nemo-fabric-adapters-hermes[harness]"
+```
+
+The adapter package also provides `relay` and `full` extras. Use `relay` when
+the environment already manages Hermes Agent. Use `full` to install Hermes
+Agent and the NeMo Relay Python package together.
+
+If the environment already manages a compatible Hermes Agent, install only the
+adapter:
+
+```bash
+pip install nemo-fabric-adapters-hermes
+```
+
+The bare adapter package does not install the NeMo Fabric runtime or Hermes
+Agent. Use `hermes-agent>=0.17.0`, the constraint supported by this release.
+
+If the existing compatible Hermes Agent and NeMo Fabric runtime share an
+environment, install the runtime and bare adapter together:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-hermes
+```
+
+For separate environments, set `ADAPTER_PYTHON` in the runtime environment to
+the adapter environment's Python interpreter. Use
+matching NeMo Fabric release versions for the runtime and adapter package
+unless a different pairing has been explicitly validated.
 
 ## Configure the Adapter
 
@@ -33,8 +66,37 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, instructions, turn limit, native tool selectors, and telemetry.
-Use `harness.settings` only for Hermes Agent-specific options such as terminal
-timeout or reasoning configuration.
+
+The Hermes descriptor validates the following `harness.settings` fields:
+
+| Setting | Type | Default | Description |
+| --- | --- | --- | --- |
+| `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
+| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. NeMo Fabric adds `observability/nemo_relay` when Relay telemetry is enabled. |
+| `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
+| `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
+| `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
+
+For example:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.hermes",
+    settings={
+        "reasoning_config": {"enabled": True, "effort": "medium"},
+        "plugins_enabled": ["disk-cleanup"],
+        "save_trajectories": True,
+        "max_tokens": 1024,
+        "terminal_timeout": 90,
+    },
+)
+```
+
+Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
+that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
+Hermes harness setting.
 
 ## Understand the Runtime Lifecycle
 

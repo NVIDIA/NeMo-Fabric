@@ -11,12 +11,48 @@ to the legacy Codex CLI adapter.
 
 ## Install the Adapter
 
-Install the adapter and its Codex Python SDK dependencies in the environment
-that runs the agent harness:
+To install the NeMo Fabric runtime, Codex adapter, and supported Codex Python
+SDK in one environment:
 
 ```bash
 pip install "nemo-fabric[codex]"
 ```
+
+To install the adapter and supported Codex SDK without the NeMo Fabric runtime,
+use the adapter package's `harness` extra:
+
+```bash
+pip install "nemo-fabric-adapters-codex[harness]"
+```
+
+The adapter package's `full` extra installs the same dependencies as `harness`;
+it does not install the NeMo Fabric runtime. Codex Relay integration uses the
+external `nemo-relay` CLI, not the Python `nemo-relay` package, so this adapter
+does not provide a `relay` extra. Follow the
+[NeMo Relay CLI installation procedure](../../getting-started/install.mdx#install-nemo-relay),
+then ensure `nemo-relay` is on `PATH`.
+
+If the environment already manages a compatible Codex SDK, install only the
+adapter:
+
+```bash
+pip install nemo-fabric-adapters-codex
+```
+
+The bare adapter package does not install the NeMo Fabric runtime or SDK. Use
+`openai-codex==0.144.4`, the constraint supported by this release.
+
+If the existing compatible Codex SDK and NeMo Fabric runtime share an
+environment, install the runtime and bare adapter together:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-codex
+```
+
+For separate environments, set `ADAPTER_PYTHON` in the runtime environment to
+the adapter environment's Python interpreter. Use
+matching NeMo Fabric release versions for the runtime and adapter package
+unless a different pairing has been explicitly validated.
 
 ## Configure the Adapter
 
@@ -30,9 +66,29 @@ harness = HarnessConfig(adapter_id="nvidia.fabric.codex")
 
 Use normalized `FabricConfig` fields to configure the model, workspace, skills,
 MCP servers, and telemetry. The Codex adapter does not support normalized
-`tools.enabled` or `tools.blocked` policy. Use `harness.settings` for supported Codex-specific
-options such as `sandbox`, `approval_mode`, `developer_instructions`, and
-`output_schema`. Configure base instructions through `instructions.system`.
+`tools.enabled` or `tools.blocked` policy. Configure base instructions through
+`instructions.system`; the adapter passes that normalized value to the Codex
+SDK as `base_instructions`.
+
+The resolved Codex descriptor accepts the following Codex-specific
+`harness.settings` keys. All keys are optional:
+
+| Setting | Type | Static Default |
+| --- | --- | --- |
+| `sandbox` | One of `read-only`, `workspace-write`, or `danger-full-access` | `read-only` |
+| `approval_mode` | One of `auto_review` or `deny_all` | `auto_review` |
+| `developer_instructions` | Nonempty string | No default |
+| `personality` | One of `none`, `friendly`, or `pragmatic` | No default |
+| `reasoning_effort` | One of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh` | No default |
+| `service_tier` | Nonempty string | No default |
+| `output_schema` | JSON Schema object for the final assistant message | No default |
+| `config_overrides` | Object that maps nonempty dotted Codex configuration keys to JSON-compatible values | `{}` |
+
+Planning rejects unknown keys, empty dotted-key segments, invalid types, and
+invalid enum values before the Codex runtime starts. Schema defaults document
+adapter behavior but are not added to `harness.settings`. Use
+`config_overrides` as the intentional adapter-specific escape hatch for Codex
+configuration that has no normalized NeMo Fabric field.
 
 ## Configure MCP and Skills
 
@@ -64,11 +120,10 @@ that it contains `SKILL.md`, and registers it as a process-scoped Codex skill
 root. Codex uses its normal skill discovery behavior. Invalid skill directories
 and MCP transports fail before the SDK runtime starts.
 
-For `Fabric.start_runtime(...)`, the model provider, MCP configuration, skill
-roots, and `harness.settings.config_overrides` are fixed when the runtime starts
-and cannot vary between `Runtime.invoke(...)` calls. Start a new runtime to
-change them. `Fabric.run(...)` starts the same runtime, invokes it once, and
-stops it, so the same settings are scoped to that single invocation.
+For `Fabric.start_runtime(...)`, the model provider, MCP configuration, and
+skill roots are fixed when the runtime starts and cannot vary between
+`Runtime.invoke(...)` calls. Start a new runtime to change them.
+`Fabric.run(...)` starts the same runtime, invokes it once, and stops it.
 
 The Codex adapter does not declare `tools.enabled` or `tools.blocked` support. Codex can filter
 individual MCP server tools, but the pinned runtime does not provide one deny
