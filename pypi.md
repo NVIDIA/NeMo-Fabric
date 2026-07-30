@@ -119,11 +119,11 @@ The LangChain Deep Agents and Hermes Agent adapter packages also provide
 Claude and Codex require the
 [`nemo-relay` CLI](https://crates.io/crates/nemo-relay-cli) instead of the NeMo
 Relay Python package. They do not provide a `relay` extra. Refer to the
-[NeMo Relay CLI](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#nemo-relay-cli)
+[NeMo Relay CLI](https://docs.nvidia.com/nemo/fabric/getting-started/install#nemo-relay-cli)
 install guide for instructions on installing the CLI tool.
 
 ## Learn More
 
-Refer to the [NVIDIA NeMo Fabric documentation](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric)
+Refer to the [NVIDIA NeMo Fabric documentation](https://docs.nvidia.com/nemo/fabric)
 for installation, configuration, and usage guidance. Source code is available
 in the [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).

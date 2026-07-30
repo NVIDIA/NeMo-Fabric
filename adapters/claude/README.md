@@ -24,7 +24,7 @@ The following table shows which components each installation provides:
 
 For split runtime and adapter environments, configure `ADAPTER_PYTHON` and use
 matching NeMo Fabric release versions. Refer to the
-[installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
+[installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 The `full` extra is equivalent to `harness`. Relay is optional for ordinary
 runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
@@ -58,7 +58,7 @@ Unset unused `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` variables before
 using WIF. Anthropic credential resolution treats an empty variable as selected,
 so an empty API credential prevents fallback to a federation profile.
 
-Refer to the [Claude adapter authentication guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/integrations/harness/claude)
+Refer to the [Claude adapter authentication guide](https://docs.nvidia.com/nemo/fabric/integrations/harness/claude)
 for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
 
@@ -122,7 +122,7 @@ by the SDK and is not persisted as a NeMo Fabric artifact.
 
 Relay requires a separately installed NeMo Relay 0.6.x CLI on `PATH`; the Python
 `nemo-relay` package does not provide the executable. Follow the
-[NeMo Relay installation instructions](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-nemo-relay).
+[NeMo Relay installation instructions](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-nemo-relay).
 
 Enable Relay through the normalized NeMo Fabric configuration:
 

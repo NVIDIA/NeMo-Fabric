@@ -30,4 +30,4 @@ NeMo Relay is optional for ordinary runs. NeMo Relay telemetry and streaming
 require one of the installations in the table that includes the NeMo Relay
 Python package.
 
-Refer to the [installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install) for more details.
+Refer to the [installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install) for more details.

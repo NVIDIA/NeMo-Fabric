@@ -24,7 +24,7 @@ table shows which components each installation provides:
 For an environment-managed harness, use `hermes-agent>=0.17.0`. For split
 runtime and adapter environments, configure `ADAPTER_PYTHON` and use matching
 NeMo Fabric release versions. Refer to the
-[installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
+[installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 Relay is optional for ordinary runs. Relay telemetry and
 `Runtime.invoke_stream()` require one of the installations in the table that

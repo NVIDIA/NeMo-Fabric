@@ -45,7 +45,7 @@ full = [
 Repository = "https://github.com/NVIDIA/NeMo-Fabric"
 Homepage = "https://github.com/NVIDIA/NeMo-Fabric"
 Issues = "https://github.com/NVIDIA/NeMo-Fabric/issues"
-Documentation = "https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric"
+Documentation = "https://docs.nvidia.com/nemo/fabric"
 
 [tool.setuptools.packages.find]
 where = ["src"]

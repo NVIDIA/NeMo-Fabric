@@ -23,7 +23,7 @@ The following table shows which components each installation provides:
 For an environment-managed SDK, use `openai-codex==0.144.4`. For split runtime
 and adapter environments, configure `ADAPTER_PYTHON` and use matching NeMo
 Fabric release versions. Refer to the
-[installation guide](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
+[installation guide](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-an-adapter-and-harness-without-the-runtime).
 
 The `full` extra is equivalent to `harness`. Relay is optional for ordinary
 runs. Relay telemetry and `Runtime.invoke_stream()` require the external CLI
@@ -147,7 +147,7 @@ Codex state variables, the selected model's `api_key_env`, and explicit
 
 Relay requires a separately installed NeMo Relay 0.6.x CLI on `PATH`; the Python
 `nemo-relay` package does not provide the executable. Follow the
-[NeMo Relay installation instructions](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric/getting-started/install#install-nemo-relay).
+[NeMo Relay installation instructions](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-nemo-relay).
 
 Enable Relay with `FabricConfig.enable_relay(...)`. The adapter starts the
 installed `nemo-relay` CLI as a supervised sidecar; do not start the gateway

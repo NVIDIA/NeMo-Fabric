@@ -15,7 +15,7 @@ Install the package directly when developing an adapter:
 pip install nemo-fabric-adapters-common
 ```
 
-Refer to the [NeMo Fabric documentation](https://nvidia-nemo-fabric.docs.buildwithfern.com/nemo/fabric)
+Refer to the [NeMo Fabric documentation](https://docs.nvidia.com/nemo/fabric)
 for adapter and configuration guidance. Source code is available in the
 [NVIDIA NeMo Fabric repository](https://github.com/NVIDIA/nemo-fabric/).
 
