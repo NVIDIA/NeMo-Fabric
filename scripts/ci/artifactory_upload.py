@@ -84,7 +84,8 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
         )
         response.raise_for_status()
         release = response.json()
-        print(
+        # {"message":"Release creation accepted","project_id":3801,"release_uuid":"579242a9-a143-43ca-b519-c89ffc394c44","status":"pending"}
+        print( # TODO Include status and message fields
             f"Release accepted for {package_name}: "
             f"project_id={release['project_id']}, release_uuid={release['release_uuid']}",
             flush=True,
