@@ -33,7 +33,9 @@ variations notebook shows advanced composition against a real, maintained agent.
     login for Codex; `ANTHROPIC_API_KEY` for the documented Claude run).
     Relay-enabled Hermes Agent and Deep Agents runs also need the `nemo-relay`
     Python package in the selected adapter environment.
-- `NVIDIA_API_KEY` is loaded from a gitignored `.env` at the repo root if present.
+- API keys are loaded from a gitignored `.env` at the repo root if present.
+  Each notebook securely prompts for any missing keys it uses. Press Enter to
+  skip a key and the live harness calls that require it.
 
 Every live cell checks the prerequisites it can inspect. Missing key-based
 credentials skip their harness and still show its resolved plan. Codex
