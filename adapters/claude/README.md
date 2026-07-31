@@ -58,7 +58,7 @@ Unset unused `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` variables before
 using WIF. Anthropic credential resolution treats an empty variable as selected,
 so an empty API credential prevents fallback to a federation profile.
 
-Refer to the [Claude adapter authentication guide](https://docs.nvidia.com/nemo/fabric/integrations/harness/claude)
+Refer to the [Claude adapter authentication guide](https://docs.nvidia.com/nemo/fabric/integrations/harness-integrations/claude-code)
 for mode selection, required WIF variables, and the Relay boundary. Package
 installation is verified by the adapter wheel and module-entrypoint tests.
 
