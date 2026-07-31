@@ -101,6 +101,7 @@ package = [
 
 test = [
     "fastapi~=0.138",
+    "pkginfo~=1.12",
     "pytest>=8",
     "pytest-asyncio>=0.26",
     "pytest-cov~=7.0",

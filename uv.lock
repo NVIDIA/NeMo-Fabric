@@ -2109,6 +2109,7 @@ package = [
 ]
 test = [
     { name = "fastapi" },
+    { name = "pkginfo" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -2162,6 +2163,7 @@ package = [
 ]
 test = [
     { name = "fastapi", specifier = "~=0.138" },
+    { name = "pkginfo", specifier = "~=1.12" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.26" },
     { name = "pytest-cov", specifier = "~=7.0" },
