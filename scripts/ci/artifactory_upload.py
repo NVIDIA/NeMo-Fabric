@@ -97,18 +97,18 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> int:
             elif status not in EXPECTED_STATUS_VALUES:
                 print(f"Unexpected release status for {package_name}: {status}", flush=True)
                 error_count += 1
+            else:
+                # {"message":"Release creation accepted","project_id":3801,"release_uuid":"579242a9-a143-43ca-b519-c89ffc394c44","status":"pending"}
+                print(
+                    f"Release for {package_name} ({release['project_id']}):\n"
+                    f"\trelease_uuid={release['release_uuid']},\n"
+                    f"\tstatus={release['status']}\n"
+                    f"\tmessage={release['message']}\n",
+                    flush=True,
+                )
         except requests.RequestException as e:
             print(f"Failed to create release for {package_name}: {e}", flush=True)
             error_count += 1
-        else:
-            # {"message":"Release creation accepted","project_id":3801,"release_uuid":"579242a9-a143-43ca-b519-c89ffc394c44","status":"pending"}
-            print(
-                f"Release for {package_name} ({release['project_id']}):\n"
-                f"\trelease_uuid={release['release_uuid']},\n"
-                f"\tstatus={release['status']}\n"
-                f"\tmessage={release['message']}\n",
-                flush=True,
-            )
 
     return error_count
 
