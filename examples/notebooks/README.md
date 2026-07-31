@@ -43,7 +43,12 @@ variant is attempted, the notebook raises on any attempted-run failure. The
 Relay cell also requires a succeeded result, a Relay telemetry reference, and a
 nonempty, parseable ATOF trace.
 
-## Launch
+## Google Colab
+
+To open these notebooks in a Google Colab environment, you can click the following link: [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/NVIDIA/NeMo-Fabric)
+
+
+## Jupyter Lab
 
 ```bash
 just notebooks
