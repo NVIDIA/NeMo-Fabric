@@ -12,6 +12,10 @@ import pkginfo
 import requests
 
 
+EXPECTED_STATUS_VALUES = {"building", "pending", "completed"}
+FAILED_STATUS = "failed"
+
+
 def upload_wheel(
     wheel_file: Path,
     artifactory_url: str,
@@ -32,7 +36,7 @@ def upload_wheel(
     return wheel_url
 
 
-def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
+def perform_release(published_wheels: list[tuple[Path, str]]) -> int:
     kitmaker_url = os.environ["KITMAKER_URL"]
     kitmaker_api_token = os.environ["KITMAKER_API_TOKEN"]
     kitmaker_owner = os.environ["KITMAKER_OWNER"]
@@ -61,6 +65,7 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
         )
 
 
+    error_count = 0
     for package_name, wheel_urls in packages.items():
         package_id = project_ids[package_name]
         wheels_payload = [{
@@ -69,29 +74,43 @@ def perform_release(published_wheels: list[tuple[Path, str]]) -> None:
                             "url": wheel_url,
                             "upload": True,
                         }
-                        for wheel_url in wheel_urls]
+                        for wheel_url in sorted(wheel_urls)]
 
         payload = {
             "project_name": package_name,
             "payload": wheels_payload,
         }
 
-        response = requests.post(
-            f"{kitmaker_url}/api/v0/projects/{package_id}/releases",
-            headers=headers,
-            json=payload,
-            timeout=(30, 600),
-        )
-        response.raise_for_status()
-        release = response.json()
-        # {"message":"Release creation accepted","project_id":3801,"release_uuid":"579242a9-a143-43ca-b519-c89ffc394c44","status":"pending"}
-        print(
-            f"Release for {package_name} ({release['project_id']}):\n"
-            f"\trelease_uuid={release['release_uuid']},\n"
-            f"\tstatus={release['status']}\n"
-            f"\tmessage={release['message']}\n",
-            flush=True,
-        )
+        try:
+            response = requests.post(
+                f"{kitmaker_url}/api/v0/projects/{package_id}/releases",
+                headers=headers,
+                json=payload,
+                timeout=(30, 600),
+            )
+            response.raise_for_status()
+            release = response.json()
+            status = release["status"]
+            if status == FAILED_STATUS:
+                print(f"Release failed for {package_name}: {release['message']}", flush=True)
+                error_count += 1
+            elif status not in EXPECTED_STATUS_VALUES:
+                print(f"Unexpected release status for {package_name}: {status}", flush=True)
+                error_count += 1
+        except requests.RequestException as e:
+            print(f"Failed to create release for {package_name}: {e}", flush=True)
+            error_count += 1
+        else:
+            # {"message":"Release creation accepted","project_id":3801,"release_uuid":"579242a9-a143-43ca-b519-c89ffc394c44","status":"pending"}
+            print(
+                f"Release for {package_name} ({release['project_id']}):\n"
+                f"\trelease_uuid={release['release_uuid']},\n"
+                f"\tstatus={release['status']}\n"
+                f"\tmessage={release['message']}\n",
+                flush=True,
+            )
+
+    return error_count
 
 
 def main() -> int:
@@ -126,14 +145,15 @@ def main() -> int:
     else:
         print("All wheels uploaded to Artifactory.")
 
+    kitmaker_error_count = 0
     if os.environ.get("CI_COMMIT_TAG") is not None:
         print("Performing release of published wheels to KitMaker...", flush=True)
-        perform_release(published_wheels)
+        kitmaker_error_count = perform_release(published_wheels)
     else:
         print("Skipping release to KitMaker. This is not a nightly, tagged, or main branch build.", flush=True)
 
-    return num_unpublished
+    return num_unpublished + kitmaker_error_count
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(min(main(), 255))
