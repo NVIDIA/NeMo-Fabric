@@ -13,8 +13,12 @@ global-theme: nvidia
 products:
 - display-name: NeMo Fabric
   slug: /
-  path: ./versions/dev.yml
+  path: ./versions/v0.1.0.yml
   versions:
+  - display-name: Latest (v0.1.0)
+    path: ./versions/v0.1.0.yml
+    slug: latest
+    availability: stable
   - display-name: dev
     path: ./versions/dev.yml
     slug: dev
@@ -22,4 +26,4 @@ products:
   - display-name: v0.1.0
     path: ./versions/v0.1.0.yml
     slug: v0.1.0
-    availability: beta
+    availability: stable
