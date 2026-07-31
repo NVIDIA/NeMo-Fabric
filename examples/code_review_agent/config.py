@@ -44,7 +44,7 @@ def base_config() -> FabricConfig:
         models={
             "default": ModelConfig(
                 provider="nvidia",
-                model="nvidia/nemotron-3-nano-30b-a3b",
+                model="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
                 temperature=0.0,
                 api_key_env="NVIDIA_API_KEY",
             )

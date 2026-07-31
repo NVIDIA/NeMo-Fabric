@@ -184,7 +184,7 @@ fn hermes() -> FabricConfig {
         "nvidia.fabric.hermes",
         Some(model(
             "nvidia",
-            "nvidia/nemotron-3-nano-30b-a3b",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
             Some("NVIDIA_API_KEY"),
             Some(NVIDIA_API_CATALOG_BASE_URL),
         )),
@@ -240,7 +240,7 @@ fn deepagents() -> FabricConfig {
         "nvidia.fabric.langchain.deepagents",
         Some(model(
             "nvidia",
-            "nvidia/nemotron-3-nano-30b-a3b",
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
             Some("NVIDIA_API_KEY"),
             Some(NVIDIA_API_CATALOG_BASE_URL),
         )),

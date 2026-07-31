@@ -81,7 +81,7 @@ Expected Harbor summary: one trial, zero exceptions, and mean reward `1.000`.
 uv run --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --model nvidia/nemotron-3-nano-30b-a3b \
+  --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \
@@ -106,7 +106,7 @@ typed config. The API key is passed separately as a task credential.
 uv run --extra harbor harbor run \
   --path "$TASK_DIR" \
   --agent nemo_fabric.integrations.harbor:FabricAgent \
-  --model nvidia/nemotron-3-nano-30b-a3b \
+  --model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning \
   --ak fabric_adapter_id=nvidia.fabric.hermes \
   --ak fabric_config_base_dir=/opt/fabric-calculator \
   --ak fabric_workspace=/app \

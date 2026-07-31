@@ -32,7 +32,7 @@ def test_hermes_config_mapping(tmp_path: Path):
 
     assert config["model"] == {
         "provider": "nvidia",
-        "default": "nvidia/nemotron-3-nano-30b-a3b",
+        "default": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
         "base_url": "https://integrate.api.nvidia.com/v1",
     }
     assert config["terminal"]["backend"] == "local"
@@ -59,7 +59,7 @@ def payload(tmpdir: str) -> dict:
             "models": {
                 "default": {
                     "provider": "nvidia",
-                    "model": "nvidia/nemotron-3-nano-30b-a3b",
+                    "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
                     "api_key_env": "NVIDIA_API_KEY",
                     "base_url": "https://integrate.api.nvidia.com/v1",
                 }

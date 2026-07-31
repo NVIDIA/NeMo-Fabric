@@ -158,7 +158,7 @@ def make_payload_fixture():
                 "models": {
                     "default": {
                         "provider": "nvidia",
-                        "model": "nvidia/nemotron-3-nano-30b-a3b",
+                        "model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
                         "api_key_env": "NVIDIA_API_KEY",
                         "base_url": "https://integrate.api.nvidia.com/v1",
                     }
@@ -268,7 +268,7 @@ async def test_single_invocation_normalizes_response_usage_and_thread(
 
     assert output["harness"] == "deepagents"
     assert output["mode"] == "deepagents"
-    assert output["model"] == "nvidia/nemotron-3-nano-30b-a3b"
+    assert output["model"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     assert output["response"] == "reply to hello"
     assert output["message_count"] == 2
     assert output["usage"] == {

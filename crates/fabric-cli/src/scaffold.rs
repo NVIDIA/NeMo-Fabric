@@ -431,7 +431,7 @@ mod tests {
             };
             let source = fs::read_to_string(launcher).expect("read launcher");
             assert!(source.contains("nvidia.fabric.hermes"));
-            assert!(source.contains("nvidia/nemotron-3-nano-30b-a3b"));
+            assert!(source.contains("nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"));
             assert!(source.contains("https://integrate.api.nvidia.com/v1"));
             if language == Language::Rust {
                 let manifest =

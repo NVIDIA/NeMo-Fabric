@@ -67,10 +67,10 @@ experiments:
 | Preset | Harness | Default model | Endpoint |
 | --- | --- | --- | --- |
 | `scripted` | Deterministic test adapter | None | None |
-| `hermes` | Hermes Agent | `nvidia/nemotron-3-nano-30b-a3b` | NVIDIA API Catalog |
+| `hermes` | Hermes Agent | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | NVIDIA API Catalog |
 | `claude` | Claude Code | `aws/anthropic/claude-opus-4-5` | `NVIDIA_FRONTIER_BASE_URL` |
 | `codex` | Codex | `azure/openai/gpt-5.4` | `NVIDIA_FRONTIER_BASE_URL` |
-| `deepagents` | LangChain Deep Agents | `nvidia/nemotron-3-nano-30b-a3b` | NVIDIA API Catalog |
+| `deepagents` | LangChain Deep Agents | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` | NVIDIA API Catalog |
 
 The `scripted` preset does not call a model. It returns a deterministic response
 through the same NeMo Fabric runtime and adapter contract, which makes it useful for

@@ -162,7 +162,7 @@ class TestHermesE2E:
 
         hermes_config = yaml.safe_load(hermes_config_path.read_text(encoding="utf-8"))
         assert hermes_config["model"]["provider"] == "nvidia"
-        assert hermes_config["model"]["default"] == "nvidia/nemotron-3-nano-30b-a3b"
+        assert hermes_config["model"]["default"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
         assert hermes_config["model"]["base_url"] == f"{self.api_server}/v1"
         assert hermes_config["plugins"]["enabled"] == ["observability/nemo_relay"]
         assert output["hermes_native_config"]["plugins"] == ["observability/nemo_relay"]
@@ -223,7 +223,7 @@ class TestHermesE2E:
         assert len(atof_records) == 7
 
         assert all(
-            record["metadata"]["model"] == "nvidia/nemotron-3-nano-30b-a3b"
+            record["metadata"]["model"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
             and record["metadata"]["platform"] == self.atof_platform
             for record in atof_records
         )
@@ -254,12 +254,12 @@ class TestHermesE2E:
         assert first_step["message"] == "Reply with exactly: relay ok"
         assert (
             first_step["extra"]["llm_request"]["model"]
-            == "nvidia/nemotron-3-nano-30b-a3b"
+            == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
         )
 
         last_step = steps[-1]
         assert last_step["source"] == "agent"
         assert last_step["message"] == self.output["response"]
-        assert last_step["model_name"] == "nvidia/nemotron-3-nano-30b-a3b"
+        assert last_step["model_name"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"

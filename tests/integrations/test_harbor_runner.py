@@ -314,7 +314,7 @@ def test_harbor_calculator_documents_explicit_cli_commands():
     assert "fabric_config_factory" not in swebench
     assert "fabric_harness_settings" not in calculator
     assert "fabric_workspace=/app" in calculator
-    assert "--model nvidia/nemotron-3-nano-30b-a3b" in calculator
+    assert "--model nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" in calculator
     assert "--model anthropic/claude-sonnet-4-5" in calculator
     assert 'CALCULATOR_DIR="$PWD/examples/harbor/calculator"' in calculator
     assert "calculator/README.md" in landing
@@ -396,7 +396,7 @@ def test_harbor_relay_telemetry_exports_direct_atof_and_atif():
     config = build_harbor_config(
         adapter_id="nvidia.fabric.hermes",
         workspace="/app",
-        model_name="nvidia/nemotron-3-nano-30b-a3b",
+        model_name="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
         telemetry="relay",
     )
     assert config.harness.settings == {}
@@ -446,7 +446,7 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
         adapter_id="nvidia.fabric.hermes",
         workspace="/testbed",
         telemetry="relay",
-        model_name="nvidia/nemotron-3-nano-30b-a3b",
+        model_name="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
         skills_dir="/harbor/skills",
         mcp_servers=tuple(
             HarborMcpServer.model_validate(server.model_dump(mode="python"))
@@ -478,7 +478,7 @@ def test_swebench_matrix_translates_harbor_inputs_to_typed_config(tmp_path: Path
     assert base.mcp is None
     assert base.tools is None
     assert base.telemetry is None
-    assert relay.models["default"].model == "nvidia/nemotron-3-nano-30b-a3b"
+    assert relay.models["default"].model == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     assert relay.skills is not None
     assert relay.skills.paths == ["/harbor/skills"]
     assert relay.mcp is not None
