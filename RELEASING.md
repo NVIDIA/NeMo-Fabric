@@ -207,7 +207,7 @@ Prioritize breaking changes, migrations, user-visible features, and ongoing
 support limitations.
 
 Update [`docs/about-nemo-fabric/release-notes.mdx`](docs/about-nemo-fabric/release-notes.mdx). Preserve the MDX front matter and JSX SPDX comment. State the full history
-is available in GitHub Releases..
+is available in GitHub Releases.
 
 Review product names, commands, package names, support claims, and links, then
 validate the draft:
@@ -246,10 +246,13 @@ git push upstream v${RELEASE_VERSION}
 
 ## What CI Does On A Tag Push
 
-Pushing a valid tag triggers
-[`.github/workflows/ci_python.yml`](.github/workflows/ci_python.yml),
-[`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml), and
-[`.github/workflows/fern-docs.yml`](.github/workflows/fern-docs.yml).
+Pushing a valid tag triggers :
+
+| Workflow | Trigger |
+|---|---|
+| [`.github/workflows/ci_python.yml`](.github/workflows/ci_python.yml) | For all tags including alpha |
+| [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml) | For RC, beta and release tags |
+| [`.github/workflows/fern-docs.yml`](.github/workflows/fern-docs.yml) | For RC, beta and release tags |
 
 The release pipeline then:
 
