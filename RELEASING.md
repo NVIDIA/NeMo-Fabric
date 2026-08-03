@@ -279,17 +279,31 @@ The workflow boundary is split intentionally:
 
 ## Publish The GitHub Release Entry
 
-- [ ] Click the "Releases" button on the right at the repo homepage
-- [ ] Click "Tags" and select the tag you just pushed
-- [ ] Click "Create release from tag"
-- [ ] Click the "Generate release notes" button which will pre-populate the body with information about new contributors and a link to the full diff.
+- Click the "Releases" button on the right at the repo homepage
+- Click "Tags" and select the tag you just pushed
+- Click "Create release from tag"
+- Click the "Generate release notes" button which will pre-populate the body with information about new contributors and a link to the full diff.
 
 ## Post-Release Checks
 
 After the release is live, verify:
 
 1. The `nemo-fabric-core` and `nemo-fabric-cli` crates are visible on crates.io.
-2. The Python wheels are available on https://pypi.org/.
-3. The Python wheels are available on https://pypi.nvidia.com/
+2. The Python wheels are available on PyPI:
+   - [`nemo-fabric`](https://pypi.org/project/nemo-fabric/)
+   - [`nemo-fabric-runtime`](https://pypi.org/project/nemo-fabric-runtime/) Ensure that a wheel exists for each supported platform.
+   - [`nemo-fabric-adapters-common`](https://pypi.org/project/nemo-fabric-adapters-common/)
+   - [`nemo-fabric-adapters-claude`](https://pypi.org/project/nemo-fabric-adapters-claude/)
+   - [`nemo-fabric-adapters-codex`](https://pypi.org/project/nemo-fabric-adapters-codex/)
+   - [`nemo-fabric-adapters-deepagents`](https://pypi.org/project/nemo-fabric-adapters-deepagents/)
+   - [`nemo-fabric-adapters-hermes`](https://pypi.org/project/nemo-fabric-adapters-hermes/)
+3. The Python wheels are available on NVIDIA PyPI:
+   - [`nemo-fabric`](https://pypi.nvidia.com/nemo-fabric/)
+   - [`nemo-fabric-runtime`](https://pypi.nvidia.com/nemo-fabric-runtime/) Ensure that a wheel exists for each supported platform.
+   - [`nemo-fabric-adapters-common`](https://pypi.nvidia.com/nemo-fabric-adapters-common/)
+   - [`nemo-fabric-adapters-claude`](https://pypi.nvidia.com/nemo-fabric-adapters-claude/)
+   - [`nemo-fabric-adapters-codex`](https://pypi.nvidia.com/nemo-fabric-adapters-codex/)
+   - [`nemo-fabric-adapters-deepagents`](https://pypi.nvidia.com/nemo-fabric-adapters-deepagents/)
+   - [`nemo-fabric-adapters-hermes`](https://pypi.nvidia.com/nemo-fabric-adapters-hermes/)
 4. The Fern documentation site shows the expected version and release notes.
 5. The GitHub Release page is complete and accurate.
