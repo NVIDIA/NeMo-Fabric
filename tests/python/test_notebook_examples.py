@@ -69,6 +69,7 @@ def _variation_harness_definitions(base_dir=BASE_DIR):
         "FABRIC_PY": sys.executable,
         "INSTRUCTION": "Test instruction.",
         "WORKSPACE": "./repos/my-service",
+        "IN_COLAB": False,
     }
     # Execute only the checked-in notebook source controlled by this repository.
     exec(compile(source, str(VARIATIONS_NOTEBOOK), "exec"), namespace)  # noqa: S102
