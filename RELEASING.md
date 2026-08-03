@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Releasing NeMo Fabric
+# Releasing NVIDIA NeMo Fabric
 
 This document is the maintainer playbook for cutting NeMo Fabric releases. It
 describes the release contract, the version files that must be updated, the tag
