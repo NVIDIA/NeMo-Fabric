@@ -63,7 +63,7 @@ Assume `upstream` is the NVIDIA repository remote (`NVIDIA/NeMo-Fabric`) and
 
    Any remaining documentation matches for `<old-version>` should be intentional
    and called out in the PR description.
-9. Open a PR targeting `main` using `.github/pull_request_template.md`. The PR
+8. Open a PR targeting `main` using `.github/pull_request_template.md`. The PR
    must mention:
    - the new release branch
    - the nightly alpha branch config update
