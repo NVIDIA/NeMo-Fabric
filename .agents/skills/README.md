@@ -38,6 +38,8 @@ This table lists the maintainer skills in this set and what each covers.
 | [`maintain-ci`](maintain-ci/SKILL.md) | Maintain GitHub Actions workflows with pinned actions and local validation. |
 | [`maintain-packaging`](maintain-packaging/SKILL.md) | Maintain package metadata, native artifacts, lockfiles, and release surfaces. |
 | [`update-project-version`](update-project-version/SKILL.md) | Bump and synchronize release versions across packaging. |
+| [`prepare-code-freeze`](prepare-code-freeze/SKILL.md) | Create a release branch, advance `main`, and prepare the code-freeze PR. |
+| [`draft-release-notes`](draft-release-notes/SKILL.md) | Draft the documentation release notes from verified repository evidence. |
 | [`prepare-pr`](prepare-pr/SKILL.md) | Prepare, open, or edit a pull request with the right scope and review handoff. |
 | [`karpathy-guidelines`](karpathy-guidelines/SKILL.md) | Behavioral coding guidelines; use as a companion to the others. |
 
