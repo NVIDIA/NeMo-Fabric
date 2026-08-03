@@ -156,6 +156,35 @@ place. In a disposable CI workspace that is fine.
 In a local checkout, restore those temporary manifest edits before continuing if
 you are not committing them.
 
+## Cut an RC Tag
+
+After the release commit is merged and validated, create and push the raw
+SemVer tag (changing the value of `RELEASE_VERSION` and `RC_NUM` as appropriate):
+
+```bash
+export RELEASE_VERSION=0.1.0
+export RELEASE_SHORT_VERSION=$(echo $RELEASE_VERSION | cut -f -2 -d '.')
+export RC_NUM=1
+export RELEASE_BRANCH="release/${RELEASE_SHORT_VERSION}"
+echo "Cutting release tag v$RELEASE_VERSION for release branch $RELEASE_BRANCH"
+
+git fetch upstream
+
+git checkout ${RELEASE_BRANCH}
+git pull
+git status
+
+git tag -as -m "v${RELEASE_VERSION}-rc${RC_NUM}" v${RELEASE_VERSION}-rc${RC_NUM}
+
+# Check the tag
+git tag -l v${RELEASE_VERSION}-rc${RC_NUM}
+git show v${RELEASE_VERSION}-rc${RC_NUM}
+
+# Push the changes
+git push upstream v${RELEASE_VERSION}-rc${RC_NUM}
+```
+
+
 ## Prepare Release Notes
 
 Before cutting the final release tag, prepare the release notes (OK to skip for
@@ -191,33 +220,29 @@ just docs
 ## Cut The Tag
 
 After the release commit is merged and validated, create and push the raw
-SemVer tag:
+SemVer tag (changing the value of `RELEASE_VERSION` as appropriate):
 
 ```bash
-git fetch upstream release/0.1
-git checkout release/0.1
-git pull --ff-only upstream release/0.1
-git tag -as -m "$(date +"%B %Y") Release" v0.1.0
+export RELEASE_VERSION=0.1.0
+export RELEASE_SHORT_VERSION=$(echo $RELEASE_VERSION | cut -f -2 -d '.')
+export RELEASE_BRANCH="release/${RELEASE_SHORT_VERSION}"
+echo "Cutting release tag v$RELEASE_VERSION for release branch $RELEASE_BRANCH"
+
+git fetch upstream
+
+git checkout ${RELEASE_BRANCH}
+git pull
+git status
+
+git tag -as -m "$(date +"%B %Y") Release" v${RELEASE_VERSION}
 
 # Verify the tag is correct
-git tag -l v0.1.0
-git show v0.1.0
+git tag -l v${RELEASE_VERSION}
+git show v${RELEASE_VERSION}
 
-git push upstream v0.1.0
+git push upstream v${RELEASE_VERSION}
 ```
 
-Use the prerelease form when needed:
-
-```bash
-git tag -as -m "v0.1.0-rc.1 Release" v0.1.0-rc.1
-
-# Check the tag
-git tag -l v0.1.0-rc.1
-git show v0.1.0-rc.1
-
-# Push the tag
-git push upstream v0.1.0-rc.1
-```
 
 ## What CI Does On A Tag Push
 
