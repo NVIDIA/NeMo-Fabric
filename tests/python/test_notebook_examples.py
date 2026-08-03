@@ -95,6 +95,10 @@ def test_variations_notebook_harnesses_plan_with_current_adapters():
         "reasoning_config": {"effort": "none"},
     }
     assert plans["Deep Agents"].config.harness.settings == {}
+    assert (
+        plans["Deep Agents"].config.models["default"]["base_url"]
+        == "https://integrate.api.nvidia.com/v1"
+    )
     codex = next(harness for harness in harnesses if harness["name"] == "Codex")
     assert "binary" not in codex
     assert "key" not in codex
