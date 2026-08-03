@@ -1,6 +1,8 @@
 ---
 name: draft-release-notes
 description: Compare NeMo Fabric release branches and draft or update the documentation-site release notes. Use when preparing a release-notes update under docs/about-nemo-fabric/release-notes.mdx, reviewing release-to-release changes, or gathering evidence for a current release summary.
+author: NVIDIA Corporation and Affiliates
+license: Apache-2.0
 ---
 
 # Draft Release Notes
