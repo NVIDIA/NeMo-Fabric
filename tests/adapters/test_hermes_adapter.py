@@ -454,7 +454,12 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     tools_pkg = ModuleType("tools")
     tools_mcp = ModuleType("tools.mcp_tool")
     tools_mcp.discover_mcp_tools = lambda: discover_calls.append("discover") or []  # type: ignore[attr-defined]
-    tools_mcp.shutdown_mcp_servers = lambda: shutdown_calls.append("shutdown")  # type: ignore[attr-defined]
+
+    def shutdown_mcp_servers() -> None:
+        shutdown_calls.append("shutdown")
+        raise RuntimeError("mcp shutdown failed")
+
+    tools_mcp.shutdown_mcp_servers = shutdown_mcp_servers  # type: ignore[attr-defined]
 
     monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
     monkeypatch.setitem(sys.modules, "hermes_cli.config", hermes_config)
@@ -464,7 +469,7 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     monkeypatch.setitem(sys.modules, "model_tools", model_tools)
     monkeypatch.setitem(sys.modules, "tools", tools_pkg)
     monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
-    os.environ["TEST_API_KEY"] = "secret"
+    monkeypatch.setenv("TEST_API_KEY", "secret")
 
     payload = {
         "agent_name": "mcp-discover",
@@ -501,12 +506,15 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
 
     runtime = adapter.HermesRuntime()
     await runtime.start(payload)
-    await runtime.stop()
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime.stop()
 
     assert discover_calls == ["discover", "clear"]
     assert shutdown_calls == ["shutdown"]
     mock_ai_agent_type.assert_called_once()
     mock_ai_agent.close.assert_called_once_with()
+    mock_session_db.close.assert_called_once_with()
+    assert caught.value.code == "hermes_runtime_stop_failed"
 
 
 def test_write_hermes_config_writes_file(tmp_path: Path):
@@ -690,7 +698,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
     monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
     monkeypatch.setitem(sys.modules, "run_agent", run_agent)
-    os.environ["TEST_API_KEY"] = "secret"
+    monkeypatch.setenv("TEST_API_KEY", "secret")
 
     payload = {
         "agent_name": "demo",

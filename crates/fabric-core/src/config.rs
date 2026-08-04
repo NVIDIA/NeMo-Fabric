@@ -2270,11 +2270,8 @@ mod tests {
             extensions: BTreeMap::new(),
         });
 
-        let plan = resolve_run_plan_from_config(
-            config,
-            ResolveContext::new(repository_root()),
-        )
-        .expect("hermes plan with mcp extensions");
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect("hermes plan with mcp extensions");
 
         let server = plan
             .capability_plan
