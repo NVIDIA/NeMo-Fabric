@@ -300,6 +300,15 @@ class HermesRuntime:
             with redirect_stdout(StringIO()):
                 discover_plugins(force=True)
                 loaded_hermes_config = load_config()
+                # Hermes 0.18+ no longer discovers MCP tools as an import side effect
+                # (#16856). Fabric is a Hermes host: discover after config.yaml exists
+                # and before AIAgent resolves mcp-* toolsets.
+                if self._hermes_config.get("mcp_servers"):
+                    from model_tools import _clear_tool_defs_cache
+                    from tools.mcp_tool import discover_mcp_tools
+
+                    discover_mcp_tools()
+                    _clear_tool_defs_cache()
                 self._enabled_toolsets = resolve_hermes_toolsets(
                     payload, loaded_hermes_config
                 )
@@ -468,6 +477,7 @@ class HermesRuntime:
         relay_context = self._relay_context
         relay_context_entered = self._relay_context_entered
         relay_plugin_config = self._relay_plugin_config
+        had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
         errors: list[BaseException] = []
         if relay_plugin_config is not None and agent is not None:
             try:
@@ -495,6 +505,13 @@ class HermesRuntime:
         self._relay_model_name = "unknown"
         self._started = False
 
+        if had_mcp_servers:
+            try:
+                from tools.mcp_tool import shutdown_mcp_servers
+
+                shutdown_mcp_servers()
+            except BaseException as error:
+                errors.append(error)
         if agent is not None:
             try:
                 agent.close()

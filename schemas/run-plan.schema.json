@@ -807,6 +807,7 @@
       "type": "object"
     },
     "McpServerPlan": {
+      "additionalProperties": true,
       "description": "Resolved MCP server exposure.",
       "properties": {
         "exposure": {

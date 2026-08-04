@@ -379,6 +379,136 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
 
+def test_build_hermes_config_maps_stdio_mcp_env_from_capability_plan(tmp_path: Path):
+    payload = {
+        "runtime_context": {
+            "runtime_id": "runtime-mcp-env",
+            "environment": {"workspace": str(tmp_path / "workspace")},
+        },
+        "capability_plan": {
+            "native": {
+                "mcp_servers": {
+                    "analyzer": {
+                        "transport": "stdio",
+                        "url": str(tmp_path / "analyzer-mcp"),
+                        "exposure": "harness_native",
+                        "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
+                    }
+                }
+            }
+        },
+        "agent_name": "mcp-env-agent",
+        "base_dir": str(tmp_path),
+        "config": {
+            "harness": {"settings": {}},
+            "models": {
+                "default": {
+                    "provider": "nvidia",
+                    "model": "nvidia/test-model",
+                }
+            },
+        },
+    }
+
+    config = adapter.build_hermes_config(payload)
+
+    assert config["mcp_servers"] == {
+        "analyzer": {
+            "enabled": True,
+            "command": str(tmp_path / "analyzer-mcp"),
+            "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
+        }
+    }
+
+
+async def test_runtime_start_discovers_mcp_tools_when_configured(
+    monkeypatch,
+    tmp_path: Path,
+):
+    mock_session_db = MagicMock(spec=SessionDB)
+    mock_session_db_type = MagicMock(spec=SessionDB, return_value=mock_session_db)
+    mock_ai_agent = MagicMock(spec=AIAgent)
+    mock_ai_agent_type = MagicMock(spec=AIAgent, return_value=mock_ai_agent)
+    monkeypatch.setattr(
+        mock_ai_agent_type.__init__.__func__,
+        "__signature__",
+        inspect.signature(AIAgent.__init__),
+        raising=False,
+    )
+
+    discover_calls: list[str] = []
+    shutdown_calls: list[str] = []
+
+    hermes_cli = ModuleType("hermes_cli")
+    hermes_config = ModuleType("hermes_cli.config")
+    hermes_config.load_config = lambda: {}  # type: ignore[attr-defined]
+    hermes_plugins = ModuleType("hermes_cli.plugins")
+    hermes_plugins.discover_plugins = lambda force=False: None  # type: ignore[attr-defined]
+    hermes_plugins.invoke_hook = lambda *args, **kwargs: None  # type: ignore[attr-defined]
+    hermes_state = ModuleType("hermes_state")
+    hermes_state.SessionDB = mock_session_db_type  # type: ignore[attr-defined]
+    run_agent = ModuleType("run_agent")
+    run_agent.AIAgent = mock_ai_agent_type  # type: ignore[attr-defined]
+    model_tools = ModuleType("model_tools")
+    model_tools._clear_tool_defs_cache = lambda: discover_calls.append("clear")  # type: ignore[attr-defined]
+    tools_pkg = ModuleType("tools")
+    tools_mcp = ModuleType("tools.mcp_tool")
+    tools_mcp.discover_mcp_tools = lambda: discover_calls.append("discover") or []  # type: ignore[attr-defined]
+    tools_mcp.shutdown_mcp_servers = lambda: shutdown_calls.append("shutdown")  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", hermes_config)
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
+    monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
+    monkeypatch.setitem(sys.modules, "run_agent", run_agent)
+    monkeypatch.setitem(sys.modules, "model_tools", model_tools)
+    monkeypatch.setitem(sys.modules, "tools", tools_pkg)
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
+    os.environ["TEST_API_KEY"] = "secret"
+
+    payload = {
+        "agent_name": "mcp-discover",
+        "base_dir": str(tmp_path),
+        "config": {
+            "harness": {"settings": {}},
+            "models": {
+                "default": {
+                    "provider": "test-provider",
+                    "model": "test-model",
+                    "api_key_env": "TEST_API_KEY",
+                }
+            },
+            "tools": {"enabled": ["mcp-analyzer"]},
+        },
+        "runtime_context": {
+            "runtime_id": "runtime-mcp-discover",
+            "environment": {"workspace": str(tmp_path)},
+            "artifacts": {"root": str(tmp_path / "artifacts")},
+        },
+        "capability_plan": {
+            "native": {
+                "mcp_servers": {
+                    "analyzer": {
+                        "transport": "stdio",
+                        "url": str(tmp_path / "analyzer-mcp"),
+                        "exposure": "harness_native",
+                        "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
+                    }
+                }
+            }
+        },
+    }
+
+    runtime = adapter.HermesRuntime()
+    await runtime.start(payload)
+    await runtime.stop()
+
+    assert discover_calls == ["discover", "clear"]
+    assert shutdown_calls == ["shutdown"]
+    mock_ai_agent_type.assert_called_once()
+    mock_ai_agent.close.assert_called_once_with()
+
+
 def test_write_hermes_config_writes_file(tmp_path: Path):
     payload = {
         "config": {

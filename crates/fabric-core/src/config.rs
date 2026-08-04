@@ -1731,6 +1731,7 @@ fn resolve_capability_plan(
                             transport: server.transport.clone(),
                             url: server.url.clone(),
                             exposure: server.exposure,
+                            extensions: server.extensions.clone(),
                         },
                     )
                 })
@@ -2165,6 +2166,9 @@ pub struct McpServerPlan {
     pub url: String,
     /// Exposure strategy.
     pub exposure: McpExposure,
+    /// Additive MCP server fields from author config (for example ``env`` / ``args``).
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
 }
 
 /// Resolved telemetry plan.
@@ -2245,6 +2249,50 @@ mod tests {
         assert_eq!(value["version"], 2);
         assert_eq!(value["atof"]["sinks"][0]["type"], "file");
         assert_eq!(value["atof"]["sinks"][1]["type"], "stream");
+    }
+
+    #[test]
+    fn mcp_server_extensions_survive_capability_planning() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.skills = None;
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "analyzer".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "transport": "stdio",
+                    "url": "/tmp/analyzer-mcp",
+                    "exposure": "harness_native",
+                    "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
+                    "args": ["--stdio"]
+                }))
+                .expect("mcp server with extensions"),
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        let plan = resolve_run_plan_from_config(
+            config,
+            ResolveContext::new(repository_root()),
+        )
+        .expect("hermes plan with mcp extensions");
+
+        let server = plan
+            .capability_plan
+            .native
+            .mcp_servers
+            .get("analyzer")
+            .expect("native analyzer mcp server");
+        assert_eq!(server.transport, "stdio");
+        assert_eq!(server.url, "/tmp/analyzer-mcp");
+        assert_eq!(server.exposure, McpExposure::HarnessNative);
+        assert_eq!(
+            server.extensions.get("env"),
+            Some(&serde_json::json!({"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"}))
+        );
+        assert_eq!(
+            server.extensions.get("args"),
+            Some(&serde_json::json!(["--stdio"]))
+        );
     }
 
     #[test]
