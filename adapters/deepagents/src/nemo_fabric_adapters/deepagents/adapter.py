@@ -15,7 +15,6 @@ import hashlib
 import inspect
 import json
 import os
-import shlex
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -279,17 +278,21 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise AdapterConfigError(f"MCP server '{name}' must be a mapping.")
     transport = str(spec.get("transport") or "").strip().lower().replace("-", "_")
-    # McpServerPlan carries the URL or command in ``url``; there is no ``command``.
+    # McpServerPlan carries the command in ``url`` and preserves stdio extensions.
     target = os.path.expandvars(str(spec.get("url") or "")).strip()
     if not target:
         raise AdapterConfigError(
             f"MCP server '{name}' requires a url (or command in url)."
         )
     if transport in ("stdio", "command", "process"):
-        parts = shlex.split(target)
-        if not parts:
-            raise AdapterConfigError(f"MCP server '{name}' has an empty stdio command.")
-        return {"transport": "stdio", "command": parts[0], "args": parts[1:]}
+        connection: dict[str, Any] = {
+            "transport": "stdio",
+            "command": target,
+            "args": common_utils.normalize_list(spec.get("args")),
+        }
+        if env := spec.get("env"):
+            connection["env"] = env
+        return connection
     if transport in ("", "http", "streamable_http", "streamablehttp"):
         transport = "streamable_http"
     if transport not in VALID_MCP_TRANSPORTS:

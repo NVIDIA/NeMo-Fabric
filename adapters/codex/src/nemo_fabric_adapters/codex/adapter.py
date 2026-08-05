@@ -11,7 +11,6 @@ import json
 import logging
 import math
 import os
-import shlex
 import subprocess
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
@@ -185,19 +184,12 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             )
         normalized_transport = transport.strip().lower().replace("_", "-")
         if normalized_transport == "stdio":
-            try:
-                command = shlex.split(target)
-            except ValueError as error:
-                raise AdapterConfigError(
-                    "codex_invalid_configuration",
-                    f"MCP server {name} command is invalid",
-                ) from error
-            if not command:
-                raise AdapterConfigError(
-                    "codex_invalid_configuration",
-                    f"MCP server {name} command is required",
-                )
-            result[name] = {"command": command[0], "args": command[1:]}
+            result[name] = {
+                "command": target,
+                "args": common_utils.normalize_list(server.get("args")),
+            }
+            if env := server.get("env"):
+                result[name]["env"] = env
         elif normalized_transport in {"http", "streamable-http"}:
             result[name] = {"url": target}
         else:

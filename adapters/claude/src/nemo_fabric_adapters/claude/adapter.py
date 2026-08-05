@@ -10,7 +10,6 @@ import json
 import logging
 import math
 import os
-import shlex
 import shutil
 import subprocess
 from dataclasses import asdict
@@ -300,12 +299,13 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 "claude_invalid_configuration", "MCP server URL is required"
             )
         if transport == "stdio":
-            command = shlex.split(url)
-            if not command:
-                raise AdapterConfigError(
-                    "claude_invalid_configuration", "MCP command is required"
-                )
-            result[name] = {"type": "stdio", "command": command[0], "args": command[1:]}
+            result[name] = {
+                "type": "stdio",
+                "command": url,
+                "args": common_utils.normalize_list(server.get("args")),
+            }
+            if env := server.get("env"):
+                result[name]["env"] = env
         elif transport in {"http", "streamable-http"}:
             result[name] = {"type": "http", "url": url}
         elif transport == "sse":
