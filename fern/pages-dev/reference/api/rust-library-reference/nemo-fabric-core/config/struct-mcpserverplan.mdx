@@ -9,7 +9,7 @@ SPDX-License-Identifier: Apache-2.0 */}
 
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct McpServerPlan &#123;\n    pub transport: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub url: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub exposure: <a href=\"enum-mcpexposure.mdx\">McpExposure</a>,\n&#125;"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub struct McpServerPlan &#123;\n    pub transport: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub url: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>,\n    pub exposure: <a href=\"enum-mcpexposure.mdx\">McpExposure</a>,\n    pub allowed_tools: <a href=\"https://doc.rust-lang.org/1.97.1/core/option/enum.Option.html\">Option</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;&gt;,\n    pub blocked_tools: <a href=\"https://doc.rust-lang.org/1.97.1/alloc/vec/struct.Vec.html\">Vec</a>&lt;<a href=\"https://doc.rust-lang.org/1.97.1/alloc/string/struct.String.html\">String</a>&gt;,\n&#125;"}} /></pre>
 
 Resolved MCP server exposure.
 
@@ -26,6 +26,14 @@ MCP URL or command.
 ### `exposure: McpExposure`
 
 Exposure strategy.
+
+### `allowed_tools: Option<Vec<String>>`
+
+MCP tool names to expose. `None` exposes every discovered tool.
+
+### `blocked_tools: Vec<String>`
+
+MCP tool names to block after applying the optional allowlist.
 
 ## Trait Implementations
 

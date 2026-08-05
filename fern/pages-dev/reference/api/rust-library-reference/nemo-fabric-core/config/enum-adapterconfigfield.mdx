@@ -19,6 +19,7 @@ pub enum AdapterConfigField {
     EnabledTools,
     BlockedTools,
     Mcp,
+    McpToolFilters,
     Skills,
 }
 ```
@@ -74,6 +75,12 @@ Adapter-native tool names to block.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "Mcp"}} /></pre>
 
 Harness-native MCP servers.
+
+### `McpToolFilters`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "McpToolFilters"}} /></pre>
+
+Per-server MCP tool allowlists and blocklists.
 
 ### `Skills`
 
