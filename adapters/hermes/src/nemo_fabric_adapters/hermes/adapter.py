@@ -306,10 +306,7 @@ class HermesRuntime:
                 # discover_mcp_tools uses a blocking 120s wait so run it in a loop
                 if self._hermes_config.get("mcp_servers"):
                     from tools.mcp_tool import discover_mcp_tools
-
-                    loop = asyncio.get_running_loop()
-
-                    await loop.run_in_executor(None, discover_mcp_tools)
+                    await asyncio.to_thread(discover_mcp_tools)
 
                 self._enabled_toolsets = resolve_hermes_toolsets(
                     payload, loaded_hermes_config
