@@ -46,8 +46,9 @@ methods that edit the typed config in place and return it:
 
 Per-server MCP tool policies require adapter support for both `mcp` and
 `mcp.tool_filters`. `allowed_tools=None` exposes every discovered tool, while
-`allowed_tools=[]` exposes none. Fabric removes `blocked_tools` after applying
-the allowlist and rejects a tool that appears in both lists during planning.
+`allowed_tools=[]` exposes none. NeMo Fabric removes `blocked_tools` after
+applying the allowlist and rejects a tool that appears in both lists during
+planning.
 
 ```python
 config = FabricConfig(

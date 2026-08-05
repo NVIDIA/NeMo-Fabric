@@ -332,9 +332,9 @@ class McpConfig(FabricBaseModel):
         """Add or replace a named MCP server."""
 
         if isinstance(allowed_tools, str):
-            raise ValueError("allowed_tools must be a sequence of strings, not a string")
+            raise TypeError("allowed_tools must be a sequence of strings, not a string")
         if isinstance(blocked_tools, str):
-            raise ValueError("blocked_tools must be a sequence of strings, not a string")
+            raise TypeError("blocked_tools must be a sequence of strings, not a string")
 
         self.servers[name] = McpServerConfig(
             transport=transport,

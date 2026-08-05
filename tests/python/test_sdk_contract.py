@@ -224,7 +224,7 @@ def test_mcp_server_tool_policy_preserves_empty_allowlist():
 @pytest.mark.parametrize("field", ["allowed_tools", "blocked_tools"])
 def test_mcp_config_rejects_string_tool_policy(field: str):
     with pytest.raises(
-        ValueError,
+        TypeError,
         match=rf"{field} must be a sequence of strings, not a string",
     ):
         McpConfig().add_server(
@@ -345,6 +345,26 @@ def test_run_plan_config_block_tools_emits_canonical_shape():
     config.block_tools("browser", "shell", "browser")
 
     assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
+
+
+def test_run_plan_config_add_mcp_server_emits_tool_filters():
+    config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
+
+    config.add_mcp_server(
+        "docs",
+        transport="streamable-http",
+        url="https://mcp.example.test",
+        allowed_tools=["search"],
+        blocked_tools=["delete"],
+    )
+
+    assert config.to_mapping()["mcp"]["servers"]["docs"] == {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test",
+        "exposure": "harness_native",
+        "allowed_tools": ["search"],
+        "blocked_tools": ["delete"],
+    }
 
 
 def test_run_plan_config_preserves_normalized_tools_and_execution_fields():
