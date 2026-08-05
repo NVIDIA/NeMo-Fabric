@@ -218,8 +218,10 @@ capability_config = config.model_copy(deep=True)
 capability_config.add_skill_path("./skills/code-review")
 capability_config.add_mcp_server(
     "github",
-    transport="streamable-http",
-    url="${GITHUB_MCP_URL}",
+    transport="stdio",
+    url="github-mcp",
+    args=["stdio"],
+    env={"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
     exposure="harness_native",
 )
 capability_config.enable_relay(

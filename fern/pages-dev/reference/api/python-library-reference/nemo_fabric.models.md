@@ -697,6 +697,8 @@ The model defines the following fields:
 | --- | --- | --- | --- | --- | --- |
 | `transport` | `str` | Yes | — | `MinLen(min_length=1)` | — |
 | `url` | `str` | Yes | — | `MinLen(min_length=1)` | — |
+| `args` | `list[str]` | No | `list()` | — | — |
+| `env` | `dict[str, str]` | No | `dict()` | — | — |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
 | `allowed_tools` | `list[str] \| None` | No | `None` | — | MCP tools to expose. None exposes every discovered tool; an empty list exposes no tools. |
 | `blocked_tools` | `list[str]` | No | `list()` | — | MCP tools to block after applying the optional allowlist. |
@@ -812,6 +814,8 @@ def add_server(
     *,
     transport: str,
     url: str,
+    args: Sequence[str] | None = None,
+    env: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     allowed_tools: Sequence[str] | None = None,
     blocked_tools: Sequence[str] = (),
@@ -1993,6 +1997,8 @@ def add_mcp_server(
     *,
     transport: str,
     url: str,
+    args: Sequence[str] | None = None,
+    env: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     allowed_tools: Sequence[str] | None = None,
     blocked_tools: Sequence[str] = (),
