@@ -995,7 +995,7 @@ def test_mcp_server_normalizes_streamable_http_aliases(transport: str):
     }
 
 
-def test_mcp_stdio_expands_environment_and_parses_quoted_arguments(
+def test_mcp_stdio_expands_command_and_maps_structured_args_and_env(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("NAT_TEST_MCP_COMMAND", "/opt/nat/bin/mcp-server")
@@ -1005,13 +1005,23 @@ def test_mcp_stdio_expands_environment_and_parses_quoted_arguments(
         {
             "transport": "stdio",
             "url": "$NAT_TEST_MCP_COMMAND --label 'safe mode' --port 9000",
+            "args": ["--trace", "--request-timeout=10"],
+            "env": {"NAT_MCP_TOKEN": "test-token"},
         },
     )
 
     assert result == {
         "transport": "stdio",
         "command": "/opt/nat/bin/mcp-server",
-        "args": ["--label", "safe mode", "--port", "9000"],
+        "args": [
+            "--label",
+            "safe mode",
+            "--port",
+            "9000",
+            "--trace",
+            "--request-timeout=10",
+        ],
+        "env": {"NAT_MCP_TOKEN": "test-token"},
     }
 
 

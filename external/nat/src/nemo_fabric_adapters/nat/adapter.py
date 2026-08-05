@@ -340,8 +340,11 @@ def nat_mcp_server_config(name: str, server: Any) -> dict[str, Any]:
             "transport": "stdio",
             "command": command[0],
         }
-        if command[1:]:
-            result["args"] = command[1:]
+        args = [*command[1:], *common_utils.normalize_list(server.get("args"))]
+        if args:
+            result["args"] = args
+        if env := server.get("env"):
+            result["env"] = env
         return result
 
     if transport in {"http", "streamablehttp"}:
