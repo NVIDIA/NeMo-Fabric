@@ -1109,12 +1109,13 @@ wheels = [
 
 [[package]]
 name = "hermes-agent"
-version = "0.17.0"
+version = "0.19.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi", marker = "python_full_version < '3.14'" },
     { name = "concurrent-log-handler", marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
     { name = "croniter", marker = "python_full_version < '3.14'" },
+    { name = "cryptography", version = "46.0.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "fastapi", marker = "python_full_version < '3.14'" },
     { name = "fire", marker = "python_full_version < '3.14'" },
     { name = "httpx", extra = ["socks"], marker = "python_full_version < '3.14'" },
@@ -1142,9 +1143,9 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"], marker = "python_full_version < '3.14'" },
     { name = "websockets", marker = "python_full_version < '3.14'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/99/c2/6b65b1c1d093eff415304472709479a392ac1422e36d007e32f3bb848f58/hermes_agent-0.17.0.tar.gz", hash = "sha256:5ceda2a131627fecf5fd52b05d0162b48032023a5d814bb5d1894db4aa146120", size = 12156176, upload-time = "2026-06-19T19:40:16.589Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/2c/5eca471374c1b48555a8f0b988c06b19a93ae33a6c0e67845e47fc3a5628/hermes_agent-0.19.0.tar.gz", hash = "sha256:ac986bede64a2785436676c0ea084ec586574f8cb00a9d047e095b435d3e21c0", size = 14282599, upload-time = "2026-07-20T18:37:28.903Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e3/e2/d18d5ec6735b412fde47ecac3b6a63874c824c83e9821e1c1f4a07bcff85/hermes_agent-0.17.0-py3-none-any.whl", hash = "sha256:f11dcc1b168d2db626ef8b2175301741a86b5247c5ffaff4b0f0e24018d1b190", size = 8642279, upload-time = "2026-06-19T19:40:14.014Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/30/c85be8290e9565dc3c7a9720e93f3e59e09b1b163487be4946c3aa848f80/hermes_agent-0.19.0-py3-none-any.whl", hash = "sha256:bd0bac012aee38a60894781f4597dc29ee7bedb3448540249921f10d3bef327f", size = 10144439, upload-time = "2026-07-20T18:37:26.417Z" },
 ]
 
 [[package]]
@@ -1923,6 +1924,21 @@ wheels = [
 ]
 
 [[package]]
+name = "mcp-server-time"
+version = "2026.7.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "tzdata" },
+    { name = "tzlocal" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ed/d7/27d984c1cd61847975ed33c528b86ea3cba946dd37c0ceb597fba062df03/mcp_server_time-2026.7.10.tar.gz", hash = "sha256:47fcd220e529d9a2e08c68af3d64633197b6f920489d391293bfe9ef0f387830", size = 63132, upload-time = "2026-07-10T03:31:05.833Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/1a/c1bb1eeea019fc547964384db9c6a092837cb3cb4936d75517e19826d8d9/mcp_server_time-2026.7.10-py3-none-any.whl", hash = "sha256:b99cb0ecfe94ec8e05d4abb65c617b591a21e61a17a084ac782af0fa9e82c944", size = 6759, upload-time = "2026-07-10T03:31:04.803Z" },
+]
+
+[[package]]
 name = "mdurl"
 version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2109,6 +2125,7 @@ package = [
 ]
 test = [
     { name = "fastapi" },
+    { name = "mcp-server-time" },
     { name = "pkginfo" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2163,6 +2180,7 @@ package = [
 ]
 test = [
     { name = "fastapi", specifier = "~=0.138" },
+    { name = "mcp-server-time", specifier = "~=2026.7" },
     { name = "pkginfo", specifier = "~=1.12" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.26" },
@@ -2302,10 +2320,13 @@ requires-dist = [
 name = "nemo-relay"
 version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/db/44d7258ee620c5cce6dc588983fcb11be3ee03ae71089a65686c14d9ee02/nemo_relay-0.6.0.tar.gz", hash = "sha256:f3d3088019609bc953357b5598a47481dc3e7dc8f11ecf27002ede251f37eb7b", size = 1071046, upload-time = "2026-08-03T14:55:49.702Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/25/65/d320016505457cc30971f575e8dadffb923b7cfc780ab8bb25a4ce9d305c/nemo_relay-0.6.0-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:ad5dae6febf6532d7b113abc2a404679c8feffc499df3034b93d9a078185d2bb", size = 9917779, upload-time = "2026-07-22T20:07:48.961Z" },
     { url = "https://files.pythonhosted.org/packages/ae/c0/f33250e71c4206da1b339072893f9a1e39295fe1aceb9a2fef4b8620a0f2/nemo_relay-0.6.0-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c0cd9570f64c6956fe3bfb82af1cdb3ee70cb50b51098cdb0de831c3f9b4e904", size = 8888375, upload-time = "2026-07-22T20:07:51.049Z" },
     { url = "https://files.pythonhosted.org/packages/a3/f4/d1dfaed022da0f6f14765a122867f976a69cc520fe1faaf99757f5719d1f/nemo_relay-0.6.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:849daa9e45158ac581e54506e0fcc7a24f557d1ed06dbdc074f5de7a00393cbc", size = 9336372, upload-time = "2026-07-22T20:07:53.224Z" },
+    { url = "https://files.pythonhosted.org/packages/60/9e/f8b80509eef5e05702b940a3d1e2f60c962548d87dec2d712fd3804e6cd4/nemo_relay-0.6.0-cp311-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:8c80e534b76bb0455cfc222aaf5c10fa064c088b3c0d5e137eb3c97db46dbc47", size = 10578834, upload-time = "2026-07-30T15:44:44.726Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/a0/84ee49d45a1a874457f2f9260d30fd573af30c9be360d9d97b8bb7835ad9/nemo_relay-0.6.0-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:c8bc4a792a2f8c35ddef1b900cc43be2b2bbbfcd5e7cf65aa0829c04d25eb77f", size = 10849651, upload-time = "2026-07-30T15:44:40.48Z" },
     { url = "https://files.pythonhosted.org/packages/3a/b0/908d77f75b9054e1e403da78f7d9430249a45939070d4298abbb41a04b5b/nemo_relay-0.6.0-cp311-abi3-win_amd64.whl", hash = "sha256:bfbbedfd130fa95c9b8c04643c30910df850e0ed3500beeab82b00ca2d94e7ea", size = 9613425, upload-time = "2026-07-22T20:07:55.175Z" },
     { url = "https://files.pythonhosted.org/packages/cd/71/c438b9d746303ff7f270d99f13b250bf947cdac3e52de2a83fd132cbca0b/nemo_relay-0.6.0-cp311-abi3-win_arm64.whl", hash = "sha256:82fe132943399d89e6ec34dc28df0be7bbe41b84f6698c545928b8816b6010f6", size = 9034810, upload-time = "2026-07-22T20:07:57.467Z" },
 ]
@@ -4031,6 +4052,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5e/a7/c202b344c5ca7daf398f3b8a477eeb205cf3b6f32e7ec3a6bac0629ca975/tzdata-2025.3.tar.gz", hash = "sha256:de39c2ca5dc7b0344f2eba86f49d614019d29f060fc4ebc8a417896a620b56a7", size = 196772, upload-time = "2025-12-13T17:45:35.667Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c7/b0/003792df09decd6849a5e39c28b513c06e84436a54440380862b5aeff25d/tzdata-2025.3-py2.py3-none-any.whl", hash = "sha256:06a47e5700f3081aab02b2e513160914ff0694bce9947d6b76ebd6bf57cfc5d1", size = 348521, upload-time = "2025-12-13T17:45:33.889Z" },
+]
+
+[[package]]
+name = "tzlocal"
+version = "5.4.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "tzdata", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/81/5b/879b2f932adfa7a053c360d50bc896c977fa6426109185f7c12ebdd0cb9d/tzlocal-5.4.4.tar.gz", hash = "sha256:8dbb8660838688a7b6ba4fed31d18dedf842afb4d47ca050d6d891c2c15f3be4", size = 31170, upload-time = "2026-06-29T08:03:40.026Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9e/a4/017a7a6cbe387d961a688ec31364ae60a5c4e22c96ae9921b79a947c855d/tzlocal-5.4.4-py3-none-any.whl", hash = "sha256:aae09f0126a8a86fa736be266eb4a471380d26a0de3bc14844e7821fee3e2a15", size = 18115, upload-time = "2026-06-29T08:03:38.666Z" },
 ]
 
 [[package]]
