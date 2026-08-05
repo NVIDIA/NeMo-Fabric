@@ -48,8 +48,8 @@ Filtered per-server MCP configurations require adapter support for both `mcp`
 and `mcp.tool_filters`. An unfiltered server with `allowed_tools=None` and an
 empty or omitted `blocked_tools` list requires only `mcp`. `allowed_tools=None`
 exposes every discovered tool, while `allowed_tools=[]` exposes none. NeMo
-Fabric removes `blocked_tools` after applying the allowlist and rejects a tool
-that appears in both lists during planning.
+Fabric removes `blocked_tools` after applying the allowlist. Tool names in both
+lists must be non-blank, and planning rejects a tool that appears in both lists.
 
 ```python
 config = FabricConfig(
