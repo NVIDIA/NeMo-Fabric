@@ -367,6 +367,22 @@ def test_run_plan_config_add_mcp_server_emits_tool_filters():
     }
 
 
+@pytest.mark.parametrize(
+    "reserved_field",
+    ["transport", "url", "exposure", "allowed_tools", "blocked_tools"],
+)
+def test_run_plan_config_rejects_reserved_mcp_extra_field(reserved_field: str):
+    config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
+
+    with pytest.raises(FabricConfigError, match="reserved field"):
+        config.add_mcp_server(
+            "docs",
+            transport="streamable-http",
+            url="https://mcp.example.test",
+            extra_fields={reserved_field: "override"},
+        )
+
+
 def test_run_plan_config_preserves_normalized_tools_and_execution_fields():
     raw = _plan()["config"]
     raw.update(

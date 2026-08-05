@@ -529,6 +529,9 @@ class _McpConfig(_ConfigMapping):
     _fields = frozenset({"servers"})
     _omit_if_empty = frozenset({"servers"})
     _EXPOSURES = frozenset({"harness_native", "fabric_managed"})
+    _SERVER_FIELDS = frozenset(
+        {"transport", "url", "exposure", "allowed_tools", "blocked_tools"}
+    )
 
     def __init__(
         self,
@@ -598,12 +601,17 @@ class _McpConfig(_ConfigMapping):
             server["allowed_tools"] = allowed_values
         if blocked_values:
             server["blocked_tools"] = blocked_values
-        server.update(
-            _mapping(
-                {} if extra_fields is None else extra_fields,
-                "mcp server extra_fields",
-            )
+        extensions = _mapping(
+            {} if extra_fields is None else extra_fields,
+            "mcp server extra_fields",
         )
+        reserved = self._SERVER_FIELDS.intersection(extensions)
+        if reserved:
+            field = sorted(reserved)[0]
+            raise FabricConfigError(
+                f"mcp server extra_fields must not contain reserved field {field!r}"
+            )
+        server.update(extensions)
         servers = dict(self.get("servers", {}))
         servers[_required_text(name, "mcp server name")] = server
         self["servers"] = servers

@@ -142,9 +142,9 @@ def to_fabric_config(job) -> FabricConfig:
 - Shape capabilities with `ToolsConfig`, `block_tools`, `add_skill_path`,
   `remove_skill_path`,
   `add_mcp_server`, `remove_mcp_server`, and `enable_relay`.
-- Use `allowed_tools` and `blocked_tools` on `add_mcp_server` for server-local
-  MCP policy only when the selected adapter declares both `mcp` and
-  `mcp.tool_filters`.
+- Use a restricted `allowed_tools` list or non-empty `blocked_tools` on
+  `add_mcp_server` only when the selected adapter declares both `mcp` and
+  `mcp.tool_filters`. An unfiltered server requires only `mcp`.
   `allowed_tools=None` exposes every discovered tool, while an empty list
   exposes none; blocked tools are removed after applying that allowlist. A tool
   cannot appear in both lists; planning rejects overlapping policies.
