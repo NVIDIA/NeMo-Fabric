@@ -21,7 +21,7 @@ that have no portable NeMo Fabric equivalent.
 
 | NeMo Fabric input | NAT configuration |
 | --- | --- |
-| `models.<role>` | `llms.<role>`; every Fabric model-role name is preserved |
+| `models.<role>` | `llms.<role>`; every NeMo Fabric model-role name is preserved |
 | `instructions.system` | Built-in `react_agent` workflow `additional_instructions`; other workflow types reject this field in the initial adapter |
 | `workflow.entrypoint.kind=nat_workflow` | Resolve a registered NAT workflow component |
 | `workflow.entrypoint.ref` | `workflow._type` |
@@ -47,19 +47,19 @@ streaming, or live-update support.
 ## MCP Tool Filters
 
 The adapter consumes the routed `capability_plan.native.mcp_servers` entries,
-including the normalized per-server filters. Fabric MCP tool names remain bare
+including the normalized per-server filters. NeMo Fabric MCP tool names remain bare
 server-local names; NAT exposes a selected member as `<server>__<tool>`.
 
-| Fabric server policy | Generated NAT function group |
+| NeMo Fabric server policy | Generated NAT function group |
 | --- | --- |
 | `allowed_tools` omitted and `blocked_tools=[]` | No `include` or `exclude`; expose all discovered tools |
 | Nonempty `allowed_tools` only | `include=allowed_tools` |
 | `allowed_tools` omitted and nonempty `blocked_tools` | `exclude=blocked_tools` |
-| Both lists configured | `include=allowed_tools`; Fabric requires `blocked_tools` to be disjoint, so those names are already outside the allowlist |
+| Both lists configured | `include=allowed_tools`; NeMo Fabric requires `blocked_tools` to be disjoint, so those names are already outside the allowlist |
 | `allowed_tools=[]` | Omit the generated group; expose no tools from that server |
 
 NAT rejects a function group that sets both `include` and `exclude`, so the
-adapter emits only `include` whenever an allowlist is present. Fabric rejects
+adapter emits only `include` whenever an allowlist is present. NeMo Fabric rejects
 blank names and an allow/block overlap before adapter startup. A nonempty
 generated MCP group is added to workflows that expose `tool_names`; callers do
 not repeat portable MCP servers in `harness.settings`. A workflow implementation
@@ -95,11 +95,10 @@ cp external/nat/fabric-adapter.json \
   .tmp/nat-reference/adapters/nat/fabric-adapter.json
 ```
 
-The calculator example also requires a streamable-HTTP calculator MCP server.
-Set its endpoint and run the typed `FabricConfig` example:
+The calculator example starts its source-only MCP server over stdio, so it does
+not require a separately managed endpoint. Run the typed `FabricConfig` example:
 
 ```bash
-export CALCULATOR_MCP_URL=http://127.0.0.1:9901/mcp
 uv run python external/nat/examples/calculator.py \
   --base-dir "$PWD/.tmp/nat-reference"
 ```

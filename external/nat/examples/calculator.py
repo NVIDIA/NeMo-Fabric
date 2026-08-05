@@ -8,7 +8,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
+import shlex
+import sys
 from pathlib import Path
 
 from nemo_fabric import Fabric
@@ -57,10 +58,11 @@ def build_config() -> FabricConfig:
         ),
         runtime=RuntimeConfig(input_schema="text", output_schema="message"),
     )
+    server = Path(__file__).with_name("calculator_mcp.py")
     config.add_mcp_server(
         "calculator",
-        transport="streamable-http",
-        url=os.environ.get("CALCULATOR_MCP_URL", "http://127.0.0.1:9901/mcp"),
+        transport="stdio",
+        url=shlex.join([sys.executable, str(server)]),
         exposure="harness_native",
         blocked_tools=["divide"],
     )

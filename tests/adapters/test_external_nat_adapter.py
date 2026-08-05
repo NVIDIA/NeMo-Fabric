@@ -405,6 +405,19 @@ def test_typed_examples_plan_with_root_workflow(tmp_path: Path, example: str):
     assert "workflow" not in plan.config.harness.settings
 
 
+def test_calculator_example_uses_the_source_stdio_server():
+    namespace = runpy.run_path(
+        str(ROOT / "external" / "nat" / "examples" / "calculator.py")
+    )
+
+    config = namespace["build_config"]()
+    calculator = config.mcp.servers["calculator"]
+
+    assert calculator.transport == "stdio"
+    assert "calculator_mcp.py" in calculator.url
+    assert calculator.blocked_tools == ["divide"]
+
+
 def test_build_typed_config_discovers_components_before_validation(
     make_payload,
     mock_nat,
