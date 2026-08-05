@@ -2716,37 +2716,49 @@ mod tests {
 
     #[test]
     fn mcp_tool_filters_require_an_explicit_adapter_claim() {
-        let mut config = typed_config("nvidia.fabric.claude");
-        config.mcp = Some(McpConfig {
-            servers: BTreeMap::from([(
-                "docs".to_string(),
-                McpServerConfig {
-                    transport: "streamable-http".to_string(),
-                    url: "https://mcp.example".to_string(),
-                    exposure: McpExposure::HarnessNative,
-                    allowed_tools: Some(vec!["search".to_string()]),
-                    blocked_tools: Vec::new(),
-                    extensions: BTreeMap::new(),
-                },
-            )]),
-            extensions: BTreeMap::new(),
-        });
+        for (allowed_tools, blocked_tools, expected_field) in [
+            (
+                Some(vec!["search".to_string()]),
+                Vec::new(),
+                "mcp.servers.docs.allowed_tools",
+            ),
+            (
+                None,
+                vec!["delete".to_string()],
+                "mcp.servers.docs.blocked_tools",
+            ),
+        ] {
+            let mut config = typed_config("nvidia.fabric.claude");
+            config.mcp = Some(McpConfig {
+                servers: BTreeMap::from([(
+                    "docs".to_string(),
+                    McpServerConfig {
+                        transport: "streamable-http".to_string(),
+                        url: "https://mcp.example".to_string(),
+                        exposure: McpExposure::HarnessNative,
+                        allowed_tools,
+                        blocked_tools,
+                        extensions: BTreeMap::new(),
+                    },
+                )]),
+                extensions: BTreeMap::new(),
+            });
 
-        let error = resolve_run_plan_from_config(
-            config,
-            ResolveContext::new("/tmp/fabric-unsupported-mcp-filters"),
-        )
-        .expect_err("Claude does not advertise per-server MCP tool filters");
+            let error = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/fabric-unsupported-mcp-filters"),
+            )
+            .expect_err("Claude does not advertise per-server MCP tool filters");
 
-        assert!(matches!(
-            error,
-            FabricError::AdapterCompatibility {
-                adapter_id,
-                field,
-                ..
-            } if adapter_id == "nvidia.fabric.claude"
-                && field == "mcp.servers.docs.allowed_tools"
-        ));
+            assert!(matches!(
+                error,
+                FabricError::AdapterCompatibility {
+                    adapter_id,
+                    field,
+                    ..
+                } if adapter_id == "nvidia.fabric.claude" && field == expected_field
+            ));
+        }
     }
 
     #[test]

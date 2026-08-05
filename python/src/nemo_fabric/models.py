@@ -24,7 +24,9 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import SerializerFunctionWrapHandler
 from pydantic import field_validator
+from pydantic import model_serializer
 from pydantic import model_validator
 
 
@@ -269,13 +271,22 @@ class McpServerConfig(FabricBaseModel):
             "MCP tools to expose. None exposes every discovered tool; an empty "
             "list exposes no tools."
         ),
-        exclude_if=lambda value: value is None,
     )
     blocked_tools: list[str] = Field(
         default_factory=list,
         description="MCP tools to block after applying the optional allowlist.",
-        exclude_if=lambda value: not value,
     )
+
+    @model_serializer(mode="wrap")
+    def _serialize_tool_policy(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data = handler(self)
+        if self.allowed_tools is None:
+            data.pop("allowed_tools", None)
+        if not self.blocked_tools:
+            data.pop("blocked_tools", None)
+        return data
 
     @field_validator("allowed_tools", "blocked_tools")
     @classmethod
@@ -319,6 +330,11 @@ class McpConfig(FabricBaseModel):
         extra_fields: Mapping[str, Any] | None = None,
     ) -> Self:
         """Add or replace a named MCP server."""
+
+        if isinstance(allowed_tools, str):
+            raise ValueError("allowed_tools must be a sequence of strings, not a string")
+        if isinstance(blocked_tools, str):
+            raise ValueError("blocked_tools must be a sequence of strings, not a string")
 
         self.servers[name] = McpServerConfig(
             transport=transport,

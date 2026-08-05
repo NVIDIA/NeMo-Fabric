@@ -208,12 +208,31 @@ def test_mcp_server_tool_policy_preserves_empty_allowlist():
         allowed_tools=[],
     )
 
-    assert server.to_mapping() == {
+    expected = {
         "transport": "streamable-http",
         "url": "https://mcp.example.test",
         "exposure": "harness_native",
         "allowed_tools": [],
     }
+    assert server.model_dump(mode="python") == expected
+    assert McpConfig(servers={"docs": server}).model_dump(mode="python") == {
+        "servers": {"docs": expected}
+    }
+    assert server.to_mapping() == expected
+
+
+@pytest.mark.parametrize("field", ["allowed_tools", "blocked_tools"])
+def test_mcp_config_rejects_string_tool_policy(field: str):
+    with pytest.raises(
+        ValueError,
+        match=rf"{field} must be a sequence of strings, not a string",
+    ):
+        McpConfig().add_server(
+            "docs",
+            transport="streamable-http",
+            url="https://mcp.example.test",
+            **{field: "search"},  # type: ignore[arg-type]
+        )
 
 
 @pytest.mark.parametrize(
