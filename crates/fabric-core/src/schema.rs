@@ -253,5 +253,9 @@ mod tests {
             schema["properties"]["settings_schema"]["type"],
             serde_json::json!(["object", "null"])
         );
+        assert_eq!(
+            schema["properties"]["workflow_schema"]["type"],
+            serde_json::json!(["object", "null"])
+        );
     }
 }

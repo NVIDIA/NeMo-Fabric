@@ -21,8 +21,8 @@ use serde_json::{Map, Value};
 
 use crate::config::{
     AdapterKind, CapabilityPlan, CapabilityTarget, ControlLocation, EnvironmentOwnership,
-    FabricConfig, RunPlan, TelemetryPlan, validate_adapter_config_compatibility,
-    validate_harness_settings,
+    FabricConfig, RunPlan, TelemetryPlan, validate_adapter_config_compatibility, validate_config,
+    validate_harness_settings, validate_workflow,
 };
 use crate::error::{FabricError, Result};
 
@@ -540,7 +540,9 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
 
 /// Start or connect to a harness runtime.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
+    validate_config(&plan.config)?;
     validate_harness_settings(&plan.config, plan.adapter_descriptor.as_ref())?;
+    validate_workflow(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_adapter_compatibility(plan)?;
     let environment = prepare_environment(plan)?;
     if uses_local_host(plan) {
@@ -2813,6 +2815,78 @@ for line in sys.stdin:
                 && settings_path == "harness.settings.unknown"
         ));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_revalidates_workflow_before_runtime_start() {
+        let (root, mut plan) = local_host_plan("success");
+        plan.config.workflow = Some(
+            serde_json::from_value(serde_json::json!({
+                "entrypoint": {
+                    "kind": "workflow_registry",
+                    "ref": "test_agent"
+                },
+                "settings": {"llm_name": 7}
+            }))
+            .expect("typed workflow"),
+        );
+        plan.adapter_descriptor
+            .as_mut()
+            .expect("adapter descriptor")
+            .descriptor
+            .workflow_schema = Some(
+            serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "settings": {
+                        "type": "object",
+                        "properties": {"llm_name": {"type": "string"}}
+                    }
+                }
+            })
+            .as_object()
+            .expect("object schema")
+            .clone(),
+        );
+
+        let error = start_runtime(&plan).expect_err("start must reject invalid workflow");
+        assert!(matches!(
+            error,
+            FabricError::InvalidWorkflow { workflow_path, .. }
+                if workflow_path == "workflow.settings.llm_name"
+        ));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_revalidates_workflow_entrypoint_before_runtime_start() {
+        for (field, value) in [
+            ("workflow.entrypoint.kind", " "),
+            ("workflow.entrypoint.ref", "\t"),
+        ] {
+            let (root, plan) = local_host_plan("start_failure");
+            let mut serialized = serde_json::to_value(plan).expect("serialize plan");
+            serialized["config"]["workflow"] = serde_json::json!({
+                "entrypoint": {
+                    "kind": "workflow_registry",
+                    "ref": "test_agent"
+                }
+            });
+            serialized["adapter_descriptor"]["descriptor"]["workflow_schema"] =
+                serde_json::json!({"type": "object"});
+            serialized["config"]["workflow"]["entrypoint"][field
+                .strip_prefix("workflow.entrypoint.")
+                .expect("entrypoint field")] = Value::String(value.to_string());
+            let plan: RunPlan = serde_json::from_value(serialized).expect("deserialize plan");
+
+            let error = start_runtime(&plan).expect_err("start must reject blank entrypoint");
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field: actual, .. } if actual == field
+            ));
+            assert!(!root.join("artifacts").exists());
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]

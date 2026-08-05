@@ -87,7 +87,12 @@ Decide the following before implementation:
 - Use the complete Fabric invocation for adapters that consume normalized
   config or runtime context. Treat `config`, `capability_plan`,
   `telemetry_plan`, and `runtime_context` as authoritative. Reserve
-  `harness.settings` for harness-specific behavior.
+  `harness.settings` for adapter-wide harness behavior. When the adapter exposes
+  selectable executables, use `FabricConfig.workflow` for the adapter-owned
+  entry point and immutable construction settings, and declare a
+  `workflow_schema` that validates the complete block. The schema must reject
+  unsupported entry-point kinds, references, and settings before runtime
+  startup; include `null` only when the adapter provides a default workflow.
 - Apply precedence in this order: normalized `config`; Fabric-resolved plans and
   runtime context; harness-specific settings; descriptor and adapter defaults.
   Let intentional overlaps layer by this order. Reject conflicting duplicate

@@ -18,6 +18,7 @@ Import these from the top-level `nemo_fabric` package:
 | `FabricConfig` | Root config passed to every `Fabric` call. |
 | `MetadataConfig` | Agent name and description. |
 | `HarnessConfig` | `adapter_id`, `resolution`, and adapter-owned `settings`. |
+| `WorkflowConfig` / `WorkflowEntrypointConfig` | Optional adapter-owned workflow selection and immutable construction settings. |
 | `ModelConfig` | Provider, model, credentials (`api_key_env`), endpoint, and sampling. |
 | `InstructionsConfig` / `InstructionConfig` | Portable agent instructions and replacement mode. |
 | `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, and harness turn limit. |
@@ -119,6 +120,12 @@ package or job layout, so nothing depends on the process working directory.
   portable. Planning and `doctor(...)` validate them against the schema embedded
   in the exact resolved adapter descriptor; a descriptor without a schema
   accepts only an empty settings map.
+- Use `workflow` when an adapter exposes selectable executable workflows.
+  `workflow.entrypoint.kind` selects the adapter-defined resolution mechanism,
+  `workflow.entrypoint.ref` identifies the workflow, and `workflow.settings`
+  contains only its construction settings. Planning validates the complete
+  block against the selected descriptor's `workflow_schema`. A configured
+  workflow fails when the descriptor does not declare that schema.
 - Use `metadata` and extension fields for caller-owned annotations NeMo Fabric carries
   but does not interpret. Config `metadata` is not echoed into
   `RunResult.metadata`: the name surfaces as `RunResult.agent_name`, and for

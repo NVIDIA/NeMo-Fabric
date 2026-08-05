@@ -271,8 +271,8 @@ print(plan.adapter.adapter_id, report.status)
 ```
 
 - Use `plan(...)` to confirm adapter selection and capability routing before
-  running. Planning also validates `harness.settings` against the schema in the
-  exact resolved adapter descriptor.
+  running. Planning also validates `harness.settings` and an optional
+  `workflow` against their schemas in the exact resolved adapter descriptor.
 - Use `doctor(...)` to check adapter availability, resolution, environment
   context, and declared requirements such as required environment variables. Its
   aggregate `status` is `pass`, `warn`, or `fail`. Invalid, unknown, or

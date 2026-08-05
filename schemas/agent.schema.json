@@ -1076,6 +1076,48 @@
         }
       },
       "type": "object"
+    },
+    "WorkflowConfig": {
+      "additionalProperties": true,
+      "description": "Adapter-owned workflow selection and immutable construction settings.",
+      "properties": {
+        "entrypoint": {
+          "$ref": "#/$defs/WorkflowEntrypointConfig",
+          "description": "Entry point resolved by the selected adapter."
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Workflow-specific construction settings.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "entrypoint"
+      ],
+      "type": "object"
+    },
+    "WorkflowEntrypointConfig": {
+      "additionalProperties": true,
+      "description": "Adapter-owned workflow entry point.",
+      "properties": {
+        "kind": {
+          "description": "Adapter-defined entry-point kind.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Adapter-defined workflow reference.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1181,6 +1223,17 @@
         }
       ],
       "description": "Tool capability configuration."
+    },
+    "workflow": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkflowConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional adapter-resolved workflow selection and construction settings."
     }
   },
   "required": [

@@ -214,6 +214,80 @@ class _HarnessConfig(_ConfigMapping):
         )
 
 
+class _WorkflowEntrypointConfig(_ConfigMapping):
+    """Adapter-owned workflow entry point."""
+
+    _fields = frozenset({"kind", "ref"})
+
+    def __init__(
+        self,
+        *,
+        kind: str,
+        ref: str,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            {
+                "kind": _required_text(kind, "workflow entrypoint kind"),
+                "ref": _required_text(ref, "workflow entrypoint ref"),
+            },
+            extra_fields=extra_fields,
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_WorkflowEntrypointConfig":
+        """Validate a workflow entry-point mapping."""
+
+        data = _mapping(value, "workflow entrypoint")
+        return cls(
+            kind=data.get("kind"),
+            ref=data.get("ref"),
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+
+class _WorkflowConfig(_ConfigMapping):
+    """Adapter-owned workflow selection and construction settings."""
+
+    _fields = frozenset({"entrypoint", "settings"})
+    _omit_if_empty = frozenset({"settings"})
+
+    def __init__(
+        self,
+        *,
+        entrypoint: _WorkflowEntrypointConfig | Mapping[str, Any],
+        settings: Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            {
+                "entrypoint": _coerce(
+                    _WorkflowEntrypointConfig,
+                    entrypoint,
+                    "workflow entrypoint",
+                ),
+                "settings": _mapping(
+                    {} if settings is None else settings,
+                    "workflow settings",
+                ),
+            },
+            extra_fields=extra_fields,
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> "_WorkflowConfig":
+        """Validate a workflow mapping."""
+
+        data = _mapping(value, "workflow")
+        if "entrypoint" not in data:
+            raise FabricConfigError("workflow entrypoint is required")
+        return cls(
+            entrypoint=data["entrypoint"],
+            settings=data.get("settings"),
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+
 class _InstructionConfig(_ConfigMapping):
     """One portable instruction value."""
 
@@ -711,6 +785,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         schema_version: Agent schema identifier.
         metadata: Required ``MetadataConfig`` agent identity.
         harness: Required ``HarnessConfig`` adapter selection.
+        workflow: Optional adapter-owned workflow selection and construction settings.
         runtime: Invocation runtime configuration.
         environment: Optional execution environment configuration.
         models: Named, JSON-compatible model configurations.
@@ -728,6 +803,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
             "schema_version",
             "metadata",
             "harness",
+            "workflow",
             "runtime",
             "environment",
             "models",
@@ -746,6 +822,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         *,
         metadata: _MetadataConfig | Mapping[str, Any],
         harness: _HarnessConfig | Mapping[str, Any],
+        workflow: _WorkflowConfig | Mapping[str, Any] | None = None,
         runtime: _RuntimeConfig | Mapping[str, Any] | None = None,
         schema_version: str = "fabric.agent/v1alpha1",
         environment: _EnvironmentConfig | Mapping[str, Any] | None = None,
@@ -760,6 +837,9 @@ class _FabricConfigSnapshot(_ConfigMapping):
     ) -> None:
         metadata_value = _coerce(_MetadataConfig, metadata, "metadata")
         harness_value = _coerce(_HarnessConfig, harness, "harness")
+        workflow_value = (
+            None if workflow is None else _coerce(_WorkflowConfig, workflow, "workflow")
+        )
         runtime_value = _coerce(
             _RuntimeConfig,
             _RuntimeConfig() if runtime is None else runtime,
@@ -785,6 +865,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         }
         for key, item in (
             ("environment", environment_value),
+            ("workflow", workflow_value),
             ("instructions", instructions_value),
             ("mcp", mcp_value),
             ("skills", skills_value),
@@ -814,6 +895,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
             schema_version=data.get("schema_version", "fabric.agent/v1alpha1"),
             metadata=data["metadata"],
             harness=data["harness"],
+            workflow=data.get("workflow"),
             runtime=data.get("runtime"),
             environment=data.get("environment"),
             models=data.get("models"),

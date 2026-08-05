@@ -107,6 +107,36 @@ class HarnessConfig(FabricBaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkflowEntrypointConfig(FabricBaseModel):
+    """Adapter-owned workflow entry point."""
+
+    kind: str = Field(min_length=1, pattern=r"\S")
+    ref: str = Field(min_length=1, pattern=r"\S")
+
+    @field_validator("kind", "ref")
+    @classmethod
+    def _validate_nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("workflow entrypoint values must be non-empty strings")
+        return value
+
+
+class WorkflowConfig(FabricBaseModel):
+    """Adapter-owned workflow selection and immutable construction settings."""
+
+    entrypoint: WorkflowEntrypointConfig
+    settings: dict[str, Any] = Field(default_factory=dict)
+
+    @model_serializer(mode="wrap")
+    def _serialize_workflow(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data = handler(self)
+        if not self.settings:
+            data.pop("settings", None)
+        return data
+
+
 class InstructionConfig(FabricBaseModel):
     """One portable instruction value."""
 
@@ -588,6 +618,7 @@ class FabricConfig(FabricBaseModel):
     schema_version: str = "fabric.agent/v1alpha1"
     metadata: MetadataConfig
     harness: HarnessConfig
+    workflow: WorkflowConfig | None = None
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     environment: EnvironmentConfig | None = None
     models: dict[str, ModelConfig] = Field(default_factory=dict)
