@@ -415,6 +415,9 @@ pub enum AdapterConfigField {
     /// Harness-native MCP servers.
     #[serde(rename = "mcp")]
     Mcp,
+    /// Per-server MCP tool allowlists and blocklists.
+    #[serde(rename = "mcp.tool_filters")]
+    McpToolFilters,
     /// Harness-native skills.
     #[serde(rename = "skills")]
     Skills,
@@ -619,6 +622,12 @@ pub struct McpServerConfig {
     pub url: String,
     /// How NeMo Fabric exposes the MCP capability to the harness.
     pub exposure: McpExposure,
+    /// MCP tool names to expose. `None` exposes every tool discovered from the server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
+    /// MCP tool names to block after applying the optional allowlist.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_tools: Vec<String>,
     /// Additive MCP server fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
@@ -1183,6 +1192,24 @@ fn validate_config(config: &FabricConfig) -> Result<()> {
         }
         validate_names("tools.blocked", &tools.blocked)?;
     }
+    if let Some(mcp) = &config.mcp {
+        for (server_name, server) in &mcp.servers {
+            let field = format!("mcp.servers.{server_name}");
+            if let Some(allowed_tools) = &server.allowed_tools {
+                validate_names(&format!("{field}.allowed_tools"), allowed_tools)?;
+                if let Some(name) = allowed_tools
+                    .iter()
+                    .find(|name| server.blocked_tools.contains(name))
+                {
+                    return invalid_config(
+                        field,
+                        format!("`{name}` cannot be both allowed and blocked"),
+                    );
+                }
+            }
+            validate_names(&format!("{field}.blocked_tools"), &server.blocked_tools)?;
+        }
+    }
     Ok(())
 }
 
@@ -1430,6 +1457,23 @@ pub(crate) fn adapter_config_compatibility_issues(
                 format!("models.{role}.temperature"),
                 "the adapter does not declare an equivalent native mapping".to_string(),
             ));
+        }
+    }
+    if accepts(AdapterConfigField::Mcp) && !accepts(AdapterConfigField::McpToolFilters) {
+        for (name, server) in config.mcp.iter().flat_map(|mcp| mcp.servers.iter()) {
+            let field = if server.allowed_tools.is_some() {
+                Some("allowed_tools")
+            } else if !server.blocked_tools.is_empty() {
+                Some("blocked_tools")
+            } else {
+                None
+            };
+            if let Some(field) = field {
+                issues.push(incompatible(
+                    format!("mcp.servers.{name}.{field}"),
+                    "the adapter does not declare per-server MCP tool-filter support".to_string(),
+                ));
+            }
         }
     }
     issues
@@ -1731,6 +1775,8 @@ fn resolve_capability_plan(
                             transport: server.transport.clone(),
                             url: server.url.clone(),
                             exposure: server.exposure,
+                            allowed_tools: server.allowed_tools.clone(),
+                            blocked_tools: server.blocked_tools.clone(),
                         },
                     )
                 })
@@ -1815,7 +1861,9 @@ fn resolve_capability_plan(
     }
 
     for (name, server) in &mcp_servers {
+        let filters_configured = server.allowed_tools.is_some() || !server.blocked_tools.is_empty();
         let can_map_native = accepts(AdapterConfigField::Mcp)
+            && (!filters_configured || accepts(AdapterConfigField::McpToolFilters))
             && matches!(server.exposure, McpExposure::HarnessNative);
         if can_map_native {
             native.mcp_servers.insert(name.clone(), server.clone());
@@ -1837,6 +1885,12 @@ fn resolve_capability_plan(
                 reason: match server.exposure {
                     McpExposure::FabricManaged => {
                         "MCP server explicitly requests NeMo Fabric-managed exposure but NeMo Fabric-managed MCP is not implemented".to_string()
+                    }
+                    _ if accepts(AdapterConfigField::Mcp)
+                        && filters_configured
+                        && !accepts(AdapterConfigField::McpToolFilters) =>
+                    {
+                        "MCP server configures tool filters but the selected adapter does not declare native MCP tool-filter support".to_string()
                     }
                     _ => "selected adapter does not declare native MCP support and NeMo Fabric-managed MCP is not implemented".to_string(),
                 },
@@ -2165,6 +2219,12 @@ pub struct McpServerPlan {
     pub url: String,
     /// Exposure strategy.
     pub exposure: McpExposure,
+    /// MCP tool names to expose. `None` exposes every discovered tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed_tools: Option<Vec<String>>,
+    /// MCP tool names to block after applying the optional allowlist.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_tools: Vec<String>,
 }
 
 /// Resolved telemetry plan.
@@ -2582,6 +2642,8 @@ mod tests {
                     transport: "streamable-http".to_string(),
                     url: "https://mcp.example".to_string(),
                     exposure: McpExposure::FabricManaged,
+                    allowed_tools: None,
+                    blocked_tools: Vec::new(),
                     extensions: BTreeMap::new(),
                 },
             )]),
@@ -2602,6 +2664,162 @@ mod tests {
                 ..
             } if adapter_id == "nvidia.fabric.claude" && field == "mcp.servers.docs"
         ));
+    }
+
+    #[test]
+    fn mcp_tool_filters_survive_capability_planning() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor
+            .config
+            .accepts
+            .push(AdapterConfigField::McpToolFilters);
+        let resolved = ResolvedAdapterDescriptor {
+            descriptor,
+            source: AdapterDescriptorSource::Repository,
+            path: path.clone(),
+            root: path.parent().expect("descriptor directory").to_path_buf(),
+        };
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "docs".to_string(),
+                McpServerConfig {
+                    transport: "streamable-http".to_string(),
+                    url: "https://mcp.example".to_string(),
+                    exposure: McpExposure::HarnessNative,
+                    allowed_tools: Some(Vec::new()),
+                    blocked_tools: vec!["delete".to_string()],
+                    extensions: BTreeMap::new(),
+                },
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        let plan = resolve_capability_plan(
+            &config,
+            Path::new("/tmp/fabric-mcp-filters"),
+            Some(&resolved),
+        );
+        let server = plan
+            .native
+            .mcp_servers
+            .get("docs")
+            .expect("native MCP server");
+
+        assert_eq!(server.allowed_tools, Some(Vec::new()));
+        assert_eq!(server.blocked_tools, vec!["delete".to_string()]);
+        let value = serde_json::to_value(server).expect("MCP server plan JSON");
+        assert_eq!(value["allowed_tools"], serde_json::json!([]));
+        assert_eq!(value["blocked_tools"], serde_json::json!(["delete"]));
+    }
+
+    #[test]
+    fn mcp_tool_filters_require_an_explicit_adapter_claim() {
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "docs".to_string(),
+                McpServerConfig {
+                    transport: "streamable-http".to_string(),
+                    url: "https://mcp.example".to_string(),
+                    exposure: McpExposure::HarnessNative,
+                    allowed_tools: Some(vec!["search".to_string()]),
+                    blocked_tools: Vec::new(),
+                    extensions: BTreeMap::new(),
+                },
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        let error = resolve_run_plan_from_config(
+            config,
+            ResolveContext::new("/tmp/fabric-unsupported-mcp-filters"),
+        )
+        .expect_err("Claude does not advertise per-server MCP tool filters");
+
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility {
+                adapter_id,
+                field,
+                ..
+            } if adapter_id == "nvidia.fabric.claude"
+                && field == "mcp.servers.docs.allowed_tools"
+        ));
+    }
+
+    #[test]
+    fn overlapping_mcp_tool_policy_is_invalid() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "docs".to_string(),
+                McpServerConfig {
+                    transport: "streamable-http".to_string(),
+                    url: "https://mcp.example".to_string(),
+                    exposure: McpExposure::HarnessNative,
+                    allowed_tools: Some(vec!["search".to_string()]),
+                    blocked_tools: vec!["search".to_string()],
+                    extensions: BTreeMap::new(),
+                },
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        let error = resolve_run_plan_from_config(
+            config,
+            ResolveContext::new("/tmp/fabric-invalid-mcp-filters"),
+        )
+        .expect_err("overlapping MCP tool policy");
+
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. } if field == "mcp.servers.docs"
+        ));
+    }
+
+    #[test]
+    fn empty_mcp_tool_names_are_invalid() {
+        for (allowed_tools, blocked_tools, expected_field) in [
+            (
+                Some(vec!["".to_string()]),
+                Vec::new(),
+                "mcp.servers.docs.allowed_tools",
+            ),
+            (
+                None,
+                vec!["  ".to_string()],
+                "mcp.servers.docs.blocked_tools",
+            ),
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.mcp = Some(McpConfig {
+                servers: BTreeMap::from([(
+                    "docs".to_string(),
+                    McpServerConfig {
+                        transport: "streamable-http".to_string(),
+                        url: "https://mcp.example".to_string(),
+                        exposure: McpExposure::HarnessNative,
+                        allowed_tools,
+                        blocked_tools,
+                        extensions: BTreeMap::new(),
+                    },
+                )]),
+                extensions: BTreeMap::new(),
+            });
+
+            let error = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/fabric-invalid-mcp-tool-name"),
+            )
+            .expect_err("empty MCP tool name");
+
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field, .. } if field == expected_field
+            ));
+        }
     }
 
     #[test]

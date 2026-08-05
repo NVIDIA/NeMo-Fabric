@@ -205,6 +205,23 @@
       "additionalProperties": true,
       "description": "MCP server configuration.",
       "properties": {
+        "allowed_tools": {
+          "description": "MCP tool names to expose. `None` exposes every tool discovered from the server.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "blocked_tools": {
+          "description": "MCP tool names to block after applying the optional allowlist.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "exposure": {
           "$ref": "#/$defs/McpExposure",
           "description": "How NeMo Fabric exposes the MCP capability to the harness."

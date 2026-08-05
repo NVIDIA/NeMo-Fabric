@@ -29,6 +29,7 @@ from nemo_fabric import HarnessConfig
 from nemo_fabric import InstructionConfig
 from nemo_fabric import InstructionsConfig
 from nemo_fabric import McpConfig
+from nemo_fabric import McpServerConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
@@ -141,6 +142,8 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         transport="streamable-http",
         url="${GITHUB_MCP_URL}",
         exposure="fabric_managed",
+        allowed_tools=["issues.read", "pull_requests.read"],
+        blocked_tools=["issues.delete"],
     )
     config.enable_relay(
         project="fabric-tests",
@@ -166,6 +169,8 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
                 "transport": "streamable-http",
                 "url": "${GITHUB_MCP_URL}",
                 "exposure": "fabric_managed",
+                "allowed_tools": ["issues.read", "pull_requests.read"],
+                "blocked_tools": ["issues.delete"],
             }
         }
     }
@@ -194,6 +199,43 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         )
     with pytest.raises(ValidationError, match="providers"):
         TelemetryConfig(providers={"sideways": {}})
+
+
+def test_mcp_server_tool_policy_preserves_empty_allowlist():
+    server = McpServerConfig(
+        transport="streamable-http",
+        url="https://mcp.example.test",
+        allowed_tools=[],
+    )
+
+    assert server.to_mapping() == {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test",
+        "exposure": "harness_native",
+        "allowed_tools": [],
+    }
+
+
+@pytest.mark.parametrize(
+    ("allowed_tools", "blocked_tools", "message"),
+    [
+        (["search"], ["search"], "cannot be both allowed and blocked"),
+        ([""], [], "MCP tool names must not be empty"),
+        (None, ["  "], "MCP tool names must not be empty"),
+    ],
+)
+def test_mcp_server_tool_policy_rejects_invalid_names_and_overlap(
+    allowed_tools: list[str] | None,
+    blocked_tools: list[str],
+    message: str,
+):
+    with pytest.raises(ValidationError, match=message):
+        McpServerConfig(
+            transport="streamable-http",
+            url="https://mcp.example.test",
+            allowed_tools=allowed_tools,
+            blocked_tools=blocked_tools,
+        )
 
 
 def test_typed_tools_config_serializes_blocked_policy():

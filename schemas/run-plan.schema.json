@@ -44,6 +44,11 @@
           "type": "string"
         },
         {
+          "const": "mcp.tool_filters",
+          "description": "Per-server MCP tool allowlists and blocklists.",
+          "type": "string"
+        },
+        {
           "const": "skills",
           "description": "Harness-native skills.",
           "type": "string"
@@ -786,6 +791,23 @@
       "additionalProperties": true,
       "description": "MCP server configuration.",
       "properties": {
+        "allowed_tools": {
+          "description": "MCP tool names to expose. `None` exposes every tool discovered from the server.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "blocked_tools": {
+          "description": "MCP tool names to block after applying the optional allowlist.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "exposure": {
           "$ref": "#/$defs/McpExposure",
           "description": "How NeMo Fabric exposes the MCP capability to the harness."
@@ -809,6 +831,23 @@
     "McpServerPlan": {
       "description": "Resolved MCP server exposure.",
       "properties": {
+        "allowed_tools": {
+          "description": "MCP tool names to expose. `None` exposes every discovered tool.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "blocked_tools": {
+          "description": "MCP tool names to block after applying the optional allowlist.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "exposure": {
           "$ref": "#/$defs/McpExposure",
           "description": "Exposure strategy."

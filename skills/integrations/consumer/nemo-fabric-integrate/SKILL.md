@@ -142,6 +142,10 @@ def to_fabric_config(job) -> FabricConfig:
 - Shape capabilities with `ToolsConfig`, `block_tools`, `add_skill_path`,
   `remove_skill_path`,
   `add_mcp_server`, `remove_mcp_server`, and `enable_relay`.
+- Use `allowed_tools` and `blocked_tools` on `add_mcp_server` for server-local
+  MCP policy only when the selected adapter declares `mcp.tool_filters`.
+  `allowed_tools=None` exposes every discovered tool, while an empty list
+  exposes none; blocked tools are removed after applying that allowlist.
 - Create deployment or evaluation variants with `model_copy(deep=True)` and
   ordinary Python functions; each copy plans and runs independently.
 - Pass `base_dir=...` to any `Fabric` call when the config uses relative paths,
