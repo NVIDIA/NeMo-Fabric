@@ -31,13 +31,13 @@ dependencies = [
 
 [project.optional-dependencies]
 harness = [
-  "hermes-agent>=0.17.0; python_version < '3.14'",
+  "hermes-agent>=0.19.0; python_version < '3.14'",
 ]
 relay = [
   "nemo-relay>=0.6.0,<0.7",
 ]
 full = [
-  "hermes-agent>=0.17.0; python_version < '3.14'",
+  "hermes-agent>=0.19.0; python_version < '3.14'",
   "nemo-relay>=0.6.0,<0.7",
 ]
 
