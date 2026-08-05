@@ -106,7 +106,7 @@ run the example:
 
 ```bash
 uv pip install -e \
-  /path/to/NeMo-Agent-Toolkit/examples/evaluation_and_profiling/email_phishing_analyzer
+  "<path-to-nat-checkout>/examples/evaluation_and_profiling/email_phishing_analyzer"
 uv run python external/nat/examples/email_phishing.py \
   --base-dir "$PWD/.tmp/nat-reference"
 ```

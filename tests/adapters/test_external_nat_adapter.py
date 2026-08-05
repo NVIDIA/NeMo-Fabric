@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 import types
 from copy import deepcopy
@@ -70,9 +69,7 @@ def make_payload_fixture(tmp_path: Path):
                 "runtime_id": "runtime-1",
                 "environment": {"workspace": str(tmp_path)},
             },
-            "capability_plan": {
-                "native": {"mcp_servers": deepcopy(mcp_servers or {})}
-            },
+            "capability_plan": {"native": {"mcp_servers": deepcopy(mcp_servers or {})}},
         }
 
     return make
@@ -165,34 +162,40 @@ def mock_nat_fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     }
 
 
-def invocation_payload(
-    *,
-    input_value: Any = "hello",
-    request_id: str = "request-1",
-    context: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    request: dict[str, Any] = {"input": input_value, "request_id": request_id}
-    if context is not None:
-        request["context"] = context
-    return {
-        "runtime_context": {"runtime_id": "runtime-1"},
-        "request": request,
-    }
+@pytest.fixture(name="make_invocation_payload")
+def make_invocation_payload_fixture():
+    """Return a factory for canonical Fabric invocation payloads."""
+
+    def make(
+        *,
+        input_value: Any = "hello",
+        request_id: str = "request-1",
+        context: Any = None,
+        raw_request: Any = None,
+        runtime_id: str = "runtime-1",
+    ) -> dict[str, Any]:
+        request = raw_request
+        if request is None:
+            request = {"input": input_value, "request_id": request_id}
+            if context is not None:
+                request["context"] = context
+        return {
+            "runtime_context": {"runtime_id": runtime_id},
+            "request": request,
+        }
+
+    return make
 
 
 def test_descriptor_declares_exact_source_reference_contract():
     descriptor = json.loads(
-        (ROOT / "external" / "nat" / "fabric-adapter.json").read_text(
-            encoding="utf-8"
-        )
+        (ROOT / "external" / "nat" / "fabric-adapter.json").read_text(encoding="utf-8")
     )
 
     assert descriptor["adapter_id"] == "nvidia.fabric.nat"
     assert descriptor["harness"] == "nat"
     assert descriptor["adapter_kind"] == "python"
-    assert descriptor["runner"] == {
-        "module": "nemo_fabric_adapters.nat.adapter"
-    }
+    assert descriptor["runner"] == {"module": "nemo_fabric_adapters.nat.adapter"}
     assert descriptor["requirements"] == {}
     assert descriptor["config"]["accepts"] == [
         "models",
@@ -216,8 +219,9 @@ def test_descriptor_declares_exact_source_reference_contract():
 
 def test_build_mapping_translates_components_models_and_instruction(
     make_payload,
+    monkeypatch: pytest.MonkeyPatch,
 ):
-    os.environ["NVIDIA_API_KEY"] = "test-key"
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
     workflow = {
         "_type": "react_agent",
         "llm_name": "default",
@@ -294,9 +298,7 @@ def test_system_instruction_rejects_duplicate_nat_instruction_source(make_payloa
 
 
 def test_react_agent_without_tool_names_defaults_to_empty_list(make_payload):
-    payload = make_payload(
-        workflow={"_type": "react_agent", "llm_name": "default"}
-    )
+    payload = make_payload(workflow={"_type": "react_agent", "llm_name": "default"})
 
     result = adapter.build_nat_config_mapping(payload)
 
@@ -309,17 +311,45 @@ def test_build_typed_config_discovers_components_before_validation(
 ):
     events: list[str] = []
     mock_nat["discover"].side_effect = lambda _plugin_type: events.append("discover")
-    mock_nat["config_type"].model_validate.side_effect = (
-        lambda _mapping: events.append("validate") or mock_nat["typed_config"]
+    mock_nat["config_type"].model_validate.side_effect = lambda _mapping: (
+        events.append("validate") or mock_nat["typed_config"]
     )
 
     result = adapter.build_nat_config(make_payload())
 
     assert result is mock_nat["typed_config"]
     assert events == ["discover", "validate"]
-    mock_nat["discover"].assert_called_once_with(
-        mock_nat["plugin_types"].CONFIG_OBJECT
+    mock_nat["discover"].assert_called_once_with(mock_nat["plugin_types"].CONFIG_OBJECT)
+
+
+def test_build_typed_config_contract_with_installed_nat(
+    make_payload,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    config_module = pytest.importorskip(
+        "nat.data_models.config",
+        reason="NAT is not installed in the base Fabric test environment",
     )
+    pytest.importorskip(
+        "nat.plugins.langchain.agent.react_agent",
+        reason="The NAT LangChain extra is not installed",
+    )
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    payload = make_payload(
+        models={
+            "default": {
+                "provider": "nvidia",
+                "model": "nvidia/test-model",
+                "api_key_env": "NVIDIA_API_KEY",
+            }
+        }
+    )
+
+    result = adapter.build_nat_config(payload)
+
+    assert isinstance(result, config_module.Config)
+    assert result.workflow.type == "react_agent"
+    assert result.llms["default"].model_name == "nvidia/test-model"
 
 
 @pytest.mark.parametrize(
@@ -513,6 +543,27 @@ def test_root_tool_policy_selects_and_blocks_exact_group_members(make_payload):
     assert result["workflow"]["tool_names"] == ["clock", "calculator", "search"]
 
 
+def test_blocking_last_group_member_and_function_removes_both_tool_refs(
+    make_payload,
+):
+    payload = make_payload(
+        workflow={
+            "_type": "react_agent",
+            "llm_name": "default",
+            "tool_names": ["calculator", "clock"],
+        },
+        functions={"clock": {"_type": "current_datetime"}},
+        function_groups={"calculator": {"_type": "calculator", "include": ["add"]}},
+        tools={"blocked": ["calculator__add", "clock"]},
+    )
+
+    result = adapter.build_nat_config_mapping(payload)
+
+    assert result["functions"] == {}
+    assert result["function_groups"] == {}
+    assert result["workflow"]["tool_names"] == []
+
+
 @pytest.mark.parametrize(
     "tools",
     [
@@ -528,9 +579,7 @@ def test_root_tool_policy_rejects_unknown_exact_selectors(make_payload, tools):
             "llm_name": "default",
             "tool_names": ["calculator"],
         },
-        function_groups={
-            "calculator": {"_type": "calculator", "include": ["add"]}
-        },
+        function_groups={"calculator": {"_type": "calculator", "include": ["add"]}},
         tools=tools,
     )
 
@@ -542,19 +591,20 @@ def test_root_tool_policy_rejects_unknown_exact_selectors(make_payload, tools):
 
 async def test_runtime_reuses_one_builder_across_invocations_and_cleans_up(
     make_payload,
+    make_invocation_payload,
     mock_nat,
 ):
     runtime = adapter.NatRuntime()
     await runtime.start(make_payload())
 
     first = await runtime.invoke(
-        invocation_payload(
+        make_invocation_payload(
             request_id="message-1",
             context={"user_id": "user-1", "conversation_id": "conversation-1"},
         )
     )
     second = await runtime.invoke(
-        invocation_payload(
+        make_invocation_payload(
             input_value="again",
             request_id="message-2",
             context={"user_id": "user-1", "conversation_id": "conversation-1"},
@@ -601,6 +651,94 @@ async def test_runtime_reuses_one_builder_across_invocations_and_cleans_up(
     assert mock_nat["builder_context"].__aexit__.await_count == 1
 
 
+async def test_start_rejects_an_already_started_runtime(make_payload, mock_nat):
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+            await runtime.start(make_payload())
+    finally:
+        await runtime.stop()
+
+    assert error.value.code == "nat_runtime_already_started"
+    assert error.value.message == "NAT runtime is already started"
+    mock_nat["workflow_builder"].from_config.assert_called_once()
+
+
+async def test_invoke_rejects_a_runtime_that_has_not_started(
+    make_invocation_payload,
+):
+    runtime = adapter.NatRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        await runtime.invoke(make_invocation_payload())
+
+    assert error.value.code == "nat_runtime_not_started"
+    assert error.value.message == "NAT runtime is not started"
+
+
+async def test_invoke_rejects_a_different_runtime_id(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+            await runtime.invoke(make_invocation_payload(runtime_id="runtime-2"))
+    finally:
+        await runtime.stop()
+
+    assert error.value.code == "nat_runtime_mismatch"
+    assert error.value.message == "NAT invocation does not match the active runtime"
+    mock_nat["sessions"].session.assert_not_called()
+
+
+async def test_invoke_normalizes_a_non_mapping_request(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        result = await runtime.invoke(
+            make_invocation_payload(raw_request=["not", "a", "mapping"])
+        )
+    finally:
+        await runtime.stop()
+
+    assert result["error"] == {
+        "code": "nat_invalid_request",
+        "message": "NAT invocation request must be a mapping",
+        "retryable": False,
+    }
+    mock_nat["sessions"].session.assert_not_called()
+
+
+async def test_invoke_normalizes_a_non_mapping_request_context(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        result = await runtime.invoke(
+            make_invocation_payload(context=["not", "a", "mapping"])
+        )
+    finally:
+        await runtime.stop()
+
+    assert result["error"] == {
+        "code": "nat_invalid_request",
+        "message": "NAT invocation request.context must be a mapping",
+        "retryable": False,
+    }
+    mock_nat["sessions"].session.assert_not_called()
+
+
 async def test_start_failure_cleans_builder_and_redacts_cause(
     make_payload,
     mock_nat,
@@ -624,6 +762,7 @@ async def test_start_failure_cleans_builder_and_redacts_cause(
 
 async def test_invoke_failure_is_normalized_and_redacts_cause(
     make_payload,
+    make_invocation_payload,
     mock_nat,
     caplog,
 ):
@@ -633,7 +772,7 @@ async def test_invoke_failure_is_normalized_and_redacts_cause(
     runtime = adapter.NatRuntime()
     await runtime.start(make_payload())
     try:
-        result = await runtime.invoke(invocation_payload())
+        result = await runtime.invoke(make_invocation_payload())
     finally:
         await runtime.stop()
 
@@ -651,6 +790,7 @@ async def test_invoke_failure_is_normalized_and_redacts_cause(
 
 async def test_non_json_result_is_normalized_without_value_leak(
     make_payload,
+    make_invocation_payload,
     mock_nat,
     caplog,
 ):
@@ -659,7 +799,7 @@ async def test_non_json_result_is_normalized_without_value_leak(
     runtime = adapter.NatRuntime()
     await runtime.start(make_payload())
     try:
-        result = await runtime.invoke(invocation_payload())
+        result = await runtime.invoke(make_invocation_payload())
     finally:
         await runtime.stop()
 
@@ -695,6 +835,52 @@ def test_mcp_server_normalizes_streamable_http_aliases(transport: str):
         "transport": "streamable-http",
         "url": "https://mcp.test",
     }
+
+
+def test_mcp_stdio_expands_environment_and_parses_quoted_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("NAT_TEST_MCP_COMMAND", "/opt/nat/bin/mcp-server")
+
+    result = adapter.nat_mcp_server_config(
+        "calculator",
+        {
+            "transport": "stdio",
+            "url": "$NAT_TEST_MCP_COMMAND --label 'safe mode' --port 9000",
+        },
+    )
+
+    assert result == {
+        "transport": "stdio",
+        "command": "/opt/nat/bin/mcp-server",
+        "args": ["--label", "safe mode", "--port", "9000"],
+    }
+
+
+def test_mcp_stdio_rejects_unbalanced_quotes():
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        adapter.nat_mcp_server_config(
+            "calculator",
+            {"transport": "stdio", "url": "mcp-server --label 'unterminated"},
+        )
+
+    assert error.value.code == "nat_invalid_mcp_server"
+    assert error.value.message == (
+        "NAT MCP server 'calculator' has an invalid stdio command"
+    )
+
+
+def test_mcp_stdio_rejects_a_whitespace_only_command():
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        adapter.nat_mcp_server_config(
+            "calculator",
+            {"transport": "stdio", "url": " \t\n "},
+        )
+
+    assert error.value.code == "nat_invalid_mcp_server"
+    assert error.value.message == (
+        "NAT MCP server 'calculator' requires a non-empty url"
+    )
 
 
 @pytest.mark.parametrize("transport", ["websocket", ""])

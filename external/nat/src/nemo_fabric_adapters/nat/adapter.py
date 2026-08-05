@@ -520,8 +520,6 @@ def _apply_enabled_tools(
             continue
 
         if identity in groups:
-            if identity in suppressed:
-                continue
             selected_groups[identity] = groups[identity]
             if identity not in selected_refs:
                 selected_refs.append(identity)
@@ -568,9 +566,8 @@ def _block_group_member(
             group["include"] = remaining
             return
         groups.pop(group_name, None)
-        config["workflow"]["tool_names"] = [
-            name for name in config["workflow"]["tool_names"] if name != group_name
-        ]
+        tool_names = config["workflow"]["tool_names"]
+        tool_names[:] = [name for name in tool_names if name != group_name]
         return
 
     exclude = _string_list(group.get("exclude"), "function group exclude") or []
@@ -674,9 +671,11 @@ def build_nat_config(payload: dict[str, Any]) -> Any:
 
 
 def _session_kwargs(request: dict[str, Any]) -> dict[str, str]:
-    context = request.get("context") or {}
+    context = request.get("context")
+    if context is None:
+        context = {}
     if not isinstance(context, dict):
-        raise ValueError("request.context must be a mapping")
+        raise ValueError("NAT invocation request.context must be a mapping")
 
     values = {
         "user_id": context.get("user_id"),
@@ -688,7 +687,9 @@ def _session_kwargs(request: dict[str, Any]) -> dict[str, str]:
         if value is None:
             continue
         if not isinstance(value, str) or not value:
-            raise ValueError(f"request context {name} must be a non-empty string")
+            raise ValueError(
+                f"NAT invocation request context {name} must be a non-empty string"
+            )
         result[name] = value
     return result
 
@@ -798,11 +799,15 @@ class NatRuntime:
                 "nat_invalid_request",
                 "NAT invocation request must be a mapping",
             )
+        try:
+            session_kwargs = _session_kwargs(request)
+        except ValueError as error:
+            return _failure_output("nat_invalid_request", str(error))
 
         try:
             from nat.data_models.runtime_enum import RuntimeTypeEnum
 
-            async with self._sessions.session(**_session_kwargs(request)) as session:
+            async with self._sessions.session(**session_kwargs) as session:
                 async with session.run(
                     request.get("input", ""),
                     runtime_type=RuntimeTypeEnum.RUN_OR_SERVE,
