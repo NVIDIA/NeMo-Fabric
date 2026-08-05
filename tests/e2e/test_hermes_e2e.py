@@ -11,13 +11,19 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import requests
 import yaml
 
 from examples.code_review_agent import (
     hermes_config,
     with_relay,
 )
-from nemo_fabric import Fabric
+from nemo_fabric import (
+    Fabric,
+    RelayAtofConfig,
+    RelayAtofFileSinkConfig,
+    RelayObservabilityConfig,
+)
 
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
@@ -89,6 +95,75 @@ async def test_hermes_persistent_host_with_relay(
         json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
     ]
     assert sum(record["name"] == "hermes.session.end" for record in atof_records) == 2
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_mcp_stdio_transport(
+    code_review_agent_dir: Path,
+    api_server: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    tool_name = "mcp__mcp_server_time__get_current_time"
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={
+            "tool_call": {
+                "name": tool_name,
+                "arguments": {"timezone": "America/Los_Angeles"},
+            }
+        },
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    config.add_mcp_server(
+        "mcp_server_time",
+        transport="stdio",
+        url=sys.executable,
+        extra_fields={"args": ["-m", "mcp_server_time"]},
+    )
+    config.enable_relay(
+        output_dir="./artifacts/relay-mcp",
+        observability=RelayObservabilityConfig(
+            atof=RelayAtofConfig(
+                enabled=True,
+                sinks=[
+                    RelayAtofFileSinkConfig(
+                        output_directory="./artifacts/relay-mcp",
+                        filename="events.atof.jsonl",
+                        mode="overwrite",
+                    )
+                ],
+            ),
+        ),
+    )
+
+    result = await Fabric().run(
+        config,
+        base_dir=code_review_agent_dir,
+        input="Use the time MCP tool to get the current time in America/Los_Angeles.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    atof_path = next(
+        Path(artifact["path"])
+        for artifact in result["output"]["relay_artifacts"]
+        if artifact["kind"] == "atof"
+    )
+    atof_records = [
+        json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
+    ]
+    tool_records = [record for record in atof_records if record["name"] == tool_name]
+    assert {record["scope_category"] for record in tool_records} == {"start", "end"}
+    tool_end = next(
+        record for record in tool_records if record["scope_category"] == "end"
+    )
+    assert tool_end["category"] == "tool"
+    assert tool_end["metadata"]["status"] == "ok"
+    assert "America/Los_Angeles" in tool_end["data"]
 
 
 class TestHermesE2E:
