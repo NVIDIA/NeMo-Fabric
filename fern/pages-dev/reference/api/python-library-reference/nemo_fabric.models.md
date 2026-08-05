@@ -221,6 +221,148 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `WorkflowEntrypointConfig`
+
+Adapter-owned workflow entry point.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `kind` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
+| `ref` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
+## <kbd>class</kbd> `WorkflowConfig`
+
+Adapter-owned workflow selection and immutable construction settings.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `entrypoint` | `WorkflowEntrypointConfig` | Yes | — | — | — |
+| `settings` | `dict[str, Any]` | No | `dict()` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `InstructionConfig`
 
 One portable instruction value.
@@ -1946,6 +2088,7 @@ The model defines the following fields:
 | `schema_version` | `str` | No | `'fabric.agent/v1alpha1'` | — | — |
 | `metadata` | `MetadataConfig` | Yes | — | — | — |
 | `harness` | `HarnessConfig` | Yes | — | — | — |
+| `workflow` | `WorkflowConfig \| None` | No | `None` | — | — |
 | `runtime` | `RuntimeConfig` | No | `RuntimeConfig()` | — | — |
 | `environment` | `EnvironmentConfig \| None` | No | `None` | — | — |
 | `models` | `dict[str, ModelConfig]` | No | `dict()` | — | — |
