@@ -453,8 +453,6 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     hermes_state.SessionDB = mock_session_db_type  # type: ignore[attr-defined]
     run_agent = ModuleType("run_agent")
     run_agent.AIAgent = mock_ai_agent_type  # type: ignore[attr-defined]
-    model_tools = ModuleType("model_tools")
-    model_tools._clear_tool_defs_cache = lambda: discover_calls.append("clear")  # type: ignore[attr-defined]
     tools_pkg = ModuleType("tools")
     tools_mcp = ModuleType("tools.mcp_tool")
     tools_mcp.discover_mcp_tools = lambda: discover_calls.append("discover") or []  # type: ignore[attr-defined]
@@ -470,7 +468,6 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
     monkeypatch.setitem(sys.modules, "hermes_state", hermes_state)
     monkeypatch.setitem(sys.modules, "run_agent", run_agent)
-    monkeypatch.setitem(sys.modules, "model_tools", model_tools)
     monkeypatch.setitem(sys.modules, "tools", tools_pkg)
     monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
     monkeypatch.setenv("TEST_API_KEY", "secret")
@@ -513,7 +510,7 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         await runtime.stop()
 
-    assert discover_calls == ["discover", "clear"]
+    assert discover_calls == ["discover"]
     assert shutdown_calls == ["shutdown"]
     mock_ai_agent_type.assert_called_once()
     mock_ai_agent.close.assert_called_once_with()
