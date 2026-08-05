@@ -11,11 +11,73 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import sys
 import uuid
 import warnings
 
 import pytest
+import requests
 from _utils.utils import assert_semantic_relay_artifacts
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
+    from examples.code_review_agent import codex_config
+    from nemo_fabric import Fabric
+
+    tool_name = "get_current_time"
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={
+            "tool_call": {
+                "name": tool_name,
+                "namespace": "mcp__mcp_server_time",
+                "arguments": {"timezone": "America/Los_Angeles"},
+            }
+        },
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = codex_config()
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.workspace = tmp_path
+    config.environment.artifacts = tmp_path / "artifacts"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+    config.runtime.artifacts = tmp_path / "artifacts"
+    config.add_mcp_server(
+        "mcp_server_time",
+        transport="stdio",
+        url=sys.executable,
+        args=["-m", "mcp_server_time"],
+        env={"MCP_TIME_TEST": "enabled"},
+    )
+
+    if not enabled:
+        config.remove_mcp_server("mcp_server_time")
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input="Use the time MCP tool to get the current time in America/Los_Angeles.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    tool_events = [
+        event for event in result["output"]["events"] if event["type"] == "mcpToolCall"
+    ]
+
+    if not enabled:
+        assert not tool_events
+    else:
+        assert len(tool_events) == 1
+        assert tool_events[0]["server"] == "mcp_server_time"
+        assert tool_events[0]["tool"] == "get_current_time"
+        assert tool_events[0]["status"] == "completed"
+        assert "America/Los_Angeles" in str(tool_events[0]["result"])
 
 
 async def test_codex_sdk():

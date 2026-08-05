@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 import uuid
 import warnings
 
 import pytest
+import requests
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
@@ -101,6 +103,75 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
             "atof",
             "atif",
         }, turn.to_mapping()
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
+    pytest.importorskip("deepagents")
+    from examples.code_review_agent import deepagents_config
+    from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
+
+    tool_name = "get_current_time"
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={
+            "tool_call": {
+                "name": tool_name,
+                "arguments": {"timezone": "America/Los_Angeles"},
+            }
+        },
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = deepagents_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=tmp_path,
+        artifacts=tmp_path / "artifacts",
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+    )
+    config.add_mcp_server(
+        "mcp_server_time",
+        transport="stdio",
+        url=sys.executable,
+        args=["-m", "mcp_server_time"],
+        env={"MCP_TIME_TEST": "enabled"},
+    )
+
+    if not enabled:
+        config.remove_mcp_server("mcp_server_time")
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input="Use the time MCP tool to get the current time in America/Los_Angeles.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    tool_calls = [
+        call
+        for message in result["output"]["messages"]
+        for call in message.get("tool_calls", [])
+        if call["name"] == tool_name
+    ]
+    tool_results = [
+        message for message in result["output"]["messages"] if message["role"] == "tool"
+    ]
+
+    if not enabled:
+        assert not tool_calls
+        assert not tool_results
+    else:
+        assert tool_calls
+        assert tool_results
+        assert "America/Los_Angeles" in str(tool_results[0]["content"])
 
 
 @pytest.fixture(name="_require_integration")

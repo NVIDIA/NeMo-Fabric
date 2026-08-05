@@ -12,6 +12,7 @@ import warnings
 from pathlib import Path
 
 import pytest
+import requests
 from _utils.utils import assert_semantic_relay_artifacts
 from nemo_fabric import (
     EnvironmentConfig,
@@ -25,6 +26,7 @@ from nemo_fabric import (
     RelayAtofFileSinkConfig,
     RelayObservabilityConfig,
     RuntimeConfig,
+    ToolsConfig,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -172,6 +174,72 @@ async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
     plugin_paths = [args[args.index("--plugin-dir") + 1] for args in arguments]
     assert len(plugin_paths) == 1
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
+    tool_name = "mcp__mcp_server_time__get_current_time"
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={
+            "tool_call": {
+                "name": tool_name,
+                "arguments": {"timezone": "America/Los_Angeles"},
+            }
+        },
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = fabric_config(tmp_path)
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+    config.tools = ToolsConfig(enabled=[tool_name])
+    config.add_mcp_server(
+        "mcp_server_time",
+        transport="stdio",
+        url=sys.executable,
+        args=["-m", "mcp_server_time"],
+        env={"MCP_TIME_TEST": "enabled"},
+    )
+
+    if not enabled:
+        config.remove_mcp_server("mcp_server_time")
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input="Use the time MCP tool to get the current time in America/Los_Angeles.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    tool_uses = [
+        block
+        for event in result["output"]["events"]
+        if event["type"] == "AssistantMessage"
+        for block in event["message"]["content"]
+        if block.get("name") == tool_name
+    ]
+    tool_results = [
+        block
+        for event in result["output"]["events"]
+        if event["type"] == "UserMessage"
+        and isinstance(event["message"]["content"], list)
+        for block in event["message"]["content"]
+        if "tool_use_id" in block
+    ]
+
+    if not enabled:
+        assert not tool_uses
+        assert not tool_results
+    else:
+        assert tool_uses
+        assert tool_results
+        assert not tool_results[0]["is_error"]
+        assert "America/Los_Angeles" in str(tool_results[0]["content"])
 
 
 @pytest.mark.skipif(
