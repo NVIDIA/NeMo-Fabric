@@ -529,6 +529,9 @@ class _McpConfig(_ConfigMapping):
     _fields = frozenset({"servers"})
     _omit_if_empty = frozenset({"servers"})
     _EXPOSURES = frozenset({"harness_native", "fabric_managed"})
+    _SERVER_FIELDS = frozenset(
+        {"transport", "url", "exposure", "allowed_tools", "blocked_tools"}
+    )
 
     def __init__(
         self,
@@ -556,6 +559,8 @@ class _McpConfig(_ConfigMapping):
         transport: str,
         url: str,
         exposure: str = "harness_native",
+        allowed_tools: Sequence[str] | None = None,
+        blocked_tools: Sequence[str] = (),
         extra_fields: Mapping[str, Any] | None = None,
     ) -> "_McpConfig":
         """Add or replace a named MCP server."""
@@ -563,17 +568,50 @@ class _McpConfig(_ConfigMapping):
         if exposure not in self._EXPOSURES:
             allowed = ", ".join(sorted(self._EXPOSURES))
             raise FabricConfigError(f"mcp exposure must be one of: {allowed}")
-        server = {
+        for policy, tools in (
+            ("allowed_tools", allowed_tools),
+            ("blocked_tools", blocked_tools),
+        ):
+            if tools is not None and (
+                isinstance(tools, (str, bytes)) or not isinstance(tools, Sequence)
+            ):
+                raise FabricConfigError(
+                    f"mcp {policy} must be an ordered sequence of strings"
+                )
+        allowed_values = (
+            None
+            if allowed_tools is None
+            else [_required_text(tool, "allowed MCP tool") for tool in allowed_tools]
+        )
+        blocked_values = [
+            _required_text(tool, "blocked MCP tool") for tool in blocked_tools
+        ]
+        overlap = set(allowed_values or []).intersection(blocked_values)
+        if overlap:
+            tool = sorted(overlap)[0]
+            raise FabricConfigError(
+                f"MCP tool {tool!r} cannot be both allowed and blocked"
+            )
+        server: dict[str, Any] = {
             "transport": _required_text(transport, "mcp transport"),
             "url": _required_text(url, "mcp url"),
             "exposure": exposure,
         }
-        server.update(
-            _mapping(
-                {} if extra_fields is None else extra_fields,
-                "mcp server extra_fields",
-            )
+        if allowed_values is not None:
+            server["allowed_tools"] = allowed_values
+        if blocked_values:
+            server["blocked_tools"] = blocked_values
+        extensions = _mapping(
+            {} if extra_fields is None else extra_fields,
+            "mcp server extra_fields",
         )
+        reserved = self._SERVER_FIELDS.intersection(extensions)
+        if reserved:
+            field = sorted(reserved)[0]
+            raise FabricConfigError(
+                f"mcp server extra_fields must not contain reserved field {field!r}"
+            )
+        server.update(extensions)
         servers = dict(self.get("servers", {}))
         servers[_required_text(name, "mcp server name")] = server
         self["servers"] = servers
@@ -845,6 +883,8 @@ class _FabricConfigSnapshot(_ConfigMapping):
         transport: str,
         url: str,
         exposure: str = "harness_native",
+        allowed_tools: Sequence[str] | None = None,
+        blocked_tools: Sequence[str] = (),
         extra_fields: Mapping[str, Any] | None = None,
     ) -> "_FabricConfigSnapshot":
         """Add or replace a named MCP server and return this config."""
@@ -854,6 +894,8 @@ class _FabricConfigSnapshot(_ConfigMapping):
             transport=transport,
             url=url,
             exposure=exposure,
+            allowed_tools=allowed_tools,
+            blocked_tools=blocked_tools,
             extra_fields=extra_fields,
         )
         return self

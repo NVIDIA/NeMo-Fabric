@@ -23,7 +23,7 @@ Import these from the top-level `nemo_fabric` package:
 | `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, and harness turn limit. |
 | `EnvironmentConfig` | Execution environment, workspace, and harness-visible variables. |
 | `ToolsConfig` | Adapter-native tool selection and blocking policy. |
-| `McpConfig` / `McpServerConfig` | MCP transport, URL or command, process arguments, environment, and exposure. |
+| `McpConfig` / `McpServerConfig` | MCP transport, URL or command, process arguments, environment, exposure, and optional per-server tool policy. |
 | `SkillConfig` | Skill directories. |
 | `TelemetryConfig` | Telemetry providers. |
 | `RelayConfig` and `Relay*Config` | NVIDIA NeMo Relay observability under the top-level `relay` block. |
@@ -39,16 +39,30 @@ Construct the nested config directly, then adjust capabilities with helper
 methods that edit the typed config in place and return it:
 
 - `add_skill_path(path)` / `remove_skill_path(path)`
-- `add_mcp_server(name, *, transport, url, args, env, exposure, ...)` / `remove_mcp_server(name)`
+- `add_mcp_server(name, *, transport, url, args, env, exposure, allowed_tools, blocked_tools, ...)` / `remove_mcp_server(name)`
 - `enable_relay(...)` for NVIDIA NeMo Relay observability in the `relay` block
 - `ToolsConfig(enabled=..., blocked=...)` for tool policy
 - `block_tools(...)` for additive deny policy
+
+Filtered per-server MCP configurations require adapter support for both `mcp`
+and `mcp.tool_filters`. An unfiltered server with `allowed_tools=None` and an
+empty or omitted `blocked_tools` list requires only `mcp`. `allowed_tools=None`
+exposes every discovered tool, while `allowed_tools=[]` exposes none. NeMo
+Fabric removes `blocked_tools` after applying the allowlist. Tool names in both
+lists must be non-blank, and planning rejects a tool that appears in both lists.
 
 ```python
 config = FabricConfig(
     metadata=MetadataConfig(name=job.name),
     harness=HarnessConfig(adapter_id=job.adapter_id, resolution="preinstalled"),
-    models={"default": ModelConfig(provider=job.provider, model=job.model, api_key_env=job.api_key_env, base_url=job.base_url)},
+    models={
+        "default": ModelConfig(
+            provider=job.provider,
+            model=job.model,
+            api_key_env=job.api_key_env,
+            base_url=job.base_url,
+        )
+    },
     instructions=(
         InstructionsConfig(
             system=InstructionConfig(content=job.system_instruction),

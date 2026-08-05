@@ -24,7 +24,9 @@ from typing import Self
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import SerializerFunctionWrapHandler
 from pydantic import field_validator
+from pydantic import model_serializer
 from pydantic import model_validator
 
 
@@ -265,6 +267,52 @@ class McpServerConfig(FabricBaseModel):
     args: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
     exposure: Literal["harness_native", "fabric_managed"] = "harness_native"
+    allowed_tools: list[str] | None = Field(
+        default=None,
+        description=(
+            "MCP tools to expose. None exposes every discovered tool; an empty "
+            "list exposes no tools."
+        ),
+    )
+    blocked_tools: list[str] = Field(
+        default_factory=list,
+        description="MCP tools to block after applying the optional allowlist.",
+    )
+
+    @model_serializer(mode="wrap")
+    def _serialize_tool_policy(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data = handler(self)
+        if self.allowed_tools is None:
+            data.pop("allowed_tools", None)
+        if not self.blocked_tools:
+            data.pop("blocked_tools", None)
+        return data
+
+    @field_validator("allowed_tools", "blocked_tools")
+    @classmethod
+    def _validate_tool_names(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and any(not tool.strip() for tool in value):
+            raise ValueError("MCP tool names must not be empty")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_tool_policy(self) -> Self:
+        if self.allowed_tools is not None:
+            overlap = set(self.allowed_tools).intersection(self.blocked_tools)
+            if overlap:
+                name = sorted(overlap)[0]
+                raise ValueError(f"MCP tool {name!r} cannot be both allowed and blocked")
+        return self
+
+    def to_mapping(self) -> dict[str, Any]:
+        """Return the server mapping without collapsing an explicit empty allowlist."""
+
+        data = super().to_mapping()
+        if self.allowed_tools == []:
+            data["allowed_tools"] = []
+        return data
 
 
 class McpConfig(FabricBaseModel):
@@ -281,6 +329,8 @@ class McpConfig(FabricBaseModel):
         args: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
+        allowed_tools: Sequence[str] | None = None,
+        blocked_tools: Sequence[str] = (),
         extra_fields: Mapping[str, Any] | None = None,
     ) -> Self:
         """Add or replace a named MCP server."""
@@ -288,12 +338,19 @@ class McpConfig(FabricBaseModel):
         extensions = dict(extra_fields or {})
         legacy_args = extensions.pop("args", ())
         legacy_env = extensions.pop("env", None)
+        if isinstance(allowed_tools, str):
+            raise TypeError("allowed_tools must be a sequence of strings, not a string")
+        if isinstance(blocked_tools, str):
+            raise TypeError("blocked_tools must be a sequence of strings, not a string")
+
         self.servers[name] = McpServerConfig(
             transport=transport,
             url=url,
             args=list(args if args is not None else legacy_args),
             env=env if env is not None else legacy_env or {},
             exposure=exposure,
+            allowed_tools=None if allowed_tools is None else list(allowed_tools),
+            blocked_tools=list(blocked_tools),
             **extensions,
         )
         return self
@@ -564,6 +621,8 @@ class FabricConfig(FabricBaseModel):
         args: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
+        allowed_tools: Sequence[str] | None = None,
+        blocked_tools: Sequence[str] = (),
         extra_fields: Mapping[str, Any] | None = None,
     ) -> Self:
         """Add or replace a named MCP server and return this config."""
@@ -577,6 +636,8 @@ class FabricConfig(FabricBaseModel):
             args=args,
             env=env,
             exposure=exposure,
+            allowed_tools=allowed_tools,
+            blocked_tools=blocked_tools,
             extra_fields=extra_fields,
         )
         return self

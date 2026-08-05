@@ -212,6 +212,23 @@
           },
           "type": "array"
         },
+        "allowed_tools": {
+          "description": "MCP tool names to expose. `None` exposes every tool discovered from the server.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "blocked_tools": {
+          "description": "MCP tool names to block after applying the optional allowlist.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "env": {
           "additionalProperties": {
             "type": "string"

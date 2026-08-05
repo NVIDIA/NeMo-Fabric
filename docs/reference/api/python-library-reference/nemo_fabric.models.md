@@ -700,6 +700,8 @@ The model defines the following fields:
 | `args` | `list[str]` | No | `list()` | — | — |
 | `env` | `dict[str, str]` | No | `dict()` | — | — |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
+| `allowed_tools` | `list[str] \| None` | No | `None` | — | MCP tools to expose. None exposes every discovered tool; an empty list exposes no tools. |
+| `blocked_tools` | `list[str]` | No | `list()` | — | MCP tools to block after applying the optional allowlist. |
 
 ---
 
@@ -751,7 +753,7 @@ Validate a mapping using this Pydantic model.
 def to_mapping() -> dict[str, Any]
 ```
 
-Return a detached JSON-compatible mapping for Rust/core calls.
+Return the server mapping without collapsing an explicit empty allowlist.
 
 
 ---
@@ -815,6 +817,8 @@ def add_server(
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
+    allowed_tools: Sequence[str] | None = None,
+    blocked_tools: Sequence[str] = (),
     extra_fields: Mapping[str, Any] | None = None,
 ) -> Self
 ```
@@ -1996,6 +2000,8 @@ def add_mcp_server(
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
+    allowed_tools: Sequence[str] | None = None,
+    blocked_tools: Sequence[str] = (),
     extra_fields: Mapping[str, Any] | None = None,
 ) -> Self
 ```

@@ -44,6 +44,11 @@
           "type": "string"
         },
         {
+          "const": "mcp.tool_filters",
+          "description": "Per-server MCP tool allowlists and blocklists.",
+          "type": "string"
+        },
+        {
           "const": "skills",
           "description": "Harness-native skills.",
           "type": "string"

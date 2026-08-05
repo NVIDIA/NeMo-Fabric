@@ -29,6 +29,7 @@ from nemo_fabric import HarnessConfig
 from nemo_fabric import InstructionConfig
 from nemo_fabric import InstructionsConfig
 from nemo_fabric import McpConfig
+from nemo_fabric import McpServerConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
@@ -143,6 +144,8 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         args=["--read-only"],
         env={"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
         exposure="fabric_managed",
+        allowed_tools=["issues.read", "pull_requests.read"],
+        blocked_tools=["issues.delete"],
     )
     config.enable_relay(
         project="fabric-tests",
@@ -170,6 +173,8 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
                 "args": ["--read-only"],
                 "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
                 "exposure": "fabric_managed",
+                "allowed_tools": ["issues.read", "pull_requests.read"],
+                "blocked_tools": ["issues.delete"],
             }
         }
     }
@@ -198,6 +203,62 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         )
     with pytest.raises(ValidationError, match="providers"):
         TelemetryConfig(providers={"sideways": {}})
+
+
+def test_mcp_server_tool_policy_preserves_empty_allowlist():
+    server = McpServerConfig(
+        transport="streamable-http",
+        url="https://mcp.example.test",
+        allowed_tools=[],
+    )
+
+    expected = {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test",
+        "exposure": "harness_native",
+        "allowed_tools": [],
+    }
+    assert server.model_dump(mode="python") == expected
+    assert McpConfig(servers={"docs": server}).model_dump(mode="python") == {
+        "servers": {"docs": expected}
+    }
+    assert server.to_mapping() == expected
+
+
+@pytest.mark.parametrize("field", ["allowed_tools", "blocked_tools"])
+def test_mcp_config_rejects_string_tool_policy(field: str):
+    with pytest.raises(
+        TypeError,
+        match=rf"{field} must be a sequence of strings, not a string",
+    ):
+        McpConfig().add_server(
+            "docs",
+            transport="streamable-http",
+            url="https://mcp.example.test",
+            **{field: "search"},  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    ("allowed_tools", "blocked_tools", "message"),
+    [
+        (["search"], ["search"], "cannot be both allowed and blocked"),
+        ([""], [], "MCP tool names must not be empty"),
+        (None, ["  "], "MCP tool names must not be empty"),
+    ],
+)
+def test_mcp_server_tool_policy_rejects_invalid_names_and_overlap(
+    allowed_tools: list[str] | None,
+    blocked_tools: list[str],
+    message: str,
+):
+    with pytest.raises(ValidationError, match=message):
+        McpServerConfig(
+            transport="streamable-http",
+            url="https://mcp.example.test",
+            allowed_tools=allowed_tools,
+            blocked_tools=blocked_tools,
+        )
 
 
 def test_typed_tools_config_serializes_blocked_policy():
@@ -288,6 +349,42 @@ def test_run_plan_config_block_tools_emits_canonical_shape():
     config.block_tools("browser", "shell", "browser")
 
     assert config.to_mapping()["tools"] == {"blocked": ["browser", "shell"]}
+
+
+def test_run_plan_config_add_mcp_server_emits_tool_filters():
+    config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
+
+    config.add_mcp_server(
+        "docs",
+        transport="streamable-http",
+        url="https://mcp.example.test",
+        allowed_tools=["search"],
+        blocked_tools=["delete"],
+    )
+
+    assert config.to_mapping()["mcp"]["servers"]["docs"] == {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test",
+        "exposure": "harness_native",
+        "allowed_tools": ["search"],
+        "blocked_tools": ["delete"],
+    }
+
+
+@pytest.mark.parametrize(
+    "reserved_field",
+    ["transport", "url", "exposure", "allowed_tools", "blocked_tools"],
+)
+def test_run_plan_config_rejects_reserved_mcp_extra_field(reserved_field: str):
+    config = _FabricConfigSnapshot.from_mapping(_plan()["config"])
+
+    with pytest.raises(FabricConfigError, match="reserved field"):
+        config.add_mcp_server(
+            "docs",
+            transport="streamable-http",
+            url="https://mcp.example.test",
+            extra_fields={reserved_field: "override"},
+        )
 
 
 def test_run_plan_config_preserves_normalized_tools_and_execution_fields():

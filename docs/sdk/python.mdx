@@ -190,6 +190,7 @@ by adapter:
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names |
 | `skills.paths` | Yes | Yes | Yes | Yes |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes |
+| `mcp.servers.<name>.allowed_tools`, `.blocked_tools` | No | No | No | No |
 | `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented |
 | `telemetry.providers.relay` | Yes | Yes | Yes | Yes |
 | `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No |
@@ -228,6 +229,27 @@ capability_config.enable_relay(
     output_dir="./artifacts/relay",
 )
 ```
+
+MCP tool policy is scoped to one server and uses the tool names that server
+advertises. `allowed_tools=None` exposes every discovered tool, while an empty
+allowlist exposes none. `blocked_tools` is then removed from the allowed or
+discovered set, and the same tool cannot appear in both lists:
+
+```python
+capability_config.add_mcp_server(
+    "github",
+    transport="streamable-http",
+    url="${GITHUB_MCP_URL}",
+    exposure="harness_native",
+    allowed_tools=["issues.read", "pull_requests.read"],
+    blocked_tools=["issues.delete"],
+)
+```
+
+An adapter must declare both `mcp` and `mcp.tool_filters` support before
+planning accepts these fields. The bundled adapters currently support
+unfiltered MCP servers only. Per-server MCP policy is distinct from the root
+`ToolsConfig`, which controls adapter-native tools across the harness.
 
 Tool names are adapter-native selectors. NeMo Fabric does not define a portable
 catalog that translates names between harnesses. Configure an allowlist, a

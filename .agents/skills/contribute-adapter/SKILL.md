@@ -137,7 +137,7 @@ cannot implement and test end to end.
 | --- | --- | --- |
 | Models | `config.models` and selected alias | Map supported provider settings and credential-variable names; reject unsupported providers. |
 | Tool policy | `config.tools.blocked` and `capability_plan.tools` | Claim `tools.blocked` only when every harness tool path enforces it. |
-| MCP | `capability_plan.native.mcp_servers` | Claim `mcp` only for supported native transports; reject unsupported routes or fields. |
+| MCP | `capability_plan.native.mcp_servers` | Claim `mcp` only for supported native transports. Claim `mcp.tool_filters` only when every configured server enforces `allowed_tools` and `blocked_tools`; reject unsupported routes or fields. |
 | Skills | `capability_plan.native.skill_paths` | Validate and stage skill paths without cross-runtime collisions. |
 | Telemetry | `telemetry_plan` and normalized telemetry config | Declare only providers, outputs, and integration modes the adapter implements. |
 | Environment and lifecycle | `runtime_context` | Use resolved workspace, runtime ID, telemetry, and artifact context; claim only lifecycle operations implemented end to end. |
