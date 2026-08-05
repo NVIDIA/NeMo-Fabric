@@ -194,7 +194,9 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                 "mcp_servers": {
                     "repo": {
                         "transport": "stdio",
-                        "url": "repo-mcp --root .",
+                        "url": "repo-mcp",
+                        "args": ["--root", ".", "--config", "repo config.json"],
+                        "env": {"REPO_MCP_MODE": "test"},
                         "exposure": "harness_native",
                     },
                     "docs": {
@@ -237,7 +239,12 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert options.strict_mcp_config is True
     assert options.mcp_servers == {
         "docs": {"type": "http", "url": "https://mcp.example.test"},
-        "repo": {"type": "stdio", "command": "repo-mcp", "args": ["--root", "."]},
+        "repo": {
+            "type": "stdio",
+            "command": "repo-mcp",
+            "args": ["--root", ".", "--config", "repo config.json"],
+            "env": {"REPO_MCP_MODE": "test"},
+        },
     }
     assert "NEMO_RELAY_GATEWAY_URL" not in options.env
     assert "ANTHROPIC_BASE_URL" not in options.env

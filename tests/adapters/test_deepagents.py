@@ -604,7 +604,12 @@ async def test_mcp_servers_become_adapter_tools(
         "native": {
             "mcp_servers": {
                 "fs": {"transport": "streamable-http", "url": "http://localhost:9/mcp"},
-                "local": {"transport": "stdio", "url": "my-server --flag"},
+                "local": {
+                    "transport": "stdio",
+                    "url": "my-server",
+                    "args": ["--flag", "--config", "repo config.json"],
+                    "env": {"REPO_MCP_MODE": "test"},
+                },
             }
         }
     }
@@ -612,10 +617,14 @@ async def test_mcp_servers_become_adapter_tools(
     output = await invoke_once(payload)
 
     assert output["failed"] is False
-    # Fabric MCP transport is normalized; stdio command/args come from ``url``
     assert mock_client_cls.call_args.args[0] == {
         "fs": {"transport": "streamable_http", "url": "http://localhost:9/mcp"},
-        "local": {"transport": "stdio", "command": "my-server", "args": ["--flag"]},
+        "local": {
+            "transport": "stdio",
+            "command": "my-server",
+            "args": ["--flag", "--config", "repo config.json"],
+            "env": {"REPO_MCP_MODE": "test"},
+        },
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file", "write_file"]

@@ -284,7 +284,16 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
             "mcp_servers": {
                 "repo": {
                     "transport": "stdio",
-                    "url": "python -m repo_mcp --root .",
+                    "url": "python",
+                    "args": [
+                        "-m",
+                        "repo_mcp",
+                        "--root",
+                        ".",
+                        "--config",
+                        "repo config.json",
+                    ],
+                    "env": {"REPO_MCP_MODE": "test"},
                 },
                 "remote": {
                     "transport": "streamable-http",
@@ -308,7 +317,15 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
         },
         "repo": {
             "command": "python",
-            "args": ["-m", "repo_mcp", "--root", "."],
+            "args": [
+                "-m",
+                "repo_mcp",
+                "--root",
+                ".",
+                "--config",
+                "repo config.json",
+            ],
+            "env": {"REPO_MCP_MODE": "test"},
         },
     }
 
