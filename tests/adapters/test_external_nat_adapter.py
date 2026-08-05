@@ -878,6 +878,45 @@ async def test_start_failure_cleans_builder_and_redacts_cause(
     assert mock_nat["builder_context"].__aexit__.await_count == 1
 
 
+def test_config_translation_failure_is_normalized_and_redacts_cause(
+    make_payload,
+    mock_nat,
+):
+    mock_nat["config_type"].model_validate.side_effect = RuntimeError(
+        "api-key=super-secret"
+    )
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        adapter.build_nat_config(make_payload())
+
+    assert error.value.code == "nat_config_translation_failed"
+    assert error.value.message == (
+        "Fabric config could not be translated into a valid NAT config"
+    )
+    assert "super-secret" not in str(error.value)
+
+
+async def test_stop_failure_clears_runtime_state_and_redacts_cause(
+    make_payload,
+    mock_nat,
+):
+    mock_nat["sessions"].shutdown.side_effect = RuntimeError("api-key=super-secret")
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        await runtime.stop()
+
+    assert error.value.code == "nat_runtime_stop_failed"
+    assert error.value.message == "NAT runtime failed to stop cleanly"
+    assert "super-secret" not in str(error.value)
+    mock_nat["sessions"].shutdown.assert_awaited_once_with()
+    assert mock_nat["builder_context"].__aexit__.await_count == 1
+
+    await runtime.stop()
+    mock_nat["sessions"].shutdown.assert_awaited_once_with()
+
+
 async def test_invoke_failure_is_normalized_and_redacts_cause(
     make_payload,
     make_invocation_payload,

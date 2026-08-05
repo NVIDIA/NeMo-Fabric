@@ -14,6 +14,8 @@ These adapters are not published as wheels and are not wired into bundled or
 installed-adapter discovery. Packaging and discovery are separate concerns from
 the adapter contract demonstrated here.
 
+The following source-only reference adapter is available:
+
 | Harness | Adapter ID | Reference |
 | --- | --- | --- |
 | NVIDIA NeMo Agent Toolkit | `nvidia.fabric.nat` | [NAT adapter](nat/README.md) |
