@@ -98,9 +98,11 @@ async def test_hermes_persistent_host_with_relay(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("enabled", [True, False])
 async def test_mcp_stdio_transport(
     code_review_agent_dir: Path,
     api_server: str,
+    enabled: bool,
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     tool_name = "mcp__mcp_server_time__get_current_time"
@@ -125,6 +127,10 @@ async def test_mcp_stdio_transport(
         url=sys.executable,
         extra_fields={"args": ["-m", "mcp_server_time"]},
     )
+
+    if not enabled:
+        config.remove_mcp_server("mcp_server_time")
+
     config.enable_relay(
         output_dir="./artifacts/relay-mcp",
         observability=RelayObservabilityConfig(
@@ -157,13 +163,22 @@ async def test_mcp_stdio_transport(
         json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
     ]
     tool_records = [record for record in atof_records if record["name"] == tool_name]
-    assert {record["scope_category"] for record in tool_records} == {"start", "end"}
-    tool_end = next(
-        record for record in tool_records if record["scope_category"] == "end"
-    )
-    assert tool_end["category"] == "tool"
-    assert tool_end["metadata"]["status"] == "ok"
-    assert "America/Los_Angeles" in tool_end["data"]
+
+    if not enabled:
+        assert not tool_records
+        hermes_config_path = Path(result["output"]["hermes_config_path"])
+        generated_config = yaml.safe_load(
+            hermes_config_path.read_text(encoding="utf-8")
+        )
+        assert "mcp_servers" not in generated_config
+    else:
+        assert {record["scope_category"] for record in tool_records} == {"start", "end"}
+        tool_end = next(
+            record for record in tool_records if record["scope_category"] == "end"
+        )
+        assert tool_end["category"] == "tool"
+        assert tool_end["metadata"]["status"] == "ok"
+        assert "America/Los_Angeles" in tool_end["data"]
 
 
 class TestHermesE2E:
