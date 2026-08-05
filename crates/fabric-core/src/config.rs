@@ -613,11 +613,23 @@ pub struct McpConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
+/// MCP server transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpTransport {
+    /// Standard input/output transport.
+    Stdio,
+    /// Server-Sent Events transport.
+    Sse,
+    /// Streamable HTTP transport.
+    StreamableHttp,
+}
+
 /// MCP server configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct McpServerConfig {
     /// MCP transport.
-    pub transport: String,
+    pub transport: McpTransport,
     /// MCP server URL or process command, depending on transport.
     pub url: String,
     /// Arguments passed to an MCP stdio server process.
@@ -1778,7 +1790,12 @@ fn resolve_capability_plan(
                     (
                         name.clone(),
                         McpServerPlan {
-                            transport: server.transport.clone(),
+                            transport: match server.transport {
+                                McpTransport::Stdio => "stdio",
+                                McpTransport::Sse => "sse",
+                                McpTransport::StreamableHttp => "streamable-http",
+                            }
+                            .to_string(),
                             url: server.url.clone(),
                             args: server.args.clone(),
                             env: server.env.clone(),
@@ -2699,7 +2716,7 @@ mod tests {
             servers: BTreeMap::from([(
                 "docs".to_string(),
                 McpServerConfig {
-                    transport: "streamable-http".to_string(),
+                    transport: McpTransport::StreamableHttp,
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
@@ -2747,7 +2764,7 @@ mod tests {
             servers: BTreeMap::from([(
                 "docs".to_string(),
                 McpServerConfig {
-                    transport: "streamable-http".to_string(),
+                    transport: McpTransport::StreamableHttp,
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
@@ -2797,7 +2814,7 @@ mod tests {
                 servers: BTreeMap::from([(
                     "docs".to_string(),
                     McpServerConfig {
-                        transport: "streamable-http".to_string(),
+                        transport: McpTransport::StreamableHttp,
                         url: "https://mcp.example".to_string(),
                         args: Vec::new(),
                         env: BTreeMap::new(),
@@ -2834,7 +2851,7 @@ mod tests {
             servers: BTreeMap::from([(
                 "docs".to_string(),
                 McpServerConfig {
-                    transport: "streamable-http".to_string(),
+                    transport: McpTransport::StreamableHttp,
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
@@ -2878,7 +2895,7 @@ mod tests {
                 servers: BTreeMap::from([(
                     "docs".to_string(),
                     McpServerConfig {
-                        transport: "streamable-http".to_string(),
+                        transport: McpTransport::StreamableHttp,
                         url: "https://mcp.example".to_string(),
                         args: Vec::new(),
                         env: BTreeMap::new(),
