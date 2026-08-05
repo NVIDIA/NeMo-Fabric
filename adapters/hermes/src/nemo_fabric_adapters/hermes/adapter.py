@@ -300,7 +300,7 @@ class HermesRuntime:
             with redirect_stdout(StringIO()):
                 discover_plugins(force=True)
                 loaded_hermes_config = load_config()
-                # Hermes 0.18+ no longer discovers MCP tools as an import side effect
+                # Hermes 0.12+ no longer discovers MCP tools as an import side effect
                 # (#16856). Fabric is a Hermes host: discover after config.yaml exists
                 # and before AIAgent resolves mcp-* toolsets.
                 if self._hermes_config.get("mcp_servers"):
@@ -309,6 +309,7 @@ class HermesRuntime:
 
                     discover_mcp_tools()
                     _clear_tool_defs_cache()
+
                 self._enabled_toolsets = resolve_hermes_toolsets(
                     payload, loaded_hermes_config
                 )
