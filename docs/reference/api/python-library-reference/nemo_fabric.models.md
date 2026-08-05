@@ -697,6 +697,8 @@ The model defines the following fields:
 | --- | --- | --- | --- | --- | --- |
 | `transport` | `str` | Yes | — | `MinLen(min_length=1)` | — |
 | `url` | `str` | Yes | — | `MinLen(min_length=1)` | — |
+| `args` | `list[str]` | No | `list()` | — | — |
+| `env` | `dict[str, str]` | No | `dict()` | — | — |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
 
 ---
@@ -810,6 +812,8 @@ def add_server(
     *,
     transport: str,
     url: str,
+    args: Sequence[str] | None = None,
+    env: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     extra_fields: Mapping[str, Any] | None = None,
 ) -> Self
@@ -1989,6 +1993,8 @@ def add_mcp_server(
     *,
     transport: str,
     url: str,
+    args: Sequence[str] | None = None,
+    env: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     extra_fields: Mapping[str, Any] | None = None,
 ) -> Self

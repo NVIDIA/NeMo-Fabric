@@ -262,6 +262,8 @@ class McpServerConfig(FabricBaseModel):
 
     transport: str = Field(min_length=1)
     url: str = Field(min_length=1)
+    args: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
     exposure: Literal["harness_native", "fabric_managed"] = "harness_native"
 
 
@@ -276,16 +278,23 @@ class McpConfig(FabricBaseModel):
         *,
         transport: str,
         url: str,
+        args: Sequence[str] | None = None,
+        env: Mapping[str, str] | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
         extra_fields: Mapping[str, Any] | None = None,
     ) -> Self:
         """Add or replace a named MCP server."""
 
+        extensions = dict(extra_fields or {})
+        legacy_args = extensions.pop("args", ())
+        legacy_env = extensions.pop("env", None)
         self.servers[name] = McpServerConfig(
             transport=transport,
             url=url,
+            args=list(args if args is not None else legacy_args),
+            env=env if env is not None else legacy_env or {},
             exposure=exposure,
-            **dict(extra_fields or {}),
+            **extensions,
         )
         return self
 
@@ -552,6 +561,8 @@ class FabricConfig(FabricBaseModel):
         *,
         transport: str,
         url: str,
+        args: Sequence[str] | None = None,
+        env: Mapping[str, str] | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
         extra_fields: Mapping[str, Any] | None = None,
     ) -> Self:
@@ -563,6 +574,8 @@ class FabricConfig(FabricBaseModel):
             name,
             transport=transport,
             url=url,
+            args=args,
+            env=env,
             exposure=exposure,
             extra_fields=extra_fields,
         )

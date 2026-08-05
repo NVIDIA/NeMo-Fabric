@@ -379,7 +379,9 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
 
-def test_build_hermes_config_maps_stdio_mcp_env_from_capability_plan(tmp_path: Path):
+def test_build_hermes_config_maps_stdio_mcp_args_and_env_from_capability_plan(
+    tmp_path: Path,
+):
     payload = {
         "runtime_context": {
             "runtime_id": "runtime-mcp-env",
@@ -392,6 +394,7 @@ def test_build_hermes_config_maps_stdio_mcp_env_from_capability_plan(tmp_path: P
                         "transport": "stdio",
                         "url": str(tmp_path / "analyzer-mcp"),
                         "exposure": "harness_native",
+                        "args": ["--stdio"],
                         "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
                     }
                 }
@@ -416,6 +419,7 @@ def test_build_hermes_config_maps_stdio_mcp_env_from_capability_plan(tmp_path: P
         "analyzer": {
             "enabled": True,
             "command": str(tmp_path / "analyzer-mcp"),
+            "args": ["--stdio"],
             "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
         }
     }

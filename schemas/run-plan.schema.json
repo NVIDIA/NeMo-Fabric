@@ -786,6 +786,20 @@
       "additionalProperties": true,
       "description": "MCP server configuration.",
       "properties": {
+        "args": {
+          "description": "Arguments passed to an MCP stdio server process.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables passed to an MCP stdio server process.",
+          "type": "object"
+        },
         "exposure": {
           "$ref": "#/$defs/McpExposure",
           "description": "How NeMo Fabric exposes the MCP capability to the harness."
@@ -810,6 +824,20 @@
       "additionalProperties": true,
       "description": "Resolved MCP server exposure.",
       "properties": {
+        "args": {
+          "description": "Arguments passed to an MCP stdio server process.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables passed to an MCP stdio server process.",
+          "type": "object"
+        },
         "exposure": {
           "$ref": "#/$defs/McpExposure",
           "description": "Exposure strategy."

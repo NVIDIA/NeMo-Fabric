@@ -125,7 +125,8 @@ async def test_mcp_stdio_transport(
         "mcp_server_time",
         transport="stdio",
         url=sys.executable,
-        extra_fields={"args": ["-m", "mcp_server_time"]},
+        args=["-m", "mcp_server_time"],
+        env={"MCP_TIME_TEST": "enabled"},
     )
 
     if not enabled:
@@ -163,15 +164,19 @@ async def test_mcp_stdio_transport(
         json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
     ]
     tool_records = [record for record in atof_records if record["name"] == tool_name]
+    hermes_config_path = Path(result["output"]["hermes_config_path"])
+    generated_config = yaml.safe_load(hermes_config_path.read_text(encoding="utf-8"))
 
     if not enabled:
         assert not tool_records
-        hermes_config_path = Path(result["output"]["hermes_config_path"])
-        generated_config = yaml.safe_load(
-            hermes_config_path.read_text(encoding="utf-8")
-        )
         assert "mcp_servers" not in generated_config
     else:
+        assert generated_config["mcp_servers"]["mcp_server_time"] == {
+            "enabled": True,
+            "command": sys.executable,
+            "args": ["-m", "mcp_server_time"],
+            "env": {"MCP_TIME_TEST": "enabled"},
+        }
         assert {record["scope_category"] for record in tool_records} == {"start", "end"}
         tool_end = next(
             record for record in tool_records if record["scope_category"] == "end"

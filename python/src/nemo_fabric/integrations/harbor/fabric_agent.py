@@ -444,8 +444,8 @@ def build_harbor_config(
                 server.name,
                 transport="stdio",
                 url=cast(str, server.command),
+                args=server.args,
                 exposure="harness_native",
-                extra_fields={"args": list(server.args)},
             )
         else:
             config.add_mcp_server(
