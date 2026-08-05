@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import runpy
 import sys
 import types
 from copy import deepcopy
@@ -16,12 +17,25 @@ from unittest.mock import MagicMock
 from unittest.mock import call
 
 import pytest
+from nemo_fabric import Fabric
 
 ROOT = Path(__file__).parents[2]
 NAT_ADAPTER_SOURCE = ROOT / "external" / "nat" / "src"
 sys.path.insert(0, str(NAT_ADAPTER_SOURCE))
 
 from nemo_fabric_adapters.nat import adapter  # noqa: E402
+
+
+def _fabric_workflow(
+    ref: str = "react_agent",
+    *,
+    kind: str = "nat_workflow",
+    **settings: Any,
+) -> dict[str, Any]:
+    return {
+        "entrypoint": {"kind": kind, "ref": ref},
+        "settings": settings,
+    }
 
 
 @pytest.fixture(name="make_payload")
@@ -41,18 +55,13 @@ def make_payload_fixture(tmp_path: Path):
         config: dict[str, Any] = {
             "harness": {
                 "settings": {
-                    "workflow": deepcopy(
-                        workflow
-                        or {
-                            "_type": "react_agent",
-                            "llm_name": "default",
-                            "tool_names": [],
-                        }
-                    ),
                     "functions": deepcopy(functions or {}),
                     "function_groups": deepcopy(function_groups or {}),
                 }
             },
+            "workflow": deepcopy(
+                _fabric_workflow(llm_name="default") if workflow is None else workflow
+            ),
             "models": deepcopy(models or {}),
         }
         if instruction is not None:
@@ -207,8 +216,19 @@ def test_descriptor_declares_exact_source_reference_contract():
         "mcp",
         "mcp.tool_filters",
     ]
-    assert descriptor["settings_schema"]["required"] == ["workflow"]
-    assert descriptor["settings_schema"]["additionalProperties"] is False
+    settings_schema = descriptor["settings_schema"]
+    assert set(settings_schema["properties"]) == {"functions", "function_groups"}
+    assert "required" not in settings_schema
+    assert settings_schema["additionalProperties"] is False
+    workflow_schema = descriptor["workflow_schema"]
+    assert workflow_schema["required"] == ["entrypoint"]
+    assert workflow_schema["additionalProperties"] is False
+    entrypoint_schema = workflow_schema["properties"]["entrypoint"]
+    assert entrypoint_schema["properties"]["kind"]["const"] == "nat_workflow"
+    assert entrypoint_schema["properties"]["ref"]["pattern"] == r"^\S+$"
+    assert entrypoint_schema["required"] == ["kind", "ref"]
+    assert entrypoint_schema["additionalProperties"] is False
+    assert workflow_schema["properties"]["settings"]["properties"]["_type"] is False
     assert descriptor["capabilities"] == {
         "cancellation": False,
         "service": False,
@@ -222,11 +242,11 @@ def test_build_mapping_translates_components_models_and_instruction(
     monkeypatch: pytest.MonkeyPatch,
 ):
     monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
-    workflow = {
-        "_type": "react_agent",
+    workflow_settings = {
         "llm_name": "default",
         "tool_names": ["clock", "calculator"],
     }
+    workflow = _fabric_workflow(**workflow_settings)
     functions = {"clock": {"_type": "current_datetime"}}
     function_groups = {
         "calculator": {"_type": "calculator", "include": ["add", "subtract"]}
@@ -257,8 +277,7 @@ def test_build_mapping_translates_components_models_and_instruction(
     assert result == {
         "workflow": {
             "_type": "react_agent",
-            "llm_name": "default",
-            "tool_names": ["clock", "calculator"],
+            **workflow_settings,
             "additional_instructions": "Use portable instructions.",
         },
         "functions": functions,
@@ -278,16 +297,15 @@ def test_build_mapping_translates_components_models_and_instruction(
             },
         },
     }
-    assert payload["config"]["harness"]["settings"]["workflow"] == workflow
+    assert payload["config"]["workflow"] == workflow
 
 
 def test_system_instruction_rejects_duplicate_nat_instruction_source(make_payload):
     payload = make_payload(
-        workflow={
-            "_type": "react_agent",
-            "llm_name": "default",
-            "additional_instructions": "adapter-local value",
-        },
+        workflow=_fabric_workflow(
+            llm_name="default",
+            additional_instructions="adapter-local value",
+        ),
         instruction="Portable instruction",
     )
 
@@ -298,11 +316,93 @@ def test_system_instruction_rejects_duplicate_nat_instruction_source(make_payloa
 
 
 def test_react_agent_without_tool_names_defaults_to_empty_list(make_payload):
-    payload = make_payload(workflow={"_type": "react_agent", "llm_name": "default"})
+    payload = make_payload(workflow=_fabric_workflow(llm_name="default"))
 
     result = adapter.build_nat_config_mapping(payload)
 
     assert result["workflow"]["tool_names"] == []
+
+
+def test_namespaced_workflow_ref_is_preserved(make_payload):
+    payload = make_payload(
+        workflow=_fabric_workflow(
+            "nat.plugins.langchain.agent.react_agent/react_agent",
+            llm_name="default",
+        )
+    )
+
+    result = adapter.build_nat_config_mapping(payload)
+
+    assert result["workflow"] == {
+        "_type": "nat.plugins.langchain.agent.react_agent/react_agent",
+        "llm_name": "default",
+        "tool_names": [],
+    }
+
+
+def test_custom_workflow_named_react_agent_does_not_receive_built_in_defaults(
+    make_payload,
+):
+    payload = make_payload(workflow=_fabric_workflow("custom/react_agent"))
+
+    result = adapter.build_nat_config_mapping(payload)
+
+    assert result["workflow"] == {"_type": "custom/react_agent"}
+
+
+def test_missing_root_workflow_is_rejected(make_payload):
+    payload = make_payload()
+    payload["config"].pop("workflow")
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        adapter.build_nat_config_mapping(payload)
+
+    assert error.value.code == "nat_invalid_workflow"
+    assert error.value.metadata["field"] == "workflow"
+
+
+@pytest.mark.parametrize(
+    ("workflow", "field"),
+    [
+        ({}, "workflow.entrypoint"),
+        ({"entrypoint": []}, "workflow.entrypoint"),
+        (_fabric_workflow(kind="python_callable"), "workflow.entrypoint.kind"),
+        (_fabric_workflow("bad ref"), "workflow.entrypoint.ref"),
+        (
+            {
+                "entrypoint": {"kind": "nat_workflow", "ref": "react_agent"},
+                "settings": [],
+            },
+            "workflow.settings",
+        ),
+        (_fabric_workflow(_type="react_agent"), "workflow.settings._type"),
+    ],
+)
+def test_invalid_root_workflow_is_rejected(make_payload, workflow, field):
+    payload = make_payload(workflow=workflow)
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        adapter.build_nat_config_mapping(payload)
+
+    assert error.value.code == "nat_invalid_workflow"
+    assert error.value.metadata["field"] == field
+
+
+@pytest.mark.parametrize("example", ["calculator.py", "email_phishing.py"])
+def test_typed_examples_plan_with_root_workflow(tmp_path: Path, example: str):
+    descriptor = ROOT / "external" / "nat" / "fabric-adapter.json"
+    staged_descriptor = tmp_path / "adapters" / "nat" / "fabric-adapter.json"
+    staged_descriptor.parent.mkdir(parents=True)
+    staged_descriptor.write_text(
+        descriptor.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    namespace = runpy.run_path(str(ROOT / "external" / "nat" / "examples" / example))
+
+    plan = Fabric().plan(namespace["build_config"](), base_dir=tmp_path)
+
+    assert plan.config.workflow.entrypoint.kind == "nat_workflow"
+    assert plan.config.workflow.entrypoint.ref == "react_agent"
+    assert "workflow" not in plan.config.harness.settings
 
 
 def test_build_typed_config_discovers_components_before_validation(
@@ -322,9 +422,17 @@ def test_build_typed_config_discovers_components_before_validation(
     mock_nat["discover"].assert_called_once_with(mock_nat["plugin_types"].CONFIG_OBJECT)
 
 
+@pytest.mark.parametrize(
+    "workflow_ref",
+    [
+        "react_agent",
+        "nat.plugins.langchain.agent.react_agent/react_agent",
+    ],
+)
 def test_build_typed_config_contract_with_installed_nat(
     make_payload,
     monkeypatch: pytest.MonkeyPatch,
+    workflow_ref: str,
 ):
     config_module = pytest.importorskip(
         "nat.data_models.config",
@@ -336,13 +444,14 @@ def test_build_typed_config_contract_with_installed_nat(
     )
     monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
     payload = make_payload(
+        workflow=_fabric_workflow(workflow_ref, llm_name="default"),
         models={
             "default": {
                 "provider": "nvidia",
                 "model": "nvidia/test-model",
                 "api_key_env": "NVIDIA_API_KEY",
             }
-        }
+        },
     )
 
     result = adapter.build_nat_config(payload)
@@ -440,11 +549,10 @@ def test_empty_mcp_allowlist_suppresses_server_and_existing_workflow_ref(
     make_payload,
 ):
     payload = make_payload(
-        workflow={
-            "_type": "react_agent",
-            "llm_name": "default",
-            "tool_names": ["clock", "docs"],
-        },
+        workflow=_fabric_workflow(
+            llm_name="default",
+            tool_names=["clock", "docs"],
+        ),
         functions={"clock": {"_type": "current_datetime"}},
         mcp_servers={
             "docs": {
@@ -488,7 +596,7 @@ def test_all_suppressed_mcp_does_not_require_custom_workflow_tool_names(
     make_payload,
 ):
     payload = make_payload(
-        workflow={"_type": "custom_workflow"},
+        workflow=_fabric_workflow("custom_workflow"),
         mcp_servers={
             "docs": {
                 "transport": "sse",
@@ -506,11 +614,10 @@ def test_all_suppressed_mcp_does_not_require_custom_workflow_tool_names(
 
 def test_root_tool_policy_selects_and_blocks_exact_group_members(make_payload):
     payload = make_payload(
-        workflow={
-            "_type": "react_agent",
-            "llm_name": "default",
-            "tool_names": ["clock", "unused", "calculator", "search"],
-        },
+        workflow=_fabric_workflow(
+            llm_name="default",
+            tool_names=["clock", "unused", "calculator", "search"],
+        ),
         functions={
             "clock": {"_type": "current_datetime"},
             "unused": {"_type": "unused_function"},
@@ -547,11 +654,10 @@ def test_blocking_last_group_member_and_function_removes_both_tool_refs(
     make_payload,
 ):
     payload = make_payload(
-        workflow={
-            "_type": "react_agent",
-            "llm_name": "default",
-            "tool_names": ["calculator", "clock"],
-        },
+        workflow=_fabric_workflow(
+            llm_name="default",
+            tool_names=["calculator", "clock"],
+        ),
         functions={"clock": {"_type": "current_datetime"}},
         function_groups={"calculator": {"_type": "calculator", "include": ["add"]}},
         tools={"blocked": ["calculator__add", "clock"]},
@@ -574,11 +680,10 @@ def test_blocking_last_group_member_and_function_removes_both_tool_refs(
 )
 def test_root_tool_policy_rejects_unknown_exact_selectors(make_payload, tools):
     payload = make_payload(
-        workflow={
-            "_type": "react_agent",
-            "llm_name": "default",
-            "tool_names": ["calculator"],
-        },
+        workflow=_fabric_workflow(
+            llm_name="default",
+            tool_names=["calculator"],
+        ),
         function_groups={"calculator": {"_type": "calculator", "include": ["add"]}},
         tools=tools,
     )
@@ -812,9 +917,10 @@ async def test_non_json_result_is_normalized_without_value_leak(
     assert "secret-object-repr" not in caplog.text
 
 
-def test_system_instruction_rejects_unsupported_workflow(make_payload):
+@pytest.mark.parametrize("ref", ["custom_workflow", "custom/react_agent"])
+def test_system_instruction_rejects_unsupported_workflow(make_payload, ref):
     payload = make_payload(
-        workflow={"_type": "custom_workflow"},
+        workflow=_fabric_workflow(ref),
         instruction="Portable instruction",
     )
 

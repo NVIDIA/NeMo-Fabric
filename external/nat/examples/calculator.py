@@ -19,6 +19,8 @@ from nemo_fabric import InstructionsConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import WorkflowConfig
+from nemo_fabric import WorkflowEntrypointConfig
 
 
 def build_config() -> FabricConfig:
@@ -32,13 +34,13 @@ def build_config() -> FabricConfig:
         harness=HarnessConfig(
             adapter_id="nvidia.fabric.nat",
             resolution="preinstalled",
-            settings={
-                "workflow": {
-                    "_type": "react_agent",
-                    "llm_name": "default",
-                    "tool_names": [],
-                }
-            },
+        ),
+        workflow=WorkflowConfig(
+            entrypoint=WorkflowEntrypointConfig(
+                kind="nat_workflow",
+                ref="react_agent",
+            ),
+            settings={"llm_name": "default"},
         ),
         models={
             "default": ModelConfig(

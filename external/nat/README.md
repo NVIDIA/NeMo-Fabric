@@ -15,14 +15,17 @@ calculator or email-phishing components.
 
 ## Configuration Boundary
 
-NeMo Fabric owns portable configuration. `harness.settings` contains only
-NAT-native component configuration that has no portable NeMo Fabric equivalent.
+NeMo Fabric owns portable configuration. `workflow` selects and configures the
+NAT executable, while `harness.settings` contains NAT-native function components
+that have no portable NeMo Fabric equivalent.
 
 | NeMo Fabric input | NAT configuration |
 | --- | --- |
 | `models.<role>` | `llms.<role>`; every Fabric model-role name is preserved |
 | `instructions.system` | Built-in `react_agent` workflow `additional_instructions`; other workflow types reject this field in the initial adapter |
-| `harness.settings.workflow` | `workflow` |
+| `workflow.entrypoint.kind=nat_workflow` | Resolve a registered NAT workflow component |
+| `workflow.entrypoint.ref` | `workflow._type` |
+| `workflow.settings` | Remaining `workflow` component fields |
 | `harness.settings.functions` | `functions` |
 | `harness.settings.function_groups` | `function_groups` |
 | Harness-native `mcp.servers.<name>` | Generated `mcp_client` function group named `<name>` |
@@ -31,7 +34,8 @@ NAT-native component configuration that has no portable NeMo Fabric equivalent.
 The adapter loads installed `nat.components` entry points before NAT validates
 the generated configuration. A custom function, function group, or workflow is
 therefore supplied as an installed NAT component package and selected by its
-registered `_type`. No Python import path or callable crosses `FabricConfig`.
+registered type in `workflow.entrypoint.ref` or the component `_type` in
+`harness.settings`. No Python import path or callable crosses `FabricConfig`.
 
 At runtime, `start` loads components, enters one `WorkflowBuilder`, creates a
 `SessionManager` with that shared builder, and retains both resources. Each

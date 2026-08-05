@@ -24,8 +24,15 @@ import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "nat"
 MODE = "nat_workflow"
+WORKFLOW_KIND = "nat_workflow"
 FUNCTION_GROUP_SEPARATOR = "__"
-NAT_SETTINGS_FIELDS = frozenset({"workflow", "functions", "function_groups"})
+NAT_SETTINGS_FIELDS = frozenset({"functions", "function_groups"})
+REACT_AGENT_REFS = frozenset(
+    {
+        "react_agent",
+        "nat.plugins.langchain.agent.react_agent/react_agent",
+    }
+)
 RESERVED_MODEL_SETTINGS = frozenset(
     {
         "_type",
@@ -73,6 +80,63 @@ def _mapping(value: Any, field: str) -> dict[str, Any]:
     return copy.deepcopy(value)
 
 
+def _nat_workflow(payload: dict[str, Any]) -> dict[str, Any]:
+    fabric_config = common_utils.fabric_config(payload)
+    workflow_config = fabric_config.get("workflow")
+    if not isinstance(workflow_config, dict):
+        raise _config_error(
+            "nat_invalid_workflow",
+            "workflow must be a mapping",
+            field="workflow",
+        )
+
+    entrypoint = workflow_config.get("entrypoint")
+    if not isinstance(entrypoint, dict):
+        raise _config_error(
+            "nat_invalid_workflow",
+            "workflow.entrypoint must be a mapping",
+            field="workflow.entrypoint",
+        )
+    kind = entrypoint.get("kind")
+    if kind != WORKFLOW_KIND:
+        raise _config_error(
+            "nat_invalid_workflow",
+            f"workflow.entrypoint.kind must equal {WORKFLOW_KIND!r}",
+            field="workflow.entrypoint.kind",
+        )
+    workflow_ref = entrypoint.get("ref")
+    if (
+        not isinstance(workflow_ref, str)
+        or not workflow_ref
+        or any(character.isspace() for character in workflow_ref)
+    ):
+        raise _config_error(
+            "nat_invalid_workflow",
+            "workflow.entrypoint.ref must be a non-empty string without whitespace",
+            field="workflow.entrypoint.ref",
+        )
+
+    settings = workflow_config.get("settings", {})
+    if not isinstance(settings, dict):
+        raise _config_error(
+            "nat_invalid_workflow",
+            "workflow.settings must be a mapping",
+            field="workflow.settings",
+        )
+    if "_type" in settings:
+        raise _config_error(
+            "nat_invalid_workflow",
+            "workflow.settings._type is reserved; use workflow.entrypoint.ref",
+            field="workflow.settings._type",
+        )
+
+    workflow = copy.deepcopy(settings)
+    workflow["_type"] = workflow_ref
+    if _is_react_agent(workflow):
+        workflow.setdefault("tool_names", [])
+    return workflow
+
+
 def _nat_component_settings(payload: dict[str, Any]) -> dict[str, Any]:
     settings = common_utils.settings_payload(payload)
     if not isinstance(settings, dict):
@@ -90,21 +154,10 @@ def _nat_component_settings(payload: dict[str, Any]) -> dict[str, Any]:
             fields=unknown,
         )
 
-    workflow = _mapping(settings.get("workflow"), "harness.settings.workflow")
-    workflow_type = workflow.get("_type")
-    if not isinstance(workflow_type, str) or not workflow_type.strip():
-        raise _config_error(
-            "nat_invalid_harness_settings",
-            "harness.settings.workflow._type must be a non-empty string",
-            field="harness.settings.workflow._type",
-        )
-    if _workflow_type(workflow) == "react_agent":
-        workflow.setdefault("tool_names", [])
-
     functions = settings.get("functions", {})
     function_groups = settings.get("function_groups", {})
     return {
-        "workflow": workflow,
+        "workflow": _nat_workflow(payload),
         "functions": _mapping(functions, "harness.settings.functions"),
         "function_groups": _mapping(
             function_groups,
@@ -204,9 +257,8 @@ def _nat_llms(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return llms
 
 
-def _workflow_type(workflow: dict[str, Any]) -> str:
-    value = workflow.get("_type")
-    return value.rsplit("/", 1)[-1] if isinstance(value, str) else ""
+def _is_react_agent(workflow: dict[str, Any]) -> bool:
+    return workflow.get("_type") in REACT_AGENT_REFS
 
 
 def _apply_system_instruction(config: dict[str, Any], payload: dict[str, Any]) -> None:
@@ -215,7 +267,7 @@ def _apply_system_instruction(config: dict[str, Any], payload: dict[str, Any]) -
         return
 
     workflow = config["workflow"]
-    if _workflow_type(workflow) != "react_agent":
+    if not _is_react_agent(workflow):
         raise _config_error(
             "nat_system_instruction_unsupported",
             "instructions.system is supported only for a NAT react_agent workflow",
@@ -224,10 +276,10 @@ def _apply_system_instruction(config: dict[str, Any], payload: dict[str, Any]) -
     if "additional_instructions" in workflow:
         raise _config_error(
             "nat_system_instruction_conflict",
-            "instructions.system conflicts with harness.settings.workflow.additional_instructions",
+            "instructions.system conflicts with workflow.settings.additional_instructions",
             fields=[
                 "instructions.system",
-                "harness.settings.workflow.additional_instructions",
+                "workflow.settings.additional_instructions",
             ],
         )
     workflow["additional_instructions"] = instruction
@@ -313,7 +365,7 @@ def _workflow_tool_names(config: dict[str, Any], reason: str) -> list[str]:
         raise _config_error(
             "nat_workflow_tools_unsupported",
             f"{reason} requires a NAT workflow with a string-list tool_names field",
-            field="harness.settings.workflow.tool_names",
+            field="workflow.settings.tool_names",
         )
     return tool_names
 

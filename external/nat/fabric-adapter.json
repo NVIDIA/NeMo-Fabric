@@ -33,10 +33,6 @@
     },
     "type": "object",
     "properties": {
-      "workflow": {
-        "$ref": "#/$defs/component",
-        "description": "NAT workflow component configuration."
-      },
       "functions": {
         "$ref": "#/$defs/components",
         "default": {},
@@ -48,7 +44,39 @@
         "description": "NAT function-group component instances keyed by their configured names."
       }
     },
-    "required": ["workflow"],
+    "additionalProperties": false
+  },
+  "workflow_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "entrypoint": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "nat_workflow",
+            "description": "Resolve the reference through NAT's registered workflow components."
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "description": "Registered NAT workflow component type, copied to NAT _type."
+          }
+        },
+        "required": ["kind", "ref"],
+        "additionalProperties": false
+      },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "_type": false
+        },
+        "additionalProperties": true,
+        "description": "NAT workflow component settings; _type is derived from entrypoint.ref."
+      }
+    },
+    "required": ["entrypoint"],
     "additionalProperties": false
   },
   "requirements": {},
