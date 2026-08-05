@@ -2749,6 +2749,8 @@ mod tests {
                 McpServerConfig {
                     transport: "streamable-http".to_string(),
                     url: "https://mcp.example".to_string(),
+                    args: Vec::new(),
+                    env: BTreeMap::new(),
                     exposure: McpExposure::HarnessNative,
                     allowed_tools: Some(Vec::new()),
                     blocked_tools: vec!["delete".to_string()],
@@ -2797,6 +2799,8 @@ mod tests {
                     McpServerConfig {
                         transport: "streamable-http".to_string(),
                         url: "https://mcp.example".to_string(),
+                        args: Vec::new(),
+                        env: BTreeMap::new(),
                         exposure: McpExposure::HarnessNative,
                         allowed_tools,
                         blocked_tools,
@@ -2832,6 +2836,8 @@ mod tests {
                 McpServerConfig {
                     transport: "streamable-http".to_string(),
                     url: "https://mcp.example".to_string(),
+                    args: Vec::new(),
+                    env: BTreeMap::new(),
                     exposure: McpExposure::HarnessNative,
                     allowed_tools: Some(vec!["search".to_string()]),
                     blocked_tools: vec!["search".to_string()],
@@ -2874,6 +2880,8 @@ mod tests {
                     McpServerConfig {
                         transport: "streamable-http".to_string(),
                         url: "https://mcp.example".to_string(),
+                        args: Vec::new(),
+                        env: BTreeMap::new(),
                         exposure: McpExposure::HarnessNative,
                         allowed_tools,
                         blocked_tools,

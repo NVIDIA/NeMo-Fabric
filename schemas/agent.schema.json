@@ -205,13 +205,6 @@
       "additionalProperties": true,
       "description": "MCP server configuration.",
       "properties": {
-        "args": {
-          "description": "Arguments passed to an MCP stdio server process.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "allowed_tools": {
           "description": "MCP tool names to expose. `None` exposes every tool discovered from the server.",
           "items": {
@@ -221,6 +214,13 @@
             "array",
             "null"
           ]
+        },
+        "args": {
+          "description": "Arguments passed to an MCP stdio server process.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "blocked_tools": {
           "description": "MCP tool names to block after applying the optional allowlist.",
