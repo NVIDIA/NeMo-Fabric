@@ -10,6 +10,7 @@ import inspect
 import json
 import os
 import sys
+from io import StringIO
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
@@ -560,6 +561,105 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     mock_ai_agent.close.assert_called_once_with()
     mock_session_db.close.assert_called_once_with()
     assert caught.value.code == "hermes_runtime_stop_failed"
+
+
+async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch):
+    force_interactive_oauth = MagicMock()
+    oauth_stdin_reads: list[str] = []
+    discover_mcp_tools = MagicMock(
+        side_effect=lambda: oauth_stdin_reads.append(sys.stdin.readline())
+    )
+    get_mcp_status = MagicMock(
+        side_effect=[
+            [
+                {
+                    "name": "confluence",
+                    "connected": False,
+                    "status": "failed",
+                }
+            ],
+            [
+                {
+                    "name": "confluence",
+                    "connected": True,
+                    "status": "connected",
+                }
+            ],
+        ]
+    )
+    refresh_agent_mcp_tools = MagicMock()
+
+    tools_oauth = ModuleType("tools.mcp_oauth")
+    tools_oauth.force_interactive_oauth = (  # type: ignore[attr-defined]
+        force_interactive_oauth
+    )
+    tools_mcp = ModuleType("tools.mcp_tool")
+    tools_mcp.discover_mcp_tools = discover_mcp_tools  # type: ignore[attr-defined]
+    tools_mcp.get_mcp_status = get_mcp_status  # type: ignore[attr-defined]
+    tools_mcp.refresh_agent_mcp_tools = (  # type: ignore[attr-defined]
+        refresh_agent_mcp_tools
+    )
+    monkeypatch.setitem(sys.modules, "tools.mcp_oauth", tools_oauth)
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
+
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {
+        "mcp_servers": {
+            "confluence": {"auth": "oauth"},
+            "time": {"transport": "stdio"},
+        }
+    }
+    lifecycle_stdin = StringIO('{"operation":"stop"}\n')
+    monkeypatch.setattr(sys, "stdin", lifecycle_stdin)
+
+    await runtime._authenticate_mcp_servers()
+    await runtime._authenticate_mcp_servers()
+
+    force_interactive_oauth.assert_called_once_with()
+    discover_mcp_tools.assert_called_once_with()
+    assert get_mcp_status.call_count == 2
+    refresh_agent_mcp_tools.assert_called_once_with(
+        runtime._agent,
+        quiet_mode=True,
+    )
+    assert oauth_stdin_reads == [""]
+    assert lifecycle_stdin.readline() == '{"operation":"stop"}\n'
+    assert sys.stdin is lifecycle_stdin
+    assert runtime._mcp_authentication_checked is True
+
+
+async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
+    tools_oauth = ModuleType("tools.mcp_oauth")
+    tools_oauth.force_interactive_oauth = MagicMock()  # type: ignore[attr-defined]
+    tools_mcp = ModuleType("tools.mcp_tool")
+    tools_mcp.discover_mcp_tools = MagicMock()  # type: ignore[attr-defined]
+    tools_mcp.get_mcp_status = MagicMock(  # type: ignore[attr-defined]
+        return_value=[
+            {
+                "name": "confluence",
+                "connected": False,
+                "status": "failed",
+            }
+        ]
+    )
+    tools_mcp.refresh_agent_mcp_tools = MagicMock()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "tools.mcp_oauth", tools_oauth)
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
+
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {
+        "mcp_servers": {"confluence": {"auth": "oauth"}}
+    }
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime._authenticate_mcp_servers()
+
+    assert caught.value.code == "hermes_mcp_authentication_failed"
+    assert caught.value.metadata == {"servers": ["confluence"]}
+    tools_mcp.refresh_agent_mcp_tools.assert_not_called()  # type: ignore[attr-defined]
+    assert runtime._mcp_authentication_checked is False
 
 
 def test_write_hermes_config_writes_file(tmp_path: Path):

@@ -143,7 +143,48 @@ def mock_codex_fixture(monkeypatch):
     mock_codex.next_thread_id = "thread-123"
     mock_codex.next_result = None
     mock_codex.next_thread = None
-    mock_codex.skill_request = AsyncMock()
+    mock_codex.mcp_auth_statuses = {}
+    mock_codex.mcp_login_success = True
+    mock_codex.mcp_login_error = None
+    mock_codex.oauth_authorization_url = "https://auth.example.test/authorize"
+    mock_codex.login_params = None
+
+    async def protocol_request(method, params, *, response_model):
+        if method == "skills/extraRoots/set":
+            return None
+        if method == "mcpServerStatus/list":
+            return response_model(
+                data=[
+                    {
+                        "name": name,
+                        "authStatus": status,
+                        "resourceTemplates": [],
+                        "resources": [],
+                        "tools": {},
+                    }
+                    for name, status in mock_codex.mcp_auth_statuses.items()
+                ]
+            )
+        if method == "mcpServer/oauth/login":
+            mock_codex.login_params = params
+            return response_model(authorizationUrl=mock_codex.oauth_authorization_url)
+        raise AssertionError(f"unexpected Codex protocol request: {method}")
+
+    async def next_notification():
+        params = mock_codex.login_params
+        assert params is not None
+        return SimpleNamespace(
+            method="mcpServer/oauthLogin/completed",
+            payload=adapter.McpServerOauthLoginCompletedNotification(
+                error=mock_codex.mcp_login_error,
+                name=params["name"],
+                success=mock_codex.mcp_login_success,
+                threadId=params["threadId"],
+            ),
+        )
+
+    mock_codex.skill_request = AsyncMock(side_effect=protocol_request)
+    mock_codex.next_notification = AsyncMock(side_effect=next_notification)
     mock_codex.close_error = None
 
     def build_client(*, config):
@@ -151,14 +192,23 @@ def mock_codex_fixture(monkeypatch):
         mock_client.config = config
         mock_client.closed = False
         mock_client.thread = None
-        mock_client._client = SimpleNamespace(request=mock_codex.skill_request)
+        mock_client._client = SimpleNamespace(
+            request=mock_codex.skill_request,
+            next_notification=mock_codex.next_notification,
+        )
 
         async def close():
             if mock_codex.close_error is not None:
                 raise mock_codex.close_error
             mock_client.closed = True
 
-        async def thread_start(**_kwargs):
+        async def thread_start(**kwargs):
+            config = kwargs.get("config") or {}
+            for name, server in config.get("mcp_servers", {}).items():
+                if server.get("auth") == "oauth":
+                    mock_codex.mcp_auth_statuses.setdefault(
+                        name, adapter.McpAuthStatus.o_auth
+                    )
             mock_client.thread = (
                 mock_codex.next_thread
                 if mock_codex.next_thread is not None
@@ -181,7 +231,9 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
 ):
     os.environ["CODEX_HOME"] = str(tmp_path / "codex-home")
     os.environ["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] = "parent-codex"
+    os.environ["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/run/user/1000/bus"
     os.environ["FABRIC_UNRELATED_SECRET"] = "do-not-forward"
+    os.environ["XDG_RUNTIME_DIR"] = "/run/user/1000"
     codex_payload["runtime_context"]["environment"]["env"] = {
         "CODEX_EXPLICIT": "forward-me"
     }
@@ -208,7 +260,11 @@ def test_single_invocation_uses_native_thread_and_turn_contract(
     assert client.config.env["CODEX_HOME"] == str(tmp_path / "codex-home")
     assert client.config.env["CODEX_EXPLICIT"] == "forward-me"
     assert client.config.env["CODEX_INTERNAL_ORIGINATOR_OVERRIDE"] == "codex_python_sdk"
+    assert (
+        client.config.env["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/run/user/1000/bus"
+    )
     assert client.config.env["FABRIC_UNRELATED_SECRET"] == ""
+    assert client.config.env["XDG_RUNTIME_DIR"] == "/run/user/1000"
     start = client.thread_start.await_args.kwargs
     assert start["model"] == "gpt-5.4"
     assert start["model_provider"] == "openai"
@@ -301,7 +357,6 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
                     "custom_headers": {"X-Tenant": "fabric"},
                     "authentication": {
                         "type": "oauth2",
-                        "client_id": "fabric-client",
                         "scopes": ["read", "write"],
                         "redirect_uri": "http://127.0.0.1:8765/callback",
                     },
@@ -321,7 +376,7 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
         "remote": {
             "url": "https://mcp.example.test/mcp",
             "http_headers": {"X-Tenant": "fabric"},
-            "oauth": {"client_id": "fabric-client"},
+            "auth": "oauth",
             "scopes": ["read", "write"],
             "required": True,
         },
@@ -360,6 +415,95 @@ def test_codex_rejects_mcp_oauth_client_secret(codex_payload):
 
     with pytest.raises(adapter.AdapterConfigError, match="client_secret_env"):
         adapter.thread_config(codex_payload, None)
+
+
+def test_codex_rejects_mcp_oauth_client_id(codex_payload):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "remote": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/mcp",
+                    "authentication": {
+                        "type": "oauth2",
+                        "client_id": "fabric-client",
+                    },
+                }
+            }
+        }
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="client_id"):
+        adapter.thread_config(codex_payload, None)
+
+
+def test_codex_logs_into_mcp_server_before_first_turn(
+    codex_payload, mock_codex, monkeypatch
+):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "remote": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/mcp",
+                    "authentication": {
+                        "type": "oauth2",
+                        "scopes": ["read", "write"],
+                    },
+                }
+            }
+        }
+    }
+    mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
+    open_browser = MagicMock(return_value=True)
+    monkeypatch.setattr(adapter.webbrowser, "open", open_browser)
+
+    output = invoke_once(codex_payload)
+
+    assert output["completed"] is True
+    requests = mock_codex.skill_request.await_args_list
+    assert [call.args[0] for call in requests] == [
+        "mcpServerStatus/list",
+        "mcpServer/oauth/login",
+    ]
+    assert requests[1].args[1] == {
+        "name": "remote",
+        "scopes": ["read", "write"],
+        "threadId": "thread-123",
+        "timeoutSecs": adapter.MCP_OAUTH_TIMEOUT_SECONDS,
+    }
+    open_browser.assert_called_once_with(mock_codex.oauth_authorization_url)
+    mock_codex.next_notification.assert_awaited_once_with()
+    mock_codex.instances[0].thread.turn.assert_awaited_once()
+
+
+def test_codex_reports_failed_mcp_oauth_login_before_turn(
+    codex_payload, mock_codex, monkeypatch
+):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "remote": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/mcp",
+                    "authentication": {"type": "oauth2"},
+                }
+            }
+        }
+    }
+    mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
+    mock_codex.mcp_login_success = False
+    mock_codex.mcp_login_error = "authorization denied"
+    monkeypatch.setattr(adapter.webbrowser, "open", MagicMock(return_value=True))
+
+    output = invoke_once(codex_payload)
+
+    assert output["failed"] is True
+    assert output["error"]["code"] == "codex_mcp_authentication_failed"
+    assert output["error"]["message"] == (
+        "Codex MCP OAuth login failed for server 'remote'"
+    )
+    mock_codex.instances[0].thread.turn.assert_not_awaited()
 
 
 def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):

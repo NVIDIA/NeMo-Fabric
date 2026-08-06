@@ -15,6 +15,7 @@ import inspect
 import json
 import logging
 import os
+import sys
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -259,6 +260,7 @@ class HermesRuntime:
         self._hermes_config_path: Path | None = None
         self._hermes_config: dict[str, Any] = {}
         self._enabled_toolsets: list[str] | None = None
+        self._mcp_authentication_checked = False
         self._conversation_history: list[dict[str, Any]] | None = None
         self._session_db: Any = None
         self._agent: Any = None
@@ -408,6 +410,8 @@ class HermesRuntime:
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
 
+        await self._authenticate_mcp_servers()
+
         def invoke_turn() -> tuple[dict[str, Any], str]:
             return _invoke_hermes_turn(
                 agent=self._agent,
@@ -476,6 +480,72 @@ class HermesRuntime:
             )
         return output
 
+    async def _authenticate_mcp_servers(self) -> None:
+        if self._mcp_authentication_checked:
+            return
+
+        oauth_server_names = {
+            name
+            for name, server in (self._hermes_config.get("mcp_servers") or {}).items()
+            if server.get("auth") == "oauth"
+        }
+        if not oauth_server_names:
+            self._mcp_authentication_checked = True
+            return
+
+        from tools.mcp_oauth import force_interactive_oauth
+        from tools.mcp_tool import (
+            discover_mcp_tools,
+            get_mcp_status,
+            refresh_agent_mcp_tools,
+        )
+
+        statuses = {status["name"]: status for status in get_mcp_status()}
+        disconnected = {
+            name
+            for name in oauth_server_names
+            if not statuses.get(name, {}).get("connected")
+        }
+        if disconnected:
+            def authenticate() -> None:
+                lifecycle_stdin = sys.stdin
+                try:
+                    # Hermes forces interactive OAuth to enable the browser flow,
+                    # which also starts an optional stdin paste reader. Fabric's
+                    # stdin carries lifecycle messages, so give only that fallback
+                    # an immediate EOF while the loopback callback remains active.
+                    sys.stdin = StringIO()
+                    with redirect_stdout(StringIO()), force_interactive_oauth():
+                        discover_mcp_tools()
+                finally:
+                    sys.stdin = lifecycle_stdin
+
+            try:
+                await asyncio.to_thread(authenticate)
+            except Exception as error:
+                raise lifecycle.LifecycleError(
+                    "hermes_mcp_authentication_failed",
+                    "Hermes could not authenticate the configured MCP servers",
+                    metadata={"servers": sorted(disconnected)},
+                ) from error
+
+            statuses = {status["name"]: status for status in get_mcp_status()}
+            disconnected = {
+                name
+                for name in oauth_server_names
+                if not statuses.get(name, {}).get("connected")
+            }
+            if disconnected:
+                raise lifecycle.LifecycleError(
+                    "hermes_mcp_authentication_failed",
+                    "Hermes could not authenticate the configured MCP servers",
+                    metadata={"servers": sorted(disconnected)},
+                )
+
+            refresh_agent_mcp_tools(self._agent, quiet_mode=True)
+
+        self._mcp_authentication_checked = True
+
     def _finalize_relay_session(self) -> None:
         if (
             self._relay_plugin_config is None
@@ -525,6 +595,7 @@ class HermesRuntime:
         self._hermes_config_path = None
         self._hermes_config = {}
         self._enabled_toolsets = None
+        self._mcp_authentication_checked = False
         self._conversation_history = None
         self._relay_context = None
         self._relay_context_entered = False
