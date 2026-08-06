@@ -120,8 +120,8 @@ by the SDK and is not persisted as a NeMo Fabric artifact.
 
 ## Relay Observability
 
-Relay requires a separately installed NeMo Relay 0.6.x CLI on `PATH`; the Python
-`nemo-relay` package does not provide the executable. Follow the
+Relay requires a separately installed NeMo Relay 0.7.x CLI on `PATH`; the
+Python `nemo-relay` package does not provide the executable. Follow the
 [NeMo Relay installation instructions](https://docs.nvidia.com/nemo/fabric/getting-started/install#install-nemo-relay).
 
 Enable Relay through the normalized NeMo Fabric configuration:

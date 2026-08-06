@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import glob
 import json
 import os
@@ -383,11 +384,110 @@ def collect_relay_artifacts(plugin_config: dict[str, Any]) -> list[dict[str, str
     return artifacts
 
 
+_RELAY_V2_OTLP_ONLY_FIELDS = {
+    "attribute_mappings",
+    "capture_content",
+    "mark_exclude_names",
+    "mark_projection",
+    "semantic_selector",
+}
+
+
+def _relay_v3_otlp_endpoint(
+    section: dict[str, Any], *, endpoint_type: str, section_name: str
+) -> dict[str, Any] | None:
+    if not section.get("enabled"):
+        return None
+
+    endpoint = section.get("endpoint")
+    if not isinstance(endpoint, str) or not endpoint.strip():
+        raise ValueError(
+            f"NeMo Relay observability config version 3 requires an endpoint "
+            f"for enabled {section_name} export"
+        )
+
+    unsupported = sorted(_RELAY_V2_OTLP_ONLY_FIELDS.intersection(section))
+    if unsupported:
+        fields = ", ".join(unsupported)
+        raise ValueError(
+            f"NeMo Relay observability config version 3 cannot preserve "
+            f"{section_name} fields: {fields}"
+        )
+
+    return {
+        "type": endpoint_type,
+        **{
+            key: value
+            for key, value in section.items()
+            if key not in {"enabled", "type"}
+        },
+    }
+
+
+def _relay_plugin_config_for_version(
+    plugin_config: dict[str, Any], observability_version: int
+) -> dict[str, Any]:
+    if observability_version != 3:
+        raise ValueError(
+            f"unsupported NeMo Relay observability config version "
+            f"{observability_version}"
+        )
+
+    rendered = copy.deepcopy(plugin_config)
+    for component in rendered.get("components", []):
+        if component.get("kind") != "observability":
+            continue
+        config = component.get("config")
+        if not isinstance(config, dict):
+            continue
+
+        config_version = config.get("version", 2)
+        if config_version == observability_version:
+            continue
+        if config_version != 2:
+            raise ValueError(
+                f"cannot render NeMo Relay observability config version "
+                f"{config_version} for version {observability_version}"
+            )
+
+        legacy_sections = (
+            ("opentelemetry", "full"),
+            ("openinference", "openinference"),
+        )
+        endpoints = []
+        section_present = False
+        for section_name, endpoint_type in legacy_sections:
+            section = config.pop(section_name, None)
+            if section is None:
+                continue
+            section_present = True
+            if not isinstance(section, dict):
+                raise ValueError(
+                    f"NeMo Relay {section_name} config must be an object"
+                )
+            migrated = _relay_v3_otlp_endpoint(
+                section,
+                endpoint_type=endpoint_type,
+                section_name=section_name,
+            )
+            if migrated is not None:
+                endpoints.append(migrated)
+
+        config["version"] = 3
+        if section_present:
+            config["opentelemetry"] = {
+                "enabled": bool(endpoints),
+                "endpoints": endpoints,
+            }
+
+    return rendered
+
+
 def write_relay_configs(
     *,
     relay_config: dict[str, Any] | None = None,
     plugin_config: dict[str, Any] | None = None,
-    observability_version: int = 2,
+    observability_version: int = 3,
 ) -> tuple[Path | None, Path | None]:
     try:
         import tomli_w
@@ -409,13 +509,12 @@ def write_relay_configs(
             relay_config_path.write_text(tomli_w.dumps(relay_config), encoding="utf-8")
 
         if plugin_config is not None:
-            if observability_version != 2:
-                raise ValueError(
-                    f"unsupported NeMo Relay observability config version {observability_version}"
-                )
+            rendered_plugin_config = _relay_plugin_config_for_version(
+                plugin_config, observability_version
+            )
             plugin_config_path = config_dir / "plugins.toml"
             plugin_config_path.write_text(
-                tomli_w.dumps(plugin_config),
+                tomli_w.dumps(rendered_plugin_config),
                 encoding="utf-8",
             )
 

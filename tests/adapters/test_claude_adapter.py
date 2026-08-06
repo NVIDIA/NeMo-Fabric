@@ -328,7 +328,7 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
         "relay_cli_contract",
         MagicMock(
             return_value=adapter.relay_gateway.RelayCliContract(
-                version=(0, 6, 0), observability_version=2
+                version=(0, 7, 0), observability_version=3
             )
         ),
     )
@@ -404,7 +404,7 @@ def test_build_options_adds_relay_plugin_and_gateway_environment(
         "relay_cli_contract",
         MagicMock(
             return_value=adapter.relay_gateway.RelayCliContract(
-                version=(0, 6, 0), observability_version=2
+                version=(0, 7, 0), observability_version=3
             )
         ),
     )

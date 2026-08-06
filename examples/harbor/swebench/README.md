@@ -31,11 +31,11 @@ export FABRIC_PACKAGE='nemo-fabric[claude,hermes-agent,relay]==0.1.0'
 export RUNS_DIR="$PWD/.tmp/harbor/fabric-swebench"
 
 curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
-  NEMO_RELAY_VERSION=0.6.0 sh -s -- \
+  NEMO_RELAY_VERSION=0.7.0 sh -s -- \
     --install-dir "$FABRIC_BUNDLE/.relay/bin"
 ```
 
-The curl command downloads and installs the standalone NeMo Relay 0.6.0 CLI tool
+The curl command downloads and installs the standalone NeMo Relay 0.7.0 CLI tool
 and verifies its checksum. For other installation methods, refer to the
 [NeMo Relay installation instructions](../../../docs/getting-started/install.mdx#install-nemo-relay).
 

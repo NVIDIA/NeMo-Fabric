@@ -812,7 +812,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     resolve = MagicMock(return_value=executable)
     contract = MagicMock(
         return_value=adapter.relay_gateway.RelayCliContract(
-            version=(0, 6, 0), observability_version=2
+            version=(0, 7, 0), observability_version=3
         )
     )
     write = MagicMock(return_value=(config_path, plugin_path))
@@ -840,7 +840,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     write.assert_called_once_with(
         relay_config={},
         plugin_config={"version": 1, "components": []},
-        observability_version=2,
+        observability_version=3,
     )
 
 

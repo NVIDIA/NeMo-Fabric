@@ -747,7 +747,7 @@ def test_write_relay_configs(
                 assert tomllib.load(stream) == config
 
 
-def test_write_relay_configs_preserves_current_cli_contract(tmp_path: Path):
+def test_write_relay_configs_migrates_observability_for_relay_0_7(tmp_path: Path):
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
     plugin_config = {
         "version": 1,
@@ -763,21 +763,25 @@ def test_write_relay_configs_preserves_current_cli_contract(tmp_path: Path):
                             {
                                 "type": "file",
                                 "output_directory": "/tmp/atof",
-                                "filename": "events.jsonl",
-                                "mode": "overwrite",
-                            },
-                            {
-                                "type": "stream",
-                                "url": "https://example.test/events",
-                                "transport": "http_post",
-                                "headers": {"x-test": "value"},
-                                "header_env": {"authorization": "TOKEN"},
-                                "timeout_millis": 1000,
-                                "field_name_policy": "replace_dots",
-                            },
+                            }
                         ],
                     },
                     "atif": {"enabled": True, "output_directory": "/tmp/atif"},
+                    "opentelemetry": {
+                        "enabled": True,
+                        "endpoint": "http://localhost:4318/v1/traces",
+                        "transport": "http_binary",
+                        "headers": {"x-tenant-id": "demo"},
+                        "resource_attributes": {"deployment.environment": "test"},
+                        "service_name": "fabric",
+                        "timeout_millis": 1000,
+                    },
+                    "openinference": {
+                        "enabled": True,
+                        "endpoint": "http://localhost:6006/v1/traces",
+                        "transport": "http_binary",
+                        "service_name": "fabric",
+                    },
                 },
             }
         ],
@@ -785,36 +789,80 @@ def test_write_relay_configs_preserves_current_cli_contract(tmp_path: Path):
 
     _, plugin_path = common_utils.write_relay_configs(
         plugin_config=plugin_config,
-        observability_version=2,
+        observability_version=3,
     )
 
     assert plugin_path is not None
     with plugin_path.open("rb") as stream:
         rendered = tomllib.load(stream)
     observability = rendered["components"][0]["config"]
-    assert observability["version"] == 2
-    assert observability["atof"] == {
+    assert observability["version"] == 3
+    assert observability["atof"] == plugin_config["components"][0]["config"]["atof"]
+    assert observability["atif"] == plugin_config["components"][0]["config"]["atif"]
+    assert "openinference" not in observability
+    assert observability["opentelemetry"] == {
         "enabled": True,
-        "sinks": [
+        "endpoints": [
             {
-                "type": "file",
-                "output_directory": "/tmp/atof",
-                "filename": "events.jsonl",
-                "mode": "overwrite",
+                "type": "full",
+                "endpoint": "http://localhost:4318/v1/traces",
+                "transport": "http_binary",
+                "headers": {"x-tenant-id": "demo"},
+                "resource_attributes": {"deployment.environment": "test"},
+                "service_name": "fabric",
+                "timeout_millis": 1000,
             },
             {
-                "type": "stream",
-                "url": "https://example.test/events",
-                "transport": "http_post",
-                "headers": {"x-test": "value"},
-                "header_env": {"authorization": "TOKEN"},
-                "timeout_millis": 1000,
-                "field_name_policy": "replace_dots",
+                "type": "openinference",
+                "endpoint": "http://localhost:6006/v1/traces",
+                "transport": "http_binary",
+                "service_name": "fabric",
             },
         ],
     }
-    assert observability["atif"] == {
-        "enabled": True,
-        "output_directory": "/tmp/atif",
+    assert plugin_config["components"][0]["config"]["version"] == 2
+    assert "openinference" in plugin_config["components"][0]["config"]
+
+
+def test_relay_0_7_config_requires_enabled_otlp_endpoint():
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "version": 2,
+                    "openinference": {"enabled": True},
+                },
+            }
+        ]
     }
-    assert rendered == plugin_config
+
+    with pytest.raises(
+        ValueError,
+        match="version 3 requires an endpoint for enabled openinference export",
+    ):
+        common_utils._relay_plugin_config_for_version(plugin_config, 3)
+
+
+def test_relay_0_7_config_rejects_removed_otlp_controls():
+    plugin_config = {
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "version": 2,
+                    "opentelemetry": {
+                        "enabled": True,
+                        "endpoint": "http://localhost:4318/v1/traces",
+                        "mark_projection": "tool",
+                    },
+                },
+            }
+        ]
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="cannot preserve opentelemetry fields: mark_projection",
+    ):
+        common_utils._relay_plugin_config_for_version(plugin_config, 3)
