@@ -122,7 +122,7 @@ def test_examples_build_plan_valid_workflow_configurations(
 
 async def test_email_graph_adapts_raw_text_to_application_state():
     namespace = runpy.run_path(
-        str(ROOT / "external" / "langgraph" / "examples" / "email_phishing_graph.py")
+        str(ROOT / "external" / "langgraph" / "examples" / "email_phishing.py")
     )
     mock_compiled_graph = MagicMock(name="compiled_graph")
     mock_compiled_graph.ainvoke = AsyncMock(return_value={"assessment": "phishing"})
@@ -211,3 +211,44 @@ def build_graph(prefix: str):
         "answer": "Fabric: again",
     }
     assert compiled_marker.read_text(encoding="utf-8") == "1"
+
+
+async def test_runtime_invokes_a_synchronous_compiled_graph(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _stage_adapter(tmp_path)
+    source_path = str(LANGGRAPH_SOURCE)
+    existing_pythonpath = os.environ.get("PYTHONPATH", "")
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        (
+            source_path
+            if not existing_pythonpath
+            else f"{source_path}{os.pathsep}{existing_pythonpath}"
+        ),
+    )
+    (tmp_path / "sync_graph.py").write_text(
+        """
+class Graph:
+    def compile(self):
+        return CompiledGraph()
+
+
+class CompiledGraph:
+    def invoke(self, graph_input):
+        return {"answer": graph_input["message"].upper()}
+
+
+def build_graph(prefix: str):
+    return Graph()
+""",
+        encoding="utf-8",
+    )
+
+    config = _config(ref="sync_graph:build_graph")
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        result = await runtime.invoke(input={"message": "hello"})
+
+    assert result["status"] == "succeeded"
+    assert result.output == {"answer": "HELLO"}

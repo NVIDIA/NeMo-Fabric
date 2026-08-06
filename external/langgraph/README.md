@@ -59,8 +59,8 @@ Stage the descriptor in the current agent-local discovery location:
 mkdir -p .tmp/langgraph-reference/adapters/langgraph
 cp external/langgraph/fabric-adapter.json \
   .tmp/langgraph-reference/adapters/langgraph/fabric-adapter.json
-cp external/langgraph/examples/calculator_graph.py \
-  external/langgraph/examples/email_phishing_graph.py \
+cp external/langgraph/examples/calculator.py \
+  external/langgraph/examples/email_phishing.py \
   .tmp/langgraph-reference/
 ```
 
@@ -91,7 +91,7 @@ uv run python external/langgraph/examples/calculator.py \
   --base-dir "$PWD/.tmp/langgraph-reference"
 ```
 
-The factory is `calculator_graph:build_graph`; its `mcp_url` setting stays
+The factory is `calculator:build_graph`; its `mcp_url` setting stays
 inside `workflow.settings` because the reference does not translate a portable
 MCP configuration.
 
@@ -113,4 +113,5 @@ uv run python external/langgraph/examples/email_phishing.py \
 
 The `--plan` command verifies the descriptor-owned workflow contract without
 importing the factory or contacting the model service. The second command
-imports and compiles the graph, then invokes the configured model.
+imports and compiles the graph, then invokes the configured model. The factory
+adapts the raw text input to the `EmailState` mapping required by its graph.
