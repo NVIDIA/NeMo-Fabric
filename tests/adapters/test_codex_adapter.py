@@ -455,8 +455,8 @@ def test_codex_logs_into_mcp_server_before_first_turn(
         }
     }
     mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
-    open_browser = MagicMock(return_value=True)
-    monkeypatch.setattr(adapter.webbrowser, "open", open_browser)
+    open_browser = AsyncMock(return_value=True)
+    monkeypatch.setattr(adapter.mcp_auth, "open_authorization_url", open_browser)
 
     output = invoke_once(codex_payload)
 
@@ -472,7 +472,7 @@ def test_codex_logs_into_mcp_server_before_first_turn(
         "threadId": "thread-123",
         "timeoutSecs": adapter.MCP_OAUTH_TIMEOUT_SECONDS,
     }
-    open_browser.assert_called_once_with(mock_codex.oauth_authorization_url)
+    open_browser.assert_awaited_once_with(mock_codex.oauth_authorization_url)
     mock_codex.next_notification.assert_awaited_once_with()
     mock_codex.instances[0].thread.turn.assert_awaited_once()
 
@@ -494,7 +494,11 @@ def test_codex_reports_failed_mcp_oauth_login_before_turn(
     mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
     mock_codex.mcp_login_success = False
     mock_codex.mcp_login_error = "authorization denied"
-    monkeypatch.setattr(adapter.webbrowser, "open", MagicMock(return_value=True))
+    monkeypatch.setattr(
+        adapter.mcp_auth,
+        "open_authorization_url",
+        AsyncMock(return_value=True),
+    )
 
     output = invoke_once(codex_payload)
 

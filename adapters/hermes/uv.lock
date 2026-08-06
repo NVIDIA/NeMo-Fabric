@@ -546,6 +546,10 @@ name = "nemo-fabric-adapters-common"
 version = "0.2.0"
 source = { editable = "../common" }
 
+[package.metadata]
+requires-dist = [{ name = "mcp", marker = "extra == 'mcp-oauth'", specifier = ">=1.28.1,<1.29" }]
+provides-extras = ["mcp-oauth"]
+
 [[package]]
 name = "nemo-fabric-adapters-hermes"
 version = "0.2.0"

@@ -25,6 +25,11 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+mcp-oauth = [
+  "mcp>=1.28.1,<1.29",
+]
+
 [project.urls]
 Repository = "https://github.com/NVIDIA/NeMo-Fabric"
 Homepage = "https://github.com/NVIDIA/NeMo-Fabric"

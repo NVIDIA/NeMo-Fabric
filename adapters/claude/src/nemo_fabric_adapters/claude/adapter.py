@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
-from urllib.parse import urlparse
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions
@@ -32,6 +31,7 @@ from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_auth
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
@@ -289,16 +289,9 @@ def _model_environment(
 
 
 def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
-    native = (
-        _mapping(common_utils.capability_plan(payload), name="capability_plan").get(
-            "native"
-        )
-        or {}
-    )
-    servers = _mapping(native, name="capability_plan.native").get("mcp_servers") or {}
+    servers = _native_mcp_server_specs(payload)
     result: dict[str, Any] = {}
-    for name, raw in sorted(_mapping(servers, name="native MCP servers").items()):
-        server = _mapping(raw, name=f"MCP server {name}")
+    for name, server in sorted(servers.items()):
         transport = server.get("transport")
         url = server.get("url")
         if not isinstance(url, str) or not url:
@@ -306,16 +299,12 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 "claude_invalid_configuration", "MCP server URL is required"
             )
         if transport == "stdio":
-            if server.get("authentication"):
+            try:
+                mcp_auth.validate_stdio_options(name, server)
+            except mcp_auth.McpAuthConfigError as error:
                 raise AdapterConfigError(
-                    "claude_invalid_configuration",
-                    "MCP authentication is not supported for stdio transport",
-                )
-            if server.get("custom_headers"):
-                raise AdapterConfigError(
-                    "claude_invalid_configuration",
-                    "MCP custom_headers are not supported for stdio transport",
-                )
+                    "claude_invalid_configuration", str(error)
+                ) from error
             result[name] = {
                 "type": "stdio",
                 "command": url,
@@ -333,49 +322,42 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 f"unsupported MCP transport: {transport}",
             )
         if headers := server.get("custom_headers"):
-            result[name]["headers"] = {
-                str(key): str(value)
-                for key, value in _mapping(
-                    headers, name=f"MCP server {name} custom_headers"
-                ).items()
-            }
-        if authentication := server.get("authentication"):
-            authentication = _mapping(
-                authentication, name=f"MCP server {name} authentication"
-            )
-            if authentication.get("type") != "oauth2":
-                raise AdapterConfigError(
-                    "claude_invalid_configuration",
-                    f"MCP server {name} has unsupported authentication type",
+            try:
+                result[name]["headers"] = mcp_auth.normalize_custom_headers(
+                    name, headers
                 )
-            oauth: dict[str, Any] = {}
-            if client_id := authentication.get("client_id"):
-                oauth["clientId"] = client_id
-            if scopes := authentication.get("scopes"):
-                oauth["scopes"] = " ".join(str(scope) for scope in scopes)
-            if authentication.get("client_secret_env") and not client_id:
+            except mcp_auth.McpAuthConfigError as error:
+                raise AdapterConfigError(
+                    "claude_invalid_configuration", str(error)
+                ) from error
+        if authentication := server.get("authentication"):
+            oauth = _mcp_oauth_config(name, authentication)
+            mapped_oauth: dict[str, Any] = {}
+            if oauth.client_id:
+                mapped_oauth["clientId"] = oauth.client_id
+            if oauth.scope:
+                mapped_oauth["scopes"] = oauth.scope
+            if oauth.client_secret_env and not oauth.client_id:
                 raise AdapterConfigError(
                     "claude_invalid_configuration",
                     f"MCP server {name} authentication.client_secret_env requires "
                     "client_id",
                 )
-            if redirect_uri := authentication.get("redirect_uri"):
-                parsed = urlparse(str(redirect_uri))
-                if (
-                    parsed.scheme != "http"
-                    or parsed.hostname not in {"127.0.0.1", "localhost"}
-                    or parsed.port is None
-                ):
+            if oauth.redirect_uri:
+                try:
+                    mapped_oauth["callbackPort"] = mcp_auth.loopback_callback_port(
+                        oauth.redirect_uri
+                    )
+                except mcp_auth.McpAuthConfigError as error:
                     raise AdapterConfigError(
                         "claude_invalid_configuration",
-                        f"MCP server {name} authentication.redirect_uri must be a loopback URI with an explicit port for Claude",
-                    )
-                oauth["callbackPort"] = parsed.port
-            result[name]["oauth"] = oauth
+                        f"MCP server {name} {error} for Claude",
+                    ) from error
+            result[name]["oauth"] = mapped_oauth
     return result
 
 
-def _authenticated_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _native_mcp_server_specs(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     native = (
         _mapping(common_utils.capability_plan(payload), name="capability_plan").get(
             "native"
@@ -383,27 +365,32 @@ def _authenticated_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, A
         or {}
     )
     servers = _mapping(native, name="capability_plan.native").get("mcp_servers") or {}
-    mapped = _mcp_servers(payload)
     return {
-        name: mapped[name]
-        for name, raw in sorted(_mapping(servers, name="native MCP servers").items())
-        if _mapping(raw, name=f"MCP server {name}").get("authentication")
+        name: _mapping(raw, name=f"MCP server {name}")
+        for name, raw in _mapping(servers, name="native MCP servers").items()
     }
 
 
-def _mcp_authentication(payload: dict[str, Any], name: str) -> dict[str, Any]:
-    native = _mapping(
-        common_utils.capability_plan(payload), name="capability_plan"
-    ).get("native") or {}
-    servers = _mapping(native, name="capability_plan.native").get("mcp_servers") or {}
-    server = _mapping(
-        _mapping(servers, name="native MCP servers").get(name),
-        name=f"MCP server {name}",
-    )
-    return _mapping(
-        server.get("authentication"),
-        name=f"MCP server {name} authentication",
-    )
+def _mcp_oauth_config(name: str, value: Any) -> mcp_auth.McpOAuth2Config:
+    try:
+        return mcp_auth.parse_oauth2_config(name, value)
+    except mcp_auth.McpAuthConfigError as error:
+        raise AdapterConfigError("claude_invalid_configuration", str(error)) from error
+
+
+def _authenticated_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    servers = _native_mcp_server_specs(payload)
+    mapped = _mcp_servers(payload)
+    return {
+        name: mapped[name]
+        for name, server in sorted(servers.items())
+        if server.get("authentication")
+    }
+
+
+def _mcp_authentication(payload: dict[str, Any], name: str) -> mcp_auth.McpOAuth2Config:
+    server = _native_mcp_server_specs(payload)[name]
+    return _mcp_oauth_config(name, server.get("authentication"))
 
 
 def _claude_cli_path(options: ClaudeAgentOptions) -> str:
@@ -525,14 +512,18 @@ async def _login_mcp_server(
         name,
         json.dumps(server, separators=(",", ":")),
     ]
-    if secret_env := authentication.get("client_secret_env"):
-        secret = environment.get(str(secret_env)) or os.environ.get(str(secret_env))
-        if not secret:
-            raise AdapterConfigError(
-                "claude_invalid_configuration",
-                f"MCP server {name} authentication.client_secret_env references "
-                "an unset environment variable",
+    if secret_env := authentication.client_secret_env:
+        try:
+            secret = mcp_auth.resolve_client_secret(
+                name,
+                authentication,
+                {**os.environ, **environment},
+                require_client_id=True,
             )
+        except mcp_auth.McpAuthConfigError as error:
+            raise AdapterConfigError(
+                "claude_invalid_configuration", str(error)
+            ) from error
         environment["MCP_CLIENT_SECRET"] = secret
         add_arguments.append("--client-secret")
 
@@ -950,7 +941,7 @@ def child_environment(
     configured = common_utils.environment_env(payload)
     values.update(configured)
     for name in _authenticated_mcp_servers(payload):
-        secret_env = _mcp_authentication(payload, name).get("client_secret_env")
+        secret_env = _mcp_authentication(payload, name).client_secret_env
         if secret_env and secret_env in os.environ:
             values[str(secret_env)] = os.environ[str(secret_env)]
     model_environment = _model_environment(payload, values)

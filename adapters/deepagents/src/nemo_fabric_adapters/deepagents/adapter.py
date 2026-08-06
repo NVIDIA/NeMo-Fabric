@@ -17,19 +17,16 @@ import inspect
 import json
 import logging
 import os
-import socket
 import uuid
-import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from typing import NamedTuple
-from urllib.parse import parse_qs
-from urllib.parse import urlparse
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_auth
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
@@ -292,14 +289,10 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
             f"MCP server '{name}' requires a url (or command in url)."
         )
     if transport in ("stdio", "command", "process"):
-        if spec.get("authentication"):
-            raise AdapterConfigError(
-                f"MCP server '{name}' authentication is not supported for stdio transport."
-            )
-        if spec.get("custom_headers"):
-            raise AdapterConfigError(
-                f"MCP server '{name}' custom_headers are not supported for stdio transport."
-            )
+        try:
+            mcp_auth.validate_stdio_options(name, spec)
+        except mcp_auth.McpAuthConfigError as error:
+            raise AdapterConfigError(f"{error}.") from error
         connection: dict[str, Any] = {
             "transport": "stdio",
             "command": target,
@@ -316,149 +309,29 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
         )
     connection = {"transport": transport, "url": target}
     if headers := spec.get("custom_headers"):
-        if not isinstance(headers, dict):
-            raise AdapterConfigError(
-                f"MCP server '{name}' custom_headers must be a mapping."
-            )
+        try:
+            normalized_headers = mcp_auth.normalize_custom_headers(name, headers)
+        except mcp_auth.McpAuthConfigError as error:
+            raise AdapterConfigError(f"{error}.") from error
         connection["headers"] = {
-            str(key): os.path.expandvars(str(value)) for key, value in headers.items()
+            key: os.path.expandvars(value) for key, value in normalized_headers.items()
         }
     if authentication := spec.get("authentication"):
         connection["auth"] = _mcp_oauth_auth(name, target, authentication)
     return connection
 
 
-class _McpOAuthMemoryStorage:
-    def __init__(self, client_info: Any = None):
-        self.tokens: Any = None
-        self.client_info = client_info
-
-    async def get_tokens(self) -> Any:
-        return self.tokens
-
-    async def set_tokens(self, tokens: Any) -> None:
-        self.tokens = tokens
-
-    async def get_client_info(self) -> Any:
-        return self.client_info
-
-    async def set_client_info(self, client_info: Any) -> None:
-        self.client_info = client_info
-
-
-def _available_loopback_port() -> int:
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        return int(listener.getsockname()[1])
-
-
 def _mcp_oauth_auth(name: str, server_url: str, raw: Any) -> Any:
-    if not isinstance(raw, dict) or raw.get("type") != "oauth2":
-        raise AdapterConfigError(
-            f"MCP server '{name}' has unsupported authentication type."
-        )
-
-    from mcp.client.auth import OAuthClientProvider
-    from mcp.shared.auth import OAuthClientInformationFull
-    from mcp.shared.auth import OAuthClientMetadata
-    from pydantic import AnyUrl
-
-    redirect_uri = raw.get("redirect_uri")
-    if redirect_uri:
-        parsed = urlparse(str(redirect_uri))
-        if (
-            parsed.scheme != "http"
-            or parsed.hostname not in {"127.0.0.1", "localhost"}
-            or parsed.port is None
-        ):
-            raise AdapterConfigError(
-                f"MCP server '{name}' authentication.redirect_uri must be an HTTP loopback URI with an explicit port for Deep Agents."
-            )
-        callback_port = parsed.port
-    else:
-        callback_port = _available_loopback_port()
-        redirect_uri = f"http://127.0.0.1:{callback_port}/callback"
-
-    scopes = raw.get("scopes") or []
-    metadata = OAuthClientMetadata(
-        client_name="NeMo Fabric Deep Agents",
-        redirect_uris=[AnyUrl(str(redirect_uri))],
-        grant_types=["authorization_code", "refresh_token"],
-        response_types=["code"],
-        token_endpoint_auth_method=(
-            "client_secret_post" if raw.get("client_secret_env") else "none"
-        ),
-        scope=" ".join(str(scope) for scope in scopes) or None,
-    )
-
-    client_info = None
-    if client_id := raw.get("client_id"):
-        client_secret = None
-        if secret_env := raw.get("client_secret_env"):
-            client_secret = os.environ.get(str(secret_env))
-            if not client_secret:
-                raise AdapterConfigError(
-                    f"MCP server '{name}' authentication.client_secret_env references an unset environment variable."
-                )
-        client_info = OAuthClientInformationFull(
-            client_id=str(client_id),
-            client_secret=client_secret,
-            redirect_uris=[AnyUrl(str(redirect_uri))],
-            grant_types=metadata.grant_types,
-            response_types=metadata.response_types,
-            token_endpoint_auth_method=metadata.token_endpoint_auth_method,
-            scope=metadata.scope,
-        )
-    elif raw.get("client_secret_env"):
-        raise AdapterConfigError(
-            f"MCP server '{name}' authentication.client_secret_env requires client_id."
-        )
-
-    async def redirect_handler(authorization_url: str) -> None:
-        LOGGER.warning(
-            "MCP server '%s' requires OAuth authorization: %s",
+    try:
+        config = mcp_auth.parse_oauth2_config(name, raw)
+        return mcp_auth.create_mcp_oauth_provider(
             name,
-            authorization_url,
+            server_url,
+            config,
+            client_name="NeMo Fabric Deep Agents",
         )
-        await asyncio.to_thread(webbrowser.open, authorization_url)
-
-    async def callback_handler() -> tuple[str, str | None]:
-        loop = asyncio.get_running_loop()
-        result: asyncio.Future[tuple[str, str | None]] = loop.create_future()
-
-        async def handle_callback(
-            reader: asyncio.StreamReader, writer: asyncio.StreamWriter
-        ) -> None:
-            request = await reader.readuntil(b"\r\n\r\n")
-            target_path = request.split(b" ", 2)[1].decode("ascii")
-            query = parse_qs(urlparse(target_path).query)
-            code = query.get("code", [""])[0]
-            state = query.get("state", [None])[0]
-            body = b"OAuth authorization complete. You may close this window."
-            writer.write(
-                b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: "
-                + str(len(body)).encode("ascii")
-                + b"\r\nConnection: close\r\n\r\n"
-                + body
-            )
-            await writer.drain()
-            writer.close()
-            if not result.done():
-                result.set_result((code, state))
-
-        server = await asyncio.start_server(
-            handle_callback, "127.0.0.1", callback_port
-        )
-        async with server:
-            return await result
-
-    return OAuthClientProvider(
-        server_url=server_url,
-        client_metadata=metadata,
-        storage=_McpOAuthMemoryStorage(client_info),
-        redirect_handler=redirect_handler,
-        callback_handler=callback_handler,
-    )
+    except mcp_auth.McpAuthConfigError as error:
+        raise AdapterConfigError(f"{error}.") from error
 
 
 # --- runtime state ---------------------------------------------------------

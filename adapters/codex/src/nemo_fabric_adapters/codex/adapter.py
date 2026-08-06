@@ -12,7 +12,6 @@ import logging
 import math
 import os
 import subprocess
-import webbrowser
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -40,6 +39,7 @@ import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_auth
 
 
 DEFAULT_TIMEOUT_SECONDS = 1800.0
@@ -194,16 +194,12 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             )
         normalized_transport = transport.strip().lower().replace("_", "-")
         if normalized_transport == "stdio":
-            if server.get("authentication"):
+            try:
+                mcp_auth.validate_stdio_options(name, server)
+            except mcp_auth.McpAuthConfigError as error:
                 raise AdapterConfigError(
-                    "codex_invalid_configuration",
-                    f"MCP server {name} authentication is not supported for stdio transport",
-                )
-            if server.get("custom_headers"):
-                raise AdapterConfigError(
-                    "codex_invalid_configuration",
-                    f"MCP server {name} custom_headers are not supported for stdio transport",
-                )
+                    "codex_invalid_configuration", str(error)
+                ) from error
             result[name] = {
                 "command": target,
                 "args": common_utils.normalize_list(server.get("args")),
@@ -218,35 +214,39 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 f"unsupported Codex MCP transport: {transport}",
             )
         if headers := server.get("custom_headers"):
+            try:
+                normalized_headers = mcp_auth.normalize_custom_headers(name, headers)
+            except mcp_auth.McpAuthConfigError as error:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration", str(error)
+                ) from error
             result[name]["http_headers"] = {
-                str(key): os.path.expandvars(str(value))
-                for key, value in _mapping(
-                    headers, name=f"MCP server {name} custom_headers"
-                ).items()
+                key: os.path.expandvars(value)
+                for key, value in normalized_headers.items()
             }
         if authentication := server.get("authentication"):
-            authentication = _mapping(
-                authentication, name=f"MCP server {name} authentication"
-            )
-            if authentication.get("type") != "oauth2":
-                raise AdapterConfigError(
-                    "codex_invalid_configuration",
-                    f"MCP server {name} has unsupported authentication type",
-                )
-            if authentication.get("client_secret_env"):
+            oauth = _mcp_oauth_config(name, authentication)
+            if oauth.client_secret_env:
                 raise AdapterConfigError(
                     "codex_invalid_configuration",
                     f"MCP server {name} authentication.client_secret_env is not supported by Codex",
                 )
-            if authentication.get("client_id"):
+            if oauth.client_id:
                 raise AdapterConfigError(
                     "codex_invalid_configuration",
                     f"MCP server {name} authentication.client_id is not supported by Codex",
                 )
             result[name]["auth"] = "oauth"
-            if scopes := authentication.get("scopes"):
-                result[name]["scopes"] = scopes
+            if oauth.scopes:
+                result[name]["scopes"] = list(oauth.scopes)
     return result
+
+
+def _mcp_oauth_config(name: str, value: Any) -> mcp_auth.McpOAuth2Config:
+    try:
+        return mcp_auth.parse_oauth2_config(name, value)
+    except mcp_auth.McpAuthConfigError as error:
+        raise AdapterConfigError("codex_invalid_configuration", str(error)) from error
 
 
 def _mcp_oauth_callback_url(payload: dict[str, Any]) -> str | None:
@@ -254,7 +254,7 @@ def _mcp_oauth_callback_url(payload: dict[str, Any]) -> str | None:
         _native_capabilities(payload).get("mcp_servers"), name="native MCP servers"
     )
     values = {
-        str(authentication["redirect_uri"])
+        oauth.redirect_uri
         for name, raw in servers.items()
         if (
             (
@@ -262,8 +262,7 @@ def _mcp_oauth_callback_url(payload: dict[str, Any]) -> str | None:
                     "authentication"
                 )
             )
-            and isinstance(authentication, dict)
-            and authentication.get("redirect_uri")
+            and (oauth := _mcp_oauth_config(name, authentication)).redirect_uri
         )
     }
     if len(values) > 1:
@@ -344,11 +343,8 @@ def _mcp_oauth_servers(payload: dict[str, Any]) -> dict[str, list[str] | None]:
         authentication = server.get("authentication")
         if not authentication:
             continue
-        authentication = _mapping(
-            authentication, name=f"MCP server {name} authentication"
-        )
-        if authentication.get("type") == "oauth2":
-            result[name] = authentication.get("scopes")
+        oauth = _mcp_oauth_config(name, authentication)
+        result[name] = list(oauth.scopes) or None
     return result
 
 
@@ -406,7 +402,7 @@ async def _login_mcp_server(
         params,
         response_model=McpServerOauthLoginResponse,
     )
-    opened = webbrowser.open(response.authorization_url)
+    opened = await mcp_auth.open_authorization_url(response.authorization_url)
     if not opened:
         raise AdapterConfigError(
             "codex_mcp_authentication_failed",

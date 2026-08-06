@@ -598,7 +598,8 @@ async def test_mcp_servers_become_adapter_tools(
     )
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
     mock_oauth = MagicMock(name="oauth")
-    monkeypatch.setattr(adapter, "_mcp_oauth_auth", MagicMock(return_value=mock_oauth))
+    create_oauth = MagicMock(return_value=mock_oauth)
+    monkeypatch.setattr(adapter.mcp_auth, "create_mcp_oauth_provider", create_oauth)
 
     payload = make_payload(tmp_path)
     # McpServerPlan carries the URL/command in ``url``.
@@ -627,6 +628,17 @@ async def test_mcp_servers_become_adapter_tools(
     output = await invoke_once(payload)
 
     assert output["failed"] is False
+    create_oauth.assert_called_once_with(
+        "fs",
+        "http://localhost:9/mcp",
+        adapter.mcp_auth.McpOAuth2Config(
+            client_id="fabric-client",
+            client_secret_env=None,
+            scopes=(),
+            redirect_uri=None,
+        ),
+        client_name="NeMo Fabric Deep Agents",
+    )
     assert mock_client_cls.call_args.args[0] == {
         "fs": {
             "transport": "streamable_http",
@@ -643,28 +655,6 @@ async def test_mcp_servers_become_adapter_tools(
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file", "write_file"]
-
-
-async def test_deepagents_builds_mcp_oauth_provider():
-    os.environ["FABRIC_MCP_CLIENT_SECRET"] = "oauth-secret"
-
-    auth = adapter._mcp_oauth_auth(
-        "jira",
-        "https://mcp.example.test/jira",
-        {
-            "type": "oauth2",
-            "client_id": "fabric-client",
-            "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
-            "scopes": ["read", "write"],
-            "redirect_uri": "http://127.0.0.1:8765/callback",
-        },
-    )
-
-    assert str(auth.context.server_url) == "https://mcp.example.test/jira"
-    assert auth.context.client_metadata.scope == "read write"
-    client_info = await auth.context.storage.get_client_info()
-    assert client_info.client_id == "fabric-client"
-    assert client_info.client_secret == "oauth-secret"
 
 
 def test_deepagents_rejects_mcp_authentication_for_stdio():

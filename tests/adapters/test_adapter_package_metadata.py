@@ -50,9 +50,7 @@ ADAPTER_EXTRAS = {
             f"nemo-fabric-adapters-hermes[harness] == {PACKAGE_VERSION}; "
             "python_version < '3.14'"
         ),
-        "harness": [
-            "hermes-agent>=0.19.0; python_version < '3.14'"
-        ],
+        "harness": ["hermes-agent>=0.19.0; python_version < '3.14'"],
         "relay": ["nemo-relay>=0.6.0,<0.7"],
     },
 }
@@ -79,7 +77,7 @@ ADAPTER_EXTRAS = {
         (
             "adapters/deepagents",
             [
-                f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
+                f"nemo-fabric-adapters-common[mcp-oauth] == {PACKAGE_VERSION}",
                 "langchain-mcp-adapters>=0.1,<0.3.0",
                 "langchain-openai>=0.3",
                 "langgraph-checkpoint-sqlite>=3.0,<4.0",
@@ -95,6 +93,11 @@ def test_adapter_runtime_dependencies(path: str, expected: list[str]):
     project = load_pyproject(path)["project"]
     assert project["version"] == PACKAGE_VERSION
     assert sorted(project.get("dependencies", [])) == sorted(expected)
+
+
+def test_common_mcp_oauth_extra_declares_mcp_sdk_dependency():
+    extras = load_pyproject("adapters/common")["project"]["optional-dependencies"]
+    assert extras == {"mcp-oauth": ["mcp>=1.28.1,<1.29"]}
 
 
 def test_adapter_test_dependency_group_matches_leaf_harnesses():

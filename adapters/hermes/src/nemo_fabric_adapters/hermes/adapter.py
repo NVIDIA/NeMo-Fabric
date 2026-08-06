@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import mcp_auth
 import nemo_fabric_adapters.common.utils as common_utils
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
@@ -125,7 +126,7 @@ def build_hermes_config(
     mcp_servers = native.get("mcp_servers") or {}
     if mcp_servers:
         config["mcp_servers"] = {
-            name: hermes_mcp_server_config(server)
+            name: hermes_mcp_server_config(server, name=name)
             for name, server in sorted(mcp_servers.items())
         }
 
@@ -154,7 +155,9 @@ def write_hermes_config(
     return config_path, config
 
 
-def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
+def hermes_mcp_server_config(
+    server: dict[str, Any], *, name: str = "configured"
+) -> dict[str, Any]:
     transport = str(server.get("transport") or "").strip().lower()
     raw_target = server.get("url")
     target = os.path.expandvars(str(raw_target or "")).strip()
@@ -162,10 +165,10 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("MCP server mapping requires a URL")
 
     if transport == "stdio":
-        if server.get("authentication"):
-            raise ValueError("MCP authentication is not supported for stdio transport")
-        if server.get("custom_headers"):
-            raise ValueError("MCP custom_headers are not supported for stdio transport")
+        try:
+            mcp_auth.validate_stdio_options(name, server)
+        except mcp_auth.McpAuthConfigError as error:
+            raise ValueError(str(error)) from error
         return common_utils.without_none(
             {
                 "enabled": True,
@@ -181,24 +184,27 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
         "transport": transport,
     }
     if headers := server.get("custom_headers"):
-        result["headers"] = {
-            str(name): str(value) for name, value in headers.items()
-        }
+        try:
+            result["headers"] = mcp_auth.normalize_custom_headers(name, headers)
+        except mcp_auth.McpAuthConfigError as error:
+            raise ValueError(str(error)) from error
     if authentication := server.get("authentication"):
-        if not isinstance(authentication, dict) or authentication.get("type") != "oauth2":
-            raise ValueError("unsupported MCP authentication type")
+        try:
+            authentication = mcp_auth.parse_oauth2_config(name, authentication)
+        except mcp_auth.McpAuthConfigError as error:
+            raise ValueError(str(error)) from error
         oauth = common_utils.without_none(
             {
-                "client_id": authentication.get("client_id"),
-                "scope": " ".join(authentication.get("scopes") or []) or None,
-                "redirect_uri": authentication.get("redirect_uri"),
+                "client_id": authentication.client_id,
+                "scope": authentication.scope,
+                "redirect_uri": authentication.redirect_uri,
             }
         )
-        if secret_env := authentication.get("client_secret_env"):
-            if not os.environ.get(str(secret_env)):
-                raise ValueError(
-                    f"MCP OAuth client secret environment variable {secret_env!r} is not set"
-                )
+        if secret_env := authentication.client_secret_env:
+            try:
+                mcp_auth.resolve_client_secret(name, authentication)
+            except mcp_auth.McpAuthConfigError as error:
+                raise ValueError(str(error)) from error
             oauth["client_secret"] = f"${{{secret_env}}}"
         result["auth"] = "oauth"
         result["oauth"] = oauth
@@ -339,6 +345,7 @@ class HermesRuntime:
                 # discover_mcp_tools uses a blocking 120s wait so run it in a loop
                 if self._hermes_config.get("mcp_servers"):
                     from tools.mcp_tool import discover_mcp_tools
+
                     await asyncio.to_thread(discover_mcp_tools)
 
                 self._enabled_toolsets = resolve_hermes_toolsets(
@@ -507,6 +514,7 @@ class HermesRuntime:
             if not statuses.get(name, {}).get("connected")
         }
         if disconnected:
+
             def authenticate() -> None:
                 lifecycle_stdin = sys.stdin
                 try:
