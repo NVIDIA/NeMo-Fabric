@@ -11,6 +11,8 @@ import runpy
 import shutil
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 from nemo_fabric import Fabric
@@ -116,6 +118,22 @@ def test_examples_build_plan_valid_workflow_configurations(
     plan = Fabric().plan(config, base_dir=tmp_path)
 
     assert plan.config.workflow == config.to_mapping()["workflow"]
+
+
+async def test_email_graph_adapts_raw_text_to_application_state():
+    namespace = runpy.run_path(
+        str(ROOT / "external" / "langgraph" / "examples" / "email_phishing_graph.py")
+    )
+    mock_compiled_graph = MagicMock(name="compiled_graph")
+    mock_compiled_graph.ainvoke = AsyncMock(return_value={"assessment": "phishing"})
+    mock_graph = MagicMock(name="graph")
+    mock_graph.compile.return_value = mock_compiled_graph
+
+    compiled_graph = namespace["TextInputGraph"](mock_graph).compile()
+    result = await compiled_graph.ainvoke("Suspicious email")
+
+    assert result == {"assessment": "phishing"}
+    mock_compiled_graph.ainvoke.assert_awaited_once_with({"input": "Suspicious email"})
 
 
 async def test_runtime_compiles_factory_graph_once_and_invokes_it(
