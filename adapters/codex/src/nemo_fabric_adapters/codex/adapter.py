@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import math
@@ -33,14 +32,13 @@ from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
+import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.common import lifecycle
 
 
 DEFAULT_TIMEOUT_SECONDS = 1800.0
 INTERRUPT_TIMEOUT_SECONDS = 5.0
-RELAY_ATIF_FINALIZATION_TIMEOUT_SECONDS = 5.0
-RELAY_ATIF_POLL_INTERVAL_SECONDS = 0.05
 SANDBOXES = {
     "read-only": Sandbox.read_only,
     "workspace-write": Sandbox.workspace_write,
@@ -940,83 +938,6 @@ def _relay_output(output: dict[str, Any], relay: CodexRelaySettings) -> dict[str
     return output
 
 
-def _relay_atif_enabled(plugin_config: dict[str, Any]) -> bool:
-    for component in plugin_config.get("components", []):
-        if (
-            not isinstance(component, dict)
-            or component.get("kind") != "observability"
-            or component.get("enabled", True) is False
-        ):
-            continue
-        config = component.get("config")
-        if not isinstance(config, dict):
-            continue
-        atif = config.get("atif")
-        if isinstance(atif, dict) and atif.get("enabled"):
-            return True
-    return False
-
-
-def _relay_atif_snapshot(plugin_config: dict[str, Any]) -> dict[Path, bytes]:
-    """Fingerprint runtime-scoped ATIF files before a Codex turn starts."""
-
-    snapshot: dict[Path, bytes] = {}
-    for artifact in common_utils.collect_relay_artifacts(plugin_config):
-        if artifact.get("kind") != "atif":
-            continue
-        path = Path(artifact["path"])
-        try:
-            contents = path.read_bytes()
-        except (OSError, RuntimeError, ValueError):
-            continue
-        snapshot[path] = hashlib.sha256(contents).digest()
-    return snapshot
-
-
-def _relay_has_finalized_atif(
-    plugin_config: dict[str, Any], before: dict[Path, bytes]
-) -> bool:
-    """Return whether a new or changed ATIF file is complete JSON."""
-
-    for artifact in common_utils.collect_relay_artifacts(plugin_config):
-        if artifact.get("kind") != "atif":
-            continue
-        path = Path(artifact["path"])
-        try:
-            contents = path.read_bytes()
-        except (OSError, RuntimeError, ValueError):
-            continue
-        if before.get(path) == hashlib.sha256(contents).digest():
-            continue
-        try:
-            document = json.loads(contents)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            continue
-        if isinstance(document, dict):
-            return True
-    return False
-
-
-async def _wait_for_relay_atif(
-    plugin_config: dict[str, Any], before: dict[Path, bytes]
-) -> None:
-    """Bound the gap between Codex turn completion and Relay subscriber output."""
-
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + RELAY_ATIF_FINALIZATION_TIMEOUT_SECONDS
-    while not _relay_has_finalized_atif(plugin_config, before):
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            raise AdapterRelayError(
-                "codex_relay_atif_timeout",
-                "NeMo Relay did not finalize an ATIF artifact before the deadline",
-                metadata={
-                    "timeout_seconds": RELAY_ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                },
-            )
-        await asyncio.sleep(min(RELAY_ATIF_POLL_INTERVAL_SECONDS, remaining))
-
-
 def _start_relay_gateway(
     payload: dict[str, Any], relay: CodexRelaySettings | None
 ) -> subprocess.Popen[Any] | None:
@@ -1146,7 +1067,7 @@ class CodexRuntime:
         if self._unusable:
             output = _failure(
                 "codex_runtime_unavailable",
-                "Codex runtime cannot accept another invocation after an SDK failure",
+                "Codex runtime cannot accept another invocation after a runtime failure",
             )
             return _relay_output(output, self._relay) if self._relay else output
 
@@ -1157,8 +1078,9 @@ class CodexRuntime:
             _output_schema(payload)
             relay = self._relay
             atif_before = (
-                _relay_atif_snapshot(relay.plugin_config)
-                if relay is not None and _relay_atif_enabled(relay.plugin_config)
+                relay_artifacts.snapshot_atif_paths(relay.plugin_config)
+                if relay is not None
+                and relay_artifacts.expects_local_atif(relay.plugin_config)
                 else None
             )
             output, usable = await _invoke_thread(payload, self._thread)
@@ -1167,7 +1089,20 @@ class CodexRuntime:
                 and relay is not None
                 and atif_before is not None
             ):
-                await _wait_for_relay_atif(relay.plugin_config, atif_before)
+                finalized = await relay_artifacts.wait_for_finalized_atif(
+                    relay.plugin_config, atif_before
+                )
+                if finalized is None:
+                    raise AdapterRelayError(
+                        "codex_relay_atif_timeout",
+                        "NeMo Relay did not finalize an ATIF artifact before the deadline",
+                        metadata={
+                            "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                        },
+                    )
+        except AdapterRelayError as error:
+            output = adapter_failure(error)
+            usable = False
         except CodexAdapterError as error:
             output = adapter_failure(error)
             usable = True

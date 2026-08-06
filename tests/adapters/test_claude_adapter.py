@@ -752,10 +752,33 @@ async def test_claude_runtime_owns_one_relay_gateway_until_stop(
     assert not relay.plugin_path.exists()
 
 
-async def test_runtime_reports_relay_artifacts(relay_payload, monkeypatch, tmp_path):
+def atif_plugin_config(output_directory: Path) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "atif": {
+                        "enabled": True,
+                        "output_directory": str(output_directory),
+                        "filename_template": "trajectory-{session_id}.atif.json",
+                    }
+                },
+            }
+        ],
+    }
+
+
+def relay_settings(
+    tmp_path: Path, plugin_config: dict[str, Any]
+) -> adapter.ClaudeRelaySettings:
     executable = tmp_path / "nemo-relay"
     executable.touch()
-    relay = adapter.ClaudeRelaySettings(
+    plugin_path = tmp_path / "relay-plugin"
+    plugin_path.mkdir()
+    return adapter.ClaudeRelaySettings(
         gateway=adapter.relay_gateway.RelayGatewayLaunch(
             executable=executable,
             config_path=tmp_path / "relay-config" / "config.toml",
@@ -763,40 +786,48 @@ async def test_runtime_reports_relay_artifacts(relay_payload, monkeypatch, tmp_p
             url="http://127.0.0.1:43210",
             log_path=tmp_path / "relay-config" / "gateway.log",
         ),
-        plugin_config={
-            "version": 1,
-            "components": [
-                {
-                    "kind": "observability",
-                    "enabled": True,
-                    "config": {
-                        "atif": {
-                            "enabled": True,
-                            "output_directory": str(tmp_path / "atif"),
-                            "filename_template": "trajectory-{session_id}.atif.json",
-                        }
-                    },
-                }
-            ],
-        },
-        plugin_path=tmp_path / "relay-plugin",
+        plugin_config=plugin_config,
+        plugin_path=plugin_path,
     )
-    relay.plugin_path.mkdir()
+
+
+def install_mock_relay(
+    monkeypatch: pytest.MonkeyPatch, relay: adapter.ClaudeRelaySettings
+) -> tuple[MagicMock, MagicMock, MagicMock]:
     relay.gateway.log_path.parent.mkdir()
     relay.gateway.log_path.write_text("gateway started\n", encoding="utf-8")
-    atif_path = tmp_path / "atif" / "trajectory-session.atif.json"
-    atif_path.parent.mkdir()
-    atif_path.write_text("{}", encoding="utf-8")
     process = MagicMock()
     mock_start = MagicMock(return_value=process)
     mock_stop = MagicMock()
     monkeypatch.setattr(adapter, "prepare_claude_relay", MagicMock(return_value=relay))
     monkeypatch.setattr(adapter.relay_gateway, "start_relay_gateway", mock_start)
     monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", mock_stop)
+    return process, mock_start, mock_stop
+
+
+async def test_runtime_waits_for_delayed_relay_artifact(
+    relay_payload, monkeypatch, tmp_path
+):
+    atif_dir = tmp_path / "atif"
+    atif_dir.mkdir()
+    atif_path = atif_dir / "trajectory-session.atif.json"
+    relay = relay_settings(tmp_path, atif_plugin_config(atif_dir))
+    process, mock_start, mock_stop = install_mock_relay(monkeypatch, relay)
+    write_task = None
 
     async def responses(client) -> AsyncIterator[ResultMessage]:
+        nonlocal write_task
         assert client.options.env["ANTHROPIC_BASE_URL"] == relay.gateway.url
         assert Path(client.options.plugins[-1]["path"]) == relay.plugin_path
+
+        async def write_atif():
+            await asyncio.sleep(0.05)
+            atif_path.write_text(
+                json.dumps({"schema_version": "ATIF-v1.7", "steps": []}),
+                encoding="utf-8",
+            )
+
+        write_task = asyncio.create_task(write_atif())
         yield ResultMessage(
             subtype="success",
             duration_ms=10,
@@ -815,8 +846,12 @@ async def test_runtime_reports_relay_artifacts(relay_payload, monkeypatch, tmp_p
         key: value for key, value in relay_payload.items() if key != "request"
     }
     await runtime.start(start_payload)
-    output = await runtime.invoke(lifecycle_invocation(relay_payload))
-    await runtime.stop()
+    try:
+        output = await runtime.invoke(lifecycle_invocation(relay_payload))
+        assert write_task is not None
+        await write_task
+    finally:
+        await runtime.stop()
 
     assert output["relay_runtime"] == {
         "enabled": True,
@@ -833,6 +868,57 @@ async def test_runtime_reports_relay_artifacts(relay_payload, monkeypatch, tmp_p
     )
     mock_stop.assert_called_once_with(process)
     assert not relay.plugin_path.exists()
+
+
+async def test_relay_atif_timeout_fails_successful_turn_explicitly(
+    relay_payload, monkeypatch, tmp_path
+):
+    atif_dir = tmp_path / "atif"
+    atif_dir.mkdir()
+    stale_atif = atif_dir / "trajectory-existing.atif.json"
+    stale_atif.write_text("{}", encoding="utf-8")
+    relay = relay_settings(tmp_path, atif_plugin_config(atif_dir))
+    install_mock_relay(monkeypatch, relay)
+    wait_for_atif = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        adapter.relay_artifacts, "wait_for_finalized_atif", wait_for_atif
+    )
+
+    async def responses(_client) -> AsyncIterator[ResultMessage]:
+        yield ResultMessage(
+            subtype="success",
+            duration_ms=10,
+            duration_api_ms=8,
+            is_error=False,
+            num_turns=1,
+            session_id="claude-session",
+            total_cost_usd=0.01,
+            usage={"input_tokens": 1, "output_tokens": 1},
+            result="done",
+        )
+
+    install_fake_client(monkeypatch, responses)
+    runtime = adapter.ClaudeRuntime()
+    start_payload = {
+        key: value for key, value in relay_payload.items() if key != "request"
+    }
+    await runtime.start(start_payload)
+    try:
+        output = await runtime.invoke(lifecycle_invocation(relay_payload))
+        unavailable = await runtime.invoke(lifecycle_invocation(relay_payload))
+    finally:
+        await runtime.stop()
+
+    assert output["error"] == {
+        "code": "claude_relay_atif_timeout",
+        "message": "NeMo Relay did not finalize an ATIF artifact before the deadline",
+        "retryable": False,
+        "metadata": {
+            "timeout_seconds": adapter.relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS
+        },
+    }
+    wait_for_atif.assert_awaited_once()
+    assert unavailable["error"]["code"] == "claude_runtime_unavailable"
 
 
 async def test_runtime_stop_reports_relay_gateway_failure(
