@@ -632,26 +632,6 @@ async def test_relay_waits_for_delayed_atif_before_collecting_artifacts(
     assert output["relay_artifacts"] == [{"kind": "atif", "path": str(atif_file)}]
 
 
-def test_relay_atif_finalization_requires_new_or_changed_valid_json(tmp_path):
-    atif_dir = tmp_path / "atif"
-    atif_dir.mkdir()
-    atif_file = atif_dir / "trajectory-session.atif.json"
-    plugin_config = atif_plugin_config(atif_dir)
-    atif_file.write_text('{"schema_version":"ATIF-v1.7","steps":[]}', encoding="utf-8")
-    before = adapter._relay_atif_snapshot(plugin_config)
-
-    assert adapter._relay_has_finalized_atif(plugin_config, before) is False
-
-    atif_file.write_text("{", encoding="utf-8")
-    assert adapter._relay_has_finalized_atif(plugin_config, before) is False
-
-    atif_file.write_text(
-        '{"schema_version":"ATIF-v1.7","steps":[{"step_id":1}]}',
-        encoding="utf-8",
-    )
-    assert adapter._relay_has_finalized_atif(plugin_config, before) is True
-
-
 async def test_relay_atif_timeout_fails_successful_turn_explicitly(
     codex_payload, mock_codex, monkeypatch, tmp_path
 ):
@@ -665,13 +645,16 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
     stale_atif.write_text('{"schema_version":"ATIF-v1.7","steps":[]}', encoding="utf-8")
     relay = relay_settings(tmp_path, atif_plugin_config(atif_dir))
     install_mock_relay(monkeypatch, relay)
-    monkeypatch.setattr(adapter, "RELAY_ATIF_FINALIZATION_TIMEOUT_SECONDS", 0.01)
-    monkeypatch.setattr(adapter, "RELAY_ATIF_POLL_INTERVAL_SECONDS", 0.001)
+    wait_for_atif = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        adapter.relay_artifacts, "wait_for_finalized_atif", wait_for_atif
+    )
     runtime = adapter.CodexRuntime()
 
     await runtime.start(lifecycle_start_payload(codex_payload))
     try:
         output = await runtime.invoke(lifecycle_invocation(codex_payload))
+        unavailable = await runtime.invoke(lifecycle_invocation(codex_payload))
     finally:
         await runtime.stop()
 
@@ -680,45 +663,12 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
         "code": "codex_relay_atif_timeout",
         "message": "NeMo Relay did not finalize an ATIF artifact before the deadline",
         "retryable": False,
-        "metadata": {"timeout_seconds": 0.01},
+        "metadata": {
+            "timeout_seconds": adapter.relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS
+        },
     }
-
-
-async def test_relay_atif_waits_are_isolated_by_runtime_directory(tmp_path):
-    first_dir = tmp_path / "runtime-1"
-    second_dir = tmp_path / "runtime-2"
-    first_dir.mkdir()
-    second_dir.mkdir()
-    first_config = atif_plugin_config(first_dir)
-    second_config = atif_plugin_config(second_dir)
-    first_before = adapter._relay_atif_snapshot(first_config)
-    second_before = adapter._relay_atif_snapshot(second_config)
-
-    async def write_atif(directory: Path, session_id: str, delay: float):
-        await asyncio.sleep(delay)
-        (directory / f"trajectory-{session_id}.atif.json").write_text(
-            json.dumps({"schema_version": "ATIF-v1.7", "steps": []}),
-            encoding="utf-8",
-        )
-
-    writers = [
-        asyncio.create_task(write_atif(first_dir, "first", 0.02)),
-        asyncio.create_task(write_atif(second_dir, "second", 0.01)),
-    ]
-    await asyncio.gather(
-        adapter._wait_for_relay_atif(first_config, first_before),
-        adapter._wait_for_relay_atif(second_config, second_before),
-    )
-    await asyncio.gather(*writers)
-
-    assert {
-        Path(artifact["path"]).parent
-        for artifact in adapter.common_utils.collect_relay_artifacts(first_config)
-    } == {first_dir}
-    assert {
-        Path(artifact["path"]).parent
-        for artifact in adapter.common_utils.collect_relay_artifacts(second_config)
-    } == {second_dir}
+    wait_for_atif.assert_awaited_once()
+    assert unavailable["error"]["code"] == "codex_runtime_unavailable"
 
 
 def test_failed_sdk_turn_is_normalized_and_transport_is_closed(
