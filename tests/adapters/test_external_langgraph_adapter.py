@@ -19,7 +19,14 @@ from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import FabricConfigError
 from nemo_fabric import HarnessConfig
+from nemo_fabric import InstructionConfig
+from nemo_fabric import InstructionsConfig
+from nemo_fabric import McpConfig
+from nemo_fabric import McpServerConfig
 from nemo_fabric import MetadataConfig
+from nemo_fabric import ModelConfig
+from nemo_fabric import SkillConfig
+from nemo_fabric import ToolsConfig
 from nemo_fabric import WorkflowConfig
 from nemo_fabric import WorkflowEntrypointConfig
 
@@ -38,7 +45,9 @@ def _stage_adapter(base_dir: Path) -> None:
     shutil.copyfile(DESCRIPTOR, destination)
 
 
-def _config(*, ref: str = "agent_graph:build_graph") -> FabricConfig:
+def _config(
+    *, ref: str = "agent_graph:build_graph", settings: dict[str, object] | None = None
+) -> FabricConfig:
     return FabricConfig(
         metadata=MetadataConfig(name="langgraph-reference-test"),
         harness=HarnessConfig(
@@ -47,7 +56,49 @@ def _config(*, ref: str = "agent_graph:build_graph") -> FabricConfig:
         ),
         workflow=WorkflowConfig(
             entrypoint=WorkflowEntrypointConfig(kind="langgraph_factory", ref=ref),
-            settings={"prefix": "Fabric: "},
+            settings={"prefix": "Fabric: "} if settings is None else settings,
+        ),
+    )
+
+
+def _normalized_config(*, ref: str = "capturing_graph:build_graph") -> FabricConfig:
+    return FabricConfig(
+        metadata=MetadataConfig(name="langgraph-normalized-config-test"),
+        harness=HarnessConfig(
+            adapter_id="example.fabric.langgraph",
+            resolution="preinstalled",
+        ),
+        workflow=WorkflowConfig(
+            entrypoint=WorkflowEntrypointConfig(kind="langgraph_factory", ref=ref),
+            settings={
+                "llm_name": "nim_llm",
+                "tool_names": ["current_timezone", "mcp_math"],
+            },
+        ),
+        models={
+            "nim_llm": ModelConfig(
+                provider="nim",
+                model="meta/llama-3.1-70b-instruct",
+                api_key_env="NVIDIA_API_KEY",
+                temperature=0.25,
+            )
+        },
+        instructions=InstructionsConfig(
+            system=InstructionConfig(content="Use the configured tools when useful.")
+        ),
+        mcp=McpConfig(
+            servers={
+                "mcp_math": McpServerConfig(
+                    transport="streamable-http",
+                    url="http://127.0.0.1:9901/mcp",
+                    allowed_tools=["multiply"],
+                    blocked_tools=["divide"],
+                )
+            }
+        ),
+        tools=ToolsConfig(
+            enabled=["mcp_math"],
+            blocked=["current_timezone"],
         ),
     )
 
@@ -60,7 +111,16 @@ def test_descriptor_declares_the_source_reference_contract():
     assert descriptor["adapter_kind"] == "python"
     assert descriptor["runner"] == {"module": "nemo_fabric_adapters.langgraph.adapter"}
     assert descriptor["requirements"] == {}
-    assert descriptor["config"]["accepts"] == []
+    assert descriptor["config"]["accepts"] == [
+        "models",
+        "models.base_url",
+        "models.temperature",
+        "instructions.system",
+        "tools.enabled",
+        "tools.blocked",
+        "mcp",
+        "mcp.tool_filters",
+    ]
     assert descriptor["settings_schema"]["additionalProperties"] is False
     workflow_schema = descriptor["workflow_schema"]
     assert workflow_schema["required"] == ["entrypoint"]
@@ -97,6 +157,25 @@ def test_plan_validates_factory_shape_without_importing_application_code(tmp_pat
     invalid_settings.harness.settings["unknown"] = True
     with pytest.raises(FabricConfigError, match=r"harness\.settings"):
         Fabric().plan(invalid_settings, base_dir=tmp_path)
+
+
+def test_plan_routes_supported_normalized_config_and_rejects_skills(tmp_path: Path):
+    _stage_adapter(tmp_path)
+
+    plan = Fabric().plan(_normalized_config(), base_dir=tmp_path)
+
+    native = plan["capability_plan"]["native"]
+    assert native["mcp_servers"]["mcp_math"]["allowed_tools"] == ["multiply"]
+    assert native["mcp_servers"]["mcp_math"]["blocked_tools"] == ["divide"]
+    assert plan["capability_plan"]["tools"] == {
+        "enabled": ["mcp_math"],
+        "blocked": ["current_timezone"],
+    }
+
+    unsupported_skills = _normalized_config()
+    unsupported_skills.skills = SkillConfig(paths=["skills"])
+    with pytest.raises(FabricConfigError, match="skills"):
+        Fabric().plan(unsupported_skills, base_dir=tmp_path)
 
 
 @pytest.mark.parametrize("example", ["calculator.py", "email_phishing.py"])
@@ -211,6 +290,83 @@ def build_graph(prefix: str):
         "answer": "Fabric: again",
     }
     assert compiled_marker.read_text(encoding="utf-8") == "1"
+
+
+async def test_runtime_translates_normalized_config_for_the_factory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _stage_adapter(tmp_path)
+    source_path = str(LANGGRAPH_SOURCE)
+    existing_pythonpath = os.environ.get("PYTHONPATH", "")
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        (
+            source_path
+            if not existing_pythonpath
+            else f"{source_path}{os.pathsep}{existing_pythonpath}"
+        ),
+    )
+    captured_arguments = tmp_path / "captured-arguments.json"
+    (tmp_path / "capturing_graph.py").write_text(
+        """
+import json
+from pathlib import Path
+
+
+class Graph:
+    def compile(self):
+        return self
+
+    async def ainvoke(self, graph_input):
+        return {"answer": graph_input}
+
+
+def build_graph(
+    *, model_config, system_instruction, mcp_servers, tool_names, marker: str
+):
+    Path(marker).write_text(
+        json.dumps(
+            {
+                "model_config": model_config,
+                "system_instruction": system_instruction,
+                "mcp_servers": mcp_servers,
+                "tool_names": tool_names,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    return Graph()
+""",
+        encoding="utf-8",
+    )
+
+    config = _normalized_config()
+    config.workflow.settings["marker"] = str(captured_arguments)
+    async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
+        result = await runtime.invoke(input="hello")
+
+    assert result.output == {"answer": "hello"}
+    assert json.loads(captured_arguments.read_text(encoding="utf-8")) == {
+        "mcp_servers": {
+            "mcp_math": {
+                "allowed_tools": ["multiply"],
+                "blocked_tools": ["divide"],
+                "exposure": "harness_native",
+                "transport": "streamable-http",
+                "url": "http://127.0.0.1:9901/mcp",
+            }
+        },
+        "model_config": {
+            "api_key_env": "NVIDIA_API_KEY",
+            "model": "meta/llama-3.1-70b-instruct",
+            "provider": "nim",
+            "temperature": 0.25,
+        },
+        "system_instruction": "Use the configured tools when useful.",
+        "tool_names": ["mcp_math"],
+    }
 
 
 async def test_runtime_invokes_a_synchronous_compiled_graph(

@@ -10,13 +10,17 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any
+from typing import Mapping
 from typing import TypedDict
 
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import HarnessConfig
 from nemo_fabric import MetadataConfig
+from nemo_fabric import McpConfig
+from nemo_fabric import McpServerConfig
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import ToolsConfig
 from nemo_fabric import WorkflowConfig
 from nemo_fabric import WorkflowEntrypointConfig
 
@@ -31,26 +35,30 @@ class CalculatorState(TypedDict):
     answer: Any
 
 
-async def build_graph(mcp_url: str) -> Any:
-    """Return an uncompiled graph that calls the configured calculator server."""
+async def build_graph(
+    mcp_servers: Mapping[str, Mapping[str, Any]], tool_names: list[str]
+) -> Any:
+    """Return an uncompiled graph that calls the selected calculator MCP server."""
 
     from langchain_mcp_adapters.client import MultiServerMCPClient
     from langgraph.graph import END
     from langgraph.graph import START
     from langgraph.graph import StateGraph
 
-    client = MultiServerMCPClient(
-        {
-            "mcp_math": {
-                "transport": "streamable-http",
-                "url": mcp_url,
-            }
-        }
-    )
+    server = mcp_servers.get("mcp_math")
+    if server is None or "mcp_math" not in tool_names:
+        raise ValueError("The calculator graph requires the selected mcp_math tool")
+    client = MultiServerMCPClient({"mcp_math": dict(server)})
 
     async def calculate(state: CalculatorState) -> dict[str, Any]:
         tools = await client.get_tools(server_name="mcp_math")
-        tool_by_name = {tool.name: tool for tool in tools}
+        allowed = server.get("allowed_tools")
+        blocked = set(server.get("blocked_tools", []))
+        tool_by_name = {
+            tool.name: tool
+            for tool in tools
+            if (allowed is None or tool.name in allowed) and tool.name not in blocked
+        }
         tool = tool_by_name.get(state["operation"])
         if tool is None:
             raise ValueError(f"Unsupported calculator operation {state['operation']!r}")
@@ -81,8 +89,17 @@ def build_config(mcp_url: str) -> FabricConfig:
                 kind="langgraph_factory",
                 ref="calculator:build_graph",
             ),
-            settings={"mcp_url": mcp_url},
+            settings={"tool_names": ["mcp_math"]},
         ),
+        mcp=McpConfig(
+            servers={
+                "mcp_math": McpServerConfig(
+                    transport="streamable-http",
+                    url=mcp_url,
+                )
+            }
+        ),
+        tools=ToolsConfig(enabled=["mcp_math"]),
         runtime=RuntimeConfig(input_schema="json", output_schema="json"),
     )
 

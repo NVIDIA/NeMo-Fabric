@@ -11,12 +11,16 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from typing import Mapping
 from typing import TypedDict
 
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import HarnessConfig
+from nemo_fabric import InstructionConfig
+from nemo_fabric import InstructionsConfig
 from nemo_fabric import MetadataConfig
+from nemo_fabric import ModelConfig
 from nemo_fabric import RuntimeConfig
 from nemo_fabric import WorkflowConfig
 from nemo_fabric import WorkflowEntrypointConfig
@@ -53,7 +57,9 @@ class CompiledTextInputGraph:
         return await self._graph.ainvoke({"input": input_value})
 
 
-def build_graph(model: str, base_url: str, api_key_env: str) -> TextInputGraph:
+def build_graph(
+    model_config: Mapping[str, Any], system_instruction: str | None = None
+) -> TextInputGraph:
     """Return an uncompiled graph that uses an OpenAI-compatible model endpoint."""
 
     from langchain_openai import ChatOpenAI
@@ -61,17 +67,29 @@ def build_graph(model: str, base_url: str, api_key_env: str) -> TextInputGraph:
     from langgraph.graph import START
     from langgraph.graph import StateGraph
 
+    provider = model_config.get("provider")
+    if provider not in {"nim", "nvidia"}:
+        raise ValueError("The email example supports the nim and nvidia model providers")
+    api_key_env = str(model_config.get("api_key_env") or "NVIDIA_API_KEY")
     api_key = os.environ.get(api_key_env)
     if not api_key:
         raise ValueError(f"Environment variable {api_key_env!r} is required")
-    llm = ChatOpenAI(model=model, base_url=base_url, api_key=api_key, temperature=0)
+    llm = ChatOpenAI(
+        model=str(model_config["model"]),
+        base_url=str(
+            model_config.get("base_url") or "https://integrate.api.nvidia.com/v1"
+        ),
+        api_key=api_key,
+        temperature=float(model_config.get("temperature") or 0),
+    )
 
     async def classify(state: EmailState) -> dict[str, str]:
         response = await llm.ainvoke(
             [
                 (
                     "system",
-                    "Classify the email as phishing or benign. Explain the evidence briefly.",
+                    system_instruction
+                    or "Classify the email as phishing or benign. Explain the evidence briefly.",
                 ),
                 ("user", state["input"]),
             ]
@@ -102,11 +120,19 @@ def build_config() -> FabricConfig:
                 kind="langgraph_factory",
                 ref="email_phishing:build_graph",
             ),
-            settings={
-                "model": "meta/llama-3.1-70b-instruct",
-                "base_url": "https://integrate.api.nvidia.com/v1",
-                "api_key_env": "NVIDIA_API_KEY",
-            },
+            settings={"llm_name": "nim_llm"},
+        ),
+        models={
+            "nim_llm": ModelConfig(
+                provider="nim",
+                model="meta/llama-3.1-70b-instruct",
+                api_key_env="NVIDIA_API_KEY",
+            )
+        },
+        instructions=InstructionsConfig(
+            system=InstructionConfig(
+                content="Classify the email as phishing or benign. Explain the evidence briefly."
+            )
         ),
         runtime=RuntimeConfig(input_schema="text", output_schema="json"),
     )

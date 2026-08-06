@@ -59,6 +59,105 @@ def _workflow(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return ref, dict(settings)
 
 
+def _model_config(payload: dict[str, Any], llm_name: Any) -> dict[str, Any]:
+    if not isinstance(llm_name, str) or not llm_name.strip():
+        raise _WorkflowError(
+            "workflow.settings.llm_name must select a configured model role"
+        )
+    models = common_utils.models_payload(payload)
+    model_config = models.get(llm_name)
+    if not isinstance(model_config, Mapping):
+        raise _WorkflowError(
+            f"workflow.settings.llm_name {llm_name!r} does not name a configured model"
+        )
+    return dict(model_config)
+
+
+def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    capability_plan = common_utils.capability_plan(payload)
+    native = capability_plan.get("native")
+    if not isinstance(native, Mapping):
+        raise _WorkflowError("capability_plan.native must be an object")
+    servers = native.get("mcp_servers", {})
+    if not isinstance(servers, Mapping):
+        raise _WorkflowError("capability_plan.native.mcp_servers must be an object")
+    if any(not isinstance(server, Mapping) for server in servers.values()):
+        raise _WorkflowError("capability_plan.native.mcp_servers entries must be objects")
+    return {str(name): dict(server) for name, server in servers.items()}
+
+
+def _effective_tool_names(
+    settings: dict[str, Any], payload: dict[str, Any]
+) -> list[str] | None:
+    capability_plan = common_utils.capability_plan(payload)
+    if not capability_plan.get("tools_configured", False):
+        return settings.get("tool_names")
+
+    declared = settings.get("tool_names")
+    if not isinstance(declared, list) or any(
+        not isinstance(name, str) or not name.strip() for name in declared
+    ):
+        raise _WorkflowError(
+            "workflow.settings.tool_names must declare factory tool names when tools are configured"
+        )
+    if len(set(declared)) != len(declared):
+        raise _WorkflowError("workflow.settings.tool_names must not contain duplicates")
+
+    tools = capability_plan.get("tools")
+    if not isinstance(tools, Mapping):
+        raise _WorkflowError("capability_plan.tools must be an object")
+    enabled = tools.get("enabled")
+    blocked = tools.get("blocked", [])
+    if enabled is not None and (
+        not isinstance(enabled, list) or any(not isinstance(name, str) for name in enabled)
+    ):
+        raise _WorkflowError("capability_plan.tools.enabled must be a string array")
+    if not isinstance(blocked, list) or any(not isinstance(name, str) for name in blocked):
+        raise _WorkflowError("capability_plan.tools.blocked must be a string array")
+
+    selectors = [*([] if enabled is None else enabled), *blocked]
+    unknown = next((name for name in selectors if name not in declared), None)
+    if unknown is not None:
+        raise _WorkflowError(
+            f"tools policy references undeclared factory tool {unknown!r}; "
+            "add it to workflow.settings.tool_names"
+        )
+    selected = declared if enabled is None else enabled
+    return [name for name in selected if name not in blocked]
+
+
+def _factory_arguments(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    ref, settings = _workflow(payload)
+    config = common_utils.fabric_config(payload)
+    models = config.get("models", {})
+    if not isinstance(models, Mapping):
+        raise _WorkflowError("models must be an object")
+    llm_name = settings.pop("llm_name", None)
+    if models:
+        settings["model_config"] = _model_config(payload, llm_name)
+    elif llm_name is not None:
+        raise _WorkflowError(
+            "workflow.settings.llm_name requires a configured normalized model"
+        )
+
+    system_instruction = common_utils.system_instruction(payload)
+    if system_instruction is not None:
+        settings["system_instruction"] = system_instruction
+
+    mcp_servers = _native_mcp_servers(payload)
+    effective_tool_names = _effective_tool_names(settings, payload)
+    if effective_tool_names is not None:
+        settings["tool_names"] = effective_tool_names
+        mcp_servers = {
+            name: server
+            for name, server in mcp_servers.items()
+            if name in effective_tool_names
+        }
+    if mcp_servers:
+        settings["mcp_servers"] = mcp_servers
+    return ref, settings
+
+
 def _is_factory_ref(value: str) -> bool:
     module, separator, attribute = value.partition(":")
     if not separator or not module or not attribute or ":" in attribute:
@@ -131,7 +230,7 @@ class LangGraphRuntime:
                 "LangGraph runtime is already started",
             )
 
-        ref, settings = _workflow(payload)
+        ref, settings = _factory_arguments(payload)
         factory = _factory_from_ref(ref, common_utils.base_dir(payload))
         try:
             graph = await _await_if_needed(factory(**settings))

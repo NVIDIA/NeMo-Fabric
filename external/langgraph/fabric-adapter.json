@@ -33,7 +33,27 @@
       },
       "settings": {
         "type": "object",
-        "description": "JSON-compatible keyword arguments forwarded unchanged to the selected factory."
+        "properties": {
+          "llm_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the normalized model role passed to the factory as model_config."
+          },
+          "tool_names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "description": "Factory-declared tool names after applying normalized tools.enabled and tools.blocked."
+          },
+          "model_config": false,
+          "system_instruction": false,
+          "mcp_servers": false
+        },
+        "additionalProperties": true,
+        "description": "Application factory settings. The adapter injects reserved normalized-config arguments."
       }
     },
     "required": ["entrypoint"],
@@ -41,7 +61,16 @@
   },
   "requirements": {},
   "config": {
-    "accepts": []
+    "accepts": [
+      "models",
+      "models.base_url",
+      "models.temperature",
+      "instructions.system",
+      "tools.enabled",
+      "tools.blocked",
+      "mcp",
+      "mcp.tool_filters"
+    ]
   },
   "capabilities": {
     "cancellation": false,
