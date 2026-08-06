@@ -909,6 +909,7 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
     finally:
         await runtime.stop()
 
+    assert output["failed"] is True
     assert output["error"] == {
         "code": "claude_relay_atif_timeout",
         "message": "NeMo Relay did not finalize an ATIF artifact before the deadline",

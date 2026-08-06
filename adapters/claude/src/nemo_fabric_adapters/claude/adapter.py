@@ -894,7 +894,7 @@ class ClaudeRuntime:
         else:
             relay = self._relay
             atif_before = (
-                relay_artifacts.snapshot_atif_paths(relay.plugin_config)
+                relay_artifacts.snapshot_atif_files(relay.plugin_config)
                 if relay is not None
                 and relay_artifacts.expects_local_atif(relay.plugin_config)
                 else None

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,8 @@ from nemo_fabric_adapters.common import utils as common_utils
 
 ATIF_FINALIZATION_TIMEOUT_SECONDS = 5.0
 ATIF_POLL_INTERVAL_SECONDS = 0.05
+AtifFileFingerprint = tuple[int, int, int, int]
+AtifSnapshot = dict[Path, AtifFileFingerprint]
 
 
 def expects_local_atif(plugin_config: dict[str, Any]) -> bool:
@@ -40,28 +41,43 @@ def expects_local_atif(plugin_config: dict[str, Any]) -> bool:
     return False
 
 
-def snapshot_atif_paths(plugin_config: dict[str, Any]) -> frozenset[Path]:
-    """Capture ATIF paths that existed before an adapter invocation.
+def _atif_fingerprint(path: Path) -> AtifFileFingerprint | None:
+    try:
+        status = path.stat()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return (status.st_dev, status.st_ino, status.st_size, status.st_mtime_ns)
+
+
+def snapshot_atif_files(plugin_config: dict[str, Any]) -> AtifSnapshot:
+    """Capture ATIF file metadata before an adapter invocation.
 
     Relay requires ``{session_id}`` in the ATIF filename template and creates a
-    new session scope for each turn. Existing paths therefore cannot satisfy a
-    later invocation, even if another process modifies them.
+    new session scope for each turn, so a new path is the normal case. Metadata
+    fingerprints also detect a writer that rewrites an existing path without
+    reading or hashing artifacts from prior turns.
     """
 
-    return frozenset(
-        Path(artifact["path"])
-        for artifact in common_utils.collect_relay_artifacts(plugin_config)
-        if artifact.get("kind") == "atif"
-    )
+    snapshot: AtifSnapshot = {}
+    for artifact in common_utils.collect_relay_artifacts(plugin_config):
+        if artifact.get("kind") != "atif":
+            continue
+        path = Path(artifact["path"])
+        fingerprint = _atif_fingerprint(path)
+        if fingerprint is not None:
+            snapshot[path] = fingerprint
+    return snapshot
 
 
 def _finalized_atif_path(
-    plugin_config: dict[str, Any], before: Collection[Path]
+    plugin_config: dict[str, Any], before: AtifSnapshot
 ) -> Path | None:
-    """Find a newly created ATIF path containing a complete JSON object."""
+    """Find a new or changed ATIF path containing a complete JSON object."""
 
-    current = snapshot_atif_paths(plugin_config)
-    for path in sorted(current.difference(before)):
+    current = snapshot_atif_files(plugin_config)
+    for path in sorted(current):
+        if before.get(path) == current[path]:
+            continue
         try:
             # Relay writes directly to the final path, so existence alone does
             # not prove that the JSON payload has been written completely.
@@ -75,12 +91,12 @@ def _finalized_atif_path(
 
 async def wait_for_finalized_atif(
     plugin_config: dict[str, Any],
-    before: Collection[Path],
+    before: AtifSnapshot,
     *,
     timeout_seconds: float = ATIF_FINALIZATION_TIMEOUT_SECONDS,
     poll_interval_seconds: float = ATIF_POLL_INTERVAL_SECONDS,
 ) -> Path | None:
-    """Wait for one new, complete ATIF file until a monotonic deadline."""
+    """Wait for one new or changed, complete ATIF file until a deadline."""
 
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout_seconds
