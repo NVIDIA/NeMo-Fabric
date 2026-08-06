@@ -167,7 +167,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "fabric-python"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "nemo-fabric-core",
  "pyo3",
@@ -456,7 +456,7 @@ checksum = "c2a86d3146ed3995b5913c414f6664344b9617457320782e64f0bb44afd49d74"
 
 [[package]]
 name = "nemo-fabric-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "nemo-fabric-core",
@@ -465,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "nemo-fabric-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jsonschema",
  "schemars",
