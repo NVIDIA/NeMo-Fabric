@@ -33,16 +33,15 @@ be managed separately.
 | `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No |
 | `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No |
 | `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes |
-| `nemo-fabric-adapters-langgraph[harness]` | No | Yes | Yes | No |
 | `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes |
 | `nemo-fabric-adapters-claude` | No | Yes | No | No |
 
 An adapter package's `full` extra is scoped to the adapter environment. It
 installs the supported harness and any Python Relay dependency, but it does not
-install the NeMo Fabric runtime. For Claude, Codex, and LangGraph, `full` is
-equivalent to `harness` because they do not include a NeMo Relay Python
-integration. For LangChain Deep Agents and Hermes Agent, `full` installs both
-the harness and the NeMo Relay Python package.
+install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
+`harness` because their Relay integration requires an external executable. For
+LangChain Deep Agents and Hermes Agent, `full` installs both the harness and the
+NeMo Relay Python package.
 
 For Claude and Codex, no Python package extra installs the external
 `nemo-relay` CLI required by Relay telemetry and `Runtime.invoke_stream()`.
@@ -67,7 +66,6 @@ the same Python environment:
 pip install "nemo-fabric[claude]"
 pip install "nemo-fabric[codex]"
 pip install "nemo-fabric[deepagents]"
-pip install "nemo-fabric[langgraph]"
 pip install "nemo-fabric[hermes-agent]"
 ```
 
@@ -92,7 +90,6 @@ Fabric:
 pip install "nemo-fabric-adapters-claude[harness]"
 pip install "nemo-fabric-adapters-codex[harness]"
 pip install "nemo-fabric-adapters-deepagents[harness]"
-pip install "nemo-fabric-adapters-langgraph[harness]"
 pip install "nemo-fabric-adapters-hermes[harness]"
 ```
 
@@ -112,7 +109,6 @@ supplies and manages a compatible harness:
 pip install nemo-fabric-adapters-claude
 pip install nemo-fabric-adapters-codex
 pip install nemo-fabric-adapters-deepagents
-pip install nemo-fabric-adapters-langgraph
 pip install nemo-fabric-adapters-hermes
 ```
 

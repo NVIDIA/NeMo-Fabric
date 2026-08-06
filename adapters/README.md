@@ -46,7 +46,6 @@ provider should expose more precise provenance.
 | [Claude](claude/README.md) | `nvidia.fabric.claude` | `nemo-fabric-adapters-claude` | 3.11+ |
 | [Codex](codex/README.md) | `nvidia.fabric.codex` | `nemo-fabric-adapters-codex` | 3.11+ |
 | [LangChain Deep Agents](deepagents/README.md) | `nvidia.fabric.langchain.deepagents` | `nemo-fabric-adapters-deepagents` | 3.11+ |
-| [LangGraph](langgraph/README.md) | `nvidia.fabric.langgraph` | `nemo-fabric-adapters-langgraph` | 3.11+ |
 | [Hermes Agent](hermes/README.md) | `nvidia.fabric.hermes` | `nemo-fabric-adapters-hermes` | 3.11-3.13 |
 
 ## Configuration Compatibility
@@ -56,7 +55,6 @@ provider should expose more precise provenance.
 | [Claude](claude/README.md) | Native Anthropic or a configured Anthropic Messages-compatible provider | `tools.enabled` selects built-ins; a pre-tool hook enforces enabled and blocked names across built-in, MCP, and plugin tools | Normalized: stdio, HTTP, streamable HTTP, and SSE | Normalized `skills.paths` | Not exposed |
 | [Codex](codex/README.md) | Native OpenAI or a configured Responses-compatible provider | `tools.enabled` and `tools.blocked` unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
 | [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | Middleware enforces `tools.enabled` and `tools.blocked` across built-ins, MCP, and local delegation | Normalized through `langchain-mcp-adapters` | Normalized | Built-in, declarative, and Agent Protocol |
-| [LangGraph](langgraph/README.md) | Not exposed | Not exposed | Not exposed | Not exposed | Not exposed |
 | [Hermes Agent](hermes/README.md) | Configurable provider, model, and base URL | `tools.enabled` and `tools.blocked` map to Hermes native toolset selectors | Normalized | Normalized | Not exposed |
 
 "Normalized" means that the adapter accepts the corresponding `FabricConfig`
@@ -83,36 +81,36 @@ its harness. `No` means an explicitly configured value fails planning instead
 of being ignored. The following table groups provider-specific Relay subfields
 and additive extension maps because their support does not vary by adapter:
 
-| `FabricConfig` Field | Claude | Codex | Deep Agents | LangGraph | Hermes Agent |
-| --- | --- | --- | --- | --- | --- |
-| `schema_version` | Core | Core | Core | Core | Core |
-| `metadata.name`, `.description` | Core | Core | Core | Core | Core |
-| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core |
-| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema |
-| `workflow.entrypoint`, `.settings` | No | No | No | Yes | No |
-| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | No | Dynamic Hermes provider |
-| `models.<role>.model` | Yes | Yes | Yes | No | Yes |
-| `models.<role>.api_key_env` | Yes | Yes | Yes | No | Yes |
-| `models.<role>.base_url` | Yes | Yes | Yes | No | Yes |
-| `models.<role>.temperature` | No | No | Yes | No | Yes |
-| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No | No keys declared |
-| `instructions.system` | Yes | Yes; base instructions | Yes | No | Yes |
-| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
-| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
-| `runtime.max_turns` | Yes | No | No | No | Yes; iteration limit |
-| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core |
-| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core |
-| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
-| `tools.enabled`, `.blocked` | Yes | No | Yes | No | Yes; native selectors are Hermes toolset names |
-| `skills.paths` | Yes | Yes | Yes | No | Yes |
-| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | No | Yes |
-| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented | No; not implemented |
-| `telemetry.providers.relay` | Yes | Yes | Yes | No | Yes |
-| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No | No |
-| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | No | Declared-provider pass-through |
-| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | No | Yes |
-| `relay.components`, `.policy` | Yes | Yes | Yes | No | Yes |
-| Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics |
+| `FabricConfig` Field | Claude | Codex | Deep Agents | Hermes Agent |
+| --- | --- | --- | --- | --- |
+| `schema_version` | Core | Core | Core | Core |
+| `metadata.name`, `.description` | Core | Core | Core | Core |
+| `harness.adapter_id`, `.resolution` | Core | Core | Core | Core |
+| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema |
+| `workflow.entrypoint`, `.settings` | No | No | No | No |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider |
+| `models.<role>.model` | Yes | Yes | Yes | Yes |
+| `models.<role>.api_key_env` | Yes | Yes | Yes | Yes |
+| `models.<role>.base_url` | Yes | Yes | Yes | Yes |
+| `models.<role>.temperature` | No | No | Yes | Yes |
+| `models.<role>.settings.<key>` | No keys declared | No keys declared | No keys declared | No keys declared |
+| `instructions.system` | Yes | Yes; base instructions | Yes | Yes |
+| `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core |
+| `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core |
+| `runtime.max_turns` | Yes | No | No | Yes; iteration limit |
+| `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core |
+| `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core |
+| `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
+| `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names |
+| `skills.paths` | Yes | Yes | Yes | Yes |
+| `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes |
+| `mcp.servers.<name>.exposure = "fabric_managed"` | No; not implemented | No; not implemented | No; not implemented | No; not implemented |
+| `telemetry.providers.relay` | Yes | Yes | Yes | Yes |
+| `telemetry.providers.native` | No | Yes; OpenTelemetry | Yes; OpenTelemetry and OpenInference | No |
+| `telemetry.providers.<provider>.config` | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through | Declared-provider pass-through |
+| `relay.project`, `.output_dir`, `.observability` | Yes | Yes | Yes | Yes |
+| `relay.components`, `.policy` | Yes | Yes | Yes | Yes |
+| Additive `extensions` on typed config objects | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics | Preserved; no portable adapter semantics |
 
 The selected model role is `default`, or the sole configured role when no
 `default` exists. More than one role without `default` fails planning.
@@ -133,7 +131,6 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [Claude](claude/README.md) | `ClaudeSDKClient` and Claude session ID | Runtime-owned Relay CLI gateway and generated Claude hooks | Calls `client.query()`, validates the session ID, and collects ATOF and ATIF | Disconnects the client, stops the gateway, and removes the generated plugin | Not implemented |
 | [Codex](codex/README.md) | `AsyncCodex` app-server client and SDK thread | Runtime-owned Relay CLI gateway and Codex SDK hooks | Reuses the SDK thread and persists its thread ID | Closes the SDK client and app server, then stops the gateway | Not implemented |
 | [LangChain Deep Agents](deepagents/README.md) | Compiled LangGraph agent, checkpointer, and thread ID | NeMo Relay Python SDK integration added when the agent is compiled | Creates a fresh Relay request scope and callback for each invocation | Closes the checkpointer; no gateway process | Not implemented |
-| [LangGraph](langgraph/README.md) | Factory-created compiled graph | Not exposed | Calls `ainvoke(input)` or `invoke(input)` | Releases the adapter's graph reference | Not implemented |
 | [Hermes Agent](hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
 
 Telemetry output names use the descriptor contract values. Claude, Codex, and

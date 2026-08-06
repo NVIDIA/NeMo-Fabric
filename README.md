@@ -44,7 +44,6 @@ expressions install the components shown in each column:
 | [Codex](docs/integrations/harness/codex.mdx) | `nemo-fabric[codex]` | `nemo-fabric-adapters-codex[harness]` | `nemo-fabric-adapters-codex` |
 | [Hermes Agent](docs/integrations/harness/hermes.mdx) | `nemo-fabric[hermes-agent]` | `nemo-fabric-adapters-hermes[harness]` | `nemo-fabric-adapters-hermes` |
 | [LangChain Deep Agents](docs/integrations/harness/deepagents.mdx) | `nemo-fabric[deepagents]` | `nemo-fabric-adapters-deepagents[harness]` | `nemo-fabric-adapters-deepagents` |
-| [LangGraph](docs/integrations/harness/langgraph.mdx) | `nemo-fabric[langgraph]` | `nemo-fabric-adapters-langgraph[harness]` | `nemo-fabric-adapters-langgraph` |
 
 The `nemo-fabric` package always installs the runtime, and each root harness
 extra adds the corresponding adapter and supported harness. Use the
@@ -211,7 +210,7 @@ flowchart TB
   Config["Typed configuration\nFabricConfig"]
   Core["NeMo Fabric Rust core\nresolve | plan | create | invoke | destroy"]
   Adapter["Selected NeMo Fabric adapter"]
-  Harness["Agent harness runtime\nHermes Agent | Codex | Claude Code | LangChain Deep Agents | LangGraph | custom"]
+  Harness["Agent harness runtime\nHermes Agent | Codex | Claude Code | LangChain Deep Agents | custom"]
   Artifacts["Normalized results and artifacts\nresponse | logs | patches | telemetry refs"]
   Relay["NVIDIA NeMo Relay\nATOF | ATIF | OTel | OpenInference when enabled"]
 

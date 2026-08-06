@@ -44,11 +44,6 @@ ADAPTER_EXTRAS = {
         "relay": ["nemo-relay>=0.6.0,<0.7"],
         "full_relay": ["nemo-relay[deepagents]>=0.6.0,<0.7"],
     },
-    "langgraph": {
-        "path": "adapters/langgraph",
-        "root": f"nemo-fabric-adapters-langgraph[harness] == {PACKAGE_VERSION}",
-        "harness": ["langgraph>=1.2,<2.0"],
-    },
     "hermes-agent": {
         "path": "adapters/hermes",
         "root": (
@@ -94,10 +89,6 @@ ADAPTER_EXTRAS = {
             "adapters/hermes",
             [f"nemo-fabric-adapters-common == {PACKAGE_VERSION}"],
         ),
-        (
-            "adapters/langgraph",
-            [f"nemo-fabric-adapters-common == {PACKAGE_VERSION}"],
-        ),
     ],
 )
 def test_adapter_runtime_dependencies(path: str, expected: list[str]):
@@ -112,7 +103,6 @@ def test_adapter_test_dependency_group_matches_leaf_harnesses():
         "nemo-fabric-adapters-claude[harness]",
         "nemo-fabric-adapters-codex[harness]",
         "nemo-fabric-adapters-deepagents[harness]",
-        "nemo-fabric-adapters-langgraph[harness]",
         "nemo-fabric-adapters-hermes[harness]; python_version < '3.14'",
     ]
     assert sorted(manifest["dependency-groups"]["adapter-tests"]) == sorted(expected)
