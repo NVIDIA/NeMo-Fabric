@@ -727,6 +727,8 @@ def child_environment(
 def _relay_output(
     output: dict[str, Any],
     relay: ClaudeRelaySettings,
+    *,
+    artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     output["relay_runtime"] = {
         "enabled": True,
@@ -736,8 +738,10 @@ def _relay_output(
         "gateway_url": relay.gateway.url,
         "gateway_log_path": str(relay.gateway.log_path),
     }
-    output["relay_artifacts"] = common_utils.collect_relay_artifacts(
-        relay.plugin_config
+    output["relay_artifacts"] = (
+        common_utils.collect_relay_artifacts(relay.plugin_config)
+        if artifacts is None
+        else artifacts
     )
     return output
 
@@ -915,14 +919,18 @@ class ClaudeRuntime:
                 )
                 if finalized is None:
                     self._unusable = True
-                    output = adapter_failure(
-                        AdapterRelayError(
-                            "claude_relay_atif_timeout",
-                            "NeMo Relay did not finalize an ATIF artifact before the deadline",
-                            metadata={
-                                "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                            },
-                        )
+                    return _relay_output(
+                        adapter_failure(
+                            AdapterRelayError(
+                                "claude_relay_atif_timeout",
+                                "NeMo Relay did not finalize an ATIF artifact before the deadline",
+                                metadata={
+                                    "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                                },
+                            )
+                        ),
+                        relay,
+                        artifacts=[],
                     )
 
         if self._relay is not None:

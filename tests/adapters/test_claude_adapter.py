@@ -919,7 +919,11 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
         },
     }
     wait_for_atif.assert_awaited_once()
+    assert output["relay_runtime"]["enabled"] is True
+    assert output["relay_artifacts"] == []
     assert unavailable["error"]["code"] == "claude_runtime_unavailable"
+    assert "relay_runtime" not in unavailable
+    assert "relay_artifacts" not in unavailable
 
 
 async def test_runtime_stop_reports_relay_gateway_failure(
