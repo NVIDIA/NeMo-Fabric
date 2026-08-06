@@ -28,13 +28,8 @@ NeMo Fabric resolves multi-component relative `ADAPTER_PYTHON` paths from
 `<base_dir>`. It resolves bare command names through `PATH`.
 
 The winning descriptor supplies its runner metadata, `settings_schema`, and
-workflow validation metadata atomically. A descriptor can use the legacy
-`workflow_schema` for one adapter-wide workflow shape or static
-`workflow_contracts` keyed by `workflow.entrypoint.kind` and
-`workflow.entrypoint.ref`. Planning validates `harness.settings`, selects a
-matching static contract when declared, validates `workflow.settings`, and
-routes only that contract's accepted mappings. The selected contract digest is
-stored in `RunPlan` and verified before runtime startup. An agent-local
+optional `workflow_schema` atomically. Planning validates `harness.settings`
+and `FabricConfig.workflow` against those exact schemas. An agent-local
 descriptor therefore replaces installed schemas rather than merging with them.
 Descriptor schemas must be self-contained; NeMo Fabric does not resolve HTTP or
 file references from adapter descriptors.

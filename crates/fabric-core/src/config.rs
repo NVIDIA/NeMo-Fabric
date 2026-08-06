@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use crate::error::{FabricError, Result};
 
@@ -155,64 +154,6 @@ pub struct WorkflowEntrypointConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
-/// Canonical workflow identity used to select a static adapter contract.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
-pub struct WorkflowEntrypointRef {
-    /// Adapter-defined entry-point kind.
-    #[schemars(length(min = 1), regex(pattern = r"\S"))]
-    pub kind: String,
-    /// Adapter-defined workflow reference.
-    #[schemars(length(min = 1), regex(pattern = r"\S"))]
-    pub r#ref: String,
-}
-
-/// Adapter-declared native delivery point for one normalized Fabric field.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct WorkflowInjectionPoint {
-    /// Adapter-native name for the declared delivery point.
-    #[schemars(length(min = 1), regex(pattern = r"\S"))]
-    pub name: String,
-    /// Additive adapter-owned injection-point metadata.
-    #[serde(default, flatten)]
-    pub extensions: BTreeMap<String, Value>,
-}
-
-/// Static contract for one adapter-owned workflow entry point.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct WorkflowContract {
-    /// Exact entry point selected by this contract.
-    pub entrypoint: WorkflowEntrypointRef,
-    /// JSON Schema for this entry point's `workflow.settings` map.
-    pub settings_schema: serde_json::Map<String, Value>,
-    /// Normalized Fabric fields the workflow accepts through named native delivery points.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub injection_points: BTreeMap<AdapterConfigField, WorkflowInjectionPoint>,
-    /// Adapter-owned execution constraints retained in the resolved plan.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub execution_constraints: BTreeMap<String, Value>,
-    /// Additive contract metadata owned by the adapter.
-    #[serde(default, flatten)]
-    pub extensions: BTreeMap<String, Value>,
-}
-
-/// Effective static workflow contract selected during planning.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct WorkflowContractPlan {
-    /// Canonical entry point selected during planning.
-    pub entrypoint: WorkflowEntrypointRef,
-    /// Normalized Fabric fields accepted by the selected workflow.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub accepted_fields: Vec<AdapterConfigField>,
-    /// Adapter-native delivery points for accepted normalized fields.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub injection_points: BTreeMap<AdapterConfigField, WorkflowInjectionPoint>,
-    /// Adapter-owned execution constraints for the selected workflow.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub execution_constraints: BTreeMap<String, Value>,
-    /// SHA-256 digest of the selected static contract.
-    pub digest: String,
-}
-
 /// Adapter-owned workflow selection and immutable construction settings.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkflowConfig {
@@ -249,9 +190,6 @@ pub struct AdapterDescriptor {
     /// JSON Schema for adapter-owned `FabricConfig.workflow`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_schema: Option<serde_json::Map<String, Value>>,
-    /// Static contracts for adapter-owned workflow entry points.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub workflow_contracts: Vec<WorkflowContract>,
     /// Runtime requirements.
     #[serde(default)]
     pub requirements: AdapterRequirements,
@@ -1429,25 +1367,17 @@ fn resolve_run_plan(
 ) -> Result<RunPlan> {
     let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_directories)?;
     validate_harness_settings(&config, adapter_descriptor.as_ref())?;
-    let workflow_contract = resolve_workflow_contract(&config, adapter_descriptor.as_ref())?;
-    if workflow_contract.is_none() {
-        validate_workflow_schema(&config, adapter_descriptor.as_ref())?;
-    }
+    validate_workflow(&config, adapter_descriptor.as_ref())?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
     if enforce_compatibility {
-        validate_adapter_config_compatibility(&config, descriptor, workflow_contract.as_ref())?;
+        validate_adapter_config_compatibility(&config, descriptor)?;
     }
     let resolution = resolve_resolution(&config, descriptor)?;
     let environment_plan = resolve_environment_plan(&config, &base_dir);
     validate_control_location(descriptor, environment_plan.as_ref())?;
-    let capability_plan = resolve_capability_plan_with_contract(
-        &config,
-        &base_dir,
-        adapter_descriptor.as_ref(),
-        workflow_contract.as_ref(),
-    );
+    let capability_plan = resolve_capability_plan(&config, &base_dir, adapter_descriptor.as_ref());
     if enforce_compatibility {
         validate_capability_plan_compatibility(&capability_plan, descriptor)?;
     }
@@ -1458,7 +1388,6 @@ fn resolve_run_plan(
         base_dir,
         config,
         adapter_descriptor,
-        workflow_contract,
         resolution,
         environment_plan,
         capability_plan,
@@ -1490,9 +1419,8 @@ fn validate_capability_plan_compatibility(
 pub(crate) fn validate_adapter_config_compatibility(
     config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
-    workflow_contract: Option<&WorkflowContractPlan>,
 ) -> Result<()> {
-    let Some(issue) = adapter_config_compatibility_issues(config, descriptor, workflow_contract)
+    let Some(issue) = adapter_config_compatibility_issues(config, descriptor)
         .into_iter()
         .next()
     else {
@@ -1515,14 +1443,11 @@ pub(crate) struct AdapterCompatibilityIssue {
 pub(crate) fn adapter_config_compatibility_issues(
     config: &FabricConfig,
     descriptor: Option<&AdapterDescriptor>,
-    workflow_contract: Option<&WorkflowContractPlan>,
 ) -> Vec<AdapterCompatibilityIssue> {
     let Some(descriptor) = descriptor else {
         return Vec::new();
     };
-    let accepts = |field: AdapterConfigField| {
-        accepts_adapter_config_field(descriptor, workflow_contract, field)
-    };
+    let accepts = |field: AdapterConfigField| descriptor.config.accepts.contains(&field);
     let incompatible = |field: String, reason: String| AdapterCompatibilityIssue {
         adapter_id: descriptor.adapter_id.clone(),
         reason,
@@ -1602,17 +1527,6 @@ pub(crate) fn adapter_config_compatibility_issues(
     issues
 }
 
-fn accepts_adapter_config_field(
-    descriptor: &AdapterDescriptor,
-    workflow_contract: Option<&WorkflowContractPlan>,
-    field: AdapterConfigField,
-) -> bool {
-    workflow_contract.map_or_else(
-        || descriptor.config.accepts.contains(&field),
-        |contract| contract.accepted_fields.contains(&field),
-    )
-}
-
 fn resolve_adapter_descriptor(
     config: &FabricConfig,
     base_dir: &Path,
@@ -1669,61 +1583,12 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     if descriptor.harness.trim().is_empty() {
         return invalid_adapter_descriptor(path, "harness must not be empty");
     }
-    if descriptor.workflow_schema.is_some() && !descriptor.workflow_contracts.is_empty() {
-        return invalid_adapter_descriptor(
-            path,
-            "workflow_schema and workflow_contracts cannot both be declared",
-        );
-    }
     for (field, schema) in [
         ("settings_schema", descriptor.settings_schema.as_ref()),
         ("workflow_schema", descriptor.workflow_schema.as_ref()),
     ] {
         if let Some(schema) = schema {
             validate_adapter_object_schema(path, field, schema)?;
-        }
-    }
-    let mut entrypoints = BTreeSet::new();
-    for (index, contract) in descriptor.workflow_contracts.iter().enumerate() {
-        let prefix = format!("workflow_contracts[{index}]");
-        if contract.entrypoint.kind.trim().is_empty() {
-            return invalid_adapter_descriptor(
-                path,
-                format!("{prefix}.entrypoint.kind must not be empty"),
-            );
-        }
-        if contract.entrypoint.r#ref.trim().is_empty() {
-            return invalid_adapter_descriptor(
-                path,
-                format!("{prefix}.entrypoint.ref must not be empty"),
-            );
-        }
-        if !entrypoints.insert(contract.entrypoint.clone()) {
-            return invalid_adapter_descriptor(
-                path,
-                format!("{prefix}.entrypoint duplicates another workflow contract"),
-            );
-        }
-        validate_adapter_object_schema(
-            path,
-            &format!("{prefix}.settings_schema"),
-            &contract.settings_schema,
-        )?;
-        for (field, injection_point) in &contract.injection_points {
-            if injection_point.name.trim().is_empty() {
-                return invalid_adapter_descriptor(
-                    path,
-                    format!("{prefix}.injection_points.{field:?}.name must not be empty"),
-                );
-            }
-            if !descriptor.config.accepts.contains(field) {
-                return invalid_adapter_descriptor(
-                    path,
-                    format!(
-                        "{prefix}.injection_points.{field:?} must also be declared by config.accepts"
-                    ),
-                );
-            }
         }
     }
     Ok(())
@@ -1812,16 +1677,6 @@ pub(crate) fn validate_workflow(
     config: &FabricConfig,
     resolved: Option<&ResolvedAdapterDescriptor>,
 ) -> Result<()> {
-    if resolve_workflow_contract(config, resolved)?.is_some() {
-        return Ok(());
-    }
-    validate_workflow_schema(config, resolved)
-}
-
-fn validate_workflow_schema(
-    config: &FabricConfig,
-    resolved: Option<&ResolvedAdapterDescriptor>,
-) -> Result<()> {
     let Some(resolved) = resolved else {
         return Ok(());
     };
@@ -1851,104 +1706,6 @@ fn validate_workflow_schema(
         return invalid_workflow(resolved, workflow_path, reason);
     }
     Ok(())
-}
-
-fn resolve_workflow_contract(
-    config: &FabricConfig,
-    resolved: Option<&ResolvedAdapterDescriptor>,
-) -> Result<Option<WorkflowContractPlan>> {
-    let Some(resolved) = resolved else {
-        return Ok(None);
-    };
-    if resolved.descriptor.workflow_contracts.is_empty() {
-        return Ok(None);
-    }
-
-    let Some(workflow) = config.workflow.as_ref() else {
-        return invalid_workflow(
-            resolved,
-            "workflow".to_string(),
-            "the resolved descriptor requires one of its static workflow contracts",
-        );
-    };
-    if let Some(name) = workflow.extensions.keys().min() {
-        return invalid_workflow(
-            resolved,
-            format!("workflow.{name}"),
-            "static workflow contracts accept only entrypoint and settings",
-        );
-    }
-    if let Some(name) = workflow.entrypoint.extensions.keys().min() {
-        return invalid_workflow(
-            resolved,
-            format!("workflow.entrypoint.{name}"),
-            "static workflow contracts use only kind and ref",
-        );
-    }
-
-    let entrypoint = WorkflowEntrypointRef {
-        kind: workflow.entrypoint.kind.clone(),
-        r#ref: workflow.entrypoint.r#ref.clone(),
-    };
-    let Some(contract) = resolved
-        .descriptor
-        .workflow_contracts
-        .iter()
-        .find(|contract| contract.entrypoint == entrypoint)
-    else {
-        return invalid_workflow(
-            resolved,
-            "workflow.entrypoint".to_string(),
-            "does not match a static workflow contract declared by the resolved descriptor",
-        );
-    };
-
-    let schema = Value::Object(contract.settings_schema.clone());
-    let settings = Value::Object(workflow.settings.clone());
-    let validator = jsonschema::validator_for(&schema).map_err(|error| {
-        FabricError::InvalidAdapterDescriptor {
-            path: resolved.path.clone(),
-            message: format!("workflow contract settings_schema could not be compiled: {error}"),
-        }
-    })?;
-    if let Some(error) = validator.iter_errors(&settings).next() {
-        let settings_path = schema_error_path(&error, "workflow.settings");
-        let reason = schema_error_reason(&error, "workflow contract settings schema");
-        return invalid_workflow(resolved, settings_path, reason);
-    }
-
-    Ok(Some(WorkflowContractPlan {
-        entrypoint,
-        accepted_fields: contract.injection_points.keys().copied().collect(),
-        injection_points: contract.injection_points.clone(),
-        execution_constraints: contract.execution_constraints.clone(),
-        digest: workflow_contract_digest(contract)?,
-    }))
-}
-
-fn workflow_contract_digest(contract: &WorkflowContract) -> Result<String> {
-    let canonical = serde_json::to_vec(contract).map_err(FabricError::SerializeJson)?;
-    Ok(format!("sha256:{:x}", Sha256::digest(canonical)))
-}
-
-/// Re-resolve the selected static contract before runtime startup.
-pub(crate) fn validate_planned_workflow_contract(plan: &RunPlan) -> Result<()> {
-    let resolved = plan.adapter_descriptor.as_ref();
-    let current = resolve_workflow_contract(&plan.config, resolved)?;
-    if plan.workflow_contract == current {
-        return Ok(());
-    }
-    if let Some(resolved) = resolved {
-        return invalid_workflow(
-            resolved,
-            "workflow_contract.digest".to_string(),
-            "the static workflow contract differs from the contract validated during planning",
-        );
-    }
-    invalid_config(
-        "workflow_contract.digest",
-        "a workflow contract requires a resolved adapter descriptor",
-    )
 }
 
 fn invalid_harness_settings<T>(
@@ -2092,26 +1849,14 @@ fn resolve_environment_plan(config: &FabricConfig, base_dir: &Path) -> Option<En
     })
 }
 
-#[cfg(test)]
 fn resolve_capability_plan(
     config: &FabricConfig,
     base_dir: &Path,
     adapter_descriptor: Option<&ResolvedAdapterDescriptor>,
 ) -> CapabilityPlan {
-    resolve_capability_plan_with_contract(config, base_dir, adapter_descriptor, None)
-}
-
-fn resolve_capability_plan_with_contract(
-    config: &FabricConfig,
-    base_dir: &Path,
-    adapter_descriptor: Option<&ResolvedAdapterDescriptor>,
-    workflow_contract: Option<&WorkflowContractPlan>,
-) -> CapabilityPlan {
     let accepts = |field: AdapterConfigField| {
         adapter_descriptor
-            .map(|adapter| {
-                accepts_adapter_config_field(&adapter.descriptor, workflow_contract, field)
-            })
+            .map(|adapter| adapter.descriptor.config.accepts.contains(&field))
             .unwrap_or(false)
     };
     let skill_paths: Vec<PathBuf> = config
@@ -2406,9 +2151,6 @@ pub struct RunPlan {
     /// Adapter descriptor resolved for this plan, when configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adapter_descriptor: Option<ResolvedAdapterDescriptor>,
-    /// Static workflow contract selected and validated during planning.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workflow_contract: Option<WorkflowContractPlan>,
     /// Selected install or availability strategy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution: Option<ResolutionStrategy>,
@@ -2692,51 +2434,6 @@ mod tests {
         .as_object()
         .expect("object workflow schema")
         .clone()
-    }
-
-    fn workflow_contract() -> WorkflowContract {
-        serde_json::from_value(serde_json::json!({
-            "entrypoint": {
-                "kind": "langgraph_factory",
-                "ref": "examples.review:build_graph"
-            },
-            "settings_schema": {
-                "type": "object",
-                "properties": {
-                    "review_mode": {"enum": ["security", "quality"]}
-                },
-                "required": ["review_mode"],
-                "additionalProperties": false
-            },
-            "injection_points": {
-                "models": {"name": "context.chat_model"},
-                "instructions.system": {"name": "context.instructions"},
-                "tools.blocked": {"name": "context.tools"},
-                "mcp": {"name": "context.tools"},
-                "skills": {"name": "context.skills"}
-            },
-            "execution_constraints": {"state_owner": "application"}
-        }))
-        .expect("valid workflow contract")
-    }
-
-    fn static_workflow_resolved_descriptor() -> ResolvedAdapterDescriptor {
-        let path = repository_root().join("adapters/claude/fabric-adapter.json");
-        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
-        descriptor.workflow_contracts = vec![workflow_contract()];
-        descriptor.config.accepts = vec![
-            AdapterConfigField::Models,
-            AdapterConfigField::SystemInstructions,
-            AdapterConfigField::BlockedTools,
-            AdapterConfigField::Mcp,
-            AdapterConfigField::Skills,
-        ];
-        ResolvedAdapterDescriptor {
-            descriptor,
-            source: AdapterDescriptorSource::Repository,
-            path: path.clone(),
-            root: path.parent().expect("descriptor directory").to_path_buf(),
-        }
     }
 
     fn repository_root() -> PathBuf {
@@ -3458,204 +3155,6 @@ mod tests {
     }
 
     #[test]
-    fn static_workflow_contract_controls_settings_and_capability_planning() {
-        let resolved = static_workflow_resolved_descriptor();
-        let mut config = typed_config("nvidia.fabric.claude");
-        config.workflow = Some(
-            serde_json::from_value(serde_json::json!({
-                "entrypoint": {
-                    "kind": "langgraph_factory",
-                    "ref": "examples.review:build_graph"
-                },
-                "settings": {"review_mode": "security"}
-            }))
-            .expect("typed workflow"),
-        );
-        config.models.insert(
-            "default".to_string(),
-            ModelConfig {
-                provider: "nvidia".to_string(),
-                model: "test-model".to_string(),
-                api_key_env: None,
-                base_url: None,
-                temperature: None,
-                settings: serde_json::Map::new(),
-                extensions: BTreeMap::new(),
-            },
-        );
-        config.instructions = Some(InstructionsConfig {
-            system: Some(InstructionConfig {
-                content: "Use the declared tools.".to_string(),
-                mode: InstructionMode::Replace,
-                extensions: BTreeMap::new(),
-            }),
-            extensions: BTreeMap::new(),
-        });
-        config.tools = Some(ToolsConfig {
-            enabled: None,
-            blocked: vec!["calculator__divide".to_string()],
-            extensions: BTreeMap::new(),
-        });
-        config.mcp = Some(McpConfig {
-            servers: BTreeMap::from([(
-                "calculator".to_string(),
-                McpServerConfig {
-                    transport: "streamable-http".to_string(),
-                    url: "http://localhost:9901/mcp".to_string(),
-                    args: Vec::new(),
-                    env: BTreeMap::new(),
-                    exposure: McpExposure::HarnessNative,
-                    allowed_tools: None,
-                    blocked_tools: Vec::new(),
-                    extensions: BTreeMap::new(),
-                },
-            )]),
-            extensions: BTreeMap::new(),
-        });
-
-        let contract = resolve_workflow_contract(&config, Some(&resolved))
-            .expect("resolve static contract")
-            .expect("selected contract");
-        assert_eq!(contract.entrypoint.kind, "langgraph_factory");
-        assert_eq!(contract.entrypoint.r#ref, "examples.review:build_graph");
-        assert!(contract.digest.starts_with("sha256:"));
-        assert_eq!(
-            contract.accepted_fields,
-            vec![
-                AdapterConfigField::Models,
-                AdapterConfigField::SystemInstructions,
-                AdapterConfigField::BlockedTools,
-                AdapterConfigField::Mcp,
-                AdapterConfigField::Skills,
-            ]
-        );
-        validate_adapter_config_compatibility(&config, Some(&resolved.descriptor), Some(&contract))
-            .expect("contract accepts configured mappings");
-
-        let capabilities = resolve_capability_plan_with_contract(
-            &config,
-            Path::new("/tmp/fabric-static-workflow-contract"),
-            Some(&resolved),
-            Some(&contract),
-        );
-        assert!(capabilities.unsupported.mcp_servers.is_empty());
-        assert!(capabilities.unsupported.skill_paths.is_empty());
-        assert!(capabilities.native.mcp_servers.contains_key("calculator"));
-        assert_eq!(capabilities.native.skill_paths.len(), 1);
-    }
-
-    #[test]
-    fn static_workflow_contract_rejects_unknown_settings_and_undeclared_mappings() {
-        let mut resolved = static_workflow_resolved_descriptor();
-        let mut config = typed_config("nvidia.fabric.claude");
-        config.skills = None;
-        config.workflow = Some(
-            serde_json::from_value(serde_json::json!({
-                "entrypoint": {
-                    "kind": "langgraph_factory",
-                    "ref": "examples.review:build_graph"
-                },
-                "settings": {"review_mode": "security", "unknown": true}
-            }))
-            .expect("typed workflow"),
-        );
-
-        let error = resolve_workflow_contract(&config, Some(&resolved))
-            .expect_err("unknown workflow setting must fail planning");
-        assert!(matches!(
-            error,
-            FabricError::InvalidWorkflow { workflow_path, .. }
-                if workflow_path == "workflow.settings.unknown"
-        ));
-
-        config
-            .workflow
-            .as_mut()
-            .expect("workflow")
-            .settings
-            .remove("unknown");
-        resolved.descriptor.workflow_contracts[0]
-            .injection_points
-            .remove(&AdapterConfigField::Mcp);
-        config.mcp = Some(McpConfig {
-            servers: BTreeMap::from([(
-                "calculator".to_string(),
-                McpServerConfig {
-                    transport: "streamable-http".to_string(),
-                    url: "http://localhost:9901/mcp".to_string(),
-                    args: Vec::new(),
-                    env: BTreeMap::new(),
-                    exposure: McpExposure::HarnessNative,
-                    allowed_tools: None,
-                    blocked_tools: Vec::new(),
-                    extensions: BTreeMap::new(),
-                },
-            )]),
-            extensions: BTreeMap::new(),
-        });
-
-        let contract = resolve_workflow_contract(&config, Some(&resolved))
-            .expect("contract without MCP injection remains valid")
-            .expect("selected contract");
-        let capabilities = resolve_capability_plan_with_contract(
-            &config,
-            Path::new("/tmp/fabric-static-workflow-contract"),
-            Some(&resolved),
-            Some(&contract),
-        );
-        assert_eq!(capabilities.routes[0].name, "calculator");
-        assert_eq!(capabilities.routes[0].target, CapabilityTarget::Unsupported);
-    }
-
-    #[test]
-    fn planned_static_workflow_contract_must_match_before_runtime_start() {
-        let config = typed_config("nvidia.fabric.claude");
-        let workflow = serde_json::from_value(serde_json::json!({
-            "entrypoint": {
-                "kind": "langgraph_factory",
-                "ref": "examples.review:build_graph"
-            },
-            "settings": {"review_mode": "security"}
-        }))
-        .expect("typed workflow");
-        let mut plan = resolve_run_plan_from_config(
-            config,
-            ResolveContext::new("/tmp/fabric-static-workflow-contract"),
-        )
-        .expect("resolve plan");
-        plan.config.workflow = Some(workflow);
-        let resolved = plan
-            .adapter_descriptor
-            .as_mut()
-            .expect("resolved adapter descriptor");
-        resolved.descriptor.workflow_contracts = vec![workflow_contract()];
-        resolved.descriptor.config.accepts = vec![AdapterConfigField::Skills];
-        resolved.descriptor.workflow_contracts[0]
-            .injection_points
-            .retain(|field, _| *field == AdapterConfigField::Skills);
-
-        plan.workflow_contract =
-            resolve_workflow_contract(&plan.config, plan.adapter_descriptor.as_ref())
-                .expect("resolve planned contract");
-        validate_planned_workflow_contract(&plan).expect("unchanged contract");
-
-        plan.adapter_descriptor
-            .as_mut()
-            .expect("resolved adapter descriptor")
-            .descriptor
-            .workflow_contracts[0]
-            .execution_constraints
-            .insert("revision".to_string(), Value::String("changed".to_string()));
-        let error = validate_planned_workflow_contract(&plan)
-            .expect_err("changed descriptor contract must fail");
-        assert!(matches!(
-            error,
-            FabricError::InvalidWorkflow { workflow_path, .. }
-                if workflow_path == "workflow_contract.digest"
-        ));
-    }
-
-    #[test]
     fn workflow_support_is_fail_closed() {
         let path = repository_root().join("adapters/claude/fabric-adapter.json");
         let descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
@@ -3988,34 +3487,6 @@ mod tests {
                 } if error_path == path && message.contains(expected)
             ));
         }
-    }
-
-    #[test]
-    fn static_workflow_contracts_require_unambiguous_supported_mappings() {
-        let path = repository_root().join("adapters/claude/fabric-adapter.json");
-        let valid_descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
-
-        let mut descriptor = valid_descriptor.clone();
-        descriptor.workflow_schema = Some(workflow_schema());
-        descriptor.workflow_contracts = vec![workflow_contract()];
-        let error = validate_adapter_descriptor_shape(&descriptor, &path)
-            .expect_err("workflow validation mechanisms must be unambiguous");
-        assert!(matches!(
-            error,
-            FabricError::InvalidAdapterDescriptor { message, .. }
-                if message.contains("workflow_schema and workflow_contracts")
-        ));
-
-        let mut descriptor = valid_descriptor;
-        descriptor.workflow_contracts = vec![workflow_contract()];
-        descriptor.config.accepts.clear();
-        let error = validate_adapter_descriptor_shape(&descriptor, &path)
-            .expect_err("static contracts require descriptor-level mapping claims");
-        assert!(matches!(
-            error,
-            FabricError::InvalidAdapterDescriptor { message, .. }
-                if message.contains("must also be declared by config.accepts")
-        ));
     }
 
     #[test]

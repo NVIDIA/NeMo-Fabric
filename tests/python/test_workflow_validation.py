@@ -15,7 +15,6 @@ from nemo_fabric import FabricConfig
 from nemo_fabric import FabricConfigError
 from nemo_fabric import HarnessConfig
 from nemo_fabric import MetadataConfig
-from nemo_fabric import ToolsConfig
 from nemo_fabric import WorkflowConfig
 from nemo_fabric import WorkflowEntrypointConfig
 
@@ -59,52 +58,6 @@ def _write_descriptor(base_dir: Path, *, optional: bool = False) -> Path:
                 "adapter_kind": "python",
                 "runner": {"module": "test.fabric.workflow"},
                 "workflow_schema": _workflow_schema(optional=optional),
-            }
-        ),
-        encoding="utf-8",
-    )
-    return path
-
-
-def _write_static_contract_descriptor(
-    base_dir: Path, *, accepts_blocked_tools: bool = True
-) -> Path:
-    path = base_dir / "adapters/workflow/fabric-adapter.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    injection_points: dict[str, Any] = {}
-    accepts: list[str] = []
-    if accepts_blocked_tools:
-        injection_points["tools.blocked"] = {"name": "context.tools"}
-        accepts.append("tools.blocked")
-    path.write_text(
-        json.dumps(
-            {
-                "contract_version": "fabric.adapter/v1alpha1",
-                "adapter_id": "test.fabric.workflow",
-                "harness": "workflow-test",
-                "adapter_kind": "python",
-                "runner": {"module": "test.fabric.workflow"},
-                "config": {"accepts": accepts},
-                "workflow_contracts": [
-                    {
-                        "entrypoint": {
-                            "kind": "langgraph_factory",
-                            "ref": "examples.review:build_graph",
-                        },
-                        "settings_schema": {
-                            "type": "object",
-                            "properties": {
-                                "review_mode": {
-                                    "enum": ["security", "quality"]
-                                }
-                            },
-                            "required": ["review_mode"],
-                            "additionalProperties": False,
-                        },
-                        "injection_points": injection_points,
-                        "execution_constraints": {"state_owner": "application"},
-                    }
-                ],
             }
         ),
         encoding="utf-8",
@@ -181,63 +134,4 @@ def test_adapter_without_workflow_schema_rejects_workflow(tmp_path: Path):
         FabricConfigError,
         match="does not declare a workflow_schema",
     ):
-        Fabric().plan(config, base_dir=tmp_path)
-
-
-def test_static_workflow_contract_is_selected_and_exposed_in_plan(tmp_path: Path):
-    _write_static_contract_descriptor(tmp_path)
-    config = _config(
-        workflow=WorkflowConfig(
-            entrypoint=WorkflowEntrypointConfig(
-                kind="langgraph_factory",
-                ref="examples.review:build_graph",
-            ),
-            settings={"review_mode": "security"},
-        )
-    )
-    config.tools = ToolsConfig(blocked=["calculator__divide"])
-
-    plan = Fabric().plan(config, base_dir=tmp_path)
-
-    assert plan.workflow_contract is not None
-    assert plan.workflow_contract.entrypoint.kind == "langgraph_factory"
-    assert plan.workflow_contract.entrypoint.ref == "examples.review:build_graph"
-    assert plan.workflow_contract.accepted_fields == ("tools.blocked",)
-    assert plan.workflow_contract.injection_points == {
-        "tools.blocked": {"name": "context.tools"}
-    }
-    assert plan.workflow_contract.digest.startswith("sha256:")
-    assert plan["capability_plan"]["native"]["tools_configured"] is True
-
-
-def test_static_workflow_contract_rejects_unknown_settings_before_runtime(tmp_path: Path):
-    _write_static_contract_descriptor(tmp_path)
-    config = _config(
-        workflow=WorkflowConfig(
-            entrypoint=WorkflowEntrypointConfig(
-                kind="langgraph_factory",
-                ref="examples.review:build_graph",
-            ),
-            settings={"review_mode": "security", "unknown": True},
-        )
-    )
-
-    with pytest.raises(FabricConfigError, match=r"workflow\.settings\.unknown"):
-        Fabric().plan(config, base_dir=tmp_path)
-
-
-def test_static_workflow_contract_rejects_undeclared_tool_policy(tmp_path: Path):
-    _write_static_contract_descriptor(tmp_path, accepts_blocked_tools=False)
-    config = _config(
-        workflow=WorkflowConfig(
-            entrypoint=WorkflowEntrypointConfig(
-                kind="langgraph_factory",
-                ref="examples.review:build_graph",
-            ),
-            settings={"review_mode": "security"},
-        )
-    )
-    config.tools = ToolsConfig(blocked=["calculator__divide"])
-
-    with pytest.raises(FabricConfigError, match=r"tools\.blocked"):
         Fabric().plan(config, base_dir=tmp_path)

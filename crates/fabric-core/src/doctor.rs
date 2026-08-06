@@ -78,7 +78,6 @@ fn check_adapter_config_compatibility(plan: &RunPlan) -> Vec<DoctorCheck> {
         plan.adapter_descriptor
             .as_ref()
             .map(|adapter| &adapter.descriptor),
-        plan.workflow_contract.as_ref(),
     )
     .into_iter()
     .map(|issue| {

@@ -55,7 +55,6 @@ from nemo_fabric.types import RunResult
 from nemo_fabric.types import RuntimeCapabilities
 from nemo_fabric.types import RuntimeHandle
 from nemo_fabric.types import TelemetryRef
-from nemo_fabric.types import WorkflowContract
 
 __all__ = [
     "AdapterInfo",
@@ -109,6 +108,5 @@ __all__ = [
     "TelemetryRef",
     "ToolsConfig",
     "WorkflowConfig",
-    "WorkflowContract",
     "WorkflowEntrypointConfig",
 ]
