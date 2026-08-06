@@ -472,6 +472,49 @@ def build_graph():
     assert second_result == {"source": "second"}
 
 
+async def test_runtime_normalizes_a_graph_invocation_failure(tmp_path: Path):
+    _stage_adapter(tmp_path)
+    (tmp_path / "failing_graph.py").write_text(
+        """
+class Graph:
+    def compile(self):
+        return self
+
+    async def ainvoke(self, graph_input):
+        raise RuntimeError("sensitive graph detail")
+
+
+def build_graph():
+    return Graph()
+""",
+        encoding="utf-8",
+    )
+
+    result = await Fabric().run(
+        _config(ref="failing_graph:build_graph", settings={}),
+        base_dir=tmp_path,
+        input="hello",
+    )
+
+    assert result["status"] == "failed"
+    assert result.output == {
+        "failed": True,
+        "response": None,
+        "error": {
+            "code": "langgraph_graph_invoke_failed",
+            "message": "Compiled graph failed during invocation",
+            "retryable": False,
+        },
+    }
+    assert result.error.to_mapping() == {
+        "stage": "invoke",
+        "code": "langgraph_graph_invoke_failed",
+        "message": "Compiled graph failed during invocation",
+        "retryable": False,
+    }
+    assert "sensitive graph detail" not in json.dumps(result.to_mapping())
+
+
 async def test_runtime_invokes_a_synchronous_compiled_graph(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

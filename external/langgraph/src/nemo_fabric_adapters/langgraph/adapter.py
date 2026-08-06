@@ -266,6 +266,20 @@ def _json_value(value: Any) -> Any:
         ) from error
 
 
+def _failed_invocation(code: str, message: str) -> dict[str, Any]:
+    """Return a graph failure in the normalized adapter-result shape."""
+
+    return {
+        "failed": True,
+        "response": None,
+        "error": {
+            "code": code,
+            "message": message,
+            "retryable": False,
+        },
+    }
+
+
 class LangGraphRuntime:
     """Own one compiled graph for the complete NVIDIA NeMo Fabric runtime."""
 
@@ -338,11 +352,17 @@ class LangGraphRuntime:
                 result = await asyncio.to_thread(getattr(graph, "invoke"), graph_input)
                 result = await _await_if_needed(result)
         except Exception as error:
-            raise lifecycle.LifecycleError(
+            return _failed_invocation(
                 "langgraph_graph_invoke_failed",
                 "Compiled graph failed during invocation",
-            ) from error
-        return _json_value(result)
+            )
+        try:
+            return _json_value(result)
+        except lifecycle.LifecycleError:
+            return _failed_invocation(
+                "langgraph_result_not_json_serializable",
+                "Graph output must be JSON-serializable",
+            )
 
     async def stop(self) -> None:
         """Release the adapter-owned graph reference."""
