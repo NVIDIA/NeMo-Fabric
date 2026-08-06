@@ -125,9 +125,12 @@ package or job layout, so nothing depends on the process working directory.
   `workflow.entrypoint.ref` identifies the workflow, and `workflow.settings`
   contains only its construction settings. Planning validates the complete
   block against the selected descriptor's `workflow_schema`. A configured
-  workflow fails when the descriptor does not declare that schema.
-- Use `metadata` and extension fields for caller-owned annotations NeMo Fabric carries
-  but does not interpret. Config `metadata` is not echoed into
+  workflow fails when the descriptor does not declare that schema. Workflow and
+  entry-point extensions are adapter-owned and must be declared by that schema;
+  a closed schema rejects undeclared fields. Do not use them for caller-owned
+  annotations.
+- Use `metadata` and extension fields outside `workflow` for caller-owned
+  annotations NeMo Fabric carries but does not interpret. Config `metadata` is not echoed into
   `RunResult.metadata`: the name surfaces as `RunResult.agent_name`, and for
   caller-owned correlation on a specific invocation set `RunRequest.request_id`,
   which is returned as `RunResult.request_id`.
