@@ -127,8 +127,10 @@ print(result.output.response)
 supported harness, install its package extra and set the corresponding adapter
 ID. Pass harness-specific options through `HarnessConfig.settings` only when
 the selected adapter descriptor declares them in `settings_schema`. Adapters
-that expose selectable executables can accept `FabricConfig.workflow`; the
-descriptor's `workflow_schema` defines and validates that adapter-owned block.
+that expose selectable executables can accept `FabricConfig.workflow`. A
+descriptor can validate one adapter-wide workflow shape with `workflow_schema`
+or select a static contract by workflow kind and reference with
+`workflow_contracts`.
 
 For a guided version of this example, refer to the
 [`01_quickstart.ipynb` notebook](examples/notebooks/01_quickstart.ipynb). The

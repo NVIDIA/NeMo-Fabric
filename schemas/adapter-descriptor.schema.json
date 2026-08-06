@@ -208,6 +208,76 @@
         }
       },
       "type": "object"
+    },
+    "WorkflowContract": {
+      "additionalProperties": true,
+      "description": "Static contract for one adapter-owned workflow entry point.",
+      "properties": {
+        "entrypoint": {
+          "$ref": "#/$defs/WorkflowEntrypointRef",
+          "description": "Exact entry point selected by this contract."
+        },
+        "execution_constraints": {
+          "additionalProperties": true,
+          "description": "Adapter-owned execution constraints retained in the resolved plan.",
+          "type": "object"
+        },
+        "injection_points": {
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkflowInjectionPoint"
+          },
+          "description": "Normalized Fabric fields the workflow accepts through named native delivery points.",
+          "type": "object"
+        },
+        "settings_schema": {
+          "additionalProperties": true,
+          "description": "JSON Schema for this entry point's `workflow.settings` map.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "entrypoint",
+        "settings_schema"
+      ],
+      "type": "object"
+    },
+    "WorkflowEntrypointRef": {
+      "description": "Canonical workflow identity used to select a static adapter contract.",
+      "properties": {
+        "kind": {
+          "description": "Adapter-defined entry-point kind.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Adapter-defined workflow reference.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "type": "object"
+    },
+    "WorkflowInjectionPoint": {
+      "additionalProperties": true,
+      "description": "Adapter-declared native delivery point for one normalized Fabric field.",
+      "properties": {
+        "name": {
+          "description": "Adapter-native name for the declared delivery point.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -270,6 +340,13 @@
       "$ref": "#/$defs/AdapterTelemetrySupport",
       "default": {},
       "description": "Telemetry support declared by this adapter."
+    },
+    "workflow_contracts": {
+      "description": "Static contracts for adapter-owned workflow entry points.",
+      "items": {
+        "$ref": "#/$defs/WorkflowContract"
+      },
+      "type": "array"
     },
     "workflow_schema": {
       "additionalProperties": true,

@@ -65,6 +65,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`types.RuntimeCapabilities`](./nemo_fabric.types.md#class-runtimecapabilities): Operations declared by the resolved runtime and adapter.
 - [`types.RuntimeHandle`](./nemo_fabric.types.md#class-runtimehandle): Opaque identity and binding for one started runtime.
 - [`types.TelemetryRef`](./nemo_fabric.types.md#class-telemetryref): Reference to external or persisted telemetry for a run.
+- [`types.WorkflowContract`](./nemo_fabric.types.md#class-workflowcontract): Static workflow contract selected during planning.
 - [`errors.FabricCapabilityError`](./nemo_fabric.errors.md#class-fabriccapabilityerror): Operation rejected by resolved runtime capabilities or implementation status.
 - [`errors.FabricConfigError`](./nemo_fabric.errors.md#class-fabricconfigerror): Invalid SDK input, request shape, factory, or resolved config.
 - [`errors.FabricError`](./nemo_fabric.errors.md#class-fabricerror): Base class for structured SDK-level NeMo Fabric errors.

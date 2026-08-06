@@ -1189,6 +1189,63 @@ class RuntimeCapabilities(FabricMapping):
         return data
 
 
+class WorkflowContract(FabricMapping):
+    """Static workflow contract selected during planning.
+
+    Attributes:
+        entrypoint: Canonical workflow kind and reference.
+        accepted_fields: Normalized Fabric fields accepted by the workflow.
+        injection_points: Adapter-native delivery points for accepted fields.
+        execution_constraints: Adapter-owned execution constraints.
+        digest: SHA-256 digest verified before runtime startup.
+    """
+
+    entrypoint: _WorkflowEntrypointConfig
+    accepted_fields: Sequence[str]
+    injection_points: Mapping[str, Any]
+    execution_constraints: Mapping[str, Any]
+    digest: str
+    _fields = frozenset(
+        {
+            "entrypoint",
+            "accepted_fields",
+            "injection_points",
+            "execution_constraints",
+            "digest",
+        }
+    )
+    _json_fields = frozenset({"injection_points", "execution_constraints"})
+    _omit_if_empty = frozenset(
+        {"accepted_fields", "injection_points", "execution_constraints"}
+    )
+
+    @classmethod
+    def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
+        data["entrypoint"] = _WorkflowEntrypointConfig.from_mapping(
+            data.get("entrypoint", {})
+        )
+        accepted_fields = data.get("accepted_fields", [])
+        if not isinstance(accepted_fields, (list, tuple)):
+            raise FabricConfigError("workflow contract accepted_fields must be an array")
+        data["accepted_fields"] = tuple(
+            _required_text(field, "workflow contract accepted field")
+            for field in accepted_fields
+        )
+        data["injection_points"] = _mapping(
+            data.get("injection_points", {}),
+            "workflow contract injection_points",
+        )
+        data["execution_constraints"] = _mapping(
+            data.get("execution_constraints", {}),
+            "workflow contract execution_constraints",
+        )
+        data["digest"] = _required_text(
+            data.get("digest"),
+            "workflow contract digest",
+        )
+        return data
+
+
 class RunPlan(FabricMapping):
     """Immutable execution plan produced before a runtime is started.
 
@@ -1197,6 +1254,7 @@ class RunPlan(FabricMapping):
         base_dir: Base directory used to resolve relative paths.
         config: Typed configuration snapshot.
         adapter: Resolved adapter identity.
+        workflow_contract: Static workflow contract selected during planning.
         capabilities: Operations declared by the resolved runtime.
     """
 
@@ -1204,8 +1262,18 @@ class RunPlan(FabricMapping):
     base_dir: Path
     config: _FabricConfigSnapshot
     adapter: AdapterInfo
+    workflow_contract: WorkflowContract | None
     capabilities: RuntimeCapabilities
-    _fields = frozenset({"agent_name", "base_dir", "config", "adapter", "capabilities"})
+    _fields = frozenset(
+        {
+            "agent_name",
+            "base_dir",
+            "config",
+            "adapter",
+            "workflow_contract",
+            "capabilities",
+        }
+    )
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -1217,6 +1285,12 @@ class RunPlan(FabricMapping):
         data["base_dir"] = Path(data["base_dir"])
         data["config"] = _FabricConfigSnapshot.from_mapping(data.get("config", {}))
         data["adapter"] = AdapterInfo.from_mapping(descriptor)
+        workflow_contract = data.get("workflow_contract")
+        data["workflow_contract"] = (
+            None
+            if workflow_contract is None
+            else WorkflowContract.from_mapping(workflow_contract)
+        )
         data["capabilities"] = RuntimeCapabilities.from_mapping(data.get("capabilities", {}))
         return data
 

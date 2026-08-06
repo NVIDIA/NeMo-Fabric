@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "NeMo Fabric config models and loading helpers."
-position: 72
+position: 76
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -51,7 +51,11 @@ NeMo Fabric config models and loading helpers.
 - [ToolsConfig](struct-toolsconfig.mdx): Harness-neutral tool capability configuration.
 - [ToolsPlan](struct-toolsplan.mdx): Normalized tool policy for a run.
 - [WorkflowConfig](struct-workflowconfig.mdx): Adapter-owned workflow selection and immutable construction settings.
+- [WorkflowContract](struct-workflowcontract.mdx): Static contract for one adapter-owned workflow entry point.
+- [WorkflowContractPlan](struct-workflowcontractplan.mdx): Effective static workflow contract selected during planning.
 - [WorkflowEntrypointConfig](struct-workflowentrypointconfig.mdx): Adapter-owned workflow entry point.
+- [WorkflowEntrypointRef](struct-workflowentrypointref.mdx): Canonical workflow identity used to select a static adapter contract.
+- [WorkflowInjectionPoint](struct-workflowinjectionpoint.mdx): Adapter-declared native delivery point for one normalized Fabric field.
 
 ## Enums
 

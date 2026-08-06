@@ -25,11 +25,15 @@ The core schema generator exports the current public typed contract.
   unsupported adapter contracts during planning. A descriptor can embed the
   JSON Schemas for its adapter-owned `harness.settings` and optional
   `FabricConfig.workflow`; malformed schemas fail descriptor loading. A missing
-  settings schema rejects non-empty settings, and a configured workflow
-  requires a workflow schema. The `process` and `python` adapter kinds use NeMo
-  Fabric's persistent local-host wire protocol.
+  settings schema rejects non-empty settings. Workflow validation can use one
+  adapter-wide `workflow_schema` or static `workflow_contracts` keyed by
+  entrypoint kind and reference. A selected static contract also declares the
+  normalized fields it accepts and its injection points. The `process` and
+  `python` adapter kinds use NeMo Fabric's persistent local-host wire protocol.
 - `run-plan`: executable plan containing the canonical typed config, absolute
-  base directory, selected adapter, and derived execution metadata.
+  base directory, selected adapter, and derived execution metadata. When a
+  static workflow contract is selected, the plan records that contract and a
+  digest verified again before runtime startup.
 
 ### Adapter Invocation
 

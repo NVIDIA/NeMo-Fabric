@@ -684,11 +684,16 @@ settings.
 Use the optional `workflow` block to select an adapter-owned executable and
 provide its immutable construction settings. `workflow.entrypoint.kind`
 identifies the adapter-defined resolution mechanism, and
-`workflow.entrypoint.ref` identifies the concrete workflow. The selected
-adapter's `workflow_schema` validates the complete block during planning and
-again before runtime startup. A configured workflow fails when the descriptor
-does not declare this schema. A schema can require `workflow` or accept `null`
-when the adapter provides a default. Validation does not apply schema defaults.
+`workflow.entrypoint.ref` identifies the concrete workflow. An adapter can use
+`workflow_schema` to validate one adapter-wide workflow shape. It can instead
+declare static `workflow_contracts`, each keyed by a kind and reference. In that
+case, planning selects the matching contract, validates `workflow.settings`,
+and accepts only the normalized mappings declared by that contract's injection
+points. The resolved plan contains the selected contract and its digest; runtime
+startup verifies that the contract has not changed. A configured workflow fails
+when the descriptor declares neither validation mechanism. Schema validation
+does not apply defaults. Dynamic workflow metadata discovery is not yet part of
+the public descriptor contract.
 
 Use `FabricConfig.metadata` for human-readable agent identity and caller-owned
 annotations. NeMo Fabric preserves these values in the resolved configuration

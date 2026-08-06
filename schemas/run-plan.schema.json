@@ -137,6 +137,13 @@
           "default": {},
           "description": "Telemetry support declared by this adapter."
         },
+        "workflow_contracts": {
+          "description": "Static contracts for adapter-owned workflow entry points.",
+          "items": {
+            "$ref": "#/$defs/WorkflowContract"
+          },
+          "type": "array"
+        },
         "workflow_schema": {
           "additionalProperties": true,
           "description": "JSON Schema for adapter-owned `FabricConfig.workflow`.",
@@ -1901,6 +1908,75 @@
       ],
       "type": "object"
     },
+    "WorkflowContract": {
+      "additionalProperties": true,
+      "description": "Static contract for one adapter-owned workflow entry point.",
+      "properties": {
+        "entrypoint": {
+          "$ref": "#/$defs/WorkflowEntrypointRef",
+          "description": "Exact entry point selected by this contract."
+        },
+        "execution_constraints": {
+          "additionalProperties": true,
+          "description": "Adapter-owned execution constraints retained in the resolved plan.",
+          "type": "object"
+        },
+        "injection_points": {
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkflowInjectionPoint"
+          },
+          "description": "Normalized Fabric fields the workflow accepts through named native delivery points.",
+          "type": "object"
+        },
+        "settings_schema": {
+          "additionalProperties": true,
+          "description": "JSON Schema for this entry point's `workflow.settings` map.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "entrypoint",
+        "settings_schema"
+      ],
+      "type": "object"
+    },
+    "WorkflowContractPlan": {
+      "description": "Effective static workflow contract selected during planning.",
+      "properties": {
+        "accepted_fields": {
+          "description": "Normalized Fabric fields accepted by the selected workflow.",
+          "items": {
+            "$ref": "#/$defs/AdapterConfigField"
+          },
+          "type": "array"
+        },
+        "digest": {
+          "description": "SHA-256 digest of the selected static contract.",
+          "type": "string"
+        },
+        "entrypoint": {
+          "$ref": "#/$defs/WorkflowEntrypointRef",
+          "description": "Canonical entry point selected during planning."
+        },
+        "execution_constraints": {
+          "additionalProperties": true,
+          "description": "Adapter-owned execution constraints for the selected workflow.",
+          "type": "object"
+        },
+        "injection_points": {
+          "additionalProperties": {
+            "$ref": "#/$defs/WorkflowInjectionPoint"
+          },
+          "description": "Adapter-native delivery points for accepted normalized fields.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "entrypoint",
+        "digest"
+      ],
+      "type": "object"
+    },
     "WorkflowEntrypointConfig": {
       "additionalProperties": true,
       "description": "Adapter-owned workflow entry point.",
@@ -1921,6 +1997,44 @@
       "required": [
         "kind",
         "ref"
+      ],
+      "type": "object"
+    },
+    "WorkflowEntrypointRef": {
+      "description": "Canonical workflow identity used to select a static adapter contract.",
+      "properties": {
+        "kind": {
+          "description": "Adapter-defined entry-point kind.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Adapter-defined workflow reference.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "type": "object"
+    },
+    "WorkflowInjectionPoint": {
+      "additionalProperties": true,
+      "description": "Adapter-declared native delivery point for one normalized Fabric field.",
+      "properties": {
+        "name": {
+          "description": "Adapter-native name for the declared delivery point.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
       ],
       "type": "object"
     }
@@ -2004,6 +2118,17 @@
         }
       ],
       "description": "Resolved telemetry pass-through plan."
+    },
+    "workflow_contract": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkflowContractPlan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Static workflow contract selected and validated during planning."
     }
   },
   "required": [

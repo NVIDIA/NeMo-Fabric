@@ -50,6 +50,7 @@ from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric import WorkflowConfig
+from nemo_fabric import WorkflowContract
 from nemo_fabric import WorkflowEntrypointConfig
 from nemo_fabric.types import _FabricConfigSnapshot
 from nemo_fabric.types import _ToolsConfig
@@ -713,6 +714,19 @@ def test_inspection_models_are_typed_read_only_mappings():
                     "future": "value",
                 }
             },
+            "workflow_contract": {
+                "entrypoint": {
+                    "kind": "langgraph_factory",
+                    "ref": "examples.review:build_graph",
+                },
+                "accepted_fields": ["models", "instructions.system"],
+                "injection_points": {
+                    "models": {"name": "context.chat_model"},
+                    "instructions.system": {"name": "context.instructions"},
+                },
+                "execution_constraints": {"state_owner": "application"},
+                "digest": "sha256:abc123",
+            },
             "capabilities": {
                 "service": False,
                 "streaming": False,
@@ -724,9 +738,16 @@ def test_inspection_models_are_typed_read_only_mappings():
     )
 
     assert isinstance(plan.adapter, AdapterInfo)
+    assert isinstance(plan.workflow_contract, WorkflowContract)
     assert isinstance(plan.capabilities, RuntimeCapabilities)
     assert plan.base_dir == Path(".")
     assert plan.adapter.harness == "hermes"
+    assert plan.workflow_contract.entrypoint.kind == "langgraph_factory"
+    assert plan.workflow_contract.accepted_fields == (
+        "models",
+        "instructions.system",
+    )
+    assert plan.workflow_contract.digest == "sha256:abc123"
     assert "harness_type" not in plan.adapter
     assert plan.adapter.extra_fields["future"] == "value"
     assert plan.capabilities.extra_fields["future_capability"] == "declared"

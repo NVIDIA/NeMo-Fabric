@@ -183,6 +183,90 @@ Return a detached, JSON-compatible mapping for serialization.
 ---
 
 
+## <kbd>class</kbd> `WorkflowContract`
+
+Static workflow contract selected during planning.
+
+
+
+**Attributes:**
+
+ - <b>`entrypoint`</b>:  Canonical workflow kind and reference.
+ - <b>`accepted_fields`</b>:  Normalized Fabric fields accepted by the workflow.
+ - <b>`injection_points`</b>:  Adapter-native delivery points for accepted fields.
+ - <b>`execution_constraints`</b>:  Adapter-owned execution constraints.
+ - <b>`digest`</b>:  SHA-256 digest verified before runtime startup.
+
+
+
+### Fields
+
+The mapping exposes the following typed fields:
+
+| Field | Type |
+| --- | --- |
+| `entrypoint` | `_WorkflowEntrypointConfig` |
+| `accepted_fields` | `Sequence[str]` |
+| `injection_points` | `Mapping[str, Any]` |
+| `execution_constraints` | `Mapping[str, Any]` |
+| `digest` | `str` |
+
+### <kbd>method</kbd> `__init__`
+
+```python
+def __init__(mapping: Mapping[str, Any]) -> None
+```
+
+
+
+
+
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return an immutable view of preserved extension fields.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(mapping: Mapping[str, Any]) -> Self
+```
+
+Validate and copy a mapping into the requested typed model.
+
+---
+
+
+### <kbd>method</kbd> `to_dict`
+
+```python
+def to_dict() -> dict[str, Any]
+```
+
+Return the same detached representation as ``to_mapping()``.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached, JSON-compatible mapping for serialization.
+
+
+---
+
+
 ## <kbd>class</kbd> `RunPlan`
 
 Immutable execution plan produced before a runtime is started.
@@ -195,6 +279,7 @@ Immutable execution plan produced before a runtime is started.
  - <b>`base_dir`</b>:  Base directory used to resolve relative paths.
  - <b>`config`</b>:  Typed configuration snapshot.
  - <b>`adapter`</b>:  Resolved adapter identity.
+ - <b>`workflow_contract`</b>:  Static workflow contract selected during planning.
  - <b>`capabilities`</b>:  Operations declared by the resolved runtime.
 
 
@@ -209,6 +294,7 @@ The mapping exposes the following typed fields:
 | `base_dir` | `Path` |
 | `config` | `_FabricConfigSnapshot` |
 | `adapter` | `AdapterInfo` |
+| `workflow_contract` | `WorkflowContract \| None` |
 | `capabilities` | `RuntimeCapabilities` |
 
 ### <kbd>method</kbd> `__init__`

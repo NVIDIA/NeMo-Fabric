@@ -22,7 +22,7 @@ use serde_json::{Map, Value};
 use crate::config::{
     AdapterKind, CapabilityPlan, CapabilityTarget, ControlLocation, EnvironmentOwnership,
     FabricConfig, RunPlan, TelemetryPlan, validate_adapter_config_compatibility, validate_config,
-    validate_harness_settings, validate_workflow,
+    validate_harness_settings, validate_planned_workflow_contract, validate_workflow,
 };
 use crate::error::{FabricError, Result};
 
@@ -543,6 +543,7 @@ pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
     validate_config(&plan.config)?;
     validate_harness_settings(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_workflow(&plan.config, plan.adapter_descriptor.as_ref())?;
+    validate_planned_workflow_contract(plan)?;
     validate_adapter_compatibility(plan)?;
     let environment = prepare_environment(plan)?;
     if uses_local_host(plan) {
@@ -577,6 +578,7 @@ fn validate_adapter_compatibility(plan: &RunPlan) -> Result<()> {
         plan.adapter_descriptor
             .as_ref()
             .map(|adapter| &adapter.descriptor),
+        plan.workflow_contract.as_ref(),
     )?;
     if let Some(route) = plan
         .capability_plan
