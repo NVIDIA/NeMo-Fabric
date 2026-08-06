@@ -50,6 +50,12 @@ The adapter consumes the routed `capability_plan.native.mcp_servers` entries,
 including the normalized per-server filters. NeMo Fabric MCP tool names remain bare
 server-local names; NAT exposes a selected member as `<server>__<tool>`.
 
+For a `stdio` server, the adapter expands `$VAR` references in `url`, splits the
+result using shell quoting rules, and uses the first token as the NAT command.
+It appends structured `args` after arguments parsed from `url` and forwards `env`
+to the NAT process environment. Variable expansion applies only to `url`; `args`
+and `env` values are used literally.
+
 | NeMo Fabric server policy | Generated NAT function group |
 | --- | --- |
 | `allowed_tools` omitted and `blocked_tools=[]` | No `include` or `exclude`; expose all discovered tools |
