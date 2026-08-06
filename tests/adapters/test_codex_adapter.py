@@ -641,8 +641,7 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
     }
     atif_dir = tmp_path / "relay" / "atif"
     atif_dir.mkdir(parents=True)
-    stale_atif = atif_dir / "trajectory-session.atif.json"
-    stale_atif.write_text('{"schema_version":"ATIF-v1.7","steps":[]}', encoding="utf-8")
+    late_atif = atif_dir / "trajectory-late.atif.json"
     relay = relay_settings(tmp_path, atif_plugin_config(atif_dir))
     install_mock_relay(monkeypatch, relay)
     wait_for_atif = AsyncMock(return_value=None)
@@ -654,6 +653,9 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
     await runtime.start(lifecycle_start_payload(codex_payload))
     try:
         output = await runtime.invoke(lifecycle_invocation(codex_payload))
+        late_atif.write_text(
+            '{"schema_version":"ATIF-v1.7","steps":[]}', encoding="utf-8"
+        )
         unavailable = await runtime.invoke(lifecycle_invocation(codex_payload))
     finally:
         await runtime.stop()
@@ -669,6 +671,8 @@ async def test_relay_atif_timeout_fails_successful_turn_explicitly(
     }
     wait_for_atif.assert_awaited_once()
     assert unavailable["error"]["code"] == "codex_runtime_unavailable"
+    assert "relay_runtime" not in unavailable
+    assert "relay_artifacts" not in unavailable
 
 
 def test_failed_sdk_turn_is_normalized_and_transport_is_closed(

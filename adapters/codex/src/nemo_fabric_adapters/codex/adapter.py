@@ -1065,11 +1065,10 @@ class CodexRuntime:
             "request": invocation.get("request"),
         }
         if self._unusable:
-            output = _failure(
+            return _failure(
                 "codex_runtime_unavailable",
                 "Codex runtime cannot accept another invocation after a runtime failure",
             )
-            return _relay_output(output, self._relay) if self._relay else output
 
         try:
             request_prompt(payload)
