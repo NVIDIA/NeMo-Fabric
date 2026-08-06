@@ -524,6 +524,7 @@ def build_graph():
         "code": "langgraph_graph_invoke_failed",
         "message": "Compiled graph failed during invocation",
         "retryable": False,
+        "metadata": {},
     }
     assert "sensitive graph detail" not in json.dumps(result.to_mapping())
 
