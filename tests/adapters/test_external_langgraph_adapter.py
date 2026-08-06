@@ -210,6 +210,27 @@ def test_examples_build_plan_valid_workflow_configurations(
     assert plan.config.workflow == config.to_mapping()["workflow"]
 
 
+def test_calculator_translates_fabric_mcp_server_for_langchain():
+    namespace = runpy.run_path(
+        str(ROOT / "external" / "langgraph" / "examples" / "calculator.py")
+    )
+
+    client_config = namespace["mcp_client_config"](
+        {
+            "transport": "streamable-http",
+            "url": "http://127.0.0.1:9901/mcp",
+            "exposure": "harness_native",
+            "allowed_tools": ["multiply"],
+            "blocked_tools": ["divide"],
+        }
+    )
+
+    assert client_config == {
+        "transport": "streamable_http",
+        "url": "http://127.0.0.1:9901/mcp",
+    }
+
+
 async def test_email_graph_adapts_raw_text_to_application_state():
     namespace = runpy.run_path(
         str(ROOT / "external" / "langgraph" / "examples" / "email_phishing.py")

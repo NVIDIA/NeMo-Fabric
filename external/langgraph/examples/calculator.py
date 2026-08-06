@@ -34,6 +34,17 @@ class CalculatorState(TypedDict):
     answer: Any
 
 
+def mcp_client_config(server: dict[str, Any]) -> dict[str, str]:
+    """Translate the selected Fabric MCP server into LangChain client settings."""
+
+    if server.get("transport") != "streamable-http":
+        raise ValueError("The calculator graph requires a Streamable HTTP MCP server")
+    url = server.get("url")
+    if not isinstance(url, str) or not url:
+        raise ValueError("The calculator MCP server requires a URL")
+    return {"transport": "streamable_http", "url": url}
+
+
 async def build_graph(context: Any) -> Any:
     """Return an uncompiled graph that calls the selected calculator MCP server."""
 
@@ -45,7 +56,7 @@ async def build_graph(context: Any) -> Any:
     server = context.mcp_servers.get("mcp_math")
     if server is None or "mcp_math" not in context.tools:
         raise ValueError("The calculator graph requires the selected mcp_math tool")
-    client = MultiServerMCPClient({"mcp_math": dict(server)})
+    client = MultiServerMCPClient({"mcp_math": mcp_client_config(dict(server))})
 
     async def calculate(state: CalculatorState) -> dict[str, Any]:
         tools = await client.get_tools(server_name="mcp_math")
