@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+models:
+  nim_llm:
+    provider: nim
+    model: meta/llama-3.1-70b-instruct
+    temperature: 0.0
+    max_tokens: 512
+
+workflow:
+  entrypoint: langgraph:email_phishing_analyzer
+  settings:
+    llm_name: nim_llm
+    verbose: true
+    retry_parsing_errors: true
+    max_retries: 3
+    prompt: |
+      Examine the email below for signs of phishing. Look for requests for
+      personal information, suspicious tone, urgency, unusual payment requests,
+      and emotional manipulation.
+
+      Email content:
+      {body}

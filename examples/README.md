@@ -37,6 +37,13 @@ just build-all
   --input "Reply with exactly: NeMo Fabric works"
 ```
 
+## LangGraph examples
+
+[`langgraph`](langgraph/README.md) contains native LangGraph calculator MCP and
+email phishing analyzer examples. They establish the factory, model, MCP, state,
+and structured-output boundaries that a reusable NeMo Fabric LangGraph adapter
+must implement.
+
 ## Harbor
 
 [`harbor`](harbor/README.md) demonstrates how to evaluate NeMo Fabric agents with

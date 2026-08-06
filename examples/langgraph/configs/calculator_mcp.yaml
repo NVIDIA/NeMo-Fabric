@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+models:
+  nim_llm:
+    provider: nim
+    model: meta/llama-3.1-70b-instruct
+    temperature: 0.0
+    max_tokens: 1024
+
+mcp:
+  servers:
+    mcp_math:
+      transport: streamable-http
+      url: http://localhost:9901/mcp
+      include:
+        - calculator__add
+        - calculator__subtract
+        - calculator__multiply
+        - calculator__divide
+
+tools:
+  current_timezone:
+    kind: local
+    description: Return the IANA time zone configured for this server.
+
+workflow:
+  entrypoint: langgraph:per_user_react_agent
+  settings:
+    llm_name: nim_llm
+    tool_names:
+      - current_timezone
+      - mcp_math
+    verbose: true
+    retry_parsing_errors: true
+    max_retries: 3
