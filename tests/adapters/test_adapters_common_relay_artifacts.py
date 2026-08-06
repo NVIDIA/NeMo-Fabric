@@ -51,7 +51,7 @@ def test_expects_local_atif_requires_enabled_local_output(tmp_path):
     assert relay_artifacts.expects_local_atif({"components": []}) is False
 
 
-async def test_wait_for_finalized_atif_ignores_existing_and_partial_files(
+async def test_wait_for_finalized_atif_ignores_unchanged_and_partial_files(
     tmp_path, monkeypatch
 ):
     atif_dir = tmp_path / "atif"
@@ -60,7 +60,7 @@ async def test_wait_for_finalized_atif_ignores_existing_and_partial_files(
     candidate = atif_dir / "trajectory-current.atif.json"
     existing.write_text('{"schema_version":"ATIF-v1.7"}', encoding="utf-8")
     plugin_config = atif_plugin_config(atif_dir)
-    before = relay_artifacts.snapshot_atif_paths(plugin_config)
+    before = relay_artifacts.snapshot_atif_files(plugin_config)
     reads: list[Path] = []
     read_bytes = Path.read_bytes
 
@@ -71,7 +71,6 @@ async def test_wait_for_finalized_atif_ignores_existing_and_partial_files(
     monkeypatch.setattr(Path, "read_bytes", record_read)
 
     async def finish_candidate():
-        existing.write_text('{"schema_version":"changed"}', encoding="utf-8")
         candidate.write_text("{", encoding="utf-8")
         await asyncio.sleep(0.02)
         candidate.write_text(
@@ -88,9 +87,31 @@ async def test_wait_for_finalized_atif_ignores_existing_and_partial_files(
     )
     await writer
 
-    assert before == frozenset({existing.resolve()})
+    assert set(before) == {existing.resolve()}
     assert finalized == candidate.resolve()
     assert set(reads) == {candidate.resolve()}
+
+
+async def test_wait_for_finalized_atif_accepts_modified_existing_path(tmp_path):
+    atif_dir = tmp_path / "atif"
+    atif_dir.mkdir()
+    existing = atif_dir / "trajectory-existing.atif.json"
+    existing.write_text('{"schema_version":"ATIF-v1.7"}', encoding="utf-8")
+    plugin_config = atif_plugin_config(atif_dir)
+    before = relay_artifacts.snapshot_atif_files(plugin_config)
+    existing.write_text(
+        json.dumps({"schema_version": "ATIF-v1.7", "steps": [{"step_id": 1}]}),
+        encoding="utf-8",
+    )
+
+    finalized = await relay_artifacts.wait_for_finalized_atif(
+        plugin_config,
+        before,
+        timeout_seconds=0.5,
+        poll_interval_seconds=0.001,
+    )
+
+    assert finalized == existing.resolve()
 
 
 async def test_wait_for_finalized_atif_has_a_hard_deadline(tmp_path):
@@ -100,7 +121,7 @@ async def test_wait_for_finalized_atif_has_a_hard_deadline(tmp_path):
 
     finalized = await relay_artifacts.wait_for_finalized_atif(
         plugin_config,
-        relay_artifacts.snapshot_atif_paths(plugin_config),
+        relay_artifacts.snapshot_atif_files(plugin_config),
         timeout_seconds=0.01,
         poll_interval_seconds=0.001,
     )
@@ -129,13 +150,13 @@ async def test_wait_for_finalized_atif_isolated_by_runtime_directory(tmp_path):
     second_writer = asyncio.create_task(write_atif(second_dir, "second", 0.01))
     first_wait = relay_artifacts.wait_for_finalized_atif(
         first_config,
-        relay_artifacts.snapshot_atif_paths(first_config),
+        relay_artifacts.snapshot_atif_files(first_config),
         timeout_seconds=0.5,
         poll_interval_seconds=0.001,
     )
     second_wait = relay_artifacts.wait_for_finalized_atif(
         second_config,
-        relay_artifacts.snapshot_atif_paths(second_config),
+        relay_artifacts.snapshot_atif_files(second_config),
         timeout_seconds=0.5,
         poll_interval_seconds=0.001,
     )
