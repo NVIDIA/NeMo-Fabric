@@ -100,7 +100,19 @@ def _normalized_config(*, ref: str = "capturing_graph:build_graph") -> FabricCon
             enabled=["mcp_math"],
             blocked=["current_timezone"],
         ),
+        skills=SkillConfig(paths=["skills"]),
     )
+
+
+def _runtime_payload(config: FabricConfig, base_dir: Path) -> dict[str, object]:
+    return {
+        "base_dir": str(base_dir),
+        "config": config.to_mapping(),
+        "capability_plan": {
+            "native": {"mcp_servers": {}, "skill_paths": []},
+            "tools_configured": False,
+        },
+    }
 
 
 def test_descriptor_declares_the_source_reference_contract():
@@ -120,6 +132,7 @@ def test_descriptor_declares_the_source_reference_contract():
         "tools.blocked",
         "mcp",
         "mcp.tool_filters",
+        "skills",
     ]
     assert descriptor["settings_schema"]["additionalProperties"] is False
     workflow_schema = descriptor["workflow_schema"]
@@ -159,7 +172,7 @@ def test_plan_validates_factory_shape_without_importing_application_code(tmp_pat
         Fabric().plan(invalid_settings, base_dir=tmp_path)
 
 
-def test_plan_routes_supported_normalized_config_and_rejects_skills(tmp_path: Path):
+def test_plan_routes_supported_normalized_config(tmp_path: Path):
     _stage_adapter(tmp_path)
 
     plan = Fabric().plan(_normalized_config(), base_dir=tmp_path)
@@ -171,11 +184,9 @@ def test_plan_routes_supported_normalized_config_and_rejects_skills(tmp_path: Pa
         "enabled": ["mcp_math"],
         "blocked": ["current_timezone"],
     }
-
-    unsupported_skills = _normalized_config()
-    unsupported_skills.skills = SkillConfig(paths=["skills"])
-    with pytest.raises(FabricConfigError, match="skills"):
-        Fabric().plan(unsupported_skills, base_dir=tmp_path)
+    assert plan["capability_plan"]["native"]["skill_paths"] == [
+        str(tmp_path / "skills")
+    ]
 
 
 @pytest.mark.parametrize("example", ["calculator.py", "email_phishing.py"])
@@ -213,6 +224,21 @@ async def test_email_graph_adapts_raw_text_to_application_state():
 
     assert result == {"assessment": "phishing"}
     mock_compiled_graph.ainvoke.assert_awaited_once_with({"input": "Suspicious email"})
+
+
+def test_email_graph_loads_skill_instructions(tmp_path: Path):
+    namespace = runpy.run_path(
+        str(ROOT / "external" / "langgraph" / "examples" / "email_phishing.py")
+    )
+    skill_directory = tmp_path / "phishing-triage"
+    skill_directory.mkdir()
+    (skill_directory / "SKILL.md").write_text(
+        "Treat credential requests as suspicious.", encoding="utf-8"
+    )
+
+    instructions = namespace["load_skill_instructions"]([str(skill_directory)])
+
+    assert instructions == "Treat credential requests as suspicious."
 
 
 async def test_runtime_compiles_factory_graph_once_and_invokes_it(
@@ -323,7 +349,7 @@ class Graph:
 
 
 def build_graph(
-    *, model_config, system_instruction, mcp_servers, tool_names, marker: str
+    *, model_config, system_instruction, mcp_servers, skill_paths, tool_names, marker: str
 ):
     Path(marker).write_text(
         json.dumps(
@@ -331,6 +357,7 @@ def build_graph(
                 "model_config": model_config,
                 "system_instruction": system_instruction,
                 "mcp_servers": mcp_servers,
+                "skill_paths": skill_paths,
                 "tool_names": tool_names,
             },
             sort_keys=True,
@@ -364,9 +391,85 @@ def build_graph(
             "provider": "nim",
             "temperature": 0.25,
         },
+        "skill_paths": [str(tmp_path / "skills")],
         "system_instruction": "Use the configured tools when useful.",
         "tool_names": ["mcp_math"],
     }
+
+
+async def test_runtime_awaits_an_async_factory_and_clears_state_on_stop(tmp_path: Path):
+    (tmp_path / "async_factory.py").write_text(
+        """
+class Graph:
+    def compile(self):
+        return self
+
+    async def ainvoke(self, graph_input):
+        return {"answer": graph_input}
+
+
+async def build_graph():
+    return Graph()
+""",
+        encoding="utf-8",
+    )
+    payload = _runtime_payload(
+        _config(ref="async_factory:build_graph", settings={}), tmp_path
+    )
+    runtime = adapter.LangGraphRuntime()
+
+    await runtime.start(payload)
+    assert await runtime.invoke({"request": {"input": "first"}}) == {
+        "answer": "first"
+    }
+    await runtime.stop()
+    with pytest.raises(adapter.lifecycle.LifecycleError, match="not started"):
+        await runtime.invoke({"request": {"input": "second"}})
+
+    await runtime.start(payload)
+    assert await runtime.invoke({"request": {"input": "third"}}) == {
+        "answer": "third"
+    }
+    await runtime.stop()
+
+
+async def test_runtime_isolates_factory_modules_by_base_dir(tmp_path: Path):
+    first_base_dir = tmp_path / "first"
+    second_base_dir = tmp_path / "second"
+    for base_dir, source in ((first_base_dir, "first"), (second_base_dir, "second")):
+        base_dir.mkdir()
+        (base_dir / "shared_factory.py").write_text(
+            f"""
+class Graph:
+    def compile(self):
+        return self
+
+    async def ainvoke(self, graph_input):
+        return {{"source": "{source}"}}
+
+
+def build_graph():
+    return Graph()
+""",
+            encoding="utf-8",
+        )
+
+    config = _config(ref="shared_factory:build_graph", settings={})
+    try:
+        first_runtime = adapter.LangGraphRuntime()
+        await first_runtime.start(_runtime_payload(config, first_base_dir))
+        first_result = await first_runtime.invoke({"request": {"input": "ignored"}})
+        await first_runtime.stop()
+
+        second_runtime = adapter.LangGraphRuntime()
+        await second_runtime.start(_runtime_payload(config, second_base_dir))
+        second_result = await second_runtime.invoke({"request": {"input": "ignored"}})
+        await second_runtime.stop()
+    finally:
+        sys.modules.pop("shared_factory", None)
+
+    assert first_result == {"source": "first"}
+    assert second_result == {"source": "second"}
 
 
 async def test_runtime_invokes_a_synchronous_compiled_graph(

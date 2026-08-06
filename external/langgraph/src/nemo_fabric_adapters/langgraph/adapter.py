@@ -73,17 +73,31 @@ def _model_config(payload: dict[str, Any], llm_name: Any) -> dict[str, Any]:
     return dict(model_config)
 
 
-def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _native_capabilities(payload: dict[str, Any]) -> Mapping[str, Any]:
     capability_plan = common_utils.capability_plan(payload)
     native = capability_plan.get("native")
     if not isinstance(native, Mapping):
         raise _WorkflowError("capability_plan.native must be an object")
+    return native
+
+
+def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    native = _native_capabilities(payload)
     servers = native.get("mcp_servers", {})
     if not isinstance(servers, Mapping):
         raise _WorkflowError("capability_plan.native.mcp_servers must be an object")
     if any(not isinstance(server, Mapping) for server in servers.values()):
         raise _WorkflowError("capability_plan.native.mcp_servers entries must be objects")
     return {str(name): dict(server) for name, server in servers.items()}
+
+
+def _native_skill_paths(payload: dict[str, Any]) -> list[str]:
+    skill_paths = _native_capabilities(payload).get("skill_paths", [])
+    if not isinstance(skill_paths, list) or any(
+        not isinstance(path, str) or not path for path in skill_paths
+    ):
+        raise _WorkflowError("capability_plan.native.skill_paths must be a string array")
+    return skill_paths
 
 
 def _effective_tool_names(
@@ -155,6 +169,9 @@ def _factory_arguments(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         }
     if mcp_servers:
         settings["mcp_servers"] = mcp_servers
+    skill_paths = _native_skill_paths(payload)
+    if skill_paths:
+        settings["skill_paths"] = skill_paths
     return ref, settings
 
 
@@ -167,15 +184,44 @@ def _is_factory_ref(value: str) -> bool:
     )
 
 
+def _module_belongs_to_base(module: Any, base_dir: Path) -> bool:
+    paths: list[Path] = []
+    module_file = getattr(module, "__file__", None)
+    if isinstance(module_file, str):
+        paths.append(Path(module_file))
+    module_spec = getattr(module, "__spec__", None)
+    locations = getattr(module_spec, "submodule_search_locations", None)
+    if locations is not None:
+        paths.extend(Path(location) for location in locations)
+    for path in paths:
+        try:
+            if path.resolve().is_relative_to(base_dir):
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return False
+
+
+def _evict_conflicting_application_modules(module_name: str, base_dir: Path) -> None:
+    package = module_name.split(".", maxsplit=1)[0]
+    for cached_name, module in tuple(sys.modules.items()):
+        if cached_name != package and not cached_name.startswith(f"{package}."):
+            continue
+        if not _module_belongs_to_base(module, base_dir):
+            sys.modules.pop(cached_name, None)
+
+
 def _factory_from_ref(ref: str, base_dir: str) -> Any:
     module_name, attribute_path = ref.split(":", maxsplit=1)
     resolved_base_dir = Path(base_dir).resolve()
     if not resolved_base_dir.is_dir():
         raise _WorkflowError("base_dir must name an existing directory")
     base_dir_text = str(resolved_base_dir)
-    if base_dir_text not in sys.path:
-        sys.path.insert(0, base_dir_text)
+    if base_dir_text in sys.path:
+        sys.path.remove(base_dir_text)
+    sys.path.insert(0, base_dir_text)
     importlib.invalidate_caches()
+    _evict_conflicting_application_modules(module_name, resolved_base_dir)
 
     try:
         target: Any = importlib.import_module(module_name)
@@ -184,6 +230,11 @@ def _factory_from_ref(ref: str, base_dir: str) -> Any:
             "langgraph_factory_import_failed",
             f"Could not import the configured graph factory module {module_name!r}",
         ) from error
+    if not _module_belongs_to_base(target, resolved_base_dir):
+        raise lifecycle.LifecycleError(
+            "langgraph_factory_import_failed",
+            f"Configured graph factory module {module_name!r} must resolve from base_dir",
+        )
 
     for attribute in attribute_path.split("."):
         try:

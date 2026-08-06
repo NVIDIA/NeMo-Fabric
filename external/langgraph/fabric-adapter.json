@@ -50,7 +50,8 @@
           },
           "model_config": false,
           "system_instruction": false,
-          "mcp_servers": false
+          "mcp_servers": false,
+          "skill_paths": false
         },
         "additionalProperties": true,
         "description": "Application factory settings. The adapter injects reserved normalized-config arguments."
@@ -69,7 +70,8 @@
       "tools.enabled",
       "tools.blocked",
       "mcp",
-      "mcp.tool_filters"
+      "mcp.tool_filters",
+      "skills"
     ]
   },
   "capabilities": {

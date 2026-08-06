@@ -22,6 +22,7 @@ from nemo_fabric import InstructionsConfig
 from nemo_fabric import MetadataConfig
 from nemo_fabric import ModelConfig
 from nemo_fabric import RuntimeConfig
+from nemo_fabric import SkillConfig
 from nemo_fabric import WorkflowConfig
 from nemo_fabric import WorkflowEntrypointConfig
 
@@ -57,8 +58,24 @@ class CompiledTextInputGraph:
         return await self._graph.ainvoke({"input": input_value})
 
 
+def load_skill_instructions(skill_paths: list[str]) -> str:
+    """Load application-provided skill instructions from the resolved paths."""
+
+    contents: list[str] = []
+    for raw_path in skill_paths:
+        path = Path(raw_path)
+        if path.is_dir():
+            path = path / "SKILL.md"
+        if not path.is_file():
+            raise ValueError(f"Skill path {raw_path!r} does not contain a readable SKILL.md")
+        contents.append(path.read_text(encoding="utf-8").strip())
+    return "\n\n".join(content for content in contents if content)
+
+
 def build_graph(
-    model_config: Mapping[str, Any], system_instruction: str | None = None
+    model_config: Mapping[str, Any],
+    system_instruction: str | None = None,
+    skill_paths: list[str] | None = None,
 ) -> TextInputGraph:
     """Return an uncompiled graph that uses an OpenAI-compatible model endpoint."""
 
@@ -82,14 +99,22 @@ def build_graph(
         api_key=api_key,
         temperature=float(model_config.get("temperature") or 0),
     )
+    instructions = "\n\n".join(
+        part
+        for part in (
+            system_instruction
+            or "Classify the email as phishing or benign. Explain the evidence briefly.",
+            load_skill_instructions(skill_paths or []),
+        )
+        if part
+    )
 
     async def classify(state: EmailState) -> dict[str, str]:
         response = await llm.ainvoke(
             [
                 (
                     "system",
-                    system_instruction
-                    or "Classify the email as phishing or benign. Explain the evidence briefly.",
+                    instructions,
                 ),
                 ("user", state["input"]),
             ]
@@ -134,6 +159,7 @@ def build_config() -> FabricConfig:
                 content="Classify the email as phishing or benign. Explain the evidence briefly."
             )
         ),
+        skills=SkillConfig(paths=["skills/phishing-triage"]),
         runtime=RuntimeConfig(input_schema="text", output_schema="json"),
     )
 
