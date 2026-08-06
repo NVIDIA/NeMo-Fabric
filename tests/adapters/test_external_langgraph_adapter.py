@@ -472,8 +472,21 @@ def build_graph():
     assert second_result == {"source": "second"}
 
 
-async def test_runtime_normalizes_a_graph_invocation_failure(tmp_path: Path):
+async def test_runtime_normalizes_a_graph_invocation_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     _stage_adapter(tmp_path)
+    source_path = str(LANGGRAPH_SOURCE)
+    existing_pythonpath = os.environ.get("PYTHONPATH", "")
+    monkeypatch.setenv(
+        "PYTHONPATH",
+        (
+            source_path
+            if not existing_pythonpath
+            else f"{source_path}{os.pathsep}{existing_pythonpath}"
+        ),
+    )
     (tmp_path / "failing_graph.py").write_text(
         """
 class Graph:
