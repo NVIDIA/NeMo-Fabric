@@ -630,7 +630,7 @@ pub enum McpTransport {
 pub struct McpServerConfig {
     /// MCP transport.
     pub transport: McpTransport,
-    /// MCP server URL or process command, depending on transport.
+    /// MCP server URL or process command (when transport=stdio), depending on transport.
     pub url: String,
     /// Arguments passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -649,6 +649,9 @@ pub struct McpServerConfig {
     /// Additive MCP server fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+    /// HTTP headers passed to an MCP server when transport is `sse` or `streamable_http`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom_headers: BTreeMap<String, String>,
 }
 
 /// MCP exposure strategy.
@@ -2720,6 +2723,7 @@ mod tests {
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    custom_headers: BTreeMap::new(),
                     exposure: McpExposure::FabricManaged,
                     allowed_tools: None,
                     blocked_tools: Vec::new(),
@@ -2768,6 +2772,7 @@ mod tests {
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    custom_headers: BTreeMap::new(),
                     exposure: McpExposure::HarnessNative,
                     allowed_tools: Some(Vec::new()),
                     blocked_tools: vec!["delete".to_string()],
@@ -2818,6 +2823,7 @@ mod tests {
                         url: "https://mcp.example".to_string(),
                         args: Vec::new(),
                         env: BTreeMap::new(),
+                        custom_headers: BTreeMap::new(),
                         exposure: McpExposure::HarnessNative,
                         allowed_tools,
                         blocked_tools,
@@ -2855,6 +2861,7 @@ mod tests {
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    custom_headers: BTreeMap::new(),
                     exposure: McpExposure::HarnessNative,
                     allowed_tools: Some(vec!["search".to_string()]),
                     blocked_tools: vec!["search".to_string()],
@@ -2899,6 +2906,7 @@ mod tests {
                         url: "https://mcp.example".to_string(),
                         args: Vec::new(),
                         env: BTreeMap::new(),
+                        custom_headers: BTreeMap::new(),
                         exposure: McpExposure::HarnessNative,
                         allowed_tools,
                         blocked_tools,
