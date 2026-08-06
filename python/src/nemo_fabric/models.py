@@ -259,6 +259,18 @@ class SkillConfig(FabricBaseModel):
         return self
 
 
+class McpAuthenticationConfig(FabricBaseModel):
+    """MCP server authentication configuration."""
+
+    type: Literal["oauth2"]
+    client_id: str | None = None
+    client_secret_env: str | None = None
+    scopes: list[str] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
+    redirect_uri: str | None = None
+
+
 class McpServerConfig(FabricBaseModel):
     """MCP server configuration."""
 
@@ -266,6 +278,9 @@ class McpServerConfig(FabricBaseModel):
     url: str = Field(min_length=1)
     args: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
     env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    authentication: McpAuthenticationConfig | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     exposure: Literal["harness_native", "fabric_managed"] = "harness_native"
     allowed_tools: list[str] | None = Field(
         default=None,
@@ -328,6 +343,7 @@ class McpConfig(FabricBaseModel):
         url: str,
         args: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
+        authentication: McpAuthenticationConfig | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
@@ -338,6 +354,7 @@ class McpConfig(FabricBaseModel):
         extensions = dict(extra_fields or {})
         legacy_args = extensions.pop("args", ())
         legacy_env = extensions.pop("env", None)
+        legacy_authentication = extensions.pop("authentication", None)
         if isinstance(allowed_tools, str):
             raise TypeError("allowed_tools must be a sequence of strings, not a string")
         if isinstance(blocked_tools, str):
@@ -348,6 +365,9 @@ class McpConfig(FabricBaseModel):
             url=url,
             args=list(args if args is not None else legacy_args),
             env=env if env is not None else legacy_env or {},
+            authentication=(
+                authentication if authentication is not None else legacy_authentication
+            ),
             exposure=exposure,
             allowed_tools=None if allowed_tools is None else list(allowed_tools),
             blocked_tools=list(blocked_tools),
@@ -620,6 +640,7 @@ class FabricConfig(FabricBaseModel):
         url: str,
         args: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
+        authentication: McpAuthenticationConfig | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
@@ -635,6 +656,7 @@ class FabricConfig(FabricBaseModel):
             url=url,
             args=args,
             env=env,
+            authentication=authentication,
             exposure=exposure,
             allowed_tools=allowed_tools,
             blocked_tools=blocked_tools,

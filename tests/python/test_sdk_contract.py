@@ -28,6 +28,7 @@ from nemo_fabric import FabricStateError
 from nemo_fabric import HarnessConfig
 from nemo_fabric import InstructionConfig
 from nemo_fabric import InstructionsConfig
+from nemo_fabric import McpAuthenticationConfig
 from nemo_fabric import McpConfig
 from nemo_fabric import McpServerConfig
 from nemo_fabric import MetadataConfig
@@ -143,15 +144,15 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         url="${GITHUB_MCP_URL}",
         args=["--read-only"],
         env={"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+        authentication=McpAuthenticationConfig(
+            type="oauth2",
+            client_id="fabric-client",
+            scopes=["repo"],
+        ),
         exposure="fabric_managed",
         allowed_tools=["issues.read", "pull_requests.read"],
         blocked_tools=["issues.delete"],
         extra_fields={
-            "authentication": {
-                "type": "oauth2",
-                "client_id": "fabric-client",
-                "scopes": ["repo"],
-            },
             "custom_headers": {"X-Tenant": "fabric"},
         },
     )
@@ -253,6 +254,7 @@ def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():
         },
     )
 
+    assert isinstance(server.authentication, McpAuthenticationConfig)
     assert server.to_mapping() == {
         "transport": "streamable-http",
         "url": "https://mcp.example.test/jira",
@@ -266,6 +268,24 @@ def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():
         "custom_headers": {"X-Tenant": "fabric"},
         "exposure": "harness_native",
     }
+
+
+def test_mcp_config_add_server_preserves_legacy_authentication_extra_field():
+    config = McpConfig().add_server(
+        "docs",
+        transport="streamable-http",
+        url="https://mcp.example.test",
+        extra_fields={"authentication": {"type": "oauth2"}},
+    )
+
+    assert config.to_mapping()["servers"]["docs"]["authentication"] == {
+        "type": "oauth2"
+    }
+
+
+def test_mcp_authentication_rejects_unsupported_type():
+    with pytest.raises(ValidationError, match="oauth2"):
+        McpAuthenticationConfig(type="bearer")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("field", ["allowed_tools", "blocked_tools"])
@@ -401,6 +421,7 @@ def test_run_plan_config_add_mcp_server_emits_tool_filters():
         "docs",
         transport="streamable-http",
         url="https://mcp.example.test",
+        authentication={"type": "oauth2"},
         allowed_tools=["search"],
         blocked_tools=["delete"],
     )
@@ -409,6 +430,7 @@ def test_run_plan_config_add_mcp_server_emits_tool_filters():
         "transport": "streamable-http",
         "url": "https://mcp.example.test",
         "exposure": "harness_native",
+        "authentication": {"type": "oauth2"},
         "allowed_tools": ["search"],
         "blocked_tools": ["delete"],
     }

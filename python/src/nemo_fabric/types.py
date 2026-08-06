@@ -558,6 +558,7 @@ class _McpConfig(_ConfigMapping):
         *,
         transport: str,
         url: str,
+        authentication: Mapping[str, Any] | None = None,
         exposure: str = "harness_native",
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
@@ -605,11 +606,19 @@ class _McpConfig(_ConfigMapping):
             {} if extra_fields is None else extra_fields,
             "mcp server extra_fields",
         )
+        legacy_authentication = extensions.pop("authentication", None)
         reserved = self._SERVER_FIELDS.intersection(extensions)
         if reserved:
             field = sorted(reserved)[0]
             raise FabricConfigError(
                 f"mcp server extra_fields must not contain reserved field {field!r}"
+            )
+        authentication_value = (
+            authentication if authentication is not None else legacy_authentication
+        )
+        if authentication_value is not None:
+            server["authentication"] = _mapping(
+                authentication_value, "mcp server authentication"
             )
         server.update(extensions)
         servers = dict(self.get("servers", {}))
@@ -882,6 +891,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         *,
         transport: str,
         url: str,
+        authentication: Mapping[str, Any] | None = None,
         exposure: str = "harness_native",
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
@@ -893,6 +903,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
             name,
             transport=transport,
             url=url,
+            authentication=authentication,
             exposure=exposure,
             allowed_tools=allowed_tools,
             blocked_tools=blocked_tools,
