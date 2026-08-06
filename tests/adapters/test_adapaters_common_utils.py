@@ -747,7 +747,9 @@ def test_write_relay_configs(
                 assert tomllib.load(stream) == config
 
 
-def test_write_relay_configs_migrates_observability_for_relay_0_7(tmp_path: Path):
+def test_write_relay_configs_migrates_otlp_and_preserves_sinks_for_relay_0_7(
+    tmp_path: Path,
+):
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "relay.json")
     plugin_config = {
         "version": 1,
@@ -763,7 +765,16 @@ def test_write_relay_configs_migrates_observability_for_relay_0_7(tmp_path: Path
                             {
                                 "type": "file",
                                 "output_directory": "/tmp/atof",
-                            }
+                            },
+                            {
+                                "type": "stream",
+                                "url": "https://example.test/events",
+                                "transport": "http_post",
+                                "headers": {"x-test": "value"},
+                                "header_env": {"authorization": "TOKEN"},
+                                "timeout_millis": 1000,
+                                "field_name_policy": "replace_dots",
+                            },
                         ],
                     },
                     "atif": {"enabled": True, "output_directory": "/tmp/atif"},

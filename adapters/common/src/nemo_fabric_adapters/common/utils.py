@@ -427,6 +427,8 @@ def _relay_v3_otlp_endpoint(
 def _relay_plugin_config_for_version(
     plugin_config: dict[str, Any], observability_version: int
 ) -> dict[str, Any]:
+    """Render Fabric's public Relay config for one CLI without mutating it."""
+
     if observability_version != 3:
         raise ValueError(
             f"unsupported NeMo Relay observability config version "
