@@ -38,6 +38,8 @@ navigation:
             path: ./integrations/harness/claude.mdx
           - page: Codex
             path: ./integrations/harness/codex.mdx
+          - page: LangGraph
+            path: ./integrations/harness/langgraph.mdx
           - page: Hermes Agent
             path: ./integrations/harness/hermes.mdx
           - page: LangChain Deep Agents

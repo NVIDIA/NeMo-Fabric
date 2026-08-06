@@ -2089,6 +2089,9 @@ harbor = [
 hermes-agent = [
     { name = "nemo-fabric-adapters-hermes", extra = ["harness"], marker = "python_full_version < '3.14'" },
 ]
+langgraph = [
+    { name = "nemo-fabric-adapters-langgraph", extra = ["harness"] },
+]
 relay = [
     { name = "nemo-relay" },
 ]
@@ -2099,6 +2102,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-codex", extra = ["harness"] },
     { name = "nemo-fabric-adapters-deepagents", extra = ["harness"] },
     { name = "nemo-fabric-adapters-hermes", extra = ["harness"], marker = "python_full_version < '3.14'" },
+    { name = "nemo-fabric-adapters-langgraph", extra = ["harness"] },
 ]
 adapters = [
     { name = "nemo-fabric-adapters-claude" },
@@ -2106,6 +2110,7 @@ adapters = [
     { name = "nemo-fabric-adapters-common" },
     { name = "nemo-fabric-adapters-deepagents", extra = ["relay"] },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'" },
+    { name = "nemo-fabric-adapters-langgraph" },
 ]
 dev = [
     { name = "ipython" },
@@ -2142,11 +2147,12 @@ requires-dist = [
     { name = "nemo-fabric-adapters-codex", extras = ["harness"], marker = "extra == 'codex'", editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], marker = "extra == 'deepagents'", editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", extras = ["harness"], marker = "python_full_version < '3.14' and extra == 'hermes-agent'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-langgraph", extras = ["harness"], marker = "extra == 'langgraph'", editable = "adapters/langgraph" },
     { name = "nemo-fabric-runtime", editable = "python" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
     { name = "pyyaml", marker = "extra == 'harbor'", specifier = ">=6.0" },
 ]
-provides-extras = ["claude", "codex", "deepagents", "harbor", "hermes-agent", "relay"]
+provides-extras = ["claude", "codex", "deepagents", "langgraph", "harbor", "hermes-agent", "relay"]
 
 [package.metadata.requires-dev]
 adapter-tests = [
@@ -2154,6 +2160,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-codex", extras = ["harness"], editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-deepagents", extras = ["harness"], editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", extras = ["harness"], marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-langgraph", extras = ["harness"], editable = "adapters/langgraph" },
 ]
 adapters = [
     { name = "nemo-fabric-adapters-claude", editable = "adapters/claude" },
@@ -2161,6 +2168,7 @@ adapters = [
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "nemo-fabric-adapters-deepagents", extras = ["relay"], editable = "adapters/deepagents" },
     { name = "nemo-fabric-adapters-hermes", marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
+    { name = "nemo-fabric-adapters-langgraph", editable = "adapters/langgraph" },
 ]
 dev = [
     { name = "ipython", specifier = "~=8.20" },
@@ -2301,6 +2309,27 @@ requires-dist = [
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
 ]
 provides-extras = ["harness", "relay", "full"]
+
+[[package]]
+name = "nemo-fabric-adapters-langgraph"
+version = "0.2.0"
+source = { editable = "adapters/langgraph" }
+dependencies = [
+    { name = "nemo-fabric-adapters-common" },
+]
+
+[package.optional-dependencies]
+harness = [
+    { name = "langgraph" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "langgraph", marker = "extra == 'full'", specifier = ">=1.2,<2.0" },
+    { name = "langgraph", marker = "extra == 'harness'", specifier = ">=1.2,<2.0" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
+]
+provides-extras = ["harness", "full"]
 
 [[package]]
 name = "nemo-fabric-runtime"
