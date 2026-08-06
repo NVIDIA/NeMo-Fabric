@@ -508,7 +508,7 @@ class HermesRuntime:
             try:
                 from tools.mcp_tool import shutdown_mcp_servers
 
-                shutdown_mcp_servers()
+                await asyncio.to_thread(shutdown_mcp_servers)
             except BaseException as error:
                 errors.append(error)
         if agent is not None:
