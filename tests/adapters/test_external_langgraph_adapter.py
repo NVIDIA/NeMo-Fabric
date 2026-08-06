@@ -283,7 +283,8 @@ class CompileMarker:
         return self.graph.compile()
 
 
-def build_graph(prefix: str):
+def build_graph(context):
+    prefix = context.workflow_settings["prefix"]
     graph = StateGraph(GraphState)
 
     def answer(state: GraphState) -> dict[str, str]:
@@ -348,17 +349,16 @@ class Graph:
         return {"answer": graph_input}
 
 
-def build_graph(
-    *, model_config, system_instruction, mcp_servers, skill_paths, tool_names, marker: str
-):
-    Path(marker).write_text(
+def build_graph(context):
+    Path(context.workflow_settings["marker"]).write_text(
         json.dumps(
             {
-                "model_config": model_config,
-                "system_instruction": system_instruction,
-                "mcp_servers": mcp_servers,
-                "skill_paths": skill_paths,
-                "tool_names": tool_names,
+                "workflow_settings": context.workflow_settings,
+                "models": context.models,
+                "system_instruction": context.instructions.system,
+                "mcp_servers": context.mcp_servers,
+                "skills": context.skills,
+                "tools": context.tools,
             },
             sort_keys=True,
         ),
@@ -370,7 +370,15 @@ def build_graph(
     )
 
     config = _normalized_config()
-    config.workflow.settings["marker"] = str(captured_arguments)
+    config.workflow.settings.update(
+        {
+            "marker": str(captured_arguments),
+            "model_config": {"application": "owned"},
+            "system_instruction": "Application-owned instruction",
+            "mcp_servers": {"application": "owned"},
+            "skill_paths": ["application-owned"],
+        }
+    )
     async with await Fabric().start_runtime(config, base_dir=tmp_path) as runtime:
         result = await runtime.invoke(input="hello")
 
@@ -385,15 +393,26 @@ def build_graph(
                 "url": "http://127.0.0.1:9901/mcp",
             }
         },
-        "model_config": {
-            "api_key_env": "NVIDIA_API_KEY",
-            "model": "meta/llama-3.1-70b-instruct",
-            "provider": "nim",
-            "temperature": 0.25,
+        "models": {
+            "nim_llm": {
+                "api_key_env": "NVIDIA_API_KEY",
+                "model": "meta/llama-3.1-70b-instruct",
+                "provider": "nim",
+                "temperature": 0.25,
+            }
         },
-        "skill_paths": [str(tmp_path / "skills")],
+        "skills": [str(tmp_path / "skills")],
         "system_instruction": "Use the configured tools when useful.",
-        "tool_names": ["mcp_math"],
+        "tools": ["mcp_math"],
+        "workflow_settings": {
+            "llm_name": "nim_llm",
+            "marker": str(captured_arguments),
+            "mcp_servers": {"application": "owned"},
+            "model_config": {"application": "owned"},
+            "skill_paths": ["application-owned"],
+            "system_instruction": "Application-owned instruction",
+            "tool_names": ["current_timezone", "mcp_math"],
+        },
     }
 
 
@@ -408,7 +427,7 @@ class Graph:
         return {"answer": graph_input}
 
 
-async def build_graph():
+async def build_graph(context):
     return Graph()
 """,
         encoding="utf-8",
@@ -448,7 +467,7 @@ class Graph:
         return {{"source": "{source}"}}
 
 
-def build_graph():
+def build_graph(context):
     return Graph()
 """,
             encoding="utf-8",
@@ -497,7 +516,7 @@ class Graph:
         raise RuntimeError("sensitive graph detail")
 
 
-def build_graph():
+def build_graph(context):
     return Graph()
 """,
         encoding="utf-8",
@@ -556,7 +575,7 @@ class CompiledGraph:
         return {"answer": graph_input["message"].upper()}
 
 
-def build_graph(prefix: str):
+def build_graph(context):
     return Graph()
 """,
         encoding="utf-8",

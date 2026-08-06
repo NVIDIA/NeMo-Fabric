@@ -34,11 +34,6 @@
       "settings": {
         "type": "object",
         "properties": {
-          "llm_name": {
-            "type": "string",
-            "minLength": 1,
-            "description": "Name of the normalized model role passed to the factory as model_config."
-          },
           "tool_names": {
             "type": "array",
             "items": {
@@ -46,15 +41,11 @@
               "minLength": 1
             },
             "uniqueItems": true,
-            "description": "Factory-declared tool names after applying normalized tools.enabled and tools.blocked."
-          },
-          "model_config": false,
-          "system_instruction": false,
-          "mcp_servers": false,
-          "skill_paths": false
+            "description": "Complete controlled tool inventory when normalized tool policy is configured."
+          }
         },
         "additionalProperties": true,
-        "description": "Application factory settings. The adapter injects reserved normalized-config arguments."
+        "description": "Application-owned factory settings, passed unchanged through context.workflow_settings."
       }
     },
     "required": ["entrypoint"],

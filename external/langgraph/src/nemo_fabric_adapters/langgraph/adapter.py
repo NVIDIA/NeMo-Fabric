@@ -12,6 +12,7 @@ import inspect
 import json
 import sys
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,25 @@ import nemo_fabric_adapters.common.utils as common_utils
 
 
 FACTORY_KIND = "langgraph_factory"
+
+
+@dataclass(frozen=True)
+class LangGraphInstructions:
+    """Normalized instructions exposed to a LangGraph graph factory."""
+
+    system: str | None
+
+
+@dataclass(frozen=True)
+class LangGraphFactoryContext:
+    """Fabric configuration and resolved resources for one graph factory."""
+
+    workflow_settings: Mapping[str, Any]
+    models: Mapping[str, Mapping[str, Any]]
+    instructions: LangGraphInstructions
+    tools: tuple[str, ...]
+    mcp_servers: Mapping[str, Mapping[str, Any]]
+    skills: tuple[str, ...]
 
 
 class _WorkflowError(lifecycle.LifecycleError):
@@ -57,20 +77,6 @@ def _workflow(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if not isinstance(settings, Mapping):
         raise _WorkflowError("workflow.settings must be an object")
     return ref, dict(settings)
-
-
-def _model_config(payload: dict[str, Any], llm_name: Any) -> dict[str, Any]:
-    if not isinstance(llm_name, str) or not llm_name.strip():
-        raise _WorkflowError(
-            "workflow.settings.llm_name must select a configured model role"
-        )
-    models = common_utils.models_payload(payload)
-    model_config = models.get(llm_name)
-    if not isinstance(model_config, Mapping):
-        raise _WorkflowError(
-            f"workflow.settings.llm_name {llm_name!r} does not name a configured model"
-        )
-    return dict(model_config)
 
 
 def _native_capabilities(payload: dict[str, Any]) -> Mapping[str, Any]:
@@ -140,39 +146,34 @@ def _effective_tool_names(
     return [name for name in selected if name not in blocked]
 
 
-def _factory_arguments(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    ref, settings = _workflow(payload)
-    config = common_utils.fabric_config(payload)
-    models = config.get("models", {})
+def _factory_context(payload: dict[str, Any]) -> tuple[str, LangGraphFactoryContext]:
+    ref, workflow_settings = _workflow(payload)
+    models = common_utils.models_payload(payload)
     if not isinstance(models, Mapping):
         raise _WorkflowError("models must be an object")
-    llm_name = settings.pop("llm_name", None)
-    if models:
-        settings["model_config"] = _model_config(payload, llm_name)
-    elif llm_name is not None:
-        raise _WorkflowError(
-            "workflow.settings.llm_name requires a configured normalized model"
-        )
-
-    system_instruction = common_utils.system_instruction(payload)
-    if system_instruction is not None:
-        settings["system_instruction"] = system_instruction
 
     mcp_servers = _native_mcp_servers(payload)
-    effective_tool_names = _effective_tool_names(settings, payload)
+    effective_tool_names = _effective_tool_names(workflow_settings, payload)
     if effective_tool_names is not None:
-        settings["tool_names"] = effective_tool_names
         mcp_servers = {
             name: server
             for name, server in mcp_servers.items()
             if name in effective_tool_names
         }
-    if mcp_servers:
-        settings["mcp_servers"] = mcp_servers
-    skill_paths = _native_skill_paths(payload)
-    if skill_paths:
-        settings["skill_paths"] = skill_paths
-    return ref, settings
+    return ref, LangGraphFactoryContext(
+        workflow_settings=workflow_settings,
+        models={
+            str(name): dict(model)
+            for name, model in models.items()
+            if isinstance(model, Mapping)
+        },
+        instructions=LangGraphInstructions(
+            system=common_utils.system_instruction(payload)
+        ),
+        tools=tuple(effective_tool_names or ()),
+        mcp_servers=mcp_servers,
+        skills=tuple(_native_skill_paths(payload)),
+    )
 
 
 def _is_factory_ref(value: str) -> bool:
@@ -295,10 +296,10 @@ class LangGraphRuntime:
                 "LangGraph runtime is already started",
             )
 
-        ref, settings = _factory_arguments(payload)
+        ref, context = _factory_context(payload)
         factory = _factory_from_ref(ref, common_utils.base_dir(payload))
         try:
-            graph = await _await_if_needed(factory(**settings))
+            graph = await _await_if_needed(factory(context))
         except Exception as error:
             raise lifecycle.LifecycleError(
                 "langgraph_factory_failed",

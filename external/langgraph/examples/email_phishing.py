@@ -11,7 +11,6 @@ import json
 import os
 from pathlib import Path
 from typing import Any
-from typing import Mapping
 from typing import TypedDict
 
 from nemo_fabric import Fabric
@@ -72,11 +71,7 @@ def load_skill_instructions(skill_paths: list[str]) -> str:
     return "\n\n".join(content for content in contents if content)
 
 
-def build_graph(
-    model_config: Mapping[str, Any],
-    system_instruction: str | None = None,
-    skill_paths: list[str] | None = None,
-) -> TextInputGraph:
+def build_graph(context: Any) -> TextInputGraph:
     """Return an uncompiled graph that uses an OpenAI-compatible model endpoint."""
 
     from langchain_openai import ChatOpenAI
@@ -84,6 +79,10 @@ def build_graph(
     from langgraph.graph import START
     from langgraph.graph import StateGraph
 
+    llm_name = context.workflow_settings.get("llm_name")
+    model_config = context.models.get(llm_name)
+    if not isinstance(model_config, dict):
+        raise ValueError("workflow.settings.llm_name must select a configured model")
     provider = model_config.get("provider")
     if provider not in {"nim", "nvidia"}:
         raise ValueError("The email example supports the nim and nvidia model providers")
@@ -102,9 +101,9 @@ def build_graph(
     instructions = "\n\n".join(
         part
         for part in (
-            system_instruction
+            context.instructions.system
             or "Classify the email as phishing or benign. Explain the evidence briefly.",
-            load_skill_instructions(skill_paths or []),
+            load_skill_instructions(list(context.skills)),
         )
         if part
     )

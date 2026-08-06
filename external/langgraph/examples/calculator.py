@@ -10,7 +10,6 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any
-from typing import Mapping
 from typing import TypedDict
 
 from nemo_fabric import Fabric
@@ -35,9 +34,7 @@ class CalculatorState(TypedDict):
     answer: Any
 
 
-async def build_graph(
-    mcp_servers: Mapping[str, Mapping[str, Any]], tool_names: list[str]
-) -> Any:
+async def build_graph(context: Any) -> Any:
     """Return an uncompiled graph that calls the selected calculator MCP server."""
 
     from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -45,8 +42,8 @@ async def build_graph(
     from langgraph.graph import START
     from langgraph.graph import StateGraph
 
-    server = mcp_servers.get("mcp_math")
-    if server is None or "mcp_math" not in tool_names:
+    server = context.mcp_servers.get("mcp_math")
+    if server is None or "mcp_math" not in context.tools:
         raise ValueError("The calculator graph requires the selected mcp_math tool")
     client = MultiServerMCPClient({"mcp_math": dict(server)})
 
