@@ -923,7 +923,12 @@ async def _invoke_thread(
         return sdk_failure(error), False
 
 
-def _relay_output(output: dict[str, Any], relay: CodexRelaySettings) -> dict[str, Any]:
+def _relay_output(
+    output: dict[str, Any],
+    relay: CodexRelaySettings,
+    *,
+    artifacts: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     output["relay_runtime"] = {
         "enabled": True,
         "emitter": "codex-sdk/nemo-relay",
@@ -932,8 +937,10 @@ def _relay_output(output: dict[str, Any], relay: CodexRelaySettings) -> dict[str
         "gateway_url": relay.gateway.url,
         "gateway_log_path": str(relay.gateway.log_path),
     }
-    output["relay_artifacts"] = common_utils.collect_relay_artifacts(
-        relay.plugin_config
+    output["relay_artifacts"] = (
+        common_utils.collect_relay_artifacts(relay.plugin_config)
+        if artifacts is None
+        else artifacts
     )
     return output
 
@@ -1092,12 +1099,19 @@ class CodexRuntime:
                     relay.plugin_config, atif_before
                 )
                 if finalized is None:
-                    raise AdapterRelayError(
-                        "codex_relay_atif_timeout",
-                        "NeMo Relay did not finalize an ATIF artifact before the deadline",
-                        metadata={
-                            "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
-                        },
+                    self._unusable = True
+                    return _relay_output(
+                        adapter_failure(
+                            AdapterRelayError(
+                                "codex_relay_atif_timeout",
+                                "NeMo Relay did not finalize an ATIF artifact before the deadline",
+                                metadata={
+                                    "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                                },
+                            )
+                        ),
+                        relay,
+                        artifacts=[],
                     )
         except AdapterRelayError as error:
             output = adapter_failure(error)
