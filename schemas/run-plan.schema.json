@@ -758,6 +758,52 @@
       },
       "type": "object"
     },
+    "McpAuthenticationConfig": {
+      "description": "MCP server authentication configuration.",
+      "oneOf": [
+        {
+          "description": "OAuth 2.0 authorization-code authentication.",
+          "properties": {
+            "client_id": {
+              "description": "Pre-registered OAuth client identifier. Omit to allow dynamic registration.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "client_secret_env": {
+              "description": "Environment variable containing the OAuth client secret.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "redirect_uri": {
+              "description": "OAuth callback URI for clients that require a pre-registered redirect URI.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scopes": {
+              "description": "OAuth scopes requested by the MCP client.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "oauth2",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "McpConfig": {
       "additionalProperties": true,
       "description": "MCP capability configuration.",
@@ -808,12 +854,30 @@
           },
           "type": "array"
         },
+        "authentication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/McpAuthenticationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Authentication used by an HTTP MCP server."
+        },
         "blocked_tools": {
           "description": "MCP tool names to block after applying the optional allowlist.",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "custom_headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "HTTP headers passed to an MCP server when transport is `sse` or `streamable_http`.",
+          "type": "object"
         },
         "env": {
           "additionalProperties": {
@@ -827,11 +891,11 @@
           "description": "How NeMo Fabric exposes the MCP capability to the harness."
         },
         "transport": {
-          "description": "MCP transport.",
-          "type": "string"
+          "$ref": "#/$defs/McpTransport",
+          "description": "MCP transport."
         },
         "url": {
-          "description": "MCP server URL or process command, depending on transport.",
+          "description": "MCP server URL or process command (when transport=stdio), depending on transport.",
           "type": "string"
         }
       },
@@ -863,12 +927,30 @@
           },
           "type": "array"
         },
+        "authentication": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/McpAuthenticationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Authentication used by an HTTP MCP server."
+        },
         "blocked_tools": {
           "description": "MCP tool names to block after applying the optional allowlist.",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "custom_headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "HTTP headers passed to an MCP server.",
+          "type": "object"
         },
         "env": {
           "additionalProperties": {
@@ -896,6 +978,26 @@
         "exposure"
       ],
       "type": "object"
+    },
+    "McpTransport": {
+      "description": "MCP server transport.",
+      "oneOf": [
+        {
+          "const": "stdio",
+          "description": "Standard input/output transport.",
+          "type": "string"
+        },
+        {
+          "const": "sse",
+          "description": "Server-Sent Events transport.",
+          "type": "string"
+        },
+        {
+          "const": "streamable-http",
+          "description": "Streamable HTTP transport.",
+          "type": "string"
+        }
+      ]
     },
     "MetadataConfig": {
       "additionalProperties": true,

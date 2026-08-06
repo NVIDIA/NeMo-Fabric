@@ -625,6 +625,28 @@ pub enum McpTransport {
     StreamableHttp,
 }
 
+/// MCP server authentication configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum McpAuthenticationConfig {
+    /// OAuth 2.0 authorization-code authentication.
+    #[serde(rename = "oauth2")]
+    OAuth2 {
+        /// Pre-registered OAuth client identifier. Omit to allow dynamic registration.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_id: Option<String>,
+        /// Environment variable containing the OAuth client secret.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_secret_env: Option<String>,
+        /// OAuth scopes requested by the MCP client.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        scopes: Vec<String>,
+        /// OAuth callback URI for clients that require a pre-registered redirect URI.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        redirect_uri: Option<String>,
+    },
+}
+
 /// MCP server configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct McpServerConfig {
@@ -638,6 +660,9 @@ pub struct McpServerConfig {
     /// Environment variables passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Authentication used by an HTTP MCP server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<McpAuthenticationConfig>,
     /// How NeMo Fabric exposes the MCP capability to the harness.
     pub exposure: McpExposure,
     /// MCP tool names to expose. `None` exposes every tool discovered from the server.
@@ -1802,6 +1827,8 @@ fn resolve_capability_plan(
                             url: server.url.clone(),
                             args: server.args.clone(),
                             env: server.env.clone(),
+                            authentication: server.authentication.clone(),
+                            custom_headers: server.custom_headers.clone(),
                             exposure: server.exposure,
                             extensions: server.extensions.clone(),
                             allowed_tools: server.allowed_tools.clone(),
@@ -2252,6 +2279,12 @@ pub struct McpServerPlan {
     /// Environment variables passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Authentication used by an HTTP MCP server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<McpAuthenticationConfig>,
+    /// HTTP headers passed to an MCP server.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom_headers: BTreeMap<String, String>,
     /// Exposure strategy.
     pub exposure: McpExposure,
     /// Additive MCP server fields from author config.
@@ -2385,6 +2418,68 @@ mod tests {
             )])
         );
         assert!(server.extensions.is_empty());
+    }
+
+    #[test]
+    fn mcp_transport_rejects_unknown_values() {
+        let error = serde_json::from_value::<McpServerConfig>(serde_json::json!({
+            "transport": "websocket",
+            "url": "https://mcp.example",
+            "exposure": "harness_native"
+        }))
+        .expect_err("unknown MCP transport");
+
+        assert!(error.to_string().contains("unknown variant `websocket`"));
+    }
+
+    #[test]
+    fn mcp_http_authentication_and_headers_survive_capability_planning() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.skills = None;
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "jira".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example/jira",
+                    "exposure": "harness_native",
+                    "custom_headers": {"X-Tenant": "fabric"},
+                    "authentication": {
+                        "type": "oauth2",
+                        "client_id": "fabric-client",
+                        "client_secret_env": "MCP_CLIENT_SECRET",
+                        "scopes": ["read:jira", "write:jira"],
+                        "redirect_uri": "http://127.0.0.1:8765/callback"
+                    }
+                }))
+                .expect("authenticated MCP server"),
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect("authenticated Hermes MCP plan");
+        let server = plan
+            .capability_plan
+            .native
+            .mcp_servers
+            .get("jira")
+            .expect("native Jira MCP server");
+
+        assert_eq!(server.transport, "streamable-http");
+        assert_eq!(
+            server.custom_headers,
+            BTreeMap::from([("X-Tenant".to_string(), "fabric".to_string())])
+        );
+        assert_eq!(
+            server.authentication,
+            Some(McpAuthenticationConfig::OAuth2 {
+                client_id: Some("fabric-client".to_string()),
+                client_secret_env: Some("MCP_CLIENT_SECRET".to_string()),
+                scopes: vec!["read:jira".to_string(), "write:jira".to_string()],
+                redirect_uri: Some("http://127.0.0.1:8765/callback".to_string()),
+            })
+        );
     }
 
     #[test]
@@ -2723,6 +2818,7 @@ mod tests {
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    authentication: None,
                     custom_headers: BTreeMap::new(),
                     exposure: McpExposure::FabricManaged,
                     allowed_tools: None,
@@ -2772,6 +2868,7 @@ mod tests {
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    authentication: None,
                     custom_headers: BTreeMap::new(),
                     exposure: McpExposure::HarnessNative,
                     allowed_tools: Some(Vec::new()),
@@ -2823,6 +2920,7 @@ mod tests {
                         url: "https://mcp.example".to_string(),
                         args: Vec::new(),
                         env: BTreeMap::new(),
+                        authentication: None,
                         custom_headers: BTreeMap::new(),
                         exposure: McpExposure::HarnessNative,
                         allowed_tools,
@@ -2861,6 +2959,7 @@ mod tests {
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    authentication: None,
                     custom_headers: BTreeMap::new(),
                     exposure: McpExposure::HarnessNative,
                     allowed_tools: Some(vec!["search".to_string()]),
@@ -2906,6 +3005,7 @@ mod tests {
                         url: "https://mcp.example".to_string(),
                         args: Vec::new(),
                         env: BTreeMap::new(),
+                        authentication: None,
                         custom_headers: BTreeMap::new(),
                         exposure: McpExposure::HarnessNative,
                         allowed_tools,

@@ -298,6 +298,13 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
                 "remote": {
                     "transport": "streamable-http",
                     "url": "${FABRIC_TEST_MCP_URL}",
+                    "custom_headers": {"X-Tenant": "fabric"},
+                    "authentication": {
+                        "type": "oauth2",
+                        "client_id": "fabric-client",
+                        "scopes": ["read", "write"],
+                        "redirect_uri": "http://127.0.0.1:8765/callback",
+                    },
                 },
             }
         }
@@ -313,6 +320,9 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
     assert config["mcp_servers"] == {
         "remote": {
             "url": "https://mcp.example.test/mcp",
+            "http_headers": {"X-Tenant": "fabric"},
+            "oauth": {"client_id": "fabric-client"},
+            "scopes": ["read", "write"],
             "required": True,
         },
         "repo": {
@@ -328,6 +338,28 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
             "env": {"REPO_MCP_MODE": "test"},
         },
     }
+    assert config["mcp_oauth_callback_url"] == "http://127.0.0.1:8765/callback"
+
+
+def test_codex_rejects_mcp_oauth_client_secret(codex_payload):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "remote": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/mcp",
+                    "authentication": {
+                        "type": "oauth2",
+                        "client_id": "fabric-client",
+                        "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                    },
+                }
+            }
+        }
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="client_secret_env"):
+        adapter.thread_config(codex_payload, None)
 
 
 def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):

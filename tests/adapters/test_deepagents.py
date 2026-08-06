@@ -597,13 +597,23 @@ async def test_mcp_servers_become_adapter_tools(
         types.ModuleType("langchain_mcp_adapters"),
     )
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
+    mock_oauth = MagicMock(name="oauth")
+    monkeypatch.setattr(adapter, "_mcp_oauth_auth", MagicMock(return_value=mock_oauth))
 
     payload = make_payload(tmp_path)
     # McpServerPlan carries the URL/command in ``url``.
     payload["capability_plan"] = {
         "native": {
             "mcp_servers": {
-                "fs": {"transport": "streamable-http", "url": "http://localhost:9/mcp"},
+                "fs": {
+                    "transport": "streamable-http",
+                    "url": "http://localhost:9/mcp",
+                    "custom_headers": {"X-Tenant": "fabric"},
+                    "authentication": {
+                        "type": "oauth2",
+                        "client_id": "fabric-client",
+                    },
+                },
                 "local": {
                     "transport": "stdio",
                     "url": "my-server",
@@ -618,7 +628,12 @@ async def test_mcp_servers_become_adapter_tools(
 
     assert output["failed"] is False
     assert mock_client_cls.call_args.args[0] == {
-        "fs": {"transport": "streamable_http", "url": "http://localhost:9/mcp"},
+        "fs": {
+            "transport": "streamable_http",
+            "url": "http://localhost:9/mcp",
+            "headers": {"X-Tenant": "fabric"},
+            "auth": mock_oauth,
+        },
         "local": {
             "transport": "stdio",
             "command": "my-server",
@@ -628,6 +643,40 @@ async def test_mcp_servers_become_adapter_tools(
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file", "write_file"]
+
+
+async def test_deepagents_builds_mcp_oauth_provider():
+    os.environ["FABRIC_MCP_CLIENT_SECRET"] = "oauth-secret"
+
+    auth = adapter._mcp_oauth_auth(
+        "jira",
+        "https://mcp.example.test/jira",
+        {
+            "type": "oauth2",
+            "client_id": "fabric-client",
+            "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+            "scopes": ["read", "write"],
+            "redirect_uri": "http://127.0.0.1:8765/callback",
+        },
+    )
+
+    assert str(auth.context.server_url) == "https://mcp.example.test/jira"
+    assert auth.context.client_metadata.scope == "read write"
+    client_info = await auth.context.storage.get_client_info()
+    assert client_info.client_id == "fabric-client"
+    assert client_info.client_secret == "oauth-secret"
+
+
+def test_deepagents_rejects_mcp_authentication_for_stdio():
+    with pytest.raises(adapter.AdapterConfigError, match="authentication.*stdio"):
+        adapter._mcp_connection(
+            "local",
+            {
+                "transport": "stdio",
+                "url": "mcp-server",
+                "authentication": {"type": "oauth2"},
+            },
+        )
 
 
 @pytest.mark.usefixtures("use_real_langgraph")

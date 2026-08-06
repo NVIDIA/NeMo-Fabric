@@ -425,6 +425,50 @@ def test_build_hermes_config_maps_stdio_mcp_args_and_env_from_capability_plan(
     }
 
 
+def test_hermes_maps_http_mcp_headers_and_oauth():
+    os.environ["FABRIC_MCP_CLIENT_SECRET"] = "oauth-secret"
+
+    config = adapter.hermes_mcp_server_config(
+        {
+            "transport": "sse",
+            "url": "https://mcp.example.test/sse",
+            "custom_headers": {"X-Tenant": "fabric"},
+            "authentication": {
+                "type": "oauth2",
+                "client_id": "fabric-client",
+                "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                "scopes": ["read", "write"],
+                "redirect_uri": "http://127.0.0.1:8765/callback",
+            },
+        }
+    )
+
+    assert config == {
+        "enabled": True,
+        "url": "https://mcp.example.test/sse",
+        "transport": "sse",
+        "headers": {"X-Tenant": "fabric"},
+        "auth": "oauth",
+        "oauth": {
+            "client_id": "fabric-client",
+            "client_secret": "${FABRIC_MCP_CLIENT_SECRET}",
+            "scope": "read write",
+            "redirect_uri": "http://127.0.0.1:8765/callback",
+        },
+    }
+
+
+def test_hermes_rejects_mcp_authentication_for_stdio():
+    with pytest.raises(ValueError, match="authentication is not supported for stdio"):
+        adapter.hermes_mcp_server_config(
+            {
+                "transport": "stdio",
+                "url": "mcp-server",
+                "authentication": {"type": "oauth2"},
+            }
+        )
+
+
 async def test_runtime_start_discovers_mcp_tools_when_configured(
     monkeypatch,
     tmp_path: Path,

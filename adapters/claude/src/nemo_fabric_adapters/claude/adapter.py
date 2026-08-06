@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from dataclasses import is_dataclass
 from hashlib import sha256
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions
@@ -299,6 +300,16 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 "claude_invalid_configuration", "MCP server URL is required"
             )
         if transport == "stdio":
+            if server.get("authentication"):
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    "MCP authentication is not supported for stdio transport",
+                )
+            if server.get("custom_headers"):
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    "MCP custom_headers are not supported for stdio transport",
+                )
             result[name] = {
                 "type": "stdio",
                 "command": url,
@@ -315,6 +326,48 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 "claude_invalid_configuration",
                 f"unsupported MCP transport: {transport}",
             )
+        if headers := server.get("custom_headers"):
+            result[name]["headers"] = {
+                str(key): str(value)
+                for key, value in _mapping(
+                    headers, name=f"MCP server {name} custom_headers"
+                ).items()
+            }
+        if authentication := server.get("authentication"):
+            authentication = _mapping(
+                authentication, name=f"MCP server {name} authentication"
+            )
+            if authentication.get("type") != "oauth2":
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    f"MCP server {name} has unsupported authentication type",
+                )
+            if authentication.get("scopes"):
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    f"MCP server {name} authentication.scopes is not supported by Claude",
+                )
+            if authentication.get("client_secret_env"):
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    f"MCP server {name} authentication.client_secret_env is not supported by Claude",
+                )
+            oauth: dict[str, Any] = {}
+            if client_id := authentication.get("client_id"):
+                oauth["clientId"] = client_id
+            if redirect_uri := authentication.get("redirect_uri"):
+                parsed = urlparse(str(redirect_uri))
+                if (
+                    parsed.scheme != "http"
+                    or parsed.hostname not in {"127.0.0.1", "localhost"}
+                    or parsed.port is None
+                ):
+                    raise AdapterConfigError(
+                        "claude_invalid_configuration",
+                        f"MCP server {name} authentication.redirect_uri must be a loopback URI with an explicit port for Claude",
+                    )
+                oauth["callbackPort"] = parsed.port
+            result[name]["oauth"] = oauth
     return result
 
 

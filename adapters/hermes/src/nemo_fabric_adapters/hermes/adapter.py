@@ -161,6 +161,10 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("MCP server mapping requires a URL")
 
     if transport == "stdio":
+        if server.get("authentication"):
+            raise ValueError("MCP authentication is not supported for stdio transport")
+        if server.get("custom_headers"):
+            raise ValueError("MCP custom_headers are not supported for stdio transport")
         return common_utils.without_none(
             {
                 "enabled": True,
@@ -170,7 +174,34 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
-    return {"enabled": True, "url": target, "transport": transport}
+    result: dict[str, Any] = {
+        "enabled": True,
+        "url": target,
+        "transport": transport,
+    }
+    if headers := server.get("custom_headers"):
+        result["headers"] = {
+            str(name): str(value) for name, value in headers.items()
+        }
+    if authentication := server.get("authentication"):
+        if not isinstance(authentication, dict) or authentication.get("type") != "oauth2":
+            raise ValueError("unsupported MCP authentication type")
+        oauth = common_utils.without_none(
+            {
+                "client_id": authentication.get("client_id"),
+                "scope": " ".join(authentication.get("scopes") or []) or None,
+                "redirect_uri": authentication.get("redirect_uri"),
+            }
+        )
+        if secret_env := authentication.get("client_secret_env"):
+            if not os.environ.get(str(secret_env)):
+                raise ValueError(
+                    f"MCP OAuth client secret environment variable {secret_env!r} is not set"
+                )
+            oauth["client_secret"] = f"${{{secret_env}}}"
+        result["auth"] = "oauth"
+        result["oauth"] = oauth
+    return result
 
 
 def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -508,7 +539,7 @@ class HermesRuntime:
             try:
                 from tools.mcp_tool import shutdown_mcp_servers
 
-                shutdown_mcp_servers()
+                await asyncio.to_thread(shutdown_mcp_servers)
             except BaseException as error:
                 errors.append(error)
         if agent is not None:

@@ -146,6 +146,14 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         exposure="fabric_managed",
         allowed_tools=["issues.read", "pull_requests.read"],
         blocked_tools=["issues.delete"],
+        extra_fields={
+            "authentication": {
+                "type": "oauth2",
+                "client_id": "fabric-client",
+                "scopes": ["repo"],
+            },
+            "custom_headers": {"X-Tenant": "fabric"},
+        },
     )
     config.enable_relay(
         project="fabric-tests",
@@ -172,6 +180,12 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
                 "url": "${GITHUB_MCP_URL}",
                 "args": ["--read-only"],
                 "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+                "authentication": {
+                    "type": "oauth2",
+                    "client_id": "fabric-client",
+                    "scopes": ["repo"],
+                },
+                "custom_headers": {"X-Tenant": "fabric"},
                 "exposure": "fabric_managed",
                 "allowed_tools": ["issues.read", "pull_requests.read"],
                 "blocked_tools": ["issues.delete"],
@@ -223,6 +237,35 @@ def test_mcp_server_tool_policy_preserves_empty_allowlist():
         "servers": {"docs": expected}
     }
     assert server.to_mapping() == expected
+
+
+def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():
+    server = McpServerConfig(
+        transport="streamable-http",
+        url="https://mcp.example.test/jira",
+        custom_headers={"X-Tenant": "fabric"},
+        authentication={
+            "type": "oauth2",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "scopes": ["read:jira", "write:jira"],
+            "redirect_uri": "http://127.0.0.1:8765/callback",
+        },
+    )
+
+    assert server.to_mapping() == {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test/jira",
+        "authentication": {
+            "type": "oauth2",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "scopes": ["read:jira", "write:jira"],
+            "redirect_uri": "http://127.0.0.1:8765/callback",
+        },
+        "custom_headers": {"X-Tenant": "fabric"},
+        "exposure": "harness_native",
+    }
 
 
 @pytest.mark.parametrize("field", ["allowed_tools", "blocked_tools"])

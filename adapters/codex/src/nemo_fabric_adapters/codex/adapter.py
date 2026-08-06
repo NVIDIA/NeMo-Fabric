@@ -184,6 +184,16 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             )
         normalized_transport = transport.strip().lower().replace("_", "-")
         if normalized_transport == "stdio":
+            if server.get("authentication"):
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} authentication is not supported for stdio transport",
+                )
+            if server.get("custom_headers"):
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} custom_headers are not supported for stdio transport",
+                )
             result[name] = {
                 "command": target,
                 "args": common_utils.normalize_list(server.get("args")),
@@ -197,7 +207,53 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 "codex_invalid_configuration",
                 f"unsupported Codex MCP transport: {transport}",
             )
+        if headers := server.get("custom_headers"):
+            result[name]["http_headers"] = {
+                str(key): os.path.expandvars(str(value))
+                for key, value in _mapping(
+                    headers, name=f"MCP server {name} custom_headers"
+                ).items()
+            }
+        if authentication := server.get("authentication"):
+            authentication = _mapping(
+                authentication, name=f"MCP server {name} authentication"
+            )
+            if authentication.get("type") != "oauth2":
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} has unsupported authentication type",
+                )
+            if authentication.get("client_secret_env"):
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} authentication.client_secret_env is not supported by Codex",
+                )
+            if client_id := authentication.get("client_id"):
+                result[name]["oauth"] = {"client_id": client_id}
+            if scopes := authentication.get("scopes"):
+                result[name]["scopes"] = scopes
     return result
+
+
+def _mcp_oauth_callback_url(payload: dict[str, Any]) -> str | None:
+    servers = _mapping(
+        _native_capabilities(payload).get("mcp_servers"), name="native MCP servers"
+    )
+    values = {
+        str(authentication["redirect_uri"])
+        for name, raw in servers.items()
+        if (
+            (authentication := _mapping(raw, name=f"MCP server {name}").get("authentication"))
+            and isinstance(authentication, dict)
+            and authentication.get("redirect_uri")
+        )
+    }
+    if len(values) > 1:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "Codex supports only one MCP OAuth callback URL per adapter process",
+        )
+    return next(iter(values)) if values else None
 
 
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
@@ -619,6 +675,8 @@ def thread_config(
     mcp_servers = _native_mcp_servers(payload)
     if mcp_servers:
         config["mcp_servers"] = mcp_servers
+    if callback_url := _mcp_oauth_callback_url(payload):
+        config["mcp_oauth_callback_url"] = callback_url
     overrides = _mapping(
         _settings(payload).get("config_overrides"),
         name="harness.settings.config_overrides",

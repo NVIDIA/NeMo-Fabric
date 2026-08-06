@@ -135,6 +135,12 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
                         "transport": "streamable-http",
                         "url": "${GITHUB_MCP_URL}",
                         "exposure": "harness_native",
+                        "custom_headers": {"X-Tenant": "fabric"},
+                        "authentication": {
+                            "type": "oauth2",
+                            "client_id": "fabric-client",
+                            "scopes": ["repo"],
+                        },
                     }
                 }
             },
@@ -154,6 +160,13 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert typed_plan["agent_name"] == "typed-hermes-shim-agent"
     assert typed_plan["adapter_descriptor"]["source"] == "local"
     assert typed_plan["telemetry_plan"]["relay_enabled"] is True
+    native_mcp = typed_plan["capability_plan"]["native"]["mcp_servers"]["github"]
+    assert native_mcp["custom_headers"] == {"X-Tenant": "fabric"}
+    assert native_mcp["authentication"] == {
+        "type": "oauth2",
+        "client_id": "fabric-client",
+        "scopes": ["repo"],
+    }
     resolved_config = typed_plan.config.to_mapping()
     assert resolved_config["harness"]["adapter_id"] == "test.fabric.hermes_shim"
     assert "settings" not in resolved_config["harness"]
@@ -163,6 +176,12 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
         "custom": True,
         "nested": {"first": 1, "second": 2},
     }
+
+    invalid_transport = typed_config.model_copy(deep=True)
+    assert invalid_transport.mcp is not None
+    invalid_transport.mcp.servers["github"].transport = "websocket"
+    with pytest.raises(FabricConfigError, match="websocket"):
+        client.plan(invalid_transport, base_dir=fixture_agent)
 
     result = await client.run(
         hermes_shim_config(),

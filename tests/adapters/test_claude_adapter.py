@@ -250,6 +250,45 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert "ANTHROPIC_BASE_URL" not in options.env
 
 
+def test_build_options_maps_mcp_headers_and_oauth(claude_payload):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["custom_headers"] = {"X-Tenant": "fabric"}
+    server["authentication"] = {
+        "type": "oauth2",
+        "client_id": "fabric-client",
+        "redirect_uri": "http://127.0.0.1:8765/callback",
+    }
+
+    options = adapter.build_options(claude_payload)
+
+    assert options.mcp_servers["docs"] == {
+        "type": "http",
+        "url": "https://mcp.example.test",
+        "headers": {"X-Tenant": "fabric"},
+        "oauth": {"clientId": "fabric-client", "callbackPort": 8765},
+    }
+
+
+def test_claude_rejects_unsupported_mcp_oauth_scopes(claude_payload):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["authentication"] = {"type": "oauth2", "scopes": ["read"]}
+
+    with pytest.raises(adapter.AdapterConfigError, match="authentication.scopes"):
+        adapter.build_options(claude_payload)
+
+
+def test_claude_rejects_unsupported_mcp_oauth_client_secret(claude_payload):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["authentication"] = {
+        "type": "oauth2",
+        "client_id": "fabric-client",
+        "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="client_secret_env"):
+        adapter.build_options(claude_payload)
+
+
 async def test_tool_policy_hooks_gate_built_in_and_mcp_tools(claude_payload):
     claude_payload["config"]["tools"] = {
         "enabled": ["Read", "Edit"],
