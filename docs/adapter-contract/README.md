@@ -61,6 +61,11 @@ transition is called out in [Execution](execution.md) and
 translation isolated so the typed boundary can be adopted without rewriting
 target lifecycle code.
 
+All NVIDIA-maintained adapters will transition to `AgentConfig`. Once that
+migration is complete, NeMo Fabric can stop sending the legacy `FabricConfig`
+start payload and pass typed invocation inputs directly, so adapters no longer
+need to parse the generic invocation payload.
+
 ## Continue Reading
 
 - [Adapter Descriptor](adapter-descriptor.md)
