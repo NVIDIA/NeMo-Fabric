@@ -825,6 +825,80 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `McpAuthenticationConfig`
+
+MCP server authentication configuration.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `type` | `Literal['oauth2']` | Yes | — | — | — |
+| `client_id` | `str \| None` | No | `None` | — | — |
+| `client_secret_env` | `str \| None` | No | `None` | — | — |
+| `scopes` | `list[str]` | No | `list()` | — | — |
+| `redirect_uri` | `str \| None` | No | `None` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `McpServerConfig`
 
 MCP server configuration.
@@ -841,6 +915,7 @@ The model defines the following fields:
 | `url` | `str` | Yes | — | `MinLen(min_length=1)` | — |
 | `args` | `list[str]` | No | `list()` | — | — |
 | `env` | `dict[str, str]` | No | `dict()` | — | — |
+| `authentication` | `McpAuthenticationConfig \| None` | No | `None` | — | — |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
 | `allowed_tools` | `list[str] \| None` | No | `None` | — | MCP tools to expose. None exposes every discovered tool; an empty list exposes no tools. |
 | `blocked_tools` | `list[str]` | No | `list()` | — | MCP tools to block after applying the optional allowlist. |
@@ -958,6 +1033,7 @@ def add_server(
     url: str,
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
+    authentication: McpAuthenticationConfig | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     allowed_tools: Sequence[str] | None = None,
     blocked_tools: Sequence[str] = (),
@@ -2142,6 +2218,7 @@ def add_mcp_server(
     url: str,
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
+    authentication: McpAuthenticationConfig | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     allowed_tools: Sequence[str] | None = None,
     blocked_tools: Sequence[str] = (),
