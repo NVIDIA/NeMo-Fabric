@@ -62,7 +62,8 @@ def build_config() -> FabricConfig:
     config.add_mcp_server(
         "calculator",
         transport="stdio",
-        url=shlex.join([sys.executable, str(server)]),
+        url=sys.executable,
+        args=[str(server)],
         exposure="harness_native",
         blocked_tools=["divide"],
     )
