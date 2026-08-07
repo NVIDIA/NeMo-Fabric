@@ -33,11 +33,14 @@ The core schema generator exports the current public typed contract.
   descriptor declares a `contract_version`; NeMo Fabric rejects descriptors for
   unsupported adapter contracts during planning. A descriptor can embed the
   JSON Schemas for its adapter-owned `harness.settings`, optional
-  `FabricConfig.workflow`, and normalized tool definitions, plus schemas for explicit adapter-owned extension
-  points in the southbound contract; malformed schemas fail descriptor loading. A missing
-  settings schema rejects non-empty settings, and a configured workflow
-  requires a workflow schema. The `process` and `python` adapter kinds use NeMo
-  Fabric's persistent local-host wire protocol.
+  `FabricConfig.workflow`, and normalized tool definitions, plus schemas for
+  explicit adapter-owned extension points in the southbound contract;
+  malformed schemas fail descriptor loading. `config.input=agent_config` opts
+  the adapter into the projected southbound config; omitting it preserves the
+  legacy northbound `FabricConfig` payload. A missing settings schema rejects
+  non-empty settings, and a configured workflow requires a workflow schema.
+  The `process` and `python` adapter kinds use NeMo Fabric's persistent
+  local-host wire protocol.
 - `run-plan`: executable plan containing the canonical northbound config, its
   projected southbound `AgentConfig`, the selected adapter, and derived
   execution metadata.

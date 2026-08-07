@@ -438,6 +438,9 @@ pub struct AdapterRequirements {
 /// Adapter config support.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterConfigSupport {
+    /// Configuration object delivered to the adapter lifecycle host.
+    #[serde(default)]
+    pub input: AdapterConfigInput,
     /// Normalized NVIDIA NeMo Fabric config areas or policy paths accepted by this adapter.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub accepts: Vec<AdapterConfigField>,
@@ -447,6 +450,17 @@ pub struct AdapterConfigSupport {
     /// Additive adapter config-support fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+/// Configuration object delivered to an adapter lifecycle host.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AdapterConfigInput {
+    /// Deliver the complete northbound `FabricConfig` for legacy adapters.
+    #[default]
+    FabricConfig,
+    /// Deliver the resolved southbound `AgentConfig` contract.
+    AgentConfig,
 }
 
 /// Adapter-translated normalized NVIDIA NeMo Fabric configuration fields.
@@ -1834,6 +1848,9 @@ pub(crate) fn validate_agent_config_extensions(
     let Some(resolved) = resolved else {
         return Ok(());
     };
+    if resolved.descriptor.config.input != AdapterConfigInput::AgentConfig {
+        return Ok(());
+    }
 
     validate_extension_block(
         resolved,
@@ -3593,6 +3610,7 @@ mod tests {
     fn adapter_extensions_are_fail_closed_and_schema_validated() {
         let path = repository_root().join("adapters/claude/fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor.config.input = AdapterConfigInput::AgentConfig;
         let resolved = ResolvedAdapterDescriptor {
             descriptor: descriptor.clone(),
             source: AdapterDescriptorSource::Repository,

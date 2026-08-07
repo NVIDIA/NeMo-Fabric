@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapter_contract.models import AgentConfig
 
 
 def _request(operation: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -131,6 +132,84 @@ def test_lifecycle_host_passes_minimal_invoke_payload_unchanged():
     lifecycle.serve(Runtime, input_stream=input_stream, output_stream=output_stream)
 
     assert invocations == [invoke_payload]
+
+
+def test_lifecycle_host_validates_opt_in_typed_config_before_adapter_start():
+    runtime_id = "runtime-1"
+    input_stream, output_stream = _streams(
+        [
+            _request(
+                "start",
+                {
+                    "config": {"harness": {"settings": {"profile": "typed"}}},
+                    "runtime_context": {"runtime_id": runtime_id},
+                },
+            ),
+            _request("stop", {"runtime_id": runtime_id}),
+        ]
+    )
+    starts: list[AgentConfig] = []
+
+    class Runtime:
+        async def start(self, payload) -> None:
+            starts.append(payload["config"])
+
+        async def invoke(self, _payload):
+            raise AssertionError("invoke is not expected")
+
+        async def stop(self) -> None:
+            pass
+
+    lifecycle.serve(
+        Runtime,
+        config_model=AgentConfig,
+        input_stream=input_stream,
+        output_stream=output_stream,
+    )
+
+    assert len(starts) == 1
+    assert isinstance(starts[0], AgentConfig)
+    assert starts[0].harness.settings == {"profile": "typed"}
+
+
+def test_lifecycle_host_rejects_invalid_opt_in_config_before_runtime_creation():
+    input_stream, output_stream = _streams(
+        [
+            _request(
+                "start",
+                {
+                    "config": {"unknown": True},
+                    "runtime_context": {"runtime_id": "runtime-1"},
+                },
+            )
+        ]
+    )
+    created = 0
+
+    class Runtime:
+        def __init__(self) -> None:
+            nonlocal created
+            created += 1
+
+        async def start(self, _payload) -> None:
+            pass
+
+        async def invoke(self, _payload):
+            raise AssertionError("invoke is not expected")
+
+        async def stop(self) -> None:
+            pass
+
+    lifecycle.serve(
+        Runtime,
+        config_model=AgentConfig,
+        input_stream=input_stream,
+        output_stream=output_stream,
+    )
+
+    response = json.loads(output_stream.getvalue())
+    assert response["outcome"]["error"]["code"] == "lifecycle_invalid_config"
+    assert created == 0
 
 
 def test_lifecycle_host_rejects_runtime_mismatch_without_poisoning_runtime():

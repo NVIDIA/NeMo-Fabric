@@ -20,9 +20,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::config::{
-    AdapterKind, CapabilityPlan, CapabilityTarget, ControlLocation, EnvironmentOwnership,
-    FabricConfig, RunPlan, TelemetryPlan, validate_adapter_config_compatibility, validate_config,
-    validate_harness_settings, validate_workflow,
+    AdapterConfigInput, AdapterKind, AgentConfig, CapabilityPlan, CapabilityTarget,
+    ControlLocation, EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
+    validate_adapter_config_compatibility, validate_agent_config_extensions, validate_config,
+    validate_harness_settings, validate_tool_definitions, validate_workflow,
 };
 use crate::error::{FabricError, Result};
 
@@ -365,11 +366,18 @@ impl AdapterLifecycleOperation {
 struct AdapterLifecycleStart {
     agent_name: String,
     base_dir: PathBuf,
-    config: FabricConfig,
+    config: AdapterLifecycleConfig,
     runtime_context: RuntimeContext,
     capability_plan: CapabilityPlan,
     #[serde(skip_serializing_if = "Option::is_none")]
     telemetry_plan: Option<TelemetryPlan>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+enum AdapterLifecycleConfig {
+    FabricConfig(Box<FabricConfig>),
+    AgentConfig(Box<AgentConfig>),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -548,6 +556,8 @@ pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
     validate_config(&plan.config)?;
     validate_harness_settings(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_workflow(&plan.config, plan.adapter_descriptor.as_ref())?;
+    validate_tool_definitions(&plan.config, plan.adapter_descriptor.as_ref())?;
+    validate_agent_config_extensions(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_adapter_compatibility(plan)?;
     let environment = prepare_environment(plan)?;
     if uses_local_host(plan) {
@@ -1708,10 +1718,11 @@ fn adapter_lifecycle_start(
     artifacts: &ArtifactManifest,
     relay_config: Option<&RelayRuntimeConfig>,
 ) -> Result<AdapterLifecycleStart> {
+    let config = adapter_lifecycle_config(plan);
     Ok(AdapterLifecycleStart {
         agent_name: plan.agent_name.clone(),
         base_dir: absolute_path(plan.base_dir.clone())?,
-        config: plan.config.clone(),
+        config,
         runtime_context: adapter_runtime_context(
             plan,
             runtime,
@@ -1722,6 +1733,22 @@ fn adapter_lifecycle_start(
         capability_plan: plan.capability_plan.clone(),
         telemetry_plan: plan.telemetry_plan.clone(),
     })
+}
+
+fn adapter_lifecycle_config(plan: &RunPlan) -> AdapterLifecycleConfig {
+    match plan
+        .adapter_descriptor
+        .as_ref()
+        .map(|resolved| resolved.descriptor.config.input)
+        .unwrap_or_default()
+    {
+        AdapterConfigInput::FabricConfig => {
+            AdapterLifecycleConfig::FabricConfig(Box::new(plan.config.clone()))
+        }
+        AdapterConfigInput::AgentConfig => {
+            AdapterLifecycleConfig::AgentConfig(Box::new(plan.agent_config.clone()))
+        }
+    }
 }
 
 fn adapter_invocation(
@@ -2583,6 +2610,33 @@ for line in sys.stdin:
         let plan = resolve_run_plan_from_config(config, ResolveContext::new(&root))
             .expect("resolve local-host plan");
         (root, plan)
+    }
+
+    #[test]
+    fn adapter_config_input_selects_southbound_payload_without_changing_legacy_default() {
+        let (root, mut plan) = local_host_plan("success");
+
+        let legacy = serde_json::to_value(adapter_lifecycle_config(&plan))
+            .expect("serialize legacy adapter config");
+        assert_eq!(legacy["schema_version"], "fabric.agent/v1alpha1");
+        assert_eq!(legacy["metadata"]["name"], "local-host-test-agent");
+
+        plan.adapter_descriptor
+            .as_mut()
+            .expect("resolved descriptor")
+            .descriptor
+            .config
+            .input = AdapterConfigInput::AgentConfig;
+        let southbound = serde_json::to_value(adapter_lifecycle_config(&plan))
+            .expect("serialize southbound adapter config");
+        assert!(southbound.get("schema_version").is_none());
+        assert!(southbound.get("metadata").is_none());
+        assert_eq!(
+            southbound["harness"]["settings"]["python"],
+            serde_json::json!("python3")
+        );
+
+        let _ = fs::remove_dir_all(root);
     }
 
     fn stopped_agents() -> Vec<String> {

@@ -8,42 +8,8 @@
   },
   "settings_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$defs": {
-      "component": {
-        "type": "object",
-        "properties": {
-          "_type": {
-            "type": "string",
-            "minLength": 1,
-            "description": "NAT component type registered through an installed nat.components entry point."
-          }
-        },
-        "required": ["_type"],
-        "additionalProperties": true
-      },
-      "components": {
-        "type": "object",
-        "propertyNames": {
-          "minLength": 1
-        },
-        "additionalProperties": {
-          "$ref": "#/$defs/component"
-        }
-      }
-    },
     "type": "object",
-    "properties": {
-      "functions": {
-        "$ref": "#/$defs/components",
-        "default": {},
-        "description": "NAT function component instances keyed by their configured names."
-      },
-      "function_groups": {
-        "$ref": "#/$defs/components",
-        "default": {},
-        "description": "NAT function-group component instances keyed by their configured names."
-      }
-    },
+    "properties": {},
     "additionalProperties": false
   },
   "workflow_schema": {
@@ -54,14 +20,12 @@
         "type": "object",
         "properties": {
           "kind": {
-            "const": "nat_workflow",
-            "description": "Resolve the reference through NAT's registered workflow components."
+            "const": "factory",
+            "description": "Resolve a Fabric-enumerated agent intent through this adapter."
           },
           "ref": {
-            "type": "string",
-            "minLength": 1,
-            "pattern": "^\\S+$",
-            "description": "Registered NAT workflow component type, copied to NAT _type."
+            "const": "fabric.agent.react",
+            "description": "Build Fabric's ReAct agent intent with the NAT react_agent factory."
           }
         },
         "required": ["kind", "ref"],
@@ -79,13 +43,40 @@
     "required": ["entrypoint"],
     "additionalProperties": false
   },
+  "tool_definition_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "kind": {
+        "enum": ["function", "function_group"]
+      },
+      "ref": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^\\S+$",
+        "description": "NAT component type registered by an installed component package."
+      },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "_type": false
+        },
+        "additionalProperties": true,
+        "description": "NAT component settings; _type is derived from ref."
+      }
+    },
+    "required": ["kind", "ref"],
+    "additionalProperties": false
+  },
   "requirements": {},
   "config": {
+    "input": "agent_config",
     "accepts": [
       "models",
       "models.base_url",
       "models.temperature",
       "instructions.system",
+      "tools.definitions",
       "tools.enabled",
       "tools.blocked",
       "mcp",

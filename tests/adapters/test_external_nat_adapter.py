@@ -18,6 +18,8 @@ from unittest.mock import call
 
 import pytest
 from nemo_fabric import Fabric
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 
 ROOT = Path(__file__).parents[2]
 NAT_ADAPTER_SOURCE = ROOT / "external" / "nat" / "src"
@@ -27,15 +29,19 @@ from nemo_fabric_adapters.nat import adapter  # noqa: E402
 
 
 def _fabric_workflow(
-    ref: str = "react_agent",
+    ref: str = "fabric.agent.react",
     *,
-    kind: str = "nat_workflow",
+    kind: str = "factory",
     **settings: Any,
 ) -> dict[str, Any]:
     return {
         "entrypoint": {"kind": kind, "ref": ref},
         "settings": settings,
     }
+
+
+def _mcp_server(**values: Any) -> AgentMcpServerConfig:
+    return AgentMcpServerConfig.model_validate(values)
 
 
 @pytest.fixture(name="make_payload")
@@ -52,13 +58,24 @@ def make_payload_fixture(tmp_path: Path):
         tools: dict[str, Any] | None = None,
         mcp_servers: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        definitions: dict[str, Any] = {}
+        for name, component in (functions or {}).items():
+            component = deepcopy(component)
+            definitions[name] = {
+                "kind": "function",
+                "ref": component.pop("_type"),
+                "settings": component,
+            }
+        for name, component in (function_groups or {}).items():
+            component = deepcopy(component)
+            definitions[name] = {
+                "kind": "function_group",
+                "ref": component.pop("_type"),
+                "settings": component,
+            }
+
         config: dict[str, Any] = {
-            "harness": {
-                "settings": {
-                    "functions": deepcopy(functions or {}),
-                    "function_groups": deepcopy(function_groups or {}),
-                }
-            },
+            "harness": {},
             "workflow": deepcopy(
                 _fabric_workflow(llm_name="default") if workflow is None else workflow
             ),
@@ -68,17 +85,18 @@ def make_payload_fixture(tmp_path: Path):
             config["instructions"] = {
                 "system": {"content": instruction, "mode": "replace"}
             }
-        if tools is not None:
-            config["tools"] = deepcopy(tools)
+        if tools is not None or definitions:
+            config["tools"] = {**deepcopy(tools or {}), "definitions": definitions}
+        if mcp_servers:
+            config["mcp"] = {"servers": deepcopy(mcp_servers)}
 
         return {
             "base_dir": str(tmp_path),
-            "config": config,
+            "config": AgentConfig.model_validate(config),
             "runtime_context": {
                 "runtime_id": "runtime-1",
                 "environment": {"workspace": str(tmp_path)},
             },
-            "capability_plan": {"native": {"mcp_servers": deepcopy(mcp_servers or {})}},
         }
 
     return make
@@ -206,35 +224,54 @@ def test_descriptor_declares_exact_source_reference_contract():
     assert descriptor["adapter_kind"] == "python"
     assert descriptor["runner"] == {"module": "nemo_fabric_adapters.nat.adapter"}
     assert descriptor["requirements"] == {}
+    assert descriptor["config"]["input"] == "agent_config"
     assert descriptor["config"]["accepts"] == [
         "models",
         "models.base_url",
         "models.temperature",
         "instructions.system",
+        "tools.definitions",
         "tools.enabled",
         "tools.blocked",
         "mcp",
         "mcp.tool_filters",
     ]
     settings_schema = descriptor["settings_schema"]
-    assert set(settings_schema["properties"]) == {"functions", "function_groups"}
+    assert settings_schema["properties"] == {}
     assert "required" not in settings_schema
     assert settings_schema["additionalProperties"] is False
     workflow_schema = descriptor["workflow_schema"]
     assert workflow_schema["required"] == ["entrypoint"]
     assert workflow_schema["additionalProperties"] is False
     entrypoint_schema = workflow_schema["properties"]["entrypoint"]
-    assert entrypoint_schema["properties"]["kind"]["const"] == "nat_workflow"
-    assert entrypoint_schema["properties"]["ref"]["pattern"] == r"^\S+$"
+    assert entrypoint_schema["properties"]["kind"]["const"] == "factory"
+    assert entrypoint_schema["properties"]["ref"]["const"] == "fabric.agent.react"
     assert entrypoint_schema["required"] == ["kind", "ref"]
     assert entrypoint_schema["additionalProperties"] is False
     assert workflow_schema["properties"]["settings"]["properties"]["_type"] is False
+    definition_schema = descriptor["tool_definition_schema"]
+    assert definition_schema["properties"]["kind"]["enum"] == [
+        "function",
+        "function_group",
+    ]
+    assert definition_schema["properties"]["settings"]["properties"]["_type"] is False
     assert descriptor["capabilities"] == {
         "cancellation": False,
         "service": False,
         "streaming": False,
         "updates": False,
     }
+
+
+def test_main_opts_the_nat_host_into_typed_agent_config(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    serve = MagicMock()
+    monkeypatch.setattr(adapter.lifecycle, "serve", serve)
+
+    adapter.main()
+
+    serve.assert_called_once_with(adapter.NatRuntime, config_model=AgentConfig)
 
 
 def test_build_mapping_translates_components_models_and_instruction(
@@ -272,7 +309,7 @@ def test_build_mapping_translates_components_models_and_instruction(
         instruction="Use portable instructions.",
     )
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
     assert result == {
         "workflow": {
@@ -297,7 +334,7 @@ def test_build_mapping_translates_components_models_and_instruction(
             },
         },
     }
-    assert payload["config"]["workflow"] == workflow
+    assert payload["config"].workflow.to_mapping() == workflow
 
 
 def test_system_instruction_rejects_duplicate_nat_instruction_source(make_payload):
@@ -310,7 +347,7 @@ def test_system_instruction_rejects_duplicate_nat_instruction_source(make_payloa
     )
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-        adapter.build_nat_config_mapping(payload)
+        adapter.build_nat_config_mapping(payload["config"])
 
     assert error.value.code == "nat_system_instruction_conflict"
 
@@ -318,44 +355,27 @@ def test_system_instruction_rejects_duplicate_nat_instruction_source(make_payloa
 def test_react_agent_without_tool_names_defaults_to_empty_list(make_payload):
     payload = make_payload(workflow=_fabric_workflow(llm_name="default"))
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
     assert result["workflow"]["tool_names"] == []
 
 
-def test_namespaced_workflow_ref_is_preserved(make_payload):
-    payload = make_payload(
-        workflow=_fabric_workflow(
-            "nat.plugins.langchain.agent.react_agent/react_agent",
-            llm_name="default",
-        )
-    )
+def test_shared_nat_adapter_rejects_an_unknown_fabric_factory(make_payload):
+    payload = make_payload(workflow=_fabric_workflow("fabric.agent.custom"))
 
-    result = adapter.build_nat_config_mapping(payload)
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        adapter.build_nat_config_mapping(payload["config"])
 
-    assert result["workflow"] == {
-        "_type": "nat.plugins.langchain.agent.react_agent/react_agent",
-        "llm_name": "default",
-        "tool_names": [],
-    }
-
-
-def test_custom_workflow_named_react_agent_does_not_receive_built_in_defaults(
-    make_payload,
-):
-    payload = make_payload(workflow=_fabric_workflow("custom/react_agent"))
-
-    result = adapter.build_nat_config_mapping(payload)
-
-    assert result["workflow"] == {"_type": "custom/react_agent"}
+    assert error.value.code == "nat_invalid_workflow"
+    assert error.value.metadata["field"] == "workflow.entrypoint.ref"
 
 
 def test_missing_root_workflow_is_rejected(make_payload):
     payload = make_payload()
-    payload["config"].pop("workflow")
+    payload["config"].workflow = None
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-        adapter.build_nat_config_mapping(payload)
+        adapter.build_nat_config_mapping(payload["config"])
 
     assert error.value.code == "nat_invalid_workflow"
     assert error.value.metadata["field"] == "workflow"
@@ -364,17 +384,8 @@ def test_missing_root_workflow_is_rejected(make_payload):
 @pytest.mark.parametrize(
     ("workflow", "field"),
     [
-        ({}, "workflow.entrypoint"),
-        ({"entrypoint": []}, "workflow.entrypoint"),
         (_fabric_workflow(kind="python_callable"), "workflow.entrypoint.kind"),
-        (_fabric_workflow("bad ref"), "workflow.entrypoint.ref"),
-        (
-            {
-                "entrypoint": {"kind": "nat_workflow", "ref": "react_agent"},
-                "settings": [],
-            },
-            "workflow.settings",
-        ),
+        (_fabric_workflow("fabric.agent.unknown"), "workflow.entrypoint.ref"),
         (_fabric_workflow(_type="react_agent"), "workflow.settings._type"),
     ],
 )
@@ -382,14 +393,18 @@ def test_invalid_root_workflow_is_rejected(make_payload, workflow, field):
     payload = make_payload(workflow=workflow)
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-        adapter.build_nat_config_mapping(payload)
+        adapter.build_nat_config_mapping(payload["config"])
 
     assert error.value.code == "nat_invalid_workflow"
     assert error.value.metadata["field"] == field
 
 
 @pytest.mark.parametrize("example", ["calculator.py", "email_phishing.py"])
-def test_typed_examples_plan_with_root_workflow(tmp_path: Path, example: str):
+def test_typed_examples_project_and_translate_through_one_nat_adapter(
+    tmp_path: Path,
+    example: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
     descriptor = ROOT / "external" / "nat" / "fabric-adapter.json"
     staged_descriptor = tmp_path / "adapters" / "nat" / "fabric-adapter.json"
     staged_descriptor.parent.mkdir(parents=True)
@@ -397,12 +412,30 @@ def test_typed_examples_plan_with_root_workflow(tmp_path: Path, example: str):
         descriptor.read_text(encoding="utf-8"), encoding="utf-8"
     )
     namespace = runpy.run_path(str(ROOT / "external" / "nat" / "examples" / example))
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
 
     plan = Fabric().plan(namespace["build_config"](), base_dir=tmp_path)
 
-    assert plan.config.workflow.entrypoint.kind == "nat_workflow"
-    assert plan.config.workflow.entrypoint.ref == "react_agent"
+    assert plan.config.workflow.entrypoint.kind == "factory"
+    assert plan.config.workflow.entrypoint.ref == "fabric.agent.react"
     assert "workflow" not in plan.config.harness.settings
+    southbound = plan.to_mapping()["agent_config"]
+    assert southbound["workflow"]["entrypoint"] == {
+        "kind": "factory",
+        "ref": "fabric.agent.react",
+    }
+    assert "schema_version" not in southbound
+    nat_config = adapter.build_nat_config_mapping(
+        AgentConfig.model_validate(southbound)
+    )
+    assert nat_config["workflow"]["_type"] == "react_agent"
+    if example == "calculator.py":
+        assert nat_config["function_groups"]["calculator"]["_type"] == "mcp_client"
+    else:
+        assert nat_config["functions"]["email_phishing_analyzer"] == {
+            "_type": "email_phishing_analyzer",
+            "llm": "default",
+        }
 
 
 def test_calculator_example_uses_the_source_stdio_server():
@@ -418,6 +451,20 @@ def test_calculator_example_uses_the_source_stdio_server():
     assert calculator.blocked_tools == ["divide"]
 
 
+def test_email_example_uses_a_normalized_function_definition():
+    namespace = runpy.run_path(
+        str(ROOT / "external" / "nat" / "examples" / "email_phishing.py")
+    )
+
+    config = namespace["build_config"]()
+    definition = config.tools.definitions["email_phishing_analyzer"]
+
+    assert config.harness.settings == {}
+    assert definition.kind == "function"
+    assert definition.ref == "email_phishing_analyzer"
+    assert definition.settings == {"llm": "default"}
+
+
 def test_build_typed_config_discovers_components_before_validation(
     make_payload,
     mock_nat,
@@ -428,24 +475,16 @@ def test_build_typed_config_discovers_components_before_validation(
         events.append("validate") or mock_nat["typed_config"]
     )
 
-    result = adapter.build_nat_config(make_payload())
+    result = adapter.build_nat_config(make_payload()["config"])
 
     assert result is mock_nat["typed_config"]
     assert events == ["discover", "validate"]
     mock_nat["discover"].assert_called_once_with(mock_nat["plugin_types"].CONFIG_OBJECT)
 
 
-@pytest.mark.parametrize(
-    "workflow_ref",
-    [
-        "react_agent",
-        "nat.plugins.langchain.agent.react_agent/react_agent",
-    ],
-)
 def test_build_typed_config_contract_with_installed_nat(
     make_payload,
     monkeypatch: pytest.MonkeyPatch,
-    workflow_ref: str,
 ):
     config_module = pytest.importorskip(
         "nat.data_models.config",
@@ -457,7 +496,7 @@ def test_build_typed_config_contract_with_installed_nat(
     )
     monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
     payload = make_payload(
-        workflow=_fabric_workflow(workflow_ref, llm_name="default"),
+        workflow=_fabric_workflow(llm_name="default"),
         models={
             "default": {
                 "provider": "nvidia",
@@ -467,7 +506,7 @@ def test_build_typed_config_contract_with_installed_nat(
         },
     )
 
-    result = adapter.build_nat_config(payload)
+    result = adapter.build_nat_config(payload["config"])
 
     assert isinstance(result, config_module.Config)
     assert result.workflow.type == "react_agent"
@@ -514,7 +553,7 @@ def test_mcp_filter_states_generate_one_nat_group_policy(
     }
     payload = make_payload(mcp_servers={"docs": server})
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
     assert result["function_groups"]["docs"] == expected_group
     assert result["workflow"]["tool_names"] == ["docs"]
@@ -532,7 +571,7 @@ def test_mcp_policy_deduplicates_valid_fabric_names(make_payload):
         },
     )
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
     assert result["function_groups"] == {
         "docs": {
@@ -550,7 +589,7 @@ def test_root_tool_policy_deduplicates_valid_fabric_names(make_payload):
         tools={"enabled": ["calculator", "calculator"]},
     )
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
     assert result["function_groups"] == {
         "calculator": {"_type": "calculator"},
@@ -576,7 +615,7 @@ def test_empty_mcp_allowlist_suppresses_server_and_existing_workflow_ref(
         },
     )
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
     assert result["workflow"]["tool_names"] == ["clock"]
     assert "docs" not in result["function_groups"]
@@ -600,16 +639,13 @@ def test_empty_mcp_allowlist_rejects_same_name_nat_component(
     )
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-        adapter.build_nat_config_mapping(payload)
+        adapter.build_nat_config_mapping(payload["config"])
 
     assert error.value.code == "nat_mcp_name_conflict"
 
 
-def test_all_suppressed_mcp_does_not_require_custom_workflow_tool_names(
-    make_payload,
-):
+def test_all_suppressed_mcp_leaves_factory_workflow_with_no_tools(make_payload):
     payload = make_payload(
-        workflow=_fabric_workflow("custom_workflow"),
         mcp_servers={
             "docs": {
                 "transport": "sse",
@@ -619,9 +655,13 @@ def test_all_suppressed_mcp_does_not_require_custom_workflow_tool_names(
         },
     )
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
-    assert result["workflow"] == {"_type": "custom_workflow"}
+    assert result["workflow"] == {
+        "_type": "react_agent",
+        "llm_name": "default",
+        "tool_names": [],
+    }
     assert result["function_groups"] == {}
 
 
@@ -646,14 +686,13 @@ def test_root_tool_policy_selects_and_blocks_exact_group_members(make_payload):
             "enabled": [
                 "clock",
                 "calculator__add",
-                "calculator__subtract",
                 "search__find",
             ],
             "blocked": ["calculator__subtract", "search__secret"],
         },
     )
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
     assert result["functions"] == {"clock": {"_type": "current_datetime"}}
     assert result["function_groups"] == {
@@ -676,7 +715,7 @@ def test_blocking_last_group_member_and_function_removes_both_tool_refs(
         tools={"blocked": ["calculator__add", "clock"]},
     )
 
-    result = adapter.build_nat_config_mapping(payload)
+    result = adapter.build_nat_config_mapping(payload["config"])
 
     assert result["functions"] == {}
     assert result["function_groups"] == {}
@@ -702,7 +741,7 @@ def test_root_tool_policy_rejects_unknown_exact_selectors(make_payload, tools):
     )
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-        adapter.build_nat_config_mapping(payload)
+        adapter.build_nat_config_mapping(payload["config"])
 
     assert error.value.code == "nat_unknown_tool_selector"
 
@@ -734,7 +773,7 @@ async def test_runtime_reuses_one_builder_across_invocations_and_cleans_up(
     assert first == {
         "harness": "nat",
         "adapter": "python",
-        "mode": "nat_workflow",
+        "mode": "agent_config",
         "response": {"answer": 42},
         "completed": True,
         "failed": False,
@@ -781,6 +820,21 @@ async def test_start_rejects_an_already_started_runtime(make_payload, mock_nat):
     assert error.value.code == "nat_runtime_already_started"
     assert error.value.message == "NAT runtime is already started"
     mock_nat["workflow_builder"].from_config.assert_called_once()
+
+
+async def test_start_rejects_a_legacy_fabric_config_mapping(tmp_path: Path):
+    runtime = adapter.NatRuntime()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
+        await runtime.start(
+            {
+                "config": {"schema_version": "fabric.agent/v1alpha1"},
+                "runtime_context": {"runtime_id": "runtime-1"},
+                "base_dir": str(tmp_path),
+            }
+        )
+
+    assert error.value.code == "nat_invalid_agent_config"
 
 
 async def test_invoke_rejects_a_runtime_that_has_not_started(
@@ -887,7 +941,7 @@ def test_config_translation_failure_is_normalized_and_redacts_cause(
     )
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-        adapter.build_nat_config(make_payload())
+        adapter.build_nat_config(make_payload()["config"])
 
     assert error.value.code == "nat_config_translation_failed"
     assert error.value.message == (
@@ -969,24 +1023,11 @@ async def test_non_json_result_is_normalized_without_value_leak(
     assert "secret-object-repr" not in caplog.text
 
 
-@pytest.mark.parametrize("ref", ["custom_workflow", "custom/react_agent"])
-def test_system_instruction_rejects_unsupported_workflow(make_payload, ref):
-    payload = make_payload(
-        workflow=_fabric_workflow(ref),
-        instruction="Portable instruction",
-    )
-
-    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-        adapter.build_nat_config_mapping(payload)
-
-    assert error.value.code == "nat_system_instruction_unsupported"
-
-
 @pytest.mark.parametrize("transport", ["http", "streamable_http", "streamablehttp"])
 def test_mcp_server_normalizes_streamable_http_aliases(transport: str):
     result = adapter.nat_mcp_server_config(
         "docs",
-        {"transport": transport, "url": "https://mcp.test"},
+        _mcp_server(transport=transport, url="https://mcp.test"),
     )
 
     assert result == {
@@ -1002,16 +1043,26 @@ def test_mcp_stdio_expands_environment_and_parses_quoted_arguments(
 
     result = adapter.nat_mcp_server_config(
         "calculator",
-        {
-            "transport": "stdio",
-            "url": "$NAT_TEST_MCP_COMMAND --label 'safe mode' --port 9000",
-        },
+        _mcp_server(
+            transport="stdio",
+            url="$NAT_TEST_MCP_COMMAND --label 'safe mode' --port 9000",
+            args=["--tenant", "fabric"],
+            env={"MCP_PROFILE": "test"},
+        ),
     )
 
     assert result == {
         "transport": "stdio",
         "command": "/opt/nat/bin/mcp-server",
-        "args": ["--label", "safe mode", "--port", "9000"],
+        "args": [
+            "--label",
+            "safe mode",
+            "--port",
+            "9000",
+            "--tenant",
+            "fabric",
+        ],
+        "env": {"MCP_PROFILE": "test"},
     }
 
 
@@ -1019,7 +1070,7 @@ def test_mcp_stdio_rejects_unbalanced_quotes():
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
         adapter.nat_mcp_server_config(
             "calculator",
-            {"transport": "stdio", "url": "mcp-server --label 'unterminated"},
+            _mcp_server(transport="stdio", url="mcp-server --label 'unterminated"),
         )
 
     assert error.value.code == "nat_invalid_mcp_server"
@@ -1032,7 +1083,7 @@ def test_mcp_stdio_rejects_a_whitespace_only_command():
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
         adapter.nat_mcp_server_config(
             "calculator",
-            {"transport": "stdio", "url": " \t\n "},
+            AgentMcpServerConfig.model_construct(transport="stdio", url=" \t\n "),
         )
 
     assert error.value.code == "nat_invalid_mcp_server"
@@ -1043,10 +1094,17 @@ def test_mcp_stdio_rejects_a_whitespace_only_command():
 
 @pytest.mark.parametrize("transport", ["websocket", ""])
 def test_mcp_server_rejects_unsupported_transport(transport: str):
+    server = (
+        _mcp_server(transport=transport, url="https://mcp.test")
+        if transport
+        else AgentMcpServerConfig.model_construct(
+            transport=transport, url="https://mcp.test"
+        )
+    )
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
         adapter.nat_mcp_server_config(
             "docs",
-            {"transport": transport, "url": "https://mcp.test"},
+            server,
         )
 
     assert error.value.code == "nat_unsupported_mcp_transport"

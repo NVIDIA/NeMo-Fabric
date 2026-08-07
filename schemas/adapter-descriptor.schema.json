@@ -60,6 +60,21 @@
         }
       ]
     },
+    "AdapterConfigInput": {
+      "description": "Configuration object delivered to an adapter lifecycle host.",
+      "oneOf": [
+        {
+          "const": "fabric_config",
+          "description": "Deliver the complete northbound `FabricConfig` for legacy adapters.",
+          "type": "string"
+        },
+        {
+          "const": "agent_config",
+          "description": "Deliver the resolved southbound `AgentConfig` contract.",
+          "type": "string"
+        }
+      ]
+    },
     "AdapterConfigSupport": {
       "additionalProperties": true,
       "description": "Adapter config support.",
@@ -77,6 +92,11 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "input": {
+          "$ref": "#/$defs/AdapterConfigInput",
+          "default": "fabric_config",
+          "description": "Configuration object delivered to the adapter lifecycle host."
         }
       },
       "type": "object"
@@ -240,7 +260,9 @@
     },
     "config": {
       "$ref": "#/$defs/AdapterConfigSupport",
-      "default": {},
+      "default": {
+        "input": "fabric_config"
+      },
       "description": "NeMo Fabric config areas this adapter consumes or generates."
     },
     "contract_version": {

@@ -355,9 +355,11 @@ pub(crate) fn project_agent_config(
         let enabled = accepts(AdapterConfigField::EnabledTools)
             .then(|| tools.enabled.clone())
             .flatten();
-        let blocked = accepts(AdapterConfigField::BlockedTools)
-            .then(|| tools.blocked.clone())
-            .unwrap_or_default();
+        let blocked = if accepts(AdapterConfigField::BlockedTools) {
+            tools.blocked.clone()
+        } else {
+            Vec::new()
+        };
         (enabled.is_some()
             || !blocked.is_empty()
             || !definitions.is_empty()

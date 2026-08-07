@@ -5,8 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric Adapter Utilities
 
-`nemo-fabric-adapters-common` provides shared Python helpers for NeMo
-NeMo Fabric adapter implementations. Adapter packages normally install
+`nemo-fabric-adapters-common` provides shared Python helpers for NeMo Fabric
+adapter implementations. Adapter packages normally install
 this package as a dependency.
 
 Install the package directly when developing an adapter:
@@ -43,6 +43,18 @@ class AdapterRuntime:
 
 lifecycle.serve(AdapterRuntime)
 ```
+
+Adapters whose descriptor sets `config.input` to `agent_config` can ask the
+host to validate the southbound contract before `start`:
+
+```python
+from nemo_fabric_adapter_contract.models import AgentConfig
+
+lifecycle.serve(AdapterRuntime, config_model=AgentConfig)
+```
+
+The runtime then receives an `AgentConfig` instance in `payload["config"]`.
+Omitting `config_model` preserves the legacy `FabricConfig` mapping.
 
 NeMo Fabric calls the factory once per local host to create one runtime instance and
 serializes invocations through that instance. The host keeps one event loop
