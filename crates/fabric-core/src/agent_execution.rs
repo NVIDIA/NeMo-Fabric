@@ -201,8 +201,14 @@ fn agent_artifact_path_schema(generator: &mut SchemaGenerator) -> Schema {
     let mut schema = String::json_schema(generator);
     schema.insert("minLength".into(), 1.into());
     schema.insert(
-        "pattern".into(),
-        r"^(?![\\/])(?![A-Za-z]:)(?!.*(?:^|[\\/])\.\.(?:[\\/]|$)).+$".into(),
+        "not".into(),
+        serde_json::json!({
+            "anyOf": [
+                {"pattern": r"^[\\/]"},
+                {"pattern": r"^[A-Za-z]:"},
+                {"pattern": r"(^|[\\/])\.\.([\\/]|$)"}
+            ]
+        }),
     );
     schema
 }

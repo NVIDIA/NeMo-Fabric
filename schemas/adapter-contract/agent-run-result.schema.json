@@ -33,7 +33,19 @@
         "path": {
           "description": "Path relative to the artifact root supplied in `RuntimeContext`.",
           "minLength": 1,
-          "pattern": "^(?![\\\\/])(?![A-Za-z]:)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$",
+          "not": {
+            "anyOf": [
+              {
+                "pattern": "^[\\\\/]"
+              },
+              {
+                "pattern": "^[A-Za-z]:"
+              },
+              {
+                "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)"
+              }
+            ]
+          },
           "type": "string"
         }
       },

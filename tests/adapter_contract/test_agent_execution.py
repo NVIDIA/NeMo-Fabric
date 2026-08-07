@@ -102,6 +102,7 @@ def test_agent_execution_models_track_rust_schema_root_fields(model, filename):
     pydantic_schema = model.model_json_schema()
 
     assert rust_schema["additionalProperties"] is False
+    assert pydantic_schema["additionalProperties"] is False
     assert set(pydantic_schema["properties"]) == set(rust_schema["properties"])
 
 

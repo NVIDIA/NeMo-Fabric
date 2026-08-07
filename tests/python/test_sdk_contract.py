@@ -15,6 +15,7 @@ import nemo_fabric
 import nemo_fabric.errors as fabric_errors
 import pytest
 from nemo_fabric import AdapterInfo
+from nemo_fabric import ArtifactRef
 from nemo_fabric import DoctorReport
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import Fabric
@@ -292,7 +293,7 @@ def test_remove_last_tool_definition_preserves_tools_extensions():
 
     config.remove_tool_definition("web")
 
-    assert config.to_mapping()["tools"] == {"blocked": [], "profile": "strict"}
+    assert config.to_mapping()["tools"] == {"profile": "strict"}
 
 
 def test_mcp_server_tool_policy_preserves_empty_allowlist():
@@ -558,6 +559,38 @@ def test_run_plan_snapshot_removes_named_definition():
     config.remove_tool_definition("web")
 
     assert "definitions" not in config.to_mapping()["tools"]
+
+
+def test_run_plan_snapshot_remove_definition_preserves_absent_tools():
+    config = _FabricConfigSnapshot.from_mapping(
+        {
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "demo"},
+            "harness": {"adapter_id": "test.fabric.shim"},
+        }
+    )
+
+    config.remove_tool_definition("web")
+
+    assert "tools" not in config.to_mapping()
+
+
+def test_artifact_ref_omits_empty_metadata_and_preserves_values():
+    assert ArtifactRef.from_mapping(
+        {"name": "trace", "kind": "file", "path": "trace.jsonl"}
+    ).to_mapping() == {
+        "name": "trace",
+        "kind": "file",
+        "path": "trace.jsonl",
+    }
+    assert ArtifactRef.from_mapping(
+        {
+            "name": "trace",
+            "kind": "file",
+            "path": "trace.jsonl",
+            "metadata": {"rows": 10},
+        }
+    ).to_mapping()["metadata"] == {"rows": 10}
 
 
 def test_fabric_config_authors_first_class_relay_observability():

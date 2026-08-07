@@ -60,17 +60,20 @@ Consumer integration skills live under `integrations/consumer/`. The following
 skill helps software on the consumer side call NeMo Fabric through its public
 SDK:
 
-| Skill | Use It When |
-|---|---|
-| [`nemo-fabric-integrate`](integrations/consumer/nemo-fabric-integrate/SKILL.md) | You are adding NeMo Fabric to a consumer application, service, evaluation harness, or platform through the typed Python SDK — building an in-memory `FabricConfig`, choosing the single-invocation convenience API or an explicitly started runtime, validating with `plan`/`doctor`, and consuming normalized results. |
+Use the
+[consumer integration skill](integrations/consumer/nemo-fabric-integrate/SKILL.md)
+when adding NeMo Fabric to an application, service, evaluation harness, or
+platform through the typed Python SDK.
 
 ## Harness Integrations
 
 Harness integration skills live under `integrations/harness/`:
 
-| Skill | Use It When |
-|---|---|
-| [`nemo-fabric-build-adapter`](integrations/harness/nemo-fabric-build-adapter/SKILL.md) | You are creating, migrating, reviewing, or maintaining a third-party adapter package, descriptor, normalized configuration mapping, lifecycle implementation, custom-agent loader, or conformance report. |
+Use the
+[adapter-authoring skill](integrations/harness/nemo-fabric-build-adapter/SKILL.md)
+when creating, migrating, reviewing, or maintaining a third-party adapter,
+descriptor, normalized configuration mapping, lifecycle implementation,
+custom-agent loader, or conformance report.
 
 ## Conventions
 

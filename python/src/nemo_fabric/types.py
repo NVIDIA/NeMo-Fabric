@@ -1104,7 +1104,11 @@ class _FabricConfigSnapshot(_ConfigMapping):
     def remove_tool_definition(self, name: str) -> _FabricConfigSnapshot:
         """Remove one named tool definition and return this config."""
 
-        self.tools.remove_definition(name)
+        tools = self.get("tools")
+        if tools is not None:
+            if not isinstance(tools, _ToolsConfig):
+                raise FabricConfigError("tools must be a _ToolsConfig")
+            tools.remove_definition(name)
         return self
 
     def enable_relay(
@@ -1420,6 +1424,7 @@ class ArtifactRef(FabricMapping):
     metadata: Mapping[str, Any]
     _fields = frozenset({"name", "kind", "path", "media_type", "metadata"})
     _json_fields = frozenset({"metadata"})
+    _omit_if_empty = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:

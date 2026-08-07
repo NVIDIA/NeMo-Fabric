@@ -613,6 +613,7 @@ class ToolsConfig(FabricBaseModel):
     )
     blocked: list[str] = Field(
         default_factory=list,
+        exclude_if=lambda value: not value,
         description="Adapter-native tool names to deny.",
     )
 

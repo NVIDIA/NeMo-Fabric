@@ -3,6 +3,7 @@
 
 //! NeMo Fabric config models and loading helpers.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1998,32 +1999,32 @@ fn validate_extension_block(
     if extensions.is_empty() {
         return Ok(());
     }
-    if !validators.contains_key(&point) {
-        let Some(schema) = resolved.descriptor.extension_schemas.get(&point) else {
-            return Err(FabricError::AdapterCompatibility {
-                adapter_id: resolved.descriptor.adapter_id.clone(),
-                field: path.to_string(),
-                reason: format!(
-                    "the adapter descriptor does not declare an extension schema for {}",
-                    point.as_str()
-                ),
-            });
-        };
-        let schema = Value::Object(schema.clone());
-        let validator = jsonschema::validator_for(&schema).map_err(|error| {
-            FabricError::InvalidAdapterDescriptor {
-                path: resolved.path.clone(),
-                message: format!(
-                    "extension_schemas.{} could not be compiled: {error}",
-                    point.as_str()
-                ),
-            }
-        })?;
-        validators.insert(point, validator);
-    }
-    let validator = validators
-        .get(&point)
-        .expect("extension validator was inserted");
+    let validator = match validators.entry(point) {
+        Entry::Occupied(entry) => entry.into_mut(),
+        Entry::Vacant(entry) => {
+            let Some(schema) = resolved.descriptor.extension_schemas.get(&point) else {
+                return Err(FabricError::AdapterCompatibility {
+                    adapter_id: resolved.descriptor.adapter_id.clone(),
+                    field: path.to_string(),
+                    reason: format!(
+                        "the adapter descriptor does not declare an extension schema for {}",
+                        point.as_str()
+                    ),
+                });
+            };
+            let schema = Value::Object(schema.clone());
+            let validator = jsonschema::validator_for(&schema).map_err(|error| {
+                FabricError::InvalidAdapterDescriptor {
+                    path: resolved.path.clone(),
+                    message: format!(
+                        "extension_schemas.{} could not be compiled: {error}",
+                        point.as_str()
+                    ),
+                }
+            })?;
+            entry.insert(validator)
+        }
+    };
     let value = serde_json::to_value(extensions).map_err(FabricError::SerializeJson)?;
     if let Some(error) = validator.iter_errors(&value).next() {
         return Err(FabricError::InvalidAdapterExtension {
