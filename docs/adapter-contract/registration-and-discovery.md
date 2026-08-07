@@ -5,9 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # Registration and Discovery
 
-Registration makes descriptor metadata discoverable without importing or
-executing adapter code. Adapter implementation loading occurs only after
-descriptor resolution and validation, when the runtime starts.
+NVIDIA NeMo Fabric registration makes descriptor metadata discoverable without
+importing or executing adapter code. Adapter implementation loading occurs only
+after descriptor resolution and validation, when the runtime starts.
 
 > **Contract status:** Registration and discovery will receive another design
 > pass in a follow-up PR, including separating static adapter metadata from
@@ -61,6 +61,8 @@ NeMo Fabric resolves multi-component relative `ADAPTER_PYTHON` paths from
 
 ## Resolution Stages
 
+NeMo Fabric resolves an adapter in these stages:
+
 1. Scan descriptor metadata without executing adapter code.
 2. Select the complete descriptor for `harness.adapter_id`.
 3. Validate descriptor shape, contract version, and embedded schemas.
@@ -77,11 +79,21 @@ Create a minimal `FabricConfig` that selects the adapter and call `plan` before
 starting it:
 
 ```python
-from nemo_fabric import Fabric
+from pathlib import Path
 
+from nemo_fabric import Fabric
+from nemo_fabric import FabricConfig
+from nemo_fabric import HarnessConfig
+from nemo_fabric import MetadataConfig
+
+project_root = Path.cwd()
+config = FabricConfig(
+    metadata=MetadataConfig(name="discovery-check"),
+    harness=HarnessConfig(adapter_id="nvidia.fabric.hermes"),
+)
 plan = Fabric().plan(config, base_dir=project_root)
-print(plan.adapter_descriptor.path)
-print(plan.adapter_descriptor.descriptor.adapter_id)
+print(plan["adapter_descriptor"]["path"])
+print(plan["adapter_descriptor"]["descriptor"]["adapter_id"])
 ```
 
 Confirm the adapter ID, descriptor location, `config.input`, accepted fields,

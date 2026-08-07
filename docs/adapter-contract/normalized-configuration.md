@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Normalized Configuration
 
 Consumers author `FabricConfig`. After validation, adapter resolution, path
-resolution, and capability planning, NeMo Fabric projects the applicable fields
+resolution, and capability planning, NVIDIA NeMo Fabric projects the applicable fields
 into `AgentConfig`. Adapters consume this resolved southbound projection; they
 do not need to understand consumer-only planning fields.
 
@@ -14,7 +14,7 @@ do not need to understand consumer-only planning fields.
 FabricConfig + adapter descriptor + resolved capability plan
                            |
                            v
-                 Fabric core validation
+              NeMo Fabric core validation
                  and field projection
                            |
                            v
@@ -28,6 +28,8 @@ FabricConfig + adapter descriptor + resolved capability plan
 `AgentConfig` is the source of truth for adapter-facing fields and validation.
 
 ## AgentConfig Blocks
+
+`AgentConfig` contains these adapter-facing blocks:
 
 | Block | Adapter-facing purpose |
 | --- | --- |
@@ -57,7 +59,7 @@ The descriptor controls the projection:
   selected descriptor before startup.
 - Named tool definitions are validated individually against
   `tool_definition_schema` before they are projected.
-- Fabric-owned metadata, installation policy, environment preparation,
+- NeMo Fabric-owned metadata, installation policy, environment preparation,
   invocation timeout, artifacts, Relay configuration, and planning details do
   not become `AgentConfig` fields. Runtime-owned values arrive through
   `RuntimeContext` instead.
@@ -96,5 +98,5 @@ service reachability. Startup errors must identify the failing field without
 including secret values.
 
 `AgentConfig` contains credential environment-variable names, not secret
-values. Environment values may be present in `RuntimeContext.environment.env`;
+values. Environment values can be present in `RuntimeContext.environment.env`;
 do not persist or log the unredacted context.

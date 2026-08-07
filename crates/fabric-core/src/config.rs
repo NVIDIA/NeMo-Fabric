@@ -219,6 +219,7 @@ pub struct AdapterDescriptor {
     pub tool_definition_schema: Option<serde_json::Map<String, Value>>,
     /// JSON Schemas for adapter-owned `extensions` at southbound block types.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[schemars(schema_with = "adapter_extension_schemas_schema")]
     pub extension_schemas: BTreeMap<AdapterExtensionPoint, serde_json::Map<String, Value>>,
     /// Runtime requirements.
     #[serde(default)]
@@ -235,6 +236,18 @@ pub struct AdapterDescriptor {
     /// Additive adapter descriptor fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+fn adapter_extension_schemas_schema(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema =
+        BTreeMap::<AdapterExtensionPoint, serde_json::Map<String, Value>>::json_schema(generator);
+    schema.insert(
+        "propertyNames".into(),
+        serde_json::json!({
+            "enum": AdapterExtensionPoint::ALL.map(AdapterExtensionPoint::as_str),
+        }),
+    );
+    schema
 }
 
 /// Where NeMo Fabric resolved an adapter descriptor from.
@@ -795,6 +808,7 @@ pub struct RelayComponentConfig {
 pub struct RelayObservabilityConfig {
     /// Relay observability config version.
     #[serde(default = "default_relay_config_version")]
+    #[schemars(range(max = u32::MAX))]
     pub version: u32,
     /// ATOF export configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -878,6 +892,7 @@ pub enum RelayAtofSinkConfig {
         header_env: BTreeMap<String, String>,
         /// Request timeout in milliseconds.
         #[serde(default = "default_relay_timeout_millis")]
+        #[schemars(range(max = u64::MAX))]
         timeout_millis: u64,
         /// Field-name handling policy.
         #[serde(default)]
@@ -960,6 +975,7 @@ pub enum RelayAtifStorageConfig {
         header_env: BTreeMap<String, String>,
         /// Request timeout in milliseconds.
         #[serde(default = "default_relay_timeout_millis")]
+        #[schemars(range(max = u64::MAX))]
         timeout_millis: u64,
         /// Additive HTTP storage fields.
         #[serde(default, flatten)]
@@ -1029,6 +1045,7 @@ pub struct RelayOtlpConfig {
     pub instrumentation_scope: Option<String>,
     /// Request timeout in milliseconds.
     #[serde(default = "default_relay_timeout_millis")]
+    #[schemars(range(max = u64::MAX))]
     pub timeout_millis: u64,
     /// Additive OTLP fields.
     #[serde(default, flatten)]
@@ -1432,14 +1449,14 @@ fn resolve_run_plan(
     let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_directories)?;
     validate_harness_settings(&config, adapter_descriptor.as_ref())?;
     validate_workflow(&config, adapter_descriptor.as_ref())?;
-    validate_tool_definitions(&config, adapter_descriptor.as_ref())?;
-    validate_agent_config_extensions(&config, adapter_descriptor.as_ref())?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
     if enforce_compatibility {
         validate_adapter_config_compatibility(&config, descriptor)?;
     }
+    validate_tool_definitions(&config, adapter_descriptor.as_ref())?;
+    validate_agent_config_extensions(&config, adapter_descriptor.as_ref())?;
     let resolution = resolve_resolution(&config, descriptor)?;
     let environment_plan = resolve_environment_plan(&config, &base_dir);
     validate_control_location(descriptor, environment_plan.as_ref())?;
@@ -1830,7 +1847,12 @@ pub(crate) fn validate_tool_definitions(
         }
     })?;
     for (name, definition) in definitions {
-        let value = serde_json::to_value(definition).map_err(FabricError::SerializeJson)?;
+        let mut value = serde_json::to_value(definition).map_err(FabricError::SerializeJson)?;
+        if let Some(object) = value.as_object_mut() {
+            for extension in definition.extensions.keys() {
+                object.remove(extension);
+            }
+        }
         if let Some(error) = validator.iter_errors(&value).next() {
             let prefix = format!("tools.definitions.{name}");
             let definition_path = schema_error_path(&error, &prefix);
@@ -1852,17 +1874,21 @@ pub(crate) fn validate_agent_config_extensions(
         return Ok(());
     }
 
+    let mut validators = BTreeMap::new();
+
     validate_extension_block(
         resolved,
         AdapterExtensionPoint::AgentConfig,
         "extensions",
         &config.extensions,
+        &mut validators,
     )?;
     validate_extension_block(
         resolved,
         AdapterExtensionPoint::Harness,
         "harness",
         &config.harness.extensions,
+        &mut validators,
     )?;
     for (name, model) in &config.models {
         validate_extension_block(
@@ -1870,6 +1896,7 @@ pub(crate) fn validate_agent_config_extensions(
             AdapterExtensionPoint::Model,
             &format!("models.{name}"),
             &model.extensions,
+            &mut validators,
         )?;
     }
     if let Some(instructions) = &config.instructions {
@@ -1878,6 +1905,7 @@ pub(crate) fn validate_agent_config_extensions(
             AdapterExtensionPoint::Instructions,
             "instructions",
             &instructions.extensions,
+            &mut validators,
         )?;
         if let Some(system) = &instructions.system {
             validate_extension_block(
@@ -1885,6 +1913,7 @@ pub(crate) fn validate_agent_config_extensions(
                 AdapterExtensionPoint::Instruction,
                 "instructions.system",
                 &system.extensions,
+                &mut validators,
             )?;
         }
     }
@@ -1893,6 +1922,7 @@ pub(crate) fn validate_agent_config_extensions(
         AdapterExtensionPoint::Runtime,
         "runtime",
         &config.runtime.extensions,
+        &mut validators,
     )?;
     if let Some(skills) = &config.skills {
         validate_extension_block(
@@ -1900,16 +1930,24 @@ pub(crate) fn validate_agent_config_extensions(
             AdapterExtensionPoint::Skills,
             "skills",
             &skills.extensions,
+            &mut validators,
         )?;
     }
     if let Some(mcp) = &config.mcp {
-        validate_extension_block(resolved, AdapterExtensionPoint::Mcp, "mcp", &mcp.extensions)?;
+        validate_extension_block(
+            resolved,
+            AdapterExtensionPoint::Mcp,
+            "mcp",
+            &mcp.extensions,
+            &mut validators,
+        )?;
         for (name, server) in &mcp.servers {
             validate_extension_block(
                 resolved,
                 AdapterExtensionPoint::McpServer,
                 &format!("mcp.servers.{name}"),
                 &server.extensions,
+                &mut validators,
             )?;
         }
     }
@@ -1919,6 +1957,7 @@ pub(crate) fn validate_agent_config_extensions(
             AdapterExtensionPoint::Tools,
             "tools",
             &tools.extensions,
+            &mut validators,
         )?;
         for (name, definition) in &tools.definitions {
             validate_extension_block(
@@ -1926,6 +1965,7 @@ pub(crate) fn validate_agent_config_extensions(
                 AdapterExtensionPoint::ToolDefinition,
                 &format!("tools.definitions.{name}"),
                 &definition.extensions,
+                &mut validators,
             )?;
         }
     }
@@ -1935,12 +1975,14 @@ pub(crate) fn validate_agent_config_extensions(
             AdapterExtensionPoint::Workflow,
             "workflow",
             &workflow.extensions,
+            &mut validators,
         )?;
         validate_extension_block(
             resolved,
             AdapterExtensionPoint::WorkflowEntrypoint,
             "workflow.entrypoint",
             &workflow.entrypoint.extensions,
+            &mut validators,
         )?;
     }
     Ok(())
@@ -1951,30 +1993,37 @@ fn validate_extension_block(
     point: AdapterExtensionPoint,
     path: &str,
     extensions: &BTreeMap<String, Value>,
+    validators: &mut BTreeMap<AdapterExtensionPoint, jsonschema::Validator>,
 ) -> Result<()> {
     if extensions.is_empty() {
         return Ok(());
     }
-    let Some(schema) = resolved.descriptor.extension_schemas.get(&point) else {
-        return Err(FabricError::AdapterCompatibility {
-            adapter_id: resolved.descriptor.adapter_id.clone(),
-            field: path.to_string(),
-            reason: format!(
-                "the adapter descriptor does not declare an extension schema for {}",
-                point.as_str()
-            ),
-        });
-    };
-    let schema = Value::Object(schema.clone());
-    let validator = jsonschema::validator_for(&schema).map_err(|error| {
-        FabricError::InvalidAdapterDescriptor {
-            path: resolved.path.clone(),
-            message: format!(
-                "extension_schemas.{} could not be compiled: {error}",
-                point.as_str()
-            ),
-        }
-    })?;
+    if !validators.contains_key(&point) {
+        let Some(schema) = resolved.descriptor.extension_schemas.get(&point) else {
+            return Err(FabricError::AdapterCompatibility {
+                adapter_id: resolved.descriptor.adapter_id.clone(),
+                field: path.to_string(),
+                reason: format!(
+                    "the adapter descriptor does not declare an extension schema for {}",
+                    point.as_str()
+                ),
+            });
+        };
+        let schema = Value::Object(schema.clone());
+        let validator = jsonschema::validator_for(&schema).map_err(|error| {
+            FabricError::InvalidAdapterDescriptor {
+                path: resolved.path.clone(),
+                message: format!(
+                    "extension_schemas.{} could not be compiled: {error}",
+                    point.as_str()
+                ),
+            }
+        })?;
+        validators.insert(point, validator);
+    }
+    let validator = validators
+        .get(&point)
+        .expect("extension validator was inserted");
     let value = serde_json::to_value(extensions).map_err(FabricError::SerializeJson)?;
     if let Some(error) = validator.iter_errors(&value).next() {
         return Err(FabricError::InvalidAdapterExtension {
@@ -2886,6 +2935,53 @@ mod tests {
     }
 
     #[test]
+    fn agent_config_projects_only_harness_native_mcp_servers() {
+        let path = repository_root().join("adapters/hermes/fabric-adapter.json");
+        let descriptor = load_adapter_descriptor(&path).expect("Hermes descriptor");
+        let resolved = ResolvedAdapterDescriptor {
+            descriptor,
+            source: AdapterDescriptorSource::Repository,
+            path: path.clone(),
+            root: path.parent().expect("descriptor directory").to_path_buf(),
+        };
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.skills = None;
+        config.mcp = Some(
+            serde_json::from_value(serde_json::json!({
+                "servers": {
+                    "native": {
+                        "transport": "stdio",
+                        "url": "native-mcp",
+                        "exposure": "harness_native"
+                    },
+                    "managed": {
+                        "transport": "stdio",
+                        "url": "managed-mcp",
+                        "exposure": "fabric_managed"
+                    }
+                }
+            }))
+            .expect("mixed MCP config"),
+        );
+
+        let capability_plan =
+            resolve_capability_plan(&config, Path::new("/tmp/mixed-mcp"), Some(&resolved));
+        let agent_config =
+            project_agent_config(&config, &capability_plan, Some(&resolved.descriptor));
+        let projected = &agent_config.mcp.expect("projected MCP config").servers;
+
+        assert!(projected.contains_key("native"));
+        assert!(!projected.contains_key("managed"));
+        assert!(capability_plan.native.mcp_servers.contains_key("native"));
+        assert!(
+            capability_plan
+                .unsupported
+                .mcp_servers
+                .contains_key("managed")
+        );
+    }
+
+    #[test]
     fn resolves_complete_typed_config_with_explicit_base_dir() {
         let base_dir = repository_root();
         let plan = resolve_run_plan_from_config(
@@ -3540,7 +3636,20 @@ mod tests {
             .config
             .accepts
             .push(AdapterConfigField::ToolDefinitions);
+        descriptor.config.input = AdapterConfigInput::AgentConfig;
         descriptor.tool_definition_schema = Some(tool_definition_schema());
+        descriptor.extension_schemas.insert(
+            AdapterExtensionPoint::ToolDefinition,
+            serde_json::json!({
+                "type": "object",
+                "properties": {"profile": {"const": "strict"}},
+                "required": ["profile"],
+                "additionalProperties": false
+            })
+            .as_object()
+            .expect("tool extension schema")
+            .clone(),
+        );
         let resolved = ResolvedAdapterDescriptor {
             descriptor,
             source: AdapterDescriptorSource::Repository,
@@ -3559,15 +3668,20 @@ mod tests {
                         "llm".to_string(),
                         serde_json::json!("default"),
                     )]),
-                    extensions: BTreeMap::new(),
+                    extensions: BTreeMap::from([(
+                        "profile".to_string(),
+                        serde_json::json!("strict"),
+                    )]),
                 },
             )]),
             enabled: Some(vec!["email_phishing_analyzer".to_string()]),
-            blocked: Vec::new(),
+            blocked: vec!["browser".to_string()],
             extensions: BTreeMap::new(),
         });
 
         validate_tool_definitions(&config, Some(&resolved)).expect("valid definition");
+        validate_agent_config_extensions(&config, Some(&resolved))
+            .expect("valid definition extension");
         let capability_plan = resolve_capability_plan(
             &config,
             Path::new("/tmp/fabric-tool-definitions"),
@@ -3583,9 +3697,18 @@ mod tests {
         assert_eq!(definition.kind, "function");
         assert_eq!(definition.r#ref, "email_phishing_analyzer");
         assert_eq!(definition.settings["llm"], "default");
+        assert_eq!(definition.extensions["profile"], "strict");
         assert_eq!(
             capability_plan.tools.definitions,
             config.tools.as_ref().expect("tools").definitions
+        );
+        assert_eq!(
+            agent_config.tools.as_ref().expect("agent tools").enabled,
+            capability_plan.tools.enabled
+        );
+        assert_eq!(
+            agent_config.tools.as_ref().expect("agent tools").blocked,
+            capability_plan.tools.blocked
         );
 
         config

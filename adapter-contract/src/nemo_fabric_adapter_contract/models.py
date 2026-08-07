@@ -337,6 +337,25 @@ class AgentArtifact(AgentContractBlock):
         exclude_if=lambda value: value is None,
     )
 
+    @field_validator("path", mode="before")
+    @classmethod
+    def _validate_path(cls, value: str | Path) -> str | Path:
+        raw = str(value)
+        path = Path(raw)
+        components = raw.replace("\\", "/").split("/")
+        windows_drive_path = len(raw) >= 2 and raw[0].isalpha() and raw[1] == ":"
+        if (
+            not raw
+            or path.is_absolute()
+            or raw.startswith(("/", "\\"))
+            or windows_drive_path
+            or ".." in components
+        ):
+            raise ValueError(
+                "artifact path must be non-empty, relative, and contain no parent traversal"
+            )
+        return value
+
 
 class AgentUsage(AgentContractBlock):
     """Normalized model usage reported by an adapter target."""

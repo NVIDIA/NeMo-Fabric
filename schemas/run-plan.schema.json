@@ -142,6 +142,28 @@
             "type": "object"
           },
           "description": "JSON Schemas for adapter-owned `extensions` at southbound block types.",
+          "propertyNames": {
+            "enum": [
+              "agent_config",
+              "harness",
+              "model",
+              "instructions",
+              "instruction",
+              "runtime",
+              "skills",
+              "mcp",
+              "mcp_server",
+              "tools",
+              "tool_definition",
+              "workflow",
+              "workflow_entrypoint",
+              "run_request",
+              "run_result",
+              "run_error",
+              "artifact",
+              "usage"
+            ]
+          },
           "type": "object"
         },
         "harness": {
@@ -619,6 +641,7 @@
         "max_turns": {
           "description": "Maximum number of agent turns allowed for one invocation.",
           "format": "uint32",
+          "maximum": 4294967295,
           "minimum": 1,
           "type": [
             "integer",
@@ -1572,6 +1595,7 @@
               "default": 3000,
               "description": "Request timeout in milliseconds.",
               "format": "uint64",
+              "maximum": 18446744073709551615,
               "minimum": 0,
               "type": "integer"
             },
@@ -1759,6 +1783,7 @@
               "default": 3000,
               "description": "Request timeout in milliseconds.",
               "format": "uint64",
+              "maximum": 18446744073709551615,
               "minimum": 0,
               "type": "integer"
             },
@@ -1977,6 +2002,7 @@
           "default": 2,
           "description": "Relay observability config version.",
           "format": "uint32",
+          "maximum": 4294967295,
           "minimum": 0,
           "type": "integer"
         }
@@ -2043,6 +2069,7 @@
           "default": 3000,
           "description": "Request timeout in milliseconds.",
           "format": "uint64",
+          "maximum": 18446744073709551615,
           "minimum": 0,
           "type": "integer"
         },

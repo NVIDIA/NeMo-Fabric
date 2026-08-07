@@ -582,7 +582,10 @@ class ToolDefinitionConfig(FabricBaseModel):
 
     kind: str = Field(min_length=1, pattern=r"\S")
     ref: str = Field(min_length=1, pattern=r"\S")
-    settings: dict[str, Any] = Field(default_factory=dict)
+    settings: dict[str, Any] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
 
     @field_validator("kind", "ref")
     @classmethod
@@ -803,6 +806,7 @@ class FabricConfig(FabricBaseModel):
                 not self.tools.definitions
                 and self.tools.enabled is None
                 and not self.tools.blocked
+                and not self.tools.model_extra
             ):
                 self.tools = None
         return self

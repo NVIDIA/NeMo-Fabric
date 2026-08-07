@@ -5,20 +5,22 @@ SPDX-License-Identifier: Apache-2.0
 
 # Execution
 
-NeMo Fabric exposes one consumer lifecycle and maps it onto an ordered
-adapter-target lifecycle. A Fabric runtime is the isolation and correlation
+NVIDIA NeMo Fabric exposes one consumer lifecycle and maps it onto an ordered
+adapter-target lifecycle. A NeMo Fabric runtime is the isolation and correlation
 boundary; it does not require a particular process, service, thread, or native
 harness-session topology.
 
 ## Lifecycle
+
+The abstract lifecycle contract contains these operations:
 
 | Operation | Requirement | Contract |
 | --- | --- | --- |
 | `start(AgentConfig, RuntimeContext)` | Required | Initialize one isolated adapter-target runtime. |
 | `invoke(AgentRunRequest, RuntimeContext)` | Required | Execute one invocation and produce one terminal outcome. |
 | `stop(runtime_id)` | Required | Attempt to release all runtime resources, including after partial or failed execution. |
-| `invoke_stream(...)` | Fabric-provided | Run ordinary `invoke` while NeMo Relay supplies correlated ATOF to the consumer. |
-| `invoke_openai_stream(...)` | Reserved optional surface | A future native pass-through may expose only a declared OpenAI-compatible event profile. Other native stream formats are outside the contract. |
+| `invoke_stream(...)` | NeMo Fabric-provided | Run ordinary `invoke` while NeMo Relay supplies correlated ATOF to the consumer. |
+| `invoke_openai_stream(...)` | Reserved optional surface | A future native pass-through can expose only a declared OpenAI-compatible event profile. Other native stream formats are outside the contract. |
 | `cancel(...)` | Reserved optional surface | Request cancellation of an active invocation when a runtime binding implements it. |
 | `update(...)` | Reserved optional surface | Atomically apply declared updateable fields when a runtime binding implements it. |
 
@@ -29,7 +31,7 @@ start independent runtimes for parallel work.
 
 Each operation produces one terminal response. An invocation-level failure
 does not necessarily invalidate the runtime. A lifecycle or transport failure
-may make it unusable, after which NeMo Fabric proceeds to cleanup rather than
+can make it unusable, after which NeMo Fabric proceeds to cleanup rather than
 replaying the request.
 
 ## Runtime Context
@@ -70,7 +72,7 @@ not invent a second stream protocol.
 
 ## Current Python Host Binding
 
-`nemo-fabric-adapters-common` is optional. Python adapters may use its
+`nemo-fabric-adapters-common` is optional. Python adapters can use its
 persistent line-oriented host instead of implementing the binding themselves:
 
 ```python
@@ -98,6 +100,12 @@ The host validates the start `config` as `AgentConfig`, serializes operations,
 normalizes lifecycle failures, reserves stdout for its protocol, and attempts
 cleanup on EOF. The adapter remains responsible for target-specific validation,
 translation, state, and shutdown.
+
+The lifecycle table describes the typed adapter contract, not the Python method
+signatures. The common Python host passes one protocol payload to `start` and
+`invoke`: `payload["config"]` contains `AgentConfig` during `start`, while the
+protocol envelope carries `RuntimeContext` and runtime identity. It calls
+`stop()` after resolving the runtime identity from that envelope.
 
 The current invoke payload contains `RuntimeContext` plus northbound
 `RunRequest`, and accepts JSON-compatible output. `AgentRunRequest` and

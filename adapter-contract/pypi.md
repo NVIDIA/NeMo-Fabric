@@ -19,6 +19,14 @@ Python adapters can use this package for Pydantic validation. Adapters in other
 languages can consume the JSON Schemas published by NeMo Fabric without a
 Python package dependency.
 
+Pydantic is the package's only runtime dependency. It provides strict typed
+validation, JSON Schema generation for adapter extensions, and field-level
+conditional serialization used by the wire models. The standard library and
+dataclasses do not provide these capabilities, while adding a separate schema
+and serialization stack would increase dependencies and duplicate validation.
+Pydantic is therefore the narrowest fit. It is MIT licensed, and no unresolved
+licensing question is known.
+
 An adapter descriptor opts into the southbound configuration with
 `config.input=agent_config`. Python adapters using the optional common
 lifecycle host pass `AgentConfig` as the `config_model`.

@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Adapter Descriptor
+# NVIDIA NeMo Fabric Adapter Descriptor
 
 `fabric-adapter.json` makes an adapter discoverable and validates its public
 surface without importing or executing adapter code. The selected descriptor
@@ -58,6 +58,8 @@ does not publish `workflow_schema`. Named tool definitions similarly fail when
 
 ## Minimal Python Descriptor
 
+The following example declares the minimum Python adapter metadata:
+
 ```json
 {
   "contract_version": "fabric.adapter/v1alpha1",
@@ -88,8 +90,8 @@ does not publish `workflow_schema`. Named tool definitions similarly fail when
 ```
 
 Do not advertise an optional capability merely because the underlying target
-supports it. Advertise only behavior implemented through the current Fabric
-runtime binding. Relay-backed ATOF streaming is Fabric-provided and does not
+supports it. Advertise only behavior implemented through the current NeMo Fabric
+runtime binding. Relay-backed ATOF streaming is NeMo Fabric-provided and does not
 require `capabilities.streaming`.
 
 See [Registration and Discovery](registration-and-discovery.md) for packaging

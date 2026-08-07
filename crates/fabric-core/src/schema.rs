@@ -324,5 +324,92 @@ mod tests {
             schema["properties"]["workflow_schema"]["type"],
             serde_json::json!(["object", "null"])
         );
+        assert_eq!(
+            schema["properties"]["extension_schemas"]["propertyNames"]["enum"],
+            serde_json::json!([
+                "agent_config",
+                "harness",
+                "model",
+                "instructions",
+                "instruction",
+                "runtime",
+                "skills",
+                "mcp",
+                "mcp_server",
+                "tools",
+                "tool_definition",
+                "workflow",
+                "workflow_entrypoint",
+                "run_request",
+                "run_result",
+                "run_error",
+                "artifact",
+                "usage"
+            ])
+        );
+    }
+
+    #[test]
+    fn adapter_contract_schemas_bound_rust_integer_types() {
+        let config = generate_schema(SchemaName::AgentConfig).expect("schema generation");
+        assert_eq!(
+            config["$defs"]["AgentRuntimeConfig"]["properties"]["max_turns"]["maximum"],
+            u32::MAX
+        );
+
+        let result = generate_schema(SchemaName::AgentRunResult).expect("schema generation");
+        for field in ["input_tokens", "output_tokens", "total_tokens"] {
+            assert_eq!(
+                result["$defs"]["AgentUsage"]["properties"][field]["maximum"],
+                u64::MAX
+            );
+        }
+    }
+
+    #[test]
+    fn agent_run_result_schema_enforces_failure_and_artifact_invariants() {
+        let schema = generate_schema(SchemaName::AgentRunResult).expect("schema generation");
+        let validator = jsonschema::validator_for(&schema).expect("valid result schema");
+
+        assert!(!validator.is_valid(&serde_json::json!({
+            "status": "failed",
+            "output": null
+        })));
+        assert!(!validator.is_valid(&serde_json::json!({
+            "status": "succeeded",
+            "output": null,
+            "error": {"code": "target_error", "message": "target failed"}
+        })));
+        for path in [
+            "nested/../output",
+            r"nested\..\output",
+            r"C:\tmp\output",
+            r"C:output",
+            r"\\server\output",
+        ] {
+            assert!(!validator.is_valid(&serde_json::json!({
+                "status": "succeeded",
+                "output": null,
+                "artifacts": [{
+                    "name": "output",
+                    "kind": "file",
+                    "path": path
+                }]
+            })));
+        }
+        assert!(!validator.is_valid(&serde_json::json!({
+            "status": "succeeded",
+            "output": null,
+            "artifacts": [{
+                "name": "output",
+                "kind": "file",
+                "path": "/tmp/output"
+            }]
+        })));
+        assert!(validator.is_valid(&serde_json::json!({
+            "status": "failed",
+            "output": null,
+            "error": {"code": "target_error", "message": "target failed"}
+        })));
     }
 }

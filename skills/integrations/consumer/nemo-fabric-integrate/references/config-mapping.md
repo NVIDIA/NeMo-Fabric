@@ -46,6 +46,9 @@ methods that edit the typed config in place and return it:
 - `add_tool_definition(name, kind=..., ref=..., settings=...)` / `remove_tool_definition(name)`
 - `block_tools(...)` for additive deny policy
 
+Use `add_tool_definition(...)` only when the selected adapter accepts
+`tools.definitions` and publishes a `tool_definition_schema`.
+
 Filtered per-server MCP configurations require adapter support for both `mcp`
 and `mcp.tool_filters`. An unfiltered server with `allowed_tools=None` and an
 empty or omitted `blocked_tools` list requires only `mcp`. `allowed_tools=None`

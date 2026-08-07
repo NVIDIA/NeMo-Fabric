@@ -15,6 +15,11 @@
             "null"
           ]
         },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Artifact-specific metadata preserved across the Rust and Python SDK boundary.",
+          "type": "object"
+        },
         "name": {
           "description": "Logical artifact name.",
           "type": "string"

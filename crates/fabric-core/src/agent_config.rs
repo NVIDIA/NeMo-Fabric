@@ -119,7 +119,7 @@ pub struct AgentInstructionsConfig {
 pub struct AgentRuntimeConfig {
     /// Maximum number of agent turns allowed for one invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(range(min = 1))]
+    #[schemars(range(min = 1, max = u32::MAX))]
     pub max_turns: Option<u32>,
     /// Adapter-owned runtime fields.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -289,13 +289,15 @@ pub(crate) fn project_agent_config(
         })
     });
 
-    let runtime = (accepts(AdapterConfigField::MaxTurns) || !config.runtime.extensions.is_empty())
-        .then(|| AgentRuntimeConfig {
-            max_turns: accepts(AdapterConfigField::MaxTurns)
-                .then_some(config.runtime.max_turns)
-                .flatten(),
+    let max_turns = accepts(AdapterConfigField::MaxTurns)
+        .then_some(config.runtime.max_turns)
+        .flatten();
+    let runtime = (max_turns.is_some() || !config.runtime.extensions.is_empty()).then(|| {
+        AgentRuntimeConfig {
+            max_turns,
             extensions: config.runtime.extensions.clone(),
-        });
+        }
+    });
 
     let skills = config.skills.as_ref().and_then(|skills| {
         (!capability_plan.native.skill_paths.is_empty() || !skills.extensions.is_empty()).then(
@@ -385,11 +387,14 @@ pub(crate) fn project_agent_config(
             extensions: workflow.extensions.clone(),
         });
 
-    AgentConfig {
-        harness: Some(AgentHarnessConfig {
+    let harness = (!config.harness.settings.is_empty() || !config.harness.extensions.is_empty())
+        .then(|| AgentHarnessConfig {
             settings: config.harness.settings.clone(),
             extensions: config.harness.extensions.clone(),
-        }),
+        });
+
+    AgentConfig {
+        harness,
         models,
         instructions,
         runtime,

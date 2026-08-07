@@ -4,11 +4,12 @@
 //! Request and result structures exchanged with an adapter target.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use thiserror::Error;
 
 /// One invocation request projected southbound to an adapter target.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -66,6 +67,8 @@ pub struct AgentArtifact {
     #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub kind: String,
     /// Path relative to the artifact root supplied in `RuntimeContext`.
+    #[serde(deserialize_with = "deserialize_agent_artifact_path")]
+    #[schemars(schema_with = "agent_artifact_path_schema")]
     pub path: PathBuf,
     /// Optional media type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,12 +85,15 @@ pub struct AgentArtifact {
 pub struct AgentUsage {
     /// Input tokens consumed by the invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(max = u64::MAX))]
     pub input_tokens: Option<u64>,
     /// Output tokens produced by the invocation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(max = u64::MAX))]
     pub output_tokens: Option<u64>,
     /// Total tokens reported by the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(range(max = u64::MAX))]
     pub total_tokens: Option<u64>,
     /// Invocation cost in US dollars when reported by the provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -101,6 +107,7 @@ pub struct AgentUsage {
 /// Terminal result returned by an adapter target.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(transform = agent_run_result_schema)]
 pub struct AgentRunResult {
     /// Adapter-target completion status.
     pub status: AgentRunStatus,
@@ -120,17 +127,109 @@ pub struct AgentRunResult {
     pub extensions: BTreeMap<String, Value>,
 }
 
+/// Invalid relationship or value within an adapter result.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum AgentRunResultValidationError {
+    /// A failed result omitted its required error.
+    #[error("failed result requires an error")]
+    FailedWithoutError,
+    /// A successful result included an error.
+    #[error("succeeded result must not include an error")]
+    SucceededWithError,
+    /// An artifact path was empty, absolute, or contained parent traversal.
+    #[error("artifact path must be non-empty, relative, and contain no parent traversal: {0}")]
+    InvalidArtifactPath(PathBuf),
+}
+
 impl AgentRunResult {
-    /// Validate the relationship between terminal status and adapter error.
-    pub fn validate(&self) -> std::result::Result<(), &'static str> {
+    /// Validate terminal status, error, and artifact invariants.
+    pub fn validate(&self) -> std::result::Result<(), AgentRunResultValidationError> {
         match (self.status, self.error.as_ref()) {
-            (AgentRunStatus::Failed, None) => Err("failed result requires an error"),
-            (AgentRunStatus::Succeeded, Some(_)) => {
-                Err("succeeded result must not include an error")
+            (AgentRunStatus::Failed, None) => {
+                return Err(AgentRunResultValidationError::FailedWithoutError);
             }
-            _ => Ok(()),
+            (AgentRunStatus::Succeeded, Some(_)) => {
+                return Err(AgentRunResultValidationError::SucceededWithError);
+            }
+            _ => {}
         }
+        if let Some(artifact) = self
+            .artifacts
+            .iter()
+            .find(|artifact| !is_valid_agent_artifact_path(&artifact.path))
+        {
+            return Err(AgentRunResultValidationError::InvalidArtifactPath(
+                artifact.path.clone(),
+            ));
+        }
+        Ok(())
     }
+}
+
+fn is_valid_agent_artifact_path(path: &Path) -> bool {
+    let raw = path.to_string_lossy();
+    !raw.is_empty()
+        && !path.is_absolute()
+        && !raw.starts_with(['/', '\\'])
+        && !raw
+            .as_bytes()
+            .get(0..2)
+            .is_some_and(|prefix| prefix[0].is_ascii_alphabetic() && prefix[1] == b':')
+        && !raw.split(['/', '\\']).any(|component| component == "..")
+        && !path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+}
+
+fn deserialize_agent_artifact_path<'de, D>(deserializer: D) -> Result<PathBuf, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let path = PathBuf::deserialize(deserializer)?;
+    if !is_valid_agent_artifact_path(&path) {
+        return Err(serde::de::Error::custom(
+            "artifact path must be non-empty, relative, and contain no parent traversal",
+        ));
+    }
+    Ok(path)
+}
+
+fn agent_artifact_path_schema(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema = String::json_schema(generator);
+    schema.insert("minLength".into(), 1.into());
+    schema.insert(
+        "pattern".into(),
+        r"^(?![\\/])(?![A-Za-z]:)(?!.*(?:^|[\\/])\.\.(?:[\\/]|$)).+$".into(),
+    );
+    schema
+}
+
+fn agent_run_result_schema(schema: &mut Schema) {
+    schema.insert(
+        "allOf".into(),
+        serde_json::json!([
+            {
+                "if": {
+                    "properties": {"status": {"const": "failed"}},
+                    "required": ["status"]
+                },
+                "then": {
+                    "properties": {"error": {"$ref": "#/$defs/AgentRunError"}},
+                    "required": ["error"]
+                }
+            },
+            {
+                "if": {
+                    "properties": {"status": {"const": "succeeded"}},
+                    "required": ["status"]
+                },
+                "then": {"not": {"required": ["error"]}}
+            }
+        ]),
+    );
 }
 
 #[cfg(test)]
@@ -149,17 +248,91 @@ mod tests {
         };
         assert_eq!(
             failed_without_error.validate(),
-            Err("failed result requires an error")
+            Err(AgentRunResultValidationError::FailedWithoutError)
         );
 
-        let succeeded = AgentRunResult {
+        let error = AgentRunError {
+            code: "target_error".to_string(),
+            message: "target failed".to_string(),
+            retryable: false,
+            extensions: BTreeMap::new(),
+        };
+        let succeeded_with_error = AgentRunResult {
             status: AgentRunStatus::Succeeded,
             output: Value::Null,
-            error: None,
+            error: Some(error.clone()),
             usage: None,
             artifacts: Vec::new(),
             extensions: BTreeMap::new(),
         };
-        assert_eq!(succeeded.validate(), Ok(()));
+        assert_eq!(
+            succeeded_with_error.validate(),
+            Err(AgentRunResultValidationError::SucceededWithError)
+        );
+
+        for (status, error) in [
+            (AgentRunStatus::Succeeded, None),
+            (AgentRunStatus::Failed, Some(error.clone())),
+            (AgentRunStatus::Cancelled, None),
+            (AgentRunStatus::Cancelled, Some(error)),
+        ] {
+            let result = AgentRunResult {
+                status,
+                output: Value::Null,
+                error,
+                usage: None,
+                artifacts: Vec::new(),
+                extensions: BTreeMap::new(),
+            };
+            assert_eq!(result.validate(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_artifact_paths_during_deserialization() {
+        for path in [
+            "",
+            "/tmp/output",
+            "../output",
+            "nested/../output",
+            r"C:\tmp\output",
+            r"C:output",
+            r"\\server\output",
+            r"nested\..\output",
+        ] {
+            let error = serde_json::from_value::<AgentArtifact>(serde_json::json!({
+                "name": "output",
+                "kind": "file",
+                "path": path
+            }))
+            .expect_err("unsafe artifact path must fail");
+
+            assert!(error.to_string().contains("artifact path must be"));
+        }
+    }
+
+    #[test]
+    fn validates_programmatically_constructed_artifact_paths() {
+        let result = AgentRunResult {
+            status: AgentRunStatus::Succeeded,
+            output: Value::Null,
+            error: None,
+            usage: None,
+            artifacts: vec![AgentArtifact {
+                name: "output".to_string(),
+                kind: "file".to_string(),
+                path: PathBuf::from("../output"),
+                media_type: None,
+                extensions: BTreeMap::new(),
+            }],
+            extensions: BTreeMap::new(),
+        };
+
+        assert_eq!(
+            result.validate(),
+            Err(AgentRunResultValidationError::InvalidArtifactPath(
+                PathBuf::from("../output")
+            ))
+        );
     }
 }

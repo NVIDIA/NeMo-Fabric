@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Conformance
+# NVIDIA NeMo Fabric Adapter Conformance
 
 The automated adapter conformance suite is planned for a follow-up release.
 Until then, use this checklist to state the exact contract surface an adapter
@@ -11,6 +11,8 @@ implements. Passing the required profile does not imply that NVIDIA has
 reviewed, trusted, or verified the adapter.
 
 ## Required Profile
+
+The required profile covers the minimum adapter contract:
 
 - The package installs one self-contained `fabric-adapter.json` descriptor.
 - `contract_version` matches the installed NeMo Fabric adapter contract.
@@ -43,6 +45,8 @@ Test each descriptor claim separately:
 | Cancellation, updates, or native streaming | Do not claim until the installed Fabric runtime exposes and tests the corresponding adapter operation. |
 
 ## Minimum Test Matrix
+
+Run this minimum test matrix before publishing an adapter:
 
 1. Descriptor discovery from an installed wheel.
 2. Descriptor discovery from `<base_dir>/adapters` for development.

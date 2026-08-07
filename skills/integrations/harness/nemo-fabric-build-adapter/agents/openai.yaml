@@ -2,6 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 interface:
-  display_name: "NeMo Fabric Adapter Builder"
-  short_description: "Build typed third-party Fabric adapters"
-  default_prompt: "Use $nemo-fabric-build-adapter to build a typed NeMo Fabric adapter for my agent harness."
+  display_name: "NVIDIA NeMo Fabric Adapter Builder"
+  short_description: "Build typed third-party NeMo Fabric adapters"
+  default_prompt: "Use $nemo-fabric-build-adapter to build a typed NVIDIA NeMo Fabric adapter for my agent harness."

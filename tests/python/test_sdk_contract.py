@@ -278,6 +278,23 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         TelemetryConfig(providers={"sideways": {}})
 
 
+def test_remove_last_tool_definition_preserves_tools_extensions():
+    config = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        tools=ToolsConfig(
+            definitions={
+                "web": ToolDefinitionConfig(kind="function_group", ref="web_tools")
+            },
+            profile="strict",
+        ),
+    )
+
+    config.remove_tool_definition("web")
+
+    assert config.to_mapping()["tools"] == {"blocked": [], "profile": "strict"}
+
+
 def test_mcp_server_tool_policy_preserves_empty_allowlist():
     server = McpServerConfig(
         transport="streamable-http",
@@ -490,6 +507,12 @@ def test_run_plan_tools_config_rejects_scalar_blocked_value():
         _ToolsConfig(blocked="browser")  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("definitions", [[], [{"kind": "function", "ref": "web"}]])
+def test_run_plan_tools_config_rejects_non_mapping_definitions(definitions: object):
+    with pytest.raises(FabricConfigError, match="tool definitions must be a JSON object"):
+        _ToolsConfig(definitions=definitions)  # type: ignore[arg-type]
+
+
 def test_run_plan_tools_config_preserves_named_definitions():
     config = _ToolsConfig().add_definition(
         "web",
@@ -507,6 +530,34 @@ def test_run_plan_tools_config_preserves_named_definitions():
             }
         }
     }
+
+
+def test_typed_tool_definition_omits_empty_settings():
+    definition = ToolDefinitionConfig(kind="function_group", ref="web_tools")
+
+    assert definition.model_dump() == {
+        "kind": "function_group",
+        "ref": "web_tools",
+    }
+
+
+def test_run_plan_snapshot_removes_named_definition():
+    config = _FabricConfigSnapshot.from_mapping(
+        {
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "demo"},
+            "harness": {"adapter_id": "test.fabric.shim"},
+            "tools": {
+                "definitions": {
+                    "web": {"kind": "function_group", "ref": "web_tools"}
+                }
+            },
+        }
+    )
+
+    config.remove_tool_definition("web")
+
+    assert "definitions" not in config.to_mapping()["tools"]
 
 
 def test_fabric_config_authors_first_class_relay_observability():

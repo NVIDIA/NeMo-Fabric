@@ -276,6 +276,28 @@
         "type": "object"
       },
       "description": "JSON Schemas for adapter-owned `extensions` at southbound block types.",
+      "propertyNames": {
+        "enum": [
+          "agent_config",
+          "harness",
+          "model",
+          "instructions",
+          "instruction",
+          "runtime",
+          "skills",
+          "mcp",
+          "mcp_server",
+          "tools",
+          "tool_definition",
+          "workflow",
+          "workflow_entrypoint",
+          "run_request",
+          "run_result",
+          "run_error",
+          "artifact",
+          "usage"
+        ]
+      },
       "type": "object"
     },
     "harness": {

@@ -49,7 +49,7 @@ own contributors.
   Claude Code discovers `SKILL.md` files under those directories.
 - **OpenAI Codex:** place it at
   `<your-project>/.agents/skills/<skill-name>/` in your project, or
-  `$CODEX_HOME/skills/<skill-name>/` to use it across projects.
+  `~/.agents/skills/<skill-name>/` to use it across projects.
 - **Other agents:** each skill is a portable `SKILL.md` bundle — put it wherever
   your agent loads skills, or reference its `SKILL.md` directly from your agent
   instructions. Confirm discovery with a prompt that should trigger the skill.
@@ -60,7 +60,7 @@ Consumer integration skills live under `integrations/consumer/`. The following
 skill helps software on the consumer side call NeMo Fabric through its public
 SDK:
 
-| Skill | Use it when |
+| Skill | Use It When |
 |---|---|
 | [`nemo-fabric-integrate`](integrations/consumer/nemo-fabric-integrate/SKILL.md) | You are adding NeMo Fabric to a consumer application, service, evaluation harness, or platform through the typed Python SDK — building an in-memory `FabricConfig`, choosing the single-invocation convenience API or an explicitly started runtime, validating with `plan`/`doctor`, and consuming normalized results. |
 
@@ -68,7 +68,7 @@ SDK:
 
 Harness integration skills live under `integrations/harness/`:
 
-| Skill | Use it when |
+| Skill | Use It When |
 |---|---|
 | [`nemo-fabric-build-adapter`](integrations/harness/nemo-fabric-build-adapter/SKILL.md) | You are creating, migrating, reviewing, or maintaining a third-party adapter package, descriptor, normalized configuration mapping, lifecycle implementation, custom-agent loader, or conformance report. |
 

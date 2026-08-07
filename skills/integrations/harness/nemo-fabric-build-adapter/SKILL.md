@@ -1,9 +1,9 @@
 ---
 name: nemo-fabric-build-adapter
-description: Build, migrate, review, and maintain third-party NeMo Fabric adapters against the public adapter contract. Use when creating an adapter package or fabric-adapter.json descriptor, mapping AgentConfig into an agent harness or custom-agent runtime, implementing start/invoke/stop, declaring schemas and capabilities, packaging adapter discovery metadata, or assessing adapter conformance. Do not use for consumer applications that only call the NeMo Fabric SDK.
+description: Build, migrate, review, and maintain third-party NVIDIA NeMo Fabric adapters against the public adapter contract. Use when creating an adapter package or fabric-adapter.json descriptor, mapping AgentConfig into an agent harness or custom-agent runtime, implementing start/invoke/stop, declaring schemas and capabilities, packaging adapter discovery metadata, or assessing adapter conformance. Do not use for consumer applications that only call the NVIDIA NeMo Fabric SDK.
 ---
 
-# Build a NeMo Fabric Adapter
+# Build an NVIDIA NeMo Fabric Adapter
 
 Build against the published southbound contract. Keep the adapter thin: let
 NeMo Fabric own planning and consumer-facing behavior, and let the adapter own
@@ -26,6 +26,8 @@ Do not reconstruct a schema from examples or copy field lists into adapter
 code.
 
 ## Establish the Boundary
+
+Establish the adapter boundary before defining its descriptor:
 
 1. Identify the adapter target and its stable harness ID.
 2. Reuse one adapter across agents built for the same target. Do not create an
@@ -52,7 +54,7 @@ translation:
 - Publish closed `settings_schema`, `workflow_schema`,
   `tool_definition_schema`, and `extension_schemas` where applicable.
 - Declare runtime requirements and telemetry outputs without secret values.
-- Leave optional capability flags false unless the installed Fabric runtime
+- Leave optional capability flags false unless the installed NeMo Fabric runtime
   exposes and tests that adapter operation. Relay-backed ATOF streaming does
   not require adapter-native streaming.
 
@@ -98,7 +100,7 @@ hatch.
 ## Implement the Lifecycle
 
 Implement exactly one `start`, zero or more ordered `invoke` operations, and
-one `stop` for each Fabric runtime.
+one `stop` for each NeMo Fabric runtime.
 
 - Construct and retain target state in `start`.
 - Translate one request and one terminal outcome in `invoke`.
@@ -140,7 +142,7 @@ the local-host transport.
 Use `workflow.entrypoint.kind` for resolution semantics and `ref` for the
 factory identity. Bound supported combinations with `workflow_schema`.
 
-- Map Fabric-defined `factory` intents to target-native factories.
+- Map NeMo Fabric-defined `factory` intents to target-native factories.
 - Resolve `python_entrypoint` only from the fixed `nemo_fabric.agents` group.
 - Resolve `python_module` only as an importable module with `create_agent`.
 - Never load a filesystem path from `ref`.
@@ -149,6 +151,8 @@ factory identity. Bound supported combinations with `workflow_schema`.
   or `AgentConfig`.
 
 ## Validate Before Handoff
+
+Complete these checks before handing off an adapter:
 
 1. Install the built wheel in an isolated adapter environment.
 2. Confirm discovery from `share/nemo-fabric/adapters` and inspect the resolved

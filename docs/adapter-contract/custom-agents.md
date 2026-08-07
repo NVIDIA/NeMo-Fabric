@@ -5,6 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Custom Agents
 
+NVIDIA NeMo Fabric distinguishes reusable agent harnesses from custom agents.
 An agent harness is an opinionated, reusable execution layer that supplies
 agent behavior and integration points such as models, tools, MCP, skills,
 state, or delegation. Customizing a harness means selecting and configuring
@@ -14,7 +15,7 @@ A custom agent is application-defined executable behavior built with a
 lower-level framework or target runtime. Its execution model cannot be known
 statically by NeMo Fabric. The shared adapter therefore resolves configuration,
 loads the selected entry point, constructs a target-native agent, and retains
-that agent for the Fabric runtime.
+that agent for the NeMo Fabric runtime.
 
 One adapter can support many custom agents built for the same adapter target.
 Agent-specific `workflow.settings` still belongs to each `AgentConfig`, and the
@@ -43,7 +44,7 @@ implements only the kinds allowed by its descriptor.
 
 | `kind` | Meaning of `ref` | Resolution |
 | --- | --- | --- |
-| `factory` | Fabric-defined agent intent, such as `fabric.agent.react` | The adapter maps the intent to a target-native factory. |
+| `factory` | NeMo Fabric-defined agent intent, such as `fabric.agent.react` | The adapter maps the intent to a target-native factory. |
 | `python_entrypoint` | Name in the `nemo_fabric.agents` Python entry-point group | The adapter resolves an installed entry point with `importlib.metadata`. |
 | `python_module` | Importable dotted module name | The adapter imports the module and loads its `create_agent` factory. |
 
@@ -52,6 +53,8 @@ task environment during `start`, not in the planning process.
 
 ### Fabric Factory Intent
 
+Use a NeMo Fabric-defined factory intent for portable agent behavior:
+
 ```yaml
 workflow:
   entrypoint:
@@ -59,16 +62,20 @@ workflow:
     ref: fabric.agent.react
 ```
 
-Fabric owns the intent name and its portable semantics. Each adapter maps a
+NeMo Fabric owns the intent name and its portable semantics. Each adapter maps a
 supported intent to its target-native implementation. The NAT reference
 adapter currently demonstrates this mode for `fabric.agent.react`.
 
 ### Installed Python Entry Point
 
+Register a custom agent factory in the fixed Python entry-point group:
+
 ```toml
 [project.entry-points."nemo_fabric.agents"]
 "acme.agent.phishing" = "acme_agents.phishing:create_agent"
 ```
+
+Select the registered factory by name:
 
 ```yaml
 workflow:
@@ -82,11 +89,15 @@ error.
 
 ### Installed Python Module
 
+An importable Python module exposes a `create_agent` factory:
+
 ```python
 # acme_agents/phishing.py
 def create_agent(context):
     ...
 ```
+
+Select that module with the matching workflow entry point:
 
 ```yaml
 workflow:
@@ -98,11 +109,11 @@ workflow:
 ## Shared Adapter Responsibilities
 
 All resolution paths yield the adapter's internal factory abstraction. The
-shared adapter:
+shared adapter performs the following steps:
 
 1. Resolves normalized models, instructions, tools, MCP, skills, workflow
    settings, and runtime context into target-native values.
-2. Resolves and calls the selected factory exactly once per Fabric runtime.
+2. Resolves and calls the selected factory exactly once per NeMo Fabric runtime.
 3. Supplies an adapter-defined build context rather than raw `FabricConfig`.
 4. Retains the returned target-native agent for later invocations.
 5. Translates requests and results and owns shutdown.
@@ -112,7 +123,7 @@ The custom agent factory assembles agent-specific behavior. It should not parse
 adapter reusable across custom agents and keeps consumer config independent of
 the target framework.
 
-`workflow.settings` may be an explicitly open compatibility object for an
+`workflow.settings` can be an explicitly open compatibility object for an
 existing target, but such a mode cannot promise harness variation. Prefer a
 closed schema or bounded bindings that let the shared adapter map normalized
 models, tools, and MCP independently of the agent-specific settings.

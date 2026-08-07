@@ -32,6 +32,8 @@
         },
         "path": {
           "description": "Path relative to the artifact root supplied in `RuntimeContext`.",
+          "minLength": 1,
+          "pattern": "^(?![\\\\/])(?![A-Za-z]:)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$",
           "type": "string"
         }
       },
@@ -116,6 +118,7 @@
         "input_tokens": {
           "description": "Input tokens consumed by the invocation.",
           "format": "uint64",
+          "maximum": 18446744073709551615,
           "minimum": 0,
           "type": [
             "integer",
@@ -125,6 +128,7 @@
         "output_tokens": {
           "description": "Output tokens produced by the invocation.",
           "format": "uint64",
+          "maximum": 18446744073709551615,
           "minimum": 0,
           "type": [
             "integer",
@@ -134,6 +138,7 @@
         "total_tokens": {
           "description": "Total tokens reported by the provider.",
           "format": "uint64",
+          "maximum": 18446744073709551615,
           "minimum": 0,
           "type": [
             "integer",
@@ -146,6 +151,49 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "$ref": "#/$defs/AgentRunError"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "error"
+          ]
+        }
+      }
+    }
+  ],
   "description": "Terminal result returned by an adapter target.",
   "properties": {
     "artifacts": {

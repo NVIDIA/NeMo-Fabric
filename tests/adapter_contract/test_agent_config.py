@@ -30,6 +30,9 @@ from pydantic import ConfigDict
 from pydantic import ValidationError
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
 class _TypedExtensions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -110,7 +113,7 @@ def test_extension_schema_uses_typed_pydantic_model():
 
 def test_agent_config_model_tracks_rust_schema_root_fields():
     rust_schema = json.loads(
-        Path("schemas/adapter-contract/agent-config.schema.json").read_text(
+        (ROOT / "schemas/adapter-contract/agent-config.schema.json").read_text(
             encoding="utf-8"
         )
     )

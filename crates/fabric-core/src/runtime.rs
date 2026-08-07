@@ -203,6 +203,9 @@ pub struct ArtifactRef {
     /// Optional media type.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
+    /// Artifact-specific metadata preserved across the Rust and Python SDK boundary.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub metadata: BTreeMap<String, Value>,
 }
 
 /// Reference to telemetry emitted by Relay or another configured telemetry path.
@@ -556,9 +559,9 @@ pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
     validate_config(&plan.config)?;
     validate_harness_settings(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_workflow(&plan.config, plan.adapter_descriptor.as_ref())?;
+    validate_adapter_compatibility(plan)?;
     validate_tool_definitions(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_agent_config_extensions(&plan.config, plan.adapter_descriptor.as_ref())?;
-    validate_adapter_compatibility(plan)?;
     let environment = prepare_environment(plan)?;
     if uses_local_host(plan) {
         return LocalHostAdapter.start(plan, environment);
@@ -2031,6 +2034,7 @@ fn promote_relay_artifacts_to_manifest(output: &Value, manifest: &mut ArtifactMa
             kind: kind.to_string(),
             path,
             media_type: relay_artifact_media_type(kind).map(str::to_string),
+            metadata: BTreeMap::new(),
         });
     }
 }
@@ -2163,6 +2167,7 @@ fn write_artifact(
         kind: kind.to_string(),
         path,
         media_type: Some(media_type.to_string()),
+        metadata: BTreeMap::new(),
     });
     Ok(())
 }

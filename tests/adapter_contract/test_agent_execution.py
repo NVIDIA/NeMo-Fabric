@@ -19,6 +19,9 @@ from nemo_fabric_adapter_contract.models import RuntimeContext
 from pydantic import ValidationError
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
 def test_agent_run_request_contains_only_southbound_request_fields():
     request = AgentRunRequest(
         input={"messages": [{"role": "user", "content": "hello"}]},
@@ -84,21 +87,42 @@ def test_agent_run_result_contains_only_adapter_owned_result_fields():
     }
 
 
-def test_agent_execution_models_track_rust_schema_root_fields():
-    for model, filename in (
+@pytest.mark.parametrize(
+    ("model", "filename"),
+    [
         (AgentRunRequest, "agent-run-request.schema.json"),
         (AgentRunResult, "agent-run-result.schema.json"),
         (RuntimeContext, "runtime-context.schema.json"),
-    ):
-        rust_schema = json.loads(
-            Path("schemas", "adapter-contract", filename).read_text(encoding="utf-8")
-        )
-        pydantic_schema = model.model_json_schema()
+    ],
+)
+def test_agent_execution_models_track_rust_schema_root_fields(model, filename):
+    rust_schema = json.loads(
+        (ROOT / "schemas" / "adapter-contract" / filename).read_text(encoding="utf-8")
+    )
+    pydantic_schema = model.model_json_schema()
 
-        assert rust_schema["additionalProperties"] is False
-        assert set(pydantic_schema["properties"]) == set(rust_schema["properties"])
+    assert rust_schema["additionalProperties"] is False
+    assert set(pydantic_schema["properties"]) == set(rust_schema["properties"])
 
 
 def test_failed_agent_run_result_requires_error():
     with pytest.raises(ValidationError, match="failed result requires an error"):
         AgentRunResult(status=AgentRunStatus.FAILED, output=None)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "",
+        "/tmp/output",
+        "../output",
+        "nested/../output",
+        r"C:\tmp\output",
+        r"C:output",
+        r"\\server\output",
+        r"nested\..\output",
+    ],
+)
+def test_agent_artifact_rejects_unsafe_paths(path: str):
+    with pytest.raises(ValidationError, match="artifact path must be"):
+        AgentArtifact(name="output", kind="file", path=path)

@@ -3,21 +3,21 @@ SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# NeMo Fabric Adapter Contract
+# NVIDIA NeMo Fabric Adapter Contract
 
 The adapter contract is the versioned boundary between NeMo Fabric and an
-adapter target. An adapter target may be an opinionated agent harness, a
+adapter target. An adapter target can be an opinionated agent harness, a
 lower-level framework that runs custom agents, or a remote service.
 
 Consumers author northbound `FabricConfig`, `RunRequest`, and `RunResult`
 objects. NeMo Fabric resolves those objects and projects the adapter-owned
 parts into the southbound contract:
 
-| Northbound consumer type | Southbound adapter type | Purpose |
+| Northbound Consumer Type | Southbound Adapter Type | Purpose |
 | --- | --- | --- |
 | `FabricConfig` | `AgentConfig` | Resolved configuration the selected adapter can apply. |
 | `RunRequest` | `AgentRunRequest` | One adapter-target invocation. |
-| `RunResult` | `AgentRunResult` | Terminal adapter-target outcome before Fabric adds its own context. |
+| `RunResult` | `AgentRunResult` | Terminal adapter-target outcome before NeMo Fabric adds its own context. |
 
 NeMo Fabric owns planning, environment preparation, adapter selection,
 correlation, and consumer-facing results. The adapter owns translation into
@@ -67,6 +67,8 @@ start payload and pass typed invocation inputs directly, so adapters no longer
 need to parse the generic invocation payload.
 
 ## Continue Reading
+
+Use these pages for the detailed contract:
 
 - [Adapter Descriptor](adapter-descriptor.md)
 - [Normalized Configuration](normalized-configuration.md)

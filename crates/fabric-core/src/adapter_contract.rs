@@ -54,6 +54,27 @@ pub enum AdapterExtensionPoint {
 }
 
 impl AdapterExtensionPoint {
+    pub(crate) const ALL: [Self; 18] = [
+        Self::AgentConfig,
+        Self::Harness,
+        Self::Model,
+        Self::Instructions,
+        Self::Instruction,
+        Self::Runtime,
+        Self::Skills,
+        Self::Mcp,
+        Self::McpServer,
+        Self::Tools,
+        Self::ToolDefinition,
+        Self::Workflow,
+        Self::WorkflowEntrypoint,
+        Self::RunRequest,
+        Self::RunResult,
+        Self::RunError,
+        Self::Artifact,
+        Self::Usage,
+    ];
+
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::AgentConfig => "agent_config",

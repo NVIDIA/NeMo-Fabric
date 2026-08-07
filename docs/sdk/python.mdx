@@ -255,7 +255,9 @@ unfiltered MCP servers only. Per-server MCP policy is distinct from the root
 
 `tools.definitions` names tools and tool groups that the adapter constructs.
 Each definition has a portable `kind`, an adapter-resolved `ref`, and settings
-validated by the adapter descriptor. Use `add_tool_definition(...)` to add one.
+validated by the adapter descriptor. Use `add_tool_definition(...)` only when
+the selected adapter accepts `tools.definitions` and publishes a
+`tool_definition_schema`.
 
 `tools.enabled` and `tools.blocked` select across the effective named tool
 surface. Configure an allowlist, a blocklist, or both:

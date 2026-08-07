@@ -564,7 +564,7 @@ class _ToolDefinitionConfig(_ConfigMapping):
         )
 
     @classmethod
-    def from_mapping(cls, value: Mapping[str, Any]) -> "_ToolDefinitionConfig":
+    def from_mapping(cls, value: Mapping[str, Any]) -> _ToolDefinitionConfig:
         """Validate a tool definition and preserve extension fields."""
 
         data = _mapping(value, "tool definition")
@@ -609,13 +609,17 @@ class _ToolsConfig(_ConfigMapping):
         if overlap:
             name = sorted(overlap)[0]
             raise FabricConfigError(f"tool {name!r} cannot be both enabled and blocked")
+        raw_definitions = _mapping(
+            {} if definitions is None else definitions,
+            "tool definitions",
+        )
         definition_values = {
             _required_text(name, "tool definition name"): _coerce(
                 _ToolDefinitionConfig,
                 definition,
                 f"tool definition {name}",
             )
-            for name, definition in (definitions or {}).items()
+            for name, definition in raw_definitions.items()
         }
         values: dict[str, Any] = {
             "definitions": definition_values,
@@ -656,7 +660,7 @@ class _ToolsConfig(_ConfigMapping):
         ref: str,
         settings: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
-    ) -> "_ToolsConfig":
+    ) -> _ToolsConfig:
         """Add or replace one named definition."""
 
         definitions = dict(self.get("definitions", {}))
@@ -671,7 +675,7 @@ class _ToolsConfig(_ConfigMapping):
         self["definitions"] = definitions
         return self
 
-    def remove_definition(self, name: str) -> "_ToolsConfig":
+    def remove_definition(self, name: str) -> _ToolsConfig:
         """Remove one named definition."""
 
         definitions = dict(self.get("definitions", {}))
@@ -1051,7 +1055,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
         extra_fields: Mapping[str, Any] | None = None,
-    ) -> "_FabricConfigSnapshot":
+    ) -> _FabricConfigSnapshot:
         """Add or replace a named MCP server and return this config."""
 
         self.mcp.add_server(
@@ -1085,7 +1089,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         ref: str,
         settings: Mapping[str, Any] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
-    ) -> "_FabricConfigSnapshot":
+    ) -> _FabricConfigSnapshot:
         """Add or replace one named tool definition and return this config."""
 
         self.tools.add_definition(
@@ -1095,6 +1099,12 @@ class _FabricConfigSnapshot(_ConfigMapping):
             settings=settings,
             extra_fields=extra_fields,
         )
+        return self
+
+    def remove_tool_definition(self, name: str) -> _FabricConfigSnapshot:
+        """Remove one named tool definition and return this config."""
+
+        self.tools.remove_definition(name)
         return self
 
     def enable_relay(

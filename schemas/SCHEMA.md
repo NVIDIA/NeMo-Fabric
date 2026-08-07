@@ -35,6 +35,12 @@ An adapter author can treat `adapter-contract/` as the complete schema entry
 point. The `legacy/` subdirectory contains only the transitional local-host
 payload used while first-party adapters migrate to the typed execution types.
 
+`FabricConfig` is the northbound source of consumer intent. Planning produces
+the `CapabilityPlan` as routed evidence and projects the fields accepted by the
+selected descriptor into `AgentConfig`, the authoritative southbound adapter
+input. The generated schemas and projection tests must change together so
+these related representations do not drift.
+
 ## Adapter Contract
 
 - `adapter-contract/adapter-descriptor`: adapter identity, runner,
@@ -51,6 +57,12 @@ payload used while first-party adapters migrate to the typed execution types.
   telemetry, and lifecycle data.
 - `adapter-contract/runtime-context`: Fabric-generated runtime, invocation,
   environment, artifact, and telemetry context passed southbound.
+
+Tool definitions fail closed. An adapter must both accept
+`tools.definitions` and publish `tool_definition_schema`; planning rejects the
+configuration otherwise. The base normalized fields and adapter-owned
+extensions are validated separately against the generated contract and the
+descriptor schema.
 
 ### Legacy Adapter Transport
 

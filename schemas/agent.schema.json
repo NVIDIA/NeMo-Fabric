@@ -415,6 +415,7 @@
               "default": 3000,
               "description": "Request timeout in milliseconds.",
               "format": "uint64",
+              "maximum": 18446744073709551615,
               "minimum": 0,
               "type": "integer"
             },
@@ -602,6 +603,7 @@
               "default": 3000,
               "description": "Request timeout in milliseconds.",
               "format": "uint64",
+              "maximum": 18446744073709551615,
               "minimum": 0,
               "type": "integer"
             },
@@ -820,6 +822,7 @@
           "default": 2,
           "description": "Relay observability config version.",
           "format": "uint32",
+          "maximum": 4294967295,
           "minimum": 0,
           "type": "integer"
         }
@@ -886,6 +889,7 @@
           "default": 3000,
           "description": "Request timeout in milliseconds.",
           "format": "uint64",
+          "maximum": 18446744073709551615,
           "minimum": 0,
           "type": "integer"
         },

@@ -481,6 +481,7 @@ def _remove_noisy_sections(content: Tag) -> None:
         "rustdoc-toolbar",
         ".src",
         "button",
+        ".item-decl summary.hideme",
         ".item-info",
         "#notable-traits-data",
     ]:
