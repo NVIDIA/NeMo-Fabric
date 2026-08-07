@@ -15,7 +15,6 @@ import asyncio
 import copy
 import logging
 import os
-import shlex
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -322,25 +321,11 @@ def nat_mcp_server_config(name: str, server: Any) -> dict[str, Any]:
         )
 
     if transport == "stdio":
-        try:
-            command = shlex.split(target)
-        except ValueError as error:
-            raise _config_error(
-                "nat_invalid_mcp_server",
-                f"NAT MCP server {name!r} has an invalid stdio command",
-                server=name,
-            ) from error
-        if not command:
-            raise _config_error(
-                "nat_invalid_mcp_server",
-                f"NAT MCP server {name!r} has an empty stdio command",
-                server=name,
-            )
         result: dict[str, Any] = {
             "transport": "stdio",
-            "command": command[0],
+            "command": target,
         }
-        args = [*command[1:], *common_utils.normalize_list(server.get("args"))]
+        args = common_utils.normalize_list(server.get("args"))
         if args:
             result["args"] = args
         if env := server.get("env"):
