@@ -13,59 +13,74 @@ models are hand-maintained against these Rust-generated schemas for now. When a
 schema-backed Rust type changes, update the matching Pydantic model and its
 schema-alignment tests in the same change.
 
-## Exported Schemas
+## Directory Layout
 
-The core schema generator exports the current public typed contract.
+The core schema generator separates the southbound adapter contract from
+consumer and Fabric-runtime schemas:
+
+```text
+schemas/
+├── adapter-contract/          # Public adapter-facing contract
+│   ├── adapter-descriptor.schema.json
+│   ├── agent-config.schema.json
+│   ├── agent-run-request.schema.json
+│   ├── agent-run-result.schema.json
+│   ├── runtime-context.schema.json
+│   └── legacy/
+│       └── adapter-invocation.schema.json
+└── *.schema.json              # Northbound and Fabric-runtime contracts
+```
+
+An adapter author can treat `adapter-contract/` as the complete schema entry
+point. The `legacy/` subdirectory contains only the transitional local-host
+payload used while first-party adapters migrate to the typed execution types.
+
+## Adapter Contract
+
+- `adapter-contract/adapter-descriptor`: adapter identity, runner,
+  requirements, accepted normalized fields, schemas, telemetry support, and
+  runtime capability claims.
+- `adapter-contract/agent-config`: typed configuration projected southbound to
+  one adapter target. Adapter-owned additions are carried only through explicit
+  `extensions` blocks and validated against schemas declared by the selected
+  descriptor.
+- `adapter-contract/agent-run-request`: invocation input and caller context
+  projected southbound after Fabric resolves consumer-owned request fields.
+- `adapter-contract/agent-run-result`: terminal status, output, errors, usage,
+  and artifact references returned before Fabric adds northbound identity,
+  telemetry, and lifecycle data.
+- `adapter-contract/runtime-context`: Fabric-generated runtime, invocation,
+  environment, artifact, and telemetry context passed southbound.
+
+### Legacy Adapter Transport
+
+- `adapter-contract/legacy/adapter-invocation`: current per-turn payload sent to
+  an initialized persistent local adapter host. It contains `runtime_context`
+  and the northbound `run-request`. It will be removed after adapters consume
+  the typed southbound request directly.
+
+## Fabric Consumer and Runtime Contracts
 
 ### Config and Planning
 
-- `agent`: complete typed `FabricConfig`.
-- `agent-config`: typed configuration projected southbound to one adapter
-  target. Adapter-owned additions are carried only through explicit
-  `extensions` blocks and validated against schemas declared by the selected
-  adapter descriptor.
-- `agent-run-request`: invocation input and caller context projected southbound
-  after Fabric resolves consumer-owned request fields.
-- `agent-run-result`: terminal status, output, errors, and artifact references
-  returned by an adapter target before Fabric adds northbound identity,
-  telemetry, and lifecycle data.
-- `adapter-descriptor`: minimal adapter descriptor consumed by NeMo Fabric. Each
-  descriptor declares a `contract_version`; NeMo Fabric rejects descriptors for
-  unsupported adapter contracts during planning. A descriptor can embed the
-  JSON Schemas for its adapter-owned `harness.settings`, optional
-  `FabricConfig.workflow`, and normalized tool definitions, plus schemas for
-  explicit adapter-owned extension points in the southbound contract;
-  malformed schemas fail descriptor loading. `config.input=agent_config` opts
-  the adapter into the projected southbound config; omitting it preserves the
-  legacy northbound `FabricConfig` payload. A missing settings schema rejects
-  non-empty settings, and a configured workflow requires a workflow schema.
-  The `process` and `python` adapter kinds use NeMo Fabric's persistent
-  local-host wire protocol.
+- `agent`: complete typed northbound `FabricConfig`.
 - `run-plan`: executable plan containing the canonical northbound config, its
   projected southbound `AgentConfig`, the selected adapter, and derived
   execution metadata.
-
-### Adapter Invocation
-
-- `adapter-invocation`: per-turn payload sent to an initialized persistent
-  local adapter host. It contains only `runtime_context` and `request`; NeMo Fabric
-  sends configuration and capability planning data during lifecycle start.
-- `runtime-context`: per-run/per-invocation context included in adapter
-  invocations.
-- `run-request`: per-invocation request/input.
+- `run-request`: northbound per-invocation request and input.
 
 ### Runtime Lifecycle
 
 - `environment-handle`: prepared execution environment context.
 - `runtime-handle`: active harness runtime identity and opaque adapter binding.
-- `invocation-handle`: one request/turn sent to a runtime.
+- `invocation-handle`: one request or turn sent to a runtime.
 
-### Results, Artifacts, And Diagnostics
+### Results, Artifacts, and Diagnostics
 
-- `run-result`: normalized invocation result.
+- `run-result`: normalized consumer-facing invocation result.
 - `artifact-manifest`: normalized artifact references.
 - `error-info`: structured runtime or adapter error metadata.
-- `fabric-event`: NeMo Fabric lifecycle/progress event.
+- `fabric-event`: NeMo Fabric lifecycle or progress event.
 
 ### Deferred Core Objects
 

@@ -110,7 +110,9 @@ def test_extension_schema_uses_typed_pydantic_model():
 
 def test_agent_config_model_tracks_rust_schema_root_fields():
     rust_schema = json.loads(
-        Path("schemas/agent-config.schema.json").read_text(encoding="utf-8")
+        Path("schemas/adapter-contract/agent-config.schema.json").read_text(
+            encoding="utf-8"
+        )
     )
     pydantic_schema = AgentConfig.model_json_schema()
 

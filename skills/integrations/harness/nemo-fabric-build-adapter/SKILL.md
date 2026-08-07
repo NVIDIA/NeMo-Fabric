@@ -19,7 +19,8 @@ the custom-agents page when the target loads application-defined agents or
 workflows.
 
 Use the committed
-[JSON Schemas](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas) or the
+[adapter-contract JSON Schemas](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas/adapter-contract)
+or the
 schemas installed with the matching NeMo Fabric release for exact wire shapes.
 Do not reconstruct a schema from examples or copy field lists into adapter
 code.

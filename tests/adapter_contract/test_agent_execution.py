@@ -90,7 +90,9 @@ def test_agent_execution_models_track_rust_schema_root_fields():
         (AgentRunResult, "agent-run-result.schema.json"),
         (RuntimeContext, "runtime-context.schema.json"),
     ):
-        rust_schema = json.loads(Path("schemas", filename).read_text(encoding="utf-8"))
+        rust_schema = json.loads(
+            Path("schemas", "adapter-contract", filename).read_text(encoding="utf-8")
+        )
         pydantic_schema = model.model_json_schema()
 
         assert rust_schema["additionalProperties"] is False

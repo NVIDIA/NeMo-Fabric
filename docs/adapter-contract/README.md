@@ -76,7 +76,7 @@ need to parse the generic invocation payload.
 - [Custom Agents](custom-agents.md)
 - [Conformance](conformance.md)
 
-Canonical JSON Schemas are published in the repository
-[`schemas/` directory](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas).
+Canonical adapter-facing JSON Schemas are published in the repository
+[`schemas/adapter-contract/` directory](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas/adapter-contract).
 Python adapters can validate the southbound models with
 `nemo-fabric-adapter-contract` without depending on the NeMo Fabric runtime.

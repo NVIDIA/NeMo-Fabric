@@ -42,7 +42,7 @@ FabricConfig + adapter descriptor + resolved capability plan
 | `extensions` | Adapter-owned fields validated at a declared extension point. |
 
 Use the generated
-[`AgentConfig` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/agent-config.schema.json)
+[`AgentConfig` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-config.schema.json)
 for exact fields and constraints. Python adapters can import matching Pydantic
 models from `nemo_fabric_adapter_contract.models`.
 

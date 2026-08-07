@@ -47,7 +47,7 @@ as opaque correlation values.
 | `telemetry` | Invocation telemetry context, including generated Relay config and environment when enabled. |
 
 Use the generated
-[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/runtime-context.schema.json)
+[`runtime-context.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/runtime-context.schema.json)
 for the exact shape. Runtime/session identity belongs here, not in
 `AgentConfig.workflow`; caller task context belongs in the invocation request.
 

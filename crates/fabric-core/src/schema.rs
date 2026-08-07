@@ -102,6 +102,22 @@ impl SchemaName {
         format!("{}.schema.json", self.as_str())
     }
 
+    /// Snapshot path relative to the schema output directory.
+    fn relative_path(self) -> PathBuf {
+        let filename = self.filename();
+        match self {
+            Self::AgentConfig
+            | Self::AgentRunRequest
+            | Self::AgentRunResult
+            | Self::AdapterDescriptor
+            | Self::RuntimeContext => PathBuf::from("adapter-contract").join(filename),
+            Self::AdapterInvocation => PathBuf::from("adapter-contract")
+                .join("legacy")
+                .join(filename),
+            _ => PathBuf::from(filename),
+        }
+    }
+
     /// Parse a schema name from CLI/user input.
     pub fn parse(value: &str) -> Result<Self> {
         match value {
@@ -176,7 +192,13 @@ pub fn write_schema_snapshots(directory: impl AsRef<Path>) -> Result<Vec<PathBuf
     })?;
     let mut written = Vec::new();
     for schema in SchemaName::ALL {
-        let path = directory.join(schema.filename());
+        let path = directory.join(schema.relative_path());
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|source| FabricError::Write {
+                path: parent.to_path_buf(),
+                source,
+            })?;
+        }
         std::fs::write(&path, generate_schema_json(schema)?).map_err(|source| {
             FabricError::Write {
                 path: path.clone(),
@@ -206,7 +228,7 @@ mod tests {
     #[test]
     fn schema_snapshots_match_generated_contract() {
         for schema in SchemaName::ALL {
-            let path = schema_dir().join(schema.filename());
+            let path = schema_dir().join(schema.relative_path());
             let expected: Value = serde_json::from_str(
                 &std::fs::read_to_string(&path)
                     .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display())),
@@ -229,6 +251,32 @@ mod tests {
                 schema
             );
         }
+    }
+
+    #[test]
+    fn adapter_contract_schemas_use_dedicated_snapshot_paths() {
+        for schema in [
+            SchemaName::AdapterDescriptor,
+            SchemaName::AgentConfig,
+            SchemaName::AgentRunRequest,
+            SchemaName::AgentRunResult,
+            SchemaName::RuntimeContext,
+        ] {
+            assert_eq!(
+                schema.relative_path(),
+                PathBuf::from("adapter-contract").join(schema.filename())
+            );
+        }
+        assert_eq!(
+            SchemaName::AdapterInvocation.relative_path(),
+            PathBuf::from("adapter-contract")
+                .join("legacy")
+                .join(SchemaName::AdapterInvocation.filename())
+        );
+        assert_eq!(
+            SchemaName::Agent.relative_path(),
+            PathBuf::from(SchemaName::Agent.filename())
+        );
     }
 
     #[test]
