@@ -136,6 +136,47 @@ def mock_thread(thread_id, result=None):
     return mock_sdk_thread
 
 
+def atif_plugin_config(output_directory: Path) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "atif": {
+                        "enabled": True,
+                        "output_directory": str(output_directory),
+                        "filename_template": "trajectory-{session_id}.atif.json",
+                    }
+                },
+            }
+        ],
+    }
+
+
+def relay_settings(tmp_path: Path, plugin_config: dict[str, Any]):
+    return adapter.CodexRelaySettings(
+        gateway=adapter.relay_gateway.RelayGatewayLaunch(
+            executable=tmp_path / "nemo-relay",
+            config_path=tmp_path / "relay" / "config.toml",
+            bind="127.0.0.1:43210",
+            url="http://127.0.0.1:43210",
+            log_path=tmp_path / "relay" / "gateway.log",
+        ),
+        plugin_config=plugin_config,
+    )
+
+
+def install_mock_relay(monkeypatch, relay: adapter.CodexRelaySettings):
+    monkeypatch.setattr(adapter, "prepare_codex_relay", MagicMock(return_value=relay))
+    monkeypatch.setattr(
+        adapter.relay_gateway,
+        "start_relay_gateway",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(adapter.relay_gateway, "stop_relay_gateway", MagicMock())
+
+
 @pytest.fixture(name="mock_codex")
 def mock_codex_fixture(monkeypatch):
     mock_codex = MagicMock(spec=AsyncCodex)
@@ -562,6 +603,97 @@ async def test_persistent_runtime_owns_one_relay_gateway(
         cwd=Path(codex_payload["runtime_context"]["environment"]["workspace"]),
     )
     stop_gateway.assert_called_once_with(process)
+
+
+async def test_relay_waits_for_delayed_atif_before_collecting_artifacts(
+    codex_payload, mock_codex, monkeypatch, tmp_path
+):
+    codex_payload["telemetry_plan"] = {
+        "providers": ["relay"],
+        "relay_enabled": True,
+    }
+    atif_dir = tmp_path / "relay" / "atif"
+    atif_dir.mkdir(parents=True)
+    atif_file = atif_dir / "trajectory-session.atif.json"
+    relay = relay_settings(tmp_path, atif_plugin_config(atif_dir))
+    install_mock_relay(monkeypatch, relay)
+    mock_sdk_thread = mock_thread("thread-123")
+    write_task = None
+
+    async def finish_turn():
+        nonlocal write_task
+
+        async def write_atif():
+            await asyncio.sleep(0.05)
+            atif_file.write_text(
+                json.dumps({"schema_version": "ATIF-v1.7", "steps": []}),
+                encoding="utf-8",
+            )
+
+        write_task = asyncio.create_task(write_atif())
+        return successful_result()
+
+    mock_sdk_thread.handle.run.side_effect = finish_turn
+    mock_codex.next_thread = mock_sdk_thread
+    runtime = adapter.CodexRuntime()
+
+    await runtime.start(lifecycle_start_payload(codex_payload))
+    try:
+        output = await runtime.invoke(lifecycle_invocation(codex_payload))
+        assert write_task is not None
+        await write_task
+    finally:
+        await runtime.stop()
+
+    assert output["completed"] is True
+    assert output["relay_artifacts"] == [{"kind": "atif", "path": str(atif_file)}]
+
+
+async def test_relay_atif_timeout_fails_successful_turn_explicitly(
+    codex_payload, mock_codex, monkeypatch, tmp_path
+):
+    codex_payload["telemetry_plan"] = {
+        "providers": ["relay"],
+        "relay_enabled": True,
+    }
+    atif_dir = tmp_path / "relay" / "atif"
+    atif_dir.mkdir(parents=True)
+    stale_atif = atif_dir / "trajectory-existing.atif.json"
+    stale_atif.write_text('{"schema_version":"ATIF-v1.7","steps":[]}', encoding="utf-8")
+    late_atif = atif_dir / "trajectory-late.atif.json"
+    relay = relay_settings(tmp_path, atif_plugin_config(atif_dir))
+    install_mock_relay(monkeypatch, relay)
+    wait_for_atif = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        adapter.relay_artifacts, "wait_for_finalized_atif", wait_for_atif
+    )
+    runtime = adapter.CodexRuntime()
+
+    await runtime.start(lifecycle_start_payload(codex_payload))
+    try:
+        output = await runtime.invoke(lifecycle_invocation(codex_payload))
+        late_atif.write_text(
+            '{"schema_version":"ATIF-v1.7","steps":[]}', encoding="utf-8"
+        )
+        unavailable = await runtime.invoke(lifecycle_invocation(codex_payload))
+    finally:
+        await runtime.stop()
+
+    assert output["failed"] is True
+    assert output["error"] == {
+        "code": "codex_relay_atif_timeout",
+        "message": "NeMo Relay did not finalize an ATIF artifact before the deadline",
+        "retryable": False,
+        "metadata": {
+            "timeout_seconds": adapter.relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS
+        },
+    }
+    wait_for_atif.assert_awaited_once()
+    assert output["relay_runtime"]["enabled"] is True
+    assert output["relay_artifacts"] == []
+    assert unavailable["error"]["code"] == "codex_runtime_unavailable"
+    assert "relay_runtime" not in unavailable
+    assert "relay_artifacts" not in unavailable
 
 
 def test_failed_sdk_turn_is_normalized_and_transport_is_closed(

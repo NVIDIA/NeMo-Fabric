@@ -41,6 +41,7 @@
       ]
     },
     "EnvironmentHandle": {
+      "additionalProperties": false,
       "description": "Resolved execution environment context.",
       "properties": {
         "artifacts": {

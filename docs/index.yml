@@ -22,6 +22,24 @@ navigation:
     contents:
       - page: Python SDK
         path: ./sdk/python.mdx
+  - section: Adapter Contract
+    contents:
+      - page: Overview
+        path: ./adapter-contract/README.md
+      - page: Adapter Descriptor
+        path: ./adapter-contract/adapter-descriptor.md
+      - page: Normalized Configuration
+        path: ./adapter-contract/normalized-configuration.md
+      - page: Execution
+        path: ./adapter-contract/execution.md
+      - page: Results and Telemetry
+        path: ./adapter-contract/results.md
+      - page: Registration and Discovery
+        path: ./adapter-contract/registration-and-discovery.md
+      - page: Custom Agents
+        path: ./adapter-contract/custom-agents.md
+      - page: Conformance
+        path: ./adapter-contract/conformance.md
   - section: Integrations
     contents:
       - section: Consumer Integrations

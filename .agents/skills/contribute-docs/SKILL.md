@@ -21,6 +21,8 @@ Use this skill for docs-only or example-heavy changes.
 - Prefer the documented public API, not internal shortcuts
 - Keep package names, repo references, and build commands current
 - Update entry-point docs when examples or reading paths change
+- Keep release-process and release-history policy in `RELEASING.md`, not in
+  user-facing docs or a duplicate `CHANGELOG.md`
 - In MDX files, top-of-file comments must use JSX comment delimiters:
   `{/*` to open and `*/}` to close. Do not use HTML comments for MDX SPDX
   headers.
@@ -38,5 +40,6 @@ Use this skill for docs-only or example-heavy changes.
 ## References
 
 - `README.md`
+- `RELEASING.md`
 - `docs/index.yml`
 - `review-doc-style`

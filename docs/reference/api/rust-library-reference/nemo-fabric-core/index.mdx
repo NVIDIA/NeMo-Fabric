@@ -13,8 +13,17 @@ Core config and runtime contract for NeMo Fabric.
 
 ## Re-exports
 
-- `pub use config::ADAPTER_CONTRACT_VERSION;`
+- `pub use adapter_contract::ADAPTER_CONTRACT_VERSION;`
+- `pub use adapter_contract::AdapterExtensionPoint;`
+- `pub use agent_execution::AgentArtifact;`
+- `pub use agent_execution::AgentRunError;`
+- `pub use agent_execution::AgentRunRequest;`
+- `pub use agent_execution::AgentRunResult;`
+- `pub use agent_execution::AgentRunResultValidationError;`
+- `pub use agent_execution::AgentRunStatus;`
+- `pub use agent_execution::AgentUsage;`
 - `pub use config::AdapterConfigField;`
+- `pub use config::AdapterConfigInput;`
 - `pub use config::AdapterConfigSupport;`
 - `pub use config::AdapterDescriptor;`
 - `pub use config::AdapterDescriptorSource;`
@@ -22,6 +31,19 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::AdapterRequirements;`
 - `pub use config::AdapterTelemetryProviderSupport;`
 - `pub use config::AdapterTelemetrySupport;`
+- `pub use config::AgentConfig;`
+- `pub use config::AgentHarnessConfig;`
+- `pub use config::AgentInstructionConfig;`
+- `pub use config::AgentInstructionsConfig;`
+- `pub use config::AgentMcpConfig;`
+- `pub use config::AgentMcpServerConfig;`
+- `pub use config::AgentModelConfig;`
+- `pub use config::AgentRuntimeConfig;`
+- `pub use config::AgentSkillConfig;`
+- `pub use config::AgentToolDefinition;`
+- `pub use config::AgentToolsConfig;`
+- `pub use config::AgentWorkflowConfig;`
+- `pub use config::AgentWorkflowEntrypointConfig;`
 - `pub use config::CapabilityPlan;`
 - `pub use config::ControlLocation;`
 - `pub use config::EnvironmentConfig;`
@@ -48,6 +70,7 @@ Core config and runtime contract for NeMo Fabric.
 - `pub use config::TelemetryPlan;`
 - `pub use config::TelemetryProvider;`
 - `pub use config::TelemetryProviderConfig;`
+- `pub use config::ToolDefinitionConfig;`
 - `pub use config::ToolsConfig;`
 - `pub use config::WorkflowConfig;`
 - `pub use config::WorkflowEntrypointConfig;`
@@ -87,6 +110,9 @@ Core config and runtime contract for NeMo Fabric.
 
 ## Modules
 
+- [adapter_contract](adapter-contract/index.mdx): Shared southbound adapter contract metadata.
+- [agent_config](agent-config/index.mdx): Configuration projected southbound to an adapter target.
+- [agent_execution](agent-execution/index.mdx): Request and result structures exchanged with an adapter target.
 - [config](config/index.mdx): NeMo Fabric config models and loading helpers.
 - [doctor](doctor/index.mdx): Plan diagnostics for NeMo Fabric.
 - [error](error/index.mdx): Error types for NeMo Fabric core.

@@ -34,6 +34,8 @@ reliability, or reproducibility.
   workflow.
 - Keep local commands aligned with the corresponding `justfile` recipes when
   they provide equivalent behavior.
+- Keep tag filters, prerelease normalization, and publication behavior aligned
+  with `RELEASING.md`.
 
 ## Permission Model
 
@@ -89,6 +91,10 @@ source instead of assuming local success proves remote success.
 - `.github/workflows/ci_python.yml`
 - `.github/workflows/ci_rust.yml`
 - `.github/workflows/fern-docs.yml`
+- `.github/workflows/nightly-alpha-tag.yml`
+- `.github/workflows/publish_rust.yml`
+- `.gitlab-ci.yml`
+- `RELEASING.md`
 - `Cargo.lock`
 - `uv.lock`
 - `docs/package-lock.json`

@@ -1,22 +1,18 @@
 ---
 name: nemo-fabric-integrate
-description: Use this skill when integrating NeMo Fabric into a consumer application, service, evaluation harness, or platform through the typed Python SDK — translating the consumer's own application, job, or deployment config into an in-memory FabricConfig, choosing the single-invocation convenience API or an explicitly started runtime, validating with plan and doctor, and consuming normalized results, artifacts, and telemetry.
+description: Use this skill when integrating NVIDIA NeMo Fabric into a consumer application, service, evaluation harness, or platform through the typed Python SDK — translating the consumer's own application, job, or deployment config into an in-memory FabricConfig, choosing the single-invocation convenience API or an explicitly started runtime, validating with plan and doctor, and consuming normalized results, artifacts, and telemetry.
 license: Apache-2.0
 metadata:
   author: NVIDIA Corporation and Affiliates
 ---
 
-# Integrate NeMo Fabric Through The Python SDK
+# Integrate NVIDIA NeMo Fabric Through The Python SDK
 
 Use this skill when a consumer codebase — an application, service, evaluation
 harness, or platform — needs to run agent harnesses through NeMo Fabric's typed
 Python SDK. The consumer owns its own configuration object and translates it
 into an in-memory `FabricConfig`; NeMo Fabric owns adapter selection, the runtime
 lifecycle, and normalized results.
-
-Do not use this skill to author or modify NeMo Fabric adapters, change NeMo Fabric core or
-its bindings, or maintain repository infrastructure. If you are contributing to
-NeMo Fabric itself, use the maintainer skills in `.agents/skills/` instead.
 
 ## Integration Boundary
 
@@ -35,7 +31,7 @@ supported and upgrade-safe:
 - Treat `runtime_id`, `invocation_id`, and `request_id` as opaque correlation
   strings, not parsable or reusable state.
 
-See [config-mapping.md](references/config-mapping.md) for how to translate a
+Refer to [config-mapping.md](references/config-mapping.md) for how to translate a
 consumer config object into `FabricConfig`, and for the full list of mechanics
 that stay hidden behind this boundary.
 
@@ -139,9 +135,11 @@ def to_fabric_config(job) -> FabricConfig:
     return config
 ```
 
-- Shape capabilities with `ToolsConfig`, `block_tools`, `add_skill_path`,
+- Shape capabilities with `ToolsConfig`, `add_tool_definition`, `block_tools`, `add_skill_path`,
   `remove_skill_path`,
   `add_mcp_server`, `remove_mcp_server`, and `enable_relay`.
+- Use `add_tool_definition` only when the selected adapter accepts
+  `tools.definitions` and publishes a `tool_definition_schema`.
 - Use a restricted `allowed_tools` list or non-empty `blocked_tools` on
   `add_mcp_server` only when the selected adapter declares both `mcp` and
   `mcp.tool_filters`. An unfiltered server requires only `mcp`.
@@ -296,9 +294,8 @@ else:
 ```
 
 - Treat `status == "succeeded"` as the only success. Other terminal values
-  (`failed`, `cancelled`) are unsuccessful, and `error` may be `None` even then,
-  so branch on `status`, not on `error`. Read `status`, `error`, and `events`
-  before processing `output`.
+  (`failed`, `cancelled`) are unsuccessful, so branch on `status`, not on
+  `error`. Read `status`, `error`, and `events` before processing `output`.
 - Capture `artifacts` and `telemetry` references as the returned evidence for
   platforms and evaluations. Store and log `runtime_id`, `invocation_id`, and
   `request_id` separately as opaque strings.
@@ -313,7 +310,7 @@ else:
   invocation error the cleanup failure is attached to the original exception. Be
   ready to handle a shutdown failure.
 
-See [results-and-errors.md](references/results-and-errors.md) for the full
+Refer to [results-and-errors.md](references/results-and-errors.md) for the full
 result-field and error inventory, and
 [sdk-api-inventory.md](references/sdk-api-inventory.md) for when to use each
 `Fabric` and `Runtime` method.

@@ -104,7 +104,10 @@ class HarnessConfig(FabricBaseModel):
         ]
         | None
     ) = None
-    settings: dict[str, Any] = Field(default_factory=dict)
+    settings: dict[str, Any] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
 
 
 class WorkflowEntrypointConfig(FabricBaseModel):
@@ -574,8 +577,32 @@ class TelemetryConfig(FabricBaseModel):
         return self
 
 
+class ToolDefinitionConfig(FabricBaseModel):
+    """One named normalized tool or tool-group definition."""
+
+    kind: str = Field(min_length=1, pattern=r"\S")
+    ref: str = Field(min_length=1, pattern=r"\S")
+    settings: dict[str, Any] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+
+    @field_validator("kind", "ref")
+    @classmethod
+    def _validate_identity(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("tool definition values must be non-empty strings")
+        return value
+
+
 class ToolsConfig(FabricBaseModel):
     """Harness-neutral tool capability configuration."""
+
+    definitions: dict[str, ToolDefinitionConfig] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+        description="Named normalized tool and tool-group definitions.",
+    )
 
     enabled: list[str] | None = Field(
         default=None,
@@ -586,8 +613,18 @@ class ToolsConfig(FabricBaseModel):
     )
     blocked: list[str] = Field(
         default_factory=list,
+        exclude_if=lambda value: not value,
         description="Adapter-native tool names to deny.",
     )
+
+    @field_validator("definitions")
+    @classmethod
+    def _validate_definition_names(
+        cls, value: dict[str, ToolDefinitionConfig]
+    ) -> dict[str, ToolDefinitionConfig]:
+        if any(not name.strip() for name in value):
+            raise ValueError("tool definition names must not be empty")
+        return value
 
     @field_validator("enabled", "blocked")
     @classmethod
@@ -603,6 +640,34 @@ class ToolsConfig(FabricBaseModel):
             if overlap:
                 name = sorted(overlap)[0]
                 raise ValueError(f"tool {name!r} cannot be both enabled and blocked")
+        return self
+
+    def add_definition(
+        self,
+        name: str,
+        *,
+        kind: str,
+        ref: str,
+        settings: Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> Self:
+        """Add or replace one named definition and return this tools config."""
+
+        if not name.strip():
+            raise ValueError("tool definition names must not be empty")
+        value = {
+            "kind": kind,
+            "ref": ref,
+            "settings": dict(settings or {}),
+            **dict(extra_fields or {}),
+        }
+        self.definitions[name] = ToolDefinitionConfig.model_validate(value)
+        return self
+
+    def remove_definition(self, name: str) -> Self:
+        """Remove one named definition and return this tools config."""
+
+        self.definitions.pop(name, None)
         return self
 
 
@@ -709,6 +774,42 @@ class FabricConfig(FabricBaseModel):
             if tool not in existing:
                 existing.append(tool)
         self.tools.blocked = existing
+        return self
+
+    def add_tool_definition(
+        self,
+        name: str,
+        *,
+        kind: str,
+        ref: str,
+        settings: Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> Self:
+        """Add or replace one named tool definition and return this config."""
+
+        if self.tools is None:
+            self.tools = ToolsConfig()
+        self.tools.add_definition(
+            name,
+            kind=kind,
+            ref=ref,
+            settings=settings,
+            extra_fields=extra_fields,
+        )
+        return self
+
+    def remove_tool_definition(self, name: str) -> Self:
+        """Remove one named tool definition and return this config."""
+
+        if self.tools is not None:
+            self.tools.remove_definition(name)
+            if (
+                not self.tools.definitions
+                and self.tools.enabled is None
+                and not self.tools.blocked
+                and not self.tools.model_extra
+            ):
+                self.tools = None
         return self
 
     def enable_relay(

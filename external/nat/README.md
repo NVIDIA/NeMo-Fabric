@@ -9,33 +9,33 @@ This source-only adapter runs an NVIDIA NeMo Agent Toolkit (NAT) workflow behind
 the NeMo Fabric lifecycle contract. It is a third-party adapter reference, not a
 bundled NeMo Fabric adapter or a published package.
 
-The implementation is generic. It constructs NAT configuration in memory from
-`FabricConfig`; it does not read a NAT YAML file and does not hardcode the
-calculator or email-phishing components.
+The implementation constructs NAT configuration in memory from the typed
+southbound `AgentConfig`; it does not read a NAT YAML file or parse the
+northbound `FabricConfig`.
 
 ## Configuration Boundary
 
-NeMo Fabric owns portable configuration. `workflow` selects and configures the
-NAT executable, while `harness.settings` contains NAT-native function components
-that have no portable NeMo Fabric equivalent.
+NeMo Fabric owns portable configuration. `workflow` selects a Fabric-enumerated
+agent factory and `tools.definitions` supplies named functions and function
+groups that the adapter resolves as installed NAT components.
 
 | NeMo Fabric input | NAT configuration |
 | --- | --- |
 | `models.<role>` | `llms.<role>`; every NeMo Fabric model-role name is preserved |
 | `instructions.system` | Built-in `react_agent` workflow `additional_instructions`; other workflow types reject this field in the initial adapter |
-| `workflow.entrypoint.kind=nat_workflow` | Resolve a registered NAT workflow component |
-| `workflow.entrypoint.ref` | `workflow._type` |
+| `workflow.entrypoint.kind=factory` | Resolve a Fabric-enumerated agent intent |
+| `workflow.entrypoint.ref=fabric.agent.react` | NAT `react_agent` workflow factory |
 | `workflow.settings` | Remaining `workflow` component fields |
-| `harness.settings.functions` | `functions` |
-| `harness.settings.function_groups` | `function_groups` |
-| Harness-native `mcp.servers.<name>` | Generated `mcp_client` function group named `<name>` |
+| `tools.definitions.<name>` with `kind=function` | NAT `functions.<name>`; `ref` becomes `_type` |
+| `tools.definitions.<name>` with `kind=function_group` | NAT `function_groups.<name>`; `ref` becomes `_type` |
+| `mcp.servers.<name>` | Generated `mcp_client` function group named `<name>` |
 | `tools.enabled`, `tools.blocked` | Effective NAT-native workflow tool selection |
 
 The adapter loads installed `nat.components` entry points before NAT validates
-the generated configuration. A custom function, function group, or workflow is
-therefore supplied as an installed NAT component package and selected by its
-registered type in `workflow.entrypoint.ref` or the component `_type` in
-`harness.settings`. No Python import path or callable crosses `FabricConfig`.
+the generated configuration. A custom function or function group is supplied
+as an installed NAT component package and selected by `tools.definitions.ref`.
+No Python callable crosses the configuration contract. A custom adapter may
+publish a broader workflow schema without changing this shared NAT adapter.
 
 At runtime, `start` loads components, enters one `WorkflowBuilder`, creates a
 `SessionManager` with that shared builder, and retains both resources. Each
@@ -46,8 +46,8 @@ streaming, or live-update support.
 
 ## MCP Tool Filters
 
-The adapter consumes the routed `capability_plan.native.mcp_servers` entries,
-including the normalized per-server filters. NeMo Fabric MCP tool names remain bare
+The adapter consumes the `AgentConfig.mcp.servers` entries, including the
+normalized per-server filters. NeMo Fabric MCP tool names remain bare
 server-local names; NAT exposes a selected member as `<server>__<tool>`.
 
 For `stdio` servers, NeMo Fabric expands `$VAR` references in `url` and forwards
@@ -84,6 +84,7 @@ component referenced by the config:
 
 ```bash
 uv pip install \
+  nemo-fabric-adapter-contract \
   nemo-fabric-adapters-common \
   nvidia-nat-core \
   nvidia-nat-langchain \

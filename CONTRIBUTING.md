@@ -73,15 +73,11 @@ complete list of adapters and installation options.
 
 ## Release Tagging
 
-Versioned release tags must use raw Rust-compatible SemVer without a leading
-`v`.
+Release tags use SemVer with a leading `v`.
 
-- Use `0.1.0` for stable releases.
-- Use `0.1.0-rc.1` for prereleases.
-- Do not create tags such as `v0.1.0` or `v0.1.0-rc.1`.
-
-This keeps release tags aligned with Cargo package versions and lets the release
-tooling translate the version consistently for Python packages.
+- Use `v0.1.0` for stable releases.
+- Use `v0.1.0-rc.1` for prereleases.
+- Do not use tags such as `0.1.0` or `0.1.0-rc.1`.
 
 ## Code Style
 

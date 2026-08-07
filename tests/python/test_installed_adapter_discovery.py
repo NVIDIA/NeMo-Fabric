@@ -43,7 +43,7 @@ def _write_descriptor(
     descriptor = root / "share/nemo-fabric/adapters/test/fabric-adapter.json"
     descriptor.parent.mkdir(parents=True)
     data: dict[str, Any] = {
-        "contract_version": "fabric.adapter/v1alpha1",
+        "contract_version": "fabric.adapter/v1alpha2",
         "adapter_id": adapter_id,
         "harness": "installed-test",
         "adapter_kind": "python",
@@ -173,7 +173,7 @@ def test_agent_local_descriptor_overrides_installed_descriptor(
     local_descriptor.write_text(
         json.dumps(
             {
-                "contract_version": "fabric.adapter/v1alpha1",
+                "contract_version": "fabric.adapter/v1alpha2",
                 "adapter_id": "test.fabric.installed",
                 "harness": "installed-test",
                 "adapter_kind": "python",

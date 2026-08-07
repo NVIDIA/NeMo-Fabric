@@ -26,7 +26,16 @@ from nemo_fabric import WorkflowEntrypointConfig
 def build_config() -> FabricConfig:
     """Build the NAT-native email-phishing configuration."""
 
-    return FabricConfig(
+    tools = ToolsConfig()
+    tools.add_definition(
+        "email_phishing_analyzer",
+        kind="function",
+        ref="email_phishing_analyzer",
+        settings={"llm": "default"},
+    )
+    tools.enabled = ["email_phishing_analyzer"]
+
+    config = FabricConfig(
         metadata=MetadataConfig(
             name="nat-email-phishing-analyzer",
             description="Classifies an email with an installed NAT function.",
@@ -34,19 +43,11 @@ def build_config() -> FabricConfig:
         harness=HarnessConfig(
             adapter_id="nvidia.fabric.nat",
             resolution="preinstalled",
-            settings={
-                "functions": {
-                    "email_phishing_analyzer": {
-                        "_type": "email_phishing_analyzer",
-                        "llm": "default",
-                    }
-                }
-            },
         ),
         workflow=WorkflowConfig(
             entrypoint=WorkflowEntrypointConfig(
-                kind="nat_workflow",
-                ref="react_agent",
+                kind="factory",
+                ref="fabric.agent.react",
             ),
             settings={
                 "llm_name": "default",
@@ -66,9 +67,10 @@ def build_config() -> FabricConfig:
                 content='State whether the email is "phishing" or "benign" and explain why.'
             )
         ),
-        tools=ToolsConfig(enabled=["email_phishing_analyzer"]),
+        tools=tools,
         runtime=RuntimeConfig(input_schema="text", output_schema="message"),
     )
+    return config
 
 
 async def main() -> None:

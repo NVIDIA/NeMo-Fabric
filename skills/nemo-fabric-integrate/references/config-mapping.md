@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 Translate the consumer's own application, job, or deployment object into a typed
 `FabricConfig` in memory. The consumer keeps owning its configuration model;
-NeMo Fabric only receives the validated slice it needs.
+NVIDIA NeMo Fabric only receives the validated slice it needs.
 
 ## Public Config Models
 
@@ -23,7 +23,7 @@ Import these from the top-level `nemo_fabric` package:
 | `InstructionsConfig` / `InstructionConfig` | Portable agent instructions and replacement mode. |
 | `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, and harness turn limit. |
 | `EnvironmentConfig` | Execution environment, workspace, and harness-visible variables. |
-| `ToolsConfig` | Adapter-native tool selection and blocking policy. |
+| `ToolsConfig` / `ToolDefinitionConfig` | Named tool and tool-group definitions plus selection and blocking policy. |
 | `McpConfig` / `McpServerConfig` | MCP transport, URL or command, process arguments, environment, exposure, and optional per-server tool policy. |
 | `SkillConfig` | Skill directories. |
 | `TelemetryConfig` | Telemetry providers. |
@@ -43,7 +43,11 @@ methods that edit the typed config in place and return it:
 - `add_mcp_server(name, *, transport, url, args, env, exposure, allowed_tools, blocked_tools, ...)` / `remove_mcp_server(name)`
 - `enable_relay(...)` for NVIDIA NeMo Relay observability in the `relay` block
 - `ToolsConfig(enabled=..., blocked=...)` for tool policy
+- `add_tool_definition(name, kind=..., ref=..., settings=...)` / `remove_tool_definition(name)`
 - `block_tools(...)` for additive deny policy
+
+Use `add_tool_definition(...)` only when the selected adapter accepts
+`tools.definitions` and publishes a `tool_definition_schema`.
 
 Filtered per-server MCP configurations require adapter support for both `mcp`
 and `mcp.tool_filters`. An unfiltered server with `allowed_tools=None` and an

@@ -31,6 +31,7 @@ from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.common import lifecycle
+from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
 from nemo_fabric_adapters.common import utils as common_utils
@@ -726,6 +727,8 @@ def child_environment(
 def _relay_output(
     output: dict[str, Any],
     relay: ClaudeRelaySettings,
+    *,
+    artifacts: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     output["relay_runtime"] = {
         "enabled": True,
@@ -735,8 +738,10 @@ def _relay_output(
         "gateway_url": relay.gateway.url,
         "gateway_log_path": str(relay.gateway.log_path),
     }
-    output["relay_artifacts"] = common_utils.collect_relay_artifacts(
-        relay.plugin_config
+    output["relay_artifacts"] = (
+        common_utils.collect_relay_artifacts(relay.plugin_config)
+        if artifacts is None
+        else artifacts
     )
     return output
 
@@ -882,7 +887,7 @@ class ClaudeRuntime:
         if self._unusable:
             return _failure(
                 "claude_runtime_unavailable",
-                "Claude runtime cannot accept another invocation after an SDK failure",
+                "Claude runtime cannot accept another invocation after a runtime failure",
             )
 
         try:
@@ -891,12 +896,42 @@ class ClaudeRuntime:
         except ClaudeAdapterError as error:
             output = adapter_failure(error)
         else:
+            relay = self._relay
+            atif_before = (
+                relay_artifacts.snapshot_atif_files(relay.plugin_config)
+                if relay is not None
+                and relay_artifacts.expects_local_atif(relay.plugin_config)
+                else None
+            )
             output = await self._run_query(
                 payload,
                 client,
                 prompt,
                 invocation_timeout,
             )
+            if (
+                output.get("completed")
+                and relay is not None
+                and atif_before is not None
+            ):
+                finalized = await relay_artifacts.wait_for_finalized_atif(
+                    relay.plugin_config, atif_before
+                )
+                if finalized is None:
+                    self._unusable = True
+                    return _relay_output(
+                        adapter_failure(
+                            AdapterRelayError(
+                                "claude_relay_atif_timeout",
+                                "NeMo Relay did not finalize an ATIF artifact before the deadline",
+                                metadata={
+                                    "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                                },
+                            )
+                        ),
+                        relay,
+                        artifacts=[],
+                    )
 
         if self._relay is not None:
             output = _relay_output(output, self._relay)

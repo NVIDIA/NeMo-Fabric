@@ -96,6 +96,38 @@ pub enum FabricError {
         /// Schema validation failure.
         reason: String,
     },
+    /// A normalized tool definition does not satisfy the resolved descriptor schema.
+    #[error(
+        "invalid tool definition for adapter `{adapter_id}` from {descriptor_source:?} descriptor {descriptor_path} at `{definition_path}`: {reason}"
+    )]
+    InvalidToolDefinition {
+        /// Selected adapter id.
+        adapter_id: String,
+        /// Registry source of the selected descriptor.
+        descriptor_source: AdapterDescriptorSource,
+        /// Path to the selected descriptor.
+        descriptor_path: PathBuf,
+        /// Canonical path to the invalid definition field.
+        definition_path: String,
+        /// Schema validation failure.
+        reason: String,
+    },
+    /// Adapter-owned extensions do not satisfy a descriptor extension schema.
+    #[error(
+        "invalid adapter extension for adapter `{adapter_id}` from {descriptor_source:?} descriptor {descriptor_path} at `{extension_path}`: {reason}"
+    )]
+    InvalidAdapterExtension {
+        /// Selected adapter id.
+        adapter_id: String,
+        /// Registry source of the selected descriptor.
+        descriptor_source: AdapterDescriptorSource,
+        /// Path to the selected descriptor.
+        descriptor_path: PathBuf,
+        /// Canonical path to the invalid extension field.
+        extension_path: String,
+        /// Schema validation failure.
+        reason: String,
+    },
     /// A normalized Fabric config field is invalid.
     #[error("invalid Fabric configuration at `{field}`: {reason}")]
     InvalidConfig {

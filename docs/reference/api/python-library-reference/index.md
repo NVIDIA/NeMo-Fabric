@@ -49,6 +49,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.SkillConfig`](./nemo_fabric.models.md#class-skillconfig): Skill capability configuration.
 - [`models.TelemetryConfig`](./nemo_fabric.models.md#class-telemetryconfig): Telemetry configuration.
 - [`models.TelemetryProviderConfig`](./nemo_fabric.models.md#class-telemetryproviderconfig): Provider-specific telemetry configuration.
+- [`models.ToolDefinitionConfig`](./nemo_fabric.models.md#class-tooldefinitionconfig): One named normalized tool or tool-group definition.
 - [`models.ToolsConfig`](./nemo_fabric.models.md#class-toolsconfig): Harness-neutral tool capability configuration.
 - [`models.WorkflowConfig`](./nemo_fabric.models.md#class-workflowconfig): Adapter-owned workflow selection and immutable construction settings.
 - [`models.WorkflowEntrypointConfig`](./nemo_fabric.models.md#class-workflowentrypointconfig): Adapter-owned workflow entry point.

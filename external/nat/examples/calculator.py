@@ -37,8 +37,8 @@ def build_config() -> FabricConfig:
         ),
         workflow=WorkflowConfig(
             entrypoint=WorkflowEntrypointConfig(
-                kind="nat_workflow",
-                ref="react_agent",
+                kind="factory",
+                ref="fabric.agent.react",
             ),
             settings={"llm_name": "default"},
         ),
