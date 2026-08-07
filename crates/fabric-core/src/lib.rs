@@ -18,7 +18,8 @@ pub use config::{
     McpServerPlan, McpTransport, MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext,
     ResolvedAdapterDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
     TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig, ToolsConfig,
-    load_adapter_descriptor, resolve_diagnostic_plan_from_config,
+    WorkflowConfig, WorkflowEntrypointConfig, load_adapter_descriptor,
+    resolve_diagnostic_plan_from_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,
     resolve_run_plan_from_config_with_adapter_directories,
 };

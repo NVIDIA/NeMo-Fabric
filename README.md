@@ -126,7 +126,9 @@ print(result.output.response)
 `HarnessConfig.adapter_id` selects the Hermes Agent adapter. To use another
 supported harness, install its package extra and set the corresponding adapter
 ID. Pass harness-specific options through `HarnessConfig.settings` only when
-the selected adapter descriptor declares them in `settings_schema`.
+the selected adapter descriptor declares them in `settings_schema`. Adapters
+that expose selectable executables can accept `FabricConfig.workflow`; the
+descriptor's `workflow_schema` defines and validates that adapter-owned block.
 
 For a guided version of this example, refer to the
 [`01_quickstart.ipynb` notebook](examples/notebooks/01_quickstart.ipynb). The

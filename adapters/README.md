@@ -27,11 +27,12 @@ precedence:
 NeMo Fabric resolves multi-component relative `ADAPTER_PYTHON` paths from
 `<base_dir>`. It resolves bare command names through `PATH`.
 
-The winning descriptor supplies its runner metadata and `settings_schema`
-atomically. Planning validates `harness.settings` against that exact schema.
-An agent-local descriptor therefore replaces an installed schema rather than
-merging with it. Settings schemas must be self-contained; NeMo Fabric does not
-resolve HTTP or file references from adapter descriptors.
+The winning descriptor supplies its runner metadata, `settings_schema`, and
+optional `workflow_schema` atomically. Planning validates `harness.settings`
+and `FabricConfig.workflow` against those exact schemas. An agent-local
+descriptor therefore replaces installed schemas rather than merging with them.
+Descriptor schemas must be self-contained; NeMo Fabric does not resolve HTTP or
+file references from adapter descriptors.
 
 This scan only discovers installed metadata. It is not the final registry
 contract for resolving or installing third-party adapters. Installed and
@@ -86,6 +87,7 @@ and additive extension maps because their support does not vary by adapter:
 | `metadata.name`, `.description` | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core |
 | `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema |
+| `workflow.entrypoint`, `.settings` | No | No | No | No |
 | `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes |

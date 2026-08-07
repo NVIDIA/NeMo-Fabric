@@ -80,6 +80,22 @@ pub enum FabricError {
         /// Schema validation failure.
         reason: String,
     },
+    /// Adapter-owned workflow configuration does not satisfy the resolved descriptor schema.
+    #[error(
+        "invalid workflow for adapter `{adapter_id}` from {descriptor_source:?} descriptor {descriptor_path} at `{workflow_path}`: {reason}"
+    )]
+    InvalidWorkflow {
+        /// Selected adapter id.
+        adapter_id: String,
+        /// Registry source of the selected descriptor.
+        descriptor_source: AdapterDescriptorSource,
+        /// Path to the selected descriptor.
+        descriptor_path: PathBuf,
+        /// Canonical path to the invalid workflow field.
+        workflow_path: String,
+        /// Schema validation failure.
+        reason: String,
+    },
     /// A normalized Fabric config field is invalid.
     #[error("invalid Fabric configuration at `{field}`: {reason}")]
     InvalidConfig {

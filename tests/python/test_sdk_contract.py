@@ -50,6 +50,8 @@ from nemo_fabric import RuntimeHandle
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
 from nemo_fabric import ToolsConfig
+from nemo_fabric import WorkflowConfig
+from nemo_fabric import WorkflowEntrypointConfig
 from nemo_fabric.types import _FabricConfigSnapshot
 from nemo_fabric.types import _ToolsConfig
 from pydantic import ValidationError
@@ -123,6 +125,59 @@ def test_typed_config_validates_required_fields_and_preserves_extensions():
             harness=HarnessConfig(adapter_id="test.fabric.shim"),
             models=[],  # type: ignore[arg-type]
         )
+
+
+def test_typed_workflow_round_trips_through_config_and_plan_snapshot():
+    config = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        workflow=WorkflowConfig(
+            entrypoint=WorkflowEntrypointConfig(
+                kind="workflow_registry",
+                ref="test_agent",
+                namespace="example",
+            ),
+            settings={"llm_name": "default"},
+            revision="v1",
+        ),
+    )
+
+    assert config.to_mapping()["workflow"] == {
+        "entrypoint": {
+            "kind": "workflow_registry",
+            "ref": "test_agent",
+            "namespace": "example",
+        },
+        "settings": {"llm_name": "default"},
+        "revision": "v1",
+    }
+
+    snapshot = _FabricConfigSnapshot.from_mapping(config.to_mapping())
+    assert snapshot.workflow.entrypoint.kind == "workflow_registry"
+    assert snapshot.workflow.entrypoint.ref == "test_agent"
+    assert snapshot.workflow.entrypoint.namespace == "example"
+    assert snapshot.workflow.settings == {"llm_name": "default"}
+    assert snapshot.workflow.revision == "v1"
+    assert snapshot.to_mapping()["workflow"] == config.to_mapping()["workflow"]
+
+    config.workflow.settings.clear()
+    workflow_mapping = config.to_mapping()["workflow"]
+    assert "settings" not in workflow_mapping
+    snapshot = _FabricConfigSnapshot.from_mapping(config.to_mapping())
+    assert snapshot.to_mapping()["workflow"] == workflow_mapping
+
+
+@pytest.mark.parametrize("field", ["kind", "ref"])
+def test_typed_workflow_rejects_blank_entrypoint_values(field: str):
+    values = {"kind": "workflow_registry", "ref": "test_agent", field: " "}
+
+    with pytest.raises(ValidationError):
+        WorkflowEntrypointConfig(**values)
+
+    raw = _plan()["config"]
+    raw["workflow"] = {"entrypoint": values}
+    with pytest.raises(FabricConfigError, match="workflow entrypoint"):
+        _FabricConfigSnapshot.from_mapping(raw)
 
 
 def test_typed_config_authoring_helpers_emit_schema_shape():

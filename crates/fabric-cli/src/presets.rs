@@ -268,6 +268,7 @@ fn config(
             settings,
             extensions: BTreeMap::new(),
         },
+        workflow: None,
         models: default_model
             .map(|model| BTreeMap::from_iter([("default".to_string(), model)]))
             .unwrap_or_default(),
