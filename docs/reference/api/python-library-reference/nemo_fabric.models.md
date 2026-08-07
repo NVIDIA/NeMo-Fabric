@@ -2082,9 +2082,9 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `ToolsConfig`
+## <kbd>class</kbd> `ToolDefinitionConfig`
 
-Harness-neutral tool capability configuration.
+One named normalized tool or tool-group definition.
 
 
 
@@ -2094,8 +2094,9 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `enabled` | `list[str] \| None` | No | `None` | — | Adapter-native tools to expose. None preserves the harness default; an empty list exposes no tools. |
-| `blocked` | `list[str]` | No | `list()` | — | Adapter-native tool names to deny. |
+| `kind` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
+| `ref` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
+| `settings` | `dict[str, Any]` | No | `dict()` | — | — |
 
 ---
 
@@ -2137,6 +2138,107 @@ def from_mapping(value: Mapping[str, Any]) -> Self
 ```
 
 Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
+## <kbd>class</kbd> `ToolsConfig`
+
+Harness-neutral tool capability configuration.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `definitions` | `dict[str, ToolDefinitionConfig]` | No | `dict()` | — | Named normalized tool and tool-group definitions. |
+| `enabled` | `list[str] \| None` | No | `None` | — | Adapter-native tools to expose. None preserves the harness default; an empty list exposes no tools. |
+| `blocked` | `list[str]` | No | `list()` | — | Adapter-native tool names to deny. |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>method</kbd> `add_definition`
+
+```python
+def add_definition(
+    name: str,
+    *,
+    kind: str,
+    ref: str,
+    settings: Mapping[str, Any] | None = None,
+    extra_fields: Mapping[str, Any] | None = None,
+) -> Self
+```
+
+Add or replace one named definition and return this tools config.
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `remove_definition`
+
+```python
+def remove_definition(name: str) -> Self
+```
+
+Remove one named definition and return this tools config.
 
 ---
 
@@ -2248,6 +2350,24 @@ Add a skill path and return this config.
 ---
 
 
+### <kbd>method</kbd> `add_tool_definition`
+
+```python
+def add_tool_definition(
+    name: str,
+    *,
+    kind: str,
+    ref: str,
+    settings: Mapping[str, Any] | None = None,
+    extra_fields: Mapping[str, Any] | None = None,
+) -> Self
+```
+
+Add or replace one named tool definition and return this config.
+
+---
+
+
 ### <kbd>method</kbd> `block_tools`
 
 ```python
@@ -2306,6 +2426,17 @@ def remove_skill_path(path: str | Path) -> Self
 ```
 
 Remove a skill path and return this config.
+
+---
+
+
+### <kbd>method</kbd> `remove_tool_definition`
+
+```python
+def remove_tool_definition(name: str) -> Self
+```
+
+Remove one named tool definition and return this config.
 
 ---
 

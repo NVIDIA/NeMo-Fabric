@@ -20,12 +20,15 @@ from typing import Any
 
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import AgentToolDefinition
 
 HARNESS = "nat"
-MODE = "nat_workflow"
-WORKFLOW_KIND = "nat_workflow"
+MODE = "agent_config"
+WORKFLOW_FACTORY_KIND = "factory"
+FABRIC_REACT_AGENT = "fabric.agent.react"
 FUNCTION_GROUP_SEPARATOR = "__"
-NAT_SETTINGS_FIELDS = frozenset({"functions", "function_groups"})
 REACT_AGENT_REFS = frozenset(
     {
         "react_agent",
@@ -52,7 +55,7 @@ LOGGER = logging.getLogger(__name__)
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
-    lifecycle.serve(NatRuntime)
+    lifecycle.serve(NatRuntime, config_model=AgentConfig)
 
 
 def _config_error(code: str, message: str, **metadata: Any) -> lifecycle.LifecycleError:
@@ -69,59 +72,40 @@ def _runtime_id(payload: dict[str, Any]) -> str:
         ) from error
 
 
-def _mapping(value: Any, field: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
+def _agent_config(payload: dict[str, Any]) -> AgentConfig:
+    config = payload.get("config")
+    if not isinstance(config, AgentConfig):
         raise _config_error(
-            "nat_invalid_harness_settings",
-            f"{field} must be a mapping",
-            field=field,
+            "nat_invalid_agent_config",
+            "NAT requires a validated AgentConfig start payload",
         )
-    return copy.deepcopy(value)
+    return config
 
 
-def _nat_workflow(payload: dict[str, Any]) -> dict[str, Any]:
-    fabric_config = common_utils.fabric_config(payload)
-    workflow_config = fabric_config.get("workflow")
-    if not isinstance(workflow_config, dict):
+def _nat_workflow(agent_config: AgentConfig) -> dict[str, Any]:
+    workflow_config = agent_config.workflow
+    if workflow_config is None:
         raise _config_error(
             "nat_invalid_workflow",
-            "workflow must be a mapping",
+            "AgentConfig.workflow is required",
             field="workflow",
         )
 
-    entrypoint = workflow_config.get("entrypoint")
-    if not isinstance(entrypoint, dict):
+    entrypoint = workflow_config.entrypoint
+    if entrypoint.kind != WORKFLOW_FACTORY_KIND:
         raise _config_error(
             "nat_invalid_workflow",
-            "workflow.entrypoint must be a mapping",
-            field="workflow.entrypoint",
-        )
-    kind = entrypoint.get("kind")
-    if kind != WORKFLOW_KIND:
-        raise _config_error(
-            "nat_invalid_workflow",
-            f"workflow.entrypoint.kind must equal {WORKFLOW_KIND!r}",
+            f"workflow.entrypoint.kind must equal {WORKFLOW_FACTORY_KIND!r}",
             field="workflow.entrypoint.kind",
         )
-    workflow_ref = entrypoint.get("ref")
-    if (
-        not isinstance(workflow_ref, str)
-        or not workflow_ref
-        or any(character.isspace() for character in workflow_ref)
-    ):
+    if entrypoint.ref != FABRIC_REACT_AGENT:
         raise _config_error(
             "nat_invalid_workflow",
-            "workflow.entrypoint.ref must be a non-empty string without whitespace",
+            f"NAT does not support workflow factory {entrypoint.ref!r}",
             field="workflow.entrypoint.ref",
         )
 
-    settings = workflow_config.get("settings", {})
-    if not isinstance(settings, dict):
-        raise _config_error(
-            "nat_invalid_workflow",
-            "workflow.settings must be a mapping",
-            field="workflow.settings",
-        )
+    settings = workflow_config.settings
     if "_type" in settings:
         raise _config_error(
             "nat_invalid_workflow",
@@ -130,38 +114,55 @@ def _nat_workflow(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     workflow = copy.deepcopy(settings)
-    workflow["_type"] = workflow_ref
+    workflow["_type"] = "react_agent"
     if _is_react_agent(workflow):
         workflow.setdefault("tool_names", [])
     return workflow
 
 
-def _nat_component_settings(payload: dict[str, Any]) -> dict[str, Any]:
-    settings = common_utils.settings_payload(payload)
-    if not isinstance(settings, dict):
+def _nat_tool_component(
+    name: str,
+    definition: AgentToolDefinition,
+) -> tuple[str, dict[str, Any]]:
+    if definition.kind not in {"function", "function_group"}:
+        raise _config_error(
+            "nat_unsupported_tool_definition",
+            f"NAT does not support tool definition kind {definition.kind!r}",
+            definition=name,
+            kind=definition.kind,
+        )
+    if "_type" in definition.settings:
+        raise _config_error(
+            "nat_tool_definition_reserved",
+            "Tool definition settings cannot replace the normalized ref",
+            definition=name,
+            field=f"tools.definitions.{name}.settings._type",
+        )
+    component = copy.deepcopy(definition.settings)
+    component["_type"] = definition.ref
+    return definition.kind, component
+
+
+def _nat_component_settings(agent_config: AgentConfig) -> dict[str, Any]:
+    if agent_config.harness is not None and agent_config.harness.settings:
         raise _config_error(
             "nat_invalid_harness_settings",
-            "harness.settings must be a mapping",
-            field="harness.settings",
+            "The shared NAT adapter does not accept harness settings",
+            fields=sorted(agent_config.harness.settings),
         )
 
-    unknown = sorted(set(settings).difference(NAT_SETTINGS_FIELDS))
-    if unknown:
-        raise _config_error(
-            "nat_invalid_harness_settings",
-            "NAT harness settings contain unsupported top-level fields",
-            fields=unknown,
-        )
+    functions: dict[str, Any] = {}
+    function_groups: dict[str, Any] = {}
+    definitions = agent_config.tools.definitions if agent_config.tools else {}
+    for name, definition in definitions.items():
+        kind, component = _nat_tool_component(name, definition)
+        target = functions if kind == "function" else function_groups
+        target[name] = component
 
-    functions = settings.get("functions", {})
-    function_groups = settings.get("function_groups", {})
     return {
-        "workflow": _nat_workflow(payload),
-        "functions": _mapping(functions, "harness.settings.functions"),
-        "function_groups": _mapping(
-            function_groups,
-            "harness.settings.function_groups",
-        ),
+        "workflow": _nat_workflow(agent_config),
+        "functions": functions,
+        "function_groups": function_groups,
     }
 
 
@@ -172,47 +173,10 @@ def _nat_llm_type(provider: str) -> str:
     return "nim" if provider == "nvidia" else provider
 
 
-def _nat_llms(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    models = common_utils.models_payload(payload)
-    if not isinstance(models, dict):
-        raise _config_error("nat_invalid_models", "Fabric models must be a mapping")
-
+def _nat_llms(agent_config: AgentConfig) -> dict[str, dict[str, Any]]:
     llms: dict[str, dict[str, Any]] = {}
-    for role, raw_model in models.items():
-        if not isinstance(role, str) or not role:
-            raise _config_error(
-                "nat_invalid_models",
-                "Fabric model role names must be non-empty strings",
-            )
-        if not isinstance(raw_model, dict):
-            raise _config_error(
-                "nat_invalid_models",
-                f"Fabric model {role!r} must be a mapping",
-                role=role,
-            )
-
-        provider = raw_model.get("provider")
-        model_name = raw_model.get("model")
-        if not isinstance(provider, str) or not provider:
-            raise _config_error(
-                "nat_invalid_models",
-                f"Fabric model {role!r} requires a non-empty provider",
-                role=role,
-            )
-        if not isinstance(model_name, str) or not model_name:
-            raise _config_error(
-                "nat_invalid_models",
-                f"Fabric model {role!r} requires a non-empty model",
-                role=role,
-            )
-
-        settings = raw_model.get("settings") or {}
-        if not isinstance(settings, dict):
-            raise _config_error(
-                "nat_invalid_models",
-                f"Fabric model {role!r} settings must be a mapping",
-                role=role,
-            )
+    for role, model in agent_config.models.items():
+        settings = model.settings
         reserved = sorted(RESERVED_MODEL_SETTINGS.intersection(settings))
         if reserved:
             raise _config_error(
@@ -225,23 +189,17 @@ def _nat_llms(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         llm = copy.deepcopy(settings)
         llm.update(
             {
-                "_type": _nat_llm_type(provider),
-                "model_name": model_name,
+                "_type": _nat_llm_type(model.provider),
+                "model_name": model.model,
             }
         )
-        if raw_model.get("base_url") is not None:
-            llm["base_url"] = raw_model["base_url"]
-        if raw_model.get("temperature") is not None:
-            llm["temperature"] = raw_model["temperature"]
+        if model.base_url is not None:
+            llm["base_url"] = model.base_url
+        if model.temperature is not None:
+            llm["temperature"] = model.temperature
 
-        api_key_env = raw_model.get("api_key_env")
+        api_key_env = model.api_key_env
         if api_key_env is not None:
-            if not isinstance(api_key_env, str) or not api_key_env:
-                raise _config_error(
-                    "nat_invalid_models",
-                    f"Fabric model {role!r} api_key_env must be a non-empty string",
-                    role=role,
-                )
             api_key = os.environ.get(api_key_env)
             if not api_key:
                 raise _config_error(
@@ -260,9 +218,11 @@ def _is_react_agent(workflow: dict[str, Any]) -> bool:
     return workflow.get("_type") in REACT_AGENT_REFS
 
 
-def _apply_system_instruction(config: dict[str, Any], payload: dict[str, Any]) -> None:
-    instruction = common_utils.system_instruction(payload)
-    if instruction is None:
+def _apply_system_instruction(
+    config: dict[str, Any], agent_config: AgentConfig
+) -> None:
+    instruction = agent_config.instructions
+    if instruction is None or instruction.system is None:
         return
 
     workflow = config["workflow"]
@@ -281,7 +241,7 @@ def _apply_system_instruction(config: dict[str, Any], payload: dict[str, Any]) -
                 "workflow.settings.additional_instructions",
             ],
         )
-    workflow["additional_instructions"] = instruction
+    workflow["additional_instructions"] = instruction.system.content
 
 
 def _string_list(value: Any, field: str, *, optional: bool = False) -> list[str] | None:
@@ -301,18 +261,11 @@ def _string_list(value: Any, field: str, *, optional: bool = False) -> list[str]
     return list(dict.fromkeys(value))
 
 
-def nat_mcp_server_config(name: str, server: Any) -> dict[str, Any]:
-    """Translate one Fabric MCP server plan into a NAT server mapping."""
+def nat_mcp_server_config(name: str, server: AgentMcpServerConfig) -> dict[str, Any]:
+    """Translate one normalized MCP server into a NAT server mapping."""
 
-    if not isinstance(server, dict):
-        raise _config_error(
-            "nat_invalid_mcp_server",
-            f"NAT MCP server {name!r} must be a mapping",
-            server=name,
-        )
-
-    transport = str(server.get("transport") or "").strip().lower().replace("_", "-")
-    target = os.path.expandvars(str(server.get("url") or "")).strip()
+    transport = server.transport.strip().lower().replace("_", "-")
+    target = os.path.expandvars(server.url).strip()
     if not target:
         raise _config_error(
             "nat_invalid_mcp_server",
@@ -325,11 +278,11 @@ def nat_mcp_server_config(name: str, server: Any) -> dict[str, Any]:
             "transport": "stdio",
             "command": target,
         }
-        args = common_utils.normalize_list(server.get("args"))
-        if args:
-            result["args"] = args
-        if env := server.get("env"):
-            result["env"] = env
+
+        if server.args:
+            result["args"] = server.args
+        if server.env:
+            result["env"] = dict(server.env)
         return result
 
     if transport in {"http", "streamablehttp"}:
@@ -358,37 +311,15 @@ def _workflow_tool_names(config: dict[str, Any], reason: str) -> list[str]:
     return tool_names
 
 
-def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
-    plan = common_utils.capability_plan(payload)
-    if not isinstance(plan, dict):
-        raise _config_error(
-            "nat_invalid_capability_plan",
-            "NAT capability plan must be a mapping",
-        )
-    native = plan.get("native", {})
-    if not isinstance(native, dict):
-        raise _config_error(
-            "nat_invalid_capability_plan",
-            "NAT native capability plan must be a mapping",
-        )
-    servers = native.get("mcp_servers", {})
-    if not isinstance(servers, dict):
-        raise _config_error(
-            "nat_invalid_mcp_config",
-            "NAT native MCP capability plan must be a mapping",
-        )
-    return servers
-
-
-def _mcp_group(name: str, server: dict[str, Any]) -> dict[str, Any] | None:
+def _mcp_group(name: str, server: AgentMcpServerConfig) -> dict[str, Any] | None:
     allowed = _string_list(
-        server.get("allowed_tools"),
-        f"capability_plan.native.mcp_servers.{name}.allowed_tools",
+        server.allowed_tools,
+        f"mcp.servers.{name}.allowed_tools",
         optional=True,
     )
     blocked = _string_list(
-        server.get("blocked_tools"),
-        f"capability_plan.native.mcp_servers.{name}.blocked_tools",
+        server.blocked_tools,
+        f"mcp.servers.{name}.blocked_tools",
     )
     assert blocked is not None
 
@@ -417,8 +348,8 @@ def _mcp_group(name: str, server: dict[str, Any]) -> dict[str, Any] | None:
     return group
 
 
-def _apply_mcp_servers(config: dict[str, Any], payload: dict[str, Any]) -> set[str]:
-    servers = _native_mcp_servers(payload)
+def _apply_mcp_servers(config: dict[str, Any], agent_config: AgentConfig) -> set[str]:
+    servers = agent_config.mcp.servers if agent_config.mcp else {}
     if not servers:
         return set()
 
@@ -427,19 +358,7 @@ def _apply_mcp_servers(config: dict[str, Any], payload: dict[str, Any]) -> set[s
     suppressed: set[str] = set()
     tool_names: list[str] | None = None
 
-    for name, raw_server in sorted(servers.items()):
-        if not isinstance(name, str) or not name.strip() or name != name.strip():
-            raise _config_error(
-                "nat_invalid_mcp_server",
-                "NAT MCP server names must be non-empty strings",
-            )
-        if not isinstance(raw_server, dict):
-            raise _config_error(
-                "nat_invalid_mcp_server",
-                f"NAT MCP server {name!r} must be a mapping",
-                server=name,
-            )
-
+    for name, server in sorted(servers.items()):
         if name in functions or name in function_groups:
             raise _config_error(
                 "nat_mcp_name_conflict",
@@ -447,7 +366,7 @@ def _apply_mcp_servers(config: dict[str, Any], payload: dict[str, Any]) -> set[s
                 server=name,
             )
 
-        group = _mcp_group(name, raw_server)
+        group = _mcp_group(name, server)
         if group is None:
             # An explicit empty allowlist means the server exposes no tools. It
             # must not remain reachable through a pre-existing workflow ref.
@@ -635,11 +554,18 @@ def _apply_blocked_tools(config: dict[str, Any], blocked: list[str]) -> None:
 
 
 def _apply_tool_policy(
-    config: dict[str, Any], payload: dict[str, Any], suppressed: set[str]
+    config: dict[str, Any], agent_config: AgentConfig, suppressed: set[str]
 ) -> None:
-    tools = common_utils.tools_config(payload)
-    enabled = _string_list(tools.get("enabled"), "config.tools.enabled", optional=True)
-    blocked = _string_list(tools.get("blocked"), "config.tools.blocked")
+    tools = agent_config.tools
+    enabled = _string_list(
+        tools.enabled if tools else None,
+        "tools.enabled",
+        optional=True,
+    )
+    blocked = _string_list(
+        tools.blocked if tools else [],
+        "tools.blocked",
+    )
     assert blocked is not None
     if enabled is None and not blocked:
         return
@@ -668,29 +594,29 @@ def _apply_tool_policy(
         _apply_blocked_tools(config, blocked)
 
 
-def apply_nat_capabilities(config: dict[str, Any], payload: dict[str, Any]) -> None:
-    """Compile Fabric MCP routing and tool policy into a raw NAT config."""
+def apply_nat_capabilities(config: dict[str, Any], agent_config: AgentConfig) -> None:
+    """Compile normalized MCP routing and tool policy into a raw NAT config."""
 
-    suppressed = _apply_mcp_servers(config, payload)
-    _apply_tool_policy(config, payload, suppressed)
+    suppressed = _apply_mcp_servers(config, agent_config)
+    _apply_tool_policy(config, agent_config, suppressed)
 
 
-def build_nat_config_mapping(payload: dict[str, Any]) -> dict[str, Any]:
-    """Build the raw in-memory NAT mapping from one Fabric start payload."""
+def build_nat_config_mapping(agent_config: AgentConfig) -> dict[str, Any]:
+    """Build the raw in-memory NAT mapping from typed southbound config."""
 
-    config = _nat_component_settings(payload)
-    llms = _nat_llms(payload)
+    config = _nat_component_settings(agent_config)
+    llms = _nat_llms(agent_config)
     if llms:
         config["llms"] = llms
-    _apply_system_instruction(config, payload)
-    apply_nat_capabilities(config, payload)
+    _apply_system_instruction(config, agent_config)
+    apply_nat_capabilities(config, agent_config)
     return config
 
 
-def build_nat_config(payload: dict[str, Any]) -> Any:
+def build_nat_config(agent_config: AgentConfig) -> Any:
     """Build and validate a typed NAT Config without a workflow YAML file."""
 
-    raw_config = build_nat_config_mapping(payload)
+    raw_config = build_nat_config_mapping(agent_config)
 
     try:
         from nat.runtime.loader import PluginTypes
@@ -790,12 +716,13 @@ class NatRuntime:
             )
 
         runtime_id = _runtime_id(payload)
+        agent_config = _agent_config(payload)
         stack = AsyncExitStack()
         try:
             from nat.builder.workflow_builder import WorkflowBuilder
             from nat.runtime.session import SessionManager
 
-            config = build_nat_config(payload)
+            config = build_nat_config(agent_config)
             builder = await stack.enter_async_context(
                 WorkflowBuilder.from_config(config=config)
             )

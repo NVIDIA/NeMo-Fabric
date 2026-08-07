@@ -15,6 +15,7 @@ import nemo_fabric
 import nemo_fabric.errors as fabric_errors
 import pytest
 from nemo_fabric import AdapterInfo
+from nemo_fabric import ArtifactRef
 from nemo_fabric import DoctorReport
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import Fabric
@@ -49,6 +50,7 @@ from nemo_fabric import RuntimeConfig
 from nemo_fabric import RuntimeHandle
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
+from nemo_fabric import ToolDefinitionConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric import WorkflowConfig
 from nemo_fabric import WorkflowEntrypointConfig
@@ -216,6 +218,12 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         output_dir="./artifacts/relay",
     )
     config.block_tools("browser", "shell", "browser")
+    config.add_tool_definition(
+        "email_phishing_analyzer",
+        kind="function",
+        ref="email_phishing_analyzer",
+        settings={"llm": "default"},
+    )
     assert config.tools is not None
     config.tools.enabled = ["terminal"]
 
@@ -223,8 +231,19 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
     assert isinstance(config.skills, SkillConfig)
     assert isinstance(config.telemetry, TelemetryConfig)
     assert isinstance(config.tools, ToolsConfig)
+    assert isinstance(
+        config.tools.definitions["email_phishing_analyzer"],
+        ToolDefinitionConfig,
+    )
 
     assert config.to_mapping()["tools"] == {
+        "definitions": {
+            "email_phishing_analyzer": {
+                "kind": "function",
+                "ref": "email_phishing_analyzer",
+                "settings": {"llm": "default"},
+            }
+        },
         "enabled": ["terminal"],
         "blocked": ["browser", "shell"],
     }
@@ -273,6 +292,23 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         )
     with pytest.raises(ValidationError, match="providers"):
         TelemetryConfig(providers={"sideways": {}})
+
+
+def test_remove_last_tool_definition_preserves_tools_extensions():
+    config = FabricConfig(
+        metadata=MetadataConfig(name="demo"),
+        harness=HarnessConfig(adapter_id="test.fabric.shim"),
+        tools=ToolsConfig(
+            definitions={
+                "web": ToolDefinitionConfig(kind="function_group", ref="web_tools")
+            },
+            profile="strict",
+        ),
+    )
+
+    config.remove_tool_definition("web")
+
+    assert config.to_mapping()["tools"] == {"profile": "strict"}
 
 
 def test_mcp_server_tool_policy_preserves_empty_allowlist():
@@ -603,6 +639,91 @@ def test_run_plan_config_preserves_normalized_tools_and_execution_fields():
 def test_run_plan_tools_config_rejects_scalar_blocked_value():
     with pytest.raises(FabricConfigError, match="tools blocked"):
         _ToolsConfig(blocked="browser")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("definitions", [[], [{"kind": "function", "ref": "web"}]])
+def test_run_plan_tools_config_rejects_non_mapping_definitions(definitions: object):
+    with pytest.raises(FabricConfigError, match="tool definitions must be a JSON object"):
+        _ToolsConfig(definitions=definitions)  # type: ignore[arg-type]
+
+
+def test_run_plan_tools_config_preserves_named_definitions():
+    config = _ToolsConfig().add_definition(
+        "web",
+        kind="function_group",
+        ref="web_tools",
+        settings={"include": ["search"]},
+    )
+
+    assert config.to_mapping() == {
+        "definitions": {
+            "web": {
+                "kind": "function_group",
+                "ref": "web_tools",
+                "settings": {"include": ["search"]},
+            }
+        }
+    }
+
+
+def test_typed_tool_definition_omits_empty_settings():
+    definition = ToolDefinitionConfig(kind="function_group", ref="web_tools")
+
+    assert definition.model_dump() == {
+        "kind": "function_group",
+        "ref": "web_tools",
+    }
+
+
+def test_run_plan_snapshot_removes_named_definition():
+    config = _FabricConfigSnapshot.from_mapping(
+        {
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "demo"},
+            "harness": {"adapter_id": "test.fabric.shim"},
+            "tools": {
+                "definitions": {
+                    "web": {"kind": "function_group", "ref": "web_tools"}
+                }
+            },
+        }
+    )
+
+    config.remove_tool_definition("web")
+
+    assert "definitions" not in config.to_mapping()["tools"]
+
+
+def test_run_plan_snapshot_remove_definition_preserves_absent_tools():
+    config = _FabricConfigSnapshot.from_mapping(
+        {
+            "schema_version": "fabric.agent/v1alpha1",
+            "metadata": {"name": "demo"},
+            "harness": {"adapter_id": "test.fabric.shim"},
+        }
+    )
+
+    config.remove_tool_definition("web")
+
+    assert "tools" not in config.to_mapping()
+
+
+def test_artifact_ref_omits_empty_metadata_and_preserves_values():
+    assert ArtifactRef.from_mapping(
+        {"name": "trace", "kind": "file", "path": "trace.jsonl"}
+    ).to_mapping() == {
+        "name": "trace",
+        "kind": "file",
+        "path": "trace.jsonl",
+    }
+    assert ArtifactRef.from_mapping(
+        {
+            "name": "trace",
+            "kind": "file",
+            "path": "trace.jsonl",
+            "metadata": {"rows": 10},
+        }
+    ).to_mapping()["metadata"] == {"rows": 10}
 
 
 def test_fabric_config_authors_first_class_relay_observability():

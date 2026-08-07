@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Preview southbound invocation request.\n\nThe current local-host transport does not enforce this type. It will join\nthe negotiated adapter contract when typed invoke transport is implemented.",
+  "properties": {
+    "context": {
+      "additionalProperties": true,
+      "description": "Caller-provided task, rollout, workflow, or application context.",
+      "type": "object"
+    },
+    "extensions": {
+      "additionalProperties": true,
+      "description": "Adapter-owned request fields.",
+      "type": "object"
+    },
+    "input": {
+      "description": "Request payload for the adapter target."
+    }
+  },
+  "required": [
+    "input"
+  ],
+  "title": "AgentRunRequest",
+  "type": "object"
+}

@@ -66,6 +66,7 @@ relay = [
 
 [dependency-groups]
 adapters = [
+  "nemo-fabric-adapter-contract",
   "nemo-fabric-adapters-common",
   "nemo-fabric-adapters-claude",
   "nemo-fabric-adapters-codex",
@@ -122,6 +123,7 @@ override-dependencies = [
 
 [tool.uv.sources]
 nemo-fabric-runtime = { path = "python", editable = true }
+nemo-fabric-adapter-contract = { path = "adapter-contract", editable = true }
 nemo-fabric-adapters-common = { path = "adapters/common", editable = true }
 nemo-fabric-adapters-claude = { path = "adapters/claude", editable = true }
 nemo-fabric-adapters-codex = { path = "adapters/codex", editable = true }

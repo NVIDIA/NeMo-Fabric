@@ -34,6 +34,11 @@
           "type": "string"
         },
         {
+          "const": "tools.definitions",
+          "description": "Named normalized tool and tool-group definitions.",
+          "type": "string"
+        },
+        {
           "const": "tools.blocked",
           "description": "Adapter-native tool names to block.",
           "type": "string"
@@ -55,6 +60,21 @@
         }
       ]
     },
+    "AdapterConfigInput": {
+      "description": "Configuration object delivered to an adapter lifecycle host.",
+      "oneOf": [
+        {
+          "const": "fabric_config",
+          "description": "Deliver the complete northbound `FabricConfig` for legacy adapters.",
+          "type": "string"
+        },
+        {
+          "const": "agent_config",
+          "description": "Deliver the resolved southbound `AgentConfig` contract.",
+          "type": "string"
+        }
+      ]
+    },
     "AdapterConfigSupport": {
       "additionalProperties": true,
       "description": "Adapter config support.",
@@ -72,6 +92,11 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "input": {
+          "$ref": "#/$defs/AdapterConfigInput",
+          "default": "fabric_config",
+          "description": "Configuration object delivered to the adapter lifecycle host."
         }
       },
       "type": "object"
@@ -235,13 +260,45 @@
     },
     "config": {
       "$ref": "#/$defs/AdapterConfigSupport",
-      "default": {},
+      "default": {
+        "input": "fabric_config"
+      },
       "description": "NeMo Fabric config areas this adapter consumes or generates."
     },
     "contract_version": {
       "description": "Adapter descriptor contract version.",
       "minLength": 1,
       "type": "string"
+    },
+    "extension_schemas": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "description": "JSON Schemas for adapter-owned `extensions` at southbound block types.",
+      "propertyNames": {
+        "enum": [
+          "agent_config",
+          "harness",
+          "model",
+          "instructions",
+          "instruction",
+          "runtime",
+          "skills",
+          "mcp",
+          "mcp_server",
+          "tools",
+          "tool_definition",
+          "workflow",
+          "workflow_entrypoint",
+          "run_request",
+          "run_result",
+          "run_error",
+          "artifact",
+          "usage"
+        ]
+      },
+      "type": "object"
     },
     "harness": {
       "description": "Stable machine-readable harness identifier implemented by this adapter.",
@@ -270,6 +327,14 @@
       "$ref": "#/$defs/AdapterTelemetrySupport",
       "default": {},
       "description": "Telemetry support declared by this adapter."
+    },
+    "tool_definition_schema": {
+      "additionalProperties": true,
+      "description": "JSON Schema applied to every normalized `FabricConfig.tools.definitions` entry.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "workflow_schema": {
       "additionalProperties": true,

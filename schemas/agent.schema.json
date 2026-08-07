@@ -599,6 +599,7 @@
               "default": 3000,
               "description": "Request timeout in milliseconds.",
               "format": "uint64",
+              "maximum": 18446744073709551615,
               "minimum": 0,
               "type": "integer"
             },
@@ -786,6 +787,7 @@
               "default": 3000,
               "description": "Request timeout in milliseconds.",
               "format": "uint64",
+              "maximum": 18446744073709551615,
               "minimum": 0,
               "type": "integer"
             },
@@ -1004,6 +1006,7 @@
           "default": 2,
           "description": "Relay observability config version.",
           "format": "uint32",
+          "maximum": 4294967295,
           "minimum": 0,
           "type": "integer"
         }
@@ -1070,6 +1073,7 @@
           "default": 3000,
           "description": "Request timeout in milliseconds.",
           "format": "uint64",
+          "maximum": 18446744073709551615,
           "minimum": 0,
           "type": "integer"
         },
@@ -1237,6 +1241,34 @@
       },
       "type": "object"
     },
+    "ToolDefinitionConfig": {
+      "additionalProperties": true,
+      "description": "One named normalized tool or tool-group definition.",
+      "properties": {
+        "kind": {
+          "description": "Portable definition category, such as `function` or `function_group`.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Adapter-resolved component or factory reference.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Definition-specific construction settings validated by the adapter descriptor.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "type": "object"
+    },
     "ToolsConfig": {
       "additionalProperties": true,
       "description": "Harness-neutral tool capability configuration.",
@@ -1247,6 +1279,13 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "definitions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolDefinitionConfig"
+          },
+          "description": "Named tool and tool-group definitions resolved by the selected adapter.",
+          "type": "object"
         },
         "enabled": {
           "description": "Adapter-native tool names to expose. `None` preserves the harness default.",

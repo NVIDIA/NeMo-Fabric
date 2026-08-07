@@ -537,15 +537,55 @@ class _SkillConfig(_ConfigMapping):
         return self
 
 
-class _ToolsConfig(_ConfigMapping):
-    """Harness-neutral tool capability configuration."""
+class _ToolDefinitionConfig(_ConfigMapping):
+    """One named normalized tool or tool-group definition."""
 
-    _fields = frozenset({"enabled", "blocked"})
-    _omit_if_empty = frozenset({"blocked"})
+    _fields = frozenset({"kind", "ref", "settings"})
+    _omit_if_empty = frozenset({"settings"})
 
     def __init__(
         self,
         *,
+        kind: str,
+        ref: str,
+        settings: Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(
+            {
+                "kind": _required_text(kind, "tool definition kind"),
+                "ref": _required_text(ref, "tool definition ref"),
+                "settings": _mapping(
+                    {} if settings is None else settings,
+                    "tool definition settings",
+                ),
+            },
+            extra_fields=extra_fields,
+        )
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, Any]) -> _ToolDefinitionConfig:
+        """Validate a tool definition and preserve extension fields."""
+
+        data = _mapping(value, "tool definition")
+        return cls(
+            kind=data.get("kind"),
+            ref=data.get("ref"),
+            settings=data.get("settings"),
+            extra_fields={key: item for key, item in data.items() if key not in cls._fields},
+        )
+
+
+class _ToolsConfig(_ConfigMapping):
+    """Harness-neutral tool capability configuration."""
+
+    _fields = frozenset({"definitions", "enabled", "blocked"})
+    _omit_if_empty = frozenset({"definitions", "blocked"})
+
+    def __init__(
+        self,
+        *,
+        definitions: Mapping[str, Any] | None = None,
         enabled: Sequence[str] | None = None,
         blocked: Sequence[str] | None = None,
         extra_fields: Mapping[str, Any] | None = None,
@@ -569,7 +609,22 @@ class _ToolsConfig(_ConfigMapping):
         if overlap:
             name = sorted(overlap)[0]
             raise FabricConfigError(f"tool {name!r} cannot be both enabled and blocked")
-        values: dict[str, Any] = {"blocked": blocked_values}
+        raw_definitions = _mapping(
+            {} if definitions is None else definitions,
+            "tool definitions",
+        )
+        definition_values = {
+            _required_text(name, "tool definition name"): _coerce(
+                _ToolDefinitionConfig,
+                definition,
+                f"tool definition {name}",
+            )
+            for name, definition in raw_definitions.items()
+        }
+        values: dict[str, Any] = {
+            "definitions": definition_values,
+            "blocked": blocked_values,
+        }
         if enabled_values is not None:
             values["enabled"] = enabled_values
         super().__init__(values, extra_fields=extra_fields)
@@ -580,6 +635,7 @@ class _ToolsConfig(_ConfigMapping):
 
         data = _mapping(value, "tools")
         return cls(
+            definitions=data.get("definitions"),
             enabled=data.get("enabled"),
             blocked=data.get("blocked", []),
             extra_fields={key: item for key, item in data.items() if key not in cls._fields},
@@ -594,6 +650,37 @@ class _ToolsConfig(_ConfigMapping):
             if value not in blocked:
                 blocked.append(value)
         self["blocked"] = blocked
+        return self
+
+    def add_definition(
+        self,
+        name: str,
+        *,
+        kind: str,
+        ref: str,
+        settings: Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> _ToolsConfig:
+        """Add or replace one named definition."""
+
+        definitions = dict(self.get("definitions", {}))
+        definitions[_required_text(name, "tool definition name")] = (
+            _ToolDefinitionConfig(
+                kind=kind,
+                ref=ref,
+                settings=settings,
+                extra_fields=extra_fields,
+            )
+        )
+        self["definitions"] = definitions
+        return self
+
+    def remove_definition(self, name: str) -> _ToolsConfig:
+        """Remove one named definition."""
+
+        definitions = dict(self.get("definitions", {}))
+        definitions.pop(name, None)
+        self["definitions"] = definitions
         return self
 
 
@@ -978,7 +1065,7 @@ class _FabricConfigSnapshot(_ConfigMapping):
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
         extra_fields: Mapping[str, Any] | None = None,
-    ) -> "_FabricConfigSnapshot":
+    ) -> _FabricConfigSnapshot:
         """Add or replace a named MCP server and return this config."""
 
         self.mcp.add_server(
@@ -1003,6 +1090,36 @@ class _FabricConfigSnapshot(_ConfigMapping):
         """Block adapter-native tool names and return this config."""
 
         self.tools.block(*tools)
+        return self
+
+    def add_tool_definition(
+        self,
+        name: str,
+        *,
+        kind: str,
+        ref: str,
+        settings: Mapping[str, Any] | None = None,
+        extra_fields: Mapping[str, Any] | None = None,
+    ) -> _FabricConfigSnapshot:
+        """Add or replace one named tool definition and return this config."""
+
+        self.tools.add_definition(
+            name,
+            kind=kind,
+            ref=ref,
+            settings=settings,
+            extra_fields=extra_fields,
+        )
+        return self
+
+    def remove_tool_definition(self, name: str) -> _FabricConfigSnapshot:
+        """Remove one named tool definition and return this config."""
+
+        tools = self.get("tools")
+        if tools is not None:
+            if not isinstance(tools, _ToolsConfig):
+                raise FabricConfigError("tools must be a _ToolsConfig")
+            tools.remove_definition(name)
         return self
 
     def enable_relay(
@@ -1318,6 +1435,7 @@ class ArtifactRef(FabricMapping):
     metadata: Mapping[str, Any]
     _fields = frozenset({"name", "kind", "path", "media_type", "metadata"})
     _json_fields = frozenset({"metadata"})
+    _omit_if_empty = frozenset({"metadata"})
 
     @classmethod
     def _normalize(cls, data: dict[str, Any]) -> dict[str, Any]:
