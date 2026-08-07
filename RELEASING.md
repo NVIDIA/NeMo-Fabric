@@ -94,6 +94,29 @@ following:
 New PRs that must go into the upcoming release must target the new `release/*`
 branch. Changes intended for later releases should continue to target `main`.
 
+## Patch Releases
+
+Cut a patch release from the existing release branch for that major and minor
+line. Do not create another release branch or run the code-freeze workflow.
+
+Set the exact patch version, previous stable tag, and existing release branch:
+
+```bash
+export RELEASE_VERSION=0.1.1
+export PREVIOUS_RELEASE_TAG=v0.1.0
+export RELEASE_BRANCH=release/0.1
+
+git fetch upstream "${RELEASE_BRANCH}" --tags
+git log --oneline "${PREVIOUS_RELEASE_TAG}..upstream/${RELEASE_BRANCH}"
+```
+
+Open the fix or release-preparation PR against `${RELEASE_BRANCH}`. The PR must
+contain the intended patch changes and run `just set-version <release-version>`
+so the release branch contains the final package version before tagging. Verify
+the commit range from `${PREVIOUS_RELEASE_TAG}` contains only changes intended
+for the patch release. Changes required on `main` should be handled separately;
+do not mix a forward merge into the patch release.
+
 ## Before You Cut A Release
 
 Before you create a release tag, confirm the following:
@@ -156,32 +179,42 @@ place. In a disposable CI workspace that is fine.
 In a local checkout, restore those temporary manifest edits before continuing if
 you are not committing them.
 
-## Cut an RC Tag
+## Cut An RC Tag
 
-After the release commit is merged and validated, create and push the raw
-SemVer tag (changing the value of `RELEASE_VERSION` and `RC_NUM` as appropriate):
+After the release commit is merged and validated, create and push a signed,
+annotated tag. Set the complete release-candidate version:
 
 ```bash
-export RELEASE_VERSION=0.1.0
-export RELEASE_SHORT_VERSION=$(echo $RELEASE_VERSION | cut -f -2 -d '.')
-export RC_NUM=1
-export RELEASE_BRANCH="release/${RELEASE_SHORT_VERSION}"
-echo "Cutting release tag v$RELEASE_VERSION for release branch $RELEASE_BRANCH"
+export RELEASE_VERSION=0.1.0-rc.1
+export RELEASE_BRANCH=release/0.1
+export RELEASE_TAG="v${RELEASE_VERSION}"
+echo "Cutting release tag ${RELEASE_TAG} for release branch ${RELEASE_BRANCH}"
 
-git fetch upstream
+git fetch upstream "${RELEASE_BRANCH}" --tags
+git switch "${RELEASE_BRANCH}"
+git pull --ff-only upstream "${RELEASE_BRANCH}"
 
-git checkout ${RELEASE_BRANCH}
-git pull
-git status
+test -z "$(git status --porcelain)"
+RELEASE_SHA="$(git rev-parse HEAD)"
+REMOTE_RELEASE_SHA="$(git rev-parse "upstream/${RELEASE_BRANCH}^{commit}")"
+test "${RELEASE_SHA}" = "${REMOTE_RELEASE_SHA}"
+test "$(just normalize-release-tag "${RELEASE_TAG}")" = "${RELEASE_VERSION}"
 
-git tag -as -m "v${RELEASE_VERSION}-rc${RC_NUM}" v${RELEASE_VERSION}-rc${RC_NUM}
+if git ls-remote --exit-code --tags upstream "refs/tags/${RELEASE_TAG}" >/dev/null; then
+  echo "Error: remote tag ${RELEASE_TAG} already exists" >&2
+  exit 1
+fi
 
-# Check the tag
-git tag -l v${RELEASE_VERSION}-rc${RC_NUM}
-git show v${RELEASE_VERSION}-rc${RC_NUM}
+git tag -s -a \
+  -m "NVIDIA NeMo Fabric ${RELEASE_VERSION}" \
+  "${RELEASE_TAG}" \
+  "${RELEASE_SHA}"
 
-# Push the changes
-git push upstream v${RELEASE_VERSION}-rc${RC_NUM}
+git tag -v "${RELEASE_TAG}"
+git show "${RELEASE_TAG}"
+test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "${RELEASE_SHA}"
+
+git push upstream "refs/tags/${RELEASE_TAG}"
 ```
 
 
@@ -191,14 +224,16 @@ Before cutting the final release tag, prepare the release notes (OK to skip for
 RC and alpha tags). You can perform these steps manually or use the
 [`draft-release-notes`](.agents/skills/draft-release-notes/SKILL.md) skill.
 
-Confirm the target release version from the release branch and package
-metadata, then gather read-only evidence with explicit release refs:
+Confirm the exact target release version from the release branch and package
+metadata, then gather read-only evidence with explicit release refs. For a
+patch release, use the previous stable tag as `--previous`. For a new release
+line, use the previous release branch or tag:
 
 ```bash
 python3 .agents/skills/draft-release-notes/scripts/collect_release_evidence.py \
-  --previous release/<previous-major>.<previous-minor> \
+  --previous <previous-release-tag-or-branch> \
   --current HEAD \
-  --version <major>.<minor>
+  --version <release-version>
 ```
 
 Treat the report as an evidence index, not publication-ready copy. Verify every
@@ -206,11 +241,21 @@ candidate claim in the changed public docs, API types, command help, or source.
 Prioritize breaking changes, migrations, user-visible features, and ongoing
 support limitations.
 
-Update [`docs/about-nemo-fabric/release-notes.mdx`](docs/about-nemo-fabric/release-notes.mdx). Preserve the MDX front matter and JSX SPDX comment. State the full history
-is available in GitHub Releases.
+Draft the authoritative GitHub Release body for every stable release. Summarize
+the user-visible changes, compatibility or migration requirements, known
+limitations, and verified fixes. For a patch release, state the affected
+behavior and whether public APIs, configuration, or dependency contracts
+changed.
 
-Review product names, commands, package names, support claims, and links, then
-validate the draft:
+Update [`docs/about-nemo-fabric/release-notes.mdx`](docs/about-nemo-fabric/release-notes.mdx)
+only when the release changes the documentation-visible summary, compatibility
+guidance, support status, or limitations. A patch release that does not change
+those surfaces can leave the page unchanged. Preserve the MDX front matter and
+JSX SPDX comment when editing it, and state that the full history is available
+in GitHub Releases.
+
+Review product names, commands, package names, support claims, and links. If the
+documentation page changed, validate it with:
 
 ```bash
 git diff --check
@@ -219,28 +264,43 @@ just docs
 
 ## Cut The Tag
 
-After the release commit is merged and validated, create and push the raw
-SemVer tag (changing the value of `RELEASE_VERSION` as appropriate):
+After the release commit is merged and validated, create and push the signed,
+annotated release tag. Set the exact stable release version and matching release
+branch:
 
 ```bash
 export RELEASE_VERSION=0.1.0
-export RELEASE_SHORT_VERSION=$(echo $RELEASE_VERSION | cut -f -2 -d '.')
-export RELEASE_BRANCH="release/${RELEASE_SHORT_VERSION}"
-echo "Cutting release tag v$RELEASE_VERSION for release branch $RELEASE_BRANCH"
+export RELEASE_BRANCH=release/0.1
+export RELEASE_TAG="v${RELEASE_VERSION}"
+echo "Cutting release tag ${RELEASE_TAG} for release branch ${RELEASE_BRANCH}"
 
-git fetch upstream
+git fetch upstream "${RELEASE_BRANCH}" --tags
+git switch "${RELEASE_BRANCH}"
+git pull --ff-only upstream "${RELEASE_BRANCH}"
 
-git checkout ${RELEASE_BRANCH}
-git pull
-git status
+test -z "$(git status --porcelain)"
+RELEASE_SHA="$(git rev-parse HEAD)"
+REMOTE_RELEASE_SHA="$(git rev-parse "upstream/${RELEASE_BRANCH}^{commit}")"
+test "${RELEASE_SHA}" = "${REMOTE_RELEASE_SHA}"
+test "$(just normalize-release-tag "${RELEASE_TAG}")" = "${RELEASE_VERSION}"
+CURRENT_VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+test "${CURRENT_VERSION}" = "${RELEASE_VERSION}"
 
-git tag -as -m "$(date +"%B %Y") Release" v${RELEASE_VERSION}
+if git ls-remote --exit-code --tags upstream "refs/tags/${RELEASE_TAG}" >/dev/null; then
+  echo "Error: remote tag ${RELEASE_TAG} already exists" >&2
+  exit 1
+fi
 
-# Verify the tag is correct
-git tag -l v${RELEASE_VERSION}
-git show v${RELEASE_VERSION}
+git tag -s -a \
+  -m "NVIDIA NeMo Fabric ${RELEASE_VERSION}" \
+  "${RELEASE_TAG}" \
+  "${RELEASE_SHA}"
 
-git push upstream v${RELEASE_VERSION}
+git tag -v "${RELEASE_TAG}"
+git show "${RELEASE_TAG}"
+test "$(git rev-parse "${RELEASE_TAG}^{commit}")" = "${RELEASE_SHA}"
+
+git push upstream "refs/tags/${RELEASE_TAG}"
 ```
 
 
@@ -279,10 +339,17 @@ The workflow boundary is split intentionally:
 
 ## Publish The GitHub Release Entry
 
-- Click the "Releases" button on the right at the repo homepage
-- Click "Tags" and select the tag you just pushed
-- Click "Create release from tag"
-- Click the "Generate release notes" button which will pre-populate the body with information about new contributors and a link to the full diff.
+1. Open **Releases** from the repository page.
+2. Select **Tags**, select the tag that you pushed, and select **Create release
+   from tag**.
+3. Set the release title to `NVIDIA NeMo Fabric <release-version>`.
+4. Paste the verified GitHub Release body prepared before tagging. You can use
+   **Generate release notes** as an evidence source for contributors, included
+   pull requests, and the full comparison link, but review and curate the
+   generated text before publishing.
+5. Confirm the selected tag and target commit match the signed tag that you
+   verified locally. Publish a stable release as the latest release and mark a
+   prerelease appropriately.
 
 ## Post-Release Checks
 

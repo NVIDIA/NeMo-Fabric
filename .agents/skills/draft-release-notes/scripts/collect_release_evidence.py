@@ -131,9 +131,13 @@ def print_note_tree(repo: Path, label: str, ref: str) -> None:
 def main() -> int:
     """Parse arguments and print the evidence report."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--previous", required=True, help="Previous release branch or commit")
-    parser.add_argument("--current", required=True, help="Current release branch or commit")
-    parser.add_argument("--version", required=True, help="Target major.minor release version")
+    parser.add_argument(
+        "--previous", required=True, help="Previous release tag, branch, or commit"
+    )
+    parser.add_argument(
+        "--current", required=True, help="Current release tag, branch, or commit"
+    )
+    parser.add_argument("--version", required=True, help="Exact target release version")
     parser.add_argument("--repo", default=".", help="Repository root (default: current directory)")
     args = parser.parse_args()
 
