@@ -50,6 +50,10 @@ The adapter consumes the `AgentConfig.mcp.servers` entries, including the
 normalized per-server filters. NeMo Fabric MCP tool names remain bare
 server-local names; NAT exposes a selected member as `<server>__<tool>`.
 
+For `stdio` servers, NeMo Fabric expands `$VAR` references in `url`, parses the
+command and inline arguments, appends structured `args`, and forwards `env` to
+NAT. Only `url` supports variable expansion; `args` and `env` values are literal.
+
 | NeMo Fabric server policy | Generated NAT function group |
 | --- | --- |
 | `allowed_tools` omitted and `blocked_tools=[]` | No `include` or `exclude`; expose all discovered tools |

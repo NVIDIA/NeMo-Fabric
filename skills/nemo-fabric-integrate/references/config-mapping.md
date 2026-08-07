@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 Translate the consumer's own application, job, or deployment object into a typed
 `FabricConfig` in memory. The consumer keeps owning its configuration model;
-NeMo Fabric only receives the validated slice it needs.
+NVIDIA NeMo Fabric only receives the validated slice it needs.
 
 ## Public Config Models
 

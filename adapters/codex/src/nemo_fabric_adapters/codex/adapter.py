@@ -32,6 +32,7 @@ from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
+import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.common import lifecycle
 
@@ -922,7 +923,12 @@ async def _invoke_thread(
         return sdk_failure(error), False
 
 
-def _relay_output(output: dict[str, Any], relay: CodexRelaySettings) -> dict[str, Any]:
+def _relay_output(
+    output: dict[str, Any],
+    relay: CodexRelaySettings,
+    *,
+    artifacts: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
     output["relay_runtime"] = {
         "enabled": True,
         "emitter": "codex-sdk/nemo-relay",
@@ -931,8 +937,10 @@ def _relay_output(output: dict[str, Any], relay: CodexRelaySettings) -> dict[str
         "gateway_url": relay.gateway.url,
         "gateway_log_path": str(relay.gateway.log_path),
     }
-    output["relay_artifacts"] = common_utils.collect_relay_artifacts(
-        relay.plugin_config
+    output["relay_artifacts"] = (
+        common_utils.collect_relay_artifacts(relay.plugin_config)
+        if artifacts is None
+        else artifacts
     )
     return output
 
@@ -1064,18 +1072,50 @@ class CodexRuntime:
             "request": invocation.get("request"),
         }
         if self._unusable:
-            output = _failure(
+            return _failure(
                 "codex_runtime_unavailable",
-                "Codex runtime cannot accept another invocation after an SDK failure",
+                "Codex runtime cannot accept another invocation after a runtime failure",
             )
-            return _relay_output(output, self._relay) if self._relay else output
 
         try:
             request_prompt(payload)
             timeout_seconds(payload)
             _reasoning_effort(payload)
             _output_schema(payload)
+            relay = self._relay
+            atif_before = (
+                relay_artifacts.snapshot_atif_files(relay.plugin_config)
+                if relay is not None
+                and relay_artifacts.expects_local_atif(relay.plugin_config)
+                else None
+            )
             output, usable = await _invoke_thread(payload, self._thread)
+            if (
+                output.get("completed")
+                and relay is not None
+                and atif_before is not None
+            ):
+                finalized = await relay_artifacts.wait_for_finalized_atif(
+                    relay.plugin_config, atif_before
+                )
+                if finalized is None:
+                    self._unusable = True
+                    return _relay_output(
+                        adapter_failure(
+                            AdapterRelayError(
+                                "codex_relay_atif_timeout",
+                                "NeMo Relay did not finalize an ATIF artifact before the deadline",
+                                metadata={
+                                    "timeout_seconds": relay_artifacts.ATIF_FINALIZATION_TIMEOUT_SECONDS,
+                                },
+                            )
+                        ),
+                        relay,
+                        artifacts=[],
+                    )
+        except AdapterRelayError as error:
+            output = adapter_failure(error)
+            usable = False
         except CodexAdapterError as error:
             output = adapter_failure(error)
             usable = True

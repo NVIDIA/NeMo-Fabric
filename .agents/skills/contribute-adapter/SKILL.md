@@ -7,7 +7,7 @@ license: Apache-2.0
 # Contribute a First-Party NVIDIA NeMo Fabric Adapter
 
 Use the public
-[`nemo-fabric-build-adapter`](../../../skills/integrations/harness/nemo-fabric-build-adapter/SKILL.md)
+[`nemo-fabric-build-adapter`](../../../skills/nemo-fabric-build-adapter/SKILL.md)
 skill for adapter-contract semantics, descriptor design, configuration mapping,
 lifecycle behavior, and conformance evidence. This maintainer skill adds only
 the repository integration required for adapters shipped by NVIDIA NeMo

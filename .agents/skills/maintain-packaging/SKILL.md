@@ -28,6 +28,8 @@ consumed outside the source tree.
   `docs/package-lock.json`
 - CI workflows, install commands, and example commands
 - `justfile` build, test, clean, and documentation recipes
+- Release tags, registry publication, and release-facing documentation in
+  `RELEASING.md`
 
 ## Dependency Selection
 
@@ -87,6 +89,7 @@ compatibility decisions using the distribution and linkage context.
 ## References
 
 - `pyproject.toml`
+- `RELEASING.md`
 - `python/pyproject.toml`
 - `Cargo.toml`
 - `Cargo.lock`

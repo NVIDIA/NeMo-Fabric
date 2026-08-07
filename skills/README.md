@@ -35,14 +35,11 @@ repository-internal paths.
 
 ## Using an Integration Skill in Your Project
 
-Copy the individual skill directory, such as
-`integrations/consumer/nemo-fabric-integrate/` or
-`integrations/harness/nemo-fabric-build-adapter/`, into the place your coding
-agent discovers skills **in your own project**. Include any bundled resources,
-and copy the skill itself rather than its `consumer/` or `harness/` category
-directory. Do not rely on this repository's maintainer wiring (its
-`.claude/skills` symlink or `.agents/skills/` set); those serve NeMo Fabric's
-own contributors.
+Copy an individual skill directory, such as `nemo-fabric-integrate/` or
+`nemo-fabric-build-adapter/`, into the place your coding agent discovers skills
+**in your own project**. Include any bundled resources. Do not rely on this
+repository's maintainer wiring (its `.claude/skills` symlink or
+`.agents/skills/` set); those serve NeMo Fabric's own contributors.
 
 - **Claude Code:** place the skill at `.claude/skills/<skill-name>/` in your
   project, or `~/.claude/skills/<skill-name>/` to use it across projects.
@@ -56,24 +53,21 @@ own contributors.
 
 ## Consumer Integrations
 
-Consumer integration skills live under `integrations/consumer/`. The following
-skill helps software on the consumer side call NeMo Fabric through its public
-SDK:
+Consumer integration skills live directly under `skills/` so each bundle can be
+validated and published independently. The following skill helps software on
+the consumer side call NeMo Fabric through its public SDK:
 
-Use the
-[consumer integration skill](integrations/consumer/nemo-fabric-integrate/SKILL.md)
-when adding NeMo Fabric to an application, service, evaluation harness, or
-platform through the typed Python SDK.
+| Skill | Use It When |
+|---|---|
+| [`nemo-fabric-integrate`](nemo-fabric-integrate/SKILL.md) | You are adding NeMo Fabric to a consumer application, service, evaluation harness, or platform through the typed Python SDK — building an in-memory `FabricConfig`, choosing the single-invocation convenience API or an explicitly started runtime, validating with `plan`/`doctor`, and consuming normalized results. |
 
 ## Harness Integrations
 
-Harness integration skills live under `integrations/harness/`:
+Harness integration skills also live directly under `skills/`:
 
-Use the
-[adapter-authoring skill](integrations/harness/nemo-fabric-build-adapter/SKILL.md)
-when creating, migrating, reviewing, or maintaining a third-party adapter,
-descriptor, normalized configuration mapping, lifecycle implementation,
-custom-agent loader, or conformance report.
+| Skill | Use It When |
+|---|---|
+| [`nemo-fabric-build-adapter`](nemo-fabric-build-adapter/SKILL.md) | You are creating, migrating, reviewing, or maintaining a third-party adapter, descriptor, normalized configuration mapping, lifecycle implementation, custom-agent loader, or conformance report. |
 
 ## Conventions
 
