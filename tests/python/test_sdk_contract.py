@@ -306,6 +306,10 @@ def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():
             "client_secret_env": "MCP_CLIENT_SECRET",
             "scopes": ["read:jira", "write:jira"],
             "redirect_uri": "http://127.0.0.1:8765/callback",
+            "enable_dynamic_registration": False,
+            "client_name": "NeMo Fabric",
+            "token_endpoint_auth_method": "client_secret_post",
+            "authorization_timeout_seconds": 120,
         },
     )
 
@@ -319,10 +323,74 @@ def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():
             "client_secret_env": "MCP_CLIENT_SECRET",
             "scopes": ["read:jira", "write:jira"],
             "redirect_uri": "http://127.0.0.1:8765/callback",
+            "enable_dynamic_registration": False,
+            "client_name": "NeMo Fabric",
+            "token_endpoint_auth_method": "client_secret_post",
+            "authorization_timeout_seconds": 120,
         },
         "custom_headers": {"X-Tenant": "fabric"},
         "exposure": "harness_native",
     }
+
+
+def test_mcp_server_serializes_service_account_authentication():
+    server = McpServerConfig(
+        transport="streamable-http",
+        url="https://mcp.example.test/automation",
+        authentication=McpAuthenticationConfig(
+            type="service_account",
+            client_id="fabric-client",
+            client_secret_env="MCP_CLIENT_SECRET",
+            token_url="https://auth.example.test/token",
+            scopes=["mcp:invoke"],
+            token_endpoint_auth_method="client_secret_basic",
+            token_cache_buffer_seconds=60,
+        ),
+    )
+
+    assert server.to_mapping()["authentication"] == {
+        "type": "service_account",
+        "client_id": "fabric-client",
+        "client_secret_env": "MCP_CLIENT_SECRET",
+        "token_url": "https://auth.example.test/token",
+        "scopes": ["mcp:invoke"],
+        "token_endpoint_auth_method": "client_secret_basic",
+        "token_cache_buffer_seconds": 60,
+    }
+
+
+def test_mcp_oauth_allows_dynamic_registration_to_supply_client_secret():
+    authentication = McpAuthenticationConfig(
+        type="oauth2",
+        token_endpoint_auth_method="client_secret_post",
+    )
+
+    assert authentication.client_id is None
+    assert authentication.client_secret_env is None
+    assert authentication.enable_dynamic_registration is True
+
+
+@pytest.mark.parametrize(
+    "authentication",
+    [
+        {"type": "oauth2", "enable_dynamic_registration": False},
+        {
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+        },
+        {
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "token_url": "https://auth.example.test/token",
+            "token_endpoint_auth_method": "none",
+        },
+    ],
+)
+def test_mcp_authentication_rejects_invalid_policy(authentication):
+    with pytest.raises(ValidationError):
+        McpAuthenticationConfig.model_validate(authentication)
 
 
 def test_mcp_config_add_server_preserves_legacy_authentication_extra_field():

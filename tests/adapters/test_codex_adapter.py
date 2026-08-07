@@ -449,6 +449,7 @@ def test_codex_logs_into_mcp_server_before_first_turn(
                     "authentication": {
                         "type": "oauth2",
                         "scopes": ["read", "write"],
+                        "authorization_timeout_seconds": 12,
                     },
                 }
             }
@@ -470,7 +471,7 @@ def test_codex_logs_into_mcp_server_before_first_turn(
         "name": "remote",
         "scopes": ["read", "write"],
         "threadId": "thread-123",
-        "timeoutSecs": adapter.MCP_OAUTH_TIMEOUT_SECONDS,
+        "timeoutSecs": 12,
     }
     open_browser.assert_awaited_once_with(mock_codex.oauth_authorization_url)
     mock_codex.next_notification.assert_awaited_once_with()
@@ -508,6 +509,28 @@ def test_codex_reports_failed_mcp_oauth_login_before_turn(
         "Codex MCP OAuth login failed for server 'remote'"
     )
     mock_codex.instances[0].thread.turn.assert_not_awaited()
+
+
+def test_codex_rejects_mcp_service_account_authentication(codex_payload):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "remote": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/mcp",
+                    "authentication": {
+                        "type": "service_account",
+                        "client_id": "fabric-client",
+                        "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                        "token_url": "https://auth.example.test/token",
+                    },
+                }
+            }
+        }
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="service_account"):
+        adapter.thread_config(codex_payload, None)
 
 
 def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):

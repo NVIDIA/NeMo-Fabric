@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Mapping
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -189,10 +190,30 @@ def hermes_mcp_server_config(
         except mcp_auth.McpAuthConfigError as error:
             raise ValueError(str(error)) from error
     if authentication := server.get("authentication"):
+        raw_authentication = authentication
         try:
+            if (
+                isinstance(authentication, Mapping)
+                and authentication.get("type") == "service_account"
+            ):
+                raise mcp_auth.McpAuthConfigError(
+                    f"MCP server {name!r} service_account authentication is not supported by Hermes"
+                )
             authentication = mcp_auth.parse_oauth2_config(name, authentication)
         except mcp_auth.McpAuthConfigError as error:
             raise ValueError(str(error)) from error
+        if authentication.client_name:
+            raise ValueError(
+                f"MCP server {name!r} authentication.client_name is not supported by Hermes"
+            )
+        if authentication.token_endpoint_auth_method:
+            raise ValueError(
+                f"MCP server {name!r} authentication.token_endpoint_auth_method is not supported by Hermes"
+            )
+        if "authorization_timeout_seconds" in raw_authentication:
+            raise ValueError(
+                f"MCP server {name!r} authentication.authorization_timeout_seconds is not supported by Hermes"
+            )
         oauth = common_utils.without_none(
             {
                 "client_id": authentication.client_id,

@@ -12,6 +12,7 @@ import math
 import os
 import shutil
 import subprocess
+from collections.abc import Mapping
 from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import is_dataclass
@@ -343,6 +344,16 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                     f"MCP server {name} authentication.client_secret_env requires "
                     "client_id",
                 )
+            if oauth.client_name:
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    f"MCP server {name} authentication.client_name is not supported by Claude",
+                )
+            if oauth.token_endpoint_auth_method:
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    f"MCP server {name} authentication.token_endpoint_auth_method is not supported by Claude",
+                )
             if oauth.redirect_uri:
                 try:
                     mapped_oauth["callbackPort"] = mcp_auth.loopback_callback_port(
@@ -373,6 +384,10 @@ def _native_mcp_server_specs(payload: dict[str, Any]) -> dict[str, dict[str, Any
 
 def _mcp_oauth_config(name: str, value: Any) -> mcp_auth.McpOAuth2Config:
     try:
+        if isinstance(value, Mapping) and value.get("type") == "service_account":
+            raise mcp_auth.McpAuthConfigError(
+                f"MCP server {name!r} service_account authentication is not supported by Claude"
+            )
         return mcp_auth.parse_oauth2_config(name, value)
     except mcp_auth.McpAuthConfigError as error:
         raise AdapterConfigError("claude_invalid_configuration", str(error)) from error
@@ -1178,6 +1193,7 @@ class ClaudeRuntime:
 
         servers = _authenticated_mcp_servers(payload)
         for name, server in servers.items():
+            authentication = _mcp_authentication(payload, name)
             status = await self._mcp_server_status(client, name)
             if status == "needs-auth":
                 await _login_mcp_server(
@@ -1185,7 +1201,10 @@ class ClaudeRuntime:
                     options,
                     name,
                     server,
-                    timeout=invocation_timeout,
+                    timeout=min(
+                        invocation_timeout,
+                        authentication.authorization_timeout_seconds,
+                    ),
                 )
                 await client.reconnect_mcp_server(name)
                 status = await self._mcp_server_status(client, name)

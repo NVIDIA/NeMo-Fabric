@@ -669,6 +669,40 @@ def test_deepagents_rejects_mcp_authentication_for_stdio():
         )
 
 
+def test_deepagents_maps_service_account_authentication(monkeypatch):
+    mock_auth = MagicMock(name="service_account_auth")
+    create_auth = MagicMock(return_value=mock_auth)
+    monkeypatch.setattr(
+        adapter.mcp_auth, "create_mcp_service_account_auth", create_auth
+    )
+
+    connection = adapter._mcp_connection(
+        "automation",
+        {
+            "transport": "streamable-http",
+            "url": "https://mcp.example.test/mcp",
+            "authentication": {
+                "type": "service_account",
+                "client_id": "fabric-client",
+                "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                "token_url": "https://auth.example.test/token",
+                "scopes": ["mcp:invoke"],
+            },
+        },
+    )
+
+    create_auth.assert_called_once_with(
+        "automation",
+        adapter.mcp_auth.McpServiceAccountConfig(
+            client_id="fabric-client",
+            client_secret_env="FABRIC_MCP_CLIENT_SECRET",
+            token_url="https://auth.example.test/token",
+            scopes=("mcp:invoke",),
+        ),
+    )
+    assert connection["auth"] is mock_auth
+
+
 @pytest.mark.usefixtures("use_real_langgraph")
 async def test_tool_policy_middleware_enforces_enabled_and_blocked_tools():
     pytest.importorskip("langchain.agents.middleware")

@@ -470,6 +470,36 @@ def test_hermes_rejects_mcp_authentication_for_stdio():
         )
 
 
+def test_hermes_rejects_mcp_service_account_authentication():
+    with pytest.raises(ValueError, match="service_account"):
+        adapter.hermes_mcp_server_config(
+            {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {
+                    "type": "service_account",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                    "token_url": "https://auth.example.test/token",
+                },
+            }
+        )
+
+
+def test_hermes_rejects_unsupported_mcp_oauth_policy():
+    with pytest.raises(ValueError, match="authorization_timeout_seconds"):
+        adapter.hermes_mcp_server_config(
+            {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {
+                    "type": "oauth2",
+                    "authorization_timeout_seconds": 30,
+                },
+            }
+        )
+
+
 async def test_runtime_start_discovers_mcp_tools_when_configured(
     monkeypatch,
     tmp_path: Path,

@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import subprocess
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -44,7 +45,6 @@ from nemo_fabric_adapters.common import mcp_auth
 
 DEFAULT_TIMEOUT_SECONDS = 1800.0
 INTERRUPT_TIMEOUT_SECONDS = 5.0
-MCP_OAUTH_TIMEOUT_SECONDS = 300
 SANDBOXES = {
     "read-only": Sandbox.read_only,
     "workspace-write": Sandbox.workspace_write,
@@ -236,6 +236,16 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
                     "codex_invalid_configuration",
                     f"MCP server {name} authentication.client_id is not supported by Codex",
                 )
+            if oauth.client_name:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} authentication.client_name is not supported by Codex",
+                )
+            if oauth.token_endpoint_auth_method:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} authentication.token_endpoint_auth_method is not supported by Codex",
+                )
             result[name]["auth"] = "oauth"
             if oauth.scopes:
                 result[name]["scopes"] = list(oauth.scopes)
@@ -244,6 +254,10 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def _mcp_oauth_config(name: str, value: Any) -> mcp_auth.McpOAuth2Config:
     try:
+        if isinstance(value, Mapping) and value.get("type") == "service_account":
+            raise mcp_auth.McpAuthConfigError(
+                f"MCP server {name!r} service_account authentication is not supported by Codex"
+            )
         return mcp_auth.parse_oauth2_config(name, value)
     except mcp_auth.McpAuthConfigError as error:
         raise AdapterConfigError("codex_invalid_configuration", str(error)) from error
@@ -332,19 +346,20 @@ async def _register_skill_roots(codex: AsyncCodex, skill_paths: list[Path]) -> N
     )
 
 
-def _mcp_oauth_servers(payload: dict[str, Any]) -> dict[str, list[str] | None]:
+def _mcp_oauth_servers(
+    payload: dict[str, Any],
+) -> dict[str, mcp_auth.McpOAuth2Config]:
     servers = _mapping(
         _native_capabilities(payload).get("mcp_servers"),
         name="native MCP servers",
     )
-    result: dict[str, list[str] | None] = {}
+    result: dict[str, mcp_auth.McpOAuth2Config] = {}
     for name, raw in servers.items():
         server = _mapping(raw, name=f"MCP server {name}")
         authentication = server.get("authentication")
         if not authentication:
             continue
-        oauth = _mcp_oauth_config(name, authentication)
-        result[name] = list(oauth.scopes) or None
+        result[name] = _mcp_oauth_config(name, authentication)
     return result
 
 
@@ -389,11 +404,12 @@ async def _login_mcp_server(
     name: str,
     scopes: list[str] | None,
     thread_id: str,
+    timeout: float,
 ) -> None:
     params: dict[str, Any] = {
         "name": name,
         "threadId": thread_id,
-        "timeoutSecs": MCP_OAUTH_TIMEOUT_SECONDS,
+        "timeoutSecs": timeout,
     }
     if scopes:
         params["scopes"] = scopes
@@ -410,7 +426,7 @@ async def _login_mcp_server(
         )
 
     try:
-        async with asyncio.timeout(MCP_OAUTH_TIMEOUT_SECONDS):
+        async with asyncio.timeout(timeout):
             while True:
                 notification = await client.next_notification()
                 completed = notification.payload
@@ -444,7 +460,7 @@ async def _authenticate_mcp_servers(
     thread_id = str(thread.id)
     try:
         statuses = await _mcp_auth_statuses(client, thread_id=thread_id)
-        for name, scopes in oauth_servers.items():
+        for name, oauth in oauth_servers.items():
             status = statuses.get(name)
             if status in {McpAuthStatus.o_auth, McpAuthStatus.bearer_token}:
                 continue
@@ -456,8 +472,9 @@ async def _authenticate_mcp_servers(
             await _login_mcp_server(
                 client,
                 name=name,
-                scopes=scopes,
+                scopes=list(oauth.scopes) or None,
                 thread_id=thread_id,
+                timeout=oauth.authorization_timeout_seconds,
             )
     except CodexAdapterError:
         raise

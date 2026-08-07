@@ -317,12 +317,17 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
             key: os.path.expandvars(value) for key, value in normalized_headers.items()
         }
     if authentication := spec.get("authentication"):
-        connection["auth"] = _mcp_oauth_auth(name, target, authentication)
+        connection["auth"] = _mcp_http_auth(name, target, authentication)
     return connection
 
 
-def _mcp_oauth_auth(name: str, server_url: str, raw: Any) -> Any:
+def _mcp_http_auth(name: str, server_url: str, raw: Any) -> Any:
     try:
+        if isinstance(raw, dict) and raw.get("type") == "service_account":
+            return mcp_auth.create_mcp_service_account_auth(
+                name,
+                mcp_auth.parse_service_account_config(name, raw),
+            )
         config = mcp_auth.parse_oauth2_config(name, raw)
         return mcp_auth.create_mcp_oauth_provider(
             name,

@@ -658,6 +658,42 @@ pub enum McpTransport {
     StreamableHttp,
 }
 
+/// OAuth client authentication method used at the token endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OAuthTokenEndpointAuthMethod {
+    /// Public client without a client secret.
+    None,
+    /// Send the client secret in the token request body.
+    ClientSecretPost,
+    /// Send the client credentials with HTTP Basic authentication.
+    ClientSecretBasic,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+fn default_mcp_oauth_timeout_seconds() -> u64 {
+    300
+}
+
+fn is_default_mcp_oauth_timeout_seconds(value: &u64) -> bool {
+    *value == default_mcp_oauth_timeout_seconds()
+}
+
+fn default_mcp_token_cache_buffer_seconds() -> u64 {
+    300
+}
+
+fn is_default_mcp_token_cache_buffer_seconds(value: &u64) -> bool {
+    *value == default_mcp_token_cache_buffer_seconds()
+}
+
 /// MCP server authentication configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -677,6 +713,42 @@ pub enum McpAuthenticationConfig {
         /// OAuth callback URI for clients that require a pre-registered redirect URI.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         redirect_uri: Option<String>,
+        /// Whether the client may register dynamically when `client_id` is omitted.
+        #[serde(default = "default_true", skip_serializing_if = "is_true")]
+        enable_dynamic_registration: bool,
+        /// Client name advertised during dynamic registration.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_name: Option<String>,
+        /// Client authentication method used at the token endpoint.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>,
+        /// Maximum time to wait for interactive authorization.
+        #[serde(
+            default = "default_mcp_oauth_timeout_seconds",
+            skip_serializing_if = "is_default_mcp_oauth_timeout_seconds"
+        )]
+        authorization_timeout_seconds: u64,
+    },
+    /// OAuth 2.0 client-credentials authentication for headless workloads.
+    ServiceAccount {
+        /// OAuth client identifier.
+        client_id: String,
+        /// Environment variable containing the OAuth client secret.
+        client_secret_env: String,
+        /// OAuth token endpoint.
+        token_url: String,
+        /// OAuth scopes requested by the MCP client.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        scopes: Vec<String>,
+        /// Client authentication method used at the token endpoint.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>,
+        /// Refresh the cached token this many seconds before expiry.
+        #[serde(
+            default = "default_mcp_token_cache_buffer_seconds",
+            skip_serializing_if = "is_default_mcp_token_cache_buffer_seconds"
+        )]
+        token_cache_buffer_seconds: u64,
     },
 }
 
@@ -1282,6 +1354,134 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
     if let Some(mcp) = &config.mcp {
         for (server_name, server) in &mcp.servers {
             let field = format!("mcp.servers.{server_name}");
+            if server.transport == McpTransport::Stdio
+                && (server.authentication.is_some() || !server.custom_headers.is_empty())
+            {
+                return invalid_config(
+                    &field,
+                    "authentication and custom_headers require an HTTP transport",
+                );
+            }
+            if let Some(authentication) = &server.authentication {
+                match authentication {
+                    McpAuthenticationConfig::OAuth2 {
+                        client_id,
+                        client_secret_env,
+                        scopes,
+                        redirect_uri,
+                        enable_dynamic_registration,
+                        client_name,
+                        token_endpoint_auth_method,
+                        authorization_timeout_seconds,
+                    } => {
+                        validate_names(&format!("{field}.authentication.scopes"), scopes)?;
+                        if client_id
+                            .as_ref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.client_id"),
+                                "must be a non-empty string",
+                            );
+                        }
+                        if client_secret_env
+                            .as_ref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.client_secret_env"),
+                                "must be a non-empty string",
+                            );
+                        }
+                        if client_secret_env.is_some() && client_id.is_none() {
+                            return invalid_config(
+                                format!("{field}.authentication.client_secret_env"),
+                                "requires client_id",
+                            );
+                        }
+                        if !enable_dynamic_registration && client_id.is_none() {
+                            return invalid_config(
+                                format!("{field}.authentication.client_id"),
+                                "is required when dynamic registration is disabled",
+                            );
+                        }
+                        if matches!(
+                            token_endpoint_auth_method,
+                            Some(
+                                OAuthTokenEndpointAuthMethod::ClientSecretBasic
+                                    | OAuthTokenEndpointAuthMethod::ClientSecretPost
+                            )
+                        ) && client_secret_env.is_none()
+                            && client_id.is_some()
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.token_endpoint_auth_method"),
+                                "requires client_secret_env for a pre-registered client",
+                            );
+                        }
+                        if *token_endpoint_auth_method == Some(OAuthTokenEndpointAuthMethod::None)
+                            && client_secret_env.is_some()
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.token_endpoint_auth_method"),
+                                "`none` cannot be combined with client_secret_env",
+                            );
+                        }
+                        if redirect_uri
+                            .as_ref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.redirect_uri"),
+                                "must be a non-empty string",
+                            );
+                        }
+                        if client_name
+                            .as_ref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.client_name"),
+                                "must be a non-empty string",
+                            );
+                        }
+                        if *authorization_timeout_seconds == 0 {
+                            return invalid_config(
+                                format!("{field}.authentication.authorization_timeout_seconds"),
+                                "must be greater than zero",
+                            );
+                        }
+                    }
+                    McpAuthenticationConfig::ServiceAccount {
+                        client_id,
+                        client_secret_env,
+                        token_url,
+                        scopes,
+                        token_endpoint_auth_method,
+                        ..
+                    } => {
+                        for (name, value) in [
+                            ("client_id", client_id),
+                            ("client_secret_env", client_secret_env),
+                            ("token_url", token_url),
+                        ] {
+                            if value.trim().is_empty() {
+                                return invalid_config(
+                                    format!("{field}.authentication.{name}"),
+                                    "must be a non-empty string",
+                                );
+                            }
+                        }
+                        validate_names(&format!("{field}.authentication.scopes"), scopes)?;
+                        if *token_endpoint_auth_method == Some(OAuthTokenEndpointAuthMethod::None) {
+                            return invalid_config(
+                                format!("{field}.authentication.token_endpoint_auth_method"),
+                                "service_account requires client_secret_basic or client_secret_post",
+                            );
+                        }
+                    }
+                }
+            }
             if let Some(allowed_tools) = &server.allowed_tools {
                 validate_names(&format!("{field}.allowed_tools"), allowed_tools)?;
                 if let Some(name) = allowed_tools
@@ -2594,7 +2794,11 @@ mod tests {
                         "client_id": "fabric-client",
                         "client_secret_env": "MCP_CLIENT_SECRET",
                         "scopes": ["read:jira", "write:jira"],
-                        "redirect_uri": "http://127.0.0.1:8765/callback"
+                        "redirect_uri": "http://127.0.0.1:8765/callback",
+                        "enable_dynamic_registration": false,
+                        "client_name": "NeMo Fabric",
+                        "token_endpoint_auth_method": "client_secret_post",
+                        "authorization_timeout_seconds": 120
                     }
                 }))
                 .expect("authenticated MCP server"),
@@ -2623,8 +2827,126 @@ mod tests {
                 client_secret_env: Some("MCP_CLIENT_SECRET".to_string()),
                 scopes: vec!["read:jira".to_string(), "write:jira".to_string()],
                 redirect_uri: Some("http://127.0.0.1:8765/callback".to_string()),
+                enable_dynamic_registration: false,
+                client_name: Some("NeMo Fabric".to_string()),
+                token_endpoint_auth_method: Some(OAuthTokenEndpointAuthMethod::ClientSecretPost,),
+                authorization_timeout_seconds: 120,
             })
         );
+    }
+
+    #[test]
+    fn mcp_service_account_authentication_survives_capability_planning() {
+        let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+        config.skills = None;
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "automation".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example/automation",
+                    "exposure": "harness_native",
+                    "authentication": {
+                        "type": "service_account",
+                        "client_id": "fabric-client",
+                        "client_secret_env": "MCP_CLIENT_SECRET",
+                        "token_url": "https://auth.example/token",
+                        "scopes": ["mcp:invoke"],
+                        "token_endpoint_auth_method": "client_secret_basic",
+                        "token_cache_buffer_seconds": 60
+                    }
+                }))
+                .expect("service-account MCP server"),
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect("authenticated Deep Agents MCP plan");
+        let server = plan
+            .capability_plan
+            .native
+            .mcp_servers
+            .get("automation")
+            .expect("native automation MCP server");
+
+        assert_eq!(
+            server.authentication,
+            Some(McpAuthenticationConfig::ServiceAccount {
+                client_id: "fabric-client".to_string(),
+                client_secret_env: "MCP_CLIENT_SECRET".to_string(),
+                token_url: "https://auth.example/token".to_string(),
+                scopes: vec!["mcp:invoke".to_string()],
+                token_endpoint_auth_method: Some(OAuthTokenEndpointAuthMethod::ClientSecretBasic,),
+                token_cache_buffer_seconds: 60,
+            })
+        );
+    }
+
+    #[test]
+    fn mcp_oauth_allows_dynamic_registration_to_supply_client_secret() {
+        let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "docs".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example/docs",
+                    "exposure": "harness_native",
+                    "authentication": {
+                        "type": "oauth2",
+                        "token_endpoint_auth_method": "client_secret_post"
+                    }
+                }))
+                .expect("dynamically registered MCP server"),
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        validate_config(&config).expect("dynamic registration supplies client credentials");
+    }
+
+    #[test]
+    fn rejects_invalid_mcp_authentication_policy() {
+        let cases = [
+            (
+                serde_json::json!({
+                    "type": "oauth2",
+                    "enable_dynamic_registration": false
+                }),
+                "client_id",
+            ),
+            (
+                serde_json::json!({
+                    "type": "service_account",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "MCP_CLIENT_SECRET",
+                    "token_url": "https://auth.example/token",
+                    "token_endpoint_auth_method": "none"
+                }),
+                "token_endpoint_auth_method",
+            ),
+        ];
+
+        for (authentication, expected) in cases {
+            let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+            config.mcp = Some(McpConfig {
+                servers: BTreeMap::from([(
+                    "invalid".to_string(),
+                    serde_json::from_value(serde_json::json!({
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example/invalid",
+                        "exposure": "harness_native",
+                        "authentication": authentication,
+                    }))
+                    .expect("syntactically valid MCP server"),
+                )]),
+                extensions: BTreeMap::new(),
+            });
+
+            let error = validate_config(&config).expect_err("invalid MCP auth must fail");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 
     #[test]

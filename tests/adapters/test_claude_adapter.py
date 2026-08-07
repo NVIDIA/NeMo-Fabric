@@ -291,6 +291,19 @@ def test_claude_maps_mcp_oauth_client_secret_configuration(claude_payload):
     assert options.mcp_servers["docs"]["oauth"] == {"clientId": "fabric-client"}
 
 
+def test_claude_rejects_mcp_service_account_authentication(claude_payload):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["authentication"] = {
+        "type": "service_account",
+        "client_id": "fabric-client",
+        "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+        "token_url": "https://auth.example.test/token",
+    }
+
+    with pytest.raises(adapter.AdapterConfigError, match="service_account"):
+        adapter.build_options(claude_payload)
+
+
 async def test_claude_stages_dynamic_mcp_server_before_login(
     claude_payload, monkeypatch
 ):
@@ -368,7 +381,10 @@ async def test_claude_authenticates_and_reconnects_before_prompt(
     claude_payload, monkeypatch
 ):
     server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {"type": "oauth2"}
+    server["authentication"] = {
+        "type": "oauth2",
+        "authorization_timeout_seconds": 12,
+    }
     options = adapter.build_options(claude_payload)
     client = MagicMock(spec=adapter.ClaudeSDKClient)
     client.get_mcp_status = AsyncMock(
@@ -390,7 +406,7 @@ async def test_claude_authenticates_and_reconnects_before_prompt(
         options,
         "docs",
         options.mcp_servers["docs"],
-        timeout=30,
+        timeout=12,
     )
     client.reconnect_mcp_server.assert_awaited_once_with("docs")
     assert runtime._mcp_authentication_checked is True

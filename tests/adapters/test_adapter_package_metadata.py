@@ -95,9 +95,9 @@ def test_adapter_runtime_dependencies(path: str, expected: list[str]):
     assert sorted(project.get("dependencies", [])) == sorted(expected)
 
 
-def test_common_mcp_oauth_extra_declares_mcp_sdk_dependency():
+def test_common_mcp_oauth_extra_declares_protocol_dependencies():
     extras = load_pyproject("adapters/common")["project"]["optional-dependencies"]
-    assert extras == {"mcp-oauth": ["mcp>=1.28.1,<1.29"]}
+    assert extras == {"mcp-oauth": ["httpx>=0.27,<1", "mcp>=1.28.1,<1.29"]}
 
 
 def test_adapter_test_dependency_group_matches_leaf_harnesses():

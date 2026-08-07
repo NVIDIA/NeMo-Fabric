@@ -178,8 +178,21 @@
         {
           "description": "OAuth 2.0 authorization-code authentication.",
           "properties": {
+            "authorization_timeout_seconds": {
+              "description": "Maximum time to wait for interactive authorization.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
             "client_id": {
               "description": "Pre-registered OAuth client identifier. Omit to allow dynamic registration.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "client_name": {
+              "description": "Client name advertised during dynamic registration.",
               "type": [
                 "string",
                 "null"
@@ -191,6 +204,10 @@
                 "string",
                 "null"
               ]
+            },
+            "enable_dynamic_registration": {
+              "description": "Whether the client may register dynamically when `client_id` is omitted.",
+              "type": "boolean"
             },
             "redirect_uri": {
               "description": "OAuth callback URI for clients that require a pre-registered redirect URI.",
@@ -206,6 +223,17 @@
               },
               "type": "array"
             },
+            "token_endpoint_auth_method": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/OAuthTokenEndpointAuthMethod"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client authentication method used at the token endpoint."
+            },
             "type": {
               "const": "oauth2",
               "type": "string"
@@ -213,6 +241,58 @@
           },
           "required": [
             "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "OAuth 2.0 client-credentials authentication for headless workloads.",
+          "properties": {
+            "client_id": {
+              "description": "OAuth client identifier.",
+              "type": "string"
+            },
+            "client_secret_env": {
+              "description": "Environment variable containing the OAuth client secret.",
+              "type": "string"
+            },
+            "scopes": {
+              "description": "OAuth scopes requested by the MCP client.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "token_cache_buffer_seconds": {
+              "description": "Refresh the cached token this many seconds before expiry.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "token_endpoint_auth_method": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/OAuthTokenEndpointAuthMethod"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client authentication method used at the token endpoint."
+            },
+            "token_url": {
+              "description": "OAuth token endpoint.",
+              "type": "string"
+            },
+            "type": {
+              "const": "service_account",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "client_id",
+            "client_secret_env",
+            "token_url"
           ],
           "type": "object"
         }
@@ -406,6 +486,26 @@
         "model"
       ],
       "type": "object"
+    },
+    "OAuthTokenEndpointAuthMethod": {
+      "description": "OAuth client authentication method used at the token endpoint.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "Public client without a client secret.",
+          "type": "string"
+        },
+        {
+          "const": "client_secret_post",
+          "description": "Send the client secret in the token request body.",
+          "type": "string"
+        },
+        {
+          "const": "client_secret_basic",
+          "description": "Send the client credentials with HTTP Basic authentication.",
+          "type": "string"
+        }
+      ]
     },
     "RelayAtifConfig": {
       "additionalProperties": true,

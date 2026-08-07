@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+from urllib.parse import urlparse
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+import httpx
 from nemo_fabric_adapters.common import mcp_auth
 
 
@@ -31,6 +33,21 @@ def test_parse_oauth2_config_normalizes_fields():
         redirect_uri="http://127.0.0.1:8765/callback",
     )
     assert config.scope == "read write"
+
+
+def test_parse_oauth2_config_allows_dynamic_registration_to_supply_client_secret():
+    config = mcp_auth.parse_oauth2_config(
+        "docs",
+        {
+            "type": "oauth2",
+            "token_endpoint_auth_method": "client_secret_post",
+        },
+    )
+
+    assert config.client_id is None
+    assert config.client_secret_env is None
+    assert config.enable_dynamic_registration is True
+    assert config.token_endpoint_auth_method == "client_secret_post"
 
 
 @pytest.mark.parametrize("value", [None, {}, {"type": "bearer"}])
@@ -129,6 +146,9 @@ async def test_create_mcp_oauth_provider_maps_client_configuration():
         client_secret_env="FABRIC_MCP_CLIENT_SECRET",
         scopes=("read", "write"),
         redirect_uri="http://127.0.0.1:8765/callback",
+        client_name="Configured Client",
+        token_endpoint_auth_method="client_secret_basic",
+        authorization_timeout_seconds=42,
     )
 
     auth = mcp_auth.create_mcp_oauth_provider(
@@ -139,50 +159,156 @@ async def test_create_mcp_oauth_provider_maps_client_configuration():
     )
 
     assert str(auth.context.server_url) == "https://mcp.example.test/jira"
-    assert auth.context.client_metadata.client_name == "NeMo Fabric Test"
+    assert auth.context.client_metadata.client_name == "Configured Client"
     assert auth.context.client_metadata.scope == "read write"
+    assert (
+        auth.context.client_metadata.token_endpoint_auth_method == "client_secret_basic"
+    )
+    assert auth.context.timeout == 42
     client_info = await auth.context.storage.get_client_info()
     assert client_info.client_id == "fabric-client"
     assert client_info.client_secret == "oauth-secret"
 
 
-async def test_mcp_oauth_provider_receives_loopback_callback(monkeypatch):
-    port = 8765
+async def test_mcp_oauth_provider_starts_listener_before_authorization_handler():
     config = mcp_auth.McpOAuth2Config(
         client_id=None,
         client_secret_env=None,
         scopes=(),
-        redirect_uri=f"http://127.0.0.1:{port}/callback",
+        redirect_uri=None,
     )
+    callback_uri = ""
+
+    async def authorization_handler(_name, _url):
+        parsed = urlparse(callback_uri)
+        reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port)
+        writer.write(
+            f"GET {parsed.path}?code=oauth-code&state=oauth-state HTTP/1.1\r\n"
+            f"Host: {parsed.hostname}\r\n\r\n".encode()
+        )
+        await writer.drain()
+        response = await reader.read()
+        writer.close()
+        await writer.wait_closed()
+        assert b"200 OK" in response
+        return True
+
     auth = mcp_auth.create_mcp_oauth_provider(
         "docs",
         "https://mcp.example.test/docs",
         config,
         client_name="NeMo Fabric Test",
+        authorization_url_handler=authorization_handler,
     )
-    server = MagicMock()
-    server.__aenter__ = AsyncMock(return_value=server)
-    server.__aexit__ = AsyncMock(return_value=False)
-    start_server = AsyncMock(return_value=server)
-    monkeypatch.setattr(mcp_auth.asyncio, "start_server", start_server)
-    callback = asyncio.create_task(auth.context.callback_handler())
-    await asyncio.sleep(0)
+    callback_uri = str(auth.context.client_metadata.redirect_uris[0])
 
-    handle_callback = start_server.await_args.args[0]
-    reader = asyncio.StreamReader()
-    reader.feed_data(
-        b"GET /callback?code=oauth-code&state=oauth-state HTTP/1.1\r\n"
-        b"Host: 127.0.0.1\r\n\r\n"
-    )
-    reader.feed_eof()
-    writer = MagicMock()
-    writer.drain = AsyncMock()
-
-    await handle_callback(reader, writer)
-
-    assert b"200 OK" in writer.write.call_args.args[0]
-    writer.close.assert_called_once_with()
-    assert await asyncio.wait_for(callback, timeout=1) == (
+    await auth.context.redirect_handler("https://auth.example.test/authorize")
+    assert await auth.context.callback_handler() == (
         "oauth-code",
         "oauth-state",
     )
+
+
+async def test_loopback_callback_reports_oauth_error():
+    callback = mcp_auth._LoopbackOAuthCallback(None, timeout=1)
+    await callback.start()
+    parsed = urlparse(callback.redirect_uri)
+    reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port)
+    writer.write(
+        f"GET {parsed.path}?error=access_denied&state=oauth-state HTTP/1.1\r\n"
+        f"Host: {parsed.hostname}\r\n\r\n".encode()
+    )
+    await writer.drain()
+    response = await reader.read()
+    writer.close()
+    await writer.wait_closed()
+
+    assert b"400 Bad Request" in response
+    with pytest.raises(mcp_auth.McpAuthConfigError, match="access_denied"):
+        await callback.wait()
+
+
+async def test_loopback_callback_times_out_and_closes_listener():
+    callback = mcp_auth._LoopbackOAuthCallback(None, timeout=0.01)
+    await callback.start()
+
+    with pytest.raises(mcp_auth.McpAuthConfigError, match="timed out"):
+        await callback.wait()
+
+
+def test_parse_service_account_config_normalizes_fields():
+    config = mcp_auth.parse_service_account_config(
+        "automation",
+        {
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+            "token_url": "https://auth.example.test/token",
+            "scopes": ["mcp:invoke"],
+            "token_endpoint_auth_method": "client_secret_post",
+            "token_cache_buffer_seconds": 60,
+        },
+    )
+
+    assert config == mcp_auth.McpServiceAccountConfig(
+        client_id="fabric-client",
+        client_secret_env="FABRIC_MCP_CLIENT_SECRET",
+        token_url="https://auth.example.test/token",
+        scopes=("mcp:invoke",),
+        token_endpoint_auth_method="client_secret_post",
+        token_cache_buffer_seconds=60,
+    )
+
+
+async def test_service_account_auth_caches_token_and_refreshes_after_401():
+    config = mcp_auth.McpServiceAccountConfig(
+        client_id="fabric client",
+        client_secret_env="FABRIC_MCP_CLIENT_SECRET",
+        token_url="https://auth.example.test/token",
+        scopes=("mcp:invoke",),
+        token_cache_buffer_seconds=60,
+    )
+    auth = mcp_auth.create_mcp_service_account_auth(
+        "automation",
+        config,
+        {"FABRIC_MCP_CLIENT_SECRET": "oauth secret"},
+    )
+
+    request = httpx.Request("POST", "https://mcp.example.test/mcp")
+    flow = auth.async_auth_flow(request)
+    token_request = await anext(flow)
+    assert str(token_request.url) == "https://auth.example.test/token"
+    assert token_request.headers["Authorization"].startswith("Basic ")
+    assert token_request.content == b"grant_type=client_credentials&scope=mcp%3Ainvoke"
+
+    authorized = await flow.asend(
+        httpx.Response(
+            200,
+            json={"access_token": "first-token", "expires_in": 3600},
+            request=token_request,
+        )
+    )
+    assert authorized.headers["Authorization"] == "Bearer first-token"
+    with pytest.raises(StopAsyncIteration):
+        await flow.asend(httpx.Response(200, request=authorized))
+
+    cached_flow = auth.async_auth_flow(
+        httpx.Request("POST", "https://mcp.example.test/mcp")
+    )
+    cached_request = await anext(cached_flow)
+    assert str(cached_request.url) == "https://mcp.example.test/mcp"
+    assert cached_request.headers["Authorization"] == "Bearer first-token"
+
+    retry_token_request = await cached_flow.asend(
+        httpx.Response(401, request=cached_request)
+    )
+    retried_request = await cached_flow.asend(
+        httpx.Response(
+            200,
+            json={"access_token": "second-token", "expires_in": 3600},
+            request=retry_token_request,
+        )
+    )
+    assert retried_request.headers["Authorization"] == "Bearer second-token"
+    with pytest.raises(StopAsyncIteration):
+        await cached_flow.asend(httpx.Response(200, request=retried_request))

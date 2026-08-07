@@ -837,11 +837,17 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `type` | `Literal['oauth2']` | Yes | — | — | — |
+| `type` | `Literal['oauth2', 'service_account']` | Yes | — | — | — |
 | `client_id` | `str \| None` | No | `None` | — | — |
 | `client_secret_env` | `str \| None` | No | `None` | — | — |
 | `scopes` | `list[str]` | No | `list()` | — | — |
 | `redirect_uri` | `str \| None` | No | `None` | — | — |
+| `enable_dynamic_registration` | `bool` | No | `True` | — | — |
+| `client_name` | `str \| None` | No | `None` | — | — |
+| `token_endpoint_auth_method` | `Literal['none', 'client_secret_post', 'client_secret_basic'] \| None` | No | `None` | — | — |
+| `authorization_timeout_seconds` | `int` | No | `300` | `Gt(gt=0)` | — |
+| `token_url` | `str \| None` | No | `None` | — | — |
+| `token_cache_buffer_seconds` | `int` | No | `300` | `Ge(ge=0)` | — |
 
 ---
 
