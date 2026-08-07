@@ -276,9 +276,13 @@ def loopback_callback_port(redirect_uri: str) -> int:
     """Return the explicit port from an HTTP loopback OAuth redirect URI."""
 
     parsed = urlparse(redirect_uri)
-    if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.port is None:
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname not in {"127.0.0.1", "localhost"}
+        or parsed.port is None
+    ):
         raise McpAuthConfigError(
-            "authentication.redirect_uri must be an HTTP loopback URI using 127.0.0.1 with an explicit port"
+            "authentication.redirect_uri must be an HTTP loopback URI with an explicit port"
         )
     return parsed.port
 
@@ -335,18 +339,45 @@ class _LoopbackOAuthCallback:
         else:
             parsed = urlparse(redirect_uri)
             self._port = loopback_callback_port(redirect_uri)
-            self._host = "127.0.0.1"
+            self._host = parsed.hostname or "127.0.0.1"
             self._path = parsed.path or "/"
             self.redirect_uri = redirect_uri
             self._reserve_socket()
 
     def _reserve_socket(self) -> None:
-        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener: socket.socket | None = None
         try:
-            listener.bind((self._host, self._port))
+            if self._host == "localhost":
+                addresses = socket.getaddrinfo(
+                    self._host,
+                    self._port,
+                    type=socket.SOCK_STREAM,
+                    proto=socket.IPPROTO_TCP,
+                )
+                resolved = next(
+                    (
+                        address
+                        for address in addresses
+                        if address[4][0] in {"127.0.0.1", "::1"}
+                    ),
+                    None,
+                )
+                if resolved is None:
+                    raise McpAuthConfigError(
+                        "localhost did not resolve to an IP loopback address"
+                    )
+                family, socktype, proto, _, bind_address = resolved
+            else:
+                family = socket.AF_INET
+                socktype = socket.SOCK_STREAM
+                proto = socket.IPPROTO_TCP
+                bind_address = (self._host, self._port)
+            listener = socket.socket(family, socktype, proto)
+            listener.bind(bind_address)
             listener.setblocking(False)
         except OSError as error:
-            listener.close()
+            if listener is not None:
+                listener.close()
             raise McpAuthConfigError(
                 f"could not bind MCP OAuth callback listener on {self._host}:{self._port}"
             ) from error

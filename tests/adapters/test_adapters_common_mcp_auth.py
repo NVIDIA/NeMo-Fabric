@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 from urllib.parse import urlparse
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -134,13 +135,20 @@ def test_resolve_client_secret_rejects_unset_environment_variable():
     [
         "https://127.0.0.1:8765/callback",
         "http://example.com:8765/callback",
-        "http://localhost:8765/callback",
         "http://127.0.0.1/callback",
     ],
 )
 def test_loopback_callback_port_rejects_unsupported_redirects(redirect_uri):
     with pytest.raises(mcp_auth.McpAuthConfigError, match="loopback"):
         mcp_auth.loopback_callback_port(redirect_uri)
+
+
+@pytest.mark.parametrize(
+    "redirect_uri",
+    ["http://127.0.0.1:8765/callback", "http://localhost:8765/callback"],
+)
+def test_loopback_callback_port_accepts_ip_and_hostname(redirect_uri):
+    assert mcp_auth.loopback_callback_port(redirect_uri) == 8765
 
 
 @pytest.mark.parametrize("opened", [True, False])
@@ -271,6 +279,45 @@ async def test_loopback_callback_times_out_closes_listener_and_cannot_restart():
 
     with pytest.raises(mcp_auth.McpAuthConfigError, match="cannot be restarted"):
         await callback.start()
+
+
+async def test_loopback_callback_listens_on_preferred_localhost_address():
+    reservation = mcp_auth._LoopbackOAuthCallback(None, timeout=1)
+    port = urlparse(reservation.redirect_uri).port
+    reservation.close_reserved_socket()
+    assert port is not None
+
+    callback = mcp_auth._LoopbackOAuthCallback(
+        f"http://localhost:{port}/callback",
+        timeout=1,
+    )
+    await callback.start()
+    family, _, _, _, address = next(
+        entry
+        for entry in socket.getaddrinfo(
+            "localhost",
+            port,
+            type=socket.SOCK_STREAM,
+            proto=socket.IPPROTO_TCP,
+        )
+        if entry[4][0] in {"127.0.0.1", "::1"}
+    )
+    reader, writer = await asyncio.open_connection(
+        address[0],
+        address[1],
+        family=family,
+    )
+    writer.write(
+        b"GET /callback?code=oauth-code&state=oauth-state HTTP/1.1\r\n"
+        b"Host: localhost\r\n\r\n"
+    )
+    await writer.drain()
+    response = await reader.read()
+    writer.close()
+    await writer.wait_closed()
+
+    assert b"200 OK" in response
+    assert await callback.wait() == ("oauth-code", "oauth-state")
 
 
 def test_parse_service_account_config_normalizes_fields():
