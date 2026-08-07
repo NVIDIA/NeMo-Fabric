@@ -215,7 +215,7 @@ def parse_service_account_config(
         client_secret_env=required["client_secret_env"],
         token_url=required["token_url"],
         scopes=_string_tuple(server_name, "scopes", value.get("scopes")),
-        token_endpoint_auth_method=method or "client_secret_basic",
+        token_endpoint_auth_method=method,
         token_cache_buffer_seconds=float(buffer),
     )
 
@@ -240,6 +240,11 @@ def normalize_custom_headers(server_name: str, value: Any) -> dict[str, str]:
         raise McpAuthConfigError(
             f"MCP server {server_name!r} custom_headers must be a mapping"
         )
+    for name, item in value.items():
+        if any(character in str(name) + str(item) for character in ("\r", "\n")):
+            raise McpAuthConfigError(
+                f"MCP server {server_name!r} custom_headers contain invalid characters in {name!r}"
+            )
     return {str(name): str(item) for name, item in value.items()}
 
 
@@ -271,13 +276,9 @@ def loopback_callback_port(redirect_uri: str) -> int:
     """Return the explicit port from an HTTP loopback OAuth redirect URI."""
 
     parsed = urlparse(redirect_uri)
-    if (
-        parsed.scheme != "http"
-        or parsed.hostname not in {"127.0.0.1", "localhost"}
-        or parsed.port is None
-    ):
+    if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.port is None:
         raise McpAuthConfigError(
-            "authentication.redirect_uri must be an HTTP loopback URI with an explicit port"
+            "authentication.redirect_uri must be an HTTP loopback URI using 127.0.0.1 with an explicit port"
         )
     return parsed.port
 
@@ -316,7 +317,7 @@ class _McpOAuthMemoryStorage:
 
 
 class _LoopbackOAuthCallback:
-    """Own a loopback callback listener across one or more OAuth attempts."""
+    """Own a single-use loopback callback listener."""
 
     def __init__(self, redirect_uri: str | None, timeout: float):
         self._timeout = timeout
@@ -357,7 +358,9 @@ class _LoopbackOAuthCallback:
             if self._server is not None:
                 return
             if self._socket is None:
-                self._reserve_socket()
+                raise McpAuthConfigError(
+                    "MCP OAuth callback listener cannot be restarted after it is closed"
+                )
             loop = asyncio.get_running_loop()
             self._result = loop.create_future()
             listener = self._socket
@@ -453,15 +456,15 @@ class _LoopbackOAuthCallback:
 
         query = parse_qs(parsed.query, keep_blank_values=True)
         error_code = query.get("error", [None])[0]
+        error_description = query.get("error_description", [None])[0]
         code = query.get("code", [""])[0]
         state = query.get("state", [None])[0]
         if error_code:
             if self._result is not None and not self._result.done():
-                self._result.set_exception(
-                    McpAuthConfigError(
-                        f"MCP OAuth authorization failed: {error_code!r}"
-                    )
-                )
+                message = f"MCP OAuth authorization failed: {error_code!r}"
+                if error_description:
+                    message += f": {error_description!r}"
+                self._result.set_exception(McpAuthConfigError(message))
             await self._write_response(
                 writer,
                 b"400 Bad Request",
@@ -629,6 +632,7 @@ def create_mcp_service_account_auth(
             try:
                 payload = json.loads((await response.aread()).decode("utf-8"))
                 access_token = payload["access_token"]
+                token_type = payload.get("token_type", "")
                 expires_in = float(payload.get("expires_in", 3600))
                 if (
                     not isinstance(access_token, str)
@@ -641,6 +645,10 @@ def create_mcp_service_account_auth(
                 raise McpAuthConfigError(
                     f"MCP server {server_name!r} returned an invalid service-account token response"
                 ) from error
+            if not isinstance(token_type, str) or token_type.lower() != "bearer":
+                raise McpAuthConfigError(
+                    f"MCP server {server_name!r} returned unsupported token_type {token_type!r}"
+                )
             self._access_token = access_token
             usable_for = max(0.0, expires_in - config.token_cache_buffer_seconds)
             self._expires_at = time.monotonic() + usable_for

@@ -67,6 +67,24 @@ def test_normalize_custom_headers_requires_mapping():
         mcp_auth.normalize_custom_headers("docs", ["X-Tenant", "fabric"])
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("X-Foo\r", "bar"),
+        ("X-Foo\n", "bar"),
+        ("X-Foo", "bar\r"),
+        ("X-Foo", "bar\nX-Evil: injected"),
+    ],
+)
+def test_normalize_custom_headers_rejects_newlines(name, value):
+    with pytest.raises(mcp_auth.McpAuthConfigError) as error:
+        mcp_auth.normalize_custom_headers("docs", {name: value})
+
+    assert str(error.value) == (
+        f"MCP server 'docs' custom_headers contain invalid characters in {name!r}"
+    )
+
+
 def test_resolve_client_secret_uses_named_environment_variable():
     os.environ["FABRIC_MCP_CLIENT_SECRET"] = "oauth-secret"
     config = mcp_auth.McpOAuth2Config(
@@ -116,6 +134,7 @@ def test_resolve_client_secret_rejects_unset_environment_variable():
     [
         "https://127.0.0.1:8765/callback",
         "http://example.com:8765/callback",
+        "http://localhost:8765/callback",
         "http://127.0.0.1/callback",
     ],
 )
@@ -209,13 +228,26 @@ async def test_mcp_oauth_provider_starts_listener_before_authorization_handler()
     )
 
 
-async def test_loopback_callback_reports_oauth_error():
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "error=access_denied&state=oauth-state",
+            "MCP OAuth authorization failed: 'access_denied'",
+        ),
+        (
+            "error=access_denied&error_description=User+denied+access&state=oauth-state",
+            "MCP OAuth authorization failed: 'access_denied': 'User denied access'",
+        ),
+    ],
+)
+async def test_loopback_callback_reports_oauth_error(query, expected):
     callback = mcp_auth._LoopbackOAuthCallback(None, timeout=1)
     await callback.start()
     parsed = urlparse(callback.redirect_uri)
     reader, writer = await asyncio.open_connection(parsed.hostname, parsed.port)
     writer.write(
-        f"GET {parsed.path}?error=access_denied&state=oauth-state HTTP/1.1\r\n"
+        f"GET {parsed.path}?{query} HTTP/1.1\r\n"
         f"Host: {parsed.hostname}\r\n\r\n".encode()
     )
     await writer.drain()
@@ -224,16 +256,21 @@ async def test_loopback_callback_reports_oauth_error():
     await writer.wait_closed()
 
     assert b"400 Bad Request" in response
-    with pytest.raises(mcp_auth.McpAuthConfigError, match="access_denied"):
+    with pytest.raises(mcp_auth.McpAuthConfigError) as error:
         await callback.wait()
 
+    assert str(error.value) == expected
 
-async def test_loopback_callback_times_out_and_closes_listener():
+
+async def test_loopback_callback_times_out_closes_listener_and_cannot_restart():
     callback = mcp_auth._LoopbackOAuthCallback(None, timeout=0.01)
     await callback.start()
 
     with pytest.raises(mcp_auth.McpAuthConfigError, match="timed out"):
         await callback.wait()
+
+    with pytest.raises(mcp_auth.McpAuthConfigError, match="cannot be restarted"):
+        await callback.start()
 
 
 def test_parse_service_account_config_normalizes_fields():
@@ -284,7 +321,11 @@ async def test_service_account_auth_caches_token_and_refreshes_after_401():
     authorized = await flow.asend(
         httpx.Response(
             200,
-            json={"access_token": "first-token", "expires_in": 3600},
+            json={
+                "access_token": "first-token",
+                "token_type": "Bearer",
+                "expires_in": 3600,
+            },
             request=token_request,
         )
     )
@@ -305,10 +346,47 @@ async def test_service_account_auth_caches_token_and_refreshes_after_401():
     retried_request = await cached_flow.asend(
         httpx.Response(
             200,
-            json={"access_token": "second-token", "expires_in": 3600},
+            json={
+                "access_token": "second-token",
+                "token_type": "bearer",
+                "expires_in": 3600,
+            },
             request=retry_token_request,
         )
     )
     assert retried_request.headers["Authorization"] == "Bearer second-token"
     with pytest.raises(StopAsyncIteration):
         await cached_flow.asend(httpx.Response(200, request=retried_request))
+
+
+@pytest.mark.parametrize(
+    ("payload", "token_type"),
+    [
+        ({"access_token": "token", "expires_in": 3600}, ""),
+        (
+            {"access_token": "token", "token_type": "mac", "expires_in": 3600},
+            "mac",
+        ),
+    ],
+)
+async def test_service_account_auth_rejects_unsupported_token_type(payload, token_type):
+    config = mcp_auth.McpServiceAccountConfig(
+        client_id="fabric-client",
+        client_secret_env="FABRIC_MCP_CLIENT_SECRET",
+        token_url="https://auth.example.test/token",
+        scopes=(),
+    )
+    auth = mcp_auth.create_mcp_service_account_auth(
+        "automation",
+        config,
+        {"FABRIC_MCP_CLIENT_SECRET": "oauth-secret"},
+    )
+    flow = auth.async_auth_flow(httpx.Request("POST", "https://mcp.example.test/mcp"))
+    token_request = await anext(flow)
+
+    with pytest.raises(mcp_auth.McpAuthConfigError) as error:
+        await flow.asend(httpx.Response(200, json=payload, request=token_request))
+
+    assert str(error.value) == (
+        f"MCP server 'automation' returned unsupported token_type {token_type!r}"
+    )
