@@ -139,7 +139,7 @@ def to_fabric_config(job) -> FabricConfig:
     return config
 ```
 
-- Shape capabilities with `ToolsConfig`, `block_tools`, `add_skill_path`,
+- Shape capabilities with `ToolsConfig`, `add_tool_definition`, `block_tools`, `add_skill_path`,
   `remove_skill_path`,
   `add_mcp_server`, `remove_mcp_server`, and `enable_relay`.
 - Use a restricted `allowed_tools` list or non-empty `blocked_tools` on

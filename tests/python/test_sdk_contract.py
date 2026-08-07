@@ -48,6 +48,7 @@ from nemo_fabric import RuntimeConfig
 from nemo_fabric import RuntimeHandle
 from nemo_fabric import SkillConfig
 from nemo_fabric import TelemetryConfig
+from nemo_fabric import ToolDefinitionConfig
 from nemo_fabric import ToolsConfig
 from nemo_fabric import WorkflowConfig
 from nemo_fabric import WorkflowEntrypointConfig
@@ -207,6 +208,12 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         output_dir="./artifacts/relay",
     )
     config.block_tools("browser", "shell", "browser")
+    config.add_tool_definition(
+        "email_phishing_analyzer",
+        kind="function",
+        ref="email_phishing_analyzer",
+        settings={"llm": "default"},
+    )
     assert config.tools is not None
     config.tools.enabled = ["terminal"]
 
@@ -214,8 +221,19 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
     assert isinstance(config.skills, SkillConfig)
     assert isinstance(config.telemetry, TelemetryConfig)
     assert isinstance(config.tools, ToolsConfig)
+    assert isinstance(
+        config.tools.definitions["email_phishing_analyzer"],
+        ToolDefinitionConfig,
+    )
 
     assert config.to_mapping()["tools"] == {
+        "definitions": {
+            "email_phishing_analyzer": {
+                "kind": "function",
+                "ref": "email_phishing_analyzer",
+                "settings": {"llm": "default"},
+            }
+        },
         "enabled": ["terminal"],
         "blocked": ["browser", "shell"],
     }
@@ -470,6 +488,25 @@ def test_run_plan_config_preserves_normalized_tools_and_execution_fields():
 def test_run_plan_tools_config_rejects_scalar_blocked_value():
     with pytest.raises(FabricConfigError, match="tools blocked"):
         _ToolsConfig(blocked="browser")  # type: ignore[arg-type]
+
+
+def test_run_plan_tools_config_preserves_named_definitions():
+    config = _ToolsConfig().add_definition(
+        "web",
+        kind="function_group",
+        ref="web_tools",
+        settings={"include": ["search"]},
+    )
+
+    assert config.to_mapping() == {
+        "definitions": {
+            "web": {
+                "kind": "function_group",
+                "ref": "web_tools",
+                "settings": {"include": ["search"]},
+            }
+        }
+    }
 
 
 def test_fabric_config_authors_first_class_relay_observability():

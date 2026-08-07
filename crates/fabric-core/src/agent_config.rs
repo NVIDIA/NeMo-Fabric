@@ -10,7 +10,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::config::InstructionMode;
+use crate::config::{
+    AdapterConfigField, AdapterDescriptor, CapabilityPlan, FabricConfig, InstructionMode,
+};
 
 /// Configuration projected southbound to one adapter target.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -238,4 +240,161 @@ pub struct AgentWorkflowConfig {
     /// Adapter-owned workflow fields.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: BTreeMap<String, Value>,
+}
+
+/// Project a resolved northbound config into the selected adapter target contract.
+pub(crate) fn project_agent_config(
+    config: &FabricConfig,
+    capability_plan: &CapabilityPlan,
+    descriptor: Option<&AdapterDescriptor>,
+) -> AgentConfig {
+    let accepts = |field: AdapterConfigField| {
+        descriptor.is_some_and(|descriptor| descriptor.config.accepts.contains(&field))
+    };
+
+    let models = if accepts(AdapterConfigField::Models) {
+        config
+            .models
+            .iter()
+            .map(|(name, model)| {
+                (
+                    name.clone(),
+                    AgentModelConfig {
+                        provider: model.provider.clone(),
+                        model: model.model.clone(),
+                        api_key_env: model.api_key_env.clone(),
+                        temperature: model.temperature,
+                        base_url: model.base_url.clone(),
+                        settings: model.settings.clone(),
+                        extensions: model.extensions.clone(),
+                    },
+                )
+            })
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
+
+    let instructions = config.instructions.as_ref().and_then(|instructions| {
+        let system = instructions.system.as_ref().and_then(|system| {
+            accepts(AdapterConfigField::SystemInstructions).then(|| AgentInstructionConfig {
+                content: system.content.clone(),
+                mode: system.mode,
+                extensions: system.extensions.clone(),
+            })
+        });
+        (system.is_some() || !instructions.extensions.is_empty()).then(|| AgentInstructionsConfig {
+            system,
+            extensions: instructions.extensions.clone(),
+        })
+    });
+
+    let runtime = (accepts(AdapterConfigField::MaxTurns) || !config.runtime.extensions.is_empty())
+        .then(|| AgentRuntimeConfig {
+            max_turns: accepts(AdapterConfigField::MaxTurns)
+                .then_some(config.runtime.max_turns)
+                .flatten(),
+            extensions: config.runtime.extensions.clone(),
+        });
+
+    let skills = config.skills.as_ref().and_then(|skills| {
+        (!capability_plan.native.skill_paths.is_empty() || !skills.extensions.is_empty()).then(
+            || AgentSkillConfig {
+                paths: capability_plan.native.skill_paths.clone(),
+                extensions: skills.extensions.clone(),
+            },
+        )
+    });
+
+    let mcp = config.mcp.as_ref().and_then(|mcp| {
+        let servers = capability_plan
+            .native
+            .mcp_servers
+            .iter()
+            .map(|(name, server)| {
+                (
+                    name.clone(),
+                    AgentMcpServerConfig {
+                        transport: server.transport.clone(),
+                        url: server.url.clone(),
+                        args: server.args.clone(),
+                        env: server.env.clone(),
+                        allowed_tools: server.allowed_tools.clone(),
+                        blocked_tools: server.blocked_tools.clone(),
+                        extensions: server.extensions.clone(),
+                    },
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        (!servers.is_empty() || !mcp.extensions.is_empty()).then(|| AgentMcpConfig {
+            servers,
+            extensions: mcp.extensions.clone(),
+        })
+    });
+
+    let tools = config.tools.as_ref().and_then(|tools| {
+        let definitions = if accepts(AdapterConfigField::ToolDefinitions) {
+            tools
+                .definitions
+                .iter()
+                .map(|(name, definition)| {
+                    (
+                        name.clone(),
+                        AgentToolDefinition {
+                            kind: definition.kind.clone(),
+                            r#ref: definition.r#ref.clone(),
+                            settings: definition.settings.clone(),
+                            extensions: definition.extensions.clone(),
+                        },
+                    )
+                })
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
+        let enabled = accepts(AdapterConfigField::EnabledTools)
+            .then(|| tools.enabled.clone())
+            .flatten();
+        let blocked = accepts(AdapterConfigField::BlockedTools)
+            .then(|| tools.blocked.clone())
+            .unwrap_or_default();
+        (enabled.is_some()
+            || !blocked.is_empty()
+            || !definitions.is_empty()
+            || !tools.extensions.is_empty())
+        .then(|| AgentToolsConfig {
+            definitions,
+            enabled,
+            blocked,
+            extensions: tools.extensions.clone(),
+        })
+    });
+
+    let workflow = config
+        .workflow
+        .as_ref()
+        .map(|workflow| AgentWorkflowConfig {
+            entrypoint: AgentWorkflowEntrypointConfig {
+                kind: workflow.entrypoint.kind.clone(),
+                r#ref: workflow.entrypoint.r#ref.clone(),
+                extensions: workflow.entrypoint.extensions.clone(),
+            },
+            settings: workflow.settings.clone(),
+            extensions: workflow.extensions.clone(),
+        });
+
+    AgentConfig {
+        harness: Some(AgentHarnessConfig {
+            settings: config.harness.settings.clone(),
+            extensions: config.harness.extensions.clone(),
+        }),
+        models,
+        instructions,
+        runtime,
+        skills,
+        mcp,
+        tools,
+        workflow,
+        extensions: config.extensions.clone(),
+    }
 }

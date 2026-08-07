@@ -23,7 +23,7 @@ Import these from the top-level `nemo_fabric` package:
 | `InstructionsConfig` / `InstructionConfig` | Portable agent instructions and replacement mode. |
 | `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, and harness turn limit. |
 | `EnvironmentConfig` | Execution environment, workspace, and harness-visible variables. |
-| `ToolsConfig` | Adapter-native tool selection and blocking policy. |
+| `ToolsConfig` / `ToolDefinitionConfig` | Named tool and tool-group definitions plus selection and blocking policy. |
 | `McpConfig` / `McpServerConfig` | MCP transport, URL or command, process arguments, environment, exposure, and optional per-server tool policy. |
 | `SkillConfig` | Skill directories. |
 | `TelemetryConfig` | Telemetry providers. |
@@ -43,6 +43,7 @@ methods that edit the typed config in place and return it:
 - `add_mcp_server(name, *, transport, url, args, env, exposure, allowed_tools, blocked_tools, ...)` / `remove_mcp_server(name)`
 - `enable_relay(...)` for NVIDIA NeMo Relay observability in the `relay` block
 - `ToolsConfig(enabled=..., blocked=...)` for tool policy
+- `add_tool_definition(name, kind=..., ref=..., settings=...)` / `remove_tool_definition(name)`
 - `block_tools(...)` for additive deny policy
 
 Filtered per-server MCP configurations require adapter support for both `mcp`

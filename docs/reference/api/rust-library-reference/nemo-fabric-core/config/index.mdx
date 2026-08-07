@@ -2,7 +2,7 @@
 title: "Module config"
 sidebar-title: "config"
 description: "NeMo Fabric config models and loading helpers."
-position: 72
+position: 96
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -10,6 +10,24 @@ SPDX-License-Identifier: Apache-2.0 */}
 Generated from `cargo doc --no-deps -p nemo-fabric-core`.
 
 NeMo Fabric config models and loading helpers.
+
+## Re-exports
+
+- `pub use crate::adapter_contract::ADAPTER_CONTRACT_VERSION;`
+- `pub use crate::adapter_contract::AdapterExtensionPoint;`
+- `pub use crate::agent_config::AgentConfig;`
+- `pub use crate::agent_config::AgentHarnessConfig;`
+- `pub use crate::agent_config::AgentInstructionConfig;`
+- `pub use crate::agent_config::AgentInstructionsConfig;`
+- `pub use crate::agent_config::AgentMcpConfig;`
+- `pub use crate::agent_config::AgentMcpServerConfig;`
+- `pub use crate::agent_config::AgentModelConfig;`
+- `pub use crate::agent_config::AgentRuntimeConfig;`
+- `pub use crate::agent_config::AgentSkillConfig;`
+- `pub use crate::agent_config::AgentToolDefinition;`
+- `pub use crate::agent_config::AgentToolsConfig;`
+- `pub use crate::agent_config::AgentWorkflowConfig;`
+- `pub use crate::agent_config::AgentWorkflowEntrypointConfig;`
 
 ## Structs
 
@@ -48,6 +66,7 @@ NeMo Fabric config models and loading helpers.
 - [TelemetryConfig](struct-telemetryconfig.mdx): Telemetry configuration.
 - [TelemetryPlan](struct-telemetryplan.mdx): Resolved telemetry plan.
 - [TelemetryProviderConfig](struct-telemetryproviderconfig.mdx): Provider-specific telemetry configuration.
+- [ToolDefinitionConfig](struct-tooldefinitionconfig.mdx): One named normalized tool or tool-group definition.
 - [ToolsConfig](struct-toolsconfig.mdx): Harness-neutral tool capability configuration.
 - [ToolsPlan](struct-toolsplan.mdx): Normalized tool policy for a run.
 - [WorkflowConfig](struct-workflowconfig.mdx): Adapter-owned workflow selection and immutable construction settings.
@@ -73,10 +92,6 @@ NeMo Fabric config models and loading helpers.
 - [RelayUnsupportedBehavior](enum-relayunsupportedbehavior.mdx): Relay unsupported/unknown config handling.
 - [ResolutionStrategy](enum-resolutionstrategy.mdx): Adapter install or availability strategy.
 - [TelemetryProvider](enum-telemetryprovider.mdx): Telemetry runtime provider.
-
-## Constants
-
-- [ADAPTER_CONTRACT_VERSION](constant-adapter-contract-version.mdx): Adapter descriptor contract version supported by this core.
 
 ## Functions
 

@@ -34,6 +34,11 @@
           "type": "string"
         },
         {
+          "const": "tools.definitions",
+          "description": "Named normalized tool and tool-group definitions.",
+          "type": "string"
+        },
+        {
           "const": "tools.blocked",
           "description": "Adapter-native tool names to block.",
           "type": "string"
@@ -278,6 +283,14 @@
       "$ref": "#/$defs/AdapterTelemetrySupport",
       "default": {},
       "description": "Telemetry support declared by this adapter."
+    },
+    "tool_definition_schema": {
+      "additionalProperties": true,
+      "description": "JSON Schema applied to every normalized `FabricConfig.tools.definitions` entry.",
+      "type": [
+        "object",
+        "null"
+      ]
     },
     "workflow_schema": {
       "additionalProperties": true,

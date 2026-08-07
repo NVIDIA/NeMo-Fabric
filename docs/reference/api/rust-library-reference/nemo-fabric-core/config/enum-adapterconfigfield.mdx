@@ -2,7 +2,7 @@
 title: "Enum Adapter Config Field"
 sidebar-title: "AdapterConfigField"
 description: "Adapter-translated normalized NVIDIA NeMo Fabric configuration fields."
-position: 2
+position: 9
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -17,6 +17,7 @@ pub enum AdapterConfigField {
     SystemInstructions,
     MaxTurns,
     EnabledTools,
+    ToolDefinitions,
     BlockedTools,
     Mcp,
     McpToolFilters,
@@ -63,6 +64,12 @@ Per-invocation harness turn limit.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "EnabledTools"}} /></pre>
 
 Adapter-native tool names to expose.
+
+### `ToolDefinitions`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "ToolDefinitions"}} /></pre>
+
+Named normalized tool and tool-group definitions.
 
 ### `BlockedTools`
 

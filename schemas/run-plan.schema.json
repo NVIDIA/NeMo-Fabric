@@ -34,6 +34,11 @@
           "type": "string"
         },
         {
+          "const": "tools.definitions",
+          "description": "Named normalized tool and tool-group definitions.",
+          "type": "string"
+        },
+        {
           "const": "tools.blocked",
           "description": "Adapter-native tool names to block.",
           "type": "string"
@@ -144,6 +149,14 @@
           "$ref": "#/$defs/AdapterTelemetrySupport",
           "default": {},
           "description": "Telemetry support declared by this adapter."
+        },
+        "tool_definition_schema": {
+          "additionalProperties": true,
+          "description": "JSON Schema applied to every normalized `FabricConfig.tools.definitions` entry.",
+          "type": [
+            "object",
+            "null"
+          ]
         },
         "workflow_schema": {
           "additionalProperties": true,
@@ -277,6 +290,460 @@
           "type": "object"
         }
       },
+      "type": "object"
+    },
+    "AgentConfig": {
+      "additionalProperties": false,
+      "description": "Configuration projected southbound to one adapter target.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned fields validated against the selected adapter descriptor.",
+          "type": "object"
+        },
+        "harness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentHarnessConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Adapter-owned target settings."
+        },
+        "instructions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentInstructionsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Normalized instructions applied by the adapter target."
+        },
+        "mcp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentMcpConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "MCP servers routed to the adapter target."
+        },
+        "models": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AgentModelConfig"
+          },
+          "description": "Named model roles applied by the adapter target.",
+          "type": "object"
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentRuntimeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Adapter-applied runtime behavior."
+        },
+        "skills": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentSkillConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Skills made available to the adapter target."
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentToolsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Named tool definitions and effective tool policy."
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentWorkflowConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Custom agent or workflow selection and construction settings."
+        }
+      },
+      "type": "object"
+    },
+    "AgentHarnessConfig": {
+      "additionalProperties": false,
+      "description": "Adapter-owned target settings projected from `FabricConfig.harness`.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned harness fields.",
+          "type": "object"
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Target-specific settings validated by the selected adapter descriptor.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "AgentInstructionConfig": {
+      "additionalProperties": false,
+      "description": "One normalized instruction value projected to an adapter target.",
+      "properties": {
+        "content": {
+          "description": "Instruction text.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned instruction fields.",
+          "type": "object"
+        },
+        "mode": {
+          "$ref": "#/$defs/InstructionMode",
+          "default": "replace",
+          "description": "How the instruction is applied."
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "AgentInstructionsConfig": {
+      "additionalProperties": false,
+      "description": "Normalized instructions projected to an adapter target.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned instruction categories.",
+          "type": "object"
+        },
+        "system": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentInstructionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "System instructions for the selected adapter target."
+        }
+      },
+      "type": "object"
+    },
+    "AgentMcpConfig": {
+      "additionalProperties": false,
+      "description": "Named MCP servers routed to an adapter target.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned MCP fields.",
+          "type": "object"
+        },
+        "servers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AgentMcpServerConfig"
+          },
+          "description": "MCP servers keyed by normalized server name.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "AgentMcpServerConfig": {
+      "additionalProperties": false,
+      "description": "One MCP server routed to an adapter target.",
+      "properties": {
+        "allowed_tools": {
+          "description": "MCP tool names to expose. `None` exposes every discovered tool.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "args": {
+          "description": "Arguments passed to an MCP stdio process.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "blocked_tools": {
+          "description": "MCP tool names blocked after applying the optional allowlist.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables passed to an MCP stdio process.",
+          "type": "object"
+        },
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned MCP server fields.",
+          "type": "object"
+        },
+        "transport": {
+          "description": "MCP transport identifier.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "url": {
+          "description": "MCP server URL or process command, depending on transport.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transport",
+        "url"
+      ],
+      "type": "object"
+    },
+    "AgentModelConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for one named model role projected to an adapter target.",
+      "properties": {
+        "api_key_env": {
+          "description": "Environment variable containing the provider credential.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "base_url": {
+          "description": "Optional provider API base URL.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned model fields.",
+          "type": "object"
+        },
+        "model": {
+          "description": "Provider model identifier.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "provider": {
+          "description": "Model provider identifier.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Provider-specific model settings.",
+          "type": "object"
+        },
+        "temperature": {
+          "description": "Optional model temperature.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "model"
+      ],
+      "type": "object"
+    },
+    "AgentRuntimeConfig": {
+      "additionalProperties": false,
+      "description": "Runtime behavior applied by an adapter target.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned runtime fields.",
+          "type": "object"
+        },
+        "max_turns": {
+          "description": "Maximum number of agent turns allowed for one invocation.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "AgentSkillConfig": {
+      "additionalProperties": false,
+      "description": "Skill paths made available to an adapter target.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned skill fields.",
+          "type": "object"
+        },
+        "paths": {
+          "description": "Skill paths resolved for the task environment.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "AgentToolDefinition": {
+      "additionalProperties": false,
+      "description": "One named tool or tool-group definition resolved by an adapter.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned tool-definition fields.",
+          "type": "object"
+        },
+        "kind": {
+          "description": "Resolution semantics declared by the selected adapter descriptor.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Executable or factory reference interpreted under `kind`.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Definition-specific construction settings.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "type": "object"
+    },
+    "AgentToolsConfig": {
+      "additionalProperties": false,
+      "description": "Named tool definitions and effective adapter-target tool policy.",
+      "properties": {
+        "blocked": {
+          "description": "Named tools to block.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "definitions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AgentToolDefinition"
+          },
+          "description": "Tool and tool-group definitions keyed by normalized name.",
+          "type": "object"
+        },
+        "enabled": {
+          "description": "Named tools to expose. `None` preserves the adapter-target default.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned tool fields.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "AgentWorkflowConfig": {
+      "additionalProperties": false,
+      "description": "Custom agent or workflow selection and construction settings.",
+      "properties": {
+        "entrypoint": {
+          "$ref": "#/$defs/AgentWorkflowEntrypointConfig",
+          "description": "Entry point resolved by the selected adapter."
+        },
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned workflow fields.",
+          "type": "object"
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Agent-specific construction settings.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "entrypoint"
+      ],
+      "type": "object"
+    },
+    "AgentWorkflowEntrypointConfig": {
+      "additionalProperties": false,
+      "description": "Adapter-declared resolution semantics for one custom agent or workflow.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned entry-point fields.",
+          "type": "object"
+        },
+        "kind": {
+          "description": "Resolution semantics declared by the selected adapter descriptor.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Executable or factory reference interpreted under `kind`.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
       "type": "object"
     },
     "CapabilityKind": {
@@ -1843,6 +2310,34 @@
       },
       "type": "object"
     },
+    "ToolDefinitionConfig": {
+      "additionalProperties": true,
+      "description": "One named normalized tool or tool-group definition.",
+      "properties": {
+        "kind": {
+          "description": "Portable definition category, such as `function` or `function_group`.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Adapter-resolved component or factory reference.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": true,
+          "description": "Definition-specific construction settings validated by the adapter descriptor.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "type": "object"
+    },
     "ToolsConfig": {
       "additionalProperties": true,
       "description": "Harness-neutral tool capability configuration.",
@@ -1853,6 +2348,13 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "definitions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolDefinitionConfig"
+          },
+          "description": "Named tool and tool-group definitions resolved by the selected adapter.",
+          "type": "object"
         },
         "enabled": {
           "description": "Adapter-native tool names to expose. `None` preserves the harness default.",
@@ -1876,6 +2378,13 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "definitions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolDefinitionConfig"
+          },
+          "description": "Named normalized tool and tool-group definitions.",
+          "type": "object"
         },
         "enabled": {
           "description": "Adapter-native tool names to expose. `None` preserves the harness default.",
@@ -1946,6 +2455,10 @@
         }
       ],
       "description": "Adapter descriptor resolved for this plan, when configured."
+    },
+    "agent_config": {
+      "$ref": "#/$defs/AgentConfig",
+      "description": "Configuration projected southbound to the selected adapter target."
     },
     "agent_name": {
       "description": "Stable agent name.",
@@ -2018,6 +2531,7 @@
     "agent_name",
     "base_dir",
     "config",
+    "agent_config",
     "capabilities"
   ],
   "title": "RunPlan",

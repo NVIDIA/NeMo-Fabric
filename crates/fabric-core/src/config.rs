@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub use crate::adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
+use crate::agent_config::project_agent_config;
 pub use crate::agent_config::{
     AgentConfig, AgentHarnessConfig, AgentInstructionConfig, AgentInstructionsConfig,
     AgentMcpConfig, AgentMcpServerConfig, AgentModelConfig, AgentRuntimeConfig, AgentSkillConfig,
@@ -103,6 +104,9 @@ pub struct InstructionsConfig {
 /// Harness-neutral tool capability configuration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ToolsConfig {
+    /// Named tool and tool-group definitions resolved by the selected adapter.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub definitions: BTreeMap<String, ToolDefinitionConfig>,
     /// Adapter-native tool names to expose. `None` preserves the harness default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<Vec<String>>,
@@ -110,6 +114,23 @@ pub struct ToolsConfig {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked: Vec<String>,
     /// Additive tool configuration fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// One named normalized tool or tool-group definition.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolDefinitionConfig {
+    /// Portable definition category, such as `function` or `function_group`.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub kind: String,
+    /// Adapter-resolved component or factory reference.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub r#ref: String,
+    /// Definition-specific construction settings validated by the adapter descriptor.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub settings: serde_json::Map<String, Value>,
+    /// Additive definition fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
 }
@@ -193,6 +214,9 @@ pub struct AdapterDescriptor {
     /// JSON Schema for adapter-owned `FabricConfig.workflow`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_schema: Option<serde_json::Map<String, Value>>,
+    /// JSON Schema applied to every normalized `FabricConfig.tools.definitions` entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_definition_schema: Option<serde_json::Map<String, Value>>,
     /// JSON Schemas for adapter-owned `extensions` at southbound block types.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extension_schemas: BTreeMap<AdapterExtensionPoint, serde_json::Map<String, Value>>,
@@ -448,6 +472,9 @@ pub enum AdapterConfigField {
     /// Adapter-native tool names to expose.
     #[serde(rename = "tools.enabled")]
     EnabledTools,
+    /// Named normalized tool and tool-group definitions.
+    #[serde(rename = "tools.definitions")]
+    ToolDefinitions,
     /// Adapter-native tool names to block.
     #[serde(rename = "tools.blocked")]
     BlockedTools,
@@ -1234,6 +1261,23 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
         }
     }
     if let Some(tools) = &config.tools {
+        for (name, definition) in &tools.definitions {
+            if name.trim().is_empty() {
+                return invalid_config("tools.definitions", "definition names must not be empty");
+            }
+            if definition.kind.trim().is_empty() {
+                return invalid_config(
+                    format!("tools.definitions.{name}.kind"),
+                    "must be a non-empty string",
+                );
+            }
+            if definition.r#ref.trim().is_empty() {
+                return invalid_config(
+                    format!("tools.definitions.{name}.ref"),
+                    "must be a non-empty string",
+                );
+            }
+        }
         if let Some(enabled) = &tools.enabled {
             validate_names("tools.enabled", enabled)?;
             if let Some(name) = enabled.iter().find(|name| tools.blocked.contains(name)) {
@@ -1374,6 +1418,8 @@ fn resolve_run_plan(
     let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_directories)?;
     validate_harness_settings(&config, adapter_descriptor.as_ref())?;
     validate_workflow(&config, adapter_descriptor.as_ref())?;
+    validate_tool_definitions(&config, adapter_descriptor.as_ref())?;
+    validate_agent_config_extensions(&config, adapter_descriptor.as_ref())?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
@@ -1389,10 +1435,12 @@ fn resolve_run_plan(
     }
     let capabilities = resolve_runtime_capabilities(&config, descriptor);
     let telemetry_plan = resolve_telemetry_plan(&config, descriptor)?;
+    let agent_config = project_agent_config(&config, &capability_plan, descriptor);
     Ok(RunPlan {
         agent_name: config.metadata.name.clone(),
         base_dir,
         config,
+        agent_config,
         adapter_descriptor,
         resolution,
         environment_plan,
@@ -1477,6 +1525,17 @@ pub(crate) fn adapter_config_compatibility_issues(
         issues.push(incompatible(
             "runtime.max_turns".to_string(),
             "the adapter does not declare an equivalent native mapping".to_string(),
+        ));
+    }
+    if config
+        .tools
+        .as_ref()
+        .is_some_and(|tools| !tools.definitions.is_empty())
+        && !accepts(AdapterConfigField::ToolDefinitions)
+    {
+        issues.push(incompatible(
+            "tools.definitions".to_string(),
+            "the adapter does not consume normalized tool definitions".to_string(),
         ));
     }
     if !config.models.is_empty() && !accepts(AdapterConfigField::Models) {
@@ -1592,6 +1651,10 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     for (field, schema) in [
         ("settings_schema", descriptor.settings_schema.as_ref()),
         ("workflow_schema", descriptor.workflow_schema.as_ref()),
+        (
+            "tool_definition_schema",
+            descriptor.tool_definition_schema.as_ref(),
+        ),
     ] {
         if let Some(schema) = schema {
             validate_adapter_object_schema(path, field, schema)?;
@@ -1718,6 +1781,196 @@ pub(crate) fn validate_workflow(
     Ok(())
 }
 
+pub(crate) fn validate_tool_definitions(
+    config: &FabricConfig,
+    resolved: Option<&ResolvedAdapterDescriptor>,
+) -> Result<()> {
+    let Some(definitions) = config
+        .tools
+        .as_ref()
+        .map(|tools| &tools.definitions)
+        .filter(|definitions| !definitions.is_empty())
+    else {
+        return Ok(());
+    };
+    let Some(resolved) = resolved else {
+        return Ok(());
+    };
+    let Some(schema) = &resolved.descriptor.tool_definition_schema else {
+        let name = definitions
+            .keys()
+            .next()
+            .expect("non-empty definitions have a key");
+        return invalid_tool_definition(
+            resolved,
+            format!("tools.definitions.{name}"),
+            "the resolved descriptor does not declare a tool_definition_schema",
+        );
+    };
+
+    let schema = Value::Object(schema.clone());
+    let validator = jsonschema::validator_for(&schema).map_err(|error| {
+        FabricError::InvalidAdapterDescriptor {
+            path: resolved.path.clone(),
+            message: format!("tool_definition_schema could not be compiled: {error}"),
+        }
+    })?;
+    for (name, definition) in definitions {
+        let value = serde_json::to_value(definition).map_err(FabricError::SerializeJson)?;
+        if let Some(error) = validator.iter_errors(&value).next() {
+            let prefix = format!("tools.definitions.{name}");
+            let definition_path = schema_error_path(&error, &prefix);
+            let reason = schema_error_reason(&error, "adapter tool definition schema");
+            return invalid_tool_definition(resolved, definition_path, reason);
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_agent_config_extensions(
+    config: &FabricConfig,
+    resolved: Option<&ResolvedAdapterDescriptor>,
+) -> Result<()> {
+    let Some(resolved) = resolved else {
+        return Ok(());
+    };
+
+    validate_extension_block(
+        resolved,
+        AdapterExtensionPoint::AgentConfig,
+        "extensions",
+        &config.extensions,
+    )?;
+    validate_extension_block(
+        resolved,
+        AdapterExtensionPoint::Harness,
+        "harness",
+        &config.harness.extensions,
+    )?;
+    for (name, model) in &config.models {
+        validate_extension_block(
+            resolved,
+            AdapterExtensionPoint::Model,
+            &format!("models.{name}"),
+            &model.extensions,
+        )?;
+    }
+    if let Some(instructions) = &config.instructions {
+        validate_extension_block(
+            resolved,
+            AdapterExtensionPoint::Instructions,
+            "instructions",
+            &instructions.extensions,
+        )?;
+        if let Some(system) = &instructions.system {
+            validate_extension_block(
+                resolved,
+                AdapterExtensionPoint::Instruction,
+                "instructions.system",
+                &system.extensions,
+            )?;
+        }
+    }
+    validate_extension_block(
+        resolved,
+        AdapterExtensionPoint::Runtime,
+        "runtime",
+        &config.runtime.extensions,
+    )?;
+    if let Some(skills) = &config.skills {
+        validate_extension_block(
+            resolved,
+            AdapterExtensionPoint::Skills,
+            "skills",
+            &skills.extensions,
+        )?;
+    }
+    if let Some(mcp) = &config.mcp {
+        validate_extension_block(resolved, AdapterExtensionPoint::Mcp, "mcp", &mcp.extensions)?;
+        for (name, server) in &mcp.servers {
+            validate_extension_block(
+                resolved,
+                AdapterExtensionPoint::McpServer,
+                &format!("mcp.servers.{name}"),
+                &server.extensions,
+            )?;
+        }
+    }
+    if let Some(tools) = &config.tools {
+        validate_extension_block(
+            resolved,
+            AdapterExtensionPoint::Tools,
+            "tools",
+            &tools.extensions,
+        )?;
+        for (name, definition) in &tools.definitions {
+            validate_extension_block(
+                resolved,
+                AdapterExtensionPoint::ToolDefinition,
+                &format!("tools.definitions.{name}"),
+                &definition.extensions,
+            )?;
+        }
+    }
+    if let Some(workflow) = &config.workflow {
+        validate_extension_block(
+            resolved,
+            AdapterExtensionPoint::Workflow,
+            "workflow",
+            &workflow.extensions,
+        )?;
+        validate_extension_block(
+            resolved,
+            AdapterExtensionPoint::WorkflowEntrypoint,
+            "workflow.entrypoint",
+            &workflow.entrypoint.extensions,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_extension_block(
+    resolved: &ResolvedAdapterDescriptor,
+    point: AdapterExtensionPoint,
+    path: &str,
+    extensions: &BTreeMap<String, Value>,
+) -> Result<()> {
+    if extensions.is_empty() {
+        return Ok(());
+    }
+    let Some(schema) = resolved.descriptor.extension_schemas.get(&point) else {
+        return Err(FabricError::AdapterCompatibility {
+            adapter_id: resolved.descriptor.adapter_id.clone(),
+            field: path.to_string(),
+            reason: format!(
+                "the adapter descriptor does not declare an extension schema for {}",
+                point.as_str()
+            ),
+        });
+    };
+    let schema = Value::Object(schema.clone());
+    let validator = jsonschema::validator_for(&schema).map_err(|error| {
+        FabricError::InvalidAdapterDescriptor {
+            path: resolved.path.clone(),
+            message: format!(
+                "extension_schemas.{} could not be compiled: {error}",
+                point.as_str()
+            ),
+        }
+    })?;
+    let value = serde_json::to_value(extensions).map_err(FabricError::SerializeJson)?;
+    if let Some(error) = validator.iter_errors(&value).next() {
+        return Err(FabricError::InvalidAdapterExtension {
+            adapter_id: resolved.descriptor.adapter_id.clone(),
+            descriptor_source: resolved.source,
+            descriptor_path: resolved.path.clone(),
+            extension_path: schema_error_path(&error, path),
+            reason: schema_error_reason(&error, "adapter extension schema"),
+        });
+    }
+    Ok(())
+}
+
 fn invalid_harness_settings<T>(
     resolved: &ResolvedAdapterDescriptor,
     settings_path: String,
@@ -1742,6 +1995,20 @@ fn invalid_workflow<T>(
         descriptor_source: resolved.source,
         descriptor_path: resolved.path.clone(),
         workflow_path,
+        reason: reason.into(),
+    })
+}
+
+fn invalid_tool_definition<T>(
+    resolved: &ResolvedAdapterDescriptor,
+    definition_path: String,
+    reason: impl Into<String>,
+) -> Result<T> {
+    Err(FabricError::InvalidToolDefinition {
+        adapter_id: resolved.descriptor.adapter_id.clone(),
+        descriptor_source: resolved.source,
+        descriptor_path: resolved.path.clone(),
+        definition_path,
         reason: reason.into(),
     })
 }
@@ -1914,15 +2181,28 @@ fn resolve_capability_plan(
         .as_ref()
         .map(|tools| tools.blocked.clone())
         .unwrap_or_default();
+    let tool_definitions = config
+        .tools
+        .as_ref()
+        .map(|tools| tools.definitions.clone())
+        .unwrap_or_default();
+    let tool_definitions_configured = !tool_definitions.is_empty();
     let enabled_tools_configured = enabled_tools.is_some();
     let blocked_tools_configured = !blocked_tools.is_empty();
-    let tools_configured = enabled_tools_configured || blocked_tools_configured;
+    let tools_configured =
+        tool_definitions_configured || enabled_tools_configured || blocked_tools_configured;
     let mut native = CapabilityTargetPlan::default();
     let managed = CapabilityTargetPlan::default();
     let mut unsupported = CapabilityTargetPlan::default();
     let mut routes = Vec::new();
 
     for (configured, support, field, description) in [
+        (
+            tool_definitions_configured,
+            AdapterConfigField::ToolDefinitions,
+            "tools.definitions",
+            "named tool definitions",
+        ),
         (
             enabled_tools_configured,
             AdapterConfigField::EnabledTools,
@@ -2022,6 +2302,7 @@ fn resolve_capability_plan(
 
     CapabilityPlan {
         tools: ToolsPlan {
+            definitions: tool_definitions,
             enabled: enabled_tools,
             blocked: blocked_tools,
         },
@@ -2158,6 +2439,8 @@ pub struct RunPlan {
     pub base_dir: PathBuf,
     /// Complete typed NeMo Fabric config.
     pub config: FabricConfig,
+    /// Configuration projected southbound to the selected adapter target.
+    pub agent_config: AgentConfig,
     /// Adapter descriptor resolved for this plan, when configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adapter_descriptor: Option<ResolvedAdapterDescriptor>,
@@ -2258,6 +2541,9 @@ pub struct CapabilityPlan {
 /// Normalized tool policy for a run.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ToolsPlan {
+    /// Named normalized tool and tool-group definitions.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub definitions: BTreeMap<String, ToolDefinitionConfig>,
     /// Adapter-native tool names to expose. `None` preserves the harness default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<Vec<String>>,
@@ -2484,6 +2770,28 @@ mod tests {
         .clone()
     }
 
+    fn tool_definition_schema() -> serde_json::Map<String, Value> {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "kind": {"enum": ["function", "function_group"]},
+                "ref": {"type": "string", "minLength": 1},
+                "settings": {
+                    "type": "object",
+                    "properties": {
+                        "llm": {"type": "string"}
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "required": ["kind", "ref"],
+            "additionalProperties": false
+        })
+        .as_object()
+        .expect("object tool definition schema")
+        .clone()
+    }
+
     fn repository_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
@@ -2648,6 +2956,7 @@ mod tests {
             },
         );
         config.tools = Some(ToolsConfig {
+            definitions: BTreeMap::new(),
             enabled: Some(vec!["terminal".to_string()]),
             blocked: vec!["browser".to_string()],
             extensions: BTreeMap::new(),
@@ -2772,6 +3081,7 @@ mod tests {
         let adapter_id = "nvidia.fabric.codex";
         let mut config = typed_config(adapter_id);
         config.tools = Some(ToolsConfig {
+            definitions: BTreeMap::new(),
             enabled: Some(vec!["terminal".to_string()]),
             blocked: Vec::new(),
             extensions: BTreeMap::new(),
@@ -2844,6 +3154,7 @@ mod tests {
     fn enabled_and_blocked_tool_policies_are_routed_independently() {
         let mut config = typed_config("nvidia.fabric.hermes");
         config.tools = Some(ToolsConfig {
+            definitions: BTreeMap::new(),
             enabled: Some(Vec::new()),
             blocked: vec!["browser".to_string()],
             extensions: BTreeMap::new(),
@@ -2864,6 +3175,7 @@ mod tests {
     fn unsupported_tool_policy_fails_during_planning() {
         let mut config = typed_config("nvidia.fabric.codex");
         config.tools = Some(ToolsConfig {
+            definitions: BTreeMap::new(),
             enabled: None,
             blocked: vec!["Bash".to_string()],
             extensions: BTreeMap::new(),
@@ -3101,6 +3413,7 @@ mod tests {
     fn overlapping_tool_policy_is_invalid() {
         let mut config = typed_config("nvidia.fabric.hermes");
         config.tools = Some(ToolsConfig {
+            definitions: BTreeMap::new(),
             enabled: Some(vec!["browser".to_string()]),
             blocked: vec!["browser".to_string()],
             extensions: BTreeMap::new(),
@@ -3199,6 +3512,145 @@ mod tests {
                 && descriptor_path == path
                 && workflow_path == "workflow.settings.llm_name"
                 && reason.contains("adapter workflow schema")
+        ));
+    }
+
+    #[test]
+    fn validates_and_projects_normalized_tool_definitions() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor
+            .config
+            .accepts
+            .push(AdapterConfigField::ToolDefinitions);
+        descriptor.tool_definition_schema = Some(tool_definition_schema());
+        let resolved = ResolvedAdapterDescriptor {
+            descriptor,
+            source: AdapterDescriptorSource::Repository,
+            path: path.clone(),
+            root: path.parent().expect("descriptor directory").to_path_buf(),
+        };
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.skills = None;
+        config.tools = Some(ToolsConfig {
+            definitions: BTreeMap::from([(
+                "email_phishing_analyzer".to_string(),
+                ToolDefinitionConfig {
+                    kind: "function".to_string(),
+                    r#ref: "email_phishing_analyzer".to_string(),
+                    settings: serde_json::Map::from_iter([(
+                        "llm".to_string(),
+                        serde_json::json!("default"),
+                    )]),
+                    extensions: BTreeMap::new(),
+                },
+            )]),
+            enabled: Some(vec!["email_phishing_analyzer".to_string()]),
+            blocked: Vec::new(),
+            extensions: BTreeMap::new(),
+        });
+
+        validate_tool_definitions(&config, Some(&resolved)).expect("valid definition");
+        let capability_plan = resolve_capability_plan(
+            &config,
+            Path::new("/tmp/fabric-tool-definitions"),
+            Some(&resolved),
+        );
+        let agent_config =
+            project_agent_config(&config, &capability_plan, Some(&resolved.descriptor));
+        let definition = agent_config
+            .tools
+            .as_ref()
+            .and_then(|tools| tools.definitions.get("email_phishing_analyzer"))
+            .expect("projected definition");
+        assert_eq!(definition.kind, "function");
+        assert_eq!(definition.r#ref, "email_phishing_analyzer");
+        assert_eq!(definition.settings["llm"], "default");
+        assert_eq!(
+            capability_plan.tools.definitions,
+            config.tools.as_ref().expect("tools").definitions
+        );
+
+        config
+            .tools
+            .as_mut()
+            .expect("tools")
+            .definitions
+            .get_mut("email_phishing_analyzer")
+            .expect("definition")
+            .settings
+            .insert("unknown".to_string(), serde_json::json!(true));
+        let error = validate_tool_definitions(&config, Some(&resolved))
+            .expect_err("unknown definition setting");
+        assert!(matches!(
+            error,
+            FabricError::InvalidToolDefinition { definition_path, .. }
+                if definition_path == "tools.definitions.email_phishing_analyzer.settings.unknown"
+        ));
+    }
+
+    #[test]
+    fn adapter_extensions_are_fail_closed_and_schema_validated() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        let resolved = ResolvedAdapterDescriptor {
+            descriptor: descriptor.clone(),
+            source: AdapterDescriptorSource::Repository,
+            path: path.clone(),
+            root: path.parent().expect("descriptor directory").to_path_buf(),
+        };
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.skills = None;
+        config.models.insert(
+            "default".to_string(),
+            serde_json::from_value(serde_json::json!({
+                "provider": "nvidia",
+                "model": "test-model",
+                "profile": "fast"
+            }))
+            .expect("model extension"),
+        );
+
+        let error = validate_agent_config_extensions(&config, Some(&resolved))
+            .expect_err("undeclared extension schema");
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility { field, .. } if field == "models.default"
+        ));
+
+        descriptor.extension_schemas.insert(
+            AdapterExtensionPoint::Model,
+            serde_json::json!({
+                "type": "object",
+                "properties": {"profile": {"enum": ["fast", "accurate"]}},
+                "required": ["profile"],
+                "additionalProperties": false
+            })
+            .as_object()
+            .expect("model extension schema")
+            .clone(),
+        );
+        let resolved = ResolvedAdapterDescriptor {
+            descriptor,
+            source: AdapterDescriptorSource::Repository,
+            path,
+            root: repository_root().join("adapters/claude"),
+        };
+        validate_agent_config_extensions(&config, Some(&resolved))
+            .expect("declared extension is valid");
+
+        config
+            .models
+            .get_mut("default")
+            .expect("default model")
+            .extensions
+            .insert("profile".to_string(), serde_json::json!("slow"));
+        let error = validate_agent_config_extensions(&config, Some(&resolved))
+            .expect_err("invalid extension value");
+        assert!(matches!(
+            error,
+            FabricError::InvalidAdapterExtension { extension_path, .. }
+                if extension_path == "models.default.profile"
         ));
     }
 

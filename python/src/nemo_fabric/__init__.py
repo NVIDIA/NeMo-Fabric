@@ -37,6 +37,7 @@ from nemo_fabric.models import SkillConfig
 from nemo_fabric.models import TelemetryConfig
 from nemo_fabric.models import TelemetryProviderConfig
 from nemo_fabric.models import ToolsConfig
+from nemo_fabric.models import ToolDefinitionConfig
 from nemo_fabric.models import WorkflowConfig
 from nemo_fabric.models import WorkflowEntrypointConfig
 from nemo_fabric.runtime import Runtime
@@ -107,6 +108,7 @@ __all__ = [
     "TelemetryProviderConfig",
     "TelemetryRef",
     "ToolsConfig",
+    "ToolDefinitionConfig",
     "WorkflowConfig",
     "WorkflowEntrypointConfig",
 ]

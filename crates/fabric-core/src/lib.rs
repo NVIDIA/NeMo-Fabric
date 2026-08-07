@@ -26,9 +26,9 @@ pub use config::{
     FabricConfig, HarnessConfig, InstructionConfig, InstructionMode, InstructionsConfig, McpConfig,
     McpExposure, McpServerPlan, MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext,
     ResolvedAdapterDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
-    TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig, ToolsConfig,
-    WorkflowConfig, WorkflowEntrypointConfig, load_adapter_descriptor,
-    resolve_diagnostic_plan_from_config,
+    TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig,
+    ToolDefinitionConfig, ToolsConfig, WorkflowConfig, WorkflowEntrypointConfig,
+    load_adapter_descriptor, resolve_diagnostic_plan_from_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,
     resolve_run_plan_from_config_with_adapter_directories,
 };
