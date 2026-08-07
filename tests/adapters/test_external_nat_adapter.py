@@ -414,7 +414,10 @@ def test_calculator_example_uses_the_source_stdio_server():
     calculator = config.mcp.servers["calculator"]
 
     assert calculator.transport == "stdio"
-    assert "calculator_mcp.py" in calculator.url
+    assert calculator.url == sys.executable
+    assert calculator.args == [
+        str(ROOT / "external" / "nat" / "examples" / "calculator_mcp.py")
+    ]
     assert calculator.blocked_tools == ["divide"]
 
 
@@ -1004,8 +1007,15 @@ def test_mcp_stdio_expands_command_and_maps_structured_args_and_env(
         "calculator",
         {
             "transport": "stdio",
-            "url": "$NAT_TEST_MCP_COMMAND --label 'safe mode' --port 9000",
-            "args": ["--trace", "--request-timeout=10"],
+            "url": "$NAT_TEST_MCP_COMMAND",
+            "args": [
+                "--label",
+                "safe mode",
+                "--port",
+                "9000",
+                "--trace",
+                "--request-timeout=10",
+            ],
             "env": {"NAT_MCP_TOKEN": "test-token"},
         },
     )
@@ -1025,17 +1035,16 @@ def test_mcp_stdio_expands_command_and_maps_structured_args_and_env(
     }
 
 
-def test_mcp_stdio_rejects_unbalanced_quotes():
-    with pytest.raises(adapter.lifecycle.LifecycleError) as error:
-        adapter.nat_mcp_server_config(
-            "calculator",
-            {"transport": "stdio", "url": "mcp-server --label 'unterminated"},
-        )
-
-    assert error.value.code == "nat_invalid_mcp_server"
-    assert error.value.message == (
-        "NAT MCP server 'calculator' has an invalid stdio command"
+def test_mcp_stdio_preserves_a_command_with_spaces_without_shell_parsing():
+    result = adapter.nat_mcp_server_config(
+        "calculator",
+        {"transport": "stdio", "url": "/opt/MCP Servers/calculator"},
     )
+
+    assert result == {
+        "transport": "stdio",
+        "command": "/opt/MCP Servers/calculator",
+    }
 
 
 def test_mcp_stdio_rejects_a_whitespace_only_command():
