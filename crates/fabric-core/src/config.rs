@@ -1578,19 +1578,16 @@ pub(crate) fn adapter_config_compatibility_issues(
         return issues;
     };
 
-    let selected_model = match (config.models.get_key_value("default"), config.models.len()) {
-        (Some(model), _) => Some(model),
-        (None, 0) => None,
-        (None, 1) => config.models.first_key_value(),
-        (None, _) => {
+    match (config.models.contains_key("default"), config.models.len()) {
+        (true, _) | (false, 0 | 1) => {}
+        (false, _) => {
             issues.push(incompatible(
                 "models".to_string(),
                 "multiple model roles are configured and no default role selects one".to_string(),
             ));
-            None
         }
-    };
-    if let Some((role, model)) = selected_model {
+    }
+    for (role, model) in &config.models {
         if model.base_url.is_some() && !accepts(AdapterConfigField::ModelBaseUrl) {
             issues.push(incompatible(
                 format!("models.{role}.base_url"),
@@ -3154,12 +3151,24 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_model_temperature_reports_canonical_field() {
+    fn unsupported_model_temperature_on_non_default_role_reports_canonical_field() {
         for (adapter_id, provider) in [
             ("nvidia.fabric.claude", "anthropic"),
             ("nvidia.fabric.codex", "openai"),
         ] {
             let mut config = typed_config(adapter_id);
+            config.models.insert(
+                "default".to_string(),
+                ModelConfig {
+                    provider: provider.to_string(),
+                    model: "default-model".to_string(),
+                    temperature: None,
+                    api_key_env: None,
+                    base_url: None,
+                    settings: serde_json::Map::new(),
+                    extensions: BTreeMap::new(),
+                },
+            );
             config.models.insert(
                 "review".to_string(),
                 ModelConfig {
@@ -3175,9 +3184,9 @@ mod tests {
 
             let error = resolve_run_plan_from_config(
                 config,
-                ResolveContext::new("/tmp/fabric-temperature"),
+                ResolveContext::new("/tmp/fabric-model-temperature"),
             )
-            .expect_err("adapter does not advertise model temperature");
+            .expect_err("adapter does not advertise non-default model temperature");
 
             assert!(matches!(
                 error,
@@ -3188,6 +3197,47 @@ mod tests {
                 } if actual == adapter_id && field == "models.review.temperature"
             ));
         }
+    }
+
+    #[test]
+    fn unsupported_model_base_url_on_non_default_role_reports_canonical_field() {
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.models.insert(
+            "default".to_string(),
+            ModelConfig {
+                provider: "anthropic".to_string(),
+                model: "default-model".to_string(),
+                temperature: None,
+                api_key_env: None,
+                base_url: None,
+                settings: serde_json::Map::new(),
+                extensions: BTreeMap::new(),
+            },
+        );
+        config.models.insert(
+            "review".to_string(),
+            ModelConfig {
+                provider: "anthropic".to_string(),
+                model: "review-model".to_string(),
+                temperature: None,
+                api_key_env: None,
+                base_url: Some("https://example.test/v1".to_string()),
+                settings: serde_json::Map::new(),
+                extensions: BTreeMap::new(),
+            },
+        );
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor
+            .config
+            .accepts
+            .retain(|field| *field != AdapterConfigField::ModelBaseUrl);
+
+        let issues = adapter_config_compatibility_issues(&config, Some(&descriptor));
+
+        assert!(issues.iter().any(|issue| {
+            issue.adapter_id == "nvidia.fabric.claude" && issue.field == "models.review.base_url"
+        }));
     }
 
     #[test]

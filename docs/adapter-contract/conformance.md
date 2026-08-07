@@ -31,6 +31,10 @@ The required profile covers the minimum adapter contract:
   secrets, or arbitrary user values.
 - Independent Fabric runtimes do not share mutable target state accidentally.
 
+The published `AgentRunRequest` and `AgentRunResult` schemas are preview-only
+and do not count toward conformance until a future contract version promotes
+and enforces the typed invoke boundary.
+
 ## Claimed Capabilities
 
 Test each descriptor claim separately:

@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Southbound adapter contract version supported by this core.
-pub const ADAPTER_CONTRACT_VERSION: &str = "fabric.adapter/v1alpha1";
+pub const ADAPTER_CONTRACT_VERSION: &str = "fabric.adapter/v1alpha2";
 
 /// Extensible block types within the southbound adapter contract.
 #[derive(

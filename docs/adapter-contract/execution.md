@@ -17,7 +17,7 @@ The abstract lifecycle contract contains these operations:
 | Operation | Requirement | Contract |
 | --- | --- | --- |
 | `start(AgentConfig, RuntimeContext)` | Required | Initialize one isolated adapter-target runtime. |
-| `invoke(AgentRunRequest, RuntimeContext)` | Required | Execute one invocation and produce one terminal outcome. |
+| `invoke(AgentRunRequest, RuntimeContext)` | Preview, not negotiated | Future typed invocation boundary. The current binding uses its legacy request envelope and JSON-compatible output. |
 | `stop(runtime_id)` | Required | Attempt to release all runtime resources, including after partial or failed execution. |
 | `invoke_stream(...)` | NeMo Fabric-provided | Run ordinary `invoke` while NeMo Relay supplies correlated ATOF to the consumer. |
 | `invoke_openai_stream(...)` | Reserved optional surface | A future native pass-through can expose only a declared OpenAI-compatible event profile. Other native stream formats are outside the contract. |
@@ -25,7 +25,8 @@ The abstract lifecycle contract contains these operations:
 | `update(...)` | Reserved optional surface | Atomically apply declared updateable fields when a runtime binding implements it. |
 
 The required ordering is one `start`, zero or more `invoke` operations, then
-one `stop`. The minimum profile permits only one active invocation in a
+one `stop`, regardless of whether invoke uses the current binding or the future
+typed boundary. The minimum profile permits only one active invocation in a
 runtime. Adapters need not implement a queue or internal concurrency; consumers
 start independent runtimes for parallel work.
 
@@ -109,6 +110,6 @@ protocol envelope carries `RuntimeContext` and runtime identity. It calls
 
 The current invoke payload contains `RuntimeContext` plus northbound
 `RunRequest`, and accepts JSON-compatible output. `AgentRunRequest` and
-`AgentRunResult` are published southbound types but are not yet enforced by
-this transport. Keep conversion at the edge of the adapter so adopting the
-typed invocation boundary does not affect target lifecycle code.
+`AgentRunResult` are preview-only and are not part of the negotiated contract.
+Keep conversion at the edge of the adapter so adopting a future typed invoke
+boundary does not affect target lifecycle code.

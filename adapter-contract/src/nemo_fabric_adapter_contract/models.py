@@ -299,7 +299,7 @@ class AgentConfig(AgentContractBlock):
 
 
 class AgentRunRequest(AgentContractBlock):
-    """One invocation request projected southbound to an adapter target."""
+    """Preview southbound request for the future typed invoke transport."""
 
     input: JsonValue
     context: dict[str, JsonValue] = Field(
@@ -386,7 +386,7 @@ class AgentUsage(AgentContractBlock):
 
 
 class AgentRunResult(AgentContractBlock):
-    """Terminal result returned by an adapter target."""
+    """Preview southbound result for the future typed invoke transport."""
 
     status: AgentRunStatus
     output: JsonValue

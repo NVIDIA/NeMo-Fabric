@@ -134,8 +134,9 @@ def main() -> None:
 ```
 
 Keep current host request/result conversion in dedicated functions. The
-published `AgentRunRequest` and `AgentRunResult` types are not yet enforced by
-the local-host transport.
+published `AgentRunRequest` and `AgentRunResult` types are preview-only and are
+not part of the negotiated contract. Do not return `AgentRunResult` from the
+current local host: it is treated as ordinary JSON, including `status: failed`.
 
 ## Handle Custom Agents
 

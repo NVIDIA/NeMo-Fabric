@@ -206,7 +206,7 @@
       }
     }
   ],
-  "description": "Terminal result returned by an adapter target.",
+  "description": "Preview southbound terminal result.\n\nThe current local-host transport does not decode this type. It will join\nthe negotiated adapter contract when typed invoke transport is implemented.",
   "properties": {
     "artifacts": {
       "description": "Artifacts produced by the adapter target.",

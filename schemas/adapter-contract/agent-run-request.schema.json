@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "One invocation request projected southbound to an adapter target.",
+  "description": "Preview southbound invocation request.\n\nThe current local-host transport does not enforce this type. It will join\nthe negotiated adapter contract when typed invoke transport is implemented.",
   "properties": {
     "context": {
       "additionalProperties": true,

@@ -52,7 +52,7 @@ def _write_descriptor(base_dir: Path, *, optional: bool = False) -> Path:
     path.write_text(
         json.dumps(
             {
-                "contract_version": "fabric.adapter/v1alpha1",
+                "contract_version": "fabric.adapter/v1alpha2",
                 "adapter_id": "test.fabric.workflow",
                 "harness": "workflow-test",
                 "adapter_kind": "python",

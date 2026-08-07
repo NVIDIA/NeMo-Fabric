@@ -1,5 +1,5 @@
 {
-  "contract_version": "fabric.adapter/v1alpha1",
+  "contract_version": "fabric.adapter/v1alpha2",
   "adapter_id": "test.fabric.hermes_shim",
   "harness": "hermes",
   "adapter_kind": "python",

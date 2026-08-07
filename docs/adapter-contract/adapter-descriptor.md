@@ -14,7 +14,7 @@ configuration support, schemas, requirements, telemetry, and capabilities.
 
 | Field | Description |
 | --- | --- |
-| `contract_version` | Adapter contract implemented by the package. Use `fabric.adapter/v1alpha1`. |
+| `contract_version` | Adapter contract implemented by the package. Use `fabric.adapter/v1alpha2`. |
 | `adapter_id` | Globally stable implementation ID, normally a reverse-domain name. |
 | `harness` | Stable machine-readable adapter-target ID. |
 | `adapter_kind` | Execution binding: `python`, `process`, `http`, or `native_plugin`. Python and process hosts are implemented locally today. |
@@ -62,7 +62,7 @@ The following example declares the minimum Python adapter metadata:
 
 ```json
 {
-  "contract_version": "fabric.adapter/v1alpha1",
+  "contract_version": "fabric.adapter/v1alpha2",
   "adapter_id": "com.acme.fabric.example",
   "harness": "example",
   "adapter_kind": "python",

@@ -26,6 +26,15 @@ from nemo_fabric import WorkflowEntrypointConfig
 def build_config() -> FabricConfig:
     """Build the NAT-native email-phishing configuration."""
 
+    tools = ToolsConfig()
+    tools.add_definition(
+        "email_phishing_analyzer",
+        kind="function",
+        ref="email_phishing_analyzer",
+        settings={"llm": "default"},
+    )
+    tools.enabled = ["email_phishing_analyzer"]
+
     config = FabricConfig(
         metadata=MetadataConfig(
             name="nat-email-phishing-analyzer",
@@ -58,14 +67,8 @@ def build_config() -> FabricConfig:
                 content='State whether the email is "phishing" or "benign" and explain why.'
             )
         ),
-        tools=ToolsConfig(enabled=["email_phishing_analyzer"]),
+        tools=tools,
         runtime=RuntimeConfig(input_schema="text", output_schema="message"),
-    )
-    config.add_tool_definition(
-        "email_phishing_analyzer",
-        kind="function",
-        ref="email_phishing_analyzer",
-        settings={"llm": "default"},
     )
     return config
 

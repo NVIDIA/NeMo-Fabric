@@ -18,6 +18,7 @@ def test_set_python_project_versions_updates_internal_pins_with_extras(
     tmp_path: Path,
 ):
     (tmp_path / "adapters" / "claude").mkdir(parents=True)
+    (tmp_path / "adapter-contract").mkdir()
     (tmp_path / "python").mkdir()
     (tmp_path / "pyproject.toml").write_text(
         """\
@@ -49,6 +50,14 @@ dependencies = [
 """,
         encoding="utf-8",
     )
+    (tmp_path / "adapter-contract" / "pyproject.toml").write_text(
+        """\
+[project]
+name = "nemo-fabric-adapter-contract"
+version = "0.2.0"
+""",
+        encoding="utf-8",
+    )
     runtime_path = tmp_path / "python" / "pyproject.toml"
     runtime_path.write_text(
         """\
@@ -69,6 +78,11 @@ dynamic = ["version"]
             encoding="utf-8"
         )
     )["project"]
+    contract_project = tomllib.loads(
+        (tmp_path / "adapter-contract" / "pyproject.toml").read_text(
+            encoding="utf-8"
+        )
+    )["project"]
 
     assert root_project["version"] == "0.2.0rc5"
     assert root_project["dependencies"] == ["nemo-fabric-runtime == 0.2.0rc5"]
@@ -82,6 +96,7 @@ dynamic = ["version"]
     assert adapter_project["dependencies"] == [
         "nemo-fabric-adapters-common == 0.2.0rc5"
     ]
+    assert contract_project["version"] == "0.2.0rc5"
     assert tomllib.loads(runtime_path.read_text(encoding="utf-8"))["project"][
         "dynamic"
     ] == ["version"]

@@ -16,8 +16,8 @@ parts into the southbound contract:
 | Northbound Consumer Type | Southbound Adapter Type | Purpose |
 | --- | --- | --- |
 | `FabricConfig` | `AgentConfig` | Resolved configuration the selected adapter can apply. |
-| `RunRequest` | `AgentRunRequest` | One adapter-target invocation. |
-| `RunResult` | `AgentRunResult` | Terminal adapter-target outcome before NeMo Fabric adds its own context. |
+| `RunRequest` | `AgentRunRequest` (preview) | Future typed adapter-target invocation. |
+| `RunResult` | `AgentRunResult` (preview) | Future typed adapter-target outcome before NeMo Fabric adds its own context. |
 
 NeMo Fabric owns planning, environment preparation, adapter selection,
 correlation, and consumer-facing results. The adapter owns translation into
@@ -42,10 +42,11 @@ invocation-correlated ATOF records directly to the consumer-side stream.
 
 ## Versioning
 
-The current contract version is `fabric.adapter/v1alpha1`. The adapter
+The current contract version is `fabric.adapter/v1alpha2`. The adapter
 descriptor declares this value in `contract_version`. That version covers the
-descriptor, `AgentConfig`, execution types, runtime context, and result types;
-these types do not carry independent schema versions.
+descriptor, `AgentConfig`, and the current lifecycle and runtime-context
+binding. Published preview types are outside the negotiated contract until the
+runtime enforces them; promoting them requires another contract-version bump.
 
 An adapter package release version identifies an implementation release. It is
 not the adapter contract version.
@@ -53,13 +54,11 @@ not the adapter contract version.
 ## Contract Status
 
 `AgentConfig` is enforced for adapters that declare
-`config.input: agent_config`. The `AgentRunRequest` and `AgentRunResult` schemas
-are published, but the current local-host transport still sends `RunRequest`
-inside the invocation payload and accepts JSON-compatible adapter output. This
-transition is called out in [Execution](execution.md) and
-[Results](results.md); adapter authors should keep request and result
-translation isolated so the typed boundary can be adopted without rewriting
-target lifecycle code.
+`config.input: agent_config`. `AgentRunRequest` and `AgentRunResult` are preview
+schemas only: the current local-host transport still sends `RunRequest` inside
+the invocation payload and accepts JSON-compatible adapter output. Do not emit
+`AgentRunResult` as the current host protocol; keep request and result
+translation isolated for the future typed boundary.
 
 All NVIDIA-maintained adapters will transition to `AgentConfig`. Once that
 migration is complete, NeMo Fabric can stop sending the legacy `FabricConfig`

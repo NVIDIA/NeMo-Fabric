@@ -5,10 +5,14 @@ SPDX-License-Identifier: Apache-2.0
 
 # Results and Telemetry
 
-`AgentRunResult` is the terminal adapter-facing result. NVIDIA NeMo Fabric
-keeps it deliberately smaller than consumer-facing `RunResult`, which also
-contains NeMo Fabric-owned identity, correlation, lifecycle events, collected
-artifacts, and telemetry references.
+**Preview status:** `AgentRunResult` is not part of the negotiated adapter
+contract yet. The current local-host transport treats it as ordinary JSON and
+does not interpret `status: failed`; adapters must use the current host error
+mechanism. The rest of this page defines the intended typed result boundary.
+
+`AgentRunResult` is deliberately smaller than consumer-facing `RunResult`,
+which also contains NeMo Fabric-owned identity, correlation, lifecycle events,
+collected artifacts, and telemetry references.
 
 ## AgentRunResult
 
@@ -84,7 +88,6 @@ Fabric-provided Relay configuration, but it must not reinterpret correlation
 IDs or claim outputs it did not produce. Never log unredacted telemetry
 environment values.
 
-The current Python host accepts JSON-compatible invoke output. Enforced
-`AgentRunResult` decoding is a contract transition still to be wired into that
-transport; adapters should normalize target outcomes in one dedicated function
-today.
+The typed result will be promoted in a future contract version when the host
+decodes and validates it. Until then, adapters should normalize target outcomes
+in one dedicated function without returning this preview envelope directly.

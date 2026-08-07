@@ -79,7 +79,7 @@ def test_claude_descriptor_is_narrow_and_versioned():
     descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
 
     assert descriptor == {
-        "contract_version": "fabric.adapter/v1alpha1",
+        "contract_version": "fabric.adapter/v1alpha2",
         "adapter_id": "nvidia.fabric.claude",
         "harness": "claude",
         "adapter_kind": "python",

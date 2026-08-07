@@ -2467,7 +2467,7 @@ mod tests {
         fs::write(
             root.join("adapters/local-host/fabric-adapter.json"),
             r#"{
-  "contract_version": "fabric.adapter/v1alpha1",
+  "contract_version": "fabric.adapter/v1alpha2",
   "adapter_id": "acme.fabric.local-host",
   "harness": "local-host-test",
   "adapter_kind": "python",
