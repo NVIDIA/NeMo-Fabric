@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+navigation:
+- section: About NeMo Fabric
+  contents:
+  - page: Overview
+    path: ../pages-v0.1.1/about-nemo-fabric/overview.mdx
+  - page: Release Notes
+    path: ../pages-v0.1.1/about-nemo-fabric/release-notes.mdx
+- section: Getting Started
+  contents:
+  - page: Install
+    path: ../pages-v0.1.1/getting-started/install.mdx
+  - page: Quickstart
+    path: ../pages-v0.1.1/getting-started/quickstart.mdx
+- section: Experimentation
+  contents:
+  - page: CLI
+    path: ../pages-v0.1.1/experimentation/cli.mdx
+- section: SDK
+  contents:
+  - page: Python SDK
+    path: ../pages-v0.1.1/sdk/python.mdx
+- section: Integrations
+  contents:
+  - section: Consumer Integrations
+    contents:
+    - page: Overview
+      path: ../pages-v0.1.1/integrations/consumer/overview.mdx
+    - page: Harbor
+      path: ../pages-v0.1.1/integrations/consumer/harbor.mdx
+  - section: Harness Integrations
+    contents:
+    - page: Overview
+      path: ../pages-v0.1.1/integrations/harness/overview.mdx
+    - page: Claude Code
+      path: ../pages-v0.1.1/integrations/harness/claude.mdx
+    - page: Codex
+      path: ../pages-v0.1.1/integrations/harness/codex.mdx
+    - page: Hermes Agent
+      path: ../pages-v0.1.1/integrations/harness/hermes.mdx
+    - page: LangChain Deep Agents
+      path: ../pages-v0.1.1/integrations/harness/deepagents.mdx
+- section: Reference
+  contents:
+  - section: API
+    contents:
+    - section: Python Library Reference
+      contents:
+      - page: Overview
+        path: ../pages-v0.1.1/reference/api/python-library-reference/index.md
+      - page: Client
+        path: ../pages-v0.1.1/reference/api/python-library-reference/nemo_fabric.client.md
+      - page: Runtime
+        path: ../pages-v0.1.1/reference/api/python-library-reference/nemo_fabric.runtime.md
+      - page: Streaming
+        path: ../pages-v0.1.1/reference/api/python-library-reference/nemo_fabric.streaming.md
+      - page: Models
+        path: ../pages-v0.1.1/reference/api/python-library-reference/nemo_fabric.models.md
+      - page: Types
+        path: ../pages-v0.1.1/reference/api/python-library-reference/nemo_fabric.types.md
+      - page: Errors
+        path: ../pages-v0.1.1/reference/api/python-library-reference/nemo_fabric.errors.md
+    - folder: ../pages-v0.1.1/reference/api/rust-library-reference
+      title: Rust Library Reference
+- section: Resources
+  contents:
+  - folder: ../pages-v0.1.1/resources/legal
+    title: Legal

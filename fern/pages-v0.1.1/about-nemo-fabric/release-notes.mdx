@@ -1,0 +1,78 @@
+---
+title: "Release Notes"
+description: "Read the NVIDIA NeMo Fabric 0.1 release notes."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+We're excited to announce NVIDIA NeMo Fabric 0.1, our first release. NeMo
+Fabric introduces a typed, observable execution layer for running applications
+across multiple agent harnesses. Applications, evaluation systems, and rollout
+infrastructure can use the same configuration, lifecycle, result, artifact, and
+telemetry contracts without building a separate integration for each harness.
+
+## Release Highlights
+
+### One Execution Contract Across Harnesses
+
+NeMo Fabric provides one typed contract for configuring, launching, invoking,
+and observing agent harnesses. Runs produce normalized responses, structured
+failure details, lifecycle events, artifact references, and telemetry
+references. This shared contract makes it easier to compare harnesses and build
+experiment variations without rewriting each integration.
+
+### Four Bundled Harness Integrations
+
+The first release includes integrations for Claude Code, Codex, LangChain Deep
+Agents, and Hermes Agent. Each adapter translates the shared NeMo Fabric
+contract into the models, tools, skills, MCP servers, runtime state, and
+observability capabilities supported by the harness.
+
+### Persistent Multi-Turn Runtimes
+
+Bundled adapters use persistent local runtime hosts that retain harness-native
+session or thread state across turns. Single-invocation and multi-turn work use
+the same lifecycle, with consistent startup, invocation, failure handling, and
+cleanup behavior.
+
+### Portable Configuration With Compatibility Validation
+
+The typed configuration model covers models, instructions, runtime limits,
+environments, tool policy, skills, MCP servers, telemetry, and
+[NVIDIA NeMo Relay](https://github.com/NVIDIA/NeMo-Relay/tree/main).
+Adapters declare the normalized configuration, telemetry, and runtime
+capabilities they support. NeMo Fabric rejects incompatible normalized
+settings and unsupported capability routes before harness invocation instead
+of silently dropping them.
+
+### NeMo Relay Observability and Live Streaming
+
+All four bundled adapters integrate with NVIDIA NeMo Relay. Runs can produce
+raw Agent Trajectory Observability Format (ATOF) events and normalized Agent
+Trajectory Interchange Format (ATIF) trajectories, and export OpenTelemetry and
+OpenInference through Relay. Relay-enabled runtimes can also stream live ATOF
+records while keeping the normalized terminal result separate.
+
+### Evaluation and Experimentation Workflows
+
+The Harbor integration brings the shared NeMo Fabric contract into isolated
+evaluation environments and returns normalized result and telemetry evidence.
+This release includes a deterministic calculator workflow and a SWE-Bench
+walkthrough built on a single Harbor task for comparing harness behavior on
+the same task.
+
+Guided notebooks and the experimentation CLI provide additional paths for
+exploring harness and model variations, running maintained examples, and
+creating editable Python or Rust projects.
+
+### Cross-Platform Release Artifacts
+
+NeMo Fabric ships Python artifacts for Linux on x86_64 and arm64, macOS on
+arm64, and Windows on x86_64. The Rust core and experimentation CLI are also
+published as independently versioned crates.
+
+## Current Limitations
+
+- Remote adapter services and a provider-backed third-party adapter registry
+  are not included in this release.
+- The configuration and adapter contracts use `v1alpha1` schema identifiers.

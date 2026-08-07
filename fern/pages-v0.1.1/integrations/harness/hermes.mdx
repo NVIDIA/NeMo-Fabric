@@ -1,0 +1,110 @@
+---
+title: "Use the Hermes Agent Adapter"
+description: "Install and configure the NeMo Fabric harness integration for Hermes Agent."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The NVIDIA NeMo Fabric `nvidia.fabric.hermes` adapter runs Hermes Agent through
+its Python SDK. The adapter maps normalized NeMo Fabric configuration into
+Hermes Agent models, tools, skills, Model Context Protocol (MCP) servers,
+sessions, and telemetry.
+
+## Install the Adapter
+
+Hermes Agent and the adapter support Python 3.11 through 3.13.
+
+To install the NeMo Fabric runtime, Hermes Agent adapter, and supported Hermes
+Agent dependencies in one environment:
+
+```bash
+pip install "nemo-fabric[hermes-agent]"
+```
+
+To install the adapter and supported Hermes Agent without the NeMo Fabric
+runtime, use the adapter package's `harness` extra:
+
+```bash
+pip install "nemo-fabric-adapters-hermes[harness]"
+```
+
+The adapter package also provides `relay` and `full` extras. Use `relay` when
+the environment already manages Hermes Agent. Use `full` to install Hermes
+Agent and the NeMo Relay Python package together.
+
+If the environment already manages a compatible Hermes Agent, install only the
+adapter:
+
+```bash
+pip install nemo-fabric-adapters-hermes
+```
+
+The bare adapter package does not install the NeMo Fabric runtime or Hermes
+Agent. Use `hermes-agent>=0.17.0`, the constraint supported by this release.
+
+If the existing compatible Hermes Agent and NeMo Fabric runtime share an
+environment, install the runtime and bare adapter together:
+
+```bash
+pip install nemo-fabric nemo-fabric-adapters-hermes
+```
+
+For separate environments, set `ADAPTER_PYTHON` in the runtime environment to
+the adapter environment's Python interpreter. Use
+matching NeMo Fabric release versions for the runtime and adapter package
+unless a different pairing has been explicitly validated.
+
+## Configure the Adapter
+
+Select the Hermes Agent harness integration in `HarnessConfig`:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(adapter_id="nvidia.fabric.hermes")
+```
+
+Use normalized `FabricConfig` fields to configure the model, workspace, skills,
+MCP servers, instructions, turn limit, native tool selectors, and telemetry.
+
+The Hermes descriptor validates the following `harness.settings` fields:
+
+| Setting | Type | Default | Description |
+| --- | --- | --- | --- |
+| `reasoning_config` | object | `{"effort": "none"}` | Configures Hermes model reasoning. The closed object accepts an optional `enabled` boolean and an optional `effort` value of `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. |
+| `plugins_enabled` | array of nonempty strings | `[]` | Enables Hermes plugins by identifier. NeMo Fabric adds `observability/nemo_relay` when Relay telemetry is enabled. |
+| `save_trajectories` | boolean | `false` | Enables Hermes-native JSONL conversation trajectory saving. This is separate from normalized NeMo Fabric telemetry. |
+| `max_tokens` | positive integer | `512` | Limits the number of tokens in each Hermes model response. |
+| `terminal_timeout` | positive number | `60` | Limits a Hermes terminal operation in seconds. |
+
+For example:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.hermes",
+    settings={
+        "reasoning_config": {"enabled": True, "effort": "medium"},
+        "plugins_enabled": ["disk-cleanup"],
+        "save_trajectories": True,
+        "max_tokens": 1024,
+        "terminal_timeout": 90,
+    },
+)
+```
+
+Use `runtime.max_turns` to set the Hermes agent-loop budget. The adapter maps
+that normalized field to `AIAgent.max_iterations`; `max_iterations` is not a
+Hermes harness setting.
+
+## Understand the Runtime Lifecycle
+
+Each NeMo Fabric runtime creates one Hermes Agent `AIAgent` and one `SessionDB`.
+Ordered invocations reuse those objects and the conversation history until the
+runtime stops. When NeMo Relay telemetry is enabled, the adapter finalizes Agent
+Trajectory Observability Format (ATOF) and Agent Trajectory Interchange Format
+(ATIF) artifacts after each invocation.
+
+For the complete configuration and lifecycle reference, refer to the
+[Hermes Agent adapter guide](https://github.com/NVIDIA/NeMo-Fabric/tree/0.1.1/adapters/hermes).
