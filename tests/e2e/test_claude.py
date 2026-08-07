@@ -73,6 +73,7 @@ def fabric_config(
     *,
     cli_path=None,
     relay=False,
+    atif=True,
     nemo_relay_command=None,
 ):
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -133,7 +134,7 @@ def fabric_config(
                     enabled=True,
                     sinks=[RelayAtofFileSinkConfig()],
                 ),
-                atif=RelayAtifConfig(enabled=True),
+                atif=RelayAtifConfig(enabled=atif),
             )
         )
     return config
@@ -182,10 +183,12 @@ async def test_fabric_claude_relay_supervises_gateway_and_injects_plugin(tmp_pat
     mock_relay = tmp_path / "nemo-relay"
     relay_args_path = tmp_path / "relay-args.json"
     write_mock_relay_gateway(mock_relay, relay_args_path)
+    # This fake implements gateway lifecycle only, not subscriber artifact writes.
     config = fabric_config(
         tmp_path,
         cli_path=MOCK_CLAUDE_CLI,
         relay=True,
+        atif=False,
         nemo_relay_command=mock_relay,
     )
 

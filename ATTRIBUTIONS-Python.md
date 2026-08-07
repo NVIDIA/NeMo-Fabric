@@ -5465,7 +5465,7 @@ Copyright 2016 Andrew Svetlov and aio-libs contributors
 ### Licenses
 License: `Apache-2.0`
 
-  - `licenses/LICENSE`:
+  - `LICENSE`:
 ```
 Apache License
                            Version 2.0, January 2004
