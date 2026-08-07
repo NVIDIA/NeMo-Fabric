@@ -9,6 +9,10 @@ Registration makes descriptor metadata discoverable without importing or
 executing adapter code. Adapter implementation loading occurs only after
 descriptor resolution and validation, when the runtime starts.
 
+> **Contract status:** Registration and discovery will receive another design
+> pass in a follow-up PR, including separating static adapter metadata from
+> dynamically generated workflow-settings schemas.
+
 ## Package Layout
 
 A publishable Python adapter normally contains:
