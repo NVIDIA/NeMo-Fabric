@@ -61,6 +61,7 @@ ADAPTER_EXTRAS = {
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
+        ("adapter-contract", ["pydantic>=2.10,<3"]),
         ("adapters/common", []),
         (
             "adapters/claude",

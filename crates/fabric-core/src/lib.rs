@@ -3,6 +3,7 @@
 
 //! Core config and runtime contract for NeMo Fabric.
 
+pub mod agent_config;
 pub mod config;
 pub mod doctor;
 pub mod error;
@@ -12,11 +13,14 @@ pub mod schema;
 pub use config::{
     ADAPTER_CONTRACT_VERSION, AdapterConfigField, AdapterConfigSupport, AdapterDescriptor,
     AdapterDescriptorSource, AdapterKind, AdapterRequirements, AdapterTelemetryProviderSupport,
-    AdapterTelemetrySupport, CapabilityPlan, ControlLocation, EnvironmentConfig,
-    EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig, InstructionConfig,
-    InstructionMode, InstructionsConfig, McpConfig, McpExposure, McpServerPlan, MetadataConfig,
-    ModelConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor, RunPlan,
-    RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
+    AdapterTelemetrySupport, AgentConfig, AgentConfigExtensionPoint, AgentHarnessConfig,
+    AgentInstructionConfig, AgentInstructionsConfig, AgentMcpConfig, AgentMcpServerConfig,
+    AgentModelConfig, AgentRuntimeConfig, AgentSkillConfig, AgentToolDefinition, AgentToolsConfig,
+    AgentWorkflowConfig, AgentWorkflowEntrypointConfig, CapabilityPlan, ControlLocation,
+    EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig,
+    InstructionConfig, InstructionMode, InstructionsConfig, McpConfig, McpExposure, McpServerPlan,
+    MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor,
+    RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
     TelemetryProvider, TelemetryProviderConfig, ToolsConfig, WorkflowConfig,
     WorkflowEntrypointConfig, load_adapter_descriptor, resolve_diagnostic_plan_from_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,

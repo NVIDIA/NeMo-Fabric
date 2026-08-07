@@ -11,6 +11,12 @@ use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use crate::agent_config::{
+    AgentConfig, AgentConfigExtensionPoint, AgentHarnessConfig, AgentInstructionConfig,
+    AgentInstructionsConfig, AgentMcpConfig, AgentMcpServerConfig, AgentModelConfig,
+    AgentRuntimeConfig, AgentSkillConfig, AgentToolDefinition, AgentToolsConfig,
+    AgentWorkflowConfig, AgentWorkflowEntrypointConfig,
+};
 use crate::error::{FabricError, Result};
 
 /// Adapter descriptor contract version supported by this core.
@@ -190,6 +196,10 @@ pub struct AdapterDescriptor {
     /// JSON Schema for adapter-owned `FabricConfig.workflow`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_schema: Option<serde_json::Map<String, Value>>,
+    /// JSON Schemas for adapter-owned `extensions` at AgentConfig block types.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agent_config_extension_schemas:
+        BTreeMap<AgentConfigExtensionPoint, serde_json::Map<String, Value>>,
     /// Runtime requirements.
     #[serde(default)]
     pub requirements: AdapterRequirements,
@@ -1591,6 +1601,10 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
             validate_adapter_object_schema(path, field, schema)?;
         }
     }
+    for (point, schema) in &descriptor.agent_config_extension_schemas {
+        let field = format!("agent_config_extension_schemas.{}", point.as_str());
+        validate_adapter_object_schema(path, &field, schema)?;
+    }
     Ok(())
 }
 
@@ -2375,6 +2389,44 @@ pub struct TelemetryPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_config_round_trips_explicit_extensions() {
+        let config: AgentConfig = serde_json::from_value(serde_json::json!({
+            "extensions": {
+                "profile": {
+                    "enabled": true
+                }
+            }
+        }))
+        .expect("typed agent config");
+
+        assert_eq!(config.extensions["profile"]["enabled"], true);
+        assert_eq!(
+            serde_json::to_value(config).expect("serialize agent config"),
+            serde_json::json!({
+                "extensions": {
+                    "profile": {
+                        "enabled": true
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn agent_config_rejects_implicit_extensions() {
+        let error = serde_json::from_value::<AgentConfig>(serde_json::json!({
+            "implicit_extension": true
+        }))
+        .expect_err("implicit extension must fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("unknown field `implicit_extension`")
+        );
+    }
 
     fn typed_config(adapter_id: &str) -> FabricConfig {
         serde_json::from_value(serde_json::json!({

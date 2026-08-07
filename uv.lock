@@ -2101,6 +2101,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-hermes", extra = ["harness"], marker = "python_full_version < '3.14'" },
 ]
 adapters = [
+    { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-claude" },
     { name = "nemo-fabric-adapters-codex" },
     { name = "nemo-fabric-adapters-common" },
@@ -2156,6 +2157,7 @@ adapter-tests = [
     { name = "nemo-fabric-adapters-hermes", extras = ["harness"], marker = "python_full_version < '3.14'", editable = "adapters/hermes" },
 ]
 adapters = [
+    { name = "nemo-fabric-adapter-contract", editable = "adapter-contract" },
     { name = "nemo-fabric-adapters-claude", editable = "adapters/claude" },
     { name = "nemo-fabric-adapters-codex", editable = "adapters/codex" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
@@ -2189,6 +2191,17 @@ test = [
     { name = "tomli-w", specifier = "~=1.2" },
     { name = "uvicorn", specifier = "~=0.49" },
 ]
+
+[[package]]
+name = "nemo-fabric-adapter-contract"
+version = "0.2.0"
+source = { editable = "adapter-contract" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.10,<3" }]
 
 [[package]]
 name = "nemo-fabric-adapters-claude"

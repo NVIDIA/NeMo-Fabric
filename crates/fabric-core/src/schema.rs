@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use schemars::schema_for;
 use serde_json::Value;
 
-use crate::config::{AdapterDescriptor, FabricConfig, RunPlan};
+use crate::config::{AdapterDescriptor, AgentConfig, FabricConfig, RunPlan};
 use crate::error::{FabricError, Result};
 use crate::runtime::{
     AdapterInvocation, ArtifactManifest, EnvironmentHandle, ErrorInfo, FabricEvent,
@@ -21,6 +21,8 @@ use crate::runtime::{
 pub enum SchemaName {
     /// Complete typed NeMo Fabric config schema.
     Agent,
+    /// Adapter-facing projected agent config schema.
+    AgentConfig,
     /// Adapter descriptor schema.
     AdapterDescriptor,
     /// Resolved run plan schema.
@@ -49,8 +51,9 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Agent,
+        Self::AgentConfig,
         Self::AdapterDescriptor,
         Self::RunPlan,
         Self::AdapterInvocation,
@@ -69,6 +72,7 @@ impl SchemaName {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Agent => "agent",
+            Self::AgentConfig => "agent-config",
             Self::AdapterDescriptor => "adapter-descriptor",
             Self::RunPlan => "run-plan",
             Self::AdapterInvocation => "adapter-invocation",
@@ -93,6 +97,7 @@ impl SchemaName {
     pub fn parse(value: &str) -> Result<Self> {
         match value {
             "agent" => Ok(Self::Agent),
+            "agent-config" | "agent_config" => Ok(Self::AgentConfig),
             "adapter-descriptor" | "adapter_descriptor" => Ok(Self::AdapterDescriptor),
             "run-plan" | "run_plan" => Ok(Self::RunPlan),
             "adapter-invocation" | "adapter_invocation" => Ok(Self::AdapterInvocation),
@@ -120,6 +125,7 @@ impl SchemaName {
 pub fn generate_schema(schema: SchemaName) -> Result<Value> {
     match schema {
         SchemaName::Agent => to_value(schema_for!(FabricConfig)),
+        SchemaName::AgentConfig => to_value(schema_for!(AgentConfig)),
         SchemaName::AdapterDescriptor => to_value(schema_for!(AdapterDescriptor)),
         SchemaName::RunPlan => to_value(schema_for!(RunPlan)),
         SchemaName::AdapterInvocation => to_value(schema_for!(AdapterInvocation)),
