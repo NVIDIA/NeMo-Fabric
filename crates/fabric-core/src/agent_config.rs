@@ -12,60 +12,6 @@ use serde_json::Value;
 
 use crate::config::InstructionMode;
 
-/// Extensible block types within the southbound agent configuration.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentConfigExtensionPoint {
-    /// Root `AgentConfig.extensions`.
-    Root,
-    /// `AgentHarnessConfig.extensions`.
-    Harness,
-    /// `AgentModelConfig.extensions` for every named model role.
-    Model,
-    /// `AgentInstructionsConfig.extensions`.
-    Instructions,
-    /// `AgentInstructionConfig.extensions` for every instruction value.
-    Instruction,
-    /// `AgentRuntimeConfig.extensions`.
-    Runtime,
-    /// `AgentSkillConfig.extensions`.
-    Skills,
-    /// `AgentMcpConfig.extensions`.
-    Mcp,
-    /// `AgentMcpServerConfig.extensions` for every named server.
-    McpServer,
-    /// `AgentToolsConfig.extensions`.
-    Tools,
-    /// `AgentToolDefinition.extensions` for every named definition.
-    ToolDefinition,
-    /// `AgentWorkflowConfig.extensions`.
-    Workflow,
-    /// `AgentWorkflowEntrypointConfig.extensions`.
-    WorkflowEntrypoint,
-}
-
-impl AgentConfigExtensionPoint {
-    pub(crate) const fn as_str(self) -> &'static str {
-        match self {
-            Self::Root => "root",
-            Self::Harness => "harness",
-            Self::Model => "model",
-            Self::Instructions => "instructions",
-            Self::Instruction => "instruction",
-            Self::Runtime => "runtime",
-            Self::Skills => "skills",
-            Self::Mcp => "mcp",
-            Self::McpServer => "mcp_server",
-            Self::Tools => "tools",
-            Self::ToolDefinition => "tool_definition",
-            Self::Workflow => "workflow",
-            Self::WorkflowEntrypoint => "workflow_entrypoint",
-        }
-    }
-}
-
 /// Configuration projected southbound to one adapter target.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

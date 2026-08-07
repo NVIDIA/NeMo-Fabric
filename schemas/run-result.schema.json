@@ -26,6 +26,7 @@
       ]
     },
     "ArtifactManifest": {
+      "additionalProperties": false,
       "description": "Manifest of run artifacts.",
       "properties": {
         "artifacts": {
@@ -46,6 +47,7 @@
       "type": "object"
     },
     "ArtifactRef": {
+      "additionalProperties": false,
       "description": "Reference to one artifact.",
       "properties": {
         "kind": {

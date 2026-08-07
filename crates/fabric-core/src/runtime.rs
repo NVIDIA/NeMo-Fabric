@@ -179,6 +179,7 @@ pub enum ErrorStage {
 
 /// Manifest of run artifacts.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ArtifactManifest {
     /// Artifact root directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -190,6 +191,7 @@ pub struct ArtifactManifest {
 
 /// Reference to one artifact.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ArtifactRef {
     /// Logical artifact name.
     pub name: String,
@@ -230,6 +232,7 @@ pub struct FabricEvent {
 
 /// Resolved execution environment context.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct EnvironmentHandle {
     /// Environment handle id.
     pub environment_id: String,
@@ -289,6 +292,7 @@ pub struct InvocationHandle {
 
 /// Context generated for one invocation of a started runtime.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeContext {
     /// Runtime handle id.
     pub runtime_id: String,
@@ -307,6 +311,7 @@ pub struct RuntimeContext {
 
 /// Runtime telemetry config passed to adapters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeTelemetryContext {
     /// Whether Relay is enabled for this invocation.
     pub relay_enabled: bool,

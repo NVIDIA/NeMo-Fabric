@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One invocation request projected southbound to an adapter target.",
+  "properties": {
+    "context": {
+      "additionalProperties": true,
+      "description": "Caller-provided task, rollout, workflow, or application context.",
+      "type": "object"
+    },
+    "extensions": {
+      "additionalProperties": true,
+      "description": "Adapter-owned request fields.",
+      "type": "object"
+    },
+    "input": {
+      "description": "Request payload for the adapter target."
+    }
+  },
+  "required": [
+    "input"
+  ],
+  "title": "AgentRunRequest",
+  "type": "object"
+}

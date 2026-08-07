@@ -24,12 +24,17 @@ The core schema generator exports the current public typed contract.
   target. Adapter-owned additions are carried only through explicit
   `extensions` blocks and validated against schemas declared by the selected
   adapter descriptor.
+- `agent-run-request`: invocation input and caller context projected southbound
+  after Fabric resolves consumer-owned request fields.
+- `agent-run-result`: terminal status, output, errors, and artifact references
+  returned by an adapter target before Fabric adds northbound identity,
+  telemetry, and lifecycle data.
 - `adapter-descriptor`: minimal adapter descriptor consumed by NeMo Fabric. Each
   descriptor declares a `contract_version`; NeMo Fabric rejects descriptors for
   unsupported adapter contracts during planning. A descriptor can embed the
   JSON Schemas for its adapter-owned `harness.settings` and optional
   `FabricConfig.workflow`, plus schemas for explicit adapter-owned extension
-  points in `AgentConfig`; malformed schemas fail descriptor loading. A missing
+  points in the southbound contract; malformed schemas fail descriptor loading. A missing
   settings schema rejects non-empty settings, and a configured workflow
   requires a workflow schema. The `process` and `python` adapter kinds use NeMo
   Fabric's persistent local-host wire protocol.

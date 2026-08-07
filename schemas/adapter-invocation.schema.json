@@ -1,6 +1,7 @@
 {
   "$defs": {
     "ArtifactManifest": {
+      "additionalProperties": false,
       "description": "Manifest of run artifacts.",
       "properties": {
         "artifacts": {
@@ -21,6 +22,7 @@
       "type": "object"
     },
     "ArtifactRef": {
+      "additionalProperties": false,
       "description": "Reference to one artifact.",
       "properties": {
         "kind": {
@@ -66,6 +68,7 @@
       ]
     },
     "EnvironmentHandle": {
+      "additionalProperties": false,
       "description": "Resolved execution environment context.",
       "properties": {
         "artifacts": {
@@ -165,6 +168,7 @@
       "type": "object"
     },
     "RuntimeContext": {
+      "additionalProperties": false,
       "description": "Context generated for one invocation of a started runtime.",
       "properties": {
         "artifacts": {
@@ -209,6 +213,7 @@
       "type": "object"
     },
     "RuntimeTelemetryContext": {
+      "additionalProperties": false,
       "description": "Runtime telemetry config passed to adapters.",
       "properties": {
         "config_path": {

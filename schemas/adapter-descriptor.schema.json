@@ -223,14 +223,6 @@
       "$ref": "#/$defs/AdapterKind",
       "description": "Adapter implementation kind."
     },
-    "agent_config_extension_schemas": {
-      "additionalProperties": {
-        "additionalProperties": true,
-        "type": "object"
-      },
-      "description": "JSON Schemas for adapter-owned `extensions` at AgentConfig block types.",
-      "type": "object"
-    },
     "capabilities": {
       "$ref": "#/$defs/RuntimeCapabilities",
       "default": {
@@ -250,6 +242,14 @@
       "description": "Adapter descriptor contract version.",
       "minLength": 1,
       "type": "string"
+    },
+    "extension_schemas": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "description": "JSON Schemas for adapter-owned `extensions` at southbound block types.",
+      "type": "object"
     },
     "harness": {
       "description": "Stable machine-readable harness identifier implemented by this adapter.",

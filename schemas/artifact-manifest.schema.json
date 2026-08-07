@@ -1,6 +1,7 @@
 {
   "$defs": {
     "ArtifactRef": {
+      "additionalProperties": false,
       "description": "Reference to one artifact.",
       "properties": {
         "kind": {
@@ -32,6 +33,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "description": "Manifest of run artifacts.",
   "properties": {
     "artifacts": {

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from typing import Literal
@@ -29,14 +30,18 @@ def extension_schema(model: type[BaseModel]) -> dict[str, JsonValue]:
     return _EXTENSIONS_ADAPTER.validate_python(model.model_json_schema(mode="validation"))
 
 
-class AgentConfigBlock(BaseModel):
-    """Base for explicitly extensible adapter-facing config blocks."""
+class ContractModel(BaseModel):
+    """Base for adapter-facing contract models."""
 
     model_config = ConfigDict(
         extra="forbid",
         validate_assignment=True,
         allow_inf_nan=False,
     )
+
+
+class AgentContractBlock(ContractModel):
+    """Base for explicitly extensible adapter-owned contract blocks."""
 
     extensions: dict[str, JsonValue] = Field(
         default_factory=dict,
@@ -58,10 +63,13 @@ class AgentConfigBlock(BaseModel):
     def to_mapping(self) -> dict[str, Any]:
         """Return a detached JSON-compatible adapter wire mapping."""
 
-        return self.model_dump(mode="json", exclude_none=True)
+        return self.model_dump(mode="json")
 
 
-class AgentHarnessConfig(AgentConfigBlock):
+AgentConfigBlock = AgentContractBlock
+
+
+class AgentHarnessConfig(AgentContractBlock):
     """Adapter-owned target settings projected from the selected harness."""
 
     settings: dict[str, JsonValue] = Field(
@@ -70,14 +78,25 @@ class AgentHarnessConfig(AgentConfigBlock):
     )
 
 
-class AgentModelConfig(AgentConfigBlock):
+class AgentModelConfig(AgentContractBlock):
     """Configuration for one named model role."""
 
     provider: str = Field(min_length=1)
     model: str = Field(min_length=1)
-    api_key_env: str | None = Field(default=None, min_length=1)
-    temperature: float | None = None
-    base_url: str | None = Field(default=None, min_length=1)
+    api_key_env: str | None = Field(
+        default=None,
+        min_length=1,
+        exclude_if=lambda value: value is None,
+    )
+    temperature: float | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    base_url: str | None = Field(
+        default=None,
+        min_length=1,
+        exclude_if=lambda value: value is None,
+    )
     settings: dict[str, JsonValue] = Field(
         default_factory=dict,
         exclude_if=lambda value: not value,
@@ -98,26 +117,34 @@ class AgentModelConfig(AgentConfigBlock):
         return value
 
 
-class AgentInstructionConfig(AgentConfigBlock):
+class AgentInstructionConfig(AgentContractBlock):
     """One normalized instruction value."""
 
     content: str = Field(min_length=1, pattern=r"\S")
     mode: Literal["replace"] = "replace"
 
 
-class AgentInstructionsConfig(AgentConfigBlock):
+class AgentInstructionsConfig(AgentContractBlock):
     """Normalized instructions applied by the adapter target."""
 
-    system: AgentInstructionConfig | None = None
+    system: AgentInstructionConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
-class AgentRuntimeConfig(AgentConfigBlock):
+class AgentRuntimeConfig(AgentContractBlock):
     """Runtime behavior applied by the adapter target."""
 
-    max_turns: int | None = Field(default=None, gt=0, le=(1 << 32) - 1)
+    max_turns: int | None = Field(
+        default=None,
+        gt=0,
+        le=(1 << 32) - 1,
+        exclude_if=lambda value: value is None,
+    )
 
 
-class AgentSkillConfig(AgentConfigBlock):
+class AgentSkillConfig(AgentContractBlock):
     """Skill paths made available to the adapter target."""
 
     paths: list[str | Path] = Field(
@@ -126,7 +153,7 @@ class AgentSkillConfig(AgentConfigBlock):
     )
 
 
-class AgentMcpServerConfig(AgentConfigBlock):
+class AgentMcpServerConfig(AgentContractBlock):
     """One MCP server routed to the adapter target."""
 
     transport: str = Field(min_length=1, pattern=r"\S")
@@ -138,6 +165,7 @@ class AgentMcpServerConfig(AgentConfigBlock):
     )
     allowed_tools: list[str] | None = Field(
         default=None,
+        exclude_if=lambda value: value is None,
         description="Tool names to expose; None exposes all and an empty list exposes none.",
     )
     blocked_tools: list[str] = Field(
@@ -162,7 +190,7 @@ class AgentMcpServerConfig(AgentConfigBlock):
         return self
 
 
-class AgentMcpConfig(AgentConfigBlock):
+class AgentMcpConfig(AgentContractBlock):
     """Named MCP servers routed to the adapter target."""
 
     servers: dict[str, AgentMcpServerConfig] = Field(
@@ -171,7 +199,7 @@ class AgentMcpConfig(AgentConfigBlock):
     )
 
 
-class AgentToolDefinition(AgentConfigBlock):
+class AgentToolDefinition(AgentContractBlock):
     """One named tool or tool-group definition resolved by the adapter."""
 
     kind: str = Field(min_length=1, pattern=r"\S")
@@ -182,7 +210,7 @@ class AgentToolDefinition(AgentConfigBlock):
     )
 
 
-class AgentToolsConfig(AgentConfigBlock):
+class AgentToolsConfig(AgentContractBlock):
     """Named tool definitions and effective target-level tool policy."""
 
     definitions: dict[str, AgentToolDefinition] = Field(
@@ -191,6 +219,7 @@ class AgentToolsConfig(AgentConfigBlock):
     )
     enabled: list[str] | None = Field(
         default=None,
+        exclude_if=lambda value: value is None,
         description="Named tools to expose; None preserves the adapter-target default.",
     )
     blocked: list[str] = Field(
@@ -215,14 +244,14 @@ class AgentToolsConfig(AgentConfigBlock):
         return self
 
 
-class AgentWorkflowEntrypointConfig(AgentConfigBlock):
+class AgentWorkflowEntrypointConfig(AgentContractBlock):
     """Adapter-declared resolution semantics for one custom agent or workflow."""
 
     kind: str = Field(min_length=1, pattern=r"\S")
     ref: str = Field(min_length=1, pattern=r"\S")
 
 
-class AgentWorkflowConfig(AgentConfigBlock):
+class AgentWorkflowConfig(AgentContractBlock):
     """Custom agent or workflow selection and construction settings."""
 
     entrypoint: AgentWorkflowEntrypointConfig
@@ -232,25 +261,245 @@ class AgentWorkflowConfig(AgentConfigBlock):
     )
 
 
-class AgentConfig(AgentConfigBlock):
+class AgentConfig(AgentContractBlock):
     """Configuration projected southbound to one adapter target."""
 
-    harness: AgentHarnessConfig | None = None
+    harness: AgentHarnessConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     models: dict[str, AgentModelConfig] = Field(
         default_factory=dict,
         exclude_if=lambda value: not value,
     )
-    instructions: AgentInstructionsConfig | None = None
-    runtime: AgentRuntimeConfig | None = None
-    skills: AgentSkillConfig | None = None
-    mcp: AgentMcpConfig | None = None
-    tools: AgentToolsConfig | None = None
-    workflow: AgentWorkflowConfig | None = None
+    instructions: AgentInstructionsConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    runtime: AgentRuntimeConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    skills: AgentSkillConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    mcp: AgentMcpConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    tools: AgentToolsConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    workflow: AgentWorkflowConfig | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+
+
+class AgentRunRequest(AgentContractBlock):
+    """One invocation request projected southbound to an adapter target."""
+
+    input: JsonValue
+    context: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+
+
+class AgentRunStatus(StrEnum):
+    """Completion status reported by an adapter target."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AgentRunError(AgentContractBlock):
+    """Error reported by an adapter target."""
+
+    code: str = Field(min_length=1, pattern=r"\S")
+    message: str = Field(min_length=1, pattern=r"\S")
+    retryable: bool = False
+
+
+class AgentArtifact(AgentContractBlock):
+    """One artifact produced by an adapter target."""
+
+    name: str = Field(min_length=1, pattern=r"\S")
+    kind: str = Field(min_length=1, pattern=r"\S")
+    path: str | Path
+    media_type: str | None = Field(
+        default=None,
+        min_length=1,
+        pattern=r"\S",
+        exclude_if=lambda value: value is None,
+    )
+
+
+class AgentUsage(AgentContractBlock):
+    """Normalized model usage reported by an adapter target."""
+
+    input_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        le=(1 << 64) - 1,
+        exclude_if=lambda value: value is None,
+    )
+    output_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        le=(1 << 64) - 1,
+        exclude_if=lambda value: value is None,
+    )
+    total_tokens: int | None = Field(
+        default=None,
+        ge=0,
+        le=(1 << 64) - 1,
+        exclude_if=lambda value: value is None,
+    )
+    cost_usd: float | None = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
+
+
+class AgentRunResult(AgentContractBlock):
+    """Terminal result returned by an adapter target."""
+
+    status: AgentRunStatus
+    output: JsonValue
+    error: AgentRunError | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    usage: AgentUsage | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    artifacts: list[AgentArtifact] = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+    )
+
+    @model_validator(mode="after")
+    def _validate_status_and_error(self) -> Self:
+        if self.status is AgentRunStatus.FAILED and self.error is None:
+            raise ValueError("failed result requires an error")
+        if self.status is AgentRunStatus.SUCCEEDED and self.error is not None:
+            raise ValueError("succeeded result must not include an error")
+        return self
+
+
+class ControlLocation(StrEnum):
+    """Where Fabric control code runs relative to the task environment."""
+
+    EXTERNAL_CONTROL = "external_control"
+    IN_ENV_CONTROL = "in_env_control"
+
+
+class EnvironmentOwnership(StrEnum):
+    """Whether Fabric owns the underlying environment resource."""
+
+    CALLER_OWNED = "caller_owned"
+    FABRIC_OWNED = "fabric_owned"
+
+
+class EnvironmentHandle(ContractModel):
+    """Resolved execution environment visible to an adapter target."""
+
+    environment_id: str = Field(min_length=1, pattern=r"\S")
+    provider: str = Field(min_length=1, pattern=r"\S")
+    control_location: ControlLocation
+    workspace: str | Path | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    artifacts: str | Path | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+    ownership: EnvironmentOwnership
+    connection: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+    metadata: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+
+
+class ArtifactRef(ContractModel):
+    """Reference to one artifact visible through RuntimeContext."""
+
+    name: str = Field(min_length=1, pattern=r"\S")
+    kind: str = Field(min_length=1, pattern=r"\S")
+    path: str | Path
+    media_type: str | None = Field(
+        default=None,
+        min_length=1,
+        pattern=r"\S",
+        exclude_if=lambda value: value is None,
+    )
+
+
+class ArtifactManifest(ContractModel):
+    """Artifacts visible to an adapter at invocation start."""
+
+    root: str | Path | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    artifacts: list[ArtifactRef] = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+    )
+
+
+class RuntimeTelemetryContext(ContractModel):
+    """Telemetry configuration generated for one adapter invocation."""
+
+    relay_enabled: bool
+    config_path: str | Path | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+    metadata: dict[str, JsonValue] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+    )
+
+
+class RuntimeContext(ContractModel):
+    """Fabric-generated context for one adapter invocation."""
+
+    runtime_id: str = Field(min_length=1, pattern=r"\S")
+    invocation_id: str = Field(min_length=1, pattern=r"\S")
+    request_id: str = Field(min_length=1, pattern=r"\S")
+    environment: EnvironmentHandle
+    artifacts: ArtifactManifest
+    telemetry: RuntimeTelemetryContext | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 __all__ = [
     "AgentConfig",
     "AgentConfigBlock",
+    "AgentContractBlock",
+    "AgentArtifact",
     "AgentHarnessConfig",
     "AgentInstructionConfig",
     "AgentInstructionsConfig",
@@ -258,10 +507,23 @@ __all__ = [
     "AgentMcpServerConfig",
     "AgentModelConfig",
     "AgentRuntimeConfig",
+    "AgentRunError",
+    "AgentRunRequest",
+    "AgentRunResult",
+    "AgentRunStatus",
     "AgentSkillConfig",
     "AgentToolDefinition",
     "AgentToolsConfig",
+    "AgentUsage",
     "AgentWorkflowConfig",
     "AgentWorkflowEntrypointConfig",
+    "ArtifactManifest",
+    "ArtifactRef",
+    "ContractModel",
+    "ControlLocation",
+    "EnvironmentHandle",
+    "EnvironmentOwnership",
+    "RuntimeContext",
+    "RuntimeTelemetryContext",
     "extension_schema",
 ]

@@ -3,26 +3,32 @@
 
 //! Core config and runtime contract for NeMo Fabric.
 
+pub mod adapter_contract;
 pub mod agent_config;
+pub mod agent_execution;
 pub mod config;
 pub mod doctor;
 pub mod error;
 pub mod runtime;
 pub mod schema;
 
+pub use adapter_contract::{ADAPTER_CONTRACT_VERSION, AdapterExtensionPoint};
+pub use agent_execution::{
+    AgentArtifact, AgentRunError, AgentRunRequest, AgentRunResult, AgentRunStatus, AgentUsage,
+};
 pub use config::{
-    ADAPTER_CONTRACT_VERSION, AdapterConfigField, AdapterConfigSupport, AdapterDescriptor,
-    AdapterDescriptorSource, AdapterKind, AdapterRequirements, AdapterTelemetryProviderSupport,
-    AdapterTelemetrySupport, AgentConfig, AgentConfigExtensionPoint, AgentHarnessConfig,
-    AgentInstructionConfig, AgentInstructionsConfig, AgentMcpConfig, AgentMcpServerConfig,
-    AgentModelConfig, AgentRuntimeConfig, AgentSkillConfig, AgentToolDefinition, AgentToolsConfig,
-    AgentWorkflowConfig, AgentWorkflowEntrypointConfig, CapabilityPlan, ControlLocation,
-    EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan, FabricConfig, HarnessConfig,
-    InstructionConfig, InstructionMode, InstructionsConfig, McpConfig, McpExposure, McpServerPlan,
-    MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext, ResolvedAdapterDescriptor,
-    RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig, TelemetryConfig, TelemetryPlan,
-    TelemetryProvider, TelemetryProviderConfig, ToolsConfig, WorkflowConfig,
-    WorkflowEntrypointConfig, load_adapter_descriptor, resolve_diagnostic_plan_from_config,
+    AdapterConfigField, AdapterConfigSupport, AdapterDescriptor, AdapterDescriptorSource,
+    AdapterKind, AdapterRequirements, AdapterTelemetryProviderSupport, AdapterTelemetrySupport,
+    AgentConfig, AgentHarnessConfig, AgentInstructionConfig, AgentInstructionsConfig,
+    AgentMcpConfig, AgentMcpServerConfig, AgentModelConfig, AgentRuntimeConfig, AgentSkillConfig,
+    AgentToolDefinition, AgentToolsConfig, AgentWorkflowConfig, AgentWorkflowEntrypointConfig,
+    CapabilityPlan, ControlLocation, EnvironmentConfig, EnvironmentOwnership, EnvironmentPlan,
+    FabricConfig, HarnessConfig, InstructionConfig, InstructionMode, InstructionsConfig, McpConfig,
+    McpExposure, McpServerPlan, MetadataConfig, ModelConfig, ResolutionStrategy, ResolveContext,
+    ResolvedAdapterDescriptor, RunPlan, RuntimeCapabilities, RuntimeConfig, SkillConfig,
+    TelemetryConfig, TelemetryPlan, TelemetryProvider, TelemetryProviderConfig, ToolsConfig,
+    WorkflowConfig, WorkflowEntrypointConfig, load_adapter_descriptor,
+    resolve_diagnostic_plan_from_config,
     resolve_diagnostic_plan_from_config_with_adapter_directories, resolve_run_plan_from_config,
     resolve_run_plan_from_config_with_adapter_directories,
 };
