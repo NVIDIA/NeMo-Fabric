@@ -188,6 +188,7 @@ by adapter:
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
+| `tools.definitions` | No | No | No | No |
 | `tools.enabled`, `.blocked` | Yes | No | Yes | Yes; native selectors are Hermes toolset names |
 | `skills.paths` | Yes | Yes | Yes | Yes |
 | `mcp.servers.<name>.transport`, `.url` with `harness_native` exposure | Yes | Yes | Yes | Yes |
@@ -252,9 +253,14 @@ planning accepts these fields. The bundled adapters currently support
 unfiltered MCP servers only. Per-server MCP policy is distinct from the root
 `ToolsConfig`, which controls adapter-native tools across the harness.
 
-Tool names are adapter-native selectors. NeMo Fabric does not define a portable
-catalog that translates names between harnesses. Configure an allowlist, a
-blocklist, or both:
+`tools.definitions` names tools and tool groups that the adapter constructs.
+Each definition has a portable `kind`, an adapter-resolved `ref`, and settings
+validated by the adapter descriptor. Use `add_tool_definition(...)` only when
+the selected adapter accepts `tools.definitions` and publishes a
+`tool_definition_schema`.
+
+`tools.enabled` and `tools.blocked` select across the effective named tool
+surface. Configure an allowlist, a blocklist, or both:
 
 ```python
 from nemo_fabric import ToolsConfig
@@ -738,7 +744,7 @@ generated API reference for exact Python signatures.
 | --- | --- |
 | SDK Pydantic models | `nemo_fabric.models`; refer to the generated [Models reference](../reference/api/python-library-reference/nemo_fabric.models.md) |
 | Agent config | `schemas/agent.schema.json` |
-| Adapter descriptor | `schemas/adapter-descriptor.schema.json` |
+| Adapter contract | `schemas/adapter-contract/`, including the descriptor, `AgentConfig`, execution types, and runtime context |
 | Run plan | `schemas/run-plan.schema.json` |
 | Request, result, and events | `schemas/run-request.schema.json`, `schemas/run-result.schema.json`, `schemas/fabric-event.schema.json` |
 | Runtime and invocation handles | `schemas/runtime-handle.schema.json`, `schemas/invocation-handle.schema.json` |
