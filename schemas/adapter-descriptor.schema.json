@@ -270,6 +270,14 @@
       "$ref": "#/$defs/AdapterTelemetrySupport",
       "default": {},
       "description": "Telemetry support declared by this adapter."
+    },
+    "workflow_schema": {
+      "additionalProperties": true,
+      "description": "JSON Schema for adapter-owned `FabricConfig.workflow`.",
+      "type": [
+        "object",
+        "null"
+      ]
     }
   },
   "required": [

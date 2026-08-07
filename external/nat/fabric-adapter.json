@@ -1,0 +1,101 @@
+{
+  "contract_version": "fabric.adapter/v1alpha1",
+  "adapter_id": "nvidia.fabric.nat",
+  "harness": "nat",
+  "adapter_kind": "python",
+  "runner": {
+    "module": "nemo_fabric_adapters.nat.adapter"
+  },
+  "settings_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+      "component": {
+        "type": "object",
+        "properties": {
+          "_type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "NAT component type registered through an installed nat.components entry point."
+          }
+        },
+        "required": ["_type"],
+        "additionalProperties": true
+      },
+      "components": {
+        "type": "object",
+        "propertyNames": {
+          "minLength": 1
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/component"
+        }
+      }
+    },
+    "type": "object",
+    "properties": {
+      "functions": {
+        "$ref": "#/$defs/components",
+        "default": {},
+        "description": "NAT function component instances keyed by their configured names."
+      },
+      "function_groups": {
+        "$ref": "#/$defs/components",
+        "default": {},
+        "description": "NAT function-group component instances keyed by their configured names."
+      }
+    },
+    "additionalProperties": false
+  },
+  "workflow_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "entrypoint": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "const": "nat_workflow",
+            "description": "Resolve the reference through NAT's registered workflow components."
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "description": "Registered NAT workflow component type, copied to NAT _type."
+          }
+        },
+        "required": ["kind", "ref"],
+        "additionalProperties": false
+      },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "_type": false
+        },
+        "additionalProperties": true,
+        "description": "NAT workflow component settings; _type is derived from entrypoint.ref."
+      }
+    },
+    "required": ["entrypoint"],
+    "additionalProperties": false
+  },
+  "requirements": {},
+  "config": {
+    "accepts": [
+      "models",
+      "models.base_url",
+      "models.temperature",
+      "instructions.system",
+      "tools.enabled",
+      "tools.blocked",
+      "mcp",
+      "mcp.tool_filters"
+    ]
+  },
+  "capabilities": {
+    "cancellation": false,
+    "service": false,
+    "streaming": false,
+    "updates": false
+  }
+}

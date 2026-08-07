@@ -23,10 +23,11 @@ The core schema generator exports the current public typed contract.
 - `adapter-descriptor`: minimal adapter descriptor consumed by NeMo Fabric. Each
   descriptor declares a `contract_version`; NeMo Fabric rejects descriptors for
   unsupported adapter contracts during planning. A descriptor can embed the
-  JSON Schema for its adapter-owned `harness.settings`; malformed schemas fail
-  descriptor loading, and a missing schema rejects non-empty settings. The
-  `process` and `python` adapter kinds use NeMo Fabric's persistent local-host
-  wire protocol.
+  JSON Schemas for its adapter-owned `harness.settings` and optional
+  `FabricConfig.workflow`; malformed schemas fail descriptor loading. A missing
+  settings schema rejects non-empty settings, and a configured workflow
+  requires a workflow schema. The `process` and `python` adapter kinds use NeMo
+  Fabric's persistent local-host wire protocol.
 - `run-plan`: executable plan containing the canonical typed config, absolute
   base directory, selected adapter, and derived execution metadata.
 

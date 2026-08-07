@@ -29,6 +29,9 @@ pub struct FabricConfig {
     pub metadata: MetadataConfig,
     /// Harness selection and harness-specific settings.
     pub harness: HarnessConfig,
+    /// Optional adapter-resolved workflow selection and construction settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowConfig>,
     /// Named model roles.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, ModelConfig>,
@@ -137,6 +140,33 @@ pub struct HarnessConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
+/// Adapter-owned workflow entry point.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowEntrypointConfig {
+    /// Adapter-defined entry-point kind.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub kind: String,
+    /// Adapter-defined workflow reference.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub r#ref: String,
+    /// Additive workflow entry-point fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// Adapter-owned workflow selection and immutable construction settings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkflowConfig {
+    /// Entry point resolved by the selected adapter.
+    pub entrypoint: WorkflowEntrypointConfig,
+    /// Workflow-specific construction settings.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub settings: serde_json::Map<String, Value>,
+    /// Additive workflow fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
 /// Language-neutral adapter descriptor for a harness integration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterDescriptor {
@@ -157,6 +187,9 @@ pub struct AdapterDescriptor {
     /// JSON Schema for adapter-owned `harness.settings`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_schema: Option<serde_json::Map<String, Value>>,
+    /// JSON Schema for adapter-owned `FabricConfig.workflow`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_schema: Option<serde_json::Map<String, Value>>,
     /// Runtime requirements.
     #[serde(default)]
     pub requirements: AdapterRequirements,
@@ -1119,12 +1152,20 @@ pub fn load_adapter_descriptor(path: impl AsRef<Path>) -> Result<AdapterDescript
     Ok(descriptor)
 }
 
-fn validate_config(config: &FabricConfig) -> Result<()> {
+pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
     if config.harness.adapter_id.trim().is_empty() {
         return Err(FabricError::UnknownAdapter {
             adapter_id: config.harness.adapter_id.clone(),
             available: Vec::new(),
         });
+    }
+    if let Some(workflow) = &config.workflow {
+        if workflow.entrypoint.kind.trim().is_empty() {
+            return invalid_config("workflow.entrypoint.kind", "must be a non-empty string");
+        }
+        if workflow.entrypoint.r#ref.trim().is_empty() {
+            return invalid_config("workflow.entrypoint.ref", "must be a non-empty string");
+        }
     }
     if config.runtime.max_turns == Some(0) {
         return invalid_config("runtime.max_turns", "must be greater than zero");
@@ -1326,6 +1367,7 @@ fn resolve_run_plan(
 ) -> Result<RunPlan> {
     let adapter_descriptor = resolve_adapter_descriptor(&config, &base_dir, adapter_directories)?;
     validate_harness_settings(&config, adapter_descriptor.as_ref())?;
+    validate_workflow(&config, adapter_descriptor.as_ref())?;
     let descriptor = adapter_descriptor
         .as_ref()
         .map(|adapter| &adapter.descriptor);
@@ -1541,34 +1583,46 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     if descriptor.harness.trim().is_empty() {
         return invalid_adapter_descriptor(path, "harness must not be empty");
     }
-    if let Some(schema) = &descriptor.settings_schema {
-        let schema = Value::Object(schema.clone());
-        jsonschema::meta::options()
-            .validate(&schema)
-            .map_err(|error| FabricError::InvalidAdapterDescriptor {
-                path: path.to_path_buf(),
-                message: format!("settings_schema is not valid JSON Schema: {error}"),
-            })?;
-        let allows_object_instances = match schema.get("type") {
-            Some(Value::String(root_type)) => root_type == "object",
-            Some(Value::Array(root_types)) => root_types
-                .iter()
-                .any(|root_type| root_type.as_str() == Some("object")),
-            _ => true,
-        };
-        if !allows_object_instances {
-            return invalid_adapter_descriptor(
-                path,
-                "settings_schema root type must allow object instances",
-            );
+    for (field, schema) in [
+        ("settings_schema", descriptor.settings_schema.as_ref()),
+        ("workflow_schema", descriptor.workflow_schema.as_ref()),
+    ] {
+        if let Some(schema) = schema {
+            validate_adapter_object_schema(path, field, schema)?;
         }
-        jsonschema::validator_for(&schema).map_err(|error| {
-            FabricError::InvalidAdapterDescriptor {
-                path: path.to_path_buf(),
-                message: format!("settings_schema could not be compiled: {error}"),
-            }
-        })?;
     }
+    Ok(())
+}
+
+fn validate_adapter_object_schema(
+    path: &Path,
+    field: &str,
+    schema: &serde_json::Map<String, Value>,
+) -> Result<()> {
+    let schema = Value::Object(schema.clone());
+    jsonschema::meta::options()
+        .validate(&schema)
+        .map_err(|error| FabricError::InvalidAdapterDescriptor {
+            path: path.to_path_buf(),
+            message: format!("{field} is not valid JSON Schema: {error}"),
+        })?;
+    let allows_object_instances = match schema.get("type") {
+        Some(Value::String(root_type)) => root_type == "object",
+        Some(Value::Array(root_types)) => root_types
+            .iter()
+            .any(|root_type| root_type.as_str() == Some("object")),
+        _ => true,
+    };
+    if !allows_object_instances {
+        return invalid_adapter_descriptor(
+            path,
+            format!("{field} root type must allow object instances"),
+        );
+    }
+    jsonschema::validator_for(&schema).map_err(|error| FabricError::InvalidAdapterDescriptor {
+        path: path.to_path_buf(),
+        message: format!("{field} could not be compiled: {error}"),
+    })?;
     Ok(())
 }
 
@@ -1612,9 +1666,44 @@ pub(crate) fn validate_harness_settings(
         }
     })?;
     if let Some(error) = validator.iter_errors(&settings).next() {
-        let settings_path = harness_settings_error_path(&error);
-        let reason = harness_settings_error_reason(&error);
+        let settings_path = schema_error_path(&error, "harness.settings");
+        let reason = schema_error_reason(&error, "adapter settings schema");
         return invalid_harness_settings(resolved, settings_path, reason);
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_workflow(
+    config: &FabricConfig,
+    resolved: Option<&ResolvedAdapterDescriptor>,
+) -> Result<()> {
+    let Some(resolved) = resolved else {
+        return Ok(());
+    };
+    let schema = match (&config.workflow, &resolved.descriptor.workflow_schema) {
+        (None, None) => return Ok(()),
+        (Some(_), None) => {
+            return invalid_workflow(
+                resolved,
+                "workflow".to_string(),
+                "the resolved descriptor does not declare a workflow_schema",
+            );
+        }
+        (_, Some(schema)) => schema,
+    };
+
+    let schema = Value::Object(schema.clone());
+    let workflow = serde_json::to_value(&config.workflow).map_err(FabricError::SerializeJson)?;
+    let validator = jsonschema::validator_for(&schema).map_err(|error| {
+        FabricError::InvalidAdapterDescriptor {
+            path: resolved.path.clone(),
+            message: format!("workflow_schema could not be compiled: {error}"),
+        }
+    })?;
+    if let Some(error) = validator.iter_errors(&workflow).next() {
+        let workflow_path = schema_error_path(&error, "workflow");
+        let reason = schema_error_reason(&error, "adapter workflow schema");
+        return invalid_workflow(resolved, workflow_path, reason);
     }
     Ok(())
 }
@@ -1633,7 +1722,21 @@ fn invalid_harness_settings<T>(
     })
 }
 
-fn harness_settings_error_path(error: &jsonschema::ValidationError<'_>) -> String {
+fn invalid_workflow<T>(
+    resolved: &ResolvedAdapterDescriptor,
+    workflow_path: String,
+    reason: impl Into<String>,
+) -> Result<T> {
+    Err(FabricError::InvalidWorkflow {
+        adapter_id: resolved.descriptor.adapter_id.clone(),
+        descriptor_source: resolved.source,
+        descriptor_path: resolved.path.clone(),
+        workflow_path,
+        reason: reason.into(),
+    })
+}
+
+fn schema_error_path(error: &jsonschema::ValidationError<'_>, prefix: &str) -> String {
     let mut segments = error
         .instance_path()
         .as_str()
@@ -1656,9 +1759,9 @@ fn harness_settings_error_path(error: &jsonschema::ValidationError<'_>) -> Strin
         _ => {}
     }
     if segments.is_empty() {
-        "harness.settings".to_string()
+        prefix.to_string()
     } else {
-        format!("harness.settings.{}", segments.join("."))
+        format!("{prefix}.{}", segments.join("."))
     }
 }
 
@@ -1666,25 +1769,25 @@ fn decode_json_pointer_segment(segment: &str) -> String {
     segment.replace("~1", "/").replace("~0", "~")
 }
 
-fn harness_settings_error_reason(error: &jsonschema::ValidationError<'_>) -> String {
+fn schema_error_reason(error: &jsonschema::ValidationError<'_>, schema_name: &str) -> String {
     match error.kind() {
         jsonschema::error::ValidationErrorKind::AdditionalProperties { .. }
         | jsonschema::error::ValidationErrorKind::UnevaluatedProperties { .. } => {
-            "is not declared by the adapter settings schema".to_string()
+            format!("is not declared by the {schema_name}")
         }
         jsonschema::error::ValidationErrorKind::Required { .. } => {
-            "is required by the adapter settings schema".to_string()
+            format!("is required by the {schema_name}")
         }
         jsonschema::error::ValidationErrorKind::Type { .. } => {
-            "has a type that is not accepted by the adapter settings schema".to_string()
+            format!("has a type that is not accepted by the {schema_name}")
         }
         jsonschema::error::ValidationErrorKind::Enum { .. } => {
-            "is not one of the values accepted by the adapter settings schema".to_string()
+            format!("is not one of the values accepted by the {schema_name}")
         }
         jsonschema::error::ValidationErrorKind::ExclusiveMinimum { .. } => {
-            "must be greater than the minimum declared by the adapter settings schema".to_string()
+            format!("must be greater than the minimum declared by the {schema_name}")
         }
-        _ => format!("does not satisfy the adapter settings schema ({error})"),
+        _ => format!("does not satisfy the {schema_name} ({error})"),
     }
 }
 
@@ -2289,6 +2392,48 @@ mod tests {
             "skills": {"paths": ["skills/review"]}
         }))
         .expect("typed config")
+    }
+
+    fn typed_workflow() -> WorkflowConfig {
+        serde_json::from_value(serde_json::json!({
+            "entrypoint": {
+                "kind": "workflow_registry",
+                "ref": "test_agent"
+            },
+            "settings": {
+                "llm_name": "default"
+            }
+        }))
+        .expect("typed workflow")
+    }
+
+    fn workflow_schema() -> serde_json::Map<String, Value> {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "entrypoint": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {"const": "workflow_registry"},
+                        "ref": {"type": "string", "minLength": 1}
+                    },
+                    "required": ["kind", "ref"],
+                    "additionalProperties": false
+                },
+                "settings": {
+                    "type": "object",
+                    "properties": {
+                        "llm_name": {"type": "string"}
+                    },
+                    "additionalProperties": false
+                }
+            },
+            "required": ["entrypoint"],
+            "additionalProperties": false
+        })
+        .as_object()
+        .expect("object workflow schema")
+        .clone()
     }
 
     fn repository_root() -> PathBuf {
@@ -2971,6 +3116,110 @@ mod tests {
     }
 
     #[test]
+    fn validates_workflow_against_resolved_adapter_schema() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        descriptor.workflow_schema = Some(workflow_schema());
+        let resolved = ResolvedAdapterDescriptor {
+            descriptor,
+            source: AdapterDescriptorSource::Repository,
+            path: path.clone(),
+            root: path.parent().expect("descriptor directory").to_path_buf(),
+        };
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.workflow = Some(typed_workflow());
+
+        validate_workflow(&config, Some(&resolved)).expect("valid workflow");
+
+        config
+            .workflow
+            .as_mut()
+            .expect("workflow")
+            .settings
+            .insert("llm_name".to_string(), serde_json::json!(7));
+        let error = validate_workflow(&config, Some(&resolved))
+            .expect_err("invalid workflow setting must fail");
+        assert!(matches!(
+            error,
+            FabricError::InvalidWorkflow {
+                adapter_id,
+                descriptor_source: AdapterDescriptorSource::Repository,
+                descriptor_path,
+                workflow_path,
+                reason,
+            } if adapter_id == "nvidia.fabric.claude"
+                && descriptor_path == path
+                && workflow_path == "workflow.settings.llm_name"
+                && reason.contains("adapter workflow schema")
+        ));
+    }
+
+    #[test]
+    fn workflow_support_is_fail_closed() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+        let mut resolved = ResolvedAdapterDescriptor {
+            descriptor,
+            source: AdapterDescriptorSource::Repository,
+            path: path.clone(),
+            root: path.parent().expect("descriptor directory").to_path_buf(),
+        };
+        let mut config = typed_config("nvidia.fabric.claude");
+        config.workflow = Some(typed_workflow());
+
+        let error = validate_workflow(&config, Some(&resolved))
+            .expect_err("workflow without a descriptor schema must fail");
+        assert!(matches!(
+            error,
+            FabricError::InvalidWorkflow { workflow_path, .. }
+                if workflow_path == "workflow"
+        ));
+
+        config.workflow = None;
+        resolved.descriptor.workflow_schema = Some(workflow_schema());
+        let error = validate_workflow(&config, Some(&resolved))
+            .expect_err("required workflow must fail when omitted");
+        assert!(matches!(
+            error,
+            FabricError::InvalidWorkflow { workflow_path, .. }
+                if workflow_path == "workflow"
+        ));
+
+        resolved.descriptor.workflow_schema = Some(
+            serde_json::json!({
+                "type": ["object", "null"]
+            })
+            .as_object()
+            .expect("optional workflow schema")
+            .clone(),
+        );
+        validate_workflow(&config, Some(&resolved)).expect("optional workflow may be omitted");
+    }
+
+    #[test]
+    fn rejects_blank_workflow_entrypoint_values() {
+        for (field, value) in [
+            ("workflow.entrypoint.kind", serde_json::json!(" ")),
+            ("workflow.entrypoint.ref", serde_json::json!("\t")),
+        ] {
+            let mut config = typed_config("nvidia.fabric.claude");
+            config.workflow = Some(typed_workflow());
+            let entrypoint = &mut config.workflow.as_mut().expect("workflow").entrypoint;
+            if field.ends_with("kind") {
+                entrypoint.kind = value.as_str().expect("string").to_string();
+            } else {
+                entrypoint.r#ref = value.as_str().expect("string").to_string();
+            }
+
+            let error = validate_config(&config).expect_err("blank entrypoint must fail");
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field: actual, .. } if actual == field
+            ));
+        }
+    }
+
+    #[test]
     fn validates_empty_settings_against_a_present_schema() {
         let path = repository_root().join("adapters/claude/fabric-adapter.json");
         let mut descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
@@ -3205,6 +3454,37 @@ mod tests {
                     && message.contains(
                         "settings_schema root type must allow object instances"
                     )
+            ));
+        }
+    }
+
+    #[test]
+    fn adapter_workflow_schema_must_be_valid_and_allow_objects() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let valid_descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+
+        for (schema, expected) in [
+            (
+                serde_json::json!({"type": 7}),
+                "workflow_schema is not valid JSON Schema",
+            ),
+            (
+                serde_json::json!({"type": "string"}),
+                "workflow_schema root type must allow object instances",
+            ),
+        ] {
+            let mut descriptor = valid_descriptor.clone();
+            descriptor.workflow_schema =
+                Some(schema.as_object().expect("workflow schema object").clone());
+
+            let error = validate_adapter_descriptor_shape(&descriptor, &path)
+                .expect_err("invalid workflow schema");
+            assert!(matches!(
+                error,
+                FabricError::InvalidAdapterDescriptor {
+                    path: error_path,
+                    message,
+                } if error_path == path && message.contains(expected)
             ));
         }
     }
