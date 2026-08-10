@@ -51,7 +51,7 @@ ADAPTER_EXTRAS = {
             "python_version < '3.14'"
         ),
         "harness": ["hermes-agent[mcp]>=0.19.0; python_version < '3.14'"],
-        "relay": ["nemo-relay==0.7.2"],
+        "relay": ["nemo-relay>=0.6.0,<0.8"],
     },
 }
 

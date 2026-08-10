@@ -17,6 +17,7 @@ import json
 import logging
 import os
 from contextlib import redirect_stdout
+from importlib.metadata import version as distribution_version
 from io import StringIO
 from pathlib import Path
 from typing import Any
@@ -150,6 +151,16 @@ def write_hermes_relay_plugin_config(
 
     plugin_config = common_utils.load_relay_plugin_config(payload)
     hermes_plugin_config = copy.deepcopy(plugin_config)
+    relay_version = distribution_version("nemo-relay")
+    try:
+        relay_major, relay_minor = (
+            int(part) for part in relay_version.split(".", maxsplit=2)[:2]
+        )
+    except ValueError as error:
+        raise RuntimeError(
+            f"unsupported NeMo Relay version {relay_version!r}"
+        ) from error
+    observability_version = 3 if (relay_major, relay_minor) >= (0, 7) else 2
     for component in hermes_plugin_config.get("components", []):
         if component.get("kind") != "observability":
             continue
@@ -157,7 +168,7 @@ def write_hermes_relay_plugin_config(
         if not isinstance(observability, dict):
             continue
 
-        if observability.get("version") != 3:
+        if observability_version == 3 and observability.get("version") != 3:
             # Relay 0.7 combines Fabric's legacy OTLP and OpenInference exporter
             # settings into typed OpenTelemetry endpoints in its v3 schema.
             endpoints = []
@@ -191,7 +202,7 @@ def write_hermes_relay_plugin_config(
                     sink["mode"] = "append"
     _, plugin_config_path = common_utils.write_relay_configs(
         plugin_config=hermes_plugin_config,
-        observability_version=3,
+        observability_version=observability_version,
     )
     if plugin_config_path is None:
         raise RuntimeError("Hermes Relay plugin configuration was not generated")

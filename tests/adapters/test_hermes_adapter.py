@@ -63,6 +63,7 @@ def test_write_hermes_relay_plugin_config_uses_upstream_toml(
     monkeypatch,
     tmp_path: Path,
 ):
+    monkeypatch.setattr(adapter, "distribution_version", lambda _name: "0.6.0")
     relay_config_path = tmp_path / "relay.json"
     relay_config_path.write_text(
         json.dumps(
@@ -74,6 +75,11 @@ def test_write_hermes_relay_plugin_config_uses_upstream_toml(
                             "sinks": [{"type": "file"}],
                         },
                         "atif": {"enabled": True},
+                        "opentelemetry": {
+                            "enabled": True,
+                            "endpoint": "https://otel.example/v1/traces",
+                            "service_name": "fabric",
+                        },
                     }
                 }
             }
@@ -98,9 +104,14 @@ def test_write_hermes_relay_plugin_config_uses_upstream_toml(
     with plugin_config_path.open("rb") as stream:
         staged_plugin_config = tomllib.load(stream)
     staged_observability = staged_plugin_config["components"][0]["config"]
-    assert staged_observability["version"] == 3
+    assert staged_observability["version"] == 2
     assert staged_observability["atif"]["enabled"] is True
     assert staged_observability["atof"]["sinks"][0]["mode"] == "append"
+    assert staged_observability["opentelemetry"] == {
+        "enabled": True,
+        "endpoint": "https://otel.example/v1/traces",
+        "service_name": "fabric",
+    }
     assert plugin_config["components"][0]["config"]["atof"]["sinks"][0][
         "output_directory"
     ] == str(tmp_path / "artifacts" / "relay" / "runtime-hermes-relay")
@@ -114,6 +125,7 @@ def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
     monkeypatch,
     tmp_path: Path,
 ):
+    monkeypatch.setattr(adapter, "distribution_version", lambda _name: "0.7.2")
     relay_config_path = tmp_path / "relay.json"
     relay_config_path.write_text(
         json.dumps(
