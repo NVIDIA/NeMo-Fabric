@@ -238,8 +238,9 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert (plugin_path / "skills" / "review" / "SKILL.md").read_text() == "# Review\n"
     assert options.strict_mcp_config is True
     assert isinstance(options.mcp_servers, Path)
-    assert options.mcp_servers.stat().st_mode & 0o777 == 0o600
-    assert options.mcp_servers.parent.stat().st_mode & 0o777 == 0o700
+    if os.name != "nt":
+        assert options.mcp_servers.stat().st_mode & 0o777 == 0o600
+        assert options.mcp_servers.parent.stat().st_mode & 0o777 == 0o700
     serialized_mcp = options.mcp_servers.read_text(encoding="utf-8")
     assert "mcp-secret-value" not in serialized_mcp
     mcp_config = json.loads(serialized_mcp)
