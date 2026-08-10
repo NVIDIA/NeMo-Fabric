@@ -342,7 +342,7 @@
           ]
         },
         "args": {
-          "description": "Arguments passed to an MCP stdio server process.",
+          "description": "Command-line arguments passed to an MCP stdio server process.",
           "items": {
             "type": "string"
           },
