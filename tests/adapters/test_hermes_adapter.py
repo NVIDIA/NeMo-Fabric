@@ -950,6 +950,60 @@ async def test_runtime_stop_waits_for_cancelled_invoke_worker(monkeypatch):
     mock_session_db.close.assert_called_once_with()
 
 
+async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch):
+    worker_started = threading.Event()
+    worker_finished = threading.Event()
+    worker_release = threading.Event()
+    mock_agent = MagicMock()
+    mock_session_db = MagicMock()
+    calls = 0
+
+    def run_turn(**_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            worker_started.set()
+            assert worker_release.wait(timeout=1)
+        worker_finished.set()
+        return (
+            {
+                "response": f"turn-{calls}",
+                "completed": True,
+                "failed": False,
+                "messages": [],
+            },
+            "",
+        )
+
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", run_turn)
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-cancelled-invoke"
+    runtime._start_payload = {"config": {"instructions": {}}}
+    runtime._agent = mock_agent
+    runtime._session_db = mock_session_db
+    invocation = {
+        "runtime_context": {"runtime_id": runtime._runtime_id},
+        "request": {"input": "wait"},
+    }
+
+    cancelled_invoke = asyncio.create_task(runtime.invoke(invocation))
+    assert await asyncio.to_thread(worker_started.wait, 1)
+
+    cancelled_invoke.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_invoke
+
+    worker_release.set()
+    assert await asyncio.to_thread(worker_finished.wait, 1)
+    await asyncio.sleep(0)
+
+    result = await runtime.invoke(invocation)
+
+    assert result["response"] == "turn-2"
+    await runtime.stop()
+
+
 def test_main_serves_persistent_runtime(monkeypatch):
     serve = MagicMock()
     monkeypatch.setattr(adapter.lifecycle, "serve", serve)

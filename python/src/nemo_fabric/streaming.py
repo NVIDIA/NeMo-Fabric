@@ -530,6 +530,11 @@ class _AtofStreamListener:
             and isinstance(metadata, dict)
             and metadata.get("turn_id") == self._legacy_hermes_turn_id
         ):
+            if (
+                record.get("kind") == "scope"
+                and record.get("scope_category") == "start"
+            ):
+                self._turn_scope_uuids.add(uuid)
             return True
         if self._turn_root_uuid is None:
             if not self._matches_turn_root(record):

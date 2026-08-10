@@ -518,6 +518,14 @@ class HermesRuntime:
             )
         invoke_task = asyncio.create_task(asyncio.to_thread(invoke_turn))
         self._active_invoke_task = invoke_task
+
+        def clear_active_invoke_task(
+            completed_task: asyncio.Task[tuple[dict[str, Any], str]],
+        ) -> None:
+            if self._active_invoke_task is completed_task:
+                self._active_invoke_task = None
+
+        invoke_task.add_done_callback(clear_active_invoke_task)
         try:
             result, adapter_stdout = await asyncio.shield(invoke_task)
         finally:

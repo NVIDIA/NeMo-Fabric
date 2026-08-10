@@ -949,6 +949,7 @@ async def test_listener_correlates_legacy_hermes_turn_records():
             "parent_uuid": "session",
             "metadata": {"turn_id": turn_id},
         },
+        {"kind": "mark", "uuid": "llm-child", "parent_uuid": "llm"},
         {
             "kind": "mark",
             "uuid": "turn-end",
