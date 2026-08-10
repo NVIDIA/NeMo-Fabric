@@ -64,7 +64,6 @@ async def test_relay_invocation_scope_carries_fabric_request_id(
         model="test-model",
         platform="fabric",
     )
-    runtime._invoke_hook = lambda *_args, **_kwargs: events.append("finalize")
     runtime._relay_plugin_config = relay_plugin_config
     runtime._hermes_home = tmp_path
     runtime._hermes_config_path = tmp_path / "config.yaml"
@@ -83,6 +82,11 @@ async def test_relay_invocation_scope_carries_fabric_request_id(
         )
 
     monkeypatch.setattr(adapter, "_invoke_hermes_turn", invoke_turn)
+    monkeypatch.setattr(
+        adapter,
+        "finalize_hermes_relay_session",
+        lambda _session_id: events.append("finalize"),
+    )
     monkeypatch.setattr(
         adapter.common_utils,
         "collect_relay_artifacts",

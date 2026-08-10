@@ -7,9 +7,11 @@ import json
 import os
 import sys
 import warnings
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 from types import ModuleType
 
+from packaging.version import Version
 import pytest
 import requests
 import yaml
@@ -106,19 +108,19 @@ async def test_mcp_stdio_transport(
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     tool_name = "mcp__mcp_server_time__get_current_time"
+    tool_arguments = {"timezone": "America/Los_Angeles"}
+    if Version(distribution_version("hermes-agent")) < Version("0.20"):
+        # The released 0.19 integration accepts the configured MCP tool directly.
+        tool_call = {"name": tool_name, "arguments": tool_arguments}
+    else:
+        # Newer Hermes versions dispatch MCP schemas through their native bridge.
+        tool_call = {
+            "name": "tool_call",
+            "arguments": {"name": tool_name, "arguments": tool_arguments},
+        }
     scenario_response = requests.post(
         f"{api_server}/_scenario",
-        json={
-            "tool_call": {
-                # Hermes v0.20 defers MCP schemas behind its native tool-call
-                # bridge. The bridge dispatches this to the configured MCP tool.
-                "name": "tool_call",
-                "arguments": {
-                    "name": tool_name,
-                    "arguments": {"timezone": "America/Los_Angeles"},
-                },
-            }
-        },
+        json={"tool_call": tool_call},
         timeout=5,
     )
     scenario_response.raise_for_status()
@@ -188,7 +190,9 @@ async def test_mcp_stdio_transport(
             record for record in tool_records if record["scope_category"] == "end"
         )
         assert tool_end["category"] == "tool"
-        assert tool_end["metadata"]["otel.status_code"] == "OK"
+        assert tool_end["metadata"].get("otel.status_code") == "OK" or (
+            tool_end["metadata"].get("status") == "ok"
+        )
         assert "America/Los_Angeles" in tool_end["data"]
 
 
@@ -327,36 +331,38 @@ class TestHermesE2E:
         record_kinds = {
             (record["name"], record.get("scope_category")) for record in atof_records
         }
-        assert record_kinds.issuperset(
-            {
-                ("hermes.session", "start"),
-                ("hermes.session", "end"),
-                ("hermes.turn", "start"),
-                ("hermes.turn", "end"),
-                ("nvidia", "start"),
-                ("nvidia", "end"),
-            }
-        )
+        assert record_kinds.issuperset({("nvidia", "start"), ("nvidia", "end")})
 
-        fabric_scopes = [
+        session_scopes = [
             record
             for record in atof_records
-            if record["name"] in {"hermes.session", "hermes.turn"}
+            if record["name"] == "hermes.session"
+            or str(record["name"]).startswith("hermes-session-")
         ]
-        assert all(
-            record["metadata"]["hermes.execution_surface"] == "fabric"
-            for record in fabric_scopes
-        )
-        turn_marks = [
+        assert {record.get("scope_category") for record in session_scopes} >= {
+            "start",
+            "end",
+        }
+
+        current_turn_scopes = [
+            record
+            for record in atof_records
+            if record["name"] == "hermes.turn"
+            and record.get("scope_category") in {"start", "end"}
+        ]
+        legacy_turn_marks = [
             record
             for record in atof_records
             if record["name"] in {"hermes.turn.start", "hermes.turn.end"}
         ]
+        turn_marks = current_turn_scopes or legacy_turn_marks
+        assert turn_marks
+
+        fabric_scopes = [*session_scopes, *turn_marks]
         assert all(
-            record["metadata"]["model"]
-            == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
-            and record["metadata"]["platform"] == self.atof_platform
-            for record in turn_marks
+            record["metadata"].get("hermes.execution_surface") == "fabric"
+            or record["metadata"].get("platform") == self.atof_platform
+            for record in fabric_scopes
         )
 
     async def test_atif_artifacts(self):

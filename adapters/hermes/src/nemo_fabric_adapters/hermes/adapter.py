@@ -37,6 +37,9 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
+# Hermes still discovers its Relay plugin through the TOML-path environment
+# variable. Keep the related fallback names here solely to clear and restore
+# inherited process state; Fabric does not translate its Relay config into them.
 HERMES_RELAY_ENV_NAMES = (
     "HERMES_NEMO_RELAY_PLUGINS_TOML",
     "HERMES_NEMO_RELAY_ATIF_ENABLED",
@@ -46,6 +49,41 @@ HERMES_RELAY_ENV_NAMES = (
     "HERMES_NEMO_RELAY_ATIF_AGENT_VERSION",
     "HERMES_NEMO_RELAY_ATIF_MODEL_NAME",
 )
+
+
+def finalize_hermes_relay_session(session_id: str) -> None:
+    """Finalize one Relay session through the installed Hermes lifecycle API."""
+    try:
+        from hermes_cli.lifecycle import finalize_session
+    except ModuleNotFoundError as error:
+        if error.name != "hermes_cli.lifecycle":
+            raise
+        # Hermes 0.19 exposes the same finalization boundary as a plugin hook.
+        from hermes_cli.plugins import invoke_hook
+
+        invoke_hook("on_session_finalize", session_id=session_id, platform="fabric")
+    else:
+        finalize_session(session_id=session_id, platform="fabric")
+
+
+def _fabric_stream_sink_enabled(config: dict[str, Any] | None) -> bool:
+    if config is None:
+        return False
+    for component in config.get("components") or []:
+        if not isinstance(component, dict) or component.get("kind") != "observability":
+            continue
+        component_config = component.get("config")
+        if not isinstance(component_config, dict):
+            continue
+        atof = component_config.get("atof")
+        if not isinstance(atof, dict):
+            continue
+        if any(
+            isinstance(sink, dict) and sink.get("name") == "nemo-fabric-stream"
+            for sink in atof.get("sinks") or []
+        ):
+            return True
+    return False
 
 
 def _api_key_env(model_config: dict[str, Any]) -> str:
@@ -291,6 +329,7 @@ class HermesRuntime:
         self._relay_plugin_config_path: Path | None = None
         self._previous_relay_environment: dict[str, str | None] = {}
         self._applied_relay_environment: dict[str, str | None] = {}
+        self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -439,31 +478,51 @@ class HermesRuntime:
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
 
-        def invoke_turn() -> tuple[dict[str, Any], str]:
-            result, adapter_stdout = _invoke_hermes_turn(
-                agent=self._agent,
-                system_prompt=common_utils.system_instruction(start_payload),
-                user_message=user_message,
-                conversation_history=self._conversation_history,
-            )
-            if self._relay_plugin_config is not None:
-                # Hermes writes TOML-configured ATIF at its session-finalization
-                # boundary for every supported Relay version. Fabric defines
-                # each invoke as an artifact-complete boundary, so finalize
-                # through Hermes' lifecycle instead of reaching into Relay
-                # directly.
-                from hermes_cli.lifecycle import finalize_session
-
-                finalize_session(
-                    session_id=str(self._agent.session_id),
-                    platform="fabric",
+        def run_hermes_turn() -> tuple[dict[str, Any], str]:
+            try:
+                return _invoke_hermes_turn(
+                    agent=self._agent,
+                    system_prompt=common_utils.system_instruction(start_payload),
+                    user_message=user_message,
+                    conversation_history=self._conversation_history,
                 )
-            return result, adapter_stdout
+            finally:
+                if self._relay_plugin_config is not None:
+                    # Hermes writes TOML-configured ATIF at its session-finalization
+                    # boundary for every supported Relay version. Fabric defines
+                    # each invoke as an artifact-complete boundary, so finalize
+                    # through Hermes' lifecycle instead of reaching into Relay
+                    # directly.
+                    finalize_hermes_relay_session(str(self._agent.session_id))
+
+        def invoke_turn() -> tuple[dict[str, Any], str]:
+            if not _fabric_stream_sink_enabled(self._relay_plugin_config):
+                return run_hermes_turn()
+
+            from nemo_relay import ScopeType, scope
+
+            with scope.scope(
+                "nemo-fabric-invocation",
+                ScopeType.Agent,
+                metadata={"nemo_fabric_request_id": request.get("request_id")},
+            ):
+                return run_hermes_turn()
 
         # Hermes' upstream Relay integration drives async Relay hooks from its
         # synchronous agent loop. Run that loop outside this lifecycle server's
         # event-loop thread so Hermes can own its Relay event loop.
-        result, adapter_stdout = await asyncio.to_thread(invoke_turn)
+        if self._active_invoke_task is not None:
+            raise lifecycle.LifecycleError(
+                "hermes_invocation_in_progress",
+                "Hermes runtime already has an active invocation",
+            )
+        invoke_task = asyncio.create_task(asyncio.to_thread(invoke_turn))
+        self._active_invoke_task = invoke_task
+        try:
+            result, adapter_stdout = await asyncio.shield(invoke_task)
+        finally:
+            if invoke_task.done() and self._active_invoke_task is invoke_task:
+                self._active_invoke_task = None
         messages = result.get("messages") or []
         if isinstance(messages, list):
             self._conversation_history = messages
@@ -500,12 +559,22 @@ class HermesRuntime:
         return output
 
     async def stop(self) -> None:
+        active_invoke_task = self._active_invoke_task
+        errors: list[BaseException] = []
+        if active_invoke_task is not None:
+            try:
+                await asyncio.shield(active_invoke_task)
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                if self._active_invoke_task is active_invoke_task:
+                    self._active_invoke_task = None
+
         agent = self._agent
         session_db = self._session_db
         had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
         previous_relay_environment = self._previous_relay_environment
         applied_relay_environment = self._applied_relay_environment
-        errors: list[BaseException] = []
         self._agent = None
         self._session_db = None
         self._start_payload = None

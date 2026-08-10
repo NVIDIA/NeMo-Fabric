@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import inspect
 import json
 import os
 import sys
+import threading
 import tomllib
 from pathlib import Path
 from types import ModuleType
@@ -180,6 +182,23 @@ def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
     }
 
 
+def test_finalize_hermes_relay_session_uses_legacy_plugin_hook(monkeypatch):
+    hermes_cli = ModuleType("hermes_cli")
+    hermes_plugins = ModuleType("hermes_cli.plugins")
+    mock_invoke_hook = MagicMock()
+    hermes_plugins.invoke_hook = mock_invoke_hook  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
+    monkeypatch.delitem(sys.modules, "hermes_cli.lifecycle", raising=False)
+
+    adapter.finalize_hermes_relay_session("session-legacy")
+
+    mock_invoke_hook.assert_called_once_with(
+        "on_session_finalize", session_id="session-legacy", platform="fabric"
+    )
+
+
 async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     monkeypatch,
     tmp_path: Path,
@@ -200,10 +219,21 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     ) -> tuple[Path, dict[str, object]]:
         assert relay_enabled is True
         assert os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(plugin_config_path)
+        assert all(
+            name not in os.environ
+            for name in adapter.HERMES_RELAY_ENV_NAMES
+            if name != "HERMES_NEMO_RELAY_PLUGINS_TOML"
+        )
         raise RuntimeError("stop after Relay plugin staging")
 
     monkeypatch.setattr(adapter, "write_hermes_config", stop_after_staging)
-    monkeypatch.setenv("HERMES_NEMO_RELAY_ATIF_ENABLED", "before-start")
+    inherited_relay_environment = {
+        name: f"before-{index}"
+        for index, name in enumerate(adapter.HERMES_RELAY_ENV_NAMES)
+        if name != "HERMES_NEMO_RELAY_PLUGINS_TOML"
+    }
+    for name, value in inherited_relay_environment.items():
+        monkeypatch.setenv(name, value)
     payload = {
         "base_dir": str(tmp_path),
         "config": {
@@ -222,7 +252,9 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
         await adapter.HermesRuntime().start(payload)
 
     assert "HERMES_NEMO_RELAY_PLUGINS_TOML" not in os.environ
-    assert os.environ["HERMES_NEMO_RELAY_ATIF_ENABLED"] == "before-start"
+    assert {
+        name: os.environ[name] for name in inherited_relay_environment
+    } == inherited_relay_environment
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -863,6 +895,59 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         / "runtimes"
         / "runtime-fabric-123"
     )
+
+
+async def test_runtime_stop_waits_for_cancelled_invoke_worker(monkeypatch):
+    worker_started = threading.Event()
+    worker_release = threading.Event()
+    mock_agent = MagicMock()
+    mock_session_db = MagicMock()
+
+    def run_turn(**_kwargs):
+        worker_started.set()
+        assert worker_release.wait(timeout=1)
+        return (
+            {
+                "response": "completed after cancellation",
+                "completed": True,
+                "failed": False,
+                "messages": [],
+            },
+            "",
+        )
+
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", run_turn)
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-cancelled-invoke"
+    runtime._start_payload = {"config": {"instructions": {}}}
+    runtime._agent = mock_agent
+    runtime._session_db = mock_session_db
+
+    invoke_task = asyncio.create_task(
+        runtime.invoke(
+            {
+                "runtime_context": {"runtime_id": runtime._runtime_id},
+                "request": {"input": "wait"},
+            }
+        )
+    )
+    assert await asyncio.to_thread(worker_started.wait, 1)
+
+    invoke_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await invoke_task
+
+    stop_task = asyncio.create_task(runtime.stop())
+    await asyncio.sleep(0)
+    mock_agent.close.assert_not_called()
+    mock_session_db.close.assert_not_called()
+
+    worker_release.set()
+    await stop_task
+
+    mock_agent.close.assert_called_once_with()
+    mock_session_db.close.assert_called_once_with()
 
 
 def test_main_serves_persistent_runtime(monkeypatch):

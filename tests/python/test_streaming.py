@@ -931,6 +931,50 @@ async def test_listener_correlates_records_to_active_turn(
     await listener.close()
 
 
+async def test_listener_correlates_legacy_hermes_turn_records():
+    listener = await _AtofStreamListener(maxsize=4).start()
+    listener.begin_stream(request_id="request-2", turn_index=2)
+    turn_id = "legacy-turn"
+    current = [
+        {
+            "kind": "mark",
+            "uuid": "turn-start",
+            "name": "hermes.turn.start",
+            "metadata": {"platform": "fabric", "turn_id": turn_id},
+        },
+        {
+            "kind": "scope",
+            "scope_category": "start",
+            "uuid": "llm",
+            "parent_uuid": "session",
+            "metadata": {"turn_id": turn_id},
+        },
+        {
+            "kind": "mark",
+            "uuid": "turn-end",
+            "name": "hermes.turn.end",
+            "metadata": {"platform": "fabric", "turn_id": turn_id},
+        },
+    ]
+
+    await _post_chunked(
+        listener.url,
+        [
+            {
+                "kind": "scope",
+                "scope_category": "start",
+                "uuid": "previous",
+                "metadata": {"nemo_fabric_request_id": "request-1"},
+            },
+            *current,
+        ],
+    )
+
+    assert [await listener.records.get() for _ in current] == current
+    listener.end_stream()
+    await listener.close()
+
+
 async def test_listener_applies_byte_budget_backpressure():
     record = {"uuid": "record", "payload": "x" * 16}
     record_size = len(json.dumps(record).encode())
