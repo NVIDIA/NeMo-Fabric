@@ -399,11 +399,17 @@ def _mcp_oauth_config(name: str, value: Any) -> mcp_auth.McpOAuth2Config:
 def _authenticated_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     servers = _native_mcp_server_specs(payload)
     mapped = _mcp_servers(payload)
-    return {
-        name: mapped[name]
-        for name, server in sorted(servers.items())
-        if server.get("authentication")
-    }
+    result: dict[str, dict[str, Any]] = {}
+    for name, server in sorted(servers.items()):
+        if server.get("authentication"):
+            if server.get("transport") == "stdio":
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    f"MCP server {name} authentication is not supported for stdio transport",
+                )
+
+            result[name] = mapped[name]
+    return result
 
 
 def _mcp_authentication(payload: dict[str, Any], name: str) -> mcp_auth.McpOAuth2Config:

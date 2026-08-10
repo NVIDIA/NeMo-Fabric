@@ -327,6 +327,34 @@ def test_claude_rejects_mcp_service_account_authentication(claude_payload):
         adapter.build_options(claude_payload)
 
 
+async def test_claude_rejects_authenticated_stdio_server_without_exposing_env(
+    claude_payload, monkeypatch
+):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["repo"]
+    server["authentication"] = {"type": "oauth2"}
+    credential = server["env"]["REPO_MCP_MODE"]
+    login = AsyncMock()
+    run_command = AsyncMock()
+    monkeypatch.setattr(adapter, "_login_mcp_server", login)
+    monkeypatch.setattr(adapter, "_run_claude_mcp_command", run_command)
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+    client.get_mcp_status = AsyncMock()
+    runtime = adapter.ClaudeRuntime()
+    runtime._options = ClaudeAgentOptions(cli_path="claude")
+
+    with pytest.raises(adapter.AdapterConfigError, match="stdio transport"):
+        await runtime._authenticate_mcp_servers(
+            claude_payload,
+            client,
+            invocation_timeout=30,
+        )
+
+    login.assert_not_awaited()
+    run_command.assert_not_awaited()
+    assert credential not in repr(login.await_args_list)
+    assert credential not in repr(run_command.await_args_list)
+
+
 async def test_claude_stages_dynamic_mcp_server_before_login(
     claude_payload, monkeypatch
 ):
