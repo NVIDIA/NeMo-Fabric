@@ -10,8 +10,9 @@ import inspect
 import json
 import os
 import sys
+import tomllib
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -58,107 +59,101 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
         adapter.validate_hermes_telemetry_provider(payload)
 
 
-def test_finalize_relay_session_flushes_before_artifact_collection(monkeypatch):
-    calls: list[str] = []
-    invoke_hook = MagicMock(side_effect=lambda *args, **kwargs: calls.append("hook"))
-    runtime = adapter.HermesRuntime()
-    runtime._relay_plugin_config = {"components": []}
-    runtime._agent = SimpleNamespace(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
+def test_write_hermes_relay_plugin_config_uses_upstream_toml(
+    monkeypatch,
+    tmp_path: Path,
+):
+    relay_config_path = tmp_path / "relay.json"
+    relay_config_path.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "atof": {
+                            "enabled": True,
+                            "sinks": [{"type": "file"}],
+                        },
+                        "atif": {"enabled": True},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
     )
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
+    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config_path))
+    payload = {
+        "agent_name": "hermes-test-agent",
+        "base_dir": str(tmp_path),
+        "config": {
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}}
+        },
+        "runtime_context": {"runtime_id": "runtime-hermes-relay"},
+    }
 
-    from nemo_relay import subscribers
+    plugin_config_path, plugin_config = adapter.write_hermes_relay_plugin_config(
+        payload
+    )
 
-    monkeypatch.setattr(subscribers, "flush", lambda: calls.append("flush"))
-
-    runtime._finalize_relay_session()
-
-    assert calls == ["hook", "flush"]
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
+    assert plugin_config_path == tmp_path / "relay-config" / "plugins.toml"
+    with plugin_config_path.open("rb") as stream:
+        staged_plugin_config = tomllib.load(stream)
+    assert "atif" not in staged_plugin_config["components"][0]["config"]
+    assert plugin_config["components"][0]["config"]["atof"]["sinks"][0][
+        "output_directory"
+    ] == str(tmp_path / "artifacts" / "relay" / "runtime-hermes-relay")
+    relay_environment = adapter.hermes_relay_environment(
+        plugin_config,
+        plugin_config_path,
+    )
+    assert relay_environment["HERMES_NEMO_RELAY_ATIF_ENABLED"] == "1"
+    assert relay_environment["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] == str(
+        tmp_path / "artifacts" / "relay" / "runtime-hermes-relay"
     )
 
 
-async def test_stop_does_not_refinalize_completed_relay_turn(monkeypatch):
-    invoke_hook = MagicMock()
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._relay_plugin_config = {"components": []}
-    agent = MagicMock(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
+async def test_runtime_start_stages_upstream_relay_plugin_configuration(
+    monkeypatch,
+    tmp_path: Path,
+):
+    plugin_config_path = tmp_path / "relay-config" / "plugins.toml"
+
+    monkeypatch.setattr(
+        adapter,
+        "write_hermes_relay_plugin_config",
+        lambda _payload: (plugin_config_path, {"version": 1}),
     )
-    session_db = MagicMock()
-    runtime._agent = agent
-    runtime._session_db = session_db
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
 
-    from nemo_relay import subscribers
+    def stop_after_staging(
+        _payload: dict[str, object],
+        _hermes_home: Path,
+        *,
+        relay_enabled: bool,
+    ) -> tuple[Path, dict[str, object]]:
+        assert relay_enabled is True
+        assert os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(plugin_config_path)
+        raise RuntimeError("stop after Relay plugin staging")
 
-    flush = MagicMock()
-    monkeypatch.setattr(subscribers, "flush", flush)
+    monkeypatch.setattr(adapter, "write_hermes_config", stop_after_staging)
+    monkeypatch.setenv("HERMES_NEMO_RELAY_ATIF_ENABLED", "before-start")
+    payload = {
+        "base_dir": str(tmp_path),
+        "config": {
+            "harness": {"settings": {}},
+            "models": {"default": {"provider": "nvidia", "model": "test-model"}},
+        },
+        "runtime_context": {
+            "runtime_id": "runtime-relay-plugin",
+            "environment": {"workspace": str(tmp_path)},
+            "artifacts": {"root": str(tmp_path / "artifacts")},
+        },
+        "telemetry_plan": {"providers": ["relay"], "relay_enabled": True},
+    }
 
-    runtime._finalize_relay_session()
-    await runtime.stop()
+    with pytest.raises(RuntimeError, match="stop after Relay plugin staging"):
+        await adapter.HermesRuntime().start(payload)
 
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    flush.assert_called_once_with()
-    agent.close.assert_called_once_with()
-    session_db.close.assert_called_once_with()
-    assert runtime._started is False
-    assert runtime._relay_session_pending is False
-    assert runtime._relay_finalize_hook_invoked is False
-
-
-async def test_stop_retries_failed_relay_flush_without_refinalizing(monkeypatch):
-    invoke_hook = MagicMock()
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._relay_plugin_config = {"components": []}
-    runtime._agent = MagicMock(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    runtime._session_db = MagicMock()
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
-
-    from nemo_relay import subscribers
-
-    flush = MagicMock(side_effect=[RuntimeError("flush failed"), None])
-    monkeypatch.setattr(subscribers, "flush", flush)
-
-    with pytest.raises(RuntimeError, match="flush failed"):
-        runtime._finalize_relay_session()
-
-    assert runtime._relay_session_pending is True
-    assert runtime._relay_finalize_hook_invoked is True
-    await runtime.stop()
-
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    assert flush.call_count == 2
-    assert runtime._relay_session_pending is False
-    assert runtime._relay_finalize_hook_invoked is False
+    assert "HERMES_NEMO_RELAY_PLUGINS_TOML" not in os.environ
+    assert os.environ["HERMES_NEMO_RELAY_ATIF_ENABLED"] == "before-start"
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -706,9 +701,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         "base_dir": str(tmp_path),
         "config": {
             "harness": {"settings": {}},
-            "instructions": {
-                "system": {"content": "system", "mode": "replace"}
-            },
+            "instructions": {"system": {"content": "system", "mode": "replace"}},
             "runtime": {"max_turns": None},
             "tools": {"enabled": []},
             "models": {
@@ -789,6 +782,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert runtime._session_db is None
     assert runtime._start_payload is None
     assert runtime._conversation_history is None
+    assert runtime._relay_plugin_config_path is None
     assert first["response"] == "first response"
     assert second["response"] == "second response"
     assert "session_id" not in second

@@ -556,6 +556,9 @@ class _AtofStreamListener:
             self._turn_index is not None
             and metadata.get("nemo_relay_scope_role") == "turn"
             and metadata.get("turn_index") == self._turn_index
+        ) or (
+            record.get("name") == "hermes.turn"
+            and metadata.get("hermes.execution_surface") == "fabric"
         )
 
     async def close(self) -> None:

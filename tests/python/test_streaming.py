@@ -880,14 +880,16 @@ async def test_aclose_drains_backpressure_while_invocation_finishes():
 
 
 @pytest.mark.parametrize(
-    "current_metadata",
+    ("current_metadata", "current_name"),
     [
-        {"nemo_fabric_request_id": "request-2"},
-        {"nemo_relay_scope_role": "turn", "turn_index": 2},
+        ({"nemo_fabric_request_id": "request-2"}, None),
+        ({"nemo_relay_scope_role": "turn", "turn_index": 2}, None),
+        ({"hermes.execution_surface": "fabric"}, "hermes.turn"),
     ],
 )
 async def test_listener_correlates_records_to_active_turn(
     current_metadata: dict[str, Any],
+    current_name: str | None,
 ):
     listener = await _AtofStreamListener(maxsize=4).start()
     listener.begin_stream(request_id="request-2", turn_index=2)
@@ -896,6 +898,7 @@ async def test_listener_correlates_records_to_active_turn(
             "kind": "scope",
             "scope_category": "start",
             "uuid": "current",
+            "name": current_name,
             "metadata": current_metadata,
         },
         {

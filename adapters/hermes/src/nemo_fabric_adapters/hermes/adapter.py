@@ -11,6 +11,7 @@ surface and invokes the installed Hermes runtime.
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import json
 import logging
@@ -35,6 +36,15 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
+HERMES_RELAY_ENV_NAMES = (
+    "HERMES_NEMO_RELAY_PLUGINS_TOML",
+    "HERMES_NEMO_RELAY_ATIF_ENABLED",
+    "HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY",
+    "HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE",
+    "HERMES_NEMO_RELAY_ATIF_AGENT_NAME",
+    "HERMES_NEMO_RELAY_ATIF_AGENT_VERSION",
+    "HERMES_NEMO_RELAY_ATIF_MODEL_NAME",
+)
 
 
 def _api_key_env(model_config: dict[str, Any]) -> str:
@@ -48,26 +58,6 @@ def _api_key_env(model_config: dict[str, Any]) -> str:
             f"selected model api_key_env is required for provider {provider!r}"
         )
     return default
-
-
-def _fabric_stream_sink_enabled(config: dict[str, Any] | None) -> bool:
-    if config is None:
-        return False
-    for component in config.get("components") or []:
-        if not isinstance(component, dict) or component.get("kind") != "observability":
-            continue
-        component_config = component.get("config")
-        if not isinstance(component_config, dict):
-            continue
-        atof = component_config.get("atof")
-        if not isinstance(atof, dict):
-            continue
-        if any(
-            isinstance(sink, dict) and sink.get("name") == "nemo-fabric-stream"
-            for sink in atof.get("sinks") or []
-        ):
-            return True
-    return False
 
 
 def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
@@ -153,6 +143,61 @@ def write_hermes_config(
     return config_path, config
 
 
+def write_hermes_relay_plugin_config(
+    payload: dict[str, Any],
+) -> tuple[Path, dict[str, Any]]:
+    """Stage Fabric's resolved Relay config for Hermes' bundled integration."""
+
+    plugin_config = common_utils.load_relay_plugin_config(payload)
+    hermes_plugin_config = copy.deepcopy(plugin_config)
+    for component in hermes_plugin_config.get("components", []):
+        if component.get("kind") != "observability":
+            continue
+        observability = component.get("config")
+        if isinstance(observability, dict):
+            # Hermes v0.20.0 manages ATIF through its plugin environment. Keep
+            # the complete Fabric config for artifact collection, but do not
+            # configure ATIF twice through the component TOML.
+            observability.pop("atif", None)
+    _, plugin_config_path = common_utils.write_relay_configs(
+        plugin_config=hermes_plugin_config
+    )
+    if plugin_config_path is None:
+        raise RuntimeError("Hermes Relay plugin configuration was not generated")
+    return plugin_config_path, plugin_config
+
+
+def hermes_relay_environment(
+    plugin_config: dict[str, Any],
+    plugin_config_path: Path,
+) -> dict[str, str]:
+    """Translate Fabric's ATIF settings to Hermes' upstream plugin environment."""
+
+    environment = {"HERMES_NEMO_RELAY_PLUGINS_TOML": str(plugin_config_path)}
+    for component in plugin_config.get("components", []):
+        if component.get("kind") != "observability":
+            continue
+        observability = component.get("config")
+        if not isinstance(observability, dict):
+            continue
+        atif = observability.get("atif")
+        if not isinstance(atif, dict) or not atif.get("enabled"):
+            continue
+        environment["HERMES_NEMO_RELAY_ATIF_ENABLED"] = "1"
+        for config_key, environment_key in (
+            ("output_directory", "HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"),
+            ("filename_template", "HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE"),
+            ("agent_name", "HERMES_NEMO_RELAY_ATIF_AGENT_NAME"),
+            ("agent_version", "HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"),
+            ("model_name", "HERMES_NEMO_RELAY_ATIF_MODEL_NAME"),
+        ):
+            value = atif.get(config_key)
+            if value is not None:
+                environment[environment_key] = str(value)
+        break
+    return environment
+
+
 def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
     transport = str(server.get("transport") or "").strip().lower()
     raw_target = server.get("url")
@@ -231,13 +276,10 @@ class HermesRuntime:
         self._conversation_history: list[dict[str, Any]] | None = None
         self._session_db: Any = None
         self._agent: Any = None
-        self._invoke_hook: Any = None
         self._relay_plugin_config: dict[str, Any] | None = None
-        self._relay_context: Any = None
-        self._relay_context_entered = False
-        self._relay_session_pending = False
-        self._relay_finalize_hook_invoked = False
-        self._relay_model_name = "unknown"
+        self._relay_plugin_config_path: Path | None = None
+        self._previous_relay_environment: dict[str, str | None] = {}
+        self._applied_relay_environment: dict[str, str | None] = {}
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -247,8 +289,6 @@ class HermesRuntime:
             )
 
         try:
-            self._relay_session_pending = False
-            self._relay_finalize_hook_invoked = False
             validate_hermes_telemetry_provider(payload)
             self._settings = common_utils.settings_payload(payload)
             self._model_config = common_utils.selected_model_config(payload)
@@ -270,14 +310,25 @@ class HermesRuntime:
 
             relay_enabled = common_utils.relay_enabled(payload)
             if relay_enabled:
-                self._relay_plugin_config = common_utils.load_relay_plugin_config(
-                    payload
+                (
+                    self._relay_plugin_config_path,
+                    self._relay_plugin_config,
+                ) = write_hermes_relay_plugin_config(payload)
+                relay_environment = hermes_relay_environment(
+                    self._relay_plugin_config,
+                    self._relay_plugin_config_path,
                 )
-                from nemo_relay import plugin
-
-                self._relay_context = plugin.plugin(self._relay_plugin_config)
-                await self._relay_context.__aenter__()
-                self._relay_context_entered = True
+                self._previous_relay_environment = {
+                    name: os.environ.get(name) for name in HERMES_RELAY_ENV_NAMES
+                }
+                self._applied_relay_environment = {}
+                for name in HERMES_RELAY_ENV_NAMES:
+                    value = relay_environment.get(name)
+                    if value is None:
+                        os.environ.pop(name, None)
+                    else:
+                        os.environ[name] = value
+                    self._applied_relay_environment[name] = value
 
             self._hermes_config_path, self._hermes_config = write_hermes_config(
                 payload,
@@ -289,11 +340,9 @@ class HermesRuntime:
             if not api_key:
                 raise RuntimeError(f"{api_key_env} is required for Hermes mode")
             self._base_url = common_utils.get_base_url(self._model_config)
-            self._relay_model_name = common_utils.relay_model_name(payload)
 
             from hermes_cli.config import load_config
             from hermes_cli.plugins import discover_plugins
-            from hermes_cli.plugins import invoke_hook
             from hermes_state import SessionDB
             from run_agent import AIAgent
 
@@ -303,10 +352,11 @@ class HermesRuntime:
                 # Hermes 0.12+ no longer discovers MCP tools as an import side effect
                 # (#16856). Fabric is a Hermes host: discover after config.yaml exists
                 # and before AIAgent resolves mcp-* toolsets.
-                # discover_mcp_tools uses a blocking 120s wait, wrapping it in 
+                # discover_mcp_tools uses a blocking 120s wait, wrapping it in
                 # asyncio.to_thread to avoid blocking the loop.
                 if self._hermes_config.get("mcp_servers"):
                     from tools.mcp_tool import discover_mcp_tools
+
                     await asyncio.to_thread(discover_mcp_tools)
 
                 self._enabled_toolsets = resolve_hermes_toolsets(
@@ -348,7 +398,6 @@ class HermesRuntime:
                         session_db=self._session_db,
                     )
                 )
-            self._invoke_hook = invoke_hook
             self._start_payload = payload
             self._started = True
         except BaseException:
@@ -386,32 +435,10 @@ class HermesRuntime:
                 conversation_history=self._conversation_history,
             )
 
-        self._relay_session_pending = self._relay_plugin_config is not None
-        self._relay_finalize_hook_invoked = False
-        if _fabric_stream_sink_enabled(self._relay_plugin_config):
-            from nemo_relay import ScopeType, scope
-
-            with scope.scope(
-                "nemo-fabric-invocation",
-                ScopeType.Agent,
-                metadata={
-                    "nemo_fabric_request_id": request.get("request_id"),
-                },
-            ):
-                try:
-                    result, adapter_stdout = invoke_turn()
-                finally:
-                    # The Hermes plugin pushes its session below this correlation
-                    # scope, so finalize that session before popping the parent.
-                    self._finalize_relay_session()
-        else:
-            try:
-                result, adapter_stdout = invoke_turn()
-            finally:
-                # Hermes' Relay plugin materializes ATIF when its session-finalize
-                # hook runs. Finalize the telemetry session for each Fabric
-                # invocation while retaining the native AIAgent and SessionDB.
-                self._finalize_relay_session()
+        # Hermes' upstream Relay integration drives async Relay hooks from its
+        # synchronous agent loop. Run that loop outside this lifecycle server's
+        # event-loop thread so Hermes can own its Relay event loop.
+        result, adapter_stdout = await asyncio.to_thread(invoke_turn)
         messages = result.get("messages") or []
         if isinstance(messages, list):
             self._conversation_history = messages
@@ -439,51 +466,21 @@ class HermesRuntime:
             output["relay_runtime"] = {
                 "enabled": True,
                 "config_path": os.environ.get("FABRIC_RELAY_CONFIG_PATH"),
-                "emitter": "hermes.observability/nemo_relay",
+                "plugin_config_path": str(self._relay_plugin_config_path),
+                "emitter": "hermes-agent/nemo-relay",
             }
             output["relay_artifacts"] = common_utils.collect_relay_artifacts(
                 self._relay_plugin_config
             )
         return output
 
-    def _finalize_relay_session(self) -> None:
-        if (
-            self._relay_plugin_config is None
-            or self._agent is None
-            or self._invoke_hook is None
-            or not self._relay_session_pending
-        ):
-            return
-        if not self._relay_finalize_hook_invoked:
-            self._invoke_hook(
-                "on_session_finalize",
-                session_id=getattr(self._agent, "session_id", ""),
-                model=getattr(self._agent, "model", None) or self._relay_model_name,
-                platform=getattr(self._agent, "platform", None) or "fabric",
-            )
-            self._relay_finalize_hook_invoked = True
-        # Relay subscriber callbacks are queued. The long-lived plugin context
-        # does not flush them until runtime shutdown, but invocation results
-        # must include artifacts produced by this turn.
-        from nemo_relay import subscribers
-
-        subscribers.flush()
-        self._relay_session_pending = False
-        self._relay_finalize_hook_invoked = False
-
     async def stop(self) -> None:
         agent = self._agent
         session_db = self._session_db
-        relay_context = self._relay_context
-        relay_context_entered = self._relay_context_entered
-        relay_plugin_config = self._relay_plugin_config
         had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
+        previous_relay_environment = self._previous_relay_environment
+        applied_relay_environment = self._applied_relay_environment
         errors: list[BaseException] = []
-        if relay_plugin_config is not None and agent is not None:
-            try:
-                self._finalize_relay_session()
-            except BaseException as error:
-                errors.append(error)
         self._agent = None
         self._session_db = None
         self._start_payload = None
@@ -496,14 +493,21 @@ class HermesRuntime:
         self._hermes_config = {}
         self._enabled_toolsets = None
         self._conversation_history = None
-        self._relay_context = None
-        self._relay_context_entered = False
-        self._relay_session_pending = False
-        self._relay_finalize_hook_invoked = False
-        self._invoke_hook = None
         self._relay_plugin_config = None
-        self._relay_model_name = "unknown"
+        self._relay_plugin_config_path = None
+        self._previous_relay_environment = {}
+        self._applied_relay_environment = {}
         self._started = False
+
+        for name, applied_value in applied_relay_environment.items():
+            current_value = os.environ.get(name)
+            if current_value != applied_value:
+                continue
+            previous_value = previous_relay_environment.get(name)
+            if previous_value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = previous_value
 
         if had_mcp_servers:
             try:
@@ -524,12 +528,6 @@ class HermesRuntime:
                 session_db.close()
             except BaseException as error:
                 errors.append(error)
-        if relay_context is not None and relay_context_entered:
-            try:
-                await relay_context.__aexit__(None, None, None)
-            except BaseException as error:
-                errors.append(error)
-
         if errors:
             for error in errors:
                 if isinstance(error, asyncio.CancelledError):
