@@ -37,17 +37,12 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
-# Hermes still discovers its Relay plugin through the TOML-path environment
-# variable. Keep the related fallback names here solely to clear and restore
-# inherited process state; Fabric does not translate its Relay config into them.
+# Hermes 0.16+ discovers Relay from this TOML path and falls back to direct
+# ATIF/ATOF only when TOML initialization fails. Clear only those enable flags.
 HERMES_RELAY_ENV_NAMES = (
     "HERMES_NEMO_RELAY_PLUGINS_TOML",
     "HERMES_NEMO_RELAY_ATIF_ENABLED",
-    "HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY",
-    "HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE",
-    "HERMES_NEMO_RELAY_ATIF_AGENT_NAME",
-    "HERMES_NEMO_RELAY_ATIF_AGENT_VERSION",
-    "HERMES_NEMO_RELAY_ATIF_MODEL_NAME",
+    "HERMES_NEMO_RELAY_ATOF_ENABLED",
 )
 
 
