@@ -96,7 +96,8 @@ Configure portable capabilities through the normalized `FabricConfig` fields:
 - `tools.blocked` maps to Claude `disallowed_tools`. A pre-tool hook enforces
   both lists across built-in, MCP, and plugin tools.
 - `mcp` configures stdio, HTTP, streamable HTTP, or SSE servers. For stdio,
-  NeMo Fabric parses `url` as a command plus arguments.
+  set `url` to the executable and pass each command-line argument as a separate
+  `args` element.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   stages these directories as a local Claude plugin for the runtime.
 
@@ -208,7 +209,8 @@ config = FabricConfig(
         servers={
             "repo": McpServerConfig(
                 transport="stdio",
-                url="repo-mcp --root .",
+                url="repo-mcp",
+                args=["--root", "."],
                 exposure="harness_native",
             )
         }

@@ -532,7 +532,7 @@
           ]
         },
         "args": {
-          "description": "Arguments passed to an MCP stdio process.",
+          "description": "Command-line arguments passed to an MCP stdio process.",
           "items": {
             "type": "string"
           },
@@ -564,7 +564,7 @@
           "type": "string"
         },
         "url": {
-          "description": "MCP server URL or process command, depending on transport.",
+          "description": "MCP server URL for network transports or executable for stdio.",
           "minLength": 1,
           "pattern": "\\S",
           "type": "string"
@@ -1341,7 +1341,7 @@
           ]
         },
         "args": {
-          "description": "Arguments passed to an MCP stdio server process.",
+          "description": "Command-line arguments passed to an MCP stdio server process.",
           "items": {
             "type": "string"
           },
@@ -1370,7 +1370,7 @@
           "type": "string"
         },
         "url": {
-          "description": "MCP server URL or process command, depending on transport.",
+          "description": "MCP server URL for network transports or executable for stdio.",
           "type": "string"
         }
       },
@@ -1396,7 +1396,7 @@
           ]
         },
         "args": {
-          "description": "Arguments passed to an MCP stdio server process.",
+          "description": "Command-line arguments passed to an MCP stdio server process.",
           "items": {
             "type": "string"
           },
@@ -1425,7 +1425,7 @@
           "type": "string"
         },
         "url": {
-          "description": "MCP URL or command.",
+          "description": "MCP server URL for network transports or executable for stdio.",
           "type": "string"
         }
       },

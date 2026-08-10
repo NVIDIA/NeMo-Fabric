@@ -838,8 +838,8 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `transport` | `str` | Yes | — | `MinLen(min_length=1)` | — |
-| `url` | `str` | Yes | — | `MinLen(min_length=1)` | — |
-| `args` | `list[str]` | No | `list()` | — | — |
+| `url` | `str` | Yes | — | `MinLen(min_length=1)` | MCP server URL for network transports or executable for stdio.|
+| `args` | `list[str]` | No | `list()` | — | Command-line arguments passed to an MCP stdio server process. |
 | `env` | `dict[str, str]` | No | `dict()` | — | — |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
 | `allowed_tools` | `list[str] \| None` | No | `None` | — | MCP tools to expose. None exposes every discovered tool; an empty list exposes no tools. |
@@ -966,6 +966,8 @@ def add_server(
 ```
 
 Add or replace a named MCP server.
+
+For stdio, set ``url`` to the executable and pass each command-line argument as a separate ``args`` element.
 
 ---
 
@@ -2252,6 +2254,8 @@ def add_mcp_server(
 ```
 
 Add or replace a named MCP server and return this config.
+
+For stdio, set ``url`` to the executable and pass each command-line argument as a separate ``args`` element.
 
 ---
 

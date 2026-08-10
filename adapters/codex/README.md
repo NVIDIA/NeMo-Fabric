@@ -95,8 +95,8 @@ Use normalized `FabricConfig` fields for portable configuration:
 - `environment.workspace` sets the working directory, and `environment.env`
   supplies explicit harness-visible variables.
 - `mcp` maps stdio, HTTP, and streamable HTTP servers into the Codex thread's
-  `mcp_servers` configuration. For stdio, NeMo Fabric parses `url` as a command plus
-  arguments.
+  `mcp_servers` configuration. For stdio, set `url` to the executable and pass
+  each command-line argument as a separate `args` element.
 - `skills.paths` names skill directories that contain `SKILL.md`. The adapter
   registers each directory as a process-scoped Codex skill root so Codex can
   select matching skills through its normal discovery behavior.

@@ -157,10 +157,10 @@ pub struct AgentMcpServerConfig {
     /// MCP transport identifier.
     #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub transport: String,
-    /// MCP server URL or process command, depending on transport.
+    /// MCP server URL for network transports or executable for stdio.
     #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub url: String,
-    /// Arguments passed to an MCP stdio process.
+    /// Command-line arguments passed to an MCP stdio process.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     /// Environment variables passed to an MCP stdio process.
