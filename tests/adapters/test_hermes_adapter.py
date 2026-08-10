@@ -952,7 +952,6 @@ async def test_runtime_stop_waits_for_cancelled_invoke_worker(monkeypatch):
 
 async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch):
     worker_started = threading.Event()
-    worker_finished = threading.Event()
     worker_release = threading.Event()
     mock_agent = MagicMock()
     mock_session_db = MagicMock()
@@ -964,7 +963,6 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
         if calls == 1:
             worker_started.set()
             assert worker_release.wait(timeout=1)
-        worker_finished.set()
         return (
             {
                 "response": f"turn-{calls}",
@@ -989,14 +987,15 @@ async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch
 
     cancelled_invoke = asyncio.create_task(runtime.invoke(invocation))
     assert await asyncio.to_thread(worker_started.wait, 1)
+    active_invoke_task = runtime._active_invoke_task
+    assert active_invoke_task is not None
 
     cancelled_invoke.cancel()
     with pytest.raises(asyncio.CancelledError):
         await cancelled_invoke
 
     worker_release.set()
-    assert await asyncio.to_thread(worker_finished.wait, 1)
-    await asyncio.sleep(0)
+    await asyncio.wait_for(asyncio.shield(active_invoke_task), timeout=1)
 
     result = await runtime.invoke(invocation)
 
