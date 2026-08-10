@@ -461,31 +461,31 @@ async def _run_claude_mcp_command(
         return process.returncode or 0, output.decode("utf-8", errors="replace")
 
     try:
-        master, slave = os.openpty()
+        primary, secondary = os.openpty()
     except (AttributeError, OSError) as error:
         raise ClaudeAdapterError(
             "claude_mcp_authentication_failed",
             "Claude MCP authentication requires a local pseudo-terminal",
         ) from error
-    os.set_blocking(master, False)
+    os.set_blocking(primary, False)
     try:
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=cwd,
             env=process_environment,
-            stdin=slave,
-            stdout=slave,
-            stderr=slave,
+            stdin=secondary,
+            stdout=secondary,
+            stderr=secondary,
         )
     finally:
-        os.close(slave)
+        os.close(secondary)
 
     output = bytearray()
     try:
         async with asyncio.timeout(timeout):
             while process.returncode is None:
                 try:
-                    chunk = os.read(master, 65536)
+                    chunk = os.read(primary, 65536)
                     if not chunk:
                         break
                     output.extend(chunk)
@@ -496,7 +496,7 @@ async def _run_claude_mcp_command(
             await process.wait()
             while True:
                 try:
-                    chunk = os.read(master, 65536)
+                    chunk = os.read(primary, 65536)
                     if not chunk:
                         break
                     output.extend(chunk)
@@ -508,7 +508,7 @@ async def _run_claude_mcp_command(
             await process.wait()
         raise
     finally:
-        os.close(master)
+        os.close(primary)
     return process.returncode or 0, output.decode("utf-8", errors="replace")
 
 
