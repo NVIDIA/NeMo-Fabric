@@ -177,12 +177,6 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
         "nested": {"first": 1, "second": 2},
     }
 
-    invalid_transport = typed_config.model_copy(deep=True)
-    assert invalid_transport.mcp is not None
-    invalid_transport.mcp.servers["github"].transport = "websocket"
-    with pytest.raises(FabricConfigError, match="websocket"):
-        client.plan(invalid_transport, base_dir=fixture_agent)
-
     result = await client.run(
         hermes_shim_config(),
         base_dir=fixture_agent,

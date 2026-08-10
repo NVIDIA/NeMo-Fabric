@@ -410,7 +410,7 @@ class McpAuthenticationConfig(FabricBaseModel):
 class McpServerConfig(FabricBaseModel):
     """MCP server configuration."""
 
-    transport: str = Field(min_length=1)
+    transport: Literal["stdio", "sse", "streamable-http"]
     url: str = Field(
         min_length=1,
         description=(

@@ -331,6 +331,17 @@ def test_mcp_server_tool_policy_preserves_empty_allowlist():
     assert server.to_mapping() == expected
 
 
+def test_mcp_server_rejects_unknown_transport():
+    with pytest.raises(ValidationError, match="transport"):
+        McpServerConfig(transport="websocket", url="https://mcp.example.test")
+
+    server = McpServerConfig(
+        transport="streamable-http", url="https://mcp.example.test"
+    )
+    with pytest.raises(ValidationError, match="transport"):
+        server.transport = "websocket"  # type: ignore[assignment]
+
+
 def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():
     server = McpServerConfig(
         transport="streamable-http",
