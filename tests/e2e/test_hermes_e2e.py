@@ -350,12 +350,12 @@ class TestHermesE2E:
             if record["name"] == "hermes.turn"
             and record.get("scope_category") in {"start", "end"}
         ]
-        legacy_turn_marks = [
+        upstream_turn_marks = [
             record
             for record in atof_records
             if record["name"] in {"hermes.turn.start", "hermes.turn.end"}
         ]
-        turn_marks = current_turn_scopes or legacy_turn_marks
+        turn_marks = current_turn_scopes or upstream_turn_marks
         assert turn_marks
 
         fabric_scopes = [*session_scopes, *turn_marks]
