@@ -154,48 +154,48 @@ def write_hermes_relay_plugin_config(
         if component.get("kind") != "observability":
             continue
         observability = component.get("config")
-        if isinstance(observability, dict):
-            # Hermes v0.20.0 manages ATIF through its plugin environment. Keep
-            # the complete Fabric config for artifact collection, but do not
-            # configure ATIF twice through the component TOML.
-            observability.pop("atif", None)
+        if not isinstance(observability, dict):
+            continue
+
+        if observability.get("version") != 3:
+            # Relay 0.7 combines Fabric's legacy OTLP and OpenInference exporter
+            # settings into typed OpenTelemetry endpoints in its v3 schema.
+            endpoints = []
+            for config_name, endpoint_type in (
+                ("opentelemetry", "full"),
+                ("openinference", "openinference"),
+            ):
+                exporter = observability.pop(config_name, None)
+                if not isinstance(exporter, dict) or not exporter.get("enabled"):
+                    continue
+                endpoint = {
+                    key: value
+                    for key, value in exporter.items()
+                    if key != "enabled" and value is not None
+                }
+                endpoint["type"] = endpoint_type
+                endpoints.append(endpoint)
+            if endpoints:
+                observability["opentelemetry"] = {
+                    "enabled": True,
+                    "endpoints": endpoints,
+                }
+            observability["version"] = 3
+
+        # Fabric finalizes Hermes' Relay session after every invocation. Each
+        # finalization reinitializes Relay for the next turn, so a file sink
+        # cannot overwrite the runtime-scoped artifact it created previously.
+        for sink in (observability.get("atof") or {}).get("sinks") or []:
+            if isinstance(sink, dict) and sink.get("type") == "file":
+                if sink.get("mode") == "overwrite":
+                    sink["mode"] = "append"
     _, plugin_config_path = common_utils.write_relay_configs(
-        plugin_config=hermes_plugin_config
+        plugin_config=hermes_plugin_config,
+        observability_version=3,
     )
     if plugin_config_path is None:
         raise RuntimeError("Hermes Relay plugin configuration was not generated")
     return plugin_config_path, plugin_config
-
-
-def hermes_relay_environment(
-    plugin_config: dict[str, Any],
-    plugin_config_path: Path,
-) -> dict[str, str]:
-    """Translate Fabric's ATIF settings to Hermes' upstream plugin environment."""
-
-    environment = {"HERMES_NEMO_RELAY_PLUGINS_TOML": str(plugin_config_path)}
-    for component in plugin_config.get("components", []):
-        if component.get("kind") != "observability":
-            continue
-        observability = component.get("config")
-        if not isinstance(observability, dict):
-            continue
-        atif = observability.get("atif")
-        if not isinstance(atif, dict) or not atif.get("enabled"):
-            continue
-        environment["HERMES_NEMO_RELAY_ATIF_ENABLED"] = "1"
-        for config_key, environment_key in (
-            ("output_directory", "HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"),
-            ("filename_template", "HERMES_NEMO_RELAY_ATIF_FILENAME_TEMPLATE"),
-            ("agent_name", "HERMES_NEMO_RELAY_ATIF_AGENT_NAME"),
-            ("agent_version", "HERMES_NEMO_RELAY_ATIF_AGENT_VERSION"),
-            ("model_name", "HERMES_NEMO_RELAY_ATIF_MODEL_NAME"),
-        ):
-            value = atif.get(config_key)
-            if value is not None:
-                environment[environment_key] = str(value)
-        break
-    return environment
 
 
 def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
@@ -314,10 +314,11 @@ class HermesRuntime:
                     self._relay_plugin_config_path,
                     self._relay_plugin_config,
                 ) = write_hermes_relay_plugin_config(payload)
-                relay_environment = hermes_relay_environment(
-                    self._relay_plugin_config,
-                    self._relay_plugin_config_path,
-                )
+                relay_environment = {
+                    "HERMES_NEMO_RELAY_PLUGINS_TOML": str(
+                        self._relay_plugin_config_path
+                    )
+                }
                 self._previous_relay_environment = {
                     name: os.environ.get(name) for name in HERMES_RELAY_ENV_NAMES
                 }
@@ -428,12 +429,24 @@ class HermesRuntime:
             user_message = json.dumps(user_message, sort_keys=True)
 
         def invoke_turn() -> tuple[dict[str, Any], str]:
-            return _invoke_hermes_turn(
+            result, adapter_stdout = _invoke_hermes_turn(
                 agent=self._agent,
                 system_prompt=common_utils.system_instruction(start_payload),
                 user_message=user_message,
                 conversation_history=self._conversation_history,
             )
+            if self._relay_plugin_config is not None:
+                # Relay 0.7 writes TOML-configured ATIF at the upstream Hermes
+                # session-finalization boundary. Fabric defines each invoke as
+                # an artifact-complete boundary, so finalize through Hermes'
+                # lifecycle instead of reaching into Relay directly.
+                from hermes_cli.lifecycle import finalize_session
+
+                finalize_session(
+                    session_id=str(self._agent.session_id),
+                    platform="fabric",
+                )
+            return result, adapter_stdout
 
         # Hermes' upstream Relay integration drives async Relay hooks from its
         # synchronous agent loop. Run that loop outside this lifecycle server's

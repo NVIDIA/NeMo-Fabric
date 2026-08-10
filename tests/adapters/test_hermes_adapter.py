@@ -97,18 +97,75 @@ def test_write_hermes_relay_plugin_config_uses_upstream_toml(
     assert plugin_config_path == tmp_path / "relay-config" / "plugins.toml"
     with plugin_config_path.open("rb") as stream:
         staged_plugin_config = tomllib.load(stream)
-    assert "atif" not in staged_plugin_config["components"][0]["config"]
+    staged_observability = staged_plugin_config["components"][0]["config"]
+    assert staged_observability["version"] == 3
+    assert staged_observability["atif"]["enabled"] is True
+    assert staged_observability["atof"]["sinks"][0]["mode"] == "append"
     assert plugin_config["components"][0]["config"]["atof"]["sinks"][0][
         "output_directory"
     ] == str(tmp_path / "artifacts" / "relay" / "runtime-hermes-relay")
-    relay_environment = adapter.hermes_relay_environment(
-        plugin_config,
-        plugin_config_path,
+    assert (
+        plugin_config["components"][0]["config"]["atof"]["sinks"][0]["mode"]
+        == "overwrite"
     )
-    assert relay_environment["HERMES_NEMO_RELAY_ATIF_ENABLED"] == "1"
-    assert relay_environment["HERMES_NEMO_RELAY_ATIF_OUTPUT_DIRECTORY"] == str(
-        tmp_path / "artifacts" / "relay" / "runtime-hermes-relay"
+
+
+def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
+    monkeypatch,
+    tmp_path: Path,
+):
+    relay_config_path = tmp_path / "relay.json"
+    relay_config_path.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "opentelemetry": {
+                            "enabled": True,
+                            "endpoint": "https://otel.example/v1/traces",
+                            "service_name": "fabric",
+                        },
+                        "openinference": {
+                            "enabled": True,
+                            "endpoint": "https://openinference.example/v1/traces",
+                            "service_name": "fabric",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
     )
+    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config_path))
+    payload = {
+        "agent_name": "hermes-test-agent",
+        "base_dir": str(tmp_path),
+        "config": {
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}}
+        },
+        "runtime_context": {"runtime_id": "runtime-hermes-relay"},
+    }
+
+    plugin_config_path, _ = adapter.write_hermes_relay_plugin_config(payload)
+
+    with plugin_config_path.open("rb") as stream:
+        staged_observability = tomllib.load(stream)["components"][0]["config"]
+    assert staged_observability["version"] == 3
+    assert staged_observability["opentelemetry"] == {
+        "enabled": True,
+        "endpoints": [
+            {
+                "type": "full",
+                "endpoint": "https://otel.example/v1/traces",
+                "service_name": "fabric",
+            },
+            {
+                "type": "openinference",
+                "endpoint": "https://openinference.example/v1/traces",
+                "service_name": "fabric",
+            },
+        ],
+    }
 
 
 async def test_runtime_start_stages_upstream_relay_plugin_configuration(
