@@ -479,7 +479,10 @@ async def _run_claude_mcp_command(
         async with asyncio.timeout(timeout):
             while process.returncode is None:
                 try:
-                    output.extend(os.read(master, 65536))
+                    chunk = os.read(master, 65536)
+                    if not chunk:
+                        break
+                    output.extend(chunk)
                 except BlockingIOError:
                     await asyncio.sleep(0.05)
                 except OSError:
@@ -487,7 +490,10 @@ async def _run_claude_mcp_command(
             await process.wait()
             while True:
                 try:
-                    output.extend(os.read(master, 65536))
+                    chunk = os.read(master, 65536)
+                    if not chunk:
+                        break
+                    output.extend(chunk)
                 except (BlockingIOError, OSError):
                     break
     except BaseException:
