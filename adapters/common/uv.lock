@@ -344,7 +344,7 @@ mcp-oauth = [
 [package.metadata]
 requires-dist = [
     { name = "httpx", marker = "extra == 'mcp-oauth'", specifier = ">=0.27,<1" },
-    { name = "mcp", marker = "extra == 'mcp-oauth'", specifier = ">=1.28.1,<1.29" },
+    { name = "mcp", marker = "extra == 'mcp-oauth'", specifier = ">=1.26,<1.29" },
 ]
 provides-extras = ["mcp-oauth"]
 
