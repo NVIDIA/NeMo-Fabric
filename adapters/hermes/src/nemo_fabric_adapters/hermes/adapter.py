@@ -363,10 +363,10 @@ class HermesRuntime:
                 # Hermes 0.12+ no longer discovers MCP tools as an import side effect
                 # (#16856). Fabric is a Hermes host: discover after config.yaml exists
                 # and before AIAgent resolves mcp-* toolsets.
-                # discover_mcp_tools uses a blocking 120s wait so run it in a loop
+                # discover_mcp_tools uses a blocking 120s wait, wrapping it in 
+                # asyncio.to_thread to avoid blocking the loop.
                 if self._hermes_config.get("mcp_servers"):
                     from tools.mcp_tool import discover_mcp_tools
-
                     await asyncio.to_thread(discover_mcp_tools)
 
                 self._enabled_toolsets = resolve_hermes_toolsets(
@@ -639,6 +639,8 @@ class HermesRuntime:
             try:
                 from tools.mcp_tool import shutdown_mcp_servers
 
+                # wrapping this blocking call in asyncio.to_thread to avoid
+                # blocking the loop.
                 await asyncio.to_thread(shutdown_mcp_servers)
             except BaseException as error:
                 errors.append(error)

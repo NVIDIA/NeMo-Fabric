@@ -196,7 +196,7 @@ def claude_payload_fixture(tmp_path) -> dict[str, Any]:
                         "transport": "stdio",
                         "url": "repo-mcp",
                         "args": ["--root", ".", "--config", "repo config.json"],
-                        "env": {"REPO_MCP_MODE": "test"},
+                        "env": {"REPO_MCP_MODE": "mcp-secret-value"},
                         "exposure": "harness_native",
                     },
                     "docs": {
@@ -237,14 +237,28 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     }
     assert (plugin_path / "skills" / "review" / "SKILL.md").read_text() == "# Review\n"
     assert options.strict_mcp_config is True
-    assert options.mcp_servers == {
-        "docs": {"type": "http", "url": "https://mcp.example.test"},
-        "repo": {
-            "type": "stdio",
-            "command": "repo-mcp",
-            "args": ["--root", ".", "--config", "repo config.json"],
-            "env": {"REPO_MCP_MODE": "test"},
-        },
+    assert isinstance(options.mcp_servers, Path)
+    if os.name != "nt":
+        assert options.mcp_servers.stat().st_mode & 0o777 == 0o600
+        assert options.mcp_servers.parent.stat().st_mode & 0o777 == 0o700
+    serialized_mcp = options.mcp_servers.read_text(encoding="utf-8")
+    assert "mcp-secret-value" not in serialized_mcp
+    mcp_config = json.loads(serialized_mcp)
+    projected_value = mcp_config["mcpServers"]["repo"]["env"]["REPO_MCP_MODE"]
+    assert projected_value.startswith("${NEMO_FABRIC_CLAUDE_MCP_")
+    assert projected_value.endswith("}")
+    projected_name = projected_value[2:-1]
+    assert options.env[projected_name] == "mcp-secret-value"
+    assert mcp_config == {
+        "mcpServers": {
+            "docs": {"type": "http", "url": "https://mcp.example.test"},
+            "repo": {
+                "type": "stdio",
+                "command": "repo-mcp",
+                "args": ["--root", ".", "--config", "repo config.json"],
+                "env": {"REPO_MCP_MODE": projected_value},
+            },
+        }
     }
     assert "NEMO_RELAY_GATEWAY_URL" not in options.env
     assert "ANTHROPIC_BASE_URL" not in options.env
@@ -827,6 +841,9 @@ async def test_claude_runtime_reuses_one_connected_sdk_client(
     start_payload.pop("request")
     runtime = adapter.ClaudeRuntime()
     await runtime.start(start_payload)
+    mcp_config_path = clients[0].options.mcp_servers
+    assert isinstance(mcp_config_path, Path)
+    assert mcp_config_path.exists()
     first = await runtime.invoke(lifecycle_invocation(claude_payload))
     claude_payload["runtime_context"]["invocation_id"] = "invocation-2"
     claude_payload["request"]["input"] = {"not": "text"}
@@ -836,6 +853,7 @@ async def test_claude_runtime_reuses_one_connected_sdk_client(
     second = await runtime.invoke(lifecycle_invocation(claude_payload))
     await runtime.stop()
 
+    assert not mcp_config_path.exists()
     assert len(clients) == 1
     assert clients[0].connect_count == 1
     assert clients[0].disconnect_count == 1
@@ -844,6 +862,32 @@ async def test_claude_runtime_reuses_one_connected_sdk_client(
     assert second["response"] == "done-2"
     assert invalid["error"]["code"] == "claude_invalid_request"
     assert first["session_id"] == second["session_id"] == "claude-session"
+
+
+async def test_claude_runtime_removes_mcp_config_after_failed_sdk_connect(
+    claude_payload, monkeypatch
+):
+    staged_paths: list[Path] = []
+
+    class FailingClient:
+        def __init__(self, options):
+            assert isinstance(options.mcp_servers, Path)
+            assert options.mcp_servers.exists()
+            staged_paths.append(options.mcp_servers)
+
+        async def connect(self):
+            raise CLIConnectionError("connection failed")
+
+    monkeypatch.setattr(adapter, "ClaudeSDKClient", FailingClient)
+    start_payload = dict(claude_payload)
+    start_payload.pop("request")
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.ClaudeRuntime().start(start_payload)
+
+    assert caught.value.code == "claude_connection_failed"
+    assert len(staged_paths) == 1
+    assert not staged_paths[0].exists()
 
 
 async def test_claude_runtime_owns_one_relay_gateway_until_stop(

@@ -820,7 +820,7 @@ pub struct McpServerConfig {
     pub transport: McpTransport,
     /// MCP server URL or process command (when transport=stdio), depending on transport.
     pub url: String,
-    /// Arguments passed to an MCP stdio server process.
+    /// Command-line arguments passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     /// Environment variables passed to an MCP stdio server process.
@@ -2934,9 +2934,9 @@ pub enum CapabilityTarget {
 pub struct McpServerPlan {
     /// MCP transport.
     pub transport: String,
-    /// MCP URL or command.
+    /// MCP server URL for network transports or executable for stdio.
     pub url: String,
-    /// Arguments passed to an MCP stdio server process.
+    /// Command-line arguments passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     /// Environment variables passed to an MCP stdio server process.

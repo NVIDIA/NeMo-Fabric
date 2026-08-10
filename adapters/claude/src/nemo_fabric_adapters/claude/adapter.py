@@ -106,6 +106,14 @@ class ClaudeRelaySettings:
     plugin_path: Path
 
 
+@dataclass(frozen=True)
+class ClaudeMcpSettings:
+    """Staged MCP configuration and its process-only environment values."""
+
+    config_path: Path
+    environment: dict[str, str]
+
+
 class ClaudeAdapterError(Exception):
     """Expected adapter error with a stable public code."""
 
@@ -570,6 +578,85 @@ async def _login_mcp_server(
             f"Claude Code could not authenticate MCP server {name!r}",
             metadata={"server": name},
         )
+def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
+    # Dictionary-valued ClaudeAgentOptions.mcp_servers are JSON-serialized by
+    # claude-agent-sdk into the literal `--mcp-config` command-line argument,
+    # where MCP credentials can be observed by process-inspection tools. Passing
+    # a Path puts only the filename in argv. We also replace each credential with
+    # a generated ${VAR} reference and provide its value through the deliberately
+    # scoped child environment. This extra mapping keeps credentials out of the
+    # staged file if the process is terminated before runtime cleanup can remove
+    # it. The file remains owner-only as defense in depth and is retained until
+    # the SDK client disconnects normally.
+    servers = _mcp_servers(payload)
+    if not servers:
+        return None
+    fabric_runtime_id = runtime_id(payload)
+    environment: dict[str, str] = {}
+    for server_name, server in servers.items():
+        raw_environment = server.get("env")
+        if raw_environment is None:
+            continue
+        server_environment = _mapping(
+            raw_environment,
+            name=f"MCP server {server_name} env",
+        )
+        projected_environment: dict[str, str] = {}
+        for variable_name, value in sorted(server_environment.items()):
+            if not isinstance(variable_name, str) or not variable_name:
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    f"MCP server {server_name} env names must be non-empty strings",
+                )
+            if not isinstance(value, str):
+                raise AdapterConfigError(
+                    "claude_invalid_configuration",
+                    f"MCP server {server_name} env values must be strings",
+                )
+            projection_key = sha256(
+                f"{fabric_runtime_id}\0{server_name}\0{variable_name}".encode()
+            ).hexdigest().upper()
+            projected_name = f"NEMO_FABRIC_CLAUDE_MCP_{projection_key}"
+            projected_environment[variable_name] = f"${{{projected_name}}}"
+            environment[projected_name] = value
+        server["env"] = projected_environment
+
+    config_root = (
+        _artifact_root(payload)
+        / ".fabric"
+        / "claude"
+        / "mcp"
+        / sha256(fabric_runtime_id.encode()).hexdigest()
+    )
+    if config_root.exists():
+        shutil.rmtree(config_root)
+    config_root.mkdir(parents=True, mode=0o700)
+    config_root.chmod(0o700)
+    config_path = config_root / "mcp.json"
+
+    try:
+        descriptor = os.open(
+            config_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump({"mcpServers": servers}, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+    except BaseException:
+        shutil.rmtree(config_root, ignore_errors=True)
+        raise
+    return ClaudeMcpSettings(config_path=config_path, environment=environment)
+
+
+def _cleanup_mcp_config(config_path: Path | None) -> None:
+    if config_path is None:
+        return
+    try:
+        config_path.unlink(missing_ok=True)
+        config_path.parent.rmdir()
+    except OSError:
+        LOGGER.exception("Claude MCP runtime configuration could not be removed")
 
 
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
@@ -805,29 +892,37 @@ def build_options(
     if relay is not None:
         plugins.append({"type": "local", "path": str(relay.plugin_path)})
 
-    return ClaudeAgentOptions(
-        cwd=resolve_cwd(payload),
-        model=selected_model(payload),
-        system_prompt=system_prompt,
-        tools=enabled_tools,
-        allowed_tools=allowed_tools,
-        disallowed_tools=common_utils.blocked_tools(payload),
-        hooks=tool_policy_hooks(payload),
-        permission_mode=permission_mode,
-        max_turns=max_turns,
-        max_budget_usd=max_budget,
-        setting_sources=sources,
-        cli_path=_resolve_path(payload, cli_path) if cli_path else None,
-        mcp_servers=_mcp_servers(payload),
-        strict_mcp_config=True,
-        skills="all" if has_skill_plugin else None,
-        plugins=plugins,
-        env=child_environment(
-            payload,
-            relay_gateway_url=relay.gateway.url if relay is not None else None,
-        ),
-        stderr=discard_stderr,
+    environment = child_environment(
+        payload,
+        relay_gateway_url=relay.gateway.url if relay is not None else None,
     )
+    mcp = _stage_mcp_config(payload)
+    if mcp is not None:
+        environment.update(mcp.environment)
+    try:
+        return ClaudeAgentOptions(
+            cwd=resolve_cwd(payload),
+            model=selected_model(payload),
+            system_prompt=system_prompt,
+            tools=enabled_tools,
+            allowed_tools=allowed_tools,
+            disallowed_tools=common_utils.blocked_tools(payload),
+            hooks=tool_policy_hooks(payload),
+            permission_mode=permission_mode,
+            max_turns=max_turns,
+            max_budget_usd=max_budget,
+            setting_sources=sources,
+            cli_path=_resolve_path(payload, cli_path) if cli_path else None,
+            mcp_servers=mcp.config_path if mcp is not None else {},
+            strict_mcp_config=True,
+            skills="all" if has_skill_plugin else None,
+            plugins=plugins,
+            env=environment,
+            stderr=discard_stderr,
+        )
+    except BaseException:
+        _cleanup_mcp_config(mcp.config_path if mcp is not None else None)
+        raise
 
 
 def timeout_seconds(payload: dict[str, Any]) -> float:
@@ -1094,6 +1189,7 @@ class ClaudeRuntime:
         self._mcp_authentication_checked = False
         self._relay: ClaudeRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
+        self._mcp_config_path: Path | None = None
         self._unusable = False
 
     async def start(self, payload: dict[str, Any]) -> None:
@@ -1108,8 +1204,13 @@ class ClaudeRuntime:
             self._relay = relay
             self._gateway_process = _start_relay_gateway(payload, relay)
             options = build_options(payload, relay=relay)
+
             if _authenticated_mcp_servers(payload):
                 options.cli_path = _claude_cli_path(options)
+
+            if isinstance(options.mcp_servers, Path):
+                self._mcp_config_path = options.mcp_servers
+
             client = ClaudeSDKClient(options)
             await client.connect()
         except ClaudeAdapterError as error:
@@ -1363,6 +1464,8 @@ class ClaudeRuntime:
             cleanup_error = _cleanup_relay(self._relay, self._gateway_process)
             self._relay = None
             self._gateway_process = None
+            _cleanup_mcp_config(self._mcp_config_path)
+            self._mcp_config_path = None
         if isinstance(disconnect_error, asyncio.CancelledError):
             raise disconnect_error
         if disconnect_error is not None:
@@ -1382,6 +1485,8 @@ class ClaudeRuntime:
         cleanup_error = _cleanup_relay(self._relay, self._gateway_process)
         self._relay = None
         self._gateway_process = None
+        _cleanup_mcp_config(self._mcp_config_path)
+        self._mcp_config_path = None
         if cleanup_error is not None:
             LOGGER.error(
                 "Claude runtime cleanup after start failure also failed: %s",

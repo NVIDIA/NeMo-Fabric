@@ -411,8 +411,17 @@ class McpServerConfig(FabricBaseModel):
     """MCP server configuration."""
 
     transport: str = Field(min_length=1)
-    url: str = Field(min_length=1)
-    args: list[str] = Field(default_factory=list, exclude_if=lambda value: not value)
+    url: str = Field(
+        min_length=1,
+        description=(
+            "MCP server URL for network transports or executable for stdio."
+        ),
+    )
+    args: list[str] = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+        description="Command-line arguments passed to an MCP stdio server process.",
+    )
     env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
     authentication: McpAuthenticationConfig | None = Field(
         default=None, exclude_if=lambda value: value is None
@@ -485,7 +494,11 @@ class McpConfig(FabricBaseModel):
         blocked_tools: Sequence[str] = (),
         extra_fields: Mapping[str, Any] | None = None,
     ) -> Self:
-        """Add or replace a named MCP server."""
+        """Add or replace a named MCP server.
+
+        For stdio, set ``url`` to the executable and pass each command-line
+        argument as a separate ``args`` element.
+        """
 
         extensions = dict(extra_fields or {})
         legacy_args = extensions.pop("args", ())
@@ -845,7 +858,11 @@ class FabricConfig(FabricBaseModel):
         blocked_tools: Sequence[str] = (),
         extra_fields: Mapping[str, Any] | None = None,
     ) -> Self:
-        """Add or replace a named MCP server and return this config."""
+        """Add or replace a named MCP server and return this config.
+
+        For stdio, set ``url`` to the executable and pass each command-line
+        argument as a separate ``args`` element.
+        """
 
         if self.mcp is None:
             self.mcp = McpConfig()
