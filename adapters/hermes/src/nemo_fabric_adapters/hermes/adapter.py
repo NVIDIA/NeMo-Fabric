@@ -447,10 +447,11 @@ class HermesRuntime:
                 conversation_history=self._conversation_history,
             )
             if self._relay_plugin_config is not None:
-                # Relay 0.7 writes TOML-configured ATIF at the upstream Hermes
-                # session-finalization boundary. Fabric defines each invoke as
-                # an artifact-complete boundary, so finalize through Hermes'
-                # lifecycle instead of reaching into Relay directly.
+                # Hermes writes TOML-configured ATIF at its session-finalization
+                # boundary for every supported Relay version. Fabric defines
+                # each invoke as an artifact-complete boundary, so finalize
+                # through Hermes' lifecycle instead of reaching into Relay
+                # directly.
                 from hermes_cli.lifecycle import finalize_session
 
                 finalize_session(
