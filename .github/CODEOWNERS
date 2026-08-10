@@ -8,4 +8,5 @@
 ATTRIBUTIONS-*.md @nvidia/nat-dep-approvers
 
 # Documentation changes must go to technical writers and NAT developers.
-docs/ @nvidia/NeMo-Fabric-doc-approvers @nvidia/NAT-developers
+/docs/ @nvidia/NeMo-Fabric-doc-approvers @nvidia/NAT-developers
+/docs/reference/api/ @nvidia/NAT-developers
