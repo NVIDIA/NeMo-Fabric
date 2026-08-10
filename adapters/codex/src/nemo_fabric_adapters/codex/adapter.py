@@ -195,12 +195,6 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             )
         normalized_transport = transport.strip().lower().replace("_", "-")
         if normalized_transport == "stdio":
-            try:
-                mcp_auth.validate_stdio_options(name, server)
-            except mcp_auth.McpAuthConfigError as error:
-                raise AdapterConfigError(
-                    "codex_invalid_configuration", str(error)
-                ) from error
             result[name] = {
                 "command": target,
                 "args": common_utils.normalize_list(server.get("args")),

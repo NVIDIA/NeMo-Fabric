@@ -166,10 +166,6 @@ def hermes_mcp_server_config(
         raise ValueError("MCP server mapping requires a URL")
 
     if transport == "stdio":
-        try:
-            mcp_auth.validate_stdio_options(name, server)
-        except mcp_auth.McpAuthConfigError as error:
-            raise ValueError(str(error)) from error
         return common_utils.without_none(
             {
                 "enabled": True,
@@ -363,10 +359,11 @@ class HermesRuntime:
                 # Hermes 0.12+ no longer discovers MCP tools as an import side effect
                 # (#16856). Fabric is a Hermes host: discover after config.yaml exists
                 # and before AIAgent resolves mcp-* toolsets.
-                # discover_mcp_tools uses a blocking 120s wait, wrapping it in 
+                # discover_mcp_tools uses a blocking 120s wait, wrapping it in
                 # asyncio.to_thread to avoid blocking the loop.
                 if self._hermes_config.get("mcp_servers"):
                     from tools.mcp_tool import discover_mcp_tools
+
                     await asyncio.to_thread(discover_mcp_tools)
 
                 self._enabled_toolsets = resolve_hermes_toolsets(

@@ -309,12 +309,6 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 "claude_invalid_configuration", "MCP server URL is required"
             )
         if transport == "stdio":
-            try:
-                mcp_auth.validate_stdio_options(name, server)
-            except mcp_auth.McpAuthConfigError as error:
-                raise AdapterConfigError(
-                    "claude_invalid_configuration", str(error)
-                ) from error
             result[name] = {
                 "type": "stdio",
                 "command": url,
@@ -578,6 +572,8 @@ async def _login_mcp_server(
             f"Claude Code could not authenticate MCP server {name!r}",
             metadata={"server": name},
         )
+
+
 def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
     # Dictionary-valued ClaudeAgentOptions.mcp_servers are JSON-serialized by
     # claude-agent-sdk into the literal `--mcp-config` command-line argument,
@@ -613,9 +609,11 @@ def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
                     "claude_invalid_configuration",
                     f"MCP server {server_name} env values must be strings",
                 )
-            projection_key = sha256(
-                f"{fabric_runtime_id}\0{server_name}\0{variable_name}".encode()
-            ).hexdigest().upper()
+            projection_key = (
+                sha256(f"{fabric_runtime_id}\0{server_name}\0{variable_name}".encode())
+                .hexdigest()
+                .upper()
+            )
             projected_name = f"NEMO_FABRIC_CLAUDE_MCP_{projection_key}"
             projected_environment[variable_name] = f"${{{projected_name}}}"
             environment[projected_name] = value

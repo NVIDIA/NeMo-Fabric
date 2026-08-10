@@ -220,19 +220,6 @@ def parse_service_account_config(
     )
 
 
-def validate_stdio_options(server_name: str, server: Mapping[str, Any]) -> None:
-    """Reject HTTP-only MCP options on a stdio server."""
-
-    if server.get("authentication"):
-        raise McpAuthConfigError(
-            f"MCP server {server_name!r} authentication is not supported for stdio transport"
-        )
-    if server.get("custom_headers"):
-        raise McpAuthConfigError(
-            f"MCP server {server_name!r} custom_headers are not supported for stdio transport"
-        )
-
-
 def normalize_custom_headers(server_name: str, value: Any) -> dict[str, str]:
     """Validate and stringify an MCP custom-header mapping."""
 

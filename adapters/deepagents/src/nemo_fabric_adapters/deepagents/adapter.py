@@ -289,10 +289,6 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
             f"MCP server '{name}' requires a url (or command in url)."
         )
     if transport in ("stdio", "command", "process"):
-        try:
-            mcp_auth.validate_stdio_options(name, spec)
-        except mcp_auth.McpAuthConfigError as error:
-            raise AdapterConfigError(f"{error}.") from error
         connection: dict[str, Any] = {
             "transport": "stdio",
             "command": target,

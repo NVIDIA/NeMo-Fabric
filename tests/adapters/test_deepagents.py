@@ -657,18 +657,6 @@ async def test_mcp_servers_become_adapter_tools(
     assert tool_names == ["read_file", "write_file"]
 
 
-def test_deepagents_rejects_mcp_authentication_for_stdio():
-    with pytest.raises(adapter.AdapterConfigError, match="authentication.*stdio"):
-        adapter._mcp_connection(
-            "local",
-            {
-                "transport": "stdio",
-                "url": "mcp-server",
-                "authentication": {"type": "oauth2"},
-            },
-        )
-
-
 def test_deepagents_maps_service_account_authentication(monkeypatch):
     mock_auth = MagicMock(name="service_account_auth")
     create_auth = MagicMock(return_value=mock_auth)

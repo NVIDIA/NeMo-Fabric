@@ -459,17 +459,6 @@ def test_hermes_maps_http_mcp_headers_and_oauth():
     }
 
 
-def test_hermes_rejects_mcp_authentication_for_stdio():
-    with pytest.raises(ValueError, match="authentication is not supported for stdio"):
-        adapter.hermes_mcp_server_config(
-            {
-                "transport": "stdio",
-                "url": "mcp-server",
-                "authentication": {"type": "oauth2"},
-            }
-        )
-
-
 def test_hermes_rejects_mcp_service_account_authentication():
     with pytest.raises(ValueError, match="service_account"):
         adapter.hermes_mcp_server_config(
@@ -679,9 +668,7 @@ async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
 
     runtime = adapter.HermesRuntime()
     runtime._agent = MagicMock()
-    runtime._hermes_config = {
-        "mcp_servers": {"confluence": {"auth": "oauth"}}
-    }
+    runtime._hermes_config = {"mcp_servers": {"confluence": {"auth": "oauth"}}}
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         await runtime._authenticate_mcp_servers()
@@ -880,9 +867,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         "base_dir": str(tmp_path),
         "config": {
             "harness": {"settings": {}},
-            "instructions": {
-                "system": {"content": "system", "mode": "replace"}
-            },
+            "instructions": {"system": {"content": "system", "mode": "replace"}},
             "runtime": {"max_turns": None},
             "tools": {"enabled": []},
             "models": {

@@ -57,12 +57,6 @@ def test_parse_oauth2_config_rejects_unsupported_authentication(value):
         mcp_auth.parse_oauth2_config("docs", value)
 
 
-@pytest.mark.parametrize("field", ["authentication", "custom_headers"])
-def test_validate_stdio_options_rejects_http_only_fields(field):
-    with pytest.raises(mcp_auth.McpAuthConfigError, match=field):
-        mcp_auth.validate_stdio_options("local", {field: {"type": "oauth2"}})
-
-
 def test_normalize_custom_headers_requires_mapping():
     with pytest.raises(mcp_auth.McpAuthConfigError, match="must be a mapping"):
         mcp_auth.normalize_custom_headers("docs", ["X-Tenant", "fabric"])
