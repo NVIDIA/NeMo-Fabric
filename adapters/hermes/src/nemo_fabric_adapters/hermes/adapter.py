@@ -322,8 +322,6 @@ class HermesRuntime:
         self._agent: Any = None
         self._relay_plugin_config: dict[str, Any] | None = None
         self._relay_plugin_config_path: Path | None = None
-        self._previous_relay_environment: dict[str, str | None] = {}
-        self._applied_relay_environment: dict[str, str | None] = {}
         self._active_invoke_task: asyncio.Task[tuple[dict[str, Any], str]] | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
@@ -359,22 +357,11 @@ class HermesRuntime:
                     self._relay_plugin_config_path,
                     self._relay_plugin_config,
                 ) = write_hermes_relay_plugin_config(payload)
-                relay_environment = {
-                    "HERMES_NEMO_RELAY_PLUGINS_TOML": str(
-                        self._relay_plugin_config_path
-                    )
-                }
-                self._previous_relay_environment = {
-                    name: os.environ.get(name) for name in HERMES_RELAY_ENV_NAMES
-                }
-                self._applied_relay_environment = {}
                 for name in HERMES_RELAY_ENV_NAMES:
-                    value = relay_environment.get(name)
-                    if value is None:
-                        os.environ.pop(name, None)
-                    else:
-                        os.environ[name] = value
-                    self._applied_relay_environment[name] = value
+                    os.environ.pop(name, None)
+                os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = str(
+                    self._relay_plugin_config_path
+                )
 
             self._hermes_config_path, self._hermes_config = write_hermes_config(
                 payload,
@@ -576,8 +563,7 @@ class HermesRuntime:
         agent = self._agent
         session_db = self._session_db
         had_mcp_servers = bool(self._hermes_config.get("mcp_servers"))
-        previous_relay_environment = self._previous_relay_environment
-        applied_relay_environment = self._applied_relay_environment
+        had_relay_plugin = self._relay_plugin_config_path is not None
         self._agent = None
         self._session_db = None
         self._start_payload = None
@@ -592,19 +578,11 @@ class HermesRuntime:
         self._conversation_history = None
         self._relay_plugin_config = None
         self._relay_plugin_config_path = None
-        self._previous_relay_environment = {}
-        self._applied_relay_environment = {}
         self._started = False
 
-        for name, applied_value in applied_relay_environment.items():
-            current_value = os.environ.get(name)
-            if current_value != applied_value:
-                continue
-            previous_value = previous_relay_environment.get(name)
-            if previous_value is None:
+        if had_relay_plugin:
+            for name in HERMES_RELAY_ENV_NAMES:
                 os.environ.pop(name, None)
-            else:
-                os.environ[name] = previous_value
 
         if had_mcp_servers:
             try:

@@ -227,13 +227,8 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
         raise RuntimeError("stop after Relay plugin staging")
 
     monkeypatch.setattr(adapter, "write_hermes_config", stop_after_staging)
-    inherited_relay_environment = {
-        name: f"before-{index}"
-        for index, name in enumerate(adapter.HERMES_RELAY_ENV_NAMES)
-        if name != "HERMES_NEMO_RELAY_PLUGINS_TOML"
-    }
-    for name, value in inherited_relay_environment.items():
-        monkeypatch.setenv(name, value)
+    for name in adapter.HERMES_RELAY_ENV_NAMES:
+        monkeypatch.setenv(name, "before")
     payload = {
         "base_dir": str(tmp_path),
         "config": {
@@ -251,10 +246,7 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     with pytest.raises(RuntimeError, match="stop after Relay plugin staging"):
         await adapter.HermesRuntime().start(payload)
 
-    assert "HERMES_NEMO_RELAY_PLUGINS_TOML" not in os.environ
-    assert {
-        name: os.environ[name] for name in inherited_relay_environment
-    } == inherited_relay_environment
+    assert all(name not in os.environ for name in adapter.HERMES_RELAY_ENV_NAMES)
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
