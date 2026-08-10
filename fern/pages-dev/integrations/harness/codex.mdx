@@ -103,7 +103,8 @@ config.add_skill_path("./skills/code-review")
 config.add_mcp_server(
     "repo",
     transport="stdio",
-    url="repo-mcp --root .",
+    url="repo-mcp",
+    args=["--root", "."],
     exposure="harness_native",
 )
 config.add_mcp_server(
