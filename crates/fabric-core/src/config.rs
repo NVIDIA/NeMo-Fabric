@@ -2688,8 +2688,6 @@ pub struct McpServerPlan {
     /// MCP transport.
     pub transport: String,
     /// MCP server URL for network transports or executable for stdio.
-    ///
-    /// Do not include command-line arguments; pass them in `args`.
     pub url: String,
     /// Command-line arguments passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
