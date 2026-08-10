@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from nemo_fabric_adapter_contract.models import AgentConfig
 
 if sys.version_info >= (3, 14):
     pytest.skip(
@@ -57,7 +58,10 @@ async def test_relay_invocation_scope_carries_fabric_request_id(
     events: list[str] = []
     runtime = adapter.HermesRuntime()
     runtime._started = True
-    runtime._start_payload = {}
+    runtime._agent_config = AgentConfig.from_mapping(
+        {"models": {"default": {"provider": "nvidia", "model": "test-model"}}}
+    )
+    runtime._model_config = runtime._agent_config.models["default"]
     runtime._runtime_id = "runtime-1"
     runtime._agent = SimpleNamespace(
         session_id="runtime-1",

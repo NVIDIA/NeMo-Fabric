@@ -22,9 +22,15 @@ if importlib.util.find_spec("run_agent") is not None:
     from hermes_state import SessionDB
     from run_agent import AIAgent
 
+    from nemo_fabric_adapter_contract.models import AgentConfig
+    from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
     import nemo_fabric_adapters.common.utils as common_utils
 
     from nemo_fabric_adapters.hermes import adapter
+
+
+def _agent_config(value: dict[str, object]) -> AgentConfig:
+    return AgentConfig.from_mapping(value)
 
 
 @pytest.mark.parametrize("providers", [None, {"relay": {}}])
@@ -56,6 +62,27 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
         ValueError, match="only relay telemetry is supported for Hermes"
     ):
         adapter.validate_hermes_telemetry_provider(payload)
+
+
+def test_descriptor_uses_the_typed_agent_config_contract():
+    descriptor_path = (
+        Path(__file__).parents[2] / "adapters" / "hermes" / "fabric-adapter.json"
+    )
+    descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
+
+    assert descriptor["contract_version"] == "fabric.adapter/v1alpha2"
+    assert descriptor["config"]["input"] == "agent_config"
+    assert descriptor["config"]["accepts"] == [
+        "models",
+        "models.base_url",
+        "models.temperature",
+        "instructions.system",
+        "runtime.max_turns",
+        "tools.enabled",
+        "tools.blocked",
+        "mcp",
+        "skills",
+    ]
 
 
 def test_finalize_relay_session_flushes_before_artifact_collection(monkeypatch):
@@ -163,22 +190,8 @@ async def test_stop_retries_failed_relay_flush_without_refinalizing(monkeypatch)
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
     os.environ["MCP_URL"] = "http://localhost:9000/mcp"
-    payload = {
-        "runtime_context": {"environment": {"workspace": "/workspace/repo"}},
-        "capability_plan": {
-            "native": {
-                "skill_paths": ["skills/review"],
-                "mcp_servers": {
-                    "github": {
-                        "transport": "stdio",
-                        "url": "github-mcp",
-                        "args": ["--stdio"],
-                    },
-                    "memory": {"transport": "sse", "url": "${MCP_URL}"},
-                },
-            }
-        },
-        "config": {
+    agent_config = _agent_config(
+        {
             "harness": {
                 "settings": {
                     "terminal_timeout": 90,
@@ -197,10 +210,24 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
                     "base_url": "https://model.example/v1",
                 }
             },
-        },
-    }
-
-    config = adapter.build_hermes_config(payload, relay_enabled=True)
+            "skills": {"paths": ["skills/review"]},
+            "mcp": {
+                "servers": {
+                    "github": {
+                        "transport": "stdio",
+                        "url": "github-mcp",
+                        "args": ["--stdio"],
+                    },
+                    "memory": {"transport": "sse", "url": "${MCP_URL}"},
+                }
+            },
+        }
+    )
+    config = adapter.build_hermes_config(
+        agent_config,
+        workspace="/workspace/repo",
+        relay_enabled=True,
+    )
 
     assert config == {
         "model": {
@@ -250,14 +277,14 @@ def test_default_max_iterations_matches_hermes_library_default():
 def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
     # When max_turns is unset the config layer must leave agent.max_turns
     # absent so Hermes applies its own default rather than a starving override.
-    payload = {
-        "config": {
+    agent_config = _agent_config(
+        {
             "harness": {"settings": {}},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
-    }
+    )
 
-    config = adapter.build_hermes_config(payload)
+    config = adapter.build_hermes_config(agent_config)
 
     assert "max_turns" not in config["agent"]
 
@@ -265,15 +292,15 @@ def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
 def test_build_hermes_config_omits_max_turns_when_fabric_limit_null():
     # An explicit null max_turns is treated like unset: agent.max_turns is
     # omitted so Hermes applies its own default instead of a starving override.
-    payload = {
-        "config": {
+    agent_config = _agent_config(
+        {
             "harness": {"settings": {}},
             "runtime": {"max_turns": None},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
-    }
+    )
 
-    config = adapter.build_hermes_config(payload)
+    config = adapter.build_hermes_config(agent_config)
 
     assert "max_turns" not in config["agent"]
 
@@ -313,27 +340,11 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             },
             "telemetry": {"relay_enabled": True},
         },
-        "capability_plan": {
-            "native": {
-                "skill_paths": [tmp_path / "skills" / "review"],
-                "mcp_servers": {
-                    "github": {
-                        "transport": "stdio",
-                        "url": "github-mcp",
-                        "args": ["--stdio"],
-                        "exposure": "harness_native",
-                    },
-                    "memory": {
-                        "transport": "streamable-http",
-                        "url": "https://mcp.example/memory",
-                        "exposure": "harness_native",
-                    },
-                },
-            }
-        },
         "agent_name": "matrix-agent",
         "base_dir": str(tmp_path),
-        "config": {
+    }
+    agent_config = _agent_config(
+        {
             "harness": {"settings": {}},
             "tools": {"enabled": ["git", "shell"]},
             "models": {
@@ -342,10 +353,29 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
                     "model": "nvidia/review-model",
                 }
             },
-        },
-    }
+            "skills": {"paths": [tmp_path / "skills" / "review"]},
+            "mcp": {
+                "servers": {
+                    "github": {
+                        "transport": "stdio",
+                        "url": "github-mcp",
+                        "args": ["--stdio"],
+                    },
+                    "memory": {
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example/memory",
+                    },
+                }
+            },
+        }
+    )
+    payload["config"] = agent_config.to_mapping()
 
-    config = adapter.build_hermes_config(payload, relay_enabled=True)
+    config = adapter.build_hermes_config(
+        agent_config,
+        workspace=str(tmp_path / "workspace"),
+        relay_enabled=True,
+    )
     plugin_config = common_utils.load_relay_plugin_config(payload)
     observability = plugin_config["components"][0]["config"]
 
@@ -379,30 +409,11 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     assert observability["atif"]["model_name"] == "nvidia/review-model"
 
 
-def test_build_hermes_config_maps_stdio_mcp_args_and_env_from_capability_plan(
+def test_build_hermes_config_maps_stdio_mcp_args_and_env_from_agent_config(
     tmp_path: Path,
 ):
-    payload = {
-        "runtime_context": {
-            "runtime_id": "runtime-mcp-env",
-            "environment": {"workspace": str(tmp_path / "workspace")},
-        },
-        "capability_plan": {
-            "native": {
-                "mcp_servers": {
-                    "analyzer": {
-                        "transport": "stdio",
-                        "url": str(tmp_path / "analyzer-mcp"),
-                        "exposure": "harness_native",
-                        "args": ["--stdio"],
-                        "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
-                    }
-                }
-            }
-        },
-        "agent_name": "mcp-env-agent",
-        "base_dir": str(tmp_path),
-        "config": {
+    agent_config = _agent_config(
+        {
             "harness": {"settings": {}},
             "models": {
                 "default": {
@@ -410,10 +421,23 @@ def test_build_hermes_config_maps_stdio_mcp_args_and_env_from_capability_plan(
                     "model": "nvidia/test-model",
                 }
             },
-        },
-    }
+            "mcp": {
+                "servers": {
+                    "analyzer": {
+                        "transport": "stdio",
+                        "url": str(tmp_path / "analyzer-mcp"),
+                        "args": ["--stdio"],
+                        "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
+                    }
+                }
+            },
+        }
+    )
 
-    config = adapter.build_hermes_config(payload)
+    config = adapter.build_hermes_config(
+        agent_config,
+        workspace=str(tmp_path / "workspace"),
+    )
 
     assert config["mcp_servers"] == {
         "analyzer": {
@@ -475,7 +499,14 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     payload = {
         "agent_name": "mcp-discover",
         "base_dir": str(tmp_path),
-        "config": {
+        "runtime_context": {
+            "runtime_id": "runtime-mcp-discover",
+            "environment": {"workspace": str(tmp_path)},
+            "artifacts": {"root": str(tmp_path / "artifacts")},
+        },
+    }
+    payload["config"] = _agent_config(
+        {
             "harness": {"settings": {}},
             "models": {
                 "default": {
@@ -485,25 +516,17 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
                 }
             },
             "tools": {"enabled": ["mcp-analyzer"]},
-        },
-        "runtime_context": {
-            "runtime_id": "runtime-mcp-discover",
-            "environment": {"workspace": str(tmp_path)},
-            "artifacts": {"root": str(tmp_path / "artifacts")},
-        },
-        "capability_plan": {
-            "native": {
-                "mcp_servers": {
+            "mcp": {
+                "servers": {
                     "analyzer": {
                         "transport": "stdio",
                         "url": str(tmp_path / "analyzer-mcp"),
-                        "exposure": "harness_native",
                         "env": {"NVIDIA_API_KEY": "${NVIDIA_API_KEY}"},
                     }
                 }
-            }
-        },
-    }
+            },
+        }
+    )
 
     runtime = adapter.HermesRuntime()
     await runtime.start(payload)
@@ -519,14 +542,17 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
 
 
 def test_write_hermes_config_writes_file(tmp_path: Path):
-    payload = {
-        "config": {
+    agent_config = _agent_config(
+        {
             "harness": {"settings": {}},
             "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}},
         }
-    }
+    )
 
-    config_path, config = adapter.write_hermes_config(payload, tmp_path / "hermes-home")
+    config_path, config = adapter.write_hermes_config(
+        agent_config,
+        tmp_path / "hermes-home",
+    )
 
     assert config_path == tmp_path / "hermes-home" / "config.yaml"
     assert config_path.exists()
@@ -538,39 +564,34 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     ("server", "expected"),
     [
         (
-            {"transport": "stdio", "url": "python3", "args": ["server.py"]},
+            AgentMcpServerConfig(
+                transport="stdio",
+                url="python3",
+                args=["server.py"],
+            ),
             {"enabled": True, "command": "python3", "args": ["server.py"]},
         ),
         (
-            {"transport": "sse", "url": "http://localhost:9000/sse"},
+            AgentMcpServerConfig(
+                transport="sse",
+                url="http://localhost:9000/sse",
+            ),
             {"enabled": True, "url": "http://localhost:9000/sse", "transport": "sse"},
         ),
         (
-            {"transport": "websocket", "url": "ws://localhost:9000"},
+            AgentMcpServerConfig(
+                transport="websocket",
+                url="ws://localhost:9000",
+            ),
             {"enabled": True, "url": "ws://localhost:9000", "transport": "websocket"},
         ),
     ],
 )
 def test_hermes_mcp_server_config(
-    server: dict[str, object],
+    server: AgentMcpServerConfig,
     expected: dict[str, object],
 ):
     assert adapter.hermes_mcp_server_config(server) == expected
-
-
-@pytest.mark.parametrize(
-    "server",
-    [
-        {"transport": "stdio"},
-        {"transport": "stdio", "command": "server --stdio"},
-        {"transport": "stdio", "url": "   "},
-    ],
-)
-def test_hermes_mcp_server_config_rejects_unsupported_mappings(
-    server: dict[str, str],
-):
-    with pytest.raises(ValueError, match="requires a URL"):
-        adapter.hermes_mcp_server_config(server)
 
 
 def test_summarize_hermes_config():
@@ -603,6 +624,20 @@ async def test_runtime_start_rejects_native_telemetry():
         await adapter.HermesRuntime().start(payload)
 
 
+async def test_runtime_start_requires_typed_agent_config():
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await adapter.HermesRuntime().start(
+            {
+                "config": {
+                    "models": {"default": {"provider": "nvidia", "model": "test-model"}}
+                },
+                "runtime_context": {"runtime_id": "runtime-untyped"},
+            }
+        )
+
+    assert caught.value.code == "hermes_invalid_config"
+
+
 async def test_runtime_start_overrides_inherited_terminal_environment(
     monkeypatch,
     tmp_path: Path,
@@ -616,16 +651,18 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
     monkeypatch.setattr(adapter, "write_hermes_config", stop_after_environment_setup)
     payload = {
         "base_dir": str(tmp_path),
-        "config": {
-            "harness": {"settings": {}},
-            "models": {"default": {"provider": "nvidia", "model": "test-model"}},
-        },
         "runtime_context": {
             "runtime_id": "runtime-terminal-env",
             "environment": {"workspace": str(tmp_path)},
             "artifacts": {"root": str(tmp_path / "artifacts")},
         },
     }
+    payload["config"] = _agent_config(
+        {
+            "harness": {"settings": {}},
+            "models": {"default": {"provider": "nvidia", "model": "test-model"}},
+        }
+    )
 
     with pytest.raises(RuntimeError, match="stop after environment setup"):
         await adapter.HermesRuntime().start(payload)
@@ -704,11 +741,19 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     payload = {
         "agent_name": "demo",
         "base_dir": str(tmp_path),
-        "config": {
+        "runtime_context": {
+            "runtime_id": "runtime-fabric-123",
+            "environment": {"workspace": str(tmp_path)},
+        },
+        "request": {
+            "input": "hello",
+            "context": {"history": [{"role": "user", "content": "stale"}]},
+        },
+    }
+    payload["config"] = _agent_config(
+        {
             "harness": {"settings": {}},
-            "instructions": {
-                "system": {"content": "system", "mode": "replace"}
-            },
+            "instructions": {"system": {"content": "system", "mode": "replace"}},
             "runtime": {"max_turns": None},
             "tools": {"enabled": []},
             "models": {
@@ -719,17 +764,8 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
                     "temperature": 0.2,
                 }
             },
-        },
-        "runtime_context": {
-            "runtime_id": "runtime-fabric-123",
-            "environment": {"workspace": str(tmp_path)},
-        },
-        "request": {
-            "input": "hello",
-            "context": {"history": [{"role": "user", "content": "stale"}]},
-        },
-        "capability_plan": {"native": {}},
-    }
+        }
+    )
 
     start_payload = {key: value for key, value in payload.items() if key != "request"}
     runtime = adapter.HermesRuntime()
@@ -787,7 +823,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     mock_session_db.close.assert_called_once_with()
     assert runtime._agent is None
     assert runtime._session_db is None
-    assert runtime._start_payload is None
+    assert runtime._agent_config is None
     assert runtime._conversation_history is None
     assert first["response"] == "first response"
     assert second["response"] == "second response"
@@ -808,4 +844,7 @@ def test_main_serves_persistent_runtime(monkeypatch):
 
     adapter.main()
 
-    serve.assert_called_once_with(adapter.HermesRuntime)
+    serve.assert_called_once_with(
+        adapter.HermesRuntime,
+        config_loader=AgentConfig.from_mapping,
+    )

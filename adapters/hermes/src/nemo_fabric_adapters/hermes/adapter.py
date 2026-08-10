@@ -20,6 +20,9 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
@@ -37,15 +40,45 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
 }
 
 
-def _api_key_env(model_config: dict[str, Any]) -> str:
-    explicit = model_config.get("api_key_env")
-    if isinstance(explicit, str) and explicit:
-        return explicit
-    provider = str(model_config.get("provider") or "").lower()
-    default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
+def _settings(config: AgentConfig) -> dict[str, Any]:
+    return config.harness.settings if config.harness is not None else {}
+
+
+def _selected_model(config: AgentConfig) -> AgentModelConfig:
+    model = config.models.get("default")
+    if model is None and len(config.models) == 1:
+        model = next(iter(config.models.values()))
+    if model is None:
+        raise ValueError("Hermes requires a default model or exactly one model")
+    return model
+
+
+def _system_instruction(config: AgentConfig) -> str | None:
+    if config.instructions is None or config.instructions.system is None:
+        return None
+    return config.instructions.system.content
+
+
+def _max_turns(config: AgentConfig) -> int | None:
+    return config.runtime.max_turns if config.runtime is not None else None
+
+
+def _workspace(payload: dict[str, Any]) -> str:
+    environment = common_utils.runtime_context(payload).get("environment") or {}
+    if not isinstance(environment, dict):
+        return "."
+    workspace = environment.get("workspace")
+    return str(workspace) if workspace else "."
+
+
+def _api_key_env(model_config: AgentModelConfig) -> str:
+    if model_config.api_key_env:
+        return model_config.api_key_env
+    default = PROVIDER_DEFAULT_API_KEY_ENV.get(model_config.provider)
     if default is None:
         raise ValueError(
-            f"selected model api_key_env is required for provider {provider!r}"
+            "selected model api_key_env is required for provider "
+            f"{model_config.provider!r}"
         )
     return default
 
@@ -76,52 +109,55 @@ def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
         raise ValueError("only relay telemetry is supported for Hermes")
 
 
-def disabled_toolsets(payload: dict[str, Any]) -> list[str]:
-    return common_utils.blocked_tools(payload)
+def disabled_toolsets(config: AgentConfig) -> list[str]:
+    return config.tools.blocked if config.tools is not None else []
 
 
 def build_hermes_config(
-    payload: dict[str, Any], *, relay_enabled: bool = False
+    agent_config: AgentConfig,
+    *,
+    workspace: str = ".",
+    relay_enabled: bool = False,
 ) -> dict[str, Any]:
-    settings = common_utils.settings_payload(payload)
-    model_config = common_utils.selected_model_config(payload)
-    native = common_utils.capability_plan(payload).get("native") or {}
-    environment = common_utils.environment_payload(payload)
-
-    model_name = model_config.get("model", "")
-    provider = model_config.get("provider")
-    base_url = common_utils.get_base_url(model_config)
-    blocked_toolsets = disabled_toolsets(payload)
-    enabled_toolsets = common_utils.enabled_tools(payload)
+    settings = _settings(agent_config)
+    model_config = _selected_model(agent_config)
+    blocked_toolsets = disabled_toolsets(agent_config)
+    enabled_toolsets = (
+        agent_config.tools.enabled if agent_config.tools is not None else None
+    )
 
     config: dict[str, Any] = {
         "model": common_utils.without_none(
             {
-                "provider": provider,
-                "default": model_name,
-                "base_url": base_url,
+                "provider": model_config.provider,
+                "default": model_config.model,
+                "base_url": model_config.base_url,
             }
         ),
         "agent": common_utils.without_none(
             {
-                "max_turns": common_utils.max_turns(payload),
+                "max_turns": _max_turns(agent_config),
                 "disabled_toolsets": blocked_toolsets or None,
             }
         ),
         "terminal": common_utils.without_none(
             {
                 "backend": "local",
-                "cwd": str(environment.get("workspace") or "."),
+                "cwd": workspace,
                 "timeout": settings.get("terminal_timeout", 60),
             }
         ),
     }
 
-    skill_dirs = [str(path) for path in native.get("skill_paths", [])]
+    skill_dirs = (
+        [str(path) for path in agent_config.skills.paths]
+        if agent_config.skills is not None
+        else []
+    )
     if skill_dirs:
         config["skills"] = {"external_dirs": skill_dirs}
 
-    mcp_servers = native.get("mcp_servers") or {}
+    mcp_servers = agent_config.mcp.servers if agent_config.mcp is not None else {}
     if mcp_servers:
         config["mcp_servers"] = {
             name: hermes_mcp_server_config(server)
@@ -141,22 +177,26 @@ def build_hermes_config(
 
 
 def write_hermes_config(
-    payload: dict[str, Any],
+    agent_config: AgentConfig,
     hermes_home: Path,
     *,
+    workspace: str = ".",
     relay_enabled: bool = False,
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)
-    config = build_hermes_config(payload, relay_enabled=relay_enabled)
+    config = build_hermes_config(
+        agent_config,
+        workspace=workspace,
+        relay_enabled=relay_enabled,
+    )
     config_path = hermes_home / "config.yaml"
     config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")
     return config_path, config
 
 
-def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
-    transport = str(server.get("transport") or "").strip().lower()
-    raw_target = server.get("url")
-    target = os.path.expandvars(str(raw_target or "")).strip()
+def hermes_mcp_server_config(server: AgentMcpServerConfig) -> dict[str, Any]:
+    transport = server.transport.strip().lower()
+    target = os.path.expandvars(server.url).strip()
     if not target:
         raise ValueError("MCP server mapping requires a URL")
 
@@ -165,8 +205,8 @@ def hermes_mcp_server_config(server: dict[str, Any]) -> dict[str, Any]:
             {
                 "enabled": True,
                 "command": target,
-                "args": common_utils.normalize_list(server.get("args")) or None,
-                "env": server.get("env"),
+                "args": server.args or None,
+                "env": server.env or None,
             }
         )
 
@@ -188,13 +228,13 @@ def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
-    lifecycle.serve(HermesRuntime)
+    lifecycle.serve(HermesRuntime, config_loader=AgentConfig.from_mapping)
 
 
 def resolve_hermes_toolsets(
-    payload: dict[str, Any], config: dict[str, Any]
+    agent_config: AgentConfig, config: dict[str, Any]
 ) -> list[str] | None:
-    enabled = common_utils.enabled_tools(payload)
+    enabled = agent_config.tools.enabled if agent_config.tools is not None else None
     if enabled is not None:
         return enabled
 
@@ -219,10 +259,10 @@ class HermesRuntime:
 
     def __init__(self) -> None:
         self._started = False
-        self._start_payload: dict[str, Any] | None = None
+        self._agent_config: AgentConfig | None = None
         self._runtime_id: str | None = None
         self._settings: dict[str, Any] = {}
-        self._model_config: dict[str, Any] = {}
+        self._model_config: AgentModelConfig | None = None
         self._base_url: str | None = None
         self._hermes_home: Path | None = None
         self._hermes_config_path: Path | None = None
@@ -250,8 +290,15 @@ class HermesRuntime:
             self._relay_session_pending = False
             self._relay_finalize_hook_invoked = False
             validate_hermes_telemetry_provider(payload)
-            self._settings = common_utils.settings_payload(payload)
-            self._model_config = common_utils.selected_model_config(payload)
+            agent_config = payload.get("config")
+            if not isinstance(agent_config, AgentConfig):
+                raise lifecycle.LifecycleError(
+                    "hermes_invalid_config",
+                    "Hermes requires a validated AgentConfig",
+                )
+            self._agent_config = agent_config
+            self._settings = _settings(agent_config)
+            self._model_config = _selected_model(agent_config)
             self._runtime_id = common_utils.runtime_id(payload)
             self._hermes_home = common_utils.runtime_state_directory(
                 _artifact_root(payload) / ".fabric" / "hermes", payload
@@ -270,8 +317,9 @@ class HermesRuntime:
 
             relay_enabled = common_utils.relay_enabled(payload)
             if relay_enabled:
+                relay_payload = {**payload, "config": agent_config.to_mapping()}
                 self._relay_plugin_config = common_utils.load_relay_plugin_config(
-                    payload
+                    relay_payload
                 )
                 from nemo_relay import plugin
 
@@ -280,16 +328,17 @@ class HermesRuntime:
                 self._relay_context_entered = True
 
             self._hermes_config_path, self._hermes_config = write_hermes_config(
-                payload,
+                agent_config,
                 self._hermes_home,
+                workspace=_workspace(payload),
                 relay_enabled=relay_enabled,
             )
             api_key_env = _api_key_env(self._model_config)
             api_key = os.environ.get(api_key_env)
             if not api_key:
                 raise RuntimeError(f"{api_key_env} is required for Hermes mode")
-            self._base_url = common_utils.get_base_url(self._model_config)
-            self._relay_model_name = common_utils.relay_model_name(payload)
+            self._base_url = self._model_config.base_url
+            self._relay_model_name = self._model_config.model
 
             from hermes_cli.config import load_config
             from hermes_cli.plugins import discover_plugins
@@ -307,27 +356,28 @@ class HermesRuntime:
                 # asyncio.to_thread to avoid blocking the loop.
                 if self._hermes_config.get("mcp_servers"):
                     from tools.mcp_tool import discover_mcp_tools
+
                     await asyncio.to_thread(discover_mcp_tools)
 
                 self._enabled_toolsets = resolve_hermes_toolsets(
-                    payload, loaded_hermes_config
+                    agent_config, loaded_hermes_config
                 )
                 self._session_db = SessionDB()
                 self._conversation_history = None
-                max_iterations = common_utils.max_turns(payload)
+                max_iterations = _max_turns(agent_config)
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
-                temperature = self._model_config.get("temperature")
+                temperature = self._model_config.temperature
                 self._agent = AIAgent(
                     **filter_supported_kwargs(
                         AIAgent,
                         base_url=self._base_url,
                         api_key=api_key,
-                        provider=self._model_config.get("provider"),
-                        model=self._model_config.get("model", ""),
+                        provider=self._model_config.provider,
+                        model=self._model_config.model,
                         max_iterations=int(max_iterations),
                         enabled_toolsets=self._enabled_toolsets,
-                        disabled_toolsets=disabled_toolsets(payload) or None,
+                        disabled_toolsets=disabled_toolsets(agent_config) or None,
                         quiet_mode=True,
                         skip_context_files=True,
                         skip_memory=True,
@@ -349,15 +399,20 @@ class HermesRuntime:
                     )
                 )
             self._invoke_hook = invoke_hook
-            self._start_payload = payload
             self._started = True
         except BaseException:
             await self.stop()
             raise
 
     async def invoke(self, invocation: dict[str, Any]) -> dict[str, Any]:
-        start_payload = self._start_payload
-        if not self._started or self._agent is None or start_payload is None:
+        agent_config = self._agent_config
+        model_config = self._model_config
+        if (
+            not self._started
+            or self._agent is None
+            or agent_config is None
+            or model_config is None
+        ):
             raise lifecycle.LifecycleError(
                 "hermes_runtime_not_started",
                 "Hermes runtime is not started",
@@ -368,12 +423,7 @@ class HermesRuntime:
                 "Hermes invocation does not match the active runtime",
             )
 
-        payload = {
-            **start_payload,
-            "runtime_context": invocation.get("runtime_context"),
-            "request": invocation.get("request"),
-        }
-        request = common_utils.request_payload(payload)
+        request = common_utils.request_payload(invocation)
         user_message = request.get("input") or ""
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
@@ -381,7 +431,7 @@ class HermesRuntime:
         def invoke_turn() -> tuple[dict[str, Any], str]:
             return _invoke_hermes_turn(
                 agent=self._agent,
-                system_prompt=common_utils.system_instruction(start_payload),
+                system_prompt=_system_instruction(agent_config),
                 user_message=user_message,
                 conversation_history=self._conversation_history,
             )
@@ -420,7 +470,7 @@ class HermesRuntime:
             "harness": "hermes",
             "adapter": "python",
             "mode": "hermes",
-            "model": self._model_config.get("model"),
+            "model": model_config.model,
             "base_url": self._base_url,
             "response": result.get("response") or result.get("final_response"),
             "completed": bool(result.get("completed")),
@@ -486,10 +536,10 @@ class HermesRuntime:
                 errors.append(error)
         self._agent = None
         self._session_db = None
-        self._start_payload = None
+        self._agent_config = None
         self._runtime_id = None
         self._settings = {}
-        self._model_config = {}
+        self._model_config = None
         self._base_url = None
         self._hermes_home = None
         self._hermes_config_path = None

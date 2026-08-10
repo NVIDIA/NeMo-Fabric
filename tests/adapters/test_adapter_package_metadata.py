@@ -50,9 +50,7 @@ ADAPTER_EXTRAS = {
             f"nemo-fabric-adapters-hermes[harness] == {PACKAGE_VERSION}; "
             "python_version < '3.14'"
         ),
-        "harness": [
-            "hermes-agent[mcp]>=0.19.0; python_version < '3.14'"
-        ],
+        "harness": ["hermes-agent[mcp]>=0.19.0; python_version < '3.14'"],
         "relay": ["nemo-relay>=0.6.0,<0.7"],
     },
 }
@@ -88,7 +86,10 @@ ADAPTER_EXTRAS = {
         ),
         (
             "adapters/hermes",
-            [f"nemo-fabric-adapters-common == {PACKAGE_VERSION}"],
+            [
+                f"nemo-fabric-adapter-contract == {PACKAGE_VERSION}",
+                f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
+            ],
         ),
     ],
 )
