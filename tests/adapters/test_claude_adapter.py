@@ -274,8 +274,11 @@ def test_build_options_maps_mcp_headers_and_oauth(claude_payload):
     }
 
     options = adapter.build_options(claude_payload)
+    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
+        "mcpServers"
+    ]
 
-    assert options.mcp_servers["docs"] == {
+    assert mcp_servers["docs"] == {
         "type": "http",
         "url": "https://mcp.example.test",
         "headers": {"X-Tenant": "fabric"},
@@ -288,8 +291,11 @@ def test_claude_maps_mcp_oauth_scopes(claude_payload):
     server["authentication"] = {"type": "oauth2", "scopes": ["read"]}
 
     options = adapter.build_options(claude_payload)
+    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
+        "mcpServers"
+    ]
 
-    assert options.mcp_servers["docs"]["oauth"] == {"scopes": "read"}
+    assert mcp_servers["docs"]["oauth"] == {"scopes": "read"}
 
 
 def test_claude_maps_mcp_oauth_client_secret_configuration(claude_payload):
@@ -301,8 +307,11 @@ def test_claude_maps_mcp_oauth_client_secret_configuration(claude_payload):
     }
 
     options = adapter.build_options(claude_payload)
+    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
+        "mcpServers"
+    ]
 
-    assert options.mcp_servers["docs"]["oauth"] == {"clientId": "fabric-client"}
+    assert mcp_servers["docs"]["oauth"] == {"clientId": "fabric-client"}
 
 
 def test_claude_rejects_mcp_service_account_authentication(claude_payload):
@@ -332,12 +341,13 @@ async def test_claude_stages_dynamic_mcp_server_before_login(
         ]
     )
     monkeypatch.setattr(adapter, "_run_claude_mcp_command", run_command)
+    mapped_server = adapter._authenticated_mcp_servers(claude_payload)["docs"]
 
     await adapter._login_mcp_server(
         claude_payload,
         options,
         "docs",
-        options.mcp_servers["docs"],
+        mapped_server,
         timeout=30,
     )
 
@@ -345,7 +355,7 @@ async def test_claude_stages_dynamic_mcp_server_before_login(
     assert run_command.await_args_list[0].kwargs["interactive"] is True
     add_arguments = run_command.await_args_list[1].args[1:]
     assert add_arguments[:4] == ("add-json", "--scope", "local", "docs")
-    assert json.loads(add_arguments[4]) == options.mcp_servers["docs"]
+    assert json.loads(add_arguments[4]) == mapped_server
     assert "interactive" not in run_command.await_args_list[1].kwargs
     assert run_command.await_args_list[2].args[1:] == ("login", "docs")
     assert run_command.await_args_list[2].kwargs["interactive"] is True
@@ -412,6 +422,7 @@ async def test_claude_authenticates_and_reconnects_before_prompt(
     monkeypatch.setattr(adapter, "_login_mcp_server", login)
     runtime = adapter.ClaudeRuntime()
     runtime._options = options
+    mapped_server = adapter._authenticated_mcp_servers(claude_payload)["docs"]
 
     await runtime._authenticate_mcp_servers(claude_payload, client, 30)
 
@@ -419,7 +430,7 @@ async def test_claude_authenticates_and_reconnects_before_prompt(
         claude_payload,
         options,
         "docs",
-        options.mcp_servers["docs"],
+        mapped_server,
         timeout=12,
     )
     client.reconnect_mcp_server.assert_awaited_once_with("docs")
