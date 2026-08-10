@@ -2462,12 +2462,7 @@ fn resolve_capability_plan(
                     (
                         name.clone(),
                         McpServerPlan {
-                            transport: match server.transport {
-                                McpTransport::Stdio => "stdio",
-                                McpTransport::Sse => "sse",
-                                McpTransport::StreamableHttp => "streamable-http",
-                            }
-                            .to_string(),
+                            transport: server.transport,
                             url: server.url.clone(),
                             args: server.args.clone(),
                             env: server.env.clone(),
@@ -2933,7 +2928,7 @@ pub enum CapabilityTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct McpServerPlan {
     /// MCP transport.
-    pub transport: String,
+    pub transport: McpTransport,
     /// MCP server URL for network transports or executable for stdio.
     pub url: String,
     /// Command-line arguments passed to an MCP stdio server process.
@@ -3171,7 +3166,7 @@ mod tests {
             .mcp_servers
             .get("analyzer")
             .expect("native analyzer mcp server");
-        assert_eq!(server.transport, "stdio");
+        assert_eq!(server.transport, McpTransport::Stdio);
         assert_eq!(server.url, "/tmp/analyzer-mcp");
         assert_eq!(server.exposure, McpExposure::HarnessNative);
         assert_eq!(server.args, vec!["--stdio".to_string()]);
@@ -3235,7 +3230,7 @@ mod tests {
             .get("jira")
             .expect("native Jira MCP server");
 
-        assert_eq!(server.transport, "streamable-http");
+        assert_eq!(server.transport, McpTransport::StreamableHttp);
         assert_eq!(
             server.custom_headers,
             BTreeMap::from([("X-Tenant".to_string(), "fabric".to_string())])

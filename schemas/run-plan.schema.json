@@ -1583,8 +1583,8 @@
           "description": "Exposure strategy."
         },
         "transport": {
-          "description": "MCP transport.",
-          "type": "string"
+          "$ref": "#/$defs/McpTransport",
+          "description": "MCP transport."
         },
         "url": {
           "description": "MCP server URL for network transports or executable for stdio.",
