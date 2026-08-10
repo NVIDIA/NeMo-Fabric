@@ -838,7 +838,7 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `transport` | `str` | Yes | — | `MinLen(min_length=1)` | — |
-| `url` | `str` | Yes | — | `MinLen(min_length=1)` | MCP server URL for network transports or executable for stdio.|
+| `url` | `str` | Yes | — | `MinLen(min_length=1)` | MCP server URL for network transports or executable for stdio. |
 | `args` | `list[str]` | No | `list()` | — | Command-line arguments passed to an MCP stdio server process. |
 | `env` | `dict[str, str]` | No | `dict()` | — | — |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
