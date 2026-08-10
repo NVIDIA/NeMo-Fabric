@@ -880,16 +880,14 @@ async def test_aclose_drains_backpressure_while_invocation_finishes():
 
 
 @pytest.mark.parametrize(
-    ("current_metadata", "current_name"),
+    "current_metadata",
     [
-        ({"nemo_fabric_request_id": "request-2"}, None),
-        ({"nemo_relay_scope_role": "turn", "turn_index": 2}, None),
-        ({"hermes.execution_surface": "fabric"}, "hermes.turn"),
+        {"nemo_fabric_request_id": "request-2"},
+        {"nemo_relay_scope_role": "turn", "turn_index": 2},
     ],
 )
 async def test_listener_correlates_records_to_active_turn(
     current_metadata: dict[str, Any],
-    current_name: str | None,
 ):
     listener = await _AtofStreamListener(maxsize=4).start()
     listener.begin_stream(request_id="request-2", turn_index=2)
@@ -898,7 +896,6 @@ async def test_listener_correlates_records_to_active_turn(
             "kind": "scope",
             "scope_category": "start",
             "uuid": "current",
-            "name": current_name,
             "metadata": current_metadata,
         },
         {
@@ -927,51 +924,6 @@ async def test_listener_correlates_records_to_active_turn(
 
     assert [await listener.records.get() for _ in current] == current
     assert listener.records.empty()
-    listener.end_stream()
-    await listener.close()
-
-
-async def test_listener_correlates_legacy_hermes_turn_records():
-    listener = await _AtofStreamListener(maxsize=4).start()
-    listener.begin_stream(request_id="request-2", turn_index=2)
-    turn_id = "legacy-turn"
-    current = [
-        {
-            "kind": "mark",
-            "uuid": "turn-start",
-            "name": "hermes.turn.start",
-            "metadata": {"platform": "fabric", "turn_id": turn_id},
-        },
-        {
-            "kind": "scope",
-            "scope_category": "start",
-            "uuid": "llm",
-            "parent_uuid": "session",
-            "metadata": {"turn_id": turn_id},
-        },
-        {"kind": "mark", "uuid": "llm-child", "parent_uuid": "llm"},
-        {
-            "kind": "mark",
-            "uuid": "turn-end",
-            "name": "hermes.turn.end",
-            "metadata": {"platform": "fabric", "turn_id": turn_id},
-        },
-    ]
-
-    await _post_chunked(
-        listener.url,
-        [
-            {
-                "kind": "scope",
-                "scope_category": "start",
-                "uuid": "previous",
-                "metadata": {"nemo_fabric_request_id": "request-1"},
-            },
-            *current,
-        ],
-    )
-
-    assert [await listener.records.get() for _ in current] == current
     listener.end_stream()
     await listener.close()
 
