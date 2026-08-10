@@ -361,6 +361,9 @@ async def test_claude_stages_dynamic_mcp_server_before_login(
     assert run_command.await_args_list[2].kwargs["interactive"] is True
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "openpty"), reason="os.openpty is unavailable on this platform"
+)
 async def test_claude_interactive_mcp_command_has_terminal_stdin(tmp_path):
     cli = tmp_path / "claude"
     cli.write_text(
@@ -383,6 +386,27 @@ async def test_claude_interactive_mcp_command_has_terminal_stdin(tmp_path):
 
     assert code == 0
     assert output.strip() == "True"
+
+
+async def test_claude_interactive_mcp_command_requires_local_pseudo_terminal(
+    monkeypatch,
+):
+    monkeypatch.delattr(os, "openpty", raising=False)
+    options = ClaudeAgentOptions(cli_path="claude")
+
+    with pytest.raises(
+        adapter.ClaudeAdapterError,
+        match="requires a local pseudo-terminal",
+    ) as caught:
+        await adapter._run_claude_mcp_command(
+            options,
+            "login",
+            "docs",
+            timeout=5,
+            interactive=True,
+        )
+
+    assert caught.value.code == "claude_mcp_authentication_failed"
 
 
 def test_claude_forwards_browser_environment_for_mcp_login(claude_payload):
