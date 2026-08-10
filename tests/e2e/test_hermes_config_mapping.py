@@ -38,7 +38,7 @@ def test_hermes_config_mapping(tmp_path: Path):
         "base_url": "https://integrate.api.nvidia.com/v1",
     }
     assert config["terminal"]["backend"] == "local"
-    assert config["terminal"]["cwd"].endswith("/workspace")
+    assert Path(config["terminal"]["cwd"]) == tmp_path / "workspace"
     assert config["terminal"]["timeout"] == 30
     assert config["skills"]["external_dirs"] == ["/tmp/fabric-skills/code-review"]
     assert config["mcp_servers"]["github"] == {

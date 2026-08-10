@@ -15,6 +15,8 @@ from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
@@ -22,8 +24,6 @@ if importlib.util.find_spec("run_agent") is not None:
     from hermes_state import SessionDB
     from run_agent import AIAgent
 
-    from nemo_fabric_adapter_contract.models import AgentConfig
-    from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
     import nemo_fabric_adapters.common.utils as common_utils
 
     from nemo_fabric_adapters.hermes import adapter
