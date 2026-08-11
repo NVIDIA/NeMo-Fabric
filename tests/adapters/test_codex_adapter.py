@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from nemo_fabric import Fabric
+from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.codex import adapter
@@ -1278,7 +1279,7 @@ def test_environment_rejects_non_string_runtime_telemetry_env(
         "env": telemetry_env,
     }
 
-    with pytest.raises(Exception):
+    with pytest.raises(ContractValidationError, match="telemetry.env"):
         runtime_input(codex_payload)
 
 
@@ -1286,8 +1287,15 @@ def test_environment_rejects_non_string_runtime_telemetry_env(
 def test_environment_rejects_non_mapping_runtime_telemetry(codex_payload, telemetry):
     codex_payload["runtime_context"]["telemetry"] = telemetry
 
-    with pytest.raises(Exception):
+    with pytest.raises(ContractValidationError, match="telemetry"):
         runtime_input(codex_payload)
+
+
+def test_runtime_context_validation_uses_lifecycle_error():
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._runtime_context({"runtime_context": {}})
+
+    assert caught.value.code == "codex_invalid_runtime_context"
 
 
 def test_main_serves_persistent_runtime(monkeypatch):

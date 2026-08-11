@@ -29,6 +29,7 @@ from openai_codex import (
 from openai_codex.generated.v2_all import SkillsExtraRootsSetResponse
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
+from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
@@ -928,6 +929,16 @@ def _as_lifecycle_error(error: CodexAdapterError) -> lifecycle.LifecycleError:
     )
 
 
+def _runtime_context(payload: dict[str, Any]) -> RuntimeContext:
+    try:
+        return RuntimeContext.from_mapping(payload.get("runtime_context"))
+    except ContractValidationError as error:
+        raise lifecycle.LifecycleError(
+            "codex_invalid_runtime_context",
+            "Codex runtime context is invalid",
+        ) from error
+
+
 class CodexRuntime:
     """One Codex app-server client and thread owned by a Fabric runtime."""
 
@@ -955,7 +966,7 @@ class CodexRuntime:
                 )
             inputs = CodexRuntimeInput(
                 config=agent_config,
-                context=RuntimeContext.from_mapping(payload.get("runtime_context")),
+                context=_runtime_context(payload),
                 base_dir=common_utils.base_dir(payload),
             )
             fabric_runtime_id = validate_runtime_payload(inputs)
@@ -1009,7 +1020,7 @@ class CodexRuntime:
                 "Codex runtime is not started",
             )
         inputs = self._inputs
-        runtime_context = RuntimeContext.from_mapping(invocation.get("runtime_context"))
+        runtime_context = _runtime_context(invocation)
         if runtime_context.runtime_id != self._fabric_runtime_id:
             raise lifecycle.LifecycleError(
                 "codex_runtime_mismatch",
