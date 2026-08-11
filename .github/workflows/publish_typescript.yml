@@ -25,7 +25,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
+      # actions/checkout needs read access to the tagged repository contents.
       contents: read
+      # npm trusted publishing exchanges this job's GitHub OIDC token for a
+      # short-lived registry credential; no long-lived npm token is provided.
       id-token: write
     environment: npmjs
     steps:

@@ -226,10 +226,12 @@ Before the first TypeScript package release:
    - Environment: `npmjs`
    - Allowed action: `npm publish`
 
-4. Push the signed tag for that already-published release candidate. The
-   workflow verifies the existing package integrity and `next` dist-tag, then
-   exits successfully without republishing it. Approve the `npmjs` environment
-   when prompted.
+4. Push the signed tag for that already-published release candidate and approve
+   the `npmjs` environment when prompted. The workflow exits without
+   republishing only when its repack has byte-identical integrity and the
+   `next` dist-tag is exact. A mismatch fails closed because npm versions are
+   immutable; do not overwrite or weaken the check. Use the next genuine
+   release version for the first OIDC publication instead.
 5. After a later release publishes through OIDC, confirm its provenance on npm.
    In the npm package settings, require two-factor authentication and disallow
    token publication. Then remove or revoke any local or automation credentials

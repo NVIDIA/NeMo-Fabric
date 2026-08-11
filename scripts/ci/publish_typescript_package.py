@@ -173,6 +173,7 @@ def _state_matches(
     state: PublishedState,
     artifact: PackageArtifact,
 ) -> bool:
+    """Require proof of a byte-identical artifact and the expected dist-tag."""
     return (
         state.version == artifact.version
         and state.integrity == artifact.integrity
@@ -185,15 +186,28 @@ def _describe_conflict(
     artifact: PackageArtifact,
     dist_tag: str,
 ) -> str:
-    return "\n".join(
-        (
-            f"{artifact.name}@{artifact.version} already exists, but its artifact or dist-tag does not match",
-            f"Expected integrity: {artifact.integrity}",
-            f"Published integrity: {state.integrity or '<unset>'}",
-            f"Expected {dist_tag} dist-tag: {artifact.version}",
-            f"Published {dist_tag} dist-tag: {state.dist_tag_version or '<unset>'}",
+    details = [
+        f"{artifact.name}@{artifact.version} already exists, but its artifact or dist-tag does not match"
+    ]
+    if not state.integrity:
+        details.append(
+            "Published integrity is missing; a byte-identical artifact cannot be proven"
         )
-    )
+    elif state.integrity != artifact.integrity:
+        details.extend(
+            (
+                f"Expected integrity: {artifact.integrity}",
+                f"Published integrity: {state.integrity}",
+            )
+        )
+    if state.dist_tag_version != artifact.version:
+        details.extend(
+            (
+                f"Expected {dist_tag} dist-tag: {artifact.version}",
+                f"Published {dist_tag} dist-tag: {state.dist_tag_version or '<unset>'}",
+            )
+        )
+    return "\n".join(details)
 
 
 def publish_package(
@@ -241,25 +255,19 @@ def publish_package(
     if publish_result.stderr:
         print(publish_result.stderr.rstrip(), file=sys.stderr)
 
-    last_error: PublicationError | None = None
+    last_error = PublicationError("The package version is not visible in npm")
     for attempt in range(verification_attempts):
-        try:
-            state = _published_state(package_directory, artifact, dist_tag, run_npm)
-            if state is not None and _state_matches(state, artifact):
+        state = _published_state(package_directory, artifact, dist_tag, run_npm)
+        if state is not None:
+            if _state_matches(state, artifact):
                 print(
                     f"Verified {artifact.name}@{artifact.version} with "
                     f"{dist_tag} dist-tag"
                 )
                 return
-            last_error = (
-                PublicationError(_describe_conflict(state, artifact, dist_tag))
-                if state is not None
-                else PublicationError("The package version is not visible in npm")
-            )
-        except PublicationError as error:
-            last_error = error
+            raise PublicationError(_describe_conflict(state, artifact, dist_tag))
         if attempt + 1 < verification_attempts:
-            sleep(5)
+            sleep(5 * (2**attempt))
 
     publish_detail = _command_error(publish_result)
     if publish_result.returncode != 0:

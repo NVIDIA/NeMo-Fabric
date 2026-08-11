@@ -46,8 +46,11 @@ reliability, or reproducibility.
 - `contents: read` is the default minimum for checkout-based build, test, docs,
   and packaging jobs.
 - `pull-requests: read` is required for PR metadata lookup jobs.
-- `pages: write` and `id-token: write` should be limited to Pages deployment
-  jobs and any caller that invokes them through a reusable workflow.
+- `pages: write` should be limited to Pages deployment jobs and any caller that
+  invokes them through a reusable workflow.
+- `id-token: write` should be limited to jobs that exchange a GitHub OIDC token
+  with a protected deployment target, including Pages deployment and the
+  protected npm publication job.
 - For reusable workflows, the caller must grant every permission the called
   jobs require. The callee cannot elevate beyond what the caller provides.
 

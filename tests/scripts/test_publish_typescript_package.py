@@ -38,15 +38,19 @@ def _result(
     )
 
 
-def _pack_result() -> subprocess.CompletedProcess[str]:
+def _pack_result(
+    *,
+    version: str = VERSION,
+    filename: str = TARBALL,
+) -> subprocess.CompletedProcess[str]:
     return _result(
         json.dumps(
             [
                 {
                     "name": PACKAGE,
-                    "version": VERSION,
+                    "version": version,
                     "integrity": INTEGRITY,
-                    "filename": TARBALL,
+                    "filename": filename,
                 }
             ]
         )
@@ -97,7 +101,7 @@ def _exact_view_responses(
     ]
 
 
-def test_existing_exact_package_is_an_idempotent_success(tmp_path: Path) -> None:
+def test_existing_exact_package_is_an_idempotent_success(tmp_path: Path):
     package_directory = _package_directory(tmp_path)
     runner = NpmRunner(
         [(["pack", "--json"], _pack_result()), *_exact_view_responses()]
@@ -115,14 +119,19 @@ def test_existing_exact_package_is_an_idempotent_success(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize(
-    ("integrity", "dist_tag_version"),
-    [("sha512-wrong", VERSION), (INTEGRITY, "0.1.0")],
+    ("integrity", "dist_tag_version", "error"),
+    [
+        ("", VERSION, "Published integrity is missing"),
+        ("sha512-wrong", VERSION, "Expected integrity"),
+        (INTEGRITY, "0.1.0", "Published latest dist-tag"),
+    ],
 )
 def test_existing_conflicting_package_fails(
     tmp_path: Path,
     integrity: str,
     dist_tag_version: str,
-) -> None:
+    error: str,
+):
     package_directory = _package_directory(tmp_path)
     runner = NpmRunner(
         [
@@ -136,7 +145,7 @@ def test_existing_conflicting_package_fails(
 
     with pytest.raises(
         publish_typescript_package.PublicationError,
-        match="artifact or dist-tag does not match",
+        match=error,
     ):
         publish_typescript_package.publish_package(
             package_directory,
@@ -149,7 +158,7 @@ def test_existing_conflicting_package_fails(
     runner.assert_finished()
 
 
-def test_absent_package_publishes_and_verifies(tmp_path: Path) -> None:
+def test_absent_package_publishes_and_verifies(tmp_path: Path):
     package_directory = _package_directory(tmp_path)
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
@@ -176,7 +185,7 @@ def test_absent_package_publishes_and_verifies(tmp_path: Path) -> None:
     runner.assert_finished()
 
 
-def test_non_404_lookup_failure_fails_closed(tmp_path: Path) -> None:
+def test_non_404_lookup_failure_fails_closed(tmp_path: Path):
     package_directory = _package_directory(tmp_path)
     runner = NpmRunner(
         [
@@ -203,7 +212,7 @@ def test_non_404_lookup_failure_fails_closed(tmp_path: Path) -> None:
     runner.assert_finished()
 
 
-def test_dist_tag_cannot_move_backward(tmp_path: Path) -> None:
+def test_dist_tag_cannot_move_backward(tmp_path: Path):
     package_directory = _package_directory(tmp_path)
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
@@ -229,7 +238,7 @@ def test_dist_tag_cannot_move_backward(tmp_path: Path) -> None:
     runner.assert_finished()
 
 
-def test_ambiguous_publish_failure_reconciles_registry_state(tmp_path: Path) -> None:
+def test_ambiguous_publish_failure_reconciles_registry_state(tmp_path: Path):
     package_directory = _package_directory(tmp_path)
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
@@ -256,6 +265,179 @@ def test_ambiguous_publish_failure_reconciles_registry_state(tmp_path: Path) -> 
     runner.assert_finished()
 
 
+def test_invalid_dist_tag_fails_before_packing(tmp_path: Path):
+    package_directory = _package_directory(tmp_path)
+    runner = NpmRunner([])
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match="Unsupported npm dist-tag: beta",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "beta",
+            run_npm=runner,
+        )
+
+    runner.assert_finished()
+
+
+@pytest.mark.parametrize("verification_attempts", [0, -1])
+def test_invalid_verification_attempts_fail_before_packing(
+    tmp_path: Path,
+    verification_attempts: int,
+):
+    package_directory = _package_directory(tmp_path)
+    runner = NpmRunner([])
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match="At least one registry verification attempt is required",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+            verification_attempts=verification_attempts,
+        )
+
+    runner.assert_finished()
+
+
+def test_packed_version_must_match_release(tmp_path: Path):
+    package_directory = _package_directory(tmp_path)
+    runner = NpmRunner(
+        [(["pack", "--json"], _pack_result(version="0.2.1"))]
+    )
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match="Packed version 0.2.1 does not match release 0.2.0",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+        )
+
+    runner.assert_finished()
+
+
+def test_packed_filename_must_be_safe(tmp_path: Path):
+    package_directory = _package_directory(tmp_path)
+    runner = NpmRunner(
+        [(["pack", "--json"], _pack_result(filename="../package.tgz"))]
+    )
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match=r"npm pack returned an unsafe filename: ../package\.tgz",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+        )
+
+    runner.assert_finished()
+
+
+def test_packed_tarball_must_exist(tmp_path: Path):
+    package_directory = _package_directory(tmp_path)
+    runner = NpmRunner(
+        [(["pack", "--json"], _pack_result(filename="missing.tgz"))]
+    )
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match="npm pack did not create missing.tgz",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+        )
+
+    runner.assert_finished()
+
+
+def test_visible_post_publish_conflict_fails_without_retry(tmp_path: Path):
+    package_directory = _package_directory(tmp_path)
+    missing = _result(returncode=1, stderr="npm error code E404")
+    runner = NpmRunner(
+        [
+            (["pack", "--json"], _pack_result()),
+            (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
+            (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
+            (
+                ["publish", f"./{TARBALL}", "--access", "public", "--tag", "latest"],
+                _result(returncode=1, stderr="network connection closed"),
+            ),
+            *_exact_view_responses(integrity="sha512-conflict"),
+        ]
+    )
+    delays: list[float] = []
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+        match="Expected integrity",
+    ):
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+            sleep=delays.append,
+        )
+
+    assert delays == []
+    runner.assert_finished()
+
+
+def test_failed_publish_exhaustion_reports_both_failures(tmp_path: Path):
+    package_directory = _package_directory(tmp_path)
+    missing = _result(returncode=1, stderr="npm error code E404")
+    runner = NpmRunner(
+        [
+            (["pack", "--json"], _pack_result()),
+            (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
+            (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
+            (
+                ["publish", f"./{TARBALL}", "--access", "public", "--tag", "latest"],
+                _result(returncode=1, stderr="network connection closed"),
+            ),
+            (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
+            (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
+            (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
+        ]
+    )
+    delays: list[float] = []
+
+    with pytest.raises(
+        publish_typescript_package.PublicationError,
+    ) as error:
+        publish_typescript_package.publish_package(
+            package_directory,
+            VERSION,
+            "latest",
+            run_npm=runner,
+            sleep=delays.append,
+            verification_attempts=3,
+        )
+
+    message = str(error.value)
+    assert "npm publish failed: network connection closed" in message
+    assert "registry verification also failed" in message
+    assert "package version is not visible in npm" in message
+    assert delays == [5, 10]
+    runner.assert_finished()
+
+
 @pytest.mark.parametrize(
     ("candidate", "current", "is_newer"),
     [
@@ -267,7 +449,7 @@ def test_ambiguous_publish_failure_reconciles_registry_state(tmp_path: Path) -> 
         ("0.2.1", "0.3.0", False),
     ],
 )
-def test_version_order(candidate: str, current: str, is_newer: bool) -> None:
+def test_version_order(candidate: str, current: str, is_newer: bool):
     assert (
         publish_typescript_package._version_key(candidate)
         > publish_typescript_package._version_key(current)
