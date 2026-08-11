@@ -2255,6 +2255,7 @@ name = "nemo-fabric-adapters-claude"
 version = "0.2.0"
 source = { editable = "adapters/claude" }
 dependencies = [
+    { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-common" },
     { name = "tomli-w" },
 ]
@@ -2268,6 +2269,7 @@ harness = [
 requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'full'", specifier = "==0.2.120" },
     { name = "claude-agent-sdk", marker = "extra == 'harness'", specifier = "==0.2.120" },
+    { name = "nemo-fabric-adapter-contract", editable = "adapter-contract" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
