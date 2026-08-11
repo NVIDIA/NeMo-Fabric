@@ -40,11 +40,18 @@ No Python callable crosses the configuration contract. Installed NAT owns the
 accepted registry types and validates their native settings.
 
 NAT validates registry references after loading installed component entry
-points. The adapter does not maintain a workflow catalog. It translates
-portable system instructions and tool policy only for the shared and per-user
-ReAct configuration shapes whose fields it knows; other NAT workflows remain
-available when callers use their native `workflow.settings` and omit those
-normalized ReAct-specific fields.
+points. The adapter does not maintain a workflow catalog and forwards any
+installed workflow registry reference. Execution is limited to workflows whose
+component graph can be expressed through the translated surfaces above:
+workflow settings, LLMs, functions, function groups, and MCP. Workflows that
+require other top-level NAT configuration sections, such as embedders, memory,
+object stores, retrievers, or middleware, are outside this initial reference.
+
+The adapter translates portable system instructions only for the exact shared
+and per-user ReAct configuration shapes whose fields it knows. Normalized tool
+policy and MCP configuration work with any workflow whose native settings
+expose a string-list `tool_names` field. Other workflow-specific configuration
+remains in `workflow.settings`.
 
 At runtime, `start` loads components, enters one `WorkflowBuilder`, creates a
 `SessionManager` with that shared builder, and retains both resources. Each

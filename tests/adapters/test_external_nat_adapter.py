@@ -529,17 +529,19 @@ def test_typed_examples_project_and_translate_through_one_nat_adapter(
 
 
 @pytest.mark.parametrize(
-    ("ref", "expected_type"),
+    ("ref", "expected_type", "uses_react_config_shape"),
     [
-        ("per_user_react_agent", "per_user_react_agent"),
+        ("per_user_react_agent", "per_user_react_agent", True),
         (
             "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
             "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
+            True,
         ),
-        ("tool_calling_agent", "tool_calling_agent"),
+        ("tool_calling_agent", "tool_calling_agent", False),
         (
             "nat.plugins.langchain.agent.tool_calling_agent/tool_calling_agent",
             "nat.plugins.langchain.agent.tool_calling_agent/tool_calling_agent",
+            False,
         ),
     ],
 )
@@ -548,6 +550,7 @@ def test_nat_workflow_refs_plan_through_generic_descriptor(
     monkeypatch: pytest.MonkeyPatch,
     ref: str,
     expected_type: str,
+    uses_react_config_shape: bool,
 ):
     descriptor = ROOT / "external" / "nat" / "fabric-adapter.json"
     staged_descriptor = tmp_path / "adapters" / "nat" / "fabric-adapter.json"
@@ -560,7 +563,7 @@ def test_nat_workflow_refs_plan_through_generic_descriptor(
     )
     config = namespace["build_config"]()
     config.workflow.entrypoint.ref = ref
-    if ref.rsplit("/", 1)[-1] not in {"react_agent", "per_user_react_agent"}:
+    if not uses_react_config_shape:
         config.instructions = None
         config.mcp = None
         config.tools = None
