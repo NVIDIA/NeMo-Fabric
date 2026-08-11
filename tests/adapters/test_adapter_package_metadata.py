@@ -100,9 +100,12 @@ def test_adapter_runtime_dependencies(path: str, expected: list[str]):
 
 def test_common_mcp_oauth_extra_declares_protocol_dependencies():
     extras = load_pyproject("adapters/common")["project"]["optional-dependencies"]
-    assert extras == {"mcp-oauth": ["httpx>=0.27,<1", "mcp>=1.26,<1.29"],
-                      "pydantic": ["pydantic>=2.12,<3"]}
+    assert extras == {"mcp-oauth": ["httpx>=0.27,<1", "mcp>=1.26,<1.29"]}
 
+def test_adapter_contract_offers_optional_pydantic_interop():
+    extras = load_pyproject("adapter-contract")["project"]["optional-dependencies"]
+
+    assert extras == {"pydantic": ["pydantic>=2.12,<3"]}
 
 def test_adapter_test_dependency_group_matches_leaf_harnesses():
     manifest = load_pyproject("")
