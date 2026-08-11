@@ -207,6 +207,41 @@ includes the NeMo Relay Python package.
   OTel/OpenInference export is available through the relay plugin config; the
   example provides `with_relay_otel(...)` and
   `with_relay_openinference(...)` variants.
+
+  Telemetry is a separate failure domain from the agent turn. After the agent has
+  been invoked, no telemetry fault — a failed scope close, a failed export flush,
+  or a failed artifact scan — changes the functional outcome: it is reported in the
+  `telemetry` block instead, as `telemetry.degraded: true` plus a `telemetry.error`
+  message. A turn the agent completed therefore stays `completed`, and a turn the
+  agent failed stays failed with its own `error`; the telemetry fault never
+  overwrites either. Faults from more than one stage are joined into that one
+  message rather than the first one winning. Both keys are absent on a clean run.
+
+  `telemetry.degraded` is the machine-readable signal to branch on. After a scope
+  or flush fault the run is degraded but `relay_artifacts` is still populated,
+  because a partial trajectory is usually worth reading — treat it as untrusted
+  rather than absent. When artifact collection itself is what failed there is
+  nothing to reference, so `relay_artifacts` is absent entirely.
+
+  A telemetry failure that happens *before* the agent runs leaves no functional
+  outcome to preserve, so it is reported as an invocation `error` as well.
+
+  Relay's scope stack lives in the process and outlives a single invocation, so a
+  fault that leaves a scope current poisons the runtime rather than just the turn.
+  When that happens the runtime is quarantined: every later turn keeps running and
+  stays `completed`, but is no longer wrapped in a request scope, reports
+  `telemetry.degraded: true` with a sticky message, and references no
+  `relay_artifacts` of its own — the artifacts on disk belong to the earlier turns.
+  This contains the damage rather than repairing it: the Relay middleware attached
+  to the agent at start still emits, and those events nest under the stale scope, so
+  a quarantined runtime's trajectory is untrustworthy rather than empty. The
+  quarantine deliberately survives `stop()`/`start()`, because restarting the
+  runtime does not clean the process's scope stack.
+
+  On the turn the fault happened, `telemetry.error` carries it verbatim. On the
+  turns that inherit the quarantine it appears as `telemetry.quarantine_cause`
+  instead, so a consumer counting or matching per-turn errors does not see the same
+  fault reported once per remaining turn.
 - **Native** (`telemetry.providers.native.config`): the provider config
   OpenTelemetry/OpenInference exporter is applied and spans export directly to
   the configured collector, without writing ATOF/ATIF relay artifacts.
