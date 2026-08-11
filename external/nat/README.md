@@ -56,6 +56,22 @@ caching, and cleanup to NAT. Repeated requests for one user reuse NAT's cached
 builder, different users remain isolated, and separate NeMo Fabric runtimes
 own separate session managers.
 
+Native OpenAI streaming is available when the selected NAT registry entry
+declares `ChatResponseChunk` as its streaming output schema. The adapter asks
+the retained `SessionManager` for that schema; it does not infer support from a
+workflow name or from shared versus per-user lifecycle. NAT 1.8's shared ReAct
+registration declares this schema, while its per-user ReAct registration does
+not currently declare a stream function.
+
+One `invoke_openai_stream` call opens one NAT session and run, consumes
+`runner.result_stream(to_type=ChatResponseChunk)` exactly once, and forwards the
+serialized OpenAI Chat Completions chunks in order. The terminal Fabric result
+contains the concatenated string `delta.content` values for choice index `0`;
+empty and usage-only streams complete with an empty response. The adapter does
+not add SSE framing, a `[DONE]` marker, or a synthetic finish chunk. A workflow
+whose registry metadata does not declare `ChatResponseChunk` returns
+`nat_openai_stream_unsupported_schema` before NAT opens a session.
+
 After starting a multi-turn runtime, invoke a per-user workflow with a typed
 request:
 
@@ -73,8 +89,7 @@ result = await runtime.invoke(
 `stop` first shuts down the session manager, including NAT's cleanup task and
 cached per-user builders, and then exits the shared builder context. NAT can
 also evict inactive per-user builders according to its session cleanup policy.
-This reference does not claim cancellation, service, streaming, or live-update
-support.
+This reference does not claim cancellation, service, or live-update support.
 
 ## MCP Tool Filters
 

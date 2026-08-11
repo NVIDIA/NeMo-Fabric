@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import runpy
 import sys
@@ -26,6 +27,37 @@ NAT_ADAPTER_SOURCE = ROOT / "external" / "nat" / "src"
 sys.path.insert(0, str(NAT_ADAPTER_SOURCE))
 
 from nemo_fabric_adapters.nat import adapter  # noqa: E402
+
+
+class _AsyncChunkStream:
+    """Small controllable async stream used to verify NAT stream ownership."""
+
+    def __init__(
+        self,
+        items: list[Any],
+        *,
+        close_error: Exception | None = None,
+    ) -> None:
+        self._items = iter(items)
+        self._close_error = close_error
+        self.close_count = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            item = next(self._items)
+        except StopIteration:
+            raise StopAsyncIteration from None
+        if isinstance(item, BaseException):
+            raise item
+        return item
+
+    async def aclose(self) -> None:
+        self.close_count += 1
+        if self._close_error is not None:
+            raise self._close_error
 
 
 def _fabric_workflow(
@@ -122,6 +154,7 @@ def mock_nat_fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     mock_runner = MagicMock(name="runner")
     mock_runner.result = AsyncMock(side_effect=[{"answer": 42}, {"answer": 84}])
+    mock_runner.result_stream = MagicMock(name="result_stream")
     mock_run_context = MagicMock(name="run_context")
     mock_run_context.__aenter__ = AsyncMock(return_value=mock_runner)
     mock_run_context.__aexit__ = AsyncMock(return_value=False)
@@ -154,6 +187,7 @@ def mock_nat_fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "nat.runtime.session",
         "nat.data_models",
         "nat.data_models.config",
+        "nat.data_models.api_server",
         "nat.data_models.runtime_enum",
         "pydantic_core",
     ):
@@ -166,6 +200,11 @@ def mock_nat_fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     modules["nat.runtime.loader"].PluginTypes = mock_plugin_types
     modules["nat.runtime.loader"].discover_and_register_plugins = mock_discover
     modules["nat.data_models.config"].Config = mock_config_type
+    mock_chat_response_chunk = MagicMock(name="ChatResponseChunk")
+    modules["nat.data_models.api_server"].ChatResponseChunk = mock_chat_response_chunk
+    mock_sessions.get_workflow_streaming_output_schema.return_value = (
+        mock_chat_response_chunk
+    )
     modules["nat.builder.workflow_builder"].WorkflowBuilder = mock_workflow_builder
     modules["nat.runtime.session"].SessionManager = mock_session_manager
     modules["nat.data_models.runtime_enum"].RuntimeTypeEnum = mock_runtime_type
@@ -187,6 +226,7 @@ def mock_nat_fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "session_context": mock_session_context,
         "runtime_type": mock_runtime_type,
         "to_jsonable": mock_to_jsonable,
+        "chat_response_chunk": mock_chat_response_chunk,
     }
 
 
@@ -262,9 +302,43 @@ def test_descriptor_declares_exact_source_reference_contract():
     assert descriptor["capabilities"] == {
         "cancellation": False,
         "service": False,
-        "streaming": False,
+        "streaming": True,
         "updates": False,
     }
+
+
+def test_installed_nat_chat_response_chunk_serializes_to_openai_mapping():
+    """Keep the adapter serializer aligned with NAT's public chunk model."""
+
+    api_server = pytest.importorskip("nat.data_models.api_server")
+    pydantic_core = pytest.importorskip("pydantic_core")
+
+    chunk = api_server.ChatResponseChunk.from_string(
+        "hello",
+        id_="chunk-1",
+        model="test-model",
+        finish_reason="stop",
+    )
+    serialized = pydantic_core.to_jsonable_python(
+        chunk,
+        serialize_unknown=False,
+    )
+
+    assert serialized["id"] == "chunk-1"
+    assert serialized["object"] == "chat.completion.chunk"
+    assert serialized["model"] == "test-model"
+    assert isinstance(serialized["created"], int)
+    assert serialized["choices"] == [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "delta": {
+                "content": "hello",
+                "role": "assistant",
+                "tool_calls": None,
+            },
+        }
+    ]
 
 
 def test_main_opts_the_nat_host_into_typed_agent_config(
@@ -719,6 +793,7 @@ async def test_installed_nat_reuses_isolates_and_cleans_per_user_builders(
         shared_builder=shared_builder,
     )
     assert manager.is_workflow_per_user is True
+    assert manager.get_workflow_streaming_output_schema() is None
     try:
         async with manager.session(user_id="user-a") as first_a:
             first_a_workflow = first_a.workflow
@@ -1035,6 +1110,348 @@ async def test_runtime_reuses_one_builder_across_invocations_and_cleans_up(
     assert mock_nat["runner"].result.await_count == 2
     mock_nat["sessions"].shutdown.assert_awaited_once_with()
     assert mock_nat["builder_context"].__aexit__.await_count == 1
+
+
+async def test_openai_stream_forwards_ordered_chunks_and_returns_content(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    del mock_nat["sessions"].is_workflow_per_user
+    chunks = [
+        {
+            "id": "chunk-1",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": "hel"},
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chunk-2",
+            "object": "chat.completion.chunk",
+            "created": 2,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": 1,
+                    "delta": {"content": "ignored"},
+                    "finish_reason": None,
+                },
+                {
+                    "index": 0,
+                    "delta": {"content": "lo"},
+                    "finish_reason": "stop",
+                },
+            ],
+        },
+    ]
+    stream = _AsyncChunkStream(chunks)
+    mock_nat["runner"].result_stream.return_value = stream
+    emitted: list[dict[str, Any]] = []
+
+    async def emit(chunk: dict[str, Any]) -> None:
+        emitted.append(chunk)
+
+    input_value = {"message": "hello"}
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        result = await runtime.invoke_openai_stream(
+            make_invocation_payload(
+                input_value=input_value,
+                context={"conversation_id": "conversation-1"},
+            ),
+            emit,
+        )
+    finally:
+        await runtime.stop()
+
+    assert emitted == chunks
+    assert result == {
+        "harness": "nat",
+        "adapter": "python",
+        "mode": "agent_config",
+        "response": "hello",
+        "completed": True,
+        "failed": False,
+        "error": None,
+    }
+    mock_nat["sessions"].session.assert_called_once_with(
+        conversation_id="conversation-1",
+        user_message_id="request-1",
+    )
+    mock_nat["session"].run.assert_called_once_with(
+        input_value,
+        runtime_type="run-or-serve",
+    )
+    mock_nat["runner"].result_stream.assert_called_once_with(
+        to_type=mock_nat["chat_response_chunk"]
+    )
+    mock_nat["runner"].result.assert_not_awaited()
+    assert mock_nat["to_jsonable"].call_args_list == [
+        call(chunk, serialize_unknown=False) for chunk in chunks
+    ]
+    assert stream.close_count == 1
+
+
+async def test_openai_stream_reuses_not_started_and_runtime_identity_validation(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    runtime = adapter.NatRuntime()
+    emit = AsyncMock()
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as not_started:
+        await runtime.invoke_openai_stream(make_invocation_payload(), emit)
+    assert not_started.value.code == "nat_runtime_not_started"
+
+    await runtime.start(make_payload())
+    try:
+        with pytest.raises(adapter.lifecycle.LifecycleError) as mismatch:
+            await runtime.invoke_openai_stream(
+                make_invocation_payload(runtime_id="runtime-2"), emit
+            )
+    finally:
+        await runtime.stop()
+
+    assert mismatch.value.code == "nat_runtime_mismatch"
+    mock_nat["sessions"].session.assert_not_called()
+    emit.assert_not_awaited()
+
+
+async def test_openai_stream_accepts_empty_and_usage_only_streams(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    usage_chunk = {
+        "id": "usage-1",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "test-model",
+        "choices": [],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 0, "total_tokens": 1},
+    }
+    streams = [_AsyncChunkStream([]), _AsyncChunkStream([usage_chunk])]
+    mock_nat["runner"].result_stream.side_effect = streams
+    emitted: list[dict[str, Any]] = []
+
+    async def emit(chunk: dict[str, Any]) -> None:
+        emitted.append(chunk)
+
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        empty_result = await runtime.invoke_openai_stream(
+            make_invocation_payload(request_id="empty"), emit
+        )
+        usage_result = await runtime.invoke_openai_stream(
+            make_invocation_payload(request_id="usage"), emit
+        )
+    finally:
+        await runtime.stop()
+
+    assert empty_result["response"] == ""
+    assert usage_result["response"] == ""
+    assert emitted == [usage_chunk]
+    assert mock_nat["runner"].result_stream.call_count == 2
+    mock_nat["runner"].result.assert_not_awaited()
+    assert [stream.close_count for stream in streams] == [1, 1]
+
+
+async def test_openai_stream_rejects_non_openai_schema_before_session(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    mock_nat["sessions"].get_workflow_streaming_output_schema.return_value = None
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        result = await runtime.invoke_openai_stream(
+            make_invocation_payload(),
+            AsyncMock(),
+        )
+    finally:
+        await runtime.stop()
+
+    assert result["error"] == {
+        "code": "nat_openai_stream_unsupported_schema",
+        "message": (
+            "NAT native OpenAI streaming requires a ChatResponseChunk output schema"
+        ),
+        "retryable": False,
+    }
+    mock_nat["sessions"].get_workflow_streaming_output_schema.assert_called_once_with()
+    mock_nat["sessions"].session.assert_not_called()
+    mock_nat["runner"].result_stream.assert_not_called()
+    mock_nat["runner"].result.assert_not_awaited()
+
+
+async def test_openai_stream_uses_nat_per_user_metadata_without_ref_policy(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    chunk = {
+        "id": "chunk-1",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "test-model",
+        "choices": [{"index": 0, "delta": {"content": "hello"}}],
+    }
+    mock_nat["sessions"].is_workflow_per_user = True
+    mock_nat["runner"].result_stream.return_value = _AsyncChunkStream([chunk])
+    emitted: list[dict[str, Any]] = []
+
+    async def emit(value: dict[str, Any]) -> None:
+        emitted.append(value)
+
+    runtime = adapter.NatRuntime()
+    await runtime.start(
+        make_payload(workflow=_fabric_workflow("installed.custom/workflow"))
+    )
+    try:
+        result = await runtime.invoke_openai_stream(
+            make_invocation_payload(context={"user_id": "user-1"}),
+            emit,
+        )
+    finally:
+        await runtime.stop()
+
+    assert result["response"] == "hello"
+    assert emitted == [chunk]
+    mock_nat["sessions"].session.assert_called_once_with(
+        user_id="user-1",
+        user_message_id="request-1",
+    )
+
+
+async def test_openai_stream_normalizes_partial_nat_failure_without_leaking_cause(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+    caplog,
+):
+    chunk = {
+        "id": "chunk-1",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "test-model",
+        "choices": [{"index": 0, "delta": {"content": "partial"}}],
+    }
+    stream = _AsyncChunkStream([chunk, RuntimeError("api-key=super-secret")])
+    mock_nat["runner"].result_stream.return_value = stream
+    emit = AsyncMock()
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        result = await runtime.invoke_openai_stream(make_invocation_payload(), emit)
+    finally:
+        await runtime.stop()
+
+    assert result["error"] == {
+        "code": "nat_workflow_stream_failed",
+        "message": "NAT workflow streaming failed; inspect adapter stderr for details",
+        "retryable": False,
+    }
+    emit.assert_awaited_once_with(chunk)
+    assert stream.close_count == 1
+    mock_nat["runner"].result.assert_not_awaited()
+    assert "super-secret" not in json.dumps(result)
+    assert "super-secret" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "serialization_failure",
+    [TypeError("secret-object-repr"), ["not", "a", "mapping"]],
+)
+async def test_openai_stream_normalizes_chunk_serialization_failure(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+    caplog,
+    serialization_failure: Any,
+):
+    stream = _AsyncChunkStream([object()])
+    mock_nat["runner"].result_stream.return_value = stream
+    if isinstance(serialization_failure, BaseException):
+        mock_nat["to_jsonable"].side_effect = serialization_failure
+    else:
+        mock_nat["to_jsonable"].return_value = serialization_failure
+    emit = AsyncMock()
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        result = await runtime.invoke_openai_stream(make_invocation_payload(), emit)
+    finally:
+        await runtime.stop()
+
+    assert result["error"] == {
+        "code": "nat_stream_chunk_not_json_serializable",
+        "message": (
+            "NAT workflow returned a stream chunk that cannot be represented as JSON"
+        ),
+        "retryable": False,
+    }
+    emit.assert_not_awaited()
+    assert stream.close_count == 1
+    assert "secret-object-repr" not in json.dumps(result)
+    assert "secret-object-repr" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "emitter_error",
+    [
+        adapter.lifecycle.LifecycleError(
+            "lifecycle_stream_transport_failed",
+            "stream listener disconnected",
+        ),
+        asyncio.CancelledError(),
+    ],
+)
+async def test_openai_stream_propagates_emitter_lifecycle_and_cancellation(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+    caplog,
+    emitter_error: BaseException,
+):
+    chunk = {
+        "id": "chunk-1",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "test-model",
+        "choices": [{"index": 0, "delta": {"content": "hello"}}],
+    }
+    stream = _AsyncChunkStream(
+        [chunk],
+        close_error=RuntimeError("cleanup-secret"),
+    )
+    mock_nat["runner"].result_stream.return_value = stream
+    emit = AsyncMock(side_effect=emitter_error)
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload())
+    try:
+        with pytest.raises(type(emitter_error)) as raised:
+            await runtime.invoke_openai_stream(make_invocation_payload(), emit)
+        assert raised.value is emitter_error
+    finally:
+        await runtime.stop()
+
+    assert stream.close_count == 1
+    assert mock_nat["run_context"].__aexit__.await_count == 1
+    assert mock_nat["session_context"].__aexit__.await_count == 1
+    mock_nat["runner"].result.assert_not_awaited()
+    assert "cleanup-secret" not in caplog.text
+    assert "error_type=RuntimeError" in caplog.text
 
 
 async def test_per_user_runtime_forwards_identity_and_cleans_nat_before_builder(
