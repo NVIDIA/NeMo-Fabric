@@ -24,11 +24,12 @@ def assert_atof_skill_selection(
     tool_records = [
         record for record in atof_records(output) if record["category"] == "tool"
     ]
-    serialized_records = json.dumps(tool_records)
+    serialized_records = json.dumps(tool_records).replace("\\\\", "/")
     loaded_skills = {
         skill
         for skill in ("default", "alternate")
         if f"{skill} skill loaded" in serialized_records
+        or f"/{skill}/SKILL.md" in serialized_records
     }
     claude_skill_ends = [
         record
