@@ -92,7 +92,9 @@ for (const spec of schemaSpecs) {
 pendingFiles.set(resolve(packageRoot, "src/json.ts"), generateJsonTypes());
 pendingFiles.set(
   resolve(packageRoot, "src/version.ts"),
-  generateVersion(contractVersion),
+  generateVersion(
+    requireString(contractVersion, "resolved adapter contract version"),
+  ),
 );
 
 const mismatches = [];

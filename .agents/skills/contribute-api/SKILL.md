@@ -1,6 +1,6 @@
 ---
 name: contribute-api
-description: Contribute a new NeMo Fabric public API surface safely, with Rust, CLI, Python, TypeScript, schema, adapter, and documentation parity in mind
+description: Contribute a new NVIDIA NeMo Fabric public API surface safely, with Rust, CLI, Python, TypeScript, schema, adapter, and documentation parity in mind
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---

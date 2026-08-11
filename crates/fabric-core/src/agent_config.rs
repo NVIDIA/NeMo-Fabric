@@ -64,10 +64,10 @@ pub struct AgentHarnessConfig {
 #[serde(deny_unknown_fields)]
 pub struct AgentModelConfig {
     /// Model provider identifier.
-    #[schemars(length(min = 1))]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub provider: String,
     /// Provider model identifier.
-    #[schemars(length(min = 1))]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub model: String,
     /// Environment variable containing the provider credential.
     #[serde(default, skip_serializing_if = "Option::is_none")]

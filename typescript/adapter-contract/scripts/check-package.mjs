@@ -172,6 +172,7 @@ if (
     "optionalDependencies",
     "peerDependencies",
     "bundledDependencies",
+    "bundleDependencies",
   ]) {
     if (installedManifest[field] !== undefined) {
       throw new Error(`Published package must not declare ${field}`);

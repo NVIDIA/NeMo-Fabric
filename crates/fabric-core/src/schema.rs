@@ -391,6 +391,12 @@ mod tests {
     #[test]
     fn adapter_contract_schemas_bound_rust_integer_types() {
         let config = generate_schema(SchemaName::AgentConfig).expect("schema generation");
+        for field in ["provider", "model"] {
+            assert_eq!(
+                config["$defs"]["AgentModelConfig"]["properties"][field]["pattern"],
+                r"\S"
+            );
+        }
         assert_eq!(
             config["$defs"]["AgentRuntimeConfig"]["properties"]["max_turns"]["maximum"],
             u32::MAX
@@ -420,6 +426,7 @@ mod tests {
             "error": {"code": "target_error", "message": "target failed"}
         })));
         for path in [
+            " \t",
             "nested/../output",
             r"nested\..\output",
             r"C:\tmp\output",

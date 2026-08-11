@@ -27,7 +27,11 @@ const currentConditionals = runResultSchema.allOf;
 
 test("result projection rejects an unhandled conditional constraint", () => {
   const changed = structuredClone(currentConditionals);
-  changed[0].then.required.push("usage");
+  const failedConditional = changed.find(
+    (entry) => entry.if?.properties?.status?.const === "failed",
+  );
+  assert.ok(failedConditional, "expected a failed-status conditional");
+  failedConditional.then.required.push("usage");
 
   assert.throws(
     () => assertRunResultConditionals(changed),

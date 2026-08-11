@@ -308,19 +308,20 @@ build-python:
             --reinstall-package nemo-fabric-runtime
     fi
 
-# Build the TypeScript adapter contract using the locked dependency set.
-build-typescript:
+# Install the TypeScript adapter contract dependencies from the lockfile.
+install-typescript:
     npm ci --prefix typescript/adapter-contract --ignore-scripts
+
+# Build the TypeScript adapter contract using the locked dependency set.
+build-typescript: install-typescript
     npm run build --prefix typescript/adapter-contract
 
 # Generate the TypeScript adapter contract from the committed JSON Schemas.
-generate-typescript-contract:
-    npm ci --prefix typescript/adapter-contract --ignore-scripts
+generate-typescript-contract: install-typescript
     npm run generate --prefix typescript/adapter-contract
 
 # Verify the TypeScript adapter contract package tarball.
-pack-typescript:
-    npm ci --prefix typescript/adapter-contract --ignore-scripts
+pack-typescript: install-typescript
     npm run pack:check --prefix typescript/adapter-contract
 
 # Build all supported language packages.
@@ -398,8 +399,7 @@ test-rust:
     cargo test --workspace --locked
 
 # Run the TypeScript adapter contract checks using the locked dependency set.
-test-typescript:
-    npm ci --prefix typescript/adapter-contract --ignore-scripts
+test-typescript: install-typescript
     npm test --prefix typescript/adapter-contract
 
 # Run all Rust, Python, and TypeScript tests.

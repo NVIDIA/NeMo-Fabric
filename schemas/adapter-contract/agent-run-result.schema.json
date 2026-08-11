@@ -46,6 +46,7 @@
               }
             ]
           },
+          "pattern": "\\S",
           "type": "string"
         }
       },

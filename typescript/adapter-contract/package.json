@@ -31,8 +31,9 @@
     "build": "node scripts/clean.mjs && tsc -p tsconfig.build.json",
     "test:generator": "node --test test/*.test.mjs",
     "test:types": "tsc -p test/tsconfig.json --noEmit",
+    "test:dependencies": "node scripts/check-dependencies.mjs && npm ls --all && npm audit --audit-level=high",
     "pack:check": "npm run build && node scripts/check-package.mjs",
-    "test": "npm run generate:check && npm run test:generator && npm run test:types && npm run pack:check",
+    "test": "npm run generate:check && npm run test:generator && npm run test:types && npm run test:dependencies && npm run pack:check",
     "prepack": "npm run generate:check && npm run build"
   },
   "publishConfig": {

@@ -61,7 +61,8 @@ surfaces touched by a change.
   Run `tests/test_harbor_runner.py`, then `just test-python`.
 - **Schema or public contract changed**
   Run the Rust, Python, and TypeScript suites and review changes under
-  `schemas/`, generated TypeScript sources, and generated API references.
+  `schemas/`, the checked-in Python adapter-contract representations, generated
+  TypeScript sources, and generated API references.
 - **Documentation-only change**
   Use `contribute-docs` and `review-doc-style`. Run `just docs` for docs-site or
   generated-reference changes.

@@ -10,9 +10,13 @@ from pathlib import Path
 from typing import Any
 
 
+NUMERIC_IDENTIFIER = r"(?:0|[1-9]\d*)"
+PRERELEASE_IDENTIFIER = rf"(?:{NUMERIC_IDENTIFIER}|\d*[A-Za-z-][0-9A-Za-z-]*)"
+BUILD_IDENTIFIER = r"[0-9A-Za-z-]+"
 SEMVER_PATTERN = re.compile(
-    r"\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)(?:\.\d+)?)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    rf"{NUMERIC_IDENTIFIER}\.{NUMERIC_IDENTIFIER}\.{NUMERIC_IDENTIFIER}"
+    rf"(?:-{PRERELEASE_IDENTIFIER}(?:\.{PRERELEASE_IDENTIFIER})*)?"
+    rf"(?:\+{BUILD_IDENTIFIER}(?:\.{BUILD_IDENTIFIER})*)?"
 )
 PACKAGE_DIRECTORY = Path("typescript/adapter-contract")
 

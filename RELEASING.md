@@ -151,6 +151,7 @@ The helper updates:
    and its npm lockfile.
 5. [`Cargo.lock`](Cargo.lock), [`uv.lock`](uv.lock), and every Python project
    lockfile.
+
 Review docs and snippets that mention explicit versions, including:
 
 - [`README.md`](README.md)

@@ -1,6 +1,6 @@
 ---
 name: maintain-packaging
-description: Maintain NeMo Fabric Rust, Python, and TypeScript dependencies, package metadata, module paths, native artifacts, lockfiles, license evidence, and release-facing build surfaces
+description: Maintain NVIDIA NeMo Fabric Rust, Python, and TypeScript dependencies, package metadata, module paths, native artifacts, lockfiles, license evidence, and release-facing build surfaces
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---

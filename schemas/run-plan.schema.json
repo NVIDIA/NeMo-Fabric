@@ -611,11 +611,13 @@
         "model": {
           "description": "Provider model identifier.",
           "minLength": 1,
+          "pattern": "\\S",
           "type": "string"
         },
         "provider": {
           "description": "Model provider identifier.",
           "minLength": 1,
+          "pattern": "\\S",
           "type": "string"
         },
         "settings": {
