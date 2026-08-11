@@ -59,13 +59,14 @@ def _max_turns(config: AgentConfig) -> int | None:
 
 
 def _api_key_env(model_config: AgentModelConfig) -> str:
-    if model_config.api_key_env:
-        return model_config.api_key_env
-    default = PROVIDER_DEFAULT_API_KEY_ENV.get(model_config.provider)
+    explicit = model_config.api_key_env
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    provider = str(model_config.provider or "").lower()
+    default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
     if default is None:
         raise ValueError(
-            "selected model api_key_env is required for provider "
-            f"{model_config.provider!r}"
+            f"selected model api_key_env is required for provider {provider!r}"
         )
     return default
 
