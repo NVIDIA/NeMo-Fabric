@@ -74,6 +74,10 @@ export type AdapterDescriptor = {
    * Stable machine-readable harness identifier implemented by this adapter.
    */
   harness: string;
+  /**
+   * JSON Schema applied to every normalized `FabricConfig.models` entry.
+   */
+  model_schema?: JsonObject | null;
   requirements?: AdapterRequirements;
   /**
    * Generic runner defaults consumed by the selected runtime adapter.

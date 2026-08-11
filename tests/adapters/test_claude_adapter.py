@@ -86,6 +86,31 @@ def test_claude_descriptor_is_narrow_and_versioned():
         "runner": {
             "module": "nemo_fabric_adapters.claude.adapter",
         },
+        "model_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "minLength": 1},
+                "model": {"type": "string", "minLength": 1},
+                "temperature": {"type": "number"},
+                "api_key_env": {"type": "string", "minLength": 1},
+                "base_url": {"type": "string", "minLength": 1},
+                "settings": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["provider", "model"],
+            "if": {
+                "properties": {"provider": {"const": "anthropic"}},
+                "required": ["provider"],
+            },
+            "else": {
+                "required": ["base_url", "api_key_env"],
+            },
+            "additionalProperties": False,
+        },
         "settings_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",

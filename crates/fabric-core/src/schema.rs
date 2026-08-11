@@ -328,6 +328,10 @@ mod tests {
             serde_json::json!(["object", "null"])
         );
         assert_eq!(
+            schema["properties"]["model_schema"]["type"],
+            serde_json::json!(["object", "null"])
+        );
+        assert_eq!(
             schema["properties"]["workflow_schema"]["type"],
             serde_json::json!(["object", "null"])
         );

@@ -254,6 +254,7 @@ class _AtofStreamListener:
         self._accepting = False
         self._request_id: str | None = None
         self._turn_index: int | None = None
+        self._upstream_hermes_turn_id: str | None = None
         self._turn_root_uuid: str | None = None
         self._turn_scope_uuids: set[str] = set()
         self._saw_atof_data = False
@@ -307,6 +308,7 @@ class _AtofStreamListener:
             self._queue.get_nowait()
         self._request_id = request_id
         self._turn_index = turn_index
+        self._upstream_hermes_turn_id = None
         self._turn_root_uuid = None
         self._turn_scope_uuids.clear()
         self._saw_atof_data = False
@@ -321,6 +323,7 @@ class _AtofStreamListener:
         self._accepting = False
         self._request_id = None
         self._turn_index = None
+        self._upstream_hermes_turn_id = None
         self._turn_root_uuid = None
         self._turn_scope_uuids.clear()
 
@@ -521,9 +524,28 @@ class _AtofStreamListener:
         uuid = record.get("uuid")
         if not isinstance(uuid, str):
             return False
+        metadata = record.get("metadata")
+
+        # Hermes copies the task ID passed by Fabric into its Relay turn markers.
+        if (
+            self._upstream_hermes_turn_id is not None
+            and isinstance(metadata, dict)
+            and metadata.get("turn_id") == self._upstream_hermes_turn_id
+        ):
+            if (
+                record.get("kind") == "scope"
+                and record.get("scope_category") == "start"
+            ):
+                self._turn_scope_uuids.add(uuid)
+            return True
+
         if self._turn_root_uuid is None:
             if not self._matches_turn_root(record):
                 return False
+            if isinstance(metadata, dict) and record.get("kind") == "mark":
+                turn_id = metadata.get("turn_id")
+                if isinstance(turn_id, str):
+                    self._upstream_hermes_turn_id = turn_id
             self._turn_root_uuid = uuid
             self._turn_scope_uuids.add(uuid)
             self._matched_turn_root = True
@@ -542,10 +564,19 @@ class _AtofStreamListener:
         return True
 
     def _matches_turn_root(self, record: dict[str, Any]) -> bool:
-        if record.get("kind") != "scope" or record.get("scope_category") != "start":
-            return False
         metadata = record.get("metadata")
         if not isinstance(metadata, dict):
+            return False
+        if (
+            record.get("kind") == "mark"
+            and record.get("name") == "hermes.turn.start"
+            and metadata.get("platform") == "fabric"
+            and self._request_id is not None
+            and metadata.get("task_id") == self._request_id
+            and isinstance(metadata.get("turn_id"), str)
+        ):
+            return True
+        if record.get("kind") != "scope" or record.get("scope_category") != "start":
             return False
         if (
             self._request_id is not None

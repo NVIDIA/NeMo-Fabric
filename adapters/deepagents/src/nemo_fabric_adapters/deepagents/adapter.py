@@ -50,6 +50,19 @@ FABRIC_OWNED_AGENT_KEYS = frozenset(
 # through harness.settings.deepagents. Executable objects (AgentMiddleware, BaseTool,
 # Python callables) cannot cross the SDK->JSON->payload boundary and are excluded.
 DEEPAGENTS_PASSTHROUGH_KEYS = frozenset({"subagents", "interrupt_on"})
+# Appended to the fault that poisoned Relay's scope stack, and then reported on every
+# later turn of the same runtime so none of them can look telemetry-clean. Deliberately
+# does not claim later turns are untraced: the Relay middleware is attached to the
+# compiled agent at start and keeps emitting, so what is actually lost is trustworthy
+# nesting, not all telemetry.
+_QUARANTINE_NOTE = (
+    "telemetry unreliable for the rest of this runtime: an earlier turn left the Relay "
+    "scope stack dirty, so this turn is not wrapped in a request scope and any events "
+    "the agent middleware still emits are nested under a stale scope"
+)
+# Sentinel for "this handle carries no identity", kept distinct from a real ``None``
+# attribute value so an unreadable handle can never compare equal to another one.
+_UNREADABLE = object()
 
 
 class AdapterConfigError(RuntimeError):
@@ -471,6 +484,8 @@ class DeepAgentsRuntime:
         self._relay_scope_type: Any = None
         self._relay_plugin_config: dict[str, Any] | None = None
         self._callback_handler_type: Any = None
+        self._telemetry_quarantine: str | None = None
+        self._telemetry_quarantine_cause: str | None = None
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -570,73 +585,147 @@ class DeepAgentsRuntime:
             user_message = json.dumps(user_message, sort_keys=True)
         request_id = request.get("request_id")
 
-        result_state: Any = None
-        events: list[dict[str, Any]] = []
-        turn_messages: list[dict[str, Any]] = []
-        error: str | None = None
         resumed = self._completed_invocations > 0
-        try:
-            if self._observability is not None:
-                callback_handler = self._callback_handler_type()
-                async with self._relay_plugin.plugin(self._relay_plugin_config):
-                    with self._relay_scope.scope(
-                        "deepagents-request",
-                        self._relay_scope_type.Agent,
-                        metadata={"nemo_fabric_request_id": request_id},
-                    ):
-                        (
-                            result_state,
-                            events,
-                            turn_messages,
-                        ) = await invoke_compiled_agent(
-                            self._agent,
-                            user_message,
-                            self._thread_id,
-                            callbacks=[callback_handler],
-                        )
-            else:
-                result_state, events, turn_messages = await invoke_compiled_agent(
-                    self._agent,
-                    user_message,
-                    self._thread_id,
-                )
-        except Exception as exc:  # normalized adapter failure
-            error = f"{type(exc).__name__}: {exc}"
+        inherited_quarantine = self._telemetry_quarantine is not None
+        if self._observability is None:
+            outcome = await self._invoke_agent(user_message)
+        else:
+            outcome = await self._invoke_with_telemetry(user_message, request_id)
 
-        if error is None:
+        if outcome.error is None:
             self._completed_invocations += 1
 
-        telemetry_runtime, relay_artifacts = self._telemetry_output()
+        telemetry_runtime, relay_artifacts, collect_error = self._telemetry_output(
+            inherited_quarantine=inherited_quarantine
+        )
         return normalize_output(
             model_name=self._model_name,
             base_url=self._base_url,
             runtime_id=self._runtime_id,
             thread_id=self._thread_id,
             resumed=resumed,
+            result_state=outcome.result_state,
+            events=outcome.events or [],
+            turn_messages=outcome.turn_messages or [],
+            error=outcome.error,
+            telemetry_runtime=telemetry_runtime,
+            relay_artifacts=relay_artifacts,
+            telemetry_error=_join_faults(outcome.telemetry_error, collect_error),
+            telemetry_quarantine_cause=(
+                self._telemetry_quarantine_cause if inherited_quarantine else None
+            ),
+        )
+
+    async def _invoke_with_telemetry(
+        self,
+        user_message: str,
+        request_id: str | None,
+    ) -> TurnOutcome:
+        """Run one turn inside the Relay plugin/scope, isolating telemetry faults.
+
+        ``_invoke_agent`` has already absorbed any invocation failure, so an exception
+        caught here can only have come from telemetry setup or teardown.
+        """
+
+        if self._telemetry_quarantine is not None:
+            # Relay's scope stack is still dirty from an earlier turn. Skip the request
+            # scope: pushing onto that stack would nest this turn under a stale scope and
+            # invite another failed pop.
+            outcome = await self._invoke_agent(user_message)
+            return outcome._replace(telemetry_error=self._telemetry_quarantine)
+
+        baseline = _current_scope_handle()
+        outcome: TurnOutcome | None = None
+        scope_error: str | None = None
+        try:
+            callback_handler = self._callback_handler_type()
+            async with self._relay_plugin.plugin(self._relay_plugin_config):
+                # Caught here rather than left to propagate: an exception crossing the
+                # plugin's ``__aexit__`` is replaced by any fault the plugin raises in
+                # turn, which would lose one of the two.
+                try:
+                    with self._relay_scope.scope(
+                        "deepagents-request",
+                        self._relay_scope_type.Agent,
+                        metadata={"nemo_fabric_request_id": request_id},
+                    ):
+                        outcome = await self._invoke_agent(
+                            user_message,
+                            callbacks=[callback_handler],
+                        )
+                except Exception as exc:
+                    scope_error = _error_text(exc)
+        except Exception as exc:  # telemetry lifecycle fault
+            telemetry_error = _join_faults(scope_error, _error_text(exc))
+        else:
+            telemetry_error = scope_error
+
+        if telemetry_error is not None and not _scope_top_unchanged(baseline):
+            self._telemetry_quarantine = _QUARANTINE_NOTE
+            self._telemetry_quarantine_cause = telemetry_error
+            telemetry_error = _join_faults(telemetry_error, _QUARANTINE_NOTE)
+
+        if outcome is None:
+            # No outcome means the agent never ran, so there is nothing to preserve.
+            return TurnOutcome(error=telemetry_error, telemetry_error=telemetry_error)
+        return outcome._replace(telemetry_error=telemetry_error)
+
+    async def _invoke_agent(
+        self,
+        user_message: str,
+        callbacks: list[Any] | None = None,
+    ) -> TurnOutcome:
+        """Run one agent turn, normalizing an invocation failure into an error string."""
+
+        try:
+            result_state, events, turn_messages = await invoke_compiled_agent(
+                self._agent,
+                user_message,
+                self._thread_id,
+                callbacks=callbacks,
+            )
+        except Exception as exc:  # normalized adapter failure
+            return TurnOutcome(error=_error_text(exc))
+        return TurnOutcome(
             result_state=result_state,
             events=events,
             turn_messages=turn_messages,
-            error=error,
-            telemetry_runtime=telemetry_runtime,
-            relay_artifacts=relay_artifacts,
         )
 
     def _telemetry_output(
         self,
-    ) -> tuple[dict[str, Any] | None, list[dict[str, str]] | None]:
+        *,
+        inherited_quarantine: bool,
+    ) -> tuple[dict[str, Any] | None, list[dict[str, str]] | None, str | None]:
+        """Return the telemetry block, artifact references, and any collection fault.
+
+        Collecting references walks the filesystem, so it is returned as a fault rather
+        than raised: raising here would discard an already-completed turn.
+
+        ``inherited_quarantine`` is the state from *before* this turn: the turn that
+        poisoned the runtime opened a scope and produced its own partial artifacts, so it
+        still publishes them; only turns that inherit the quarantine have none of their
+        own to publish.
+        """
+
         if self._observability is None:
-            return None, None
+            return None, None, None
         telemetry_runtime = {
             "enabled": True,
             "provider": self._telemetry_provider,
             "emitter": self._observability.emitter,
         }
-        relay_artifacts = (
-            common_utils.collect_relay_artifacts(self._observability.plugin_config)
-            if self._observability.collect_artifacts
-            else None
-        )
-        return telemetry_runtime, relay_artifacts
+        if not self._observability.collect_artifacts:
+            return telemetry_runtime, None, None
+        if inherited_quarantine:
+            return telemetry_runtime, None, None
+        try:
+            relay_artifacts = common_utils.collect_relay_artifacts(
+                self._observability.plugin_config
+            )
+        except Exception as exc:
+            return telemetry_runtime, None, _error_text(exc)
+        return telemetry_runtime, relay_artifacts, None
 
     async def stop(self) -> None:
         checkpointer = self._checkpointer
@@ -736,6 +825,66 @@ class Observability(NamedTuple):
     collect_artifacts: bool
 
 
+class TurnOutcome(NamedTuple):
+    """One agent turn, with its two failure domains kept apart: ``error`` means the
+    agent failed, ``telemetry_error`` means recording it did.
+    """
+
+    result_state: Any = None
+    events: list[dict[str, Any]] | None = None
+    turn_messages: list[dict[str, Any]] | None = None
+    error: str | None = None
+    telemetry_error: str | None = None
+
+
+def _error_text(exc: BaseException) -> str:
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _current_scope_handle() -> Any:
+    """Return Relay's current scope handle, or ``None`` when it cannot be read."""
+
+    try:
+        import nemo_relay
+
+        return nemo_relay.scope.get_handle()
+    except Exception:
+        return None
+
+
+def _scope_top_unchanged(baseline: Any) -> bool:
+    """Report whether the scope current now is the one current before the turn.
+
+    This checks the top of the stack, not the whole stack: Relay exposes no depth, so a
+    fault that left the stack deeper while restoring the top would read as unchanged.
+    The observed failure strands a child scope on top, which this does catch. Anything
+    unreadable — a missing handle, or a handle without the identity attribute — counts
+    as changed, so a Relay rename cannot silently turn the check off.
+    """
+
+    if baseline is None:
+        return False
+    current = _current_scope_handle()
+    if current is None:
+        return False
+    baseline_uuid = getattr(baseline, "uuid", _UNREADABLE)
+    current_uuid = getattr(current, "uuid", _UNREADABLE)
+    if baseline_uuid is _UNREADABLE or current_uuid is _UNREADABLE:
+        return False
+    return bool(current_uuid == baseline_uuid)
+
+
+def _join_faults(*faults: str | None) -> str | None:
+    """Combine telemetry faults into one message; teardown and artifact collection can
+    both fail in the same turn.
+    """
+
+    present = [fault for fault in faults if fault]
+    if not present:
+        return None
+    return "; ".join(present)
+
+
 def _relay_dependency_error() -> RuntimeError:
     return RuntimeError(
         "telemetry is enabled but a compatible 'nemo-relay' package is not installed; "
@@ -786,6 +935,8 @@ def normalize_output(
     error: str | None,
     telemetry_runtime: dict[str, Any] | None,
     relay_artifacts: list[dict[str, str]] | None,
+    telemetry_error: str | None = None,
+    telemetry_quarantine_cause: str | None = None,
 ) -> dict[str, Any]:
     messages = _extract_messages(result_state)
     response = _final_response(messages)
@@ -812,8 +963,16 @@ def normalize_output(
         "failed": error is not None,
         "error": error,
     }
-    if telemetry_runtime is not None:
-        output["telemetry"] = telemetry_runtime
+    if telemetry_runtime is not None or telemetry_error is not None:
+        # ``degraded`` marks the referenced artifacts as possibly truncated; both keys
+        # are absent on a clean run, so the telemetry block keeps its existing shape.
+        telemetry: dict[str, Any] = dict(telemetry_runtime or {})
+        if telemetry_error is not None:
+            telemetry["degraded"] = True
+            telemetry["error"] = telemetry_error
+        if telemetry_quarantine_cause is not None:
+            telemetry["quarantine_cause"] = telemetry_quarantine_cause
+        output["telemetry"] = telemetry
     if relay_artifacts is not None:
         output["relay_artifacts"] = relay_artifacts
     return output

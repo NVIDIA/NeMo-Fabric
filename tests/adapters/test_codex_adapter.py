@@ -1135,6 +1135,18 @@ def test_descriptor_has_no_codex_binary_requirement():
         "mcp",
         "skills",
     ]
+    assert descriptor["model_schema"]["if"]["properties"]["provider"] == {
+        "const": "openai"
+    }
+    assert descriptor["model_schema"]["else"]["required"] == [
+        "base_url",
+        "api_key_env",
+    ]
+    assert descriptor["model_schema"]["properties"]["settings"] == {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    }
     assert "requirements" not in descriptor
 
 

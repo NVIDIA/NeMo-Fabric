@@ -51,8 +51,10 @@ translation:
   target `harness`, `adapter_kind`, and runner binding.
 - Set `config.input` to `agent_config` for a new adapter.
 - Declare only normalized `config.accepts` fields the implementation enforces.
-- Publish closed `settings_schema`, `workflow_schema`,
-  `tool_definition_schema`, and `extension_schemas` where applicable.
+- Publish closed `settings_schema`, `model_schema`, `workflow_schema`,
+  `tool_definition_schema`, and `extension_schemas` where applicable. Use
+  `model_schema` only for static model/provider compatibility and model settings;
+  keep credential validity and provider availability in startup validation.
 - Declare runtime requirements and telemetry outputs without secret values.
 - Leave optional capability flags false unless the installed NeMo Fabric runtime
   exposes and tests that adapter operation. Relay-backed ATOF streaming does

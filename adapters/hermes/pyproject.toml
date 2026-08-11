@@ -26,6 +26,7 @@ readme = "pypi.md"
 # Hermes Agent does not currently support Python 3.14 or later.
 requires-python = ">=3.11,<3.14"
 dependencies = [
+  "nemo-fabric-adapter-contract == 0.2.0",
   "nemo-fabric-adapters-common == 0.2.0",
 ]
 
@@ -55,4 +56,5 @@ include = ["nemo_fabric_adapters.hermes*"]
 "share/nemo-fabric/adapters/hermes" = ["fabric-adapter.json"]
 
 [tool.uv.sources]
+nemo-fabric-adapter-contract = { path = "../../adapter-contract", editable = true }
 nemo-fabric-adapters-common = { path = "../common", editable = true }

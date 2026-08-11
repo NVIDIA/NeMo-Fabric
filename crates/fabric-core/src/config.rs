@@ -212,6 +212,9 @@ pub struct AdapterDescriptor {
     /// JSON Schema for adapter-owned `harness.settings`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_schema: Option<serde_json::Map<String, Value>>,
+    /// JSON Schema applied to every normalized `FabricConfig.models` entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_schema: Option<serde_json::Map<String, Value>>,
     /// JSON Schema for adapter-owned `FabricConfig.workflow`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_schema: Option<serde_json::Map<String, Value>>,
@@ -1609,6 +1612,28 @@ pub(crate) fn adapter_config_compatibility_issues(
             ));
         }
     }
+
+    if let Some(schema) = &descriptor.model_schema {
+        let schema = Value::Object(schema.clone());
+        let validator = jsonschema::validator_for(&schema)
+            .expect("adapter model schema was validated during descriptor resolution");
+        for (role, model) in &config.models {
+            let mut value = serde_json::to_value(model)
+                .expect("typed model configuration is always JSON serializable");
+            if let Some(object) = value.as_object_mut() {
+                for extension in model.extensions.keys() {
+                    object.remove(extension);
+                }
+            }
+            for error in validator.iter_errors(&value) {
+                issues.push(incompatible(
+                    schema_error_path(&error, &format!("models.{role}")),
+                    schema_error_reason(&error, "adapter model schema"),
+                ));
+            }
+        }
+    }
+
     for (role, model) in &config.models {
         if model.base_url.is_some() && !accepts(AdapterConfigField::ModelBaseUrl) {
             issues.push(incompatible(
@@ -1701,6 +1726,7 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     }
     for (field, schema) in [
         ("settings_schema", descriptor.settings_schema.as_ref()),
+        ("model_schema", descriptor.model_schema.as_ref()),
         ("workflow_schema", descriptor.workflow_schema.as_ref()),
         (
             "tool_definition_schema",
@@ -2814,6 +2840,23 @@ mod tests {
         .expect("typed config")
     }
 
+    fn config_with_model(adapter_id: &str, provider: &str) -> FabricConfig {
+        let mut config = typed_config(adapter_id);
+        config.models.insert(
+            "default".to_string(),
+            ModelConfig {
+                provider: provider.to_string(),
+                model: "test-model".to_string(),
+                temperature: None,
+                api_key_env: None,
+                base_url: None,
+                settings: serde_json::Map::new(),
+                extensions: BTreeMap::new(),
+            },
+        );
+        config
+    }
+
     fn typed_workflow() -> WorkflowConfig {
         serde_json::from_value(serde_json::json!({
             "entrypoint": {
@@ -3260,6 +3303,97 @@ mod tests {
         assert!(issues.iter().any(|issue| {
             issue.adapter_id == "nvidia.fabric.claude" && issue.field == "models.review.base_url"
         }));
+    }
+
+    #[test]
+    fn adapter_model_schemas_accept_native_and_explicit_custom_providers() {
+        for (adapter_id, native_provider) in [
+            ("nvidia.fabric.claude", "anthropic"),
+            ("nvidia.fabric.codex", "openai"),
+        ] {
+            resolve_run_plan_from_config(
+                config_with_model(adapter_id, native_provider),
+                ResolveContext::new("/tmp/fabric-native-provider"),
+            )
+            .expect("adapter-native provider");
+
+            let mut custom = config_with_model(adapter_id, "acme");
+            let model = custom.models.get_mut("default").expect("default model");
+            model.api_key_env = Some("ACME_API_KEY".to_string());
+            model.base_url = Some("https://models.example/v1".to_string());
+            resolve_run_plan_from_config(
+                custom,
+                ResolveContext::new("/tmp/fabric-custom-provider"),
+            )
+            .expect("explicit custom provider");
+        }
+
+        resolve_run_plan_from_config(
+            config_with_model("nvidia.fabric.langchain.deepagents", "acme"),
+            ResolveContext::new("/tmp/fabric-dynamic-provider"),
+        )
+        .expect("adapter without a model schema preserves dynamic providers");
+    }
+
+    #[test]
+    fn adapter_model_schemas_validate_every_model_role() {
+        for (adapter_id, native_provider) in [
+            ("nvidia.fabric.claude", "anthropic"),
+            ("nvidia.fabric.codex", "openai"),
+        ] {
+            let mut config = config_with_model(adapter_id, native_provider);
+            config.models.insert(
+                "review".to_string(),
+                ModelConfig {
+                    provider: "acme".to_string(),
+                    model: "review-model".to_string(),
+                    temperature: None,
+                    api_key_env: None,
+                    base_url: None,
+                    settings: serde_json::Map::new(),
+                    extensions: BTreeMap::new(),
+                },
+            );
+            let path = repository_root().join(match adapter_id {
+                "nvidia.fabric.claude" => "adapters/claude/fabric-adapter.json",
+                "nvidia.fabric.codex" => "adapters/codex/fabric-adapter.json",
+                _ => unreachable!("test adapter"),
+            });
+            let descriptor = load_adapter_descriptor(&path).expect("adapter descriptor");
+
+            let fields = adapter_config_compatibility_issues(&config, Some(&descriptor))
+                .into_iter()
+                .map(|issue| issue.field)
+                .collect::<BTreeSet<_>>();
+
+            assert!(fields.contains("models.review.base_url"));
+            assert!(fields.contains("models.review.api_key_env"));
+        }
+    }
+
+    #[test]
+    fn adapter_model_schema_rejects_undeclared_settings() {
+        let mut config = config_with_model("nvidia.fabric.claude", "anthropic");
+        config
+            .models
+            .get_mut("default")
+            .expect("default model")
+            .settings
+            .insert("api_timeout".to_string(), serde_json::json!(30));
+
+        let error =
+            resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-model-settings"))
+                .expect_err("undeclared model setting");
+
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility {
+                adapter_id,
+                field,
+                ..
+            } if adapter_id == "nvidia.fabric.claude"
+                && field == "models.default.settings.api_timeout"
+        ));
     }
 
     #[test]
@@ -4168,6 +4302,37 @@ mod tests {
                     && message.contains(
                         "settings_schema root type must allow object instances"
                     )
+            ));
+        }
+    }
+
+    #[test]
+    fn adapter_model_schema_must_be_valid_and_allow_objects() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let valid_descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+
+        for (schema, expected) in [
+            (
+                serde_json::json!({"type": 7}),
+                "model_schema is not valid JSON Schema",
+            ),
+            (
+                serde_json::json!({"type": "string"}),
+                "model_schema root type must allow object instances",
+            ),
+        ] {
+            let mut descriptor = valid_descriptor.clone();
+            descriptor.model_schema =
+                Some(schema.as_object().expect("model schema object").clone());
+
+            let error = validate_adapter_descriptor_shape(&descriptor, &path)
+                .expect_err("invalid model schema");
+            assert!(matches!(
+                error,
+                FabricError::InvalidAdapterDescriptor {
+                    path: error_path,
+                    message,
+                } if error_path == path && message.contains(expected)
             ));
         }
     }

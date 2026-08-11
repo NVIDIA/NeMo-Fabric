@@ -84,12 +84,6 @@ def runtime_id(payload: dict[str, Any]) -> str:
     return str(value)
 
 
-def runtime_state_directory(base: str | Path, payload: dict[str, Any]) -> Path:
-    """Return a harness-owned state directory isolated to one NeMo Fabric runtime."""
-
-    return Path(base).joinpath("runtimes", runtime_id(payload))
-
-
 def environment_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return (
         runtime_context(payload).get("environment")
@@ -219,8 +213,10 @@ def merge_unique(*values: Any) -> list[str]:
                 merged.append(item)
     return merged
 
+
 def without_none(mapping: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in mapping.items() if value is not None}
+
 
 def dump_yaml(value: dict[str, Any]) -> str:
     try:
@@ -409,7 +405,7 @@ def write_relay_configs(
             relay_config_path.write_text(tomli_w.dumps(relay_config), encoding="utf-8")
 
         if plugin_config is not None:
-            if observability_version != 2:
+            if observability_version not in {2, 3}:
                 raise ValueError(
                     f"unsupported NeMo Relay observability config version {observability_version}"
                 )
