@@ -18,7 +18,8 @@ from nemo_fabric import RelayAtifConfig
 from nemo_fabric import RelayAtofConfig
 from nemo_fabric import RelayAtofFileSinkConfig
 from nemo_fabric import RelayObservabilityConfig
-from nemo_fabric import RelayOtlpConfig
+from nemo_fabric import RelayOpenTelemetryConfig
+from nemo_fabric import RelayOpenTelemetryEndpointConfig
 from nemo_fabric import RuntimeConfig
 from nemo_fabric import TelemetryConfig
 from nemo_fabric import ToolsConfig
@@ -263,16 +264,20 @@ def with_relay_otel(base: FabricConfig) -> FabricConfig:
     config.enable_relay(
         output_dir="./artifacts/relay-otel",
         observability=RelayObservabilityConfig(
-            opentelemetry=RelayOtlpConfig(
+            opentelemetry=RelayOpenTelemetryConfig(
                 enabled=True,
-                transport="http_binary",
-                endpoint="http://localhost:4318/v1/traces",
-                service_name="code-review-agent",
-                service_namespace="fabric",
-                service_version="fabric-sdk-example",
-                instrumentation_scope="nemo-relay-otel",
-                timeout_millis=3000,
-                resource_attributes={"deployment.environment": "dev"},
+                endpoints=[
+                    RelayOpenTelemetryEndpointConfig(
+                        type="full",
+                        transport="http_binary",
+                        endpoint="http://localhost:4318/v1/traces",
+                        service_name="code-review-agent",
+                        service_namespace="fabric",
+                        service_version="fabric-sdk-example",
+                        timeout_millis=3000,
+                        resource_attributes={"deployment.environment": "dev"},
+                    )
+                ],
             ),
         ),
     )
@@ -292,10 +297,15 @@ def with_relay_openinference(base: FabricConfig) -> FabricConfig:
     assert not isinstance(observability, dict)
 
     relay.output_dir = "./artifacts/relay-openinference"
-    observability.openinference = RelayOtlpConfig(
+    observability.opentelemetry = RelayOpenTelemetryConfig(
         enabled=True,
-        transport="http_binary",
-        endpoint="http://localhost:6006/v1/traces",
+        endpoints=[
+            RelayOpenTelemetryEndpointConfig(
+                type="openinference",
+                transport="http_binary",
+                endpoint="http://localhost:6006/v1/traces",
+            )
+        ],
     )
     if isinstance(observability.atif, RelayAtifConfig):
         observability.atif.output_directory = "./artifacts/relay-openinference"
@@ -310,6 +320,37 @@ def with_native_otel(base: FabricConfig) -> FabricConfig:
     """Return a copy with adapter-native OpenTelemetry enabled."""
 
     config = base.model_copy(deep=True)
+    adapter_id = config.harness.adapter_id
+    if adapter_id == "nvidia.fabric.codex":
+        observability = {
+            "version": 1,
+            "opentelemetry": {
+                "enabled": True,
+                "transport": "http_binary",
+                "endpoint": "http://localhost:4318/v1/traces",
+                "resource_attributes": {"deployment.environment": "dev"},
+            },
+        }
+    elif adapter_id == "nvidia.fabric.langchain.deepagents":
+        observability = {
+            "version": 3,
+            "opentelemetry": {
+                "enabled": True,
+                "endpoints": [
+                    {
+                        "type": "full",
+                        "transport": "http_binary",
+                        "endpoint": "http://localhost:4318/v1/traces",
+                        "resource_attributes": {"deployment.environment": "dev"},
+                    }
+                ],
+            },
+        }
+    else:
+        raise ValueError(
+            f"adapter {adapter_id!r} does not support native OpenTelemetry"
+        )
+
     config.telemetry = TelemetryConfig(
         providers={
             "native": {
@@ -319,15 +360,7 @@ def with_native_otel(base: FabricConfig) -> FabricConfig:
                         {
                             "kind": "observability",
                             "enabled": True,
-                            "config": {
-                                "version": 1,
-                                "opentelemetry": {
-                                    "enabled": True,
-                                    "transport": "http_binary",
-                                    "endpoint": "http://localhost:4318/v1/traces",
-                                    "resource_attributes": {"deployment.environment": "dev"},
-                                },
-                            },
+                            "config": observability,
                         },
                     ],
                 },

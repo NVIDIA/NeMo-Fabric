@@ -41,8 +41,8 @@ ADAPTER_EXTRAS = {
             "langchain>=1.3,<2.0",
             "langgraph>=1.2,<2.0",
         ],
-        "relay": ["nemo-relay>=0.6.0,<0.7"],
-        "full_relay": ["nemo-relay[deepagents]>=0.6.0,<0.7"],
+        "relay": ["nemo-relay>=0.7.2,<0.8"],
+        "full_relay": ["nemo-relay[deepagents]>=0.7.2,<0.8"],
     },
     "hermes-agent": {
         "path": "adapters/hermes",
@@ -51,7 +51,7 @@ ADAPTER_EXTRAS = {
             "python_version < '3.14'"
         ),
         "harness": ["hermes-agent[mcp]>=0.19.0; python_version < '3.14'"],
-        "relay": ["nemo-relay>=0.6.0,<0.7"],
+        "relay": ["nemo-relay>=0.7.2,<0.8"],
     },
 }
 
@@ -129,7 +129,7 @@ def test_root_package_installs_runtime_unconditionally():
 
 def test_root_relay_extra_installs_only_relay():
     extras = load_pyproject("")["project"]["optional-dependencies"]
-    assert extras["relay"] == ["nemo-relay>=0.6.0,<0.7"]
+    assert extras["relay"] == ["nemo-relay>=0.7.2,<0.8"]
 
 
 @pytest.mark.parametrize("name", ADAPTER_EXTRAS)

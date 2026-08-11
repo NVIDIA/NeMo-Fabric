@@ -28,14 +28,17 @@ from nemo_relay.integrations.langchain.callbacks import (  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def isolated_scope_stack():
+def isolated_scope_stack(monkeypatch: pytest.MonkeyPatch):
     """Give each test its own Relay scope stack.
 
     These tests strand a scope on purpose, and the stack is process-global, so without
     isolation the damage would leak into every test that runs afterwards. ``ContextVar``
-    assignment is the only way to install a stack for the current context on Relay 0.6.
+    assignment is the only way to install a stack for the current context.
     """
 
+    monkeypatch.setattr(
+        adapter.common_utils, "reject_ambient_relay_plugin_config", lambda: None
+    )
     token = nemo_relay._scope_stack_var.set(nemo_relay.create_scope_stack())
     try:
         yield
@@ -138,7 +141,7 @@ class _NoopPlugin:
 
     @contextlib.asynccontextmanager
     async def plugin(self, config: object):
-        yield
+        yield {"diagnostics": [], "runtime_diagnostics": []}
 
 
 async def test_a_poisoned_runtime_quarantines_its_next_turn(monkeypatch):

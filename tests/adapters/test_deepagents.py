@@ -214,6 +214,13 @@ def fake_relay_fixture(monkeypatch):
     import contextlib
 
     calls: dict[str, Any] = {}
+    ambient_guard = MagicMock()
+    calls["ambient_guard"] = ambient_guard
+    monkeypatch.setattr(
+        adapter.common_utils,
+        "reject_ambient_relay_plugin_config",
+        ambient_guard,
+    )
 
     def add_nemo_relay_integration(kwargs, **_):
         merged = dict(kwargs)
@@ -223,12 +230,12 @@ def fake_relay_fixture(monkeypatch):
         return merged
 
     @contextlib.asynccontextmanager
-    async def plugin_ctx(config: object) -> AsyncIterator[None]:
+    async def plugin_ctx(config: object) -> AsyncIterator[dict[str, object]]:
         calls["plugin_open"] = True
         calls["plugin_enters"] = calls.get("plugin_enters", 0) + 1
         calls.setdefault("plugin_configs", []).append(config)
         try:
-            yield
+            yield {"diagnostics": [], "runtime_diagnostics": []}
         finally:
             calls["plugin_exits"] = calls.get("plugin_exits", 0) + 1
 
@@ -395,6 +402,77 @@ async def test_agent_creation_error_fails_runtime_start(
         )
 
 
+def test_resolve_relay_observability_passes_through_relay_v3(
+    tmp_path, make_payload, monkeypatch
+):
+    source = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "config": {
+                    "version": 3,
+                    "opentelemetry": {
+                        "enabled": True,
+                        "endpoints": [
+                            {
+                                "type": "openinference",
+                                "endpoint": "http://localhost:6006/v1/traces",
+                            }
+                        ],
+                    },
+                },
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        adapter.common_utils, "load_relay_plugin_config", lambda _payload: source
+    )
+    runtime_context = RuntimeContext.from_mapping(
+        make_payload(tmp_path)["runtime_context"]
+    )
+
+    observability = adapter.resolve_observability(
+        runtime_context,
+        str(tmp_path),
+        "deepagents-test",
+        "test-model",
+        "relay",
+        True,
+    )
+
+    assert observability is not None
+    assert observability.plugin_config is source
+    config = observability.plugin_config["components"][0]["config"]
+    assert config["version"] == 3
+    assert config["opentelemetry"]["endpoints"][0]["type"] == "openinference"
+
+
+def test_resolve_relay_observability_rejects_v2(tmp_path, make_payload):
+    relay_config_path = tmp_path / "relay.json"
+    relay_config_path.write_text(
+        '{"relay":{"config":{"version":2}}}',
+        encoding="utf-8",
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(relay_config_path)
+    runtime_context = RuntimeContext.from_mapping(
+        make_payload(tmp_path)["runtime_context"]
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="unsupported NeMo Relay observability config version 2",
+    ):
+        adapter.resolve_observability(
+            runtime_context,
+            str(tmp_path),
+            "deepagents-test",
+            "test-model",
+            "relay",
+            True,
+        )
+
+
 async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
@@ -418,6 +496,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
+    assert fake_relay["ambient_guard"].call_count == 2
     assert fake_relay["plugin_configs"] == [plugin_config]
     assert output["telemetry"] == {
         "enabled": True,
@@ -436,6 +515,55 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
         "callbacks", []
     )
+
+
+async def test_ambient_relay_config_fails_runtime_start_before_agent_creation(
+    tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
+):
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
+    }
+    monkeypatch.setattr(
+        adapter.common_utils,
+        "load_relay_plugin_config",
+        lambda _payload: {"version": 1, "components": []},
+    )
+    fake_relay["ambient_guard"].side_effect = RuntimeError("ambient Relay config")
+
+    with pytest.raises(RuntimeError, match="ambient Relay config"):
+        await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
+
+    assert "create_kwargs" not in fake_sdks
+
+
+async def test_inherited_relay_config_report_fails_before_agent_invocation(
+    tmp_path, relay_payload, monkeypatch, fake_sdks, fake_relay
+):
+    import contextlib
+
+    @contextlib.asynccontextmanager
+    async def inherited_plugin(_config: object):
+        yield {
+            "diagnostics": [
+                {
+                    "level": "warning",
+                    "code": "plugin.configuration_inherited",
+                    "message": "inherited plugin configuration from discovered file",
+                }
+            ],
+            "runtime_diagnostics": [],
+        }
+
+    monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "plugin", inherited_plugin)
+
+    output = await invoke_once(relay_payload(tmp_path))
+
+    assert output["completed"] is False
+    assert output["failed"] is True
+    assert "refuses Relay plugin configuration inherited" in output["error"]
+    assert fake_relay.get("scopes", []) == []
 
 
 @pytest.fixture(name="relay_payload")
@@ -507,7 +635,7 @@ async def test_relay_plugin_teardown_failure_keeps_the_invocation_completed(
 
     @contextlib.asynccontextmanager
     async def exploding_plugin(config: object):
-        yield
+        yield {"diagnostics": [], "runtime_diagnostics": []}
         raise RuntimeError("relay plugin flush failed")
 
     monkeypatch.setattr(sys.modules["nemo_relay.plugin"], "plugin", exploding_plugin)
@@ -706,7 +834,7 @@ async def test_a_fault_that_unwinds_cleanly_does_not_quarantine_later_turns(
 
     @contextlib.asynccontextmanager
     async def flaky_plugin(config: object):
-        yield
+        yield {"diagnostics": [], "runtime_diagnostics": []}
         flushes["count"] += 1
         if flushes["count"] == 1:
             raise RuntimeError("relay plugin flush failed")
@@ -737,7 +865,7 @@ async def test_scope_and_plugin_teardown_faults_are_both_reported(
 
     @contextlib.asynccontextmanager
     async def exploding_plugin(config: object):
-        yield
+        yield {"diagnostics": [], "runtime_diagnostics": []}
         raise RuntimeError("relay plugin flush failed")
 
     monkeypatch.setattr(sys.modules["nemo_relay.scope"], "scope", exploding_scope)
@@ -925,10 +1053,15 @@ async def test_native_telemetry_exports_without_artifacts(
                         "kind": "observability",
                         "enabled": True,
                         "config": {
-                            "version": 1,
+                            "version": 3,
                             "opentelemetry": {
                                 "enabled": True,
-                                "endpoint": "http://localhost:4318/v1/traces",
+                                "endpoints": [
+                                    {
+                                        "type": "full",
+                                        "endpoint": "http://localhost:4318/v1/traces",
+                                    }
+                                ],
                             },
                         },
                     }
@@ -1028,7 +1161,7 @@ async def test_missing_nemo_relay_with_native_telemetry_fails_runtime_start(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": {"version": 1},
+                        "config": {"version": 3},
                     }
                 ],
             },
@@ -1055,7 +1188,7 @@ async def test_incomplete_nemo_relay_install_fails_runtime_start(
                     {
                         "kind": "observability",
                         "enabled": True,
-                        "config": {"version": 1},
+                        "config": {"version": 3},
                     }
                 ],
             },

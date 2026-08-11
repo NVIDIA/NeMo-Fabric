@@ -5470,7 +5470,7 @@ Copyright 2016 Andrew Svetlov and aio-libs contributors
    limitations under the License.
 ```
 
-## nemo-relay (0.6.0)
+## nemo-relay (0.7.2)
 
 ### Licenses
 License: `Apache-2.0`

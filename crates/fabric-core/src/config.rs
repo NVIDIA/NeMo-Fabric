@@ -955,8 +955,11 @@ pub struct RelayComponentConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RelayObservabilityConfig {
     /// Relay observability config version.
-    #[serde(default = "default_relay_config_version")]
-    #[schemars(range(max = u32::MAX))]
+    #[serde(
+        default = "default_relay_observability_version",
+        deserialize_with = "deserialize_relay_observability_version"
+    )]
+    #[schemars(schema_with = "relay_observability_version_schema")]
     pub version: u32,
     /// ATOF export configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -964,15 +967,15 @@ pub struct RelayObservabilityConfig {
     /// ATIF export configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub atif: Option<RelayAtifConfig>,
-    /// OpenTelemetry export configuration.
+    /// OpenTelemetry and OpenInference export configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub opentelemetry: Option<RelayOtlpConfig>,
-    /// OpenInference export configuration.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub openinference: Option<RelayOtlpConfig>,
+    pub opentelemetry: Option<RelayOpenTelemetryConfig>,
     /// Relay config validation policy.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy: Option<RelayConfigPolicy>,
+    /// Retain complete sanitized request data on LLM start events.
+    #[serde(default)]
+    pub enable_full_payloads: bool,
     /// Additive observability fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
@@ -981,12 +984,12 @@ pub struct RelayObservabilityConfig {
 impl Default for RelayObservabilityConfig {
     fn default() -> Self {
         Self {
-            version: default_relay_config_version(),
+            version: default_relay_observability_version(),
             atof: None,
             atif: None,
             opentelemetry: None,
-            openinference: None,
             policy: None,
+            enable_full_payloads: false,
             extensions: BTreeMap::new(),
         }
     }
@@ -1161,26 +1164,42 @@ pub enum RelayAtifStorageConfig {
     },
 }
 
-/// Relay OpenTelemetry/OpenInference export configuration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct RelayOtlpConfig {
-    /// Whether OTLP export is enabled.
+/// Relay OpenTelemetry export section.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayOpenTelemetryConfig {
+    /// Whether OpenTelemetry export is enabled.
     #[serde(default)]
     pub enabled: bool,
+    /// Typed OTLP destinations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endpoints: Vec<RelayOpenTelemetryEndpointConfig>,
+    /// Additive OpenTelemetry section fields.
+    #[serde(default, flatten)]
+    pub extensions: BTreeMap<String, Value>,
+}
+
+/// One typed Relay OpenTelemetry OTLP destination.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RelayOpenTelemetryEndpointConfig {
+    /// Span projection emitted to this destination.
+    pub r#type: RelayOpenTelemetryEndpointType,
+    /// OTLP endpoint.
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
+    pub endpoint: String,
+    /// Mark projection policy.
+    #[serde(default)]
+    pub mark_projection: RelayOpenTelemetryMarkProjection,
+    /// Event names excluded from mark projection.
+    #[serde(default = "default_relay_mark_exclude_names")]
+    pub mark_exclude_names: Vec<String>,
+    /// Attribute mapping rules.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attribute_mappings: Vec<BTreeMap<String, String>>,
     /// OTLP transport.
     #[serde(default)]
     pub transport: RelayOtlpTransport,
-    /// OTLP endpoint.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoint: Option<String>,
-    /// OTLP headers.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub headers: BTreeMap<String, String>,
-    /// OTLP resource attributes.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub resource_attributes: BTreeMap<String, String>,
     /// OTLP service name.
-    #[serde(default = "default_relay_service_name")]
+    #[serde(default = "default_relay_otel_service_name")]
     pub service_name: String,
     /// OTLP service namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1189,33 +1208,24 @@ pub struct RelayOtlpConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_version: Option<String>,
     /// OTLP instrumentation scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub instrumentation_scope: Option<String>,
+    #[serde(default = "default_relay_instrumentation_scope")]
+    pub instrumentation_scope: String,
     /// Request timeout in milliseconds.
     #[serde(default = "default_relay_timeout_millis")]
     #[schemars(range(max = u64::MAX))]
     pub timeout_millis: u64,
-    /// Additive OTLP fields.
+    /// Static OTLP headers.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
+    /// Environment-variable-backed OTLP headers.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub header_env: BTreeMap<String, String>,
+    /// OTLP resource attributes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub resource_attributes: BTreeMap<String, String>,
+    /// Additive endpoint fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
-}
-
-impl Default for RelayOtlpConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            transport: RelayOtlpTransport::default(),
-            endpoint: None,
-            headers: BTreeMap::new(),
-            resource_attributes: BTreeMap::new(),
-            service_name: default_relay_service_name(),
-            service_namespace: None,
-            service_version: None,
-            instrumentation_scope: None,
-            timeout_millis: default_relay_timeout_millis(),
-            extensions: BTreeMap::new(),
-        }
-    }
 }
 
 /// Relay validation policy.
@@ -1301,6 +1311,31 @@ pub enum RelayOtlpTransport {
     Grpc,
 }
 
+/// Relay OpenTelemetry span projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayOpenTelemetryEndpointType {
+    /// Emit full Relay spans.
+    Full,
+    /// Emit GenAI semantic-convention spans.
+    GenAi,
+    /// Emit OpenInference semantic-convention spans.
+    Openinference,
+}
+
+/// Relay OpenTelemetry mark projection policy.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RelayOpenTelemetryMarkProjection {
+    /// Inherit the endpoint type's projection behavior.
+    #[default]
+    Inherit,
+    /// Project marks as events.
+    Event,
+    /// Project marks as tool spans.
+    Tool,
+}
+
 /// Telemetry runtime provider.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
@@ -1326,8 +1361,32 @@ impl TelemetryProvider {
     }
 }
 
-fn default_relay_config_version() -> u32 {
-    2
+const RELAY_OBSERVABILITY_VERSION: u32 = 3;
+
+fn relay_observability_version_schema(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema = u32::json_schema(generator);
+    schema.insert("const".into(), RELAY_OBSERVABILITY_VERSION.into());
+    schema
+}
+
+fn default_relay_observability_version() -> u32 {
+    RELAY_OBSERVABILITY_VERSION
+}
+
+fn deserialize_relay_observability_version<'de, D>(
+    deserializer: D,
+) -> std::result::Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let version = u32::deserialize(deserializer)?;
+    if version == RELAY_OBSERVABILITY_VERSION {
+        Ok(version)
+    } else {
+        Err(serde::de::Error::custom(format!(
+            "NeMo Relay 0.7 requires observability config version {RELAY_OBSERVABILITY_VERSION}; found {version}"
+        )))
+    }
 }
 
 fn default_enabled() -> bool {
@@ -1350,8 +1409,16 @@ fn default_relay_timeout_millis() -> u64 {
     3000
 }
 
-fn default_relay_service_name() -> String {
-    "nemo-relay".to_string()
+fn default_relay_otel_service_name() -> String {
+    "unknown_service".to_string()
+}
+
+fn default_relay_instrumentation_scope() -> String {
+    "opentelemetry".to_string()
+}
+
+fn default_relay_mark_exclude_names() -> Vec<String> {
+    vec!["llm.chunk".to_string()]
 }
 
 fn default_relay_unsupported_value_behavior() -> RelayUnsupportedBehavior {
@@ -1438,6 +1505,82 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
         for name in environment.env.keys() {
             if name.trim().is_empty() {
                 return invalid_config("environment.env", "variable names must not be empty");
+            }
+        }
+    }
+    if let Some(relay) = &config.relay {
+        if let Some(observability) = relay.observability.as_ref() {
+            if observability.version != RELAY_OBSERVABILITY_VERSION {
+                return invalid_config(
+                    "relay.observability.version",
+                    format!(
+                        "NeMo Relay 0.7 requires observability config version {RELAY_OBSERVABILITY_VERSION}"
+                    ),
+                );
+            }
+            if observability.extensions.contains_key("openinference") {
+                return invalid_config(
+                    "relay.observability.openinference",
+                    "was removed in observability config version 3; use an OpenTelemetry endpoint with type `openinference`",
+                );
+            }
+            if let Some(opentelemetry) = observability.opentelemetry.as_ref() {
+                if let Some(field) = relay_legacy_flat_otel_field(|field| {
+                    opentelemetry.extensions.contains_key(field)
+                }) {
+                    return invalid_config(
+                        format!("relay.observability.opentelemetry.{field}"),
+                        "moved into each typed endpoint in observability config version 3",
+                    );
+                }
+                if opentelemetry.enabled && opentelemetry.endpoints.is_empty() {
+                    return invalid_config(
+                        "relay.observability.opentelemetry.endpoints",
+                        "must contain at least one endpoint when OpenTelemetry export is enabled",
+                    );
+                }
+                for (index, endpoint) in opentelemetry.endpoints.iter().enumerate() {
+                    if endpoint.endpoint.trim().is_empty() {
+                        return invalid_config(
+                            format!("relay.observability.opentelemetry.endpoints.{index}.endpoint"),
+                            "must be a non-empty string",
+                        );
+                    }
+                }
+            }
+        }
+        for (index, component) in relay.components.iter().enumerate() {
+            if component.kind != "observability" {
+                continue;
+            }
+            if component.config.contains_key("openinference") {
+                return invalid_config(
+                    format!("relay.components.{index}.config.openinference"),
+                    "was removed in observability config version 3; use an OpenTelemetry endpoint with type `openinference`",
+                );
+            }
+            if let Some(opentelemetry) = component
+                .config
+                .get("opentelemetry")
+                .and_then(Value::as_object)
+                && let Some(field) =
+                    relay_legacy_flat_otel_field(|field| opentelemetry.contains_key(field))
+            {
+                return invalid_config(
+                    format!("relay.components.{index}.config.opentelemetry.{field}"),
+                    "moved into each typed endpoint in observability config version 3",
+                );
+            }
+            let Some(version) = component.config.get("version") else {
+                continue;
+            };
+            if version.as_u64() != Some(u64::from(RELAY_OBSERVABILITY_VERSION)) {
+                return invalid_config(
+                    format!("relay.components.{index}.config.version"),
+                    format!(
+                        "NeMo Relay 0.7 requires observability config version {RELAY_OBSERVABILITY_VERSION}"
+                    ),
+                );
             }
         }
     }
@@ -1620,6 +1763,29 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn relay_legacy_flat_otel_field(contains_field: impl Fn(&str) -> bool) -> Option<&'static str> {
+    const LEGACY_FLAT_OTEL_FIELDS: [&str; 15] = [
+        "attribute_mappings",
+        "capture_content",
+        "endpoint",
+        "header_env",
+        "headers",
+        "instrumentation_scope",
+        "mark_exclude_names",
+        "mark_projection",
+        "resource_attributes",
+        "semantic_selector",
+        "service_name",
+        "service_namespace",
+        "service_version",
+        "timeout_millis",
+        "transport",
+    ];
+    LEGACY_FLAT_OTEL_FIELDS
+        .into_iter()
+        .find(|field| contains_field(field))
 }
 
 fn validate_names(field: &str, names: &[String]) -> Result<()> {
@@ -3189,7 +3355,7 @@ mod tests {
     }
 
     #[test]
-    fn relay_observability_uses_v2_typed_atof_sinks() {
+    fn relay_observability_uses_v3_typed_endpoints() {
         let observability: RelayObservabilityConfig = serde_json::from_value(serde_json::json!({
             "atof": {
                 "enabled": true,
@@ -3208,14 +3374,131 @@ mod tests {
                         "name": "live-events"
                     }
                 ]
+            },
+            "opentelemetry": {
+                "enabled": true,
+                "endpoints": [
+                    {
+                        "type": "openinference",
+                        "endpoint": "http://localhost:4318/v1/traces",
+                        "header_env": {"authorization": "OTEL_AUTHORIZATION"}
+                    }
+                ]
             }
         }))
-        .expect("Relay v2 observability config");
+        .expect("Relay v3 observability config");
 
         let value = serde_json::to_value(observability).expect("serialized observability");
-        assert_eq!(value["version"], 2);
+        assert_eq!(value["version"], 3);
         assert_eq!(value["atof"]["sinks"][0]["type"], "file");
         assert_eq!(value["atof"]["sinks"][1]["type"], "stream");
+        assert_eq!(
+            value["opentelemetry"]["endpoints"][0]["type"],
+            "openinference"
+        );
+        assert_eq!(
+            value["opentelemetry"]["endpoints"][0]["service_name"],
+            "unknown_service"
+        );
+    }
+
+    #[test]
+    fn relay_observability_rejects_explicit_v2() {
+        let error = serde_json::from_value::<RelayObservabilityConfig>(serde_json::json!({
+            "version": 2,
+            "atif": {"enabled": true}
+        }))
+        .expect_err("Relay v2 observability config must fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("NeMo Relay 0.7 requires observability config version 3")
+        );
+    }
+
+    #[test]
+    fn generic_relay_observability_component_rejects_explicit_v2() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.relay = Some(RelayConfig {
+            components: vec![RelayComponentConfig {
+                kind: "observability".to_string(),
+                enabled: false,
+                config: BTreeMap::from([("version".to_string(), serde_json::json!(2))]),
+                extensions: BTreeMap::new(),
+            }],
+            ..RelayConfig::default()
+        });
+
+        let error = validate_config(&config).expect_err("Relay v2 component must fail");
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. }
+                if field == "relay.components.0.config.version"
+        ));
+    }
+
+    #[test]
+    fn generic_relay_observability_component_accepts_implicit_v3() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.relay = Some(RelayConfig {
+            components: vec![RelayComponentConfig {
+                kind: "observability".to_string(),
+                enabled: true,
+                config: BTreeMap::new(),
+                extensions: BTreeMap::new(),
+            }],
+            ..RelayConfig::default()
+        });
+
+        validate_config(&config).expect("Relay 0.7 defaults a missing version to v3");
+    }
+
+    #[test]
+    fn enabled_relay_opentelemetry_requires_an_endpoint() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.relay = Some(RelayConfig {
+            observability: Some(RelayObservabilityConfig {
+                opentelemetry: Some(RelayOpenTelemetryConfig {
+                    enabled: true,
+                    ..RelayOpenTelemetryConfig::default()
+                }),
+                ..RelayObservabilityConfig::default()
+            }),
+            ..RelayConfig::default()
+        });
+
+        let error = validate_config(&config).expect_err("enabled exporter needs an endpoint");
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. }
+                if field == "relay.observability.opentelemetry.endpoints"
+        ));
+    }
+
+    #[test]
+    fn relay_observability_rejects_removed_v2_exporter_fields() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.relay = Some(RelayConfig {
+            observability: Some(
+                serde_json::from_value(serde_json::json!({
+                    "version": 3,
+                    "openinference": {
+                        "enabled": true,
+                        "endpoint": "http://localhost:6006/v1/traces"
+                    }
+                }))
+                .expect("additive field deserializes before semantic validation"),
+            ),
+            ..RelayConfig::default()
+        });
+
+        let error = validate_config(&config).expect_err("removed exporter must fail");
+        assert!(matches!(
+            error,
+            FabricError::InvalidConfig { field, .. }
+                if field == "relay.observability.openinference"
+        ));
     }
 
     #[test]

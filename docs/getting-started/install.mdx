@@ -43,7 +43,7 @@ install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
 LangChain Deep Agents and Hermes Agent, `full` installs both the harness and the
 NeMo Relay Python package.
 
-For Claude and Codex, no Python package extra installs the external
+For Claude and Codex, no NeMo Fabric package extra installs the external
 `nemo-relay` CLI required by Relay telemetry and `Runtime.invoke_stream()`.
 
 ### Install the NeMo Fabric Runtime
@@ -159,28 +159,44 @@ install the harness and Relay package together. Claude and Codex do not provide
 a `relay` extra because their adapters launch the external CLI instead of
 importing this Python package.
 
+NeMo Fabric requires `nemo-relay>=0.7.2,<0.8`. For Python-backed Relay
+integrations, NeMo Fabric does not merge user or workspace `plugins.toml`
+files with its runtime-owned configuration. Remove or relocate a user
+`plugins.toml` or the nearest `.nemo-relay/plugins.toml` before starting a
+Relay-enabled Deep Agents or Hermes Agent runtime. System configuration in
+`/etc/nemo-relay/plugins.toml` remains administrator controlled.
+
 #### NeMo Relay CLI
+
+Install the compatible Python package and CLI binary together:
+
+```bash
+pip install "nemo-relay[cli]>=0.7.2,<0.8"
+```
 
 **Shell installation method (Linux and macOS):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
+  NEMO_RELAY_VERSION=0.7.2 sh -s --
 ```
 
 **Windows PowerShell installation method:**
 
 ```powershell
+$env:NEMO_RELAY_VERSION = "0.7.2"
 irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
 ```
 
 **Cargo installation method (requires `cargo-binstall`):**
 
 ```bash
-cargo binstall nemo-relay-cli
+cargo binstall nemo-relay-cli --version 0.7.2
 ```
 
-After installation, ensure `nemo-relay` is on `PATH`. When Relay is enabled
-with `FabricConfig.enable_relay(...)`, the Claude and Codex adapters start and
+After installation, run `nemo-relay --version` and confirm the version is in
+the `>=0.7.2,<0.8` range. When Relay is enabled with
+`FabricConfig.enable_relay(...)`, the Claude and Codex adapters start and
 supervise the CLI gateway automatically.
 
 ## Source Installation Method

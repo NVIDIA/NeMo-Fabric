@@ -9,6 +9,8 @@ import sys
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import pytest
+
 from examples.code_review_agent import BASE_DIR
 from examples.code_review_agent import __main__ as main_module
 from examples.code_review_agent import base_config
@@ -68,7 +70,7 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     base = hermes_config()
     variants = (
         with_github_mcp(base),
-        with_native_otel(base),
+        with_native_otel(codex_config()),
         with_opensandbox(base),
         with_relay(base),
         with_relay_openinference(base),
@@ -89,6 +91,71 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     assert variants[2].environment.provider == "opensandbox"
     assert variants[3].telemetry is not None
     assert "relay" in variants[3].telemetry.providers
+
+
+def test_native_otel_variants_match_adapter_contracts(nemo_relay):
+    from nemo_relay import plugin
+
+    codex = with_native_otel(codex_config())
+    assert codex.telemetry is not None
+    codex_config_payload = codex.telemetry.providers["native"].config
+    codex_observability = codex_config_payload["components"][0]["config"]
+    assert codex_observability["version"] == 1
+    assert codex_observability["opentelemetry"]["endpoint"] == (
+        "http://localhost:4318/v1/traces"
+    )
+
+    deepagents = with_native_otel(deepagents_config())
+    assert deepagents.telemetry is not None
+    deepagents_config_payload = deepagents.telemetry.providers["native"].config
+    assert plugin.validate(deepagents_config_payload)["diagnostics"] == []
+
+    with pytest.raises(ValueError, match="does not support native OpenTelemetry"):
+        with_native_otel(hermes_config())
+
+
+@pytest.mark.parametrize(
+    ("variant", "endpoint_type", "endpoint"),
+    [
+        (
+            with_relay_otel,
+            "full",
+            "http://localhost:4318/v1/traces",
+        ),
+        (
+            with_relay_openinference,
+            "openinference",
+            "http://localhost:6006/v1/traces",
+        ),
+    ],
+)
+def test_relay_otel_variants_author_v3_endpoints(
+    variant,
+    endpoint_type: str,
+    endpoint: str,
+    nemo_relay,
+):
+    from nemo_relay import plugin
+
+    config = variant(hermes_config())
+
+    observability = config.to_mapping()["relay"]["observability"]
+    assert observability["version"] == 3
+    assert "openinference" not in observability
+    assert observability["opentelemetry"]["enabled"] is True
+    assert observability["opentelemetry"]["endpoints"][0]["type"] == endpoint_type
+    assert observability["opentelemetry"]["endpoints"][0]["endpoint"] == endpoint
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": observability,
+            }
+        ],
+    }
+    assert plugin.validate(plugin_config)["diagnostics"] == []
 
 
 def test_variants_plan_from_complete_configs():

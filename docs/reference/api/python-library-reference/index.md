@@ -43,7 +43,8 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.RelayConfigPolicy`](./nemo_fabric.models.md#class-relayconfigpolicy): NeMo Relay config validation policy.
 - [`models.RelayHttpStorageConfig`](./nemo_fabric.models.md#class-relayhttpstorageconfig): NeMo Relay ATIF HTTP storage configuration.
 - [`models.RelayObservabilityConfig`](./nemo_fabric.models.md#class-relayobservabilityconfig): NeMo Relay observability component configuration.
-- [`models.RelayOtlpConfig`](./nemo_fabric.models.md#class-relayotlpconfig): NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference.
+- [`models.RelayOpenTelemetryConfig`](./nemo_fabric.models.md#class-relayopentelemetryconfig): NeMo Relay typed OpenTelemetry destination configuration.
+- [`models.RelayOpenTelemetryEndpointConfig`](./nemo_fabric.models.md#class-relayopentelemetryendpointconfig): One typed NeMo Relay OpenTelemetry destination.
 - [`models.RelayS3StorageConfig`](./nemo_fabric.models.md#class-relays3storageconfig): NeMo Relay ATIF S3 storage configuration.
 - [`models.RunRequest`](./nemo_fabric.models.md#class-runrequest): One validated NeMo Fabric invocation request.
 - [`models.RuntimeConfig`](./nemo_fabric.models.md#class-runtimeconfig): Invocation runtime contract.

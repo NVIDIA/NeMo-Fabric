@@ -31,8 +31,8 @@ pip install "nemo-fabric-adapters-claude[harness]"
 ```
 
 The adapter package's `full` extra installs the same dependencies as `harness`;
-it does not install the NeMo Fabric runtime. Claude Relay integration uses the
-external `nemo-relay` CLI, not the Python `nemo-relay` package, so this adapter
+it does not install the NeMo Fabric runtime. Claude Relay integration launches
+the `nemo-relay` CLI and does not import the Relay Python API, so this adapter
 does not provide a `relay` extra. Follow the
 [NeMo Relay CLI installation procedure](../../getting-started/install.mdx#install-nemo-relay),
 then ensure `nemo-relay` is on `PATH`.
@@ -170,7 +170,8 @@ gateway is scoped to that single invocation. Claude still resolves its credentia
 through the selected mode, and NeMo Fabric does not write authentication values
 to Relay configuration or artifacts.
 
-NeMo Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
-including, `0.7.0`. The Python package named `nemo-relay` does not install this
-CLI. NeMo Fabric owns sidecar supervision, Claude configuration, and upstream
-selection. Relay owns the gateway transport and semantic observability pipeline.
+NeMo Fabric supports the external NeMo Relay CLI in the `>=0.7.2,<0.8` range.
+NeMo Fabric's `relay` extra installs only the Relay Python library and does not
+install the CLI. NeMo Fabric owns sidecar supervision, Claude configuration,
+and upstream selection. Relay owns the gateway transport and semantic
+observability pipeline.

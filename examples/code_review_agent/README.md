@@ -74,10 +74,9 @@ The entrypoint exposes complete harness configs defined in
 Add `--relay` to any variant to enable the Relay ATOF and ATIF configuration:
 
 Relay requirements depend on the selected adapter. The Codex and Claude
-adapters require an external `nemo-relay` CLI in the supported `0.6.x` range;
-the Python package named `nemo-relay` does not install the `nemo-relay` CLI
-tool. Hermes Agent and Deep Agents require the Relay Python package in their
-selected adapter environment. Refer to the
+adapters require a `nemo-relay` CLI in the `>=0.7.2,<0.8` range. NeMo Fabric's
+`relay` extra does not install the CLI. Hermes Agent and Deep Agents require the
+Relay Python package in their selected adapter environment. Refer to the
 [installation guide](../../docs/getting-started/install.mdx#install-nemo-relay)
 for the current compatibility requirements.
 

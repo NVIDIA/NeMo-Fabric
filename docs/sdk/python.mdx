@@ -381,7 +381,7 @@ variant = review_agent_config(config, github_mcp=True, relay=True)
 ```
 
 NeMo Relay observability is represented directly in the SDK config's top-level
-`relay` block. ATOF uses NeMo Relay 0.6 file and stream sinks:
+`relay` block. Configure ATOF file and stream sinks as follows:
 
 ```python
 from nemo_fabric import (
@@ -610,9 +610,9 @@ Streaming has the following v0.1 constraints:
   `stream.result()` still receives the terminal result and does not run this
   warning check.
 
-Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and require a
-stream-sink-capable release from `0.6.0` up to, but not including, `0.7.0`. Follow
-the [NeMo Relay CLI installation instructions](../getting-started/install.mdx#install-nemo-relay)
+Claude and Codex streaming use the NeMo Relay `nemo-relay` gateway CLI and
+require a release in the `>=0.7.2,<0.8` range. Follow the
+[NeMo Relay CLI installation instructions](../getting-started/install.mdx#install-nemo-relay)
 to provision it. Hermes Agent and Deep Agents use their in-process NeMo Relay
 integrations.
 

@@ -25,6 +25,8 @@ async def test_relay_invocation_passes_fabric_request_id_to_hermes(
     monkeypatch,
     tmp_path: Path,
 ):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+    monkeypatch.chdir(tmp_path)
     events: list[str] = []
     task_ids: list[object] = []
     runtime = adapter.HermesRuntime()
