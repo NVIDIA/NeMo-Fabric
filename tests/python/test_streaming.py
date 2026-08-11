@@ -937,7 +937,11 @@ async def test_listener_correlates_upstream_hermes_turn_records():
             "kind": "mark",
             "name": "hermes.turn.start",
             "uuid": "turn-start",
-            "metadata": {"platform": "fabric", "turn_id": turn_id},
+            "metadata": {
+                "platform": "fabric",
+                "task_id": "request-2",
+                "turn_id": turn_id,
+            },
         },
         {
             "kind": "scope",
@@ -951,7 +955,11 @@ async def test_listener_correlates_upstream_hermes_turn_records():
             "kind": "mark",
             "name": "hermes.turn.end",
             "uuid": "turn-end",
-            "metadata": {"platform": "fabric", "turn_id": turn_id},
+            "metadata": {
+                "platform": "fabric",
+                "task_id": "request-2",
+                "turn_id": turn_id,
+            },
         },
     ]
 
@@ -969,6 +977,42 @@ async def test_listener_correlates_upstream_hermes_turn_records():
     )
 
     assert [await listener.records.get() for _ in current] == current
+    assert listener.records.empty()
+    listener.end_stream()
+    await listener.close()
+
+
+async def test_listener_rejects_late_upstream_hermes_turn_marker():
+    listener = await _AtofStreamListener().start()
+    previous = {
+        "kind": "mark",
+        "name": "hermes.turn.start",
+        "uuid": "previous-turn",
+        "metadata": {
+            "platform": "fabric",
+            "task_id": "request-1",
+            "turn_id": "previous-turn",
+        },
+    }
+    listener.begin_stream(request_id="request-1")
+    await _post_chunked(listener.url, [previous])
+    assert await listener.records.get() == previous
+    listener.end_stream()
+
+    current = {
+        "kind": "mark",
+        "name": "hermes.turn.start",
+        "uuid": "current-turn",
+        "metadata": {
+            "platform": "fabric",
+            "task_id": "request-2",
+            "turn_id": "current-turn",
+        },
+    }
+    listener.begin_stream(request_id="request-2")
+    await _post_chunked(listener.url, [previous, current])
+
+    assert await listener.records.get() == current
     assert listener.records.empty()
     listener.end_stream()
     await listener.close()

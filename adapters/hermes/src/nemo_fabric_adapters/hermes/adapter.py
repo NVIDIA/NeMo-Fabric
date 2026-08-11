@@ -61,26 +61,6 @@ def finalize_hermes_relay_session(session_id: str) -> None:
         finalize_session(session_id=session_id, platform="fabric")
 
 
-def _fabric_stream_sink_enabled(config: dict[str, Any] | None) -> bool:
-    if config is None:
-        return False
-    for component in config.get("components") or []:
-        if not isinstance(component, dict) or component.get("kind") != "observability":
-            continue
-        component_config = component.get("config")
-        if not isinstance(component_config, dict):
-            continue
-        atof = component_config.get("atof")
-        if not isinstance(atof, dict):
-            continue
-        if any(
-            isinstance(sink, dict) and sink.get("name") == "nemo-fabric-stream"
-            for sink in atof.get("sinks") or []
-        ):
-            return True
-    return False
-
-
 def _api_key_env(model_config: dict[str, Any]) -> str:
     explicit = model_config.get("api_key_env")
     if isinstance(explicit, str) and explicit:
@@ -467,6 +447,11 @@ class HermesRuntime:
                     system_prompt=common_utils.system_instruction(start_payload),
                     user_message=user_message,
                     conversation_history=self._conversation_history,
+                    task_id=(
+                        request["request_id"]
+                        if isinstance(request.get("request_id"), str)
+                        else None
+                    ),
                 )
             finally:
                 if self._relay_plugin_config is not None:
@@ -477,19 +462,6 @@ class HermesRuntime:
                     # directly.
                     finalize_hermes_relay_session(str(self._agent.session_id))
 
-        def invoke_turn() -> tuple[dict[str, Any], str]:
-            if not _fabric_stream_sink_enabled(self._relay_plugin_config):
-                return run_hermes_turn()
-
-            from nemo_relay import ScopeType, scope
-
-            with scope.scope(
-                "nemo-fabric-invocation",
-                ScopeType.Agent,
-                metadata={"nemo_fabric_request_id": request.get("request_id")},
-            ):
-                return run_hermes_turn()
-
         # Hermes' upstream Relay integration drives async Relay hooks from its
         # synchronous agent loop. Run that loop outside this lifecycle server's
         # event-loop thread so Hermes can own its Relay event loop.
@@ -498,7 +470,7 @@ class HermesRuntime:
                 "hermes_invocation_in_progress",
                 "Hermes runtime already has an active invocation",
             )
-        invoke_task = asyncio.create_task(asyncio.to_thread(invoke_turn))
+        invoke_task = asyncio.create_task(asyncio.to_thread(run_hermes_turn))
         self._active_invoke_task = invoke_task
 
         def clear_active_invoke_task(
@@ -623,6 +595,7 @@ def _invoke_hermes_turn(
     system_prompt: str | None,
     user_message: str,
     conversation_history: list[dict[str, Any]] | None,
+    task_id: str | None,
 ) -> tuple[dict[str, Any], str]:
     hermes_stdout = StringIO()
     with redirect_stdout(hermes_stdout):
@@ -630,6 +603,7 @@ def _invoke_hermes_turn(
             agent.run_conversation,
             system_message=system_prompt,
             conversation_history=conversation_history,
+            task_id=task_id,
             sync_honcho=False,
             dont_review=True,
         )

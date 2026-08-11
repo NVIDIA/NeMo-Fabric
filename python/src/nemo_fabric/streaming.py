@@ -526,8 +526,7 @@ class _AtofStreamListener:
             return False
         metadata = record.get("metadata")
 
-        # Upstream Hermes emits its turn markers from its own Relay runtime,
-        # so they carry the upstream turn ID rather than Fabric scope metadata.
+        # Hermes copies the task ID passed by Fabric into its Relay turn markers.
         if (
             self._upstream_hermes_turn_id is not None
             and isinstance(metadata, dict)
@@ -572,6 +571,8 @@ class _AtofStreamListener:
             record.get("kind") == "mark"
             and record.get("name") == "hermes.turn.start"
             and metadata.get("platform") == "fabric"
+            and self._request_id is not None
+            and metadata.get("task_id") == self._request_id
             and isinstance(metadata.get("turn_id"), str)
         ):
             return True

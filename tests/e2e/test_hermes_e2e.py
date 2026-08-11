@@ -60,6 +60,11 @@ async def test_hermes_persistent_host_reuses_native_session(
     assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
     assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     assert "user_count=2" in second["output"]["response"], results
+    for turn in (first, second):
+        assert {artifact["kind"] for artifact in turn["output"]["relay_artifacts"]} >= {
+            "atof",
+            "atif",
+        }, turn.to_mapping()
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")

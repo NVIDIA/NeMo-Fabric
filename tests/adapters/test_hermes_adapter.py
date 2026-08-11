@@ -812,6 +812,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         },
         "request": {
             "input": "hello",
+            "request_id": "request-1",
             "context": {"history": [{"role": "user", "content": "stale"}]},
         },
         "capability_plan": {"native": {}},
@@ -829,6 +830,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     )
     payload["runtime_context"]["invocation_id"] = "invocation-2"
     payload["request"]["input"] = "continue"
+    payload["request"]["request_id"] = "request-2"
     second = await runtime.invoke(
         {
             "runtime_context": payload["runtime_context"],
@@ -863,11 +865,13 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert first_call.kwargs == {
         "system_message": "system",
         "conversation_history": None,
+        "task_id": "request-1",
     }
     assert second_call.args == ("continue",)
     assert second_call.kwargs == {
         "system_message": "system",
         "conversation_history": first_messages,
+        "task_id": "request-2",
     }
     mock_ai_agent.close.assert_called_once_with()
     mock_session_db.close.assert_called_once_with()
