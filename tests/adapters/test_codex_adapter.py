@@ -21,11 +21,11 @@ from openai_codex.types import TurnStatus
 
 
 def lifecycle_start_payload(payload):
-    inputs = runtime_input(payload)
+    config, context, _ = runtime_input(payload)
     return {
         **payload,
-        "config": inputs.config,
-        "runtime_context": inputs.context,
+        "config": config,
+        "runtime_context": context,
         "request": None,
     }
 
@@ -41,16 +41,16 @@ def runtime_input(payload):
             "relay_enabled": telemetry_plan.get("relay_enabled", False),
             "metadata": metadata,
         }
-    return adapter.CodexRuntimeInput(
-        config=AgentConfig.from_mapping(payload["config"]),
-        context=RuntimeContext.from_mapping(context),
-        base_dir=payload["base_dir"],
+    return (
+        AgentConfig.from_mapping(payload["config"]),
+        RuntimeContext.from_mapping(context),
+        payload["base_dir"],
     )
 
 
 def lifecycle_invocation(payload):
     return {
-        "runtime_context": runtime_input(payload).context,
+        "runtime_context": runtime_input(payload)[1],
         "request": payload["request"],
     }
 
@@ -533,7 +533,7 @@ def test_sdk_test_override_resolves_relative_runtime_from_base_dir(
 ):
     monkeypatch.setenv("FABRIC_TEST_CODEX_BIN", codex_bin)
 
-    config = adapter.sdk_config(runtime_input(codex_payload), relay=None)
+    config = adapter.sdk_config(*runtime_input(codex_payload), relay=None)
 
     base_dir = Path(codex_payload["base_dir"])
     assert config.codex_bin == str((base_dir / codex_bin).resolve())
@@ -545,7 +545,7 @@ def test_sdk_test_override_keeps_absolute_runtime_path(
     codex_bin = tmp_path / "bin" / ".." / "codex"
     monkeypatch.setenv("FABRIC_TEST_CODEX_BIN", str(codex_bin))
 
-    config = adapter.sdk_config(runtime_input(codex_payload), relay=None)
+    config = adapter.sdk_config(*runtime_input(codex_payload), relay=None)
 
     assert config.codex_bin == str(codex_bin)
 
@@ -880,7 +880,9 @@ def test_custom_provider_requires_credential(codex_payload, mock_codex):
 
     assert error.code == "codex_invalid_configuration"
     assert "ACME_API_KEY is required" in error.message
-    assert not (adapter.state_dir(runtime_input(codex_payload)) / "custom-provider-home").exists()
+    assert not (
+        adapter.state_dir(*runtime_input(codex_payload)[1:]) / "custom-provider-home"
+    ).exists()
     mock_codex.assert_not_called()
 
 
@@ -992,8 +994,8 @@ def test_relay_routes_custom_provider_through_gateway(codex_payload, tmp_path):
         plugin_config={"version": 1, "components": []},
     )
 
-    adapter.validate_runtime_payload(runtime_input(codex_payload))
-    config = adapter.thread_config(runtime_input(codex_payload), relay)
+    adapter.validate_runtime_payload(*runtime_input(codex_payload))
+    config = adapter.thread_config(*runtime_input(codex_payload)[:2], relay)
 
     assert config["model_providers"]["acme"] == {
         "name": "acme",
@@ -1038,7 +1040,7 @@ def test_prepare_relay_reuses_one_resolved_executable(
     )
     monkeypatch.setattr(adapter.common_utils, "write_relay_configs", write)
 
-    relay = adapter.prepare_codex_relay(codex_payload, runtime_input(codex_payload))
+    relay = adapter.prepare_codex_relay(codex_payload, *runtime_input(codex_payload))
 
     assert relay is not None
     assert relay.gateway.executable == executable
@@ -1236,7 +1238,7 @@ def test_codex_config_resolves_sdk_adapter():
 def test_environment_does_not_mutate_parent(codex_payload):
     os.environ["FABRIC_UNRELATED_SECRET"] = "parent-value"
 
-    child = adapter.child_environment(runtime_input(codex_payload))
+    child = adapter.child_environment(*runtime_input(codex_payload))
 
     assert child["FABRIC_UNRELATED_SECRET"] == ""
     assert os.environ["FABRIC_UNRELATED_SECRET"] == "parent-value"
@@ -1256,7 +1258,7 @@ def test_environment_preserves_runtime_telemetry_env(codex_payload):
     }
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = "/tmp/parent-relay.json"
 
-    child = adapter.child_environment(runtime_input(codex_payload))
+    child = adapter.child_environment(*runtime_input(codex_payload))
 
     assert child["FABRIC_RELAY_ENABLED"] == "true"
     assert child["FABRIC_RELAY_CONFIG_PATH"] == "/tmp/relay.json"
