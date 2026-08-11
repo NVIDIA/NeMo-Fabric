@@ -78,7 +78,7 @@ ADAPTER_EXTRAS = {
         (
             "adapters/deepagents",
             [
-                f"nemo-fabric-adapters-common[mcp-oauth] == {PACKAGE_VERSION}",
+                f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
                 "langchain-mcp-adapters>=0.1,<0.3.0",
                 "langchain-openai>=0.3",
                 "langgraph-checkpoint-sqlite>=3.0,<4.0",
@@ -99,14 +99,11 @@ def test_adapter_runtime_dependencies(path: str, expected: list[str]):
     assert sorted(project.get("dependencies", [])) == sorted(expected)
 
 
-def test_common_mcp_oauth_extra_declares_protocol_dependencies():
-    extras = load_pyproject("adapters/common")["project"]["optional-dependencies"]
-    assert extras == {"mcp-oauth": ["httpx>=0.27,<1", "mcp>=1.26,<1.29"]}
-
 def test_adapter_contract_offers_optional_pydantic_interop():
     extras = load_pyproject("adapter-contract")["project"]["optional-dependencies"]
 
     assert extras == {"pydantic": ["pydantic>=2.12,<3"]}
+
 
 def test_adapter_test_dependency_group_matches_leaf_harnesses():
     manifest = load_pyproject("")

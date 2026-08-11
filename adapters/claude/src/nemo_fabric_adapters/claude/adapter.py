@@ -12,7 +12,6 @@ import math
 import os
 import shutil
 import subprocess
-from collections.abc import Mapping
 from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import is_dataclass
@@ -334,14 +333,13 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 raise AdapterConfigError(
                     "claude_invalid_configuration", str(error)
                 ) from error
-        if authentication := server.get("authentication"):
-            if transport == "stdio":
-                raise AdapterConfigError(
-                    "claude_invalid_configuration",
-                    f"MCP server {name} authentication is not supported for stdio; "
-                    "provide credentials through env",
-                )
-            _mcp_oauth_config(name, authentication)
+
+        auth = server.get("authentication")
+        if auth is not None:
+            raise AdapterConfigError(
+                "claude_invalid_configuration",
+                f"MCP server {name!r} {auth.get('type')!r} authentication is not supported by Claude",
+            )
     return result
 
 
@@ -359,144 +357,7 @@ def _native_mcp_server_specs(payload: dict[str, Any]) -> dict[str, dict[str, Any
     }
 
 
-def _mcp_oauth_config(name: str, value: Any) -> mcp_auth.McpOAuth2Config:
-    try:
-        if isinstance(value, Mapping) and value.get("type") == "service_account":
-            raise mcp_auth.McpAuthConfigError(
-                f"MCP server {name!r} service_account authentication is not supported by Claude"
-            )
-        return mcp_auth.parse_oauth2_config(name, value)
-    except mcp_auth.McpAuthConfigError as error:
-        raise AdapterConfigError("claude_invalid_configuration", str(error)) from error
-
-
-def _authenticated_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    servers = _native_mcp_server_specs(payload)
-    mapped = _mcp_servers(payload)
-    return {
-        name: mapped[name]
-        for name, server in sorted(servers.items())
-        if server.get("authentication")
-    }
-
-
-def _mcp_authentication(payload: dict[str, Any], name: str) -> mcp_auth.McpOAuth2Config:
-    server = _native_mcp_server_specs(payload)[name]
-    return _mcp_oauth_config(name, server.get("authentication"))
-
-
-async def _self_authenticate_http_mcp_server(
-    server_name: str,
-    server_url: str,
-    server_type: str,
-    config: mcp_auth.McpOAuth2Config,
-    *,
-    timeout: float,
-) -> str:
-    """Run an OAuth authorization_code flow in-process and return the access token.
-
-    Uses mcp_auth.create_mcp_oauth_provider and an HTTP request to trigger the
-    401→OAuth dance. The HTTP method is chosen by transport type: SSE servers
-    expect GET; streamable-http servers only issue the 401 auth challenge on POST
-    (a bare GET returns 405 or 200 and never triggers the OAuth flow).
-    On success, the token is stored in the provider context and returned as a string.
-    Raises ClaudeAdapterError on failure; re-raises TimeoutError so the caller can
-    map it to claude_mcp_authentication_timed_out.
-    """
-    import httpx
-
-    try:
-        provider = mcp_auth.create_mcp_oauth_provider(
-            server_name,
-            server_url,
-            config,
-            client_name=config.client_name or "nemo-fabric",
-        )
-    except mcp_auth.McpAuthConfigError as error:
-        raise ClaudeAdapterError(
-            "claude_mcp_authentication_failed",
-            f"MCP server {server_name!r} OAuth configuration is invalid: {error}",
-            metadata={"server": server_name},
-        ) from error
-
-    try:
-        async with asyncio.timeout(timeout):
-            async with httpx.AsyncClient(auth=provider) as http_client:
-                if server_type == "sse":
-                    await http_client.get(server_url)
-                else:
-                    await http_client.post(
-                        server_url,
-                        headers={
-                            "Content-Type": "application/json",
-                            "Accept": "application/json, text/event-stream",
-                        },
-                        json={
-                            "jsonrpc": "2.0",
-                            "id": 0,
-                            "method": "initialize",
-                            "params": {
-                                "protocolVersion": "2024-11-05",
-                                "capabilities": {},
-                                "clientInfo": {
-                                    "name": "nemo-fabric",
-                                    "version": "0.0.0",
-                                },
-                            },
-                        },
-                    )
-    except TimeoutError:
-        raise
-    except mcp_auth.McpAuthConfigError as error:
-        raise ClaudeAdapterError(
-            "claude_mcp_authentication_failed",
-            f"Claude Code could not authenticate MCP server {server_name!r}: {error}",
-            metadata={"server": server_name},
-        ) from error
-    except asyncio.CancelledError:
-        raise
-    except Exception as error:
-        raise ClaudeAdapterError(
-            "claude_mcp_authentication_failed",
-            f"Claude Code could not authenticate MCP server {server_name!r}",
-            metadata={"server": server_name},
-        ) from error
-
-    access_token = mcp_auth.access_token(provider)
-    if not access_token:
-        raise ClaudeAdapterError(
-            "claude_mcp_authentication_failed",
-            f"MCP server {server_name!r} OAuth flow did not return an access token",
-            metadata={"server": server_name},
-        )
-    return access_token
-
-
-async def _prefetch_mcp_oauth_tokens(payload: dict[str, Any]) -> dict[str, str]:
-    """Run OAuth flows for HTTP/SSE MCP servers before Claude launches.
-
-    Returns {server_name: access_token}. Tokens are projected into the staged
-    config as ${VAR} references by _stage_mcp_config so the literal credential
-    never appears in the on-disk config file.
-    """
-    servers = _authenticated_mcp_servers(payload)
-    tokens: dict[str, str] = {}
-    for name, server in servers.items():
-        authentication = _mcp_authentication(payload, name)
-        tokens[name] = await _self_authenticate_http_mcp_server(
-            name,
-            server["url"],
-            server["type"],
-            authentication,
-            timeout=authentication.authorization_timeout_seconds,
-        )
-    return tokens
-
-
-def _stage_mcp_config(
-    payload: dict[str, Any],
-    oauth_tokens: dict[str, str] | None = None,
-) -> ClaudeMcpSettings | None:
+def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
     # Dictionary-valued ClaudeAgentOptions.mcp_servers are JSON-serialized by
     # claude-agent-sdk into the literal `--mcp-config` command-line argument,
     # where MCP credentials can be observed by process-inspection tools. Passing
@@ -545,14 +406,6 @@ def _stage_mcp_config(
                     server_name, variable_name, value
                 )
             server["env"] = projected_environment
-
-        if oauth_tokens and (token := oauth_tokens.get(server_name)):
-            token_reference = project_environment_value(
-                server_name, "oauth_access_token", token
-            )
-            server.setdefault("headers", {})["Authorization"] = (
-                f"Bearer {token_reference}"
-            )
 
     config_root = (
         _artifact_root(payload)
@@ -793,7 +646,6 @@ def build_options(
     payload: dict[str, Any],
     *,
     relay: ClaudeRelaySettings | None = None,
-    oauth_tokens: dict[str, str] | None = None,
 ) -> ClaudeAgentOptions:
     settings = _settings(payload)
     permission_mode = settings.get("permission_mode")
@@ -829,7 +681,7 @@ def build_options(
         payload,
         relay_gateway_url=relay.gateway.url if relay is not None else None,
     )
-    mcp = _stage_mcp_config(payload, oauth_tokens)
+    mcp = _stage_mcp_config(payload)
     if mcp is not None:
         environment.update(mcp.environment)
     try:
@@ -1118,7 +970,6 @@ class ClaudeRuntime:
         self._fabric_runtime_id: str | None = None
         self._claude_session_id: str | None = None
         self._client: ClaudeSDKClient | None = None
-        self._mcp_authentication_checked: dict[str, bool] = {}
         self._relay: ClaudeRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
@@ -1135,20 +986,13 @@ class ClaudeRuntime:
             relay = prepare_claude_relay(payload)
             self._relay = relay
             self._gateway_process = _start_relay_gateway(payload, relay)
-            oauth_tokens = await _prefetch_mcp_oauth_tokens(payload)
-            options = build_options(payload, relay=relay, oauth_tokens=oauth_tokens)
+            options = build_options(payload, relay=relay)
 
             if isinstance(options.mcp_servers, Path):
                 self._mcp_config_path = options.mcp_servers
 
             client = ClaudeSDKClient(options)
             await client.connect()
-        except TimeoutError as error:
-            self._cleanup_failed_start()
-            raise lifecycle.LifecycleError(
-                "claude_mcp_authentication_timed_out",
-                "Claude MCP OAuth authentication timed out during startup",
-            ) from error
         except ClaudeAdapterError as error:
             self._cleanup_failed_start()
             raise _as_lifecycle_error(error) from error
@@ -1188,23 +1032,13 @@ class ClaudeRuntime:
                 "Claude runtime cannot accept another invocation after a runtime failure",
             )
 
-        invocation_deadline = (
-            asyncio.get_running_loop().time() + timeout_seconds(payload)
+        invocation_deadline = asyncio.get_running_loop().time() + timeout_seconds(
+            payload
         )
         try:
             prompt = request_prompt(payload)
-            await self._authenticate_mcp_servers(
-                payload,
-                client,
-                invocation_deadline,
-            )
         except ClaudeAdapterError as error:
             output = adapter_failure(error)
-        except TimeoutError:
-            output = _failure(
-                "claude_mcp_authentication_timed_out",
-                "Claude MCP authentication timed out",
-            )
         except ClaudeSDKError as error:
             output = sdk_failure(error)
         else:
@@ -1248,59 +1082,6 @@ class ClaudeRuntime:
         if self._relay is not None:
             output = _relay_output(output, self._relay)
         return output
-
-    async def _authenticate_mcp_servers(
-        self,
-        payload: dict[str, Any],
-        client: ClaudeSDKClient,
-        invocation_deadline: float,
-    ) -> None:
-        for name in _authenticated_mcp_servers(payload):
-            if self._mcp_authentication_checked.get(name, False):
-                continue
-
-            self._mcp_authentication_checked[name] = False
-            status = await self._mcp_server_status(
-                client,
-                name,
-                min(5.0, _remaining_timeout(invocation_deadline)),
-            )
-            if status != "connected":
-                raise ClaudeAdapterError(
-                    "claude_mcp_unavailable",
-                    f"Claude MCP server {name!r} is unavailable",
-                    metadata={"server": name, "status": status},
-                )
-
-            self._mcp_authentication_checked[name] = True
-
-    async def _mcp_server_status(
-        self,
-        client: ClaudeSDKClient,
-        name: str,
-        timeout: float,
-    ) -> str:
-        async with asyncio.timeout(timeout):
-            while True:
-                response = await client.get_mcp_status()
-                match = next(
-                    (
-                        server
-                        for server in response.get("mcpServers", [])
-                        if server.get("name") == name
-                    ),
-                    None,
-                )
-                if match is None:
-                    raise ClaudeAdapterError(
-                        "claude_mcp_unavailable",
-                        f"Claude MCP server {name!r} was not loaded",
-                        metadata={"server": name, "status": "missing"},
-                    )
-                status = str(match.get("status") or "unknown")
-                if status != "pending":
-                    return status
-                await asyncio.sleep(0.25)
 
     async def _run_query(
         self,
@@ -1370,7 +1151,6 @@ class ClaudeRuntime:
         self._start_payload = None
         self._fabric_runtime_id = None
         self._claude_session_id = None
-        self._mcp_authentication_checked = {}
         self._unusable = True
 
         disconnect_error: BaseException | None = None

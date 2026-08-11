@@ -264,312 +264,29 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert "ANTHROPIC_BASE_URL" not in options.env
 
 
-def test_build_options_maps_mcp_headers_and_oauth(claude_payload):
+@pytest.mark.parametrize("authentication_type", ["oauth2", "service_account"])
+def test_claude_rejects_mcp_authentication(claude_payload, authentication_type):
     server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["custom_headers"] = {"X-Tenant": "fabric"}
-    server["authentication"] = {
-        "type": "oauth2",
-        "client_id": "fabric-client",
-        "redirect_uri": "http://127.0.0.1:8765/callback",
-    }
+    server["authentication"] = {"type": authentication_type}
 
-    options = adapter.build_options(claude_payload)
-    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
-        "mcpServers"
-    ]
-
-    # OAuth is handled in-process at start(); no oauth block is staged for Claude.
-    assert mcp_servers["docs"] == {
-        "type": "http",
-        "url": "https://mcp.example.test",
-        "headers": {"X-Tenant": "fabric"},
-    }
-    assert "oauth" not in mcp_servers["docs"]
-
-
-def test_claude_maps_mcp_oauth_scopes(claude_payload):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {"type": "oauth2", "scopes": ["read"]}
-
-    options = adapter.build_options(claude_payload)
-    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
-        "mcpServers"
-    ]
-
-    assert "oauth" not in mcp_servers["docs"]
-    assert mcp_servers["docs"] == {"type": "http", "url": "https://mcp.example.test"}
-
-
-def test_claude_maps_mcp_oauth_client_secret_configuration(claude_payload):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {
-        "type": "oauth2",
-        "client_id": "fabric-client",
-        "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
-    }
-
-    options = adapter.build_options(claude_payload)
-    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
-        "mcpServers"
-    ]
-
-    assert "oauth" not in mcp_servers["docs"]
-    assert mcp_servers["docs"] == {"type": "http", "url": "https://mcp.example.test"}
-
-
-def test_claude_rejects_mcp_service_account_authentication(claude_payload):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {
-        "type": "service_account",
-        "client_id": "fabric-client",
-        "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
-        "token_url": "https://auth.example.test/token",
-    }
-
-    with pytest.raises(adapter.AdapterConfigError, match="service_account"):
-        adapter.build_options(claude_payload)
-
-
-def test_claude_rejects_authenticated_stdio_server_without_exposing_env(claude_payload):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["repo"]
-    server["authentication"] = {"type": "oauth2"}
-    credential = server["env"]["REPO_MCP_MODE"]
-
-    with pytest.raises(adapter.AdapterConfigError, match="stdio") as caught:
+    with pytest.raises(
+        adapter.AdapterConfigError, match="not supported by Claude"
+    ) as caught:
         adapter.build_options(claude_payload)
 
     assert caught.value.code == "claude_invalid_configuration"
-    assert credential not in str(caught.value)
 
 
-def test_claude_forwards_browser_environment_for_mcp_login(claude_payload):
-    browser_environment = {
-        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
-        "DISPLAY": ":1",
-        "XAUTHORITY": "/run/user/1000/xauthority",
-        "XDG_RUNTIME_DIR": "/run/user/1000",
-    }
-    os.environ.update(browser_environment)
-
-    options = adapter.build_options(claude_payload)
-
-    assert {name: options.env[name] for name in browser_environment} == (
-        browser_environment
-    )
-
-
-def test_claude_projects_oauth_token_into_child_environment(claude_payload):
+def test_claude_maps_mcp_custom_headers(claude_payload):
     server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {"type": "oauth2"}
     server["custom_headers"] = {"X-Tenant": "fabric"}
 
-    options = adapter.build_options(claude_payload, oauth_tokens={"docs": "tok-abc123"})
-    serialized_mcp = options.mcp_servers.read_text(encoding="utf-8")
-    mcp_config = json.loads(serialized_mcp)
+    options = adapter.build_options(claude_payload)
+    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
+        "mcpServers"
+    ]
 
-    assert "tok-abc123" not in serialized_mcp
-    authorization = mcp_config["mcpServers"]["docs"]["headers"]["Authorization"]
-    assert authorization.startswith("Bearer ${NEMO_FABRIC_CLAUDE_MCP_")
-    assert authorization.endswith("}")
-    projected_name = authorization.removeprefix("Bearer ${").removesuffix("}")
-    assert options.env[projected_name] == "tok-abc123"
-    assert mcp_config["mcpServers"]["docs"]["headers"]["X-Tenant"] == "fabric"
-
-
-async def test_claude_prefetches_oauth_tokens_before_connect(
-    claude_payload, monkeypatch
-):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {
-        "type": "oauth2",
-        "authorization_timeout_seconds": 12,
-    }
-    self_auth = AsyncMock(return_value="tok-prefetched")
-    monkeypatch.setattr(adapter, "_self_authenticate_http_mcp_server", self_auth)
-
-    tokens = await adapter._prefetch_mcp_oauth_tokens(claude_payload)
-
-    assert tokens == {"docs": "tok-prefetched"}
-    call = self_auth.await_args
-    assert call.args[:3] == ("docs", "https://mcp.example.test", "http")
-    assert call.kwargs["timeout"] == 12
-
-
-async def test_claude_preserves_missing_oauth_token_error(monkeypatch):
-    import httpx
-
-    mock_provider = MagicMock()
-    mock_http_client = MagicMock()
-    mock_http_client.post = AsyncMock()
-    mock_http_client_context = MagicMock()
-    mock_http_client_context.__aenter__ = AsyncMock(return_value=mock_http_client)
-    mock_http_client_context.__aexit__ = AsyncMock(return_value=None)
-    monkeypatch.setattr(
-        httpx,
-        "AsyncClient",
-        MagicMock(return_value=mock_http_client_context),
-    )
-    monkeypatch.setattr(
-        adapter.mcp_auth,
-        "create_mcp_oauth_provider",
-        MagicMock(return_value=mock_provider),
-    )
-    access_token = MagicMock(return_value=None)
-    monkeypatch.setattr(adapter.mcp_auth, "access_token", access_token)
-    config = adapter.mcp_auth.McpOAuth2Config(
-        client_id=None,
-        client_secret_env=None,
-        scopes=(),
-        redirect_uri=None,
-    )
-
-    with pytest.raises(adapter.ClaudeAdapterError) as caught:
-        await adapter._self_authenticate_http_mcp_server(
-            "docs",
-            "https://mcp.example.test",
-            "http",
-            config,
-            timeout=12,
-        )
-
-    access_token.assert_called_once_with(mock_provider)
-    assert caught.value.code == "claude_mcp_authentication_failed"
-    assert caught.value.message == (
-        "MCP server 'docs' OAuth flow did not return an access token"
-    )
-    assert caught.value.metadata == {"server": "docs"}
-
-
-async def test_claude_checks_mcp_connectivity_on_first_invoke(claude_payload):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {"type": "oauth2"}
-    client = MagicMock(spec=adapter.ClaudeSDKClient)
-    client.get_mcp_status = AsyncMock(
-        return_value={"mcpServers": [{"name": "docs", "status": "connected"}]}
-    )
-    runtime = adapter.ClaudeRuntime()
-
-    await runtime._authenticate_mcp_servers(
-        claude_payload,
-        client,
-        asyncio.get_running_loop().time() + 30,
-    )
-
-    client.get_mcp_status.assert_awaited()
-    assert runtime._mcp_authentication_checked == {"docs": True}
-
-
-async def test_claude_raises_when_mcp_server_unavailable_at_invoke(claude_payload):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {"type": "oauth2"}
-    client = MagicMock(spec=adapter.ClaudeSDKClient)
-    client.get_mcp_status = AsyncMock(
-        return_value={"mcpServers": [{"name": "docs", "status": "failed"}]}
-    )
-    runtime = adapter.ClaudeRuntime()
-
-    with pytest.raises(adapter.ClaudeAdapterError) as caught:
-        await runtime._authenticate_mcp_servers(
-            claude_payload,
-            client,
-            asyncio.get_running_loop().time() + 30,
-        )
-
-    assert caught.value.code == "claude_mcp_unavailable"
-    assert caught.value.metadata == {"server": "docs", "status": "failed"}
-    assert runtime._mcp_authentication_checked == {"docs": False}
-
-
-async def test_claude_tracks_mcp_authentication_per_server(claude_payload):
-    servers = claude_payload["capability_plan"]["native"]["mcp_servers"]
-    servers["docs"]["authentication"] = {"type": "oauth2"}
-    servers["issues"] = {
-        "transport": "streamable-http",
-        "url": "https://issues.example.test",
-        "authentication": {"type": "oauth2"},
-    }
-    client = MagicMock(spec=adapter.ClaudeSDKClient)
-    client.get_mcp_status = AsyncMock(
-        side_effect=[
-            {
-                "mcpServers": [
-                    {"name": "docs", "status": "connected"},
-                    {"name": "issues", "status": "failed"},
-                ]
-            },
-            {
-                "mcpServers": [
-                    {"name": "docs", "status": "connected"},
-                    {"name": "issues", "status": "failed"},
-                ]
-            },
-            {
-                "mcpServers": [
-                    {"name": "docs", "status": "connected"},
-                    {"name": "issues", "status": "connected"},
-                ]
-            },
-        ]
-    )
-    runtime = adapter.ClaudeRuntime()
-
-    with pytest.raises(adapter.ClaudeAdapterError):
-        await runtime._authenticate_mcp_servers(
-            claude_payload,
-            client,
-            asyncio.get_running_loop().time() + 30,
-        )
-
-    assert runtime._mcp_authentication_checked == {
-        "docs": True,
-        "issues": False,
-    }
-
-    await runtime._authenticate_mcp_servers(
-        claude_payload,
-        client,
-        asyncio.get_running_loop().time() + 30,
-    )
-
-    assert client.get_mcp_status.await_count == 3
-    assert runtime._mcp_authentication_checked == {
-        "docs": True,
-        "issues": True,
-    }
-
-
-async def test_claude_mcp_status_checks_use_remaining_invocation_budget(
-    claude_payload, monkeypatch
-):
-    servers = claude_payload["capability_plan"]["native"]["mcp_servers"]
-    servers["docs"]["authentication"] = {"type": "oauth2"}
-    servers["issues"] = {
-        "transport": "streamable-http",
-        "url": "https://issues.example.test",
-        "authentication": {"type": "oauth2"},
-    }
-    runtime = adapter.ClaudeRuntime()
-    status = AsyncMock(return_value="connected")
-    monkeypatch.setattr(runtime, "_mcp_server_status", status)
-    remaining_timeout = MagicMock(side_effect=[4.0, 1.5])
-    monkeypatch.setattr(adapter, "_remaining_timeout", remaining_timeout)
-    client = MagicMock(spec=adapter.ClaudeSDKClient)
-
-    await runtime._authenticate_mcp_servers(claude_payload, client, 100.0)
-
-    assert status.await_args_list[0].args == (client, "docs", 4.0)
-    assert status.await_args_list[1].args == (client, "issues", 1.5)
-    assert remaining_timeout.call_count == 2
-
-
-async def test_claude_mcp_status_polling_respects_timeout():
-    client = MagicMock(spec=adapter.ClaudeSDKClient)
-    client.get_mcp_status = AsyncMock(
-        return_value={"mcpServers": [{"name": "docs", "status": "pending"}]}
-    )
-
-    with pytest.raises(TimeoutError):
-        await adapter.ClaudeRuntime()._mcp_server_status(client, "docs", 0.01)
+    assert mcp_servers["docs"]["headers"] == {"X-Tenant": "fabric"}
 
 
 async def test_claude_invoke_passes_remaining_budget_to_query(
@@ -581,9 +298,7 @@ async def test_claude_invoke_passes_remaining_budget_to_query(
     }
     runtime._fabric_runtime_id = claude_payload["runtime_context"]["runtime_id"]
     runtime._client = MagicMock(spec=adapter.ClaudeSDKClient)
-    authenticate = AsyncMock()
     run_query = AsyncMock(return_value={"completed": False})
-    monkeypatch.setattr(runtime, "_authenticate_mcp_servers", authenticate)
     monkeypatch.setattr(runtime, "_run_query", run_query)
     remaining_timeout = MagicMock(return_value=7.0)
     monkeypatch.setattr(adapter, "_remaining_timeout", remaining_timeout)
@@ -593,7 +308,7 @@ async def test_claude_invoke_passes_remaining_budget_to_query(
     await runtime.invoke(lifecycle_invocation(claude_payload))
 
     after = loop.time()
-    invocation_deadline = authenticate.await_args.args[2]
+    invocation_deadline = remaining_timeout.call_args.args[0]
     assert before + 30 <= invocation_deadline <= after + 30
     remaining_timeout.assert_called_once_with(invocation_deadline)
     assert run_query.await_args.args[3] == 7.0

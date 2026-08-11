@@ -25,6 +25,23 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
 }
 
 
+def _resolve_client_secret(
+    server_name: str,
+    config: mcp_auth.McpOAuth2Config,
+) -> str | None:
+    """Resolve a Hermes OAuth client secret without retaining or logging it."""
+
+    if config.client_secret_env is None:
+        return None
+    secret = os.environ.get(config.client_secret_env)
+    if not secret:
+        raise mcp_auth.McpAuthConfigError(
+            f"MCP server {server_name!r} authentication.client_secret_env "
+            "references an unset environment variable"
+        )
+    return secret
+
+
 def _settings(config: AgentConfig) -> dict[str, Any]:
     return config.harness.settings if config.harness is not None else {}
 
@@ -204,7 +221,7 @@ def hermes_mcp_server_config(
         )
         if secret_env := authentication.client_secret_env:
             try:
-                mcp_auth.resolve_client_secret(name, authentication)
+                _resolve_client_secret(name, authentication)
             except mcp_auth.McpAuthConfigError as error:
                 raise ValueError(str(error)) from error
             oauth["client_secret"] = f"${{{secret_env}}}"

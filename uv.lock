@@ -2316,20 +2316,6 @@ name = "nemo-fabric-adapters-common"
 version = "0.2.0"
 source = { editable = "adapters/common" }
 
-[package.optional-dependencies]
-mcp-oauth = [
-    { name = "httpx" },
-    { name = "mcp", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
-    { name = "mcp", version = "1.28.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", marker = "extra == 'mcp-oauth'", specifier = ">=0.27,<1" },
-    { name = "mcp", marker = "extra == 'mcp-oauth'", specifier = ">=1.26,<1.29" },
-]
-provides-extras = ["mcp-oauth"]
-
 [[package]]
 name = "nemo-fabric-adapters-deepagents"
 version = "0.2.0"
@@ -2338,7 +2324,7 @@ dependencies = [
     { name = "langchain-mcp-adapters" },
     { name = "langchain-openai" },
     { name = "langgraph-checkpoint-sqlite" },
-    { name = "nemo-fabric-adapters-common", extra = ["mcp-oauth"] },
+    { name = "nemo-fabric-adapters-common" },
 ]
 
 [package.optional-dependencies]
@@ -2362,7 +2348,7 @@ requires-dist = [
     { name = "langgraph", marker = "extra == 'full'", specifier = ">=1.2,<2.0" },
     { name = "langgraph", marker = "extra == 'harness'", specifier = ">=1.2,<2.0" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=3.0,<4.0" },
-    { name = "nemo-fabric-adapters-common", extras = ["mcp-oauth"], editable = "adapters/common" },
+    { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
     { name = "nemo-relay", extras = ["deepagents"], marker = "extra == 'full'", specifier = ">=0.6.0,<0.7" },
 ]

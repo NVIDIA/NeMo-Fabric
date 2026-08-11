@@ -379,13 +379,6 @@ name = "nemo-fabric-adapters-common"
 version = "0.2.0"
 source = { editable = "../common" }
 
-[package.metadata]
-requires-dist = [
-    { name = "httpx", marker = "extra == 'mcp-oauth'", specifier = ">=0.27,<1" },
-    { name = "mcp", marker = "extra == 'mcp-oauth'", specifier = ">=1.26,<1.29" },
-]
-provides-extras = ["mcp-oauth"]
-
 [[package]]
 name = "pycparser"
 version = "3.0"

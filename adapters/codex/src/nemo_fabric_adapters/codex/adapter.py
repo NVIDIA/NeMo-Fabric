@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import subprocess
+import webbrowser
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
@@ -55,6 +56,14 @@ APPROVAL_MODES = {
     "auto_review": ApprovalMode.auto_review,
     "deny_all": ApprovalMode.deny_all,
 }
+
+
+async def _open_authorization_url(authorization_url: str) -> bool:
+    """Open a Codex OAuth authorization URL without blocking the event loop."""
+
+    return await asyncio.to_thread(webbrowser.open, authorization_url)
+
+
 INHERITED_ENV_NAMES = {
     "APPDATA",
     "CODEX_HOME",
@@ -410,7 +419,7 @@ async def _login_mcp_server(
         params,
         response_model=McpServerOauthLoginResponse,
     )
-    opened = await mcp_auth.open_authorization_url(response.authorization_url)
+    opened = await _open_authorization_url(response.authorization_url)
     if not opened:
         raise AdapterConfigError(
             "codex_mcp_authentication_failed",

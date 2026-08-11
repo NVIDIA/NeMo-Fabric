@@ -283,9 +283,7 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
         "config": _agent_config(
             {
                 "harness": {"settings": {}},
-                "models": {
-                    "default": {"provider": "nvidia", "model": "test-model"}
-                },
+                "models": {"default": {"provider": "nvidia", "model": "test-model"}},
             }
         ),
         "runtime_context": _runtime_context(
@@ -594,6 +592,21 @@ def test_hermes_maps_http_mcp_headers_and_oauth():
             "redirect_uri": "http://127.0.0.1:8765/callback",
         },
     }
+
+
+def test_hermes_rejects_unset_mcp_oauth_client_secret():
+    with pytest.raises(ValueError, match="unset environment variable"):
+        adapter.hermes_mcp_server_config(
+            AgentMcpServerConfig(
+                transport="sse",
+                url="https://mcp.example.test/sse",
+                authentication={
+                    "type": "oauth2",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                },
+            )
+        )
 
 
 def test_hermes_rejects_mcp_service_account_authentication():
@@ -967,10 +980,13 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
-    assert adapter._artifact_root(
-        _runtime_context(artifact_root="run-artifacts"),
-        str(tmp_path),
-    ) == (tmp_path / "run-artifacts").resolve()
+    assert (
+        adapter._artifact_root(
+            _runtime_context(artifact_root="run-artifacts"),
+            str(tmp_path),
+        )
+        == (tmp_path / "run-artifacts").resolve()
+    )
 
 
 async def test_persistent_runtime_reuses_hermes_agent_session_and_history(

@@ -1113,17 +1113,6 @@ async def test_mcp_servers_become_adapter_tools(
         types.ModuleType("langchain_mcp_adapters"),
     )
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
-    mock_oauth = MagicMock(name="oauth")
-    cleanup_calls = []
-    mock_callback = MagicMock(name="oauth_callback")
-    mock_callback.close_reserved_socket.side_effect = lambda: cleanup_calls.append(
-        "close_reserved_socket"
-    )
-    mock_callback.close = AsyncMock(side_effect=lambda: cleanup_calls.append("close"))
-    mock_oauth._fabric_oauth_callback = mock_callback
-    create_oauth = MagicMock(return_value=mock_oauth)
-    monkeypatch.setattr(adapter.mcp_auth, "create_mcp_oauth_provider", create_oauth)
-
     payload = make_payload(tmp_path)
     # McpServerPlan carries the URL/command in ``url``.
     payload["capability_plan"] = {
@@ -1133,10 +1122,6 @@ async def test_mcp_servers_become_adapter_tools(
                     "transport": "streamable-http",
                     "url": "http://localhost:9/mcp",
                     "custom_headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
-                    "authentication": {
-                        "type": "oauth2",
-                        "client_id": "fabric-client",
-                    },
                 },
                 "local": {
                     "transport": "stdio",
@@ -1151,23 +1136,11 @@ async def test_mcp_servers_become_adapter_tools(
     output = await invoke_once(payload)
 
     assert output["failed"] is False
-    create_oauth.assert_called_once_with(
-        "fs",
-        "http://localhost:9/mcp",
-        adapter.mcp_auth.McpOAuth2Config(
-            client_id="fabric-client",
-            client_secret_env=None,
-            scopes=(),
-            redirect_uri=None,
-        ),
-        client_name="NeMo Fabric Deep Agents",
-    )
     assert mock_client_cls.call_args.args[0] == {
         "fs": {
             "transport": "streamable_http",
             "url": "http://localhost:9/mcp",
             "headers": {"X-Tenant": "fabric"},
-            "auth": mock_oauth,
         },
         "local": {
             "transport": "stdio",
@@ -1178,63 +1151,21 @@ async def test_mcp_servers_become_adapter_tools(
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file", "write_file"]
-    mock_callback.close_reserved_socket.assert_called_once_with()
-    mock_callback.close.assert_awaited_once_with()
-    assert cleanup_calls == ["close_reserved_socket", "close"]
 
 
-async def test_mcp_oauth_callback_closed_on_startup_failure(
-    tmp_path, make_payload, monkeypatch, fake_sdks
-):
-    callback = MagicMock(name="oauth_callback")
-    callback.close = AsyncMock()
-
-    async def fail_resolve_tools(_payload, oauth_callbacks=None):
-        oauth_callbacks.append(callback)
-        raise RuntimeError("MCP startup failed")
-
-    monkeypatch.setattr(adapter, "resolve_tools", fail_resolve_tools)
-
-    runtime = adapter.DeepAgentsRuntime()
-    with pytest.raises(RuntimeError, match="MCP startup failed"):
-        await runtime.start(lifecycle_start_payload(make_payload(tmp_path)))
-
-    callback.close_reserved_socket.assert_called_once_with()
-    callback.close.assert_awaited_once_with()
-
-
-def test_deepagents_maps_service_account_authentication(monkeypatch):
-    mock_auth = MagicMock(name="service_account_auth")
-    create_auth = MagicMock(return_value=mock_auth)
-    monkeypatch.setattr(
-        adapter.mcp_auth, "create_mcp_service_account_auth", create_auth
-    )
-
-    connection = adapter._mcp_connection(
-        "automation",
-        {
-            "transport": "streamable-http",
-            "url": "https://mcp.example.test/mcp",
-            "authentication": {
-                "type": "service_account",
-                "client_id": "fabric-client",
-                "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
-                "token_url": "https://auth.example.test/token",
-                "scopes": ["mcp:invoke"],
+@pytest.mark.parametrize("authentication_type", ["oauth2", "service_account"])
+def test_deepagents_rejects_mcp_authentication(authentication_type):
+    with pytest.raises(
+        adapter.AdapterConfigError, match="not supported by Deep Agents"
+    ):
+        adapter._mcp_connection(
+            "automation",
+            {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {"type": authentication_type},
             },
-        },
-    )
-
-    create_auth.assert_called_once_with(
-        "automation",
-        adapter.mcp_auth.McpServiceAccountConfig(
-            client_id="fabric-client",
-            client_secret_env="FABRIC_MCP_CLIENT_SECRET",
-            token_url="https://auth.example.test/token",
-            scopes=("mcp:invoke",),
-        ),
-    )
-    assert connection["auth"] is mock_auth
+        )
 
 
 @pytest.mark.usefixtures("use_real_langgraph")

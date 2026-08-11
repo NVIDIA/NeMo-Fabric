@@ -25,7 +25,7 @@ license-files = ["LICENSE"]
 readme = "pypi.md"
 requires-python = ">=3.11"
 dependencies = [
-  "nemo-fabric-adapters-common[mcp-oauth] == 0.2.0",
+  "nemo-fabric-adapters-common == 0.2.0",
   "langchain-mcp-adapters>=0.1,<0.3.0",
   "langchain-openai>=0.3",
   # Requires 3.x: the 2.x line is incompatible with the langgraph core deepagents

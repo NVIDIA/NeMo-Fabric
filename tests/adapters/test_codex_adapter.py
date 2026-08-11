@@ -509,7 +509,7 @@ def test_codex_logs_into_mcp_server_before_first_turn(
     }
     mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
     open_browser = AsyncMock(return_value=True)
-    monkeypatch.setattr(adapter.mcp_auth, "open_authorization_url", open_browser)
+    monkeypatch.setattr(adapter, "_open_authorization_url", open_browser)
 
     output = invoke_once(codex_payload)
 
@@ -548,8 +548,8 @@ def test_codex_reports_failed_mcp_oauth_login_before_turn(
     mock_codex.mcp_login_success = False
     mock_codex.mcp_login_error = "authorization denied"
     monkeypatch.setattr(
-        adapter.mcp_auth,
-        "open_authorization_url",
+        adapter,
+        "_open_authorization_url",
         AsyncMock(return_value=True),
     )
 
@@ -561,6 +561,17 @@ def test_codex_reports_failed_mcp_oauth_login_before_turn(
         "Codex MCP OAuth login failed for server 'remote'"
     )
     mock_codex.instances[0].thread.turn.assert_not_awaited()
+
+
+@pytest.mark.parametrize("opened", [True, False])
+async def test_codex_opens_mcp_authorization_url_without_blocking(monkeypatch, opened):
+    open_browser = MagicMock(return_value=opened)
+    monkeypatch.setattr(adapter.webbrowser, "open", open_browser)
+    to_thread = AsyncMock(return_value=opened)
+    monkeypatch.setattr(adapter.asyncio, "to_thread", to_thread)
+
+    assert await adapter._open_authorization_url("https://auth.example.test") is opened
+    to_thread.assert_awaited_once_with(open_browser, "https://auth.example.test")
 
 
 def test_codex_rejects_mcp_service_account_authentication(codex_payload):
