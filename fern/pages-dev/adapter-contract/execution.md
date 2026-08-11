@@ -94,7 +94,7 @@ class ExampleRuntime:
 
 
 def main() -> None:
-    lifecycle.serve(ExampleRuntime, config_model=AgentConfig)
+    lifecycle.serve(ExampleRuntime, config_loader=AgentConfig.from_mapping)
 ```
 
 The host validates the start `config` as `AgentConfig`, serializes operations,

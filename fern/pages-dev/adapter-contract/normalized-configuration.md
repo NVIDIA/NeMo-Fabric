@@ -45,8 +45,8 @@ FabricConfig + adapter descriptor + resolved capability plan
 
 Use the generated
 [`AgentConfig` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-config.schema.json)
-for exact fields and constraints. Python adapters can import matching Pydantic
-models from `nemo_fabric_adapter_contract.models`.
+for exact fields and constraints. Python adapters can import matching
+dataclasses from `nemo_fabric_adapter_contract.models`.
 
 ## Projection Rules
 
@@ -80,8 +80,8 @@ Use extensions only when normalized fields cannot express the behavior:
 
 1. Define a closed typed model for the adapter-owned data.
 2. Publish its JSON Schema at the exact extension point.
-3. Set the extension through the Pydantic block's `set_extensions(...)` helper
-   or an equivalent validated mapping.
+3. Set the extension through the block's `set_extensions(...)` helper. Adapters
+   using the optional Pydantic integration can supply a typed extension model.
 4. Reject extension data when the descriptor does not declare that extension
    point or the value does not satisfy its schema.
 
