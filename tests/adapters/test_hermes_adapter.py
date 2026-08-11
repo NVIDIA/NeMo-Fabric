@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
@@ -33,35 +34,62 @@ def _agent_config(value: dict[str, object]) -> AgentConfig:
     return AgentConfig.from_mapping(value)
 
 
-@pytest.mark.parametrize("providers", [None, {"relay": {}}])
-def test_validate_hermes_telemetry_provider_accepts_relay(
-    providers: dict[str, object] | None,
-):
-    payload = {}
+def _runtime_context(
+    *,
+    runtime_id: str = "runtime-1",
+    workspace: str | None = None,
+    artifact_root: str | None = None,
+    providers: list[str] | None = None,
+) -> RuntimeContext:
+    environment: dict[str, object] = {
+        "environment_id": "environment-1",
+        "provider": "test",
+        "control_location": "in_env_control",
+        "ownership": "caller_owned",
+    }
+    if workspace is not None:
+        environment["workspace"] = workspace
+    telemetry = None
     if providers is not None:
-        payload["telemetry_plan"] = {"providers": list(providers)}
+        telemetry = {
+            "relay_enabled": providers == ["relay"],
+            "metadata": {"telemetry_providers": providers},
+        }
+    return RuntimeContext.from_mapping(
+        {
+            "runtime_id": runtime_id,
+            "invocation_id": "invocation-1",
+            "request_id": "request-1",
+            "environment": environment,
+            "artifacts": {"root": artifact_root} if artifact_root else {},
+            "telemetry": telemetry,
+        }
+    )
 
-    adapter.validate_hermes_telemetry_provider(payload)
+
+@pytest.mark.parametrize("providers", [None, ["relay"]])
+def test_validate_hermes_telemetry_provider_accepts_relay(
+    providers: list[str] | None,
+):
+    adapter.validate_hermes_telemetry_provider(_runtime_context(providers=providers))
 
 
 def test_validate_hermes_telemetry_provider_rejects_native():
-    payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
-
     with pytest.raises(
         ValueError, match="only relay telemetry is supported for Hermes"
     ):
-        adapter.validate_hermes_telemetry_provider(payload)
+        adapter.validate_hermes_telemetry_provider(
+            _runtime_context(providers=["native"])
+        )
 
 
 def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
-    payload = {
-        "telemetry_plan": {"providers": ["relay", "native"], "relay_enabled": True}
-    }
-
     with pytest.raises(
         ValueError, match="only relay telemetry is supported for Hermes"
     ):
-        adapter.validate_hermes_telemetry_provider(payload)
+        adapter.validate_hermes_telemetry_provider(
+            _runtime_context(providers=["relay", "native"])
+        )
 
 
 def test_descriptor_uses_the_typed_agent_config_contract():
@@ -499,11 +527,11 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     payload = {
         "agent_name": "mcp-discover",
         "base_dir": str(tmp_path),
-        "runtime_context": {
-            "runtime_id": "runtime-mcp-discover",
-            "environment": {"workspace": str(tmp_path)},
-            "artifacts": {"root": str(tmp_path / "artifacts")},
-        },
+        "runtime_context": _runtime_context(
+            runtime_id="runtime-mcp-discover",
+            workspace=str(tmp_path),
+            artifact_root=str(tmp_path / "artifacts"),
+        ).to_mapping(),
     }
     payload["config"] = _agent_config(
         {
@@ -616,7 +644,10 @@ def test_summarize_hermes_config():
 
 
 async def test_runtime_start_rejects_native_telemetry():
-    payload = {"telemetry_plan": {"providers": ["native"], "relay_enabled": False}}
+    payload = {
+        "config": _agent_config({}),
+        "runtime_context": _runtime_context(providers=["native"]).to_mapping(),
+    }
 
     with pytest.raises(
         ValueError, match="only relay telemetry is supported for Hermes"
@@ -631,7 +662,9 @@ async def test_runtime_start_requires_typed_agent_config():
                 "config": {
                     "models": {"default": {"provider": "nvidia", "model": "test-model"}}
                 },
-                "runtime_context": {"runtime_id": "runtime-untyped"},
+                "runtime_context": _runtime_context(
+                    runtime_id="runtime-untyped"
+                ).to_mapping(),
             }
         )
 
@@ -651,11 +684,11 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
     monkeypatch.setattr(adapter, "write_hermes_config", stop_after_environment_setup)
     payload = {
         "base_dir": str(tmp_path),
-        "runtime_context": {
-            "runtime_id": "runtime-terminal-env",
-            "environment": {"workspace": str(tmp_path)},
-            "artifacts": {"root": str(tmp_path / "artifacts")},
-        },
+        "runtime_context": _runtime_context(
+            runtime_id="runtime-terminal-env",
+            workspace=str(tmp_path),
+            artifact_root=str(tmp_path / "artifacts"),
+        ).to_mapping(),
     }
     payload["config"] = _agent_config(
         {
@@ -669,12 +702,10 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
-    payload = {
-        "base_dir": str(tmp_path),
-        "runtime_context": {"artifacts": {"root": "run-artifacts"}},
-    }
-
-    assert adapter._artifact_root(payload) == (tmp_path / "run-artifacts").resolve()
+    assert adapter._artifact_root(
+        _runtime_context(artifact_root="run-artifacts"),
+        str(tmp_path),
+    ) == (tmp_path / "run-artifacts").resolve()
 
 
 async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
@@ -741,10 +772,10 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     payload = {
         "agent_name": "demo",
         "base_dir": str(tmp_path),
-        "runtime_context": {
-            "runtime_id": "runtime-fabric-123",
-            "environment": {"workspace": str(tmp_path)},
-        },
+        "runtime_context": _runtime_context(
+            runtime_id="runtime-fabric-123",
+            workspace=str(tmp_path),
+        ).to_mapping(),
         "request": {
             "input": "hello",
             "context": {"history": [{"role": "user", "content": "stale"}]},

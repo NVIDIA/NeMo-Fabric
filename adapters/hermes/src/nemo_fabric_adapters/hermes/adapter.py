@@ -23,6 +23,7 @@ from typing import Any
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
@@ -63,12 +64,8 @@ def _max_turns(config: AgentConfig) -> int | None:
     return config.runtime.max_turns if config.runtime is not None else None
 
 
-def _workspace(payload: dict[str, Any]) -> str:
-    environment = common_utils.runtime_context(payload).get("environment") or {}
-    if not isinstance(environment, dict):
-        return "."
-    workspace = environment.get("workspace")
-    return str(workspace) if workspace else "."
+def _workspace(runtime_context: RuntimeContext) -> str:
+    return str(runtime_context.environment.workspace or ".")
 
 
 def _api_key_env(model_config: AgentModelConfig) -> str:
@@ -103,8 +100,9 @@ def _fabric_stream_sink_enabled(config: dict[str, Any] | None) -> bool:
     return False
 
 
-def validate_hermes_telemetry_provider(payload: dict[str, Any]) -> None:
-    providers = common_utils.telemetry_providers(payload)
+def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
+    telemetry = runtime_context.telemetry
+    providers = telemetry.metadata.get("telemetry_providers", []) if telemetry else []
     if any(provider != "relay" for provider in providers):
         raise ValueError("only relay telemetry is supported for Hermes")
 
@@ -243,15 +241,14 @@ def resolve_hermes_toolsets(
     return sorted(_get_platform_tools(config, "cli"))
 
 
-def _artifact_root(payload: dict[str, Any]) -> Path:
-    artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
-    root = artifacts.get("root") if isinstance(artifacts, dict) else None
+def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    root = runtime_context.artifacts.root
     if root:
         artifact_root = Path(str(root))
         if not artifact_root.is_absolute():
-            artifact_root = Path(common_utils.base_dir(payload)) / artifact_root
+            artifact_root = Path(base_dir) / artifact_root
         return artifact_root.resolve()
-    return Path(common_utils.base_dir(payload)).resolve() / "artifacts"
+    return Path(base_dir).resolve() / "artifacts"
 
 
 class HermesRuntime:
@@ -289,19 +286,24 @@ class HermesRuntime:
         try:
             self._relay_session_pending = False
             self._relay_finalize_hook_invoked = False
-            validate_hermes_telemetry_provider(payload)
             agent_config = payload.get("config")
             if not isinstance(agent_config, AgentConfig):
                 raise lifecycle.LifecycleError(
                     "hermes_invalid_config",
                     "Hermes requires a validated AgentConfig",
                 )
+            runtime_context = RuntimeContext.from_mapping(payload.get("runtime_context"))
+            validate_hermes_telemetry_provider(runtime_context)
             self._agent_config = agent_config
             self._settings = _settings(agent_config)
             self._model_config = _selected_model(agent_config)
-            self._runtime_id = common_utils.runtime_id(payload)
-            self._hermes_home = common_utils.runtime_state_directory(
-                _artifact_root(payload) / ".fabric" / "hermes", payload
+            self._runtime_id = runtime_context.runtime_id
+            self._hermes_home = (
+                _artifact_root(runtime_context, common_utils.base_dir(payload))
+                / ".fabric"
+                / "hermes"
+                / "runtimes"
+                / runtime_context.runtime_id
             )
             self._hermes_home.mkdir(parents=True, exist_ok=True)
             os.environ["HOME"] = str(self._hermes_home)
@@ -315,7 +317,9 @@ class HermesRuntime:
                 str(self._settings.get("terminal_timeout", 60)),
             )
 
-            relay_enabled = common_utils.relay_enabled(payload)
+            relay_enabled = bool(
+                runtime_context.telemetry and runtime_context.telemetry.relay_enabled
+            )
             if relay_enabled:
                 relay_payload = {**payload, "config": agent_config.to_mapping()}
                 self._relay_plugin_config = common_utils.load_relay_plugin_config(
@@ -330,7 +334,7 @@ class HermesRuntime:
             self._hermes_config_path, self._hermes_config = write_hermes_config(
                 agent_config,
                 self._hermes_home,
-                workspace=_workspace(payload),
+                workspace=_workspace(runtime_context),
                 relay_enabled=relay_enabled,
             )
             api_key_env = _api_key_env(self._model_config)
@@ -417,7 +421,8 @@ class HermesRuntime:
                 "hermes_runtime_not_started",
                 "Hermes runtime is not started",
             )
-        if common_utils.runtime_id(invocation) != self._runtime_id:
+        runtime_context = RuntimeContext.from_mapping(invocation.get("runtime_context"))
+        if runtime_context.runtime_id != self._runtime_id:
             raise lifecycle.LifecycleError(
                 "hermes_runtime_mismatch",
                 "Hermes invocation does not match the active runtime",
@@ -445,7 +450,7 @@ class HermesRuntime:
                 "nemo-fabric-invocation",
                 ScopeType.Agent,
                 metadata={
-                    "nemo_fabric_request_id": request.get("request_id"),
+                    "nemo_fabric_request_id": runtime_context.request_id,
                 },
             ):
                 try:
