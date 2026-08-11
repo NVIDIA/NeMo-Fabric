@@ -13,7 +13,11 @@ from pathlib import Path
 
 import pytest
 import requests
-from _utils.utils import assert_semantic_relay_artifacts, atof_records
+from _utils.utils import (
+    assert_atof_model,
+    assert_atof_skill_selection,
+    assert_semantic_relay_artifacts,
+)
 from nemo_fabric import (
     EnvironmentConfig,
     Fabric,
@@ -282,18 +286,7 @@ async def test_skill_selection(
     )
 
     assert result["status"] == "succeeded", result.to_mapping()
-    skill_records = [
-        record
-        for record in atof_records(result["output"])
-        if record["category"] == "tool" and record["name"] == "Skill"
-    ]
-    if skill is None:
-        assert not skill_records
-    else:
-        skill_end = next(
-            record for record in skill_records if record["scope_category"] == "end"
-        )
-        assert skill_end["data"] == {"commandName": skill, "success": True}
+    assert_atof_skill_selection(result["output"], skill)
 
 
 @pytest.mark.usefixtures("nemo_relay")
@@ -309,12 +302,7 @@ async def test_model_selection(api_server, tmp_path, model):
     result = await Fabric().run(config, base_dir=tmp_path, input="Reply with hello.")
 
     assert result["status"] == "succeeded", result.to_mapping()
-    llm_starts = [
-        record
-        for record in atof_records(result["output"])
-        if record["category"] == "llm" and record["scope_category"] == "start"
-    ]
-    assert {record["data"]["content"]["model"] for record in llm_starts} == {model}
+    assert_atof_model(result["output"], model)
 
 
 @pytest.mark.skipif(

@@ -9,7 +9,6 @@ RUN_FABRIC_CODEX_INTEGRATION=1 uv run pytest tests/e2e/test_codex.py
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 import shutil
 import sys
@@ -18,7 +17,11 @@ import warnings
 
 import pytest
 import requests
-from _utils.utils import assert_semantic_relay_artifacts, atof_records
+from _utils.utils import (
+    assert_atof_model,
+    assert_atof_skill_selection,
+    assert_semantic_relay_artifacts,
+)
 
 
 def _mock_codex_config(api_server, tmp_path):
@@ -75,14 +78,7 @@ async def test_skill_selection(
     )
 
     assert result["status"] == "succeeded", result.to_mapping()
-    records = atof_records(result["output"])
-    tool_records = [record for record in records if record["category"] == "tool"]
-    serialized_records = json.dumps(tool_records)
-    if skill is None:
-        assert "default skill loaded" not in serialized_records
-        assert "alternate skill loaded" not in serialized_records
-    else:
-        assert f"{skill} skill loaded" in serialized_records
+    assert_atof_skill_selection(result["output"], skill)
 
 
 @pytest.mark.usefixtures("nemo_relay")
@@ -96,12 +92,7 @@ async def test_model_selection(api_server, tmp_path, model):
     result = await Fabric().run(config, base_dir=tmp_path, input="Reply with hello.")
 
     assert result["status"] == "succeeded", result.to_mapping()
-    llm_starts = [
-        record
-        for record in atof_records(result["output"])
-        if record["category"] == "llm" and record["scope_category"] == "start"
-    ]
-    assert {record["data"]["content"]["model"] for record in llm_starts} == {model}
+    assert_atof_model(result["output"], model)
 
 
 @pytest.mark.parametrize("enabled", [True, False])

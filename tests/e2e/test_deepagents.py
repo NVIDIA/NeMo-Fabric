@@ -10,7 +10,6 @@ RUN_FABRIC_DEEPAGENTS_INTEGRATION=1 NVIDIA_API_KEY=... \
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 import sys
 import uuid
@@ -18,7 +17,7 @@ import warnings
 
 import pytest
 import requests
-from _utils.utils import atof_records
+from _utils.utils import assert_atof_model, assert_atof_skill_selection
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
@@ -228,17 +227,7 @@ async def test_skill_selection(
     )
 
     assert result["status"] == "succeeded", result.to_mapping()
-    tool_records = [
-        record
-        for record in atof_records(result["output"])
-        if record["category"] == "tool"
-    ]
-    serialized_records = json.dumps(tool_records)
-    if skill is None:
-        assert "default skill loaded" not in serialized_records
-        assert "alternate skill loaded" not in serialized_records
-    else:
-        assert f"{skill} skill loaded" in serialized_records
+    assert_atof_skill_selection(result["output"], skill)
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
@@ -265,12 +254,7 @@ async def test_model_selection(api_server, tmp_path, model):
     result = await Fabric().run(config, base_dir=tmp_path, input="Reply with hello.")
 
     assert result["status"] == "succeeded", result.to_mapping()
-    llm_starts = [
-        record
-        for record in atof_records(result["output"])
-        if record["category"] == "llm" and record["scope_category"] == "start"
-    ]
-    assert {record["data"]["content"]["model"] for record in llm_starts} == {model}
+    assert_atof_model(result["output"], model)
 
 
 @pytest.fixture(name="_require_integration")

@@ -15,7 +15,7 @@ from packaging.version import Version
 import pytest
 import requests
 import yaml
-from _utils.utils import atof_records
+from _utils.utils import assert_atof_model, assert_atof_skill_selection
 
 from examples.code_review_agent import (
     hermes_config,
@@ -244,17 +244,7 @@ async def test_skill_selection(
     )
 
     assert result["status"] == "succeeded", result.to_mapping()
-    tool_records = [
-        record
-        for record in atof_records(result["output"])
-        if record["category"] == "tool"
-    ]
-    serialized_records = json.dumps(tool_records)
-    if skill is None:
-        assert "default skill loaded" not in serialized_records
-        assert "alternate skill loaded" not in serialized_records
-    else:
-        assert f"{skill} skill loaded" in serialized_records
+    assert_atof_skill_selection(result["output"], skill)
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
@@ -276,12 +266,7 @@ async def test_model_selection(
     )
 
     assert result["status"] == "succeeded", result.to_mapping()
-    llm_starts = [
-        record
-        for record in atof_records(result["output"])
-        if record["category"] == "llm" and record["scope_category"] == "start"
-    ]
-    assert {record["data"]["content"]["model"] for record in llm_starts} == {model}
+    assert_atof_model(result["output"], model)
 
 
 class TestHermesE2E:

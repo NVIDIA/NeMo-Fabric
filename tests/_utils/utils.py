@@ -18,6 +18,43 @@ def atof_records(output: Mapping[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def assert_atof_skill_selection(
+    output: Mapping[str, Any], expected_skill: str | None
+) -> None:
+    tool_records = [
+        record for record in atof_records(output) if record["category"] == "tool"
+    ]
+    serialized_records = json.dumps(tool_records)
+    loaded_skills = {
+        skill
+        for skill in ("default", "alternate")
+        if f"{skill} skill loaded" in serialized_records
+    }
+    claude_skill_ends = [
+        record
+        for record in tool_records
+        if record["name"] == "Skill" and record["scope_category"] == "end"
+    ]
+    assert all(record["data"]["success"] for record in claude_skill_ends)
+    loaded_skills.update(record["data"]["commandName"] for record in claude_skill_ends)
+
+    expected_skills = {expected_skill} if expected_skill is not None else set()
+    assert loaded_skills == expected_skills
+
+
+def assert_atof_model(output: Mapping[str, Any], expected_model: str) -> None:
+    events = atof_records(output)
+    llm_starts = [
+        record
+        for record in events
+        if record["category"] == "llm" and record["scope_category"] == "start"
+    ]
+    assert llm_starts, events
+    assert {record["data"]["content"]["model"] for record in llm_starts} == {
+        expected_model
+    }
+
+
 def _relay_event_total_tokens(event: dict) -> int:
     profile = event.get("category_profile") or {}
     annotated = profile.get("annotated_response") or {}
