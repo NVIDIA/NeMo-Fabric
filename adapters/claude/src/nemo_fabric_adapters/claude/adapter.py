@@ -164,10 +164,6 @@ def _positive_number(value: Any, *, name: str) -> float:
     return number
 
 
-def runtime_id(runtime_context: RuntimeContext) -> str:
-    return runtime_context.runtime_id
-
-
 def _runtime_context(payload: dict[str, Any]) -> RuntimeContext:
     try:
         return RuntimeContext.from_mapping(payload.get("runtime_context"))
@@ -306,7 +302,7 @@ def _stage_mcp_config(
     servers = _mcp_servers(config)
     if not servers:
         return None
-    fabric_runtime_id = runtime_id(runtime_context)
+    fabric_runtime_id = runtime_context.runtime_id
     environment: dict[str, str] = {}
     for server_name, server in servers.items():
         raw_environment = server.get("env")
@@ -400,7 +396,7 @@ def _stage_skill_plugin(
         names.add(name)
         skills.append((name, skill_path))
 
-    plugin_key = sha256(runtime_id(runtime_context).encode()).hexdigest()
+    plugin_key = sha256(runtime_context.runtime_id.encode()).hexdigest()
     plugin_root = (
         _artifact_root(runtime_context, base_dir)
         / ".fabric"
@@ -919,7 +915,7 @@ class ClaudeRuntime:
             runtime_context = _runtime_context(payload)
             base_dir = common_utils.base_dir(payload)
             model = _selected_model_config(agent_config)
-            fabric_runtime_id = runtime_id(runtime_context)
+            fabric_runtime_id = runtime_context.runtime_id
             relay = prepare_claude_relay(payload, model, runtime_context, base_dir)
             self._relay = relay
             self._gateway_process = _start_relay_gateway(runtime_context, base_dir, relay)
@@ -952,7 +948,7 @@ class ClaudeRuntime:
                 "Claude runtime is not started",
             )
         runtime_context = _runtime_context(invocation)
-        if runtime_id(runtime_context) != fabric_runtime_id:
+        if runtime_context.runtime_id != fabric_runtime_id:
             raise lifecycle.LifecycleError(
                 "claude_runtime_mismatch",
                 "Claude invocation does not match the connected runtime",
