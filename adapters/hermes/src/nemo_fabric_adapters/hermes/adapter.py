@@ -525,7 +525,10 @@ class HermesRuntime:
             refresh_agent_mcp_tools,
         )
 
-        statuses = {status["name"]: status for status in get_mcp_status()}
+        statuses = {
+            status["name"]: status
+            for status in await asyncio.to_thread(get_mcp_status)
+        }
         disconnected = {
             name
             for name in oauth_server_names
@@ -555,7 +558,10 @@ class HermesRuntime:
                     metadata={"servers": sorted(disconnected)},
                 ) from error
 
-            statuses = {status["name"]: status for status in get_mcp_status()}
+            statuses = {
+                status["name"]: status
+                for status in await asyncio.to_thread(get_mcp_status)
+            }
             disconnected = {
                 name
                 for name in oauth_server_names
@@ -568,7 +574,11 @@ class HermesRuntime:
                     metadata={"servers": sorted(disconnected)},
                 )
 
-            refresh_agent_mcp_tools(self._agent, quiet_mode=True)
+            await asyncio.to_thread(
+                refresh_agent_mcp_tools,
+                self._agent,
+                quiet_mode=True,
+            )
 
         self._mcp_authentication_checked = True
 

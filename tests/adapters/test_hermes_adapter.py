@@ -583,6 +583,13 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
 
 
 async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch):
+    thread_calls = []
+
+    async def to_thread(function, *args, **kwargs):
+        thread_calls.append((function, args, kwargs))
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(adapter.asyncio, "to_thread", to_thread)
     force_interactive_oauth = MagicMock()
     oauth_stdin_reads: list[str] = []
     discover_mcp_tools = MagicMock(
@@ -646,6 +653,15 @@ async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch
     assert lifecycle_stdin.readline() == '{"operation":"stop"}\n'
     assert sys.stdin is lifecycle_stdin
     assert runtime._mcp_authentication_checked is True
+    assert len(thread_calls) == 4
+    assert thread_calls[0] == (get_mcp_status, (), {})
+    assert thread_calls[1][0].__name__ == "authenticate"
+    assert thread_calls[2] == (get_mcp_status, (), {})
+    assert thread_calls[3] == (
+        refresh_agent_mcp_tools,
+        (runtime._agent,),
+        {"quiet_mode": True},
+    )
 
 
 async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
