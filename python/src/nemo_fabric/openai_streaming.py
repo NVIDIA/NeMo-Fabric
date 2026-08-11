@@ -248,6 +248,8 @@ class _OpenAIStreamListener:
         while True:
             size_line = await reader.readline()
             size = int(size_line.split(b";", 1)[0].strip(), 16)
+            if size < 0:
+                raise _ProtocolError("Invalid OpenAI stream chunk size")
             if size == 0:
                 while True:
                     trailer = await reader.readline()
@@ -269,10 +271,16 @@ class _OpenAIStreamListener:
             newline = buffer.find(b"\n")
             if newline < 0:
                 if len(buffer) > self._max_record_bytes:
-                    raise _ProtocolError("OpenAI stream record exceeds 1 MiB", 413)
+                    raise _ProtocolError(
+                        f"OpenAI stream record exceeds {self._max_record_bytes} bytes",
+                        413,
+                    )
                 return
             if newline > self._max_record_bytes:
-                raise _ProtocolError("OpenAI stream record exceeds 1 MiB", 413)
+                raise _ProtocolError(
+                    f"OpenAI stream record exceeds {self._max_record_bytes} bytes",
+                    413,
+                )
             line = bytes(buffer[:newline])
             del buffer[: newline + 1]
             await self._emit_line(line)
@@ -282,7 +290,10 @@ class _OpenAIStreamListener:
         if not stripped:
             return
         if len(stripped) > self._max_record_bytes:
-            raise _ProtocolError("OpenAI stream record exceeds 1 MiB", 413)
+            raise _ProtocolError(
+                f"OpenAI stream record exceeds {self._max_record_bytes} bytes",
+                413,
+            )
         try:
             record = json.loads(stripped, parse_constant=_reject_json_constant)
         except (json.JSONDecodeError, RecursionError, ValueError) as error:
@@ -625,15 +636,16 @@ class OpenAIInvokeStream:
                 pass
 
             if result is not None:
-                try:
-                    await asyncio.wait_for(
-                        self._listener.wait_completed(),
-                        _OPENAI_STREAM_COMPLETION_TIMEOUT,
-                    )
-                except TimeoutError:
-                    self._listener.fail(
-                        "OpenAI stream did not establish and complete its event channel"
-                    )
+                if result.status == "succeeded" or self._listener.invocation_id is not None:
+                    try:
+                        await asyncio.wait_for(
+                            self._listener.wait_completed(),
+                            _OPENAI_STREAM_COMPLETION_TIMEOUT,
+                        )
+                    except TimeoutError:
+                        self._listener.fail(
+                            "OpenAI stream did not establish and complete its event channel"
+                        )
                 while not queue.empty():
                     queue.get_nowait()
                 self._validate_and_accept_result(result)
@@ -649,7 +661,11 @@ class OpenAIInvokeStream:
             return
         if self._listener.error is None:
             invocation_id = self._listener.invocation_id
-            if invocation_id is None or result.invocation_id != invocation_id:
+            if invocation_id is None:
+                mismatched = result.status == "succeeded"
+            else:
+                mismatched = result.invocation_id != invocation_id
+            if mismatched:
                 self._listener._set_error(
                     "OpenAI stream invocation ID does not match its terminal result"
                 )

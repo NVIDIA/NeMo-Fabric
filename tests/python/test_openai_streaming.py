@@ -16,7 +16,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import nemo_fabric.openai_streaming as openai_streaming
 from nemo_fabric import (
     Fabric,
     FabricCapabilityError,
@@ -25,6 +24,7 @@ from nemo_fabric import (
     RunRequest,
     Runtime,
     RuntimeStatus,
+    openai_streaming,
 )
 
 
@@ -402,6 +402,35 @@ async def test_successful_terminal_result_requires_an_explicit_stream_end(
     assert runtime.invocations == []
 
 
+async def test_failed_terminal_result_without_stream_preserves_failure(mock_native):
+    def invoke_failed_without_stream(
+        _plan_json,
+        runtime_json,
+        request_json,
+        _transport_json,
+    ):
+        runtime = json.loads(runtime_json)
+        request = json.loads(request_json)
+        return json.dumps(
+            _result(
+                request,
+                runtime,
+                invocation_id="invocation-failed-before-stream",
+                failed=True,
+            )
+        )
+
+    mock_native.invoke_openai_stream.side_effect = invoke_failed_without_stream
+    runtime = _runtime_wrapper(mock_native)
+
+    result = await runtime.invoke_openai_stream(input="fail before stream").result()
+
+    assert result.status == "failed"
+    assert result.error.code == "shim_failed"
+    assert result.error.message == "shim reported failure"
+    assert runtime.status is RuntimeStatus.ACTIVE
+
+
 async def test_unauthenticated_probe_does_not_poison_the_adapter_stream(mock_native):
     def invoke_after_probe(_plan_json, runtime_json, request_json, transport_json):
         runtime = json.loads(runtime_json)
@@ -694,7 +723,7 @@ async def test_listener_rejects_malformed_oversized_and_changed_identity():
         request_id="request-1",
         max_record_bytes=64,
     )
-    with pytest.raises(openai_streaming._ProtocolError, match="exceeds 1 MiB"):
+    with pytest.raises(openai_streaming._ProtocolError, match="exceeds 64 bytes"):
         await listener._emit_line(b"x" * 65)
 
     listener = openai_streaming._OpenAIStreamListener(
@@ -712,6 +741,22 @@ async def test_listener_rejects_malformed_oversized_and_changed_identity():
                 )
             ).encode()
         )
+
+
+async def test_listener_rejects_negative_chunk_size():
+    listener = openai_streaming._OpenAIStreamListener(
+        runtime_id="runtime-1",
+        request_id="request-1",
+    )
+    reader = asyncio.StreamReader()
+    reader.feed_data(b"-1\r\n")
+    reader.feed_eof()
+
+    with pytest.raises(
+        openai_streaming._ProtocolError,
+        match="Invalid OpenAI stream chunk size",
+    ):
+        await listener._read_chunked(reader, bytearray())
 
 
 async def test_missing_end_record_fails_the_invocation(mock_native):

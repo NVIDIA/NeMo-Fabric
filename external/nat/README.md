@@ -46,16 +46,19 @@ lifecycle behavior; the adapter does not call a workflow function's lower-level
 `ainvoke()` method directly.
 
 Native OpenAI streaming is available when the retained `SessionManager` reports
-`ChatResponseChunk` as the workflow's streaming output schema. NAT 1.8's shared
-ReAct registration declares that schema. The adapter checks the schema rather
-than branching on a workflow name, opens one NAT session and run, and consumes
+`ChatResponseChunk` as the workflow's streaming output schema. The adapter is
+tested against NAT 1.7.0 and 1.8.0; both versions' shared ReAct registrations
+declare that schema. The adapter checks the schema rather than branching on a
+workflow name, opens one NAT session and run, and consumes
 `runner.result_stream(to_type=ChatResponseChunk)` exactly once. It serializes and
-forwards the OpenAI Chat Completions chunks in order. The terminal Fabric result
-contains the concatenated string `delta.content` values for choice index `0`;
-empty and usage-only streams complete with an empty response. The adapter does
-not add SSE framing, a `[DONE]` marker, or a synthetic finish chunk. A workflow
-without the required schema returns `nat_openai_stream_unsupported_schema`
-before NAT opens a session.
+forwards the OpenAI Chat Completions chunks in order. `invoke` serializes NAT's
+terminal `runner.result()` object into `result.output["response"]`. By contrast,
+the terminal NeMo Fabric `invoke_openai_stream` result contains the concatenated
+string `delta.content` values for choice index `0` in
+`result.output["response"]`; empty and usage-only streams complete with an empty
+response. The adapter does not add SSE framing, a `[DONE]` marker, or a synthetic
+finish chunk. A workflow without the required schema returns
+`nat_openai_stream_unsupported_schema` before NAT opens a session.
 
 `stop` shuts down the session manager and exits the builder context. This first
 reference does not claim cancellation, service, or live-update support.

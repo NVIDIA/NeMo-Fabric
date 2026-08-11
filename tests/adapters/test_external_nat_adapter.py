@@ -1114,11 +1114,19 @@ async def test_openai_stream_normalizes_chunk_serialization_failure(
     caplog,
     serialization_failure: Any,
 ):
-    stream = _AsyncChunkStream([object()])
+    chunk = {
+        "id": "chunk-1",
+        "object": "chat.completion.chunk",
+        "created": 1,
+        "model": "test-model",
+        "choices": [],
+    }
+    stream = _AsyncChunkStream([chunk])
     mock_nat["runner"].result_stream.return_value = stream
     if isinstance(serialization_failure, BaseException):
         mock_nat["to_jsonable"].side_effect = serialization_failure
     else:
+        mock_nat["to_jsonable"].side_effect = None
         mock_nat["to_jsonable"].return_value = serialization_failure
     emit = AsyncMock()
     runtime = adapter.NatRuntime()
@@ -1135,6 +1143,10 @@ async def test_openai_stream_normalizes_chunk_serialization_failure(
         ),
         "retryable": False,
     }
+    mock_nat["to_jsonable"].assert_called_once_with(
+        chunk,
+        serialize_unknown=False,
+    )
     emit.assert_not_awaited()
     assert stream.close_count == 1
     assert "secret-object-repr" not in json.dumps(result)

@@ -12,7 +12,12 @@ from typing import Any
 import pytest
 from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapter_contract.models import AgentConfig
-from nemo_fabric.openai_streaming import _END, _OpenAIStreamListener
+from nemo_fabric.openai_streaming import (
+    _END,
+    _OpenAIStreamListener,
+    _ProtocolError,
+    _validate_openai_chunk,
+)
 
 
 def _request(operation: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -366,6 +371,44 @@ def test_lifecycle_host_rejects_unimplemented_openai_stream_without_poisoning_ru
     "chunk",
     [
         {
+            "id": "minimal",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "test-model",
+            "choices": [],
+        },
+        {
+            "id": "complete",
+            "object": "chat.completion.chunk",
+            "created": (1 << 64) - 1,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": (1 << 32) - 1,
+                    "delta": {
+                        "role": "assistant",
+                        "content": "hello",
+                        "refusal": None,
+                        "function_call": {},
+                        "tool_calls": [{}],
+                    },
+                    "finish_reason": "stop",
+                    "logprobs": {},
+                }
+            ],
+            "usage": {},
+        },
+    ],
+)
+def test_openai_chunk_validators_accept_shared_profile_fixtures(chunk):
+    assert lifecycle._validated_openai_chunk(chunk) == chunk
+    assert _validate_openai_chunk(chunk) == chunk
+
+
+@pytest.mark.parametrize(
+    "chunk",
+    [
+        {
             "id": "missing-model",
             "object": "chat.completion.chunk",
             "created": 0,
@@ -408,11 +451,13 @@ def test_lifecycle_host_rejects_unimplemented_openai_stream_without_poisoning_ru
         },
     ],
 )
-def test_common_host_rejects_chunks_outside_the_declared_openai_profile(chunk):
+def test_openai_chunk_validators_reject_shared_profile_fixtures(chunk):
     with pytest.raises(lifecycle.LifecycleError) as caught:
         lifecycle._validated_openai_chunk(chunk)
 
     assert caught.value.code == "lifecycle_invalid_openai_stream_event"
+    with pytest.raises(_ProtocolError):
+        _validate_openai_chunk(chunk)
 
 
 def test_malformed_openai_stream_request_uses_the_invoke_error_stage():

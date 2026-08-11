@@ -90,6 +90,13 @@ iteration early does not cancel the invocation. The SDK drains the invocation
 when the consumer closes the stream so that the runtime can safely accept its
 next turn.
 
+`runtime.timeout_seconds` limits the total duration of the streamed invocation,
+from invocation start through terminal completion. It is not an idle or
+progress timeout, and receiving chunks does not reset it. If the deadline is
+exceeded, NeMo Fabric invalidates and terminates the local adapter host as
+required by the existing lifecycle timeout semantics; consumers must start a
+new runtime instead of reusing that host.
+
 NeMo Fabric owns the authenticated loopback HTTP transport, chunked NDJSON
 framing, correlation, validation, buffering, and consumer lifecycle. Adapters
 must not persist or log the bearer token. NeMo Fabric persists only redacted
