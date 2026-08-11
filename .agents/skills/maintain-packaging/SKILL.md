@@ -29,6 +29,8 @@ consumed outside the source tree.
 - Documentation tooling metadata in `docs/package.json` and
   `docs/package-lock.json`
 - CI workflows, install commands, and example commands
+- npm trusted publishing through `.github/workflows/publish_typescript.yml` and
+  the protected `npmjs` environment
 - `justfile` build, test, clean, and documentation recipes
 - Release tags, registry publication, and release-facing documentation in
   `RELEASING.md`
@@ -107,6 +109,8 @@ compatibility decisions using the distribution and linkage context.
 - `typescript/adapter-contract/package.json`
 - `typescript/adapter-contract/package-lock.json`
 - `.github/workflows/ci_typescript.yml`
+- `.github/workflows/publish_typescript.yml`
+- `scripts/ci/publish_typescript_package.py`
 - `.github/workflows/ci_python.yml`
 - `.github/workflows/ci_rust.yml`
 - `.pre-commit-config.yaml`

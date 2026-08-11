@@ -29,6 +29,10 @@ reliability, or reproducibility.
   `actions/cache`.
 - Use lockfiles or dependency manifests to drive cache invalidation.
 - Keep deploy and publish permissions isolated to the jobs that need them.
+- Publish the TypeScript contract from the dedicated
+  `publish_typescript.yml` workflow through the protected `npmjs` environment.
+  Grant `id-token: write` for npm trusted publishing, and do not provide an npm
+  write token that could mask an OIDC configuration failure.
 - Read both caller and callee when a workflow uses `workflow_call`.
 - Keep documentation publish and preview credentials isolated to the Fern docs
   workflow.
@@ -93,6 +97,8 @@ source instead of assuming local success proves remote success.
 - `.github/workflows/fern-docs.yml`
 - `.github/workflows/nightly-alpha-tag.yml`
 - `.github/workflows/publish_rust.yml`
+- `.github/workflows/publish_typescript.yml`
+- `scripts/ci/publish_typescript_package.py`
 - `.gitlab-ci.yml`
 - `RELEASING.md`
 - `Cargo.lock`

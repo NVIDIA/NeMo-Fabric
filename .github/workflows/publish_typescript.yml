@@ -1,0 +1,116 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Publish TypeScript package
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '!v*-alpha*'
+
+concurrency:
+  group: publish-typescript
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  publish-typescript:
+    name: Publish (npmjs.com)
+    # Stable, beta, and RC tags publish. Alpha tags remain artifact-only.
+    if: ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-alpha') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    environment: npmjs
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Validate trusted publishing toolchain
+        run: |
+          set -euo pipefail
+
+          node --version
+          npm_version="$(npm --version)"
+          echo "$npm_version"
+          NPM_VERSION="$npm_version" node <<'NODE'
+          const actual = process.env.NPM_VERSION.split('.').map(Number);
+          const minimum = [11, 5, 1];
+          const comparison = actual.findIndex(
+            (part, index) => part !== minimum[index],
+          );
+
+          if (
+            actual.length !== minimum.length ||
+            actual.some(Number.isNaN) ||
+            (comparison !== -1 && actual[comparison] < minimum[comparison])
+          ) {
+            throw new Error('npm 11.5.1 or newer is required for trusted publishing');
+          }
+          NODE
+
+      - name: Prepare release metadata
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          version="$(python3 scripts/ci/normalize_release_tag.py "$RELEASE_TAG")"
+          if [[ "$version" == *+* ]]; then
+            echo "npm publication does not support build metadata: $version" >&2
+            exit 1
+          fi
+
+          case "$version" in
+            *-alpha*)
+              echo "Alpha releases are not published to npm: $version" >&2
+              exit 1
+              ;;
+            *-beta*|*-rc*) dist_tag="next" ;;
+            *-*)
+              echo "Unsupported npm prerelease: $version" >&2
+              exit 1
+              ;;
+            *) dist_tag="latest" ;;
+          esac
+
+          python3 scripts/ci/set_typescript_project_version.py "$version"
+          {
+            echo "version=$version"
+            echo "dist_tag=$dist_tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        working-directory: typescript/adapter-contract
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test package
+        working-directory: typescript/adapter-contract
+        run: npm test
+
+      - name: Publish package
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_DIST_TAG: ${{ steps.release.outputs.dist_tag }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/publish_typescript_package.py \
+            --package-directory typescript/adapter-contract \
+            --version "$RELEASE_VERSION" \
+            --dist-tag "$RELEASE_DIST_TAG"

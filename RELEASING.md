@@ -31,6 +31,7 @@ The release pipeline publishes these package surfaces from a tag push:
 | Ecosystem | Published Surface |
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
+| npm | `@nvidia/nemo-fabric-adapter-contract` |
 | GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, and `nemo-fabric-adapters-hermes` wheel artifacts |
 | Fern | The documentation site |
 
@@ -187,6 +188,61 @@ place. In a disposable CI workspace that is fine.
 In a local checkout, restore those temporary manifest edits before continuing if
 you are not committing them.
 
+## Bootstrap npm Trusted Publishing
+
+The npm package must exist before npm can bind it to a GitHub trusted publisher.
+This is a one-time bootstrap for
+`@nvidia/nemo-fabric-adapter-contract`; normal releases use OpenID Connect (OIDC)
+and do not use an npm write token in GitHub Actions.
+
+Before the first TypeScript package release:
+
+1. Create and protect the GitHub `npmjs` environment. Require the release
+   approvers who should authorize registry publication, and restrict deployment
+   tags to `v*`.
+2. Commit the intended prerelease version on the release branch. From that
+   exact clean commit, run the version helper as an idempotency check and run
+   the same package checks used by CI. Use the real first release candidate
+   rather than a disposable version because npm versions are immutable:
+
+   ```bash
+   just set-version 0.2.0-rc.1
+   git diff --exit-code
+   just test-typescript
+   cd typescript/adapter-contract
+   npm login
+   npm publish --access public --tag next
+   npm logout
+   ```
+
+   The publisher needs write access to the `@nvidia` scope and account-level
+   two-factor authentication. Do not push the matching release tag yet.
+3. In the npm package settings, configure the single trusted publisher with
+   these exact, case-sensitive values:
+
+   - Organization or user: `NVIDIA`
+   - Repository: `NeMo-Fabric`
+   - Workflow filename: `publish_typescript.yml`
+   - Environment: `npmjs`
+   - Allowed action: `npm publish`
+
+4. Push the signed tag for that already-published release candidate. The
+   workflow verifies the existing package integrity and `next` dist-tag, then
+   exits successfully without republishing it. Approve the `npmjs` environment
+   when prompted.
+5. After a later release publishes through OIDC, confirm its provenance on npm.
+   In the npm package settings, require two-factor authentication and disallow
+   token publication. Then remove or revoke any local or automation credentials
+   used for bootstrap.
+
+The workflow publishes stable versions with the `latest` dist-tag and beta or
+RC versions with `next`. Alpha versions are not published. A retry skips only
+when the immutable package version, packed artifact integrity, and expected
+dist-tag all match. If any of them differs, the workflow fails so a maintainer
+can inspect and repair the registry state explicitly. Publication also fails
+rather than moving `latest` or `next` backward when cutting a patch from an
+older release line.
+
 ## Cut An RC Tag
 
 After the release commit is merged and validated, create and push a signed,
@@ -320,6 +376,7 @@ Pushing a valid tag triggers :
 |---|---|
 | [`.github/workflows/ci_python.yml`](.github/workflows/ci_python.yml) | For all tags including alpha |
 | [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml) | For RC, beta and release tags |
+| [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml) | For RC, beta and release tags |
 | [`.github/workflows/fern-docs.yml`](.github/workflows/fern-docs.yml) | For RC, beta and release tags |
 
 The release pipeline then:
@@ -332,7 +389,11 @@ The release pipeline then:
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
-4. Publishes Fern documentation versions for stable, beta, and RC tags. Alpha
+4. Publishes `@nvidia/nemo-fabric-adapter-contract` to npm through trusted
+   publishing for stable, beta, and RC tags. Stable releases use the `latest`
+   dist-tag; beta and RC releases use `next`. Alpha tags are not published to
+   npm.
+5. Publishes Fern documentation versions for stable, beta, and RC tags. Alpha
    tags do not publish a separate documentation version.
 
 The workflow boundary is split intentionally:
@@ -343,6 +404,9 @@ The workflow boundary is split intentionally:
   and publishes Fern documentation independently from package CI.
 - [`.github/workflows/publish_rust.yml`](.github/workflows/publish_rust.yml)
   owns crates.io publication decisions and credentials.
+- [`.github/workflows/publish_typescript.yml`](.github/workflows/publish_typescript.yml)
+  owns npm publication decisions and requests a short-lived npm credential
+  through GitHub OIDC. It does not receive an npm write token.
 
 
 ## Publish The GitHub Release Entry
@@ -380,5 +444,13 @@ After the release is live, verify:
    - [`nemo-fabric-adapters-codex`](https://pypi.nvidia.com/nemo-fabric-adapters-codex/)
    - [`nemo-fabric-adapters-deepagents`](https://pypi.nvidia.com/nemo-fabric-adapters-deepagents/)
    - [`nemo-fabric-adapters-hermes`](https://pypi.nvidia.com/nemo-fabric-adapters-hermes/)
-4. The Fern documentation site shows the expected version and release notes.
-5. The GitHub Release page is complete and accurate.
+4. The TypeScript contract package is visible on npm with the expected version,
+   dist-tag, and provenance:
+
+   ```bash
+   npm view "@nvidia/nemo-fabric-adapter-contract@<release-version>" version
+   npm view "@nvidia/nemo-fabric-adapter-contract" dist-tags
+   ```
+
+5. The Fern documentation site shows the expected version and release notes.
+6. The GitHub Release page is complete and accurate.
