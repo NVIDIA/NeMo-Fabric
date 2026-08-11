@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 from nemo_fabric import Fabric
 from nemo_fabric_adapters.codex import adapter
-from openai_codex import AsyncCodex, AsyncThread, AsyncTurnHandle
+from openai_codex import AsyncCodex, AsyncThread, AsyncTurnHandle, JsonRpcError
 from openai_codex.types import TurnStatus
 
 
@@ -709,6 +709,15 @@ def test_failed_sdk_turn_is_normalized_and_transport_is_closed(
         "retryable": False,
     }
     assert mock_codex.instances[0].closed is True
+
+
+def test_sdk_failure_preserves_jsonrpc_code():
+    output = adapter.sdk_failure(JsonRpcError(-32000, "provider failure"))
+
+    assert output["error"]["metadata"] == {
+        "sdk_error": "JsonRpcError",
+        "jsonrpc_code": -32000,
+    }
 
 
 def test_incomplete_sdk_turn_is_failed(codex_payload, mock_codex):

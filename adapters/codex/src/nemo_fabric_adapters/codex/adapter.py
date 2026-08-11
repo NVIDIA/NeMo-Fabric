@@ -22,6 +22,7 @@ from openai_codex import (
     AsyncCodex,
     CodexConfig,
     CodexError,
+    JsonRpcError,
     Sandbox,
     TransportClosedError,
     is_retryable_error,
@@ -793,11 +794,14 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
             "codex_connection_failed", "Codex SDK runtime connection closed"
         )
     if isinstance(error, CodexError):
+        metadata = {"sdk_error": type(error).__name__}
+        if isinstance(error, JsonRpcError):
+            metadata["jsonrpc_code"] = error.code
         return _failure(
             "codex_sdk_failed",
             "Codex SDK request failed",
             retryable=is_retryable_error(error),
-            sdk_error=type(error).__name__,
+            **metadata,
         )
     if isinstance(error, OSError):
         return _failure(
