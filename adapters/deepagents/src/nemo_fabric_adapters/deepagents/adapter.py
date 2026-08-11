@@ -226,10 +226,12 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
     return FilesystemBackend(root_dir=str(root), virtual_mode=True)
 
 
-async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
+async def resolve_tools(
+    payload: dict[str, Any], oauth_callbacks: list[Any] | None = None
+) -> list[Any] | None:
     """Resolve Fabric MCP servers into Deep Agents tools."""
 
-    tools = await _mcp_tools(payload)
+    tools = await _mcp_tools(payload, oauth_callbacks)
     return tools or None
 
 
@@ -265,10 +267,15 @@ def resolve_skills(payload: dict[str, Any]) -> list[str] | None:
     return skills or None
 
 
-async def _mcp_tools(payload: dict[str, Any]) -> list[Any]:
+async def _mcp_tools(
+    payload: dict[str, Any], oauth_callbacks: list[Any] | None = None
+) -> list[Any]:
     native = common_utils.capability_plan(payload).get("native") or {}
     servers = native.get("mcp_servers") or {}
-    connections = {name: _mcp_connection(name, spec) for name, spec in servers.items()}
+    connections = {
+        name: _mcp_connection(name, spec, oauth_callbacks)
+        for name, spec in servers.items()
+    }
     if not connections:
         return []
     from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -277,7 +284,11 @@ async def _mcp_tools(payload: dict[str, Any]) -> list[Any]:
     return list(await client.get_tools())
 
 
-def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
+def _mcp_connection(
+    name: str,
+    spec: dict[str, Any],
+    oauth_callbacks: list[Any] | None = None,
+) -> dict[str, Any]:
     # A misconfigured server must fail loudly, not be silently dropped.
     if not isinstance(spec, dict):
         raise AdapterConfigError(f"MCP server '{name}' must be a mapping.")
@@ -311,11 +322,18 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
             raise AdapterConfigError(f"{error}.") from error
         connection["headers"] = normalized_headers
     if authentication := spec.get("authentication"):
-        connection["auth"] = _mcp_http_auth(name, target, authentication)
+        connection["auth"] = _mcp_http_auth(
+            name, target, authentication, oauth_callbacks
+        )
     return connection
 
 
-def _mcp_http_auth(name: str, server_url: str, raw: Any) -> Any:
+def _mcp_http_auth(
+    name: str,
+    server_url: str,
+    raw: Any,
+    oauth_callbacks: list[Any] | None = None,
+) -> Any:
     try:
         if isinstance(raw, dict) and raw.get("type") == "service_account":
             return mcp_auth.create_mcp_service_account_auth(
@@ -323,12 +341,15 @@ def _mcp_http_auth(name: str, server_url: str, raw: Any) -> Any:
                 mcp_auth.parse_service_account_config(name, raw),
             )
         config = mcp_auth.parse_oauth2_config(name, raw)
-        return mcp_auth.create_mcp_oauth_provider(
+        provider = mcp_auth.create_mcp_oauth_provider(
             name,
             server_url,
             config,
             client_name="NeMo Fabric Deep Agents",
         )
+        if oauth_callbacks is not None:
+            oauth_callbacks.append(provider._fabric_oauth_callback)
+        return provider
     except mcp_auth.McpAuthConfigError as error:
         raise AdapterConfigError(f"{error}.") from error
 
@@ -378,11 +399,14 @@ async def close_checkpointer(checkpointer: Any) -> None:
 
 
 async def build_agent_kwargs(
-    payload: dict[str, Any], model: Any, settings: dict[str, Any]
+    payload: dict[str, Any],
+    model: Any,
+    settings: dict[str, Any],
+    oauth_callbacks: list[Any] | None = None,
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
-        "tools": await resolve_tools(payload),
+        "tools": await resolve_tools(payload, oauth_callbacks),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": common_utils.system_instruction(payload),
         "skills": resolve_skills(payload),
@@ -502,6 +526,7 @@ class DeepAgentsRuntime:
         self._relay_scope_type: Any = None
         self._relay_plugin_config: dict[str, Any] | None = None
         self._callback_handler_type: Any = None
+        self._mcp_oauth_callbacks: list[Any] = []
 
     async def start(self, payload: dict[str, Any]) -> None:
         if self._started:
@@ -533,7 +558,9 @@ class DeepAgentsRuntime:
                 relay_enabled,
             )
 
-            agent_kwargs = await build_agent_kwargs(payload, model, settings)
+            agent_kwargs = await build_agent_kwargs(
+                payload, model, settings, self._mcp_oauth_callbacks
+            )
             if runtime_id:
                 self._checkpointer = await open_checkpointer(
                     checkpointer_path(payload, runtime_id)
@@ -671,6 +698,7 @@ class DeepAgentsRuntime:
 
     async def stop(self) -> None:
         checkpointer = self._checkpointer
+        oauth_callbacks = self._mcp_oauth_callbacks
         self._start_payload = None
         self._runtime_id = None
         self._model_name = None
@@ -686,7 +714,11 @@ class DeepAgentsRuntime:
         self._relay_scope_type = None
         self._relay_plugin_config = None
         self._callback_handler_type = None
+        self._mcp_oauth_callbacks = []
         self._started = False
+        for callback in oauth_callbacks:
+            callback.close_reserved_socket()
+            await callback.close()
         if checkpointer is not None:
             await close_checkpointer(checkpointer)
 

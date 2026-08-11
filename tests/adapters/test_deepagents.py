@@ -599,6 +599,13 @@ async def test_mcp_servers_become_adapter_tools(
     )
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
     mock_oauth = MagicMock(name="oauth")
+    cleanup_calls = []
+    mock_callback = MagicMock(name="oauth_callback")
+    mock_callback.close_reserved_socket.side_effect = lambda: cleanup_calls.append(
+        "close_reserved_socket"
+    )
+    mock_callback.close = AsyncMock(side_effect=lambda: cleanup_calls.append("close"))
+    mock_oauth._fabric_oauth_callback = mock_callback
     create_oauth = MagicMock(return_value=mock_oauth)
     monkeypatch.setattr(adapter.mcp_auth, "create_mcp_oauth_provider", create_oauth)
 
@@ -656,6 +663,29 @@ async def test_mcp_servers_become_adapter_tools(
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file", "write_file"]
+    mock_callback.close_reserved_socket.assert_called_once_with()
+    mock_callback.close.assert_awaited_once_with()
+    assert cleanup_calls == ["close_reserved_socket", "close"]
+
+
+async def test_mcp_oauth_callback_closed_on_startup_failure(
+    tmp_path, make_payload, monkeypatch, fake_sdks
+):
+    callback = MagicMock(name="oauth_callback")
+    callback.close = AsyncMock()
+
+    async def fail_resolve_tools(_payload, oauth_callbacks=None):
+        oauth_callbacks.append(callback)
+        raise RuntimeError("MCP startup failed")
+
+    monkeypatch.setattr(adapter, "resolve_tools", fail_resolve_tools)
+
+    runtime = adapter.DeepAgentsRuntime()
+    with pytest.raises(RuntimeError, match="MCP startup failed"):
+        await runtime.start(lifecycle_start_payload(make_payload(tmp_path)))
+
+    callback.close_reserved_socket.assert_called_once_with()
+    callback.close.assert_awaited_once_with()
 
 
 def test_deepagents_maps_service_account_authentication(monkeypatch):
