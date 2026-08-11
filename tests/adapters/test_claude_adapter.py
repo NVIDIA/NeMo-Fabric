@@ -446,7 +446,11 @@ async def test_claude_checks_mcp_connectivity_on_first_invoke(claude_payload):
     )
     runtime = adapter.ClaudeRuntime()
 
-    await runtime._authenticate_mcp_servers(claude_payload, client)
+    await runtime._authenticate_mcp_servers(
+        claude_payload,
+        client,
+        asyncio.get_running_loop().time() + 30,
+    )
 
     client.get_mcp_status.assert_awaited()
     assert runtime._mcp_authentication_checked == {"docs": True}
@@ -462,7 +466,11 @@ async def test_claude_raises_when_mcp_server_unavailable_at_invoke(claude_payloa
     runtime = adapter.ClaudeRuntime()
 
     with pytest.raises(adapter.ClaudeAdapterError) as caught:
-        await runtime._authenticate_mcp_servers(claude_payload, client)
+        await runtime._authenticate_mcp_servers(
+            claude_payload,
+            client,
+            asyncio.get_running_loop().time() + 30,
+        )
 
     assert caught.value.code == "claude_mcp_unavailable"
     assert caught.value.metadata == {"server": "docs", "status": "failed"}
@@ -503,20 +511,89 @@ async def test_claude_tracks_mcp_authentication_per_server(claude_payload):
     runtime = adapter.ClaudeRuntime()
 
     with pytest.raises(adapter.ClaudeAdapterError):
-        await runtime._authenticate_mcp_servers(claude_payload, client)
+        await runtime._authenticate_mcp_servers(
+            claude_payload,
+            client,
+            asyncio.get_running_loop().time() + 30,
+        )
 
     assert runtime._mcp_authentication_checked == {
         "docs": True,
         "issues": False,
     }
 
-    await runtime._authenticate_mcp_servers(claude_payload, client)
+    await runtime._authenticate_mcp_servers(
+        claude_payload,
+        client,
+        asyncio.get_running_loop().time() + 30,
+    )
 
     assert client.get_mcp_status.await_count == 3
     assert runtime._mcp_authentication_checked == {
         "docs": True,
         "issues": True,
     }
+
+
+async def test_claude_mcp_status_checks_use_remaining_invocation_budget(
+    claude_payload, monkeypatch
+):
+    servers = claude_payload["capability_plan"]["native"]["mcp_servers"]
+    servers["docs"]["authentication"] = {"type": "oauth2"}
+    servers["issues"] = {
+        "transport": "streamable-http",
+        "url": "https://issues.example.test",
+        "authentication": {"type": "oauth2"},
+    }
+    runtime = adapter.ClaudeRuntime()
+    status = AsyncMock(return_value="connected")
+    monkeypatch.setattr(runtime, "_mcp_server_status", status)
+    remaining_timeout = MagicMock(side_effect=[4.0, 1.5])
+    monkeypatch.setattr(adapter, "_remaining_timeout", remaining_timeout)
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+
+    await runtime._authenticate_mcp_servers(claude_payload, client, 100.0)
+
+    assert status.await_args_list[0].args == (client, "docs", 4.0)
+    assert status.await_args_list[1].args == (client, "issues", 1.5)
+    assert remaining_timeout.call_count == 2
+
+
+async def test_claude_mcp_status_polling_respects_timeout():
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+    client.get_mcp_status = AsyncMock(
+        return_value={"mcpServers": [{"name": "docs", "status": "pending"}]}
+    )
+
+    with pytest.raises(TimeoutError):
+        await adapter.ClaudeRuntime()._mcp_server_status(client, "docs", 0.01)
+
+
+async def test_claude_invoke_passes_remaining_budget_to_query(
+    claude_payload, monkeypatch
+):
+    runtime = adapter.ClaudeRuntime()
+    runtime._start_payload = {
+        key: value for key, value in claude_payload.items() if key != "request"
+    }
+    runtime._fabric_runtime_id = claude_payload["runtime_context"]["runtime_id"]
+    runtime._client = MagicMock(spec=adapter.ClaudeSDKClient)
+    authenticate = AsyncMock()
+    run_query = AsyncMock(return_value={"completed": False})
+    monkeypatch.setattr(runtime, "_authenticate_mcp_servers", authenticate)
+    monkeypatch.setattr(runtime, "_run_query", run_query)
+    remaining_timeout = MagicMock(return_value=7.0)
+    monkeypatch.setattr(adapter, "_remaining_timeout", remaining_timeout)
+    loop = asyncio.get_running_loop()
+    before = loop.time()
+
+    await runtime.invoke(lifecycle_invocation(claude_payload))
+
+    after = loop.time()
+    invocation_deadline = authenticate.await_args.args[2]
+    assert before + 30 <= invocation_deadline <= after + 30
+    remaining_timeout.assert_called_once_with(invocation_deadline)
+    assert run_query.await_args.args[3] == 7.0
 
 
 async def test_tool_policy_hooks_gate_built_in_and_mcp_tools(claude_payload):

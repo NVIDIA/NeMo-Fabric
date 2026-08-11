@@ -859,6 +859,10 @@ def timeout_seconds(payload: dict[str, Any]) -> float:
     return _positive_number(value, name="timeout_seconds")
 
 
+def _remaining_timeout(deadline: float) -> float:
+    return max(0.0, deadline - asyncio.get_running_loop().time())
+
+
 def _artifact_root(payload: dict[str, Any]) -> Path:
     artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
     root = artifacts.get("root") if isinstance(artifacts, dict) else None
@@ -1180,10 +1184,16 @@ class ClaudeRuntime:
                 "Claude runtime cannot accept another invocation after a runtime failure",
             )
 
+        invocation_deadline = (
+            asyncio.get_running_loop().time() + timeout_seconds(payload)
+        )
         try:
             prompt = request_prompt(payload)
-            invocation_timeout = timeout_seconds(payload)
-            await self._authenticate_mcp_servers(payload, client)
+            await self._authenticate_mcp_servers(
+                payload,
+                client,
+                invocation_deadline,
+            )
         except ClaudeAdapterError as error:
             output = adapter_failure(error)
         except TimeoutError:
@@ -1205,7 +1215,7 @@ class ClaudeRuntime:
                 payload,
                 client,
                 prompt,
-                invocation_timeout,
+                _remaining_timeout(invocation_deadline),
             )
             if (
                 output.get("completed")
@@ -1239,13 +1249,18 @@ class ClaudeRuntime:
         self,
         payload: dict[str, Any],
         client: ClaudeSDKClient,
+        invocation_deadline: float,
     ) -> None:
         for name in _authenticated_mcp_servers(payload):
             if self._mcp_authentication_checked.get(name, False):
                 continue
 
             self._mcp_authentication_checked[name] = False
-            status = await self._mcp_server_status(client, name)
+            status = await self._mcp_server_status(
+                client,
+                name,
+                min(5.0, _remaining_timeout(invocation_deadline)),
+            )
             if status != "connected":
                 raise ClaudeAdapterError(
                     "claude_mcp_unavailable",
@@ -1259,43 +1274,43 @@ class ClaudeRuntime:
         self,
         client: ClaudeSDKClient,
         name: str,
+        timeout: float,
     ) -> str:
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + 5.0
-        while True:
-            response = await client.get_mcp_status()
-            match = next(
-                (
-                    server
-                    for server in response.get("mcpServers", [])
-                    if server.get("name") == name
-                ),
-                None,
-            )
-            if match is None:
-                raise ClaudeAdapterError(
-                    "claude_mcp_unavailable",
-                    f"Claude MCP server {name!r} was not loaded",
-                    metadata={"server": name, "status": "missing"},
+        async with asyncio.timeout(timeout):
+            while True:
+                response = await client.get_mcp_status()
+                match = next(
+                    (
+                        server
+                        for server in response.get("mcpServers", [])
+                        if server.get("name") == name
+                    ),
+                    None,
                 )
-            status = str(match.get("status") or "unknown")
-            if status != "pending" or loop.time() >= deadline:
-                return status
-            await asyncio.sleep(0.25)
+                if match is None:
+                    raise ClaudeAdapterError(
+                        "claude_mcp_unavailable",
+                        f"Claude MCP server {name!r} was not loaded",
+                        metadata={"server": name, "status": "missing"},
+                    )
+                status = str(match.get("status") or "unknown")
+                if status != "pending":
+                    return status
+                await asyncio.sleep(0.25)
 
     async def _run_query(
         self,
         payload: dict[str, Any],
         client: ClaudeSDKClient,
         prompt: str,
-        invocation_timeout: float,
+        remaining_timeout: float,
     ) -> dict[str, Any]:
         """Run one SDK query and normalize its terminal result."""
 
         messages: list[Message] = []
         result: ResultMessage | None = None
         try:
-            async with asyncio.timeout(invocation_timeout):
+            async with asyncio.timeout(remaining_timeout):
                 await client.query(prompt)
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):
