@@ -212,6 +212,9 @@ def test_each_harbor_job_delegates_to_an_independent_fabric_run(
 
 
 def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
+    from nemo_fabric_adapter_contract.models import AgentConfig
+    from nemo_fabric_adapter_contract.models import RuntimeContext
+
     adapter = load_codex_adapter()
 
     payload = {
@@ -233,16 +236,31 @@ def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
         },
         "runtime_context": {
             "runtime_id": "harbor-test",
-            "environment": {"workspace": str(tmp_path)},
+            "invocation_id": "harbor-invocation",
+            "request_id": "harbor-request",
+            "environment": {
+                "environment_id": "harbor-environment",
+                "provider": "local",
+                "control_location": "in_env_control",
+                "ownership": "caller_owned",
+                "workspace": str(tmp_path),
+            },
+            "artifacts": {},
         },
         "request": {"input": "Fix the calculator."},
     }
 
-    assert adapter.selected_model(payload) == "gpt-5.4"
-    assert adapter.sandbox(payload) == adapter.Sandbox.workspace_write
-    assert adapter._reasoning_effort(payload) == adapter.ReasoningEffort.high
-    assert adapter.thread_config(payload, relay=None) == {}
-    assert adapter.resolve_cwd(payload) == tmp_path
+    inputs = adapter.CodexRuntimeInput(
+        config=AgentConfig.from_mapping(payload["config"]),
+        context=RuntimeContext.from_mapping(payload["runtime_context"]),
+        base_dir=payload["base_dir"],
+    )
+
+    assert adapter.selected_model(inputs) == "gpt-5.4"
+    assert adapter.sandbox(inputs) == adapter.Sandbox.workspace_write
+    assert adapter._reasoning_effort(inputs) == adapter.ReasoningEffort.high
+    assert adapter.thread_config(inputs, relay=None) == {}
+    assert adapter.resolve_cwd(inputs) == tmp_path
 
 
 def test_claude_calculator_run_uses_current_adapter_contract():
