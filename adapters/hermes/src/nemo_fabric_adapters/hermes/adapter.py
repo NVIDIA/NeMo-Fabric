@@ -54,18 +54,8 @@ def _selected_model(config: AgentConfig) -> AgentModelConfig:
     return model
 
 
-def _system_instruction(config: AgentConfig) -> str | None:
-    if config.instructions is None or config.instructions.system is None:
-        return None
-    return config.instructions.system.content
-
-
 def _max_turns(config: AgentConfig) -> int | None:
     return config.runtime.max_turns if config.runtime is not None else None
-
-
-def _workspace(runtime_context: RuntimeContext) -> str:
-    return str(runtime_context.environment.workspace or ".")
 
 
 def _api_key_env(model_config: AgentModelConfig) -> str:
@@ -258,9 +248,7 @@ class HermesRuntime:
         self._started = False
         self._agent_config: AgentConfig | None = None
         self._runtime_id: str | None = None
-        self._settings: dict[str, Any] = {}
         self._model_config: AgentModelConfig | None = None
-        self._base_url: str | None = None
         self._hermes_home: Path | None = None
         self._hermes_config_path: Path | None = None
         self._hermes_config: dict[str, Any] = {}
@@ -284,8 +272,6 @@ class HermesRuntime:
             )
 
         try:
-            self._relay_session_pending = False
-            self._relay_finalize_hook_invoked = False
             agent_config = payload.get("config")
             if not isinstance(agent_config, AgentConfig):
                 raise lifecycle.LifecycleError(
@@ -295,8 +281,9 @@ class HermesRuntime:
             runtime_context = RuntimeContext.from_mapping(payload.get("runtime_context"))
             validate_hermes_telemetry_provider(runtime_context)
             self._agent_config = agent_config
-            self._settings = _settings(agent_config)
-            self._model_config = _selected_model(agent_config)
+            settings = _settings(agent_config)
+            model_config = _selected_model(agent_config)
+            self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
             self._hermes_home = (
                 _artifact_root(runtime_context, common_utils.base_dir(payload))
@@ -314,7 +301,7 @@ class HermesRuntime:
             os.environ["TERMINAL_ENV"] = "local"
             os.environ.setdefault(
                 "TERMINAL_TIMEOUT",
-                str(self._settings.get("terminal_timeout", 60)),
+                str(settings.get("terminal_timeout", 60)),
             )
 
             relay_enabled = bool(
@@ -334,15 +321,14 @@ class HermesRuntime:
             self._hermes_config_path, self._hermes_config = write_hermes_config(
                 agent_config,
                 self._hermes_home,
-                workspace=_workspace(runtime_context),
+                workspace=str(runtime_context.environment.workspace or "."),
                 relay_enabled=relay_enabled,
             )
-            api_key_env = _api_key_env(self._model_config)
+            api_key_env = _api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
             if not api_key:
                 raise RuntimeError(f"{api_key_env} is required for Hermes mode")
-            self._base_url = self._model_config.base_url
-            self._relay_model_name = self._model_config.model
+            self._relay_model_name = model_config.model
 
             from hermes_cli.config import load_config
             from hermes_cli.plugins import discover_plugins
@@ -367,18 +353,17 @@ class HermesRuntime:
                     agent_config, loaded_hermes_config
                 )
                 self._session_db = SessionDB()
-                self._conversation_history = None
                 max_iterations = _max_turns(agent_config)
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
-                temperature = self._model_config.temperature
+                temperature = model_config.temperature
                 self._agent = AIAgent(
                     **filter_supported_kwargs(
-                        AIAgent,
-                        base_url=self._base_url,
+                        AIAgent.__init__,
+                        base_url=model_config.base_url,
                         api_key=api_key,
-                        provider=self._model_config.provider,
-                        model=self._model_config.model,
+                        provider=model_config.provider,
+                        model=model_config.model,
                         max_iterations=int(max_iterations),
                         enabled_toolsets=self._enabled_toolsets,
                         disabled_toolsets=disabled_toolsets(agent_config) or None,
@@ -386,15 +371,15 @@ class HermesRuntime:
                         skip_context_files=True,
                         skip_memory=True,
                         save_trajectories=bool(
-                            self._settings.get("save_trajectories", False)
+                            settings.get("save_trajectories", False)
                         ),
-                        max_tokens=self._settings.get("max_tokens", 512),
+                        max_tokens=settings.get("max_tokens", 512),
                         request_overrides=(
                             {"temperature": temperature}
                             if temperature is not None
                             else None
                         ),
-                        reasoning_config=self._settings.get(
+                        reasoning_config=settings.get(
                             "reasoning_config", {"effort": "none"}
                         ),
                         platform="fabric",
@@ -432,11 +417,15 @@ class HermesRuntime:
         user_message = request.get("input") or ""
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
+        instructions = agent_config.instructions
+        system_prompt = (
+            instructions.system.content if instructions and instructions.system else None
+        )
 
         def invoke_turn() -> tuple[dict[str, Any], str]:
             return _invoke_hermes_turn(
                 agent=self._agent,
-                system_prompt=_system_instruction(agent_config),
+                system_prompt=system_prompt,
                 user_message=user_message,
                 conversation_history=self._conversation_history,
             )
@@ -476,7 +465,7 @@ class HermesRuntime:
             "adapter": "python",
             "mode": "hermes",
             "model": model_config.model,
-            "base_url": self._base_url,
+            "base_url": model_config.base_url,
             "response": result.get("response") or result.get("final_response"),
             "completed": bool(result.get("completed")),
             "failed": bool(result.get("failed")),
@@ -543,9 +532,7 @@ class HermesRuntime:
         self._session_db = None
         self._agent_config = None
         self._runtime_id = None
-        self._settings = {}
         self._model_config = None
-        self._base_url = None
         self._hermes_home = None
         self._hermes_config_path = None
         self._hermes_config = {}
@@ -608,7 +595,7 @@ def _invoke_hermes_turn(
 ) -> tuple[dict[str, Any], str]:
     hermes_stdout = StringIO()
     with redirect_stdout(hermes_stdout):
-        conversation_kwargs = filter_supported_call_kwargs(
+        conversation_kwargs = filter_supported_kwargs(
             agent.run_conversation,
             system_message=system_prompt,
             conversation_history=conversation_history,
@@ -622,13 +609,7 @@ def _invoke_hermes_turn(
     return result, hermes_stdout.getvalue()
 
 
-def filter_supported_kwargs(callable_obj: Any, **kwargs: Any) -> dict[str, Any]:
-    signature = inspect.signature(callable_obj.__init__)
-    supported = set(signature.parameters)
-    return {key: value for key, value in kwargs.items() if key in supported}
-
-
-def filter_supported_call_kwargs(func: Any, **kwargs: Any) -> dict[str, Any]:
+def filter_supported_kwargs(func: Any, **kwargs: Any) -> dict[str, Any]:
     signature = inspect.signature(func)
     supported = set(signature.parameters)
     return {key: value for key, value in kwargs.items() if key in supported}
