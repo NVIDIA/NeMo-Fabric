@@ -73,6 +73,7 @@ ADAPTER_EXTRAS = {
         (
             "adapters/codex",
             [
+                f"nemo-fabric-adapter-contract == {PACKAGE_VERSION}",
                 f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
                 "tomli-w~=1.2",
             ],

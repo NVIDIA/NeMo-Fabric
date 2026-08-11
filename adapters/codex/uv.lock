@@ -12,10 +12,20 @@ wheels = [
 ]
 
 [[package]]
+name = "nemo-fabric-adapter-contract"
+version = "0.2.0"
+source = { editable = "../../adapter-contract" }
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
+provides-extras = ["pydantic"]
+
+[[package]]
 name = "nemo-fabric-adapters-codex"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-common" },
     { name = "tomli-w" },
 ]
@@ -30,6 +40,7 @@ harness = [
 
 [package.metadata]
 requires-dist = [
+    { name = "nemo-fabric-adapter-contract", editable = "../../adapter-contract" },
     { name = "nemo-fabric-adapters-common", editable = "../common" },
     { name = "openai-codex", marker = "extra == 'full'", specifier = "==0.144.4" },
     { name = "openai-codex", marker = "extra == 'harness'", specifier = "==0.144.4" },

@@ -29,6 +29,9 @@ from openai_codex import (
 from openai_codex.generated.v2_all import SkillsExtraRootsSetResponse
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentModelConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
@@ -89,6 +92,15 @@ class CodexRelaySettings:
     plugin_config: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class CodexRuntimeInput:
+    """Typed configuration and context retained for one Codex runtime."""
+
+    config: AgentConfig
+    context: RuntimeContext
+    base_dir: str
+
+
 class CodexAdapterError(Exception):
     """Expected adapter error with a stable public code."""
 
@@ -127,17 +139,12 @@ def _mapping(value: Any, *, name: str) -> dict[str, Any]:
     return value
 
 
-def _settings(payload: dict[str, Any]) -> dict[str, Any]:
-    return _mapping(common_utils.settings_payload(payload), name="harness.settings")
+def _settings(inputs: CodexRuntimeInput) -> dict[str, Any]:
+    return inputs.config.harness.settings if inputs.config.harness else {}
 
 
-def runtime_id(payload: dict[str, Any]) -> str:
-    value = common_utils.runtime_context(payload).get("runtime_id")
-    if not isinstance(value, str) or not value:
-        raise AdapterInputError(
-            "codex_invalid_request", "NeMo Fabric runtime ID is required"
-        )
-    return value
+def runtime_id(inputs: CodexRuntimeInput) -> str:
+    return inputs.context.runtime_id
 
 
 def request_prompt(payload: dict[str, Any]) -> str:
@@ -147,37 +154,12 @@ def request_prompt(payload: dict[str, Any]) -> str:
     return value
 
 
-def _native_capabilities(payload: dict[str, Any]) -> dict[str, Any]:
-    plan = _mapping(common_utils.capability_plan(payload), name="capability_plan")
-    return _mapping(plan.get("native"), name="capability_plan.native")
-
-
-def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    servers = _mapping(
-        _native_capabilities(payload).get("mcp_servers"),
-        name="native MCP servers",
-    )
+def _native_mcp_servers(inputs: CodexRuntimeInput) -> dict[str, dict[str, Any]]:
+    servers = inputs.config.mcp.servers if inputs.config.mcp else {}
     result: dict[str, dict[str, Any]] = {}
-    for name, raw in sorted(servers.items()):
-        if not isinstance(name, str) or not name:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                "MCP server names must be non-empty strings",
-            )
-        server = _mapping(raw, name=f"MCP server {name}")
-        transport = server.get("transport")
-        if not isinstance(transport, str) or not transport:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"MCP server {name} transport is required",
-            )
-        target = server.get("url")
-        if not isinstance(target, str) or not target:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"MCP server {name} URL is required",
-            )
-        target = os.path.expandvars(target).strip()
+    for name, server in sorted(servers.items()):
+        transport = server.transport
+        target = os.path.expandvars(server.url).strip()
         if not target:
             raise AdapterConfigError(
                 "codex_invalid_configuration",
@@ -187,9 +169,9 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         if normalized_transport == "stdio":
             result[name] = {
                 "command": target,
-                "args": common_utils.normalize_list(server.get("args")),
+                "args": server.args,
             }
-            if env := server.get("env"):
+            if env := server.env:
                 result[name]["env"] = env
         elif normalized_transport in {"http", "streamable-http"}:
             result[name] = {"url": target}
@@ -201,19 +183,12 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return result
 
 
-def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
-    values = _native_capabilities(payload).get("skill_paths", [])
-    if not isinstance(values, list) or any(
-        not isinstance(value, (str, Path)) or not str(value) for value in values
-    ):
-        raise AdapterConfigError(
-            "codex_invalid_configuration",
-            "native skill_paths must be a list of paths",
-        )
+def _native_skill_paths(inputs: CodexRuntimeInput) -> list[Path]:
+    values = inputs.config.skills.paths if inputs.config.skills else []
 
     paths: list[Path] = []
     names: set[str] = set()
-    config_root = Path(common_utils.base_dir(payload))
+    config_root = Path(inputs.base_dir)
     for value in values:
         skill_path = Path(value)
         if not skill_path.is_absolute():
@@ -260,74 +235,56 @@ async def _register_skill_roots(codex: AsyncCodex, skill_paths: list[Path]) -> N
     )
 
 
-def resolve_cwd(payload: dict[str, Any]) -> Path:
-    environment = _mapping(
-        common_utils.environment_payload(payload), name="runtime environment"
-    )
-    value = environment.get("workspace") or common_utils.base_dir(payload)
-    path = Path(str(value))
+def resolve_cwd(inputs: CodexRuntimeInput) -> Path:
+    path = Path(inputs.context.environment.workspace or inputs.base_dir)
     if not path.is_absolute():
-        path = Path(common_utils.base_dir(payload)) / path
+        path = Path(inputs.base_dir) / path
     return path.resolve()
 
 
-def _selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return _mapping(
-        common_utils.selected_model_config(payload),
-        name="selected model",
-    )
-
-
-def selected_model(payload: dict[str, Any]) -> str | None:
-    model_config = _selected_model_config(payload)
-    value = model_config.get("model")
-    if value is None:
-        return None
-    provider = model_config.get("provider")
-    if not isinstance(provider, str) or not provider:
+def _selected_model_config(inputs: CodexRuntimeInput) -> AgentModelConfig:
+    model = inputs.config.models.get("default")
+    if model is None and len(inputs.config.models) == 1:
+        model = next(iter(inputs.config.models.values()))
+    if model is None:
         raise AdapterConfigError(
             "codex_invalid_configuration",
-            "selected model provider must be a non-empty string",
+            "Codex requires a default model or exactly one model",
         )
-    if not isinstance(value, str) or not value:
-        raise AdapterConfigError(
-            "codex_invalid_configuration", "model must be a non-empty string"
-        )
-    return value.removeprefix("openai/") if provider == "openai" else value
+    return model
 
 
-def selected_model_provider(payload: dict[str, Any]) -> str:
-    provider = _selected_model_config(payload).get("provider")
-    if not isinstance(provider, str) or not provider:
-        raise AdapterConfigError(
-            "codex_invalid_configuration",
-            "selected model provider must be a non-empty string",
-        )
-    return provider
+def selected_model(inputs: CodexRuntimeInput) -> str:
+    model = _selected_model_config(inputs)
+    return model.model.removeprefix("openai/") if model.provider == "openai" else model.model
 
 
-def custom_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
-    model_config = _selected_model_config(payload)
-    provider = selected_model_provider(payload)
+def selected_model_provider(inputs: CodexRuntimeInput) -> str:
+    return _selected_model_config(inputs).provider
+
+
+def custom_model_provider_config(inputs: CodexRuntimeInput) -> dict[str, Any]:
+    model_config = _selected_model_config(inputs)
+    provider = selected_model_provider(inputs)
     if provider == "openai":
         return {}
-    api_key_env = model_config.get("api_key_env")
-    if not isinstance(api_key_env, str) or not api_key_env:
+    api_key_env = model_config.api_key_env
+    if api_key_env is None:
         raise AdapterConfigError(
             "codex_invalid_configuration",
             "selected model api_key_env is required for a custom "
             "Responses-compatible provider",
         )
     if not (
-        common_utils.environment_env(payload).get(api_key_env)
+        inputs.context.environment.env.get(api_key_env)
         or os.environ.get(api_key_env)
     ):
         raise AdapterConfigError(
             "codex_invalid_configuration",
             f"{api_key_env} is required for the selected model provider",
         )
-    base_url = common_utils.get_base_url(model_config)
-    if not isinstance(base_url, str) or not base_url:
+    base_url = model_config.base_url
+    if not base_url:
         raise AdapterConfigError(
             "codex_invalid_configuration",
             "selected model base_url is required for a custom "
@@ -345,16 +302,16 @@ def custom_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def openai_model_provider_config(payload: dict[str, Any]) -> dict[str, Any]:
-    model_config = _selected_model_config(payload)
-    if model_config.get("provider") != "openai":
+def openai_model_provider_config(inputs: CodexRuntimeInput) -> dict[str, Any]:
+    model_config = _selected_model_config(inputs)
+    if model_config.provider != "openai":
         return {}
-    base_url = common_utils.get_base_url(model_config)
+    base_url = model_config.base_url
     return {"openai_base_url": base_url.rstrip("/")} if base_url else {}
 
 
-def sandbox(payload: dict[str, Any]) -> Sandbox:
-    value = _settings(payload).get("sandbox", "read-only")
+def sandbox(inputs: CodexRuntimeInput) -> Sandbox:
+    value = _settings(inputs).get("sandbox", "read-only")
     try:
         return SANDBOXES[value]
     except (KeyError, TypeError) as error:
@@ -364,8 +321,8 @@ def sandbox(payload: dict[str, Any]) -> Sandbox:
         ) from error
 
 
-def approval_mode(payload: dict[str, Any]) -> ApprovalMode:
-    value = _settings(payload).get("approval_mode", "auto_review")
+def approval_mode(inputs: CodexRuntimeInput) -> ApprovalMode:
+    value = _settings(inputs).get("approval_mode", "auto_review")
     try:
         return APPROVAL_MODES[value]
     except (KeyError, TypeError) as error:
@@ -375,8 +332,8 @@ def approval_mode(payload: dict[str, Any]) -> ApprovalMode:
         ) from error
 
 
-def timeout_seconds(payload: dict[str, Any]) -> float:
-    value = common_utils.timeout_seconds(payload, default=DEFAULT_TIMEOUT_SECONDS)
+def timeout_seconds() -> float:
+    value = DEFAULT_TIMEOUT_SECONDS
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise AdapterConfigError(
             "codex_invalid_configuration", "timeout_seconds must be positive"
@@ -402,45 +359,28 @@ def _optional_string(settings: dict[str, Any], name: str) -> str | None:
 
 
 def child_environment(
-    payload: dict[str, Any], *, relay_gateway_url: str | None = None
+    inputs: CodexRuntimeInput, *, relay_gateway_url: str | None = None
 ) -> dict[str, str]:
     values = dict.fromkeys(os.environ, "")
     values.update(
         {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
-    telemetry = common_utils.runtime_context(payload).get("telemetry")
-    if telemetry is None:
-        telemetry = {}
-    if not isinstance(telemetry, dict):
-        raise AdapterInputError(
-            "codex_invalid_request", "runtime_context.telemetry must be a mapping"
-        )
-    telemetry_env = telemetry.get("env")
-    if telemetry_env is None:
-        telemetry_env = {}
-    if not isinstance(telemetry_env, dict) or any(
-        not isinstance(key, str) or not isinstance(value, str)
-        for key, value in telemetry_env.items()
-    ):
-        raise AdapterInputError(
-            "codex_invalid_request",
-            "runtime_context.telemetry.env must contain strings",
-        )
+    telemetry_env = inputs.context.telemetry.env if inputs.context.telemetry else {}
     values.update(telemetry_env)
-    model_config = _selected_model_config(payload)
-    api_key_env = model_config.get("api_key_env")
-    if isinstance(api_key_env, str) and api_key_env in os.environ:
+    model_config = _selected_model_config(inputs)
+    api_key_env = model_config.api_key_env
+    if api_key_env is not None and api_key_env in os.environ:
         values[api_key_env] = os.environ[api_key_env]
-    configured = common_utils.environment_env(payload)
+    configured = inputs.context.environment.env
     values.update(configured)
     if (
-        selected_model_provider(payload) == "openai"
-        and isinstance(api_key_env, str)
+        selected_model_provider(inputs) == "openai"
+        and api_key_env is not None
         and api_key_env in values
     ):
         values["OPENAI_API_KEY"] = values[api_key_env]
-    if selected_model_provider(payload) != "openai":
-        codex_home = state_dir(payload) / "custom-provider-home"
+    if selected_model_provider(inputs) != "openai":
+        codex_home = state_dir(inputs) / "custom-provider-home"
         values["CODEX_HOME"] = str(codex_home)
     # The SDK overlays this mapping on the parent environment. An empty
     # originator is still treated as an override by Codex and produces invalid
@@ -452,16 +392,15 @@ def child_environment(
     return values
 
 
-def _artifact_root(payload: dict[str, Any]) -> Path:
-    artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
-    root = artifacts.get("root") if isinstance(artifacts, dict) else None
+def _artifact_root(inputs: CodexRuntimeInput) -> Path:
+    root = inputs.context.artifacts.root
     if root:
         return Path(str(root))
-    return Path(common_utils.base_dir(payload)) / "artifacts" / "codex"
+    return Path(inputs.base_dir) / "artifacts" / "codex"
 
 
-def state_dir(payload: dict[str, Any]) -> Path:
-    return _artifact_root(payload) / ".fabric" / "codex"
+def state_dir(inputs: CodexRuntimeInput) -> Path:
+    return _artifact_root(inputs) / ".fabric" / "codex"
 
 
 def _merge_config(target: dict[str, Any], layer: dict[str, Any]) -> None:
@@ -508,11 +447,14 @@ def _apply_config_overrides(config: dict[str, Any], overrides: dict[str, Any]) -
         target[parts[-1]] = _json_value(value, name=f"config_overrides.{dotted_key}")
 
 
-def native_codex_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
-    if "native" not in common_utils.telemetry_providers(payload):
+def native_codex_telemetry_config(inputs: CodexRuntimeInput) -> dict[str, Any]:
+    telemetry = inputs.context.telemetry
+    if telemetry is None or "native" not in telemetry.metadata.get("telemetry_providers", []):
         return {}
 
-    telemetry_config = common_utils.native_telemetry_config(payload)
+    telemetry_config = telemetry.metadata.get("native_config", {})
+    if not isinstance(telemetry_config, dict):
+        return {}
     for component in telemetry_config.get("components") or []:
         if (
             not isinstance(component, dict)
@@ -553,15 +495,17 @@ def native_codex_telemetry_config(payload: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
+def prepare_codex_relay(
+    payload: dict[str, Any], inputs: CodexRuntimeInput
+) -> CodexRelaySettings | None:
     """Generate invocation-scoped Relay gateway configuration."""
 
-    if not common_utils.relay_enabled(payload):
+    if inputs.context.telemetry is None or not inputs.context.telemetry.relay_enabled:
         return None
     command = os.environ.get("FABRIC_TEST_NEMO_RELAY_COMMAND", "nemo-relay")
     try:
         executable = relay_gateway.resolve_relay_command(
-            Path(common_utils.base_dir(payload)).resolve(), command
+            Path(inputs.base_dir).resolve(), command
         )
     except FileNotFoundError as error:
         raise AdapterRelayError(
@@ -570,7 +514,9 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
 
     try:
         relay_contract = relay_gateway.relay_cli_contract(executable)
-        plugin_config = common_utils.load_relay_plugin_config(payload)
+        plugin_config = common_utils.load_relay_plugin_config(
+            payload, model_name=_selected_model_config(inputs).model
+        )
         config_path, plugin_config_path = common_utils.write_relay_configs(
             # Codex execution remains SDK-owned; Relay runs only as a gateway.
             relay_config={},
@@ -588,12 +534,7 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
             "NeMo Relay runtime configuration is unavailable",
         )
 
-    base_url = common_utils.get_base_url(_selected_model_config(payload))
-    if base_url is not None and (not isinstance(base_url, str) or not base_url):
-        raise AdapterConfigError(
-            "codex_invalid_configuration",
-            "selected model base_url must be a non-empty string",
-        )
+    base_url = _selected_model_config(inputs).base_url
     port = relay_gateway.find_available_tcp_port()
     bind = f"127.0.0.1:{port}"
     return CodexRelaySettings(
@@ -610,23 +551,23 @@ def prepare_codex_relay(payload: dict[str, Any]) -> CodexRelaySettings | None:
 
 
 def thread_config(
-    payload: dict[str, Any], relay: CodexRelaySettings | None
+    inputs: CodexRuntimeInput, relay: CodexRelaySettings | None
 ) -> dict[str, Any]:
     """Build request-scoped Codex config without writing a user profile."""
 
-    config = native_codex_telemetry_config(payload)
-    _merge_config(config, custom_model_provider_config(payload))
-    _merge_config(config, openai_model_provider_config(payload))
-    mcp_servers = _native_mcp_servers(payload)
+    config = native_codex_telemetry_config(inputs)
+    _merge_config(config, custom_model_provider_config(inputs))
+    _merge_config(config, openai_model_provider_config(inputs))
+    mcp_servers = _native_mcp_servers(inputs)
     if mcp_servers:
         config["mcp_servers"] = mcp_servers
     overrides = _mapping(
-        _settings(payload).get("config_overrides"),
+        _settings(inputs).get("config_overrides"),
         name="harness.settings.config_overrides",
     )
     _apply_config_overrides(config, overrides)
     if relay is not None:
-        provider = selected_model_provider(payload)
+        provider = selected_model_provider(inputs)
         transport_config = (
             {"openai_base_url": relay.gateway.url}
             if provider == "openai"
@@ -662,26 +603,26 @@ def thread_config(
 
 
 def sdk_config(
-    payload: dict[str, Any], relay: CodexRelaySettings | None
+    inputs: CodexRuntimeInput, relay: CodexRelaySettings | None
 ) -> CodexConfig:
     codex_bin = os.environ.get("FABRIC_TEST_CODEX_BIN")
     if codex_bin:
         path = Path(codex_bin)
         if not path.is_absolute():
-            path = (Path(common_utils.base_dir(payload)) / path).resolve()
+            path = (Path(inputs.base_dir) / path).resolve()
         codex_bin = str(path)
     return CodexConfig(
         codex_bin=codex_bin,
-        cwd=str(resolve_cwd(payload)),
+        cwd=str(resolve_cwd(inputs)),
         env=child_environment(
-            payload,
+            inputs,
             relay_gateway_url=relay.gateway.url if relay is not None else None,
         ),
     )
 
 
-def _personality(payload: dict[str, Any]) -> Personality | None:
-    value = _optional_string(_settings(payload), "personality")
+def _personality(inputs: CodexRuntimeInput) -> Personality | None:
+    value = _optional_string(_settings(inputs), "personality")
     if value is None:
         return None
     try:
@@ -692,8 +633,8 @@ def _personality(payload: dict[str, Any]) -> Personality | None:
         ) from error
 
 
-def _reasoning_effort(payload: dict[str, Any]) -> ReasoningEffort | None:
-    value = _optional_string(_settings(payload), "reasoning_effort")
+def _reasoning_effort(inputs: CodexRuntimeInput) -> ReasoningEffort | None:
+    value = _optional_string(_settings(inputs), "reasoning_effort")
     if value is None:
         return None
     try:
@@ -704,34 +645,34 @@ def _reasoning_effort(payload: dict[str, Any]) -> ReasoningEffort | None:
         ) from error
 
 
-def _output_schema(payload: dict[str, Any]) -> dict[str, Any] | None:
-    value = _settings(payload).get("output_schema")
+def _output_schema(inputs: CodexRuntimeInput) -> dict[str, Any] | None:
+    value = _settings(inputs).get("output_schema")
     if value is None:
         return None
     return _mapping(_json_value(value, name="output_schema"), name="output_schema")
 
 
-def validate_runtime_payload(payload: dict[str, Any]) -> str:
+def validate_runtime_payload(inputs: CodexRuntimeInput) -> str:
     """Validate runtime-owned configuration before starting SDK or Relay processes."""
 
-    settings = _settings(payload)
-    _native_skill_paths(payload)
-    fabric_runtime_id = runtime_id(payload)
-    resolve_cwd(payload)
-    selected_model(payload)
-    sandbox(payload)
-    approval_mode(payload)
-    timeout_seconds(payload)
+    settings = _settings(inputs)
+    _native_skill_paths(inputs)
+    fabric_runtime_id = runtime_id(inputs)
+    resolve_cwd(inputs)
+    selected_model(inputs)
+    sandbox(inputs)
+    approval_mode(inputs)
+    timeout_seconds()
     for name in (
         "developer_instructions",
         "service_tier",
     ):
         _optional_string(settings, name)
-    _personality(payload)
-    _reasoning_effort(payload)
-    _output_schema(payload)
-    child_environment(payload)
-    thread_config(payload, None)
+    _personality(inputs)
+    _reasoning_effort(inputs)
+    _output_schema(inputs)
+    child_environment(inputs)
+    thread_config(inputs, None)
     return fabric_runtime_id
 
 
@@ -810,7 +751,7 @@ def sdk_failure(error: BaseException) -> dict[str, Any]:
 
 
 def normalize_result(
-    payload: dict[str, Any], *, thread_id: str, result: Any
+    inputs: CodexRuntimeInput, *, thread_id: str, result: Any
 ) -> dict[str, Any]:
     status = _json_safe(result.status)
     completed = (
@@ -833,8 +774,8 @@ def normalize_result(
         "harness": "codex",
         "adapter": "sdk",
         "mode": "codex_sdk_runtime",
-        "cwd": str(resolve_cwd(payload)),
-        "model": selected_model(payload),
+        "cwd": str(resolve_cwd(inputs)),
+        "model": selected_model(inputs),
         "thread_id": thread_id,
         "turn_id": result.id,
         "turn_status": status,
@@ -847,7 +788,7 @@ def normalize_result(
         "failed": not completed,
         "error": error,
         "events": [_json_safe(item) for item in result.items],
-        "state_dir": str(state_dir(payload)),
+        "state_dir": str(state_dir(inputs)),
     }
 
 
@@ -864,48 +805,52 @@ async def _interrupt_turn(handle: Any) -> None:
 
 
 def _thread_options(
-    payload: dict[str, Any], relay: CodexRelaySettings | None
+    inputs: CodexRuntimeInput, relay: CodexRelaySettings | None
 ) -> dict[str, Any]:
-    settings = _settings(payload)
+    settings = _settings(inputs)
     return {
-        "approval_mode": approval_mode(payload),
-        "base_instructions": common_utils.system_instruction(payload),
-        "config": thread_config(payload, relay) or None,
-        "cwd": str(resolve_cwd(payload)),
+        "approval_mode": approval_mode(inputs),
+        "base_instructions": (
+            inputs.config.instructions.system.content
+            if inputs.config.instructions and inputs.config.instructions.system
+            else None
+        ),
+        "config": thread_config(inputs, relay) or None,
+        "cwd": str(resolve_cwd(inputs)),
         "developer_instructions": _optional_string(settings, "developer_instructions"),
-        "model": selected_model(payload),
-        "model_provider": selected_model_provider(payload),
-        "personality": _personality(payload),
-        "sandbox": sandbox(payload),
+        "model": selected_model(inputs),
+        "model_provider": selected_model_provider(inputs),
+        "personality": _personality(inputs),
+        "sandbox": sandbox(inputs),
         "service_tier": _optional_string(settings, "service_tier"),
     }
 
 
 async def _open_thread(
     codex: AsyncCodex,
-    payload: dict[str, Any],
+    inputs: CodexRuntimeInput,
     *,
     relay: CodexRelaySettings | None,
 ) -> Any:
-    options = _thread_options(payload, relay)
+    options = _thread_options(inputs, relay)
     return await codex.thread_start(**options)
 
 
 async def _invoke_thread(
-    payload: dict[str, Any], thread: Any
+    inputs: CodexRuntimeInput, invocation: dict[str, Any], thread: Any
 ) -> tuple[dict[str, Any], bool]:
     """Run one turn and report whether the connected SDK transport remains usable."""
 
     handle = None
     try:
-        async with asyncio.timeout(timeout_seconds(payload)):
+        async with asyncio.timeout(timeout_seconds()):
             handle = await thread.turn(
-                request_prompt(payload),
-                effort=_reasoning_effort(payload),
-                output_schema=_output_schema(payload),
+                request_prompt(invocation),
+                effort=_reasoning_effort(inputs),
+                output_schema=_output_schema(inputs),
             )
             result = await handle.run()
-            return normalize_result(payload, thread_id=thread.id, result=result), True
+            return normalize_result(inputs, thread_id=thread.id, result=result), True
     except TimeoutError as error:
         await _interrupt_turn(handle)
         return sdk_failure(error), False
@@ -938,13 +883,13 @@ def _relay_output(
 
 
 def _start_relay_gateway(
-    payload: dict[str, Any], relay: CodexRelaySettings | None
+    inputs: CodexRuntimeInput, relay: CodexRelaySettings | None
 ) -> subprocess.Popen[Any] | None:
     if relay is None:
         return None
     try:
         return relay_gateway.start_relay_gateway(
-            launch=relay.gateway, cwd=resolve_cwd(payload)
+            launch=relay.gateway, cwd=resolve_cwd(inputs)
         )
     except relay_gateway.RelayGatewayError as error:
         raise AdapterRelayError(
@@ -987,7 +932,7 @@ class CodexRuntime:
     """One Codex app-server client and thread owned by a Fabric runtime."""
 
     def __init__(self) -> None:
-        self._start_payload: dict[str, Any] | None = None
+        self._inputs: CodexRuntimeInput | None = None
         self._fabric_runtime_id: str | None = None
         self._client: AsyncCodex | None = None
         self._thread: Any = None
@@ -1003,12 +948,22 @@ class CodexRuntime:
             )
 
         try:
-            fabric_runtime_id = validate_runtime_payload(payload)
-            relay = prepare_codex_relay(payload)
+            agent_config = payload.get("config")
+            if not isinstance(agent_config, AgentConfig):
+                raise lifecycle.LifecycleError(
+                    "codex_invalid_config", "Codex requires a validated AgentConfig"
+                )
+            inputs = CodexRuntimeInput(
+                config=agent_config,
+                context=RuntimeContext.from_mapping(payload.get("runtime_context")),
+                base_dir=common_utils.base_dir(payload),
+            )
+            fabric_runtime_id = validate_runtime_payload(inputs)
+            relay = prepare_codex_relay(payload, inputs)
             self._relay = relay
-            self._gateway_process = _start_relay_gateway(payload, relay)
-            client_config = sdk_config(payload, relay)
-            if selected_model_provider(payload) != "openai":
+            self._gateway_process = _start_relay_gateway(inputs, relay)
+            client_config = sdk_config(inputs, relay)
+            if selected_model_provider(inputs) != "openai":
                 await asyncio.to_thread(
                     Path(client_config.env["CODEX_HOME"]).mkdir,
                     parents=True,
@@ -1016,10 +971,10 @@ class CodexRuntime:
                 )
             client = AsyncCodex(config=client_config)
             self._client = client
-            await _register_skill_roots(client, _native_skill_paths(payload))
+            await _register_skill_roots(client, _native_skill_paths(inputs))
             thread = await _open_thread(
                 client,
-                payload,
+                inputs,
                 relay=relay,
             )
         except CodexAdapterError as error:
@@ -1038,13 +993,13 @@ class CodexRuntime:
             await self._cleanup_failed_start()
             raise
 
-        self._start_payload = payload
+        self._inputs = inputs
         self._fabric_runtime_id = fabric_runtime_id
         self._thread = thread
 
     async def invoke(self, invocation: dict[str, Any]) -> dict[str, Any]:
         if (
-            self._start_payload is None
+            self._inputs is None
             or self._client is None
             or self._thread is None
             or self._fabric_runtime_id is None
@@ -1053,16 +1008,13 @@ class CodexRuntime:
                 "codex_runtime_not_started",
                 "Codex runtime is not started",
             )
-        if runtime_id(invocation) != self._fabric_runtime_id:
+        inputs = self._inputs
+        runtime_context = RuntimeContext.from_mapping(invocation.get("runtime_context"))
+        if runtime_context.runtime_id != self._fabric_runtime_id:
             raise lifecycle.LifecycleError(
                 "codex_runtime_mismatch",
                 "Codex invocation does not match the connected runtime",
             )
-        payload = {
-            **self._start_payload,
-            "runtime_context": invocation.get("runtime_context"),
-            "request": invocation.get("request"),
-        }
         if self._unusable:
             return _failure(
                 "codex_runtime_unavailable",
@@ -1070,10 +1022,10 @@ class CodexRuntime:
             )
 
         try:
-            request_prompt(payload)
-            timeout_seconds(payload)
-            _reasoning_effort(payload)
-            _output_schema(payload)
+            request_prompt(invocation)
+            timeout_seconds()
+            _reasoning_effort(inputs)
+            _output_schema(inputs)
             relay = self._relay
             atif_before = (
                 relay_artifacts.snapshot_atif_files(relay.plugin_config)
@@ -1081,7 +1033,7 @@ class CodexRuntime:
                 and relay_artifacts.expects_local_atif(relay.plugin_config)
                 else None
             )
-            output, usable = await _invoke_thread(payload, self._thread)
+            output, usable = await _invoke_thread(inputs, invocation, self._thread)
             if (
                 output.get("completed")
                 and relay is not None
@@ -1120,7 +1072,7 @@ class CodexRuntime:
     async def stop(self) -> None:
         client = self._client
         self._client = None
-        self._start_payload = None
+        self._inputs = None
         self._thread = None
         self._fabric_runtime_id = None
         self._unusable = True
@@ -1174,7 +1126,7 @@ class CodexRuntime:
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
-    lifecycle.serve(CodexRuntime)
+    lifecycle.serve(CodexRuntime, config_loader=AgentConfig.from_mapping)
 
 
 if __name__ == "__main__":
