@@ -23,6 +23,8 @@ surfaces touched by a change.
   test pass.
 - If Rust code changed, run `cargo fmt --all -- --check` and `just test-rust`.
 - If Python code or a Python-facing adapter changed, run `just test-python`.
+- If the TypeScript adapter contract or one of its source schemas changed, run
+  `just test-typescript`.
 - If `crates/fabric-core` changed in a way exposed through Python, run both the
   Rust and Python suites.
 - If the PyO3 bridge or package metadata changed, run `just build-python` and
@@ -30,10 +32,13 @@ surfaces touched by a change.
 - If public configuration types changed, confirm the schema snapshot tests in
   `just test-rust` pass and review generated schema diffs.
 - If an adapter or integration changed, run its focused tests.
-- If a manifest or lockfile changed, run
+- If a Cargo or Python manifest or lockfile changed, run
   `uv run --no-project python scripts/licensing/license_diff.py --base-ref origin/main`,
   review the transitive license changes, then run the `attributions-rust` and
   `attributions-python` pre-commit hooks.
+- If the TypeScript manifest or npm lockfile changed, inspect the complete npm
+  dependency tree and license fields, confirm the package still has zero
+  production dependencies, and run its package and audit checks.
 - If documentation or examples changed, run `just docs` when practical and
   verify documented commands against the current repository.
 - If code changes alter APIs, commands, paths, packaging behavior, telemetry
@@ -55,8 +60,8 @@ surfaces touched by a change.
 - **Harbor integration changed**
   Run `tests/test_harbor_runner.py`, then `just test-python`.
 - **Schema or public contract changed**
-  Run both language suites and review changes under `schemas/` and generated API
-  references.
+  Run the Rust, Python, and TypeScript suites and review changes under
+  `schemas/`, generated TypeScript sources, and generated API references.
 - **Documentation-only change**
   Use `contribute-docs` and `review-doc-style`. Run `just docs` for docs-site or
   generated-reference changes.
@@ -69,6 +74,7 @@ surfaces touched by a change.
 ```bash
 just test-rust
 just test-python
+just test-typescript
 ```
 
 ## Common Targeted Commands
@@ -84,6 +90,11 @@ cargo check -p fabric-python --locked
 just build-python
 just test-python
 uv run --no-sync pytest -k "<pattern>"
+
+# TypeScript adapter contract
+just build-typescript
+just test-typescript
+just pack-typescript
 
 # Documentation
 just docs
@@ -114,5 +125,7 @@ Before review or handoff:
 - Build and test recipes: `justfile`
 - Python CI: `.github/workflows/ci_python.yml`
 - Rust CI: `.github/workflows/ci_rust.yml`
+- TypeScript CI: `.github/workflows/ci_typescript.yml`
 - Documentation CI: `.github/workflows/fern-docs.yml`
 - Public Python contract: `docs/python-sdk-contract.md`
+- Public adapter contract: `schemas/SCHEMA.md`

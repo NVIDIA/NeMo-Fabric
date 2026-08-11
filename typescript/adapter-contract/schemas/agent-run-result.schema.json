@@ -1,0 +1,259 @@
+{
+  "$defs": {
+    "AgentArtifact": {
+      "additionalProperties": false,
+      "description": "One artifact produced by an adapter target.",
+      "properties": {
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned artifact fields.",
+          "type": "object"
+        },
+        "kind": {
+          "description": "Artifact kind.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "media_type": {
+          "description": "Optional media type.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Logical artifact name.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path relative to the artifact root supplied in `RuntimeContext`.",
+          "minLength": 1,
+          "not": {
+            "anyOf": [
+              {
+                "pattern": "^[\\\\/]"
+              },
+              {
+                "pattern": "^[A-Za-z]:"
+              },
+              {
+                "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)"
+              }
+            ]
+          },
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "path"
+      ],
+      "type": "object"
+    },
+    "AgentRunError": {
+      "additionalProperties": false,
+      "description": "Error reported by an adapter target.",
+      "properties": {
+        "code": {
+          "description": "Stable adapter error code.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned error fields.",
+          "type": "object"
+        },
+        "message": {
+          "description": "Human-readable error message.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "retryable": {
+          "default": false,
+          "description": "Whether the adapter considers the failure safe for a consumer-level retry.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "AgentRunStatus": {
+      "description": "Completion status reported by an adapter target.",
+      "oneOf": [
+        {
+          "const": "succeeded",
+          "description": "The adapter target completed successfully.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "The adapter target completed with a failure.",
+          "type": "string"
+        },
+        {
+          "const": "cancelled",
+          "description": "The adapter target cancelled the invocation.",
+          "type": "string"
+        }
+      ]
+    },
+    "AgentUsage": {
+      "additionalProperties": false,
+      "description": "Normalized model usage reported by an adapter target.",
+      "properties": {
+        "cost_usd": {
+          "description": "Invocation cost in US dollars when reported by the provider.",
+          "format": "double",
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "extensions": {
+          "additionalProperties": true,
+          "description": "Adapter-owned usage fields.",
+          "type": "object"
+        },
+        "input_tokens": {
+          "description": "Input tokens consumed by the invocation.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output_tokens": {
+          "description": "Output tokens produced by the invocation.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "description": "Total tokens reported by the provider.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "$ref": "#/$defs/AgentRunError"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "succeeded"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "error"
+          ]
+        }
+      }
+    }
+  ],
+  "description": "Preview southbound terminal result.\n\nThe current local-host transport does not decode this type. It will join\nthe negotiated adapter contract when typed invoke transport is implemented.",
+  "properties": {
+    "artifacts": {
+      "description": "Artifacts produced by the adapter target.",
+      "items": {
+        "$ref": "#/$defs/AgentArtifact"
+      },
+      "type": "array"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentRunError"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Adapter error when the invocation did not succeed."
+    },
+    "extensions": {
+      "additionalProperties": true,
+      "description": "Adapter-owned result fields.",
+      "type": "object"
+    },
+    "output": {
+      "description": "Primary adapter-target output."
+    },
+    "status": {
+      "$ref": "#/$defs/AgentRunStatus",
+      "description": "Adapter-target completion status."
+    },
+    "usage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentUsage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Normalized model usage when reported by the adapter target."
+    }
+  },
+  "required": [
+    "status",
+    "output"
+  ],
+  "title": "AgentRunResult",
+  "type": "object"
+}

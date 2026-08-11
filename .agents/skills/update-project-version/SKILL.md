@@ -1,6 +1,6 @@
 ---
 name: update-project-version
-description: Update the NeMo Fabric release version across Cargo, setuptools package metadata, internal Python dependency pins, integration metadata, and lockfiles. Use when bumping, synchronizing, or auditing NeMo Fabric package versions for a release.
+description: Update the NeMo Fabric release version across Cargo, Python and TypeScript package metadata, internal Python dependency pins, integration metadata, and lockfiles. Use when bumping, synchronizing, or auditing NeMo Fabric package versions for a release.
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
@@ -20,7 +20,8 @@ pre-release or build-metadata variants used during packaging.
 ## Source Of Truth
 
 - `Cargo.toml` `[workspace.package].version` is the source of truth for the Rust
-  workspace and Python build versioning.
+  workspace and the release version stamped into Python and TypeScript package
+  metadata.
 - Keep `Cargo.toml` `[workspace.dependencies]` self-references aligned when the
   workspace version changes.
 - `python/pyproject.toml` is the exception among the Python projects: do not add
@@ -36,6 +37,8 @@ pre-release or build-metadata variants used during packaging.
   - All `nemo-fabric-* == <version>` requirements in the root
     `pyproject.toml` optional dependencies.
   - Each adapter's `nemo-fabric-adapters-common == <version>` dependency.
+- Keep `typescript/adapter-contract/package.json` and the root package entries in
+  its `package-lock.json` aligned with the Cargo SemVer release version.
 
 For a normal release, use the same `X.Y.Z` string everywhere. For a prerelease
 or build-metadata version, use valid Cargo SemVer in `Cargo.toml` and the
@@ -45,15 +48,17 @@ versions rather than blindly copying incompatible syntax.
 
 ## Workflow
 
-1. Read the current version from `Cargo.toml` and decide the exact Cargo and
-   Python target version strings.
-2. Run `just set-version <cargo-version>`. The recipe converts supported Cargo
-   SemVer prereleases to PEP 440 and updates:
+1. Read the current version from `Cargo.toml` and decide the exact Cargo,
+   Python, and TypeScript target version strings.
+2. Run `just set-version <cargo-version>`. The recipe preserves the normalized
+   SemVer for Cargo and TypeScript, converts it to PEP 440 for Python, and
+   updates:
    - `Cargo.toml` `[workspace.package].version`
    - `Cargo.toml` `workspace.dependencies.nemo-fabric-core.version`
    - The root setuptools `project.version` and every
      `adapters/**/pyproject.toml` `project.version`
    - Every internal `nemo-fabric-*` exact-version requirement
+   - The TypeScript adapter-contract `package.json` and `package-lock.json`
    - `Cargo.lock` through Cargo metadata resolution
    - The root, runtime, and adapter `uv.lock` files through `just lock-python`
 3. Confirm that `python/pyproject.toml` remains dynamic and unchanged.
@@ -62,7 +67,8 @@ versions rather than blindly copying incompatible syntax.
 
 If editing the helper code, keep these contracts aligned:
 
-- `set_project_version` must call the Cargo and Python project version helpers.
+- `set_project_version` must call the Cargo, Python, and TypeScript project
+  version helpers.
 - `set_cargo_workspace_version` must update the workspace version and the
   `nemo-fabric-core` workspace dependency, then verify every `nemo-fabric-*` workspace
   package through Cargo metadata.
@@ -70,6 +76,8 @@ If editing the helper code, keep these contracts aligned:
   adapter `pyproject.toml` discovered recursively under `adapters/`, and all
   internal exact-version pins while rejecting a static version in
   `python/pyproject.toml`.
+- `set_typescript_project_version` must update the package manifest and both
+  root version entries in the npm lockfile without changing dependency versions.
 - The `set-version` recipe must run `just lock-python` after source metadata is
   updated.
 
@@ -81,11 +89,14 @@ If editing the helper code, keep these contracts aligned:
   `rg -n '^version =|nemo-fabric-[a-z-]+ == ' pyproject.toml adapters --glob 'pyproject.toml'`
 - Confirm the runtime remains dynamic:
   `rg -n 'dynamic = \["version"\]' python/pyproject.toml`
+- Inspect the TypeScript package and lockfile root versions:
+  `rg -n '"version":' typescript/adapter-contract/package{,-lock}.json`
 - Run `cargo check --workspace --locked`.
 - Run `just build-python` to verify all Python package metadata resolves.
 - Run `just test-python` when the integration version or Python packaging
   behavior changes materially.
 - Run `just wheels` for release-facing validation of every Python wheel.
+- Run `just pack-typescript` to verify the stamped TypeScript package metadata.
 - Run `git diff --check`.
 
 ## Avoid
@@ -94,6 +105,7 @@ If editing the helper code, keep these contracts aligned:
 - Adding a literal version to `python/pyproject.toml`; Maturin owns that version.
 - Updating Python package versions without their exact internal dependency pins.
 - Forgetting `Cargo.lock`, the root `uv.lock`, or per-project `uv.lock` files.
+- Updating the TypeScript package manifest without its npm lockfile root entry.
 - Blind repository-wide replacement of version-like strings.
 
 ## References
@@ -106,4 +118,6 @@ If editing the helper code, keep these contracts aligned:
 - `python/uv.lock`
 - `adapters/**/pyproject.toml`
 - `adapters/**/uv.lock`
+- `typescript/adapter-contract/package.json`
+- `typescript/adapter-contract/package-lock.json`
 - `justfile`

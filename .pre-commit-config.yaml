@@ -9,7 +9,7 @@ repos:
         name: copyright header
         entry: python3 scripts/lint/check_copyright.py
         language: system
-        files: '\.(rs|py|pyi|toml|yaml|yml|md|mdx|sh)$|\.gitignore$'
+        files: '\.(rs|py|pyi|toml|yaml|yml|md|mdx|sh|js|mjs|ts)$|\.gitignore$'
         exclude: '(/SKILL\.md|node_modules/|target/|\.venv/|^\.github/pull_request_template\.md)$'
 
   # Python lint — enforce the flake8-bugbear cached-instance-method rule (B019)

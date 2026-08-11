@@ -261,13 +261,16 @@ through adapters. Use the following reference to compare the integrations:
 
 - [Adapter compatibility and guides](adapters/README.md): compare bundled
   harness support, runtime ownership, telemetry integration, and package guides.
+- [Adapter contract](docs/adapter-contract/README.md): build third-party
+  adapters against the canonical schemas or the dependency-free Python and
+  TypeScript contract bindings.
 
 ## Roadmap
 
-- **Custom harnesses:** Publish the NeMo Fabric adapter contract so third-party
-  developers can build integrations that are compatible with NeMo Fabric.
-  Support integrations maintained by NeMo Fabric and compatible third-party
-  integrations.
+- **Custom harnesses:** Publish the NeMo Fabric adapter contract as canonical
+  schemas and dependency-free language bindings so third-party developers can
+  build integrations that are compatible with NeMo Fabric. Support integrations
+  maintained by NeMo Fabric and compatible third-party integrations.
 - **Custom agents:** Support custom agents built on maintained or third-party
   harness integrations without requiring an additional, agent-specific adapter.
   Preserve the normalized NeMo Fabric lifecycle, results, artifacts, and

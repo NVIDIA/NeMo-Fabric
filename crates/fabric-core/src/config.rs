@@ -196,13 +196,13 @@ pub struct WorkflowConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AdapterDescriptor {
     /// Adapter descriptor contract version.
-    #[schemars(length(min = 1))]
+    #[schemars(schema_with = "adapter_contract_version_schema")]
     pub contract_version: String,
     /// Unique id for this adapter implementation.
-    #[schemars(length(min = 1))]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub adapter_id: String,
     /// Stable machine-readable harness identifier implemented by this adapter.
-    #[schemars(length(min = 1))]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub harness: String,
     /// Adapter implementation kind.
     pub adapter_kind: AdapterKind,
@@ -237,6 +237,13 @@ pub struct AdapterDescriptor {
     /// Additive adapter descriptor fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+fn adapter_contract_version_schema(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema = String::json_schema(generator);
+    schema.insert("const".into(), ADAPTER_CONTRACT_VERSION.into());
+    schema.insert("minLength".into(), 1.into());
+    schema
 }
 
 fn adapter_extension_schemas_schema(generator: &mut SchemaGenerator) -> Schema {
@@ -522,10 +529,23 @@ pub enum AdapterConfigField {
 pub struct AdapterTelemetrySupport {
     /// Provider-specific telemetry capabilities supported by this adapter.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[schemars(schema_with = "adapter_telemetry_providers_schema")]
     pub providers: BTreeMap<TelemetryProvider, AdapterTelemetryProviderSupport>,
     /// Additive adapter telemetry fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+}
+
+fn adapter_telemetry_providers_schema(generator: &mut SchemaGenerator) -> Schema {
+    let mut schema =
+        BTreeMap::<TelemetryProvider, AdapterTelemetryProviderSupport>::json_schema(generator);
+    schema.insert(
+        "propertyNames".into(),
+        serde_json::json!({
+            "enum": TelemetryProvider::ALL.map(TelemetryProvider::as_str),
+        }),
+    );
+    schema
 }
 
 /// Telemetry capabilities for one adapter-supported provider.
@@ -1168,6 +1188,8 @@ pub enum TelemetryProvider {
 }
 
 impl TelemetryProvider {
+    const ALL: [Self; 2] = [Self::Relay, Self::Native];
+
     /// Return the stable configuration value for this provider.
     pub fn as_str(self) -> &'static str {
         match self {

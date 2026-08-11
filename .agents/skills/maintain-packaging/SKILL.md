@@ -1,6 +1,6 @@
 ---
 name: maintain-packaging
-description: Maintain NeMo Fabric Rust and Python dependencies, package metadata, module paths, native artifacts, lockfiles, license evidence, and release-facing build surfaces
+description: Maintain NeMo Fabric Rust, Python, and TypeScript dependencies, package metadata, module paths, native artifacts, lockfiles, license evidence, and release-facing build surfaces
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
@@ -24,6 +24,8 @@ consumed outside the source tree.
 - Python package metadata in `python/pyproject.toml`
 - Native extension naming and placement under `python/src/nemo_fabric`
 - Dependency resolution in `Cargo.lock` and `uv.lock`
+- TypeScript adapter-contract metadata and dependency resolution in
+  `typescript/adapter-contract/package.json` and `package-lock.json`
 - Documentation tooling metadata in `docs/package.json` and
   `docs/package-lock.json`
 - CI workflows, install commands, and example commands
@@ -59,6 +61,10 @@ commitment.
   `uv run --no-project python scripts/licensing/license_diff.py --base-ref origin/main`
   after updating manifests and lockfiles, then review added packages and license
   changes.
+- For `typescript/adapter-contract/package-lock.json`, inspect the resolved
+  package entries and their `license` fields. The adapter-contract package must
+  keep an empty production dependency graph; build-only dependencies still
+  require permissive, recorded license evidence.
 - Regenerate the attribution files with the named pre-commit hooks instead of
   editing generated output:
 
@@ -78,6 +84,8 @@ compatibility decisions using the distribution and linkage context.
 - [ ] CI references the same package names as local workflows
 - [ ] Public packaging changes are reflected in release-facing docs
 - [ ] Workspace, Python, and lockfile versions remain aligned where required
+- [ ] The TypeScript adapter-contract package version follows the workspace
+      release version without changing its independent wire contract version
 - [ ] The editable maturin build still produces `nemo_fabric._native`
 - [ ] New dependencies are necessary, maintained, and narrower than the viable
       alternatives
@@ -96,6 +104,9 @@ compatibility decisions using the distribution and linkage context.
 - `uv.lock`
 - `docs/package.json`
 - `docs/package-lock.json`
+- `typescript/adapter-contract/package.json`
+- `typescript/adapter-contract/package-lock.json`
+- `.github/workflows/ci_typescript.yml`
 - `.github/workflows/ci_python.yml`
 - `.github/workflows/ci_rust.yml`
 - `.pre-commit-config.yaml`

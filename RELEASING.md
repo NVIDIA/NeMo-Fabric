@@ -46,6 +46,10 @@ NeMo Fabric versions are anchored on the workspace SemVer in the repository root
 - The root `pyproject.toml` and every `adapters/**/pyproject.toml` carry the
   Python package versions and internal dependency pins and must stay aligned
   with the same release version.
+- `typescript/adapter-contract/package.json` and its lockfile carry the npm
+  adapter-contract package version and must stay aligned with the same release
+  version. The package version is independent of the
+  `fabric.adapter/v1alpha2` wire contract version.
 - The `nemo-fabric-runtime` Python package version is derived at packaging time.
   `python/pyproject.toml` stays `dynamic = ["version"]` in the repository, and
   Maturin derives the version from `crates/fabric-python/Cargo.toml`, which
@@ -143,7 +147,9 @@ The helper updates:
    `nemo-fabric-core`.
 3. [`pyproject.toml`](pyproject.toml), every `adapters/**/pyproject.toml`, and
    their internal dependency pins to the same release version.
-4. [`Cargo.lock`](Cargo.lock), [`uv.lock`](uv.lock), and every Python project
+4. [`typescript/adapter-contract/package.json`](typescript/adapter-contract/package.json)
+   and its npm lockfile.
+5. [`Cargo.lock`](Cargo.lock), [`uv.lock`](uv.lock), and every Python project
    lockfile.
 Review docs and snippets that mention explicit versions, including:
 
@@ -164,6 +170,7 @@ repository release, the safest baseline is:
 uv run pre-commit run --all-files
 just test-rust
 just test-python
+just test-typescript
 just docs
 ```
 

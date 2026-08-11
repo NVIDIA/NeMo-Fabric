@@ -310,12 +310,18 @@ mod tests {
     }
 
     #[test]
-    fn adapter_descriptor_schema_rejects_empty_identifiers() {
+    fn adapter_descriptor_schema_matches_runtime_constraints() {
         let schema = generate_schema(SchemaName::AdapterDescriptor).expect("schema generation");
 
+        assert_eq!(
+            schema["properties"]["contract_version"]["const"],
+            crate::ADAPTER_CONTRACT_VERSION
+        );
         assert_eq!(schema["properties"]["contract_version"]["minLength"], 1);
         assert_eq!(schema["properties"]["adapter_id"]["minLength"], 1);
+        assert_eq!(schema["properties"]["adapter_id"]["pattern"], r"\S");
         assert_eq!(schema["properties"]["harness"]["minLength"], 1);
+        assert_eq!(schema["properties"]["harness"]["pattern"], r"\S");
         assert_eq!(
             schema["properties"]["settings_schema"]["type"],
             serde_json::json!(["object", "null"])
@@ -347,6 +353,39 @@ mod tests {
                 "usage"
             ])
         );
+        assert_eq!(
+            schema["$defs"]["AdapterTelemetrySupport"]["properties"]["providers"]["propertyNames"]
+                ["enum"],
+            serde_json::json!(["relay", "native"])
+        );
+
+        let validator = jsonschema::validator_for(&schema).expect("valid descriptor schema");
+        let descriptor = serde_json::json!({
+            "contract_version": crate::ADAPTER_CONTRACT_VERSION,
+            "adapter_id": "test.fabric.schema",
+            "harness": "schema-test",
+            "adapter_kind": "python",
+            "telemetry": {
+                "providers": {
+                    "relay": {}
+                }
+            }
+        });
+        assert!(validator.is_valid(&descriptor));
+
+        let mut unsupported_contract = descriptor.clone();
+        unsupported_contract["contract_version"] = serde_json::json!("fabric.adapter/v1alpha3");
+        assert!(!validator.is_valid(&unsupported_contract));
+
+        let mut unsupported_provider = descriptor.clone();
+        unsupported_provider["telemetry"]["providers"] = serde_json::json!({"custom": {}});
+        assert!(!validator.is_valid(&unsupported_provider));
+
+        for field in ["adapter_id", "harness"] {
+            let mut blank_identifier = descriptor.clone();
+            blank_identifier[field] = serde_json::json!(" \t");
+            assert!(!validator.is_valid(&blank_identifier));
+        }
     }
 
     #[test]

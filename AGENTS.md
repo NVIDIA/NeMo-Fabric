@@ -48,7 +48,12 @@ These workflow notes keep public documentation, examples, and PR preparation ali
 with repository expectations.
 
 - Update user-facing entry points when public behavior, the `nemo-fabric` package (imported as `nemo_fabric`), examples, or supported bindings change: `README.md`, the Fern docs under `docs/` (navigation in `docs/index.yml`, site config in `fern/docs.yml`), and the adapter/integration READMEs (`adapters/*/README.md`, `python/src/nemo_fabric/integrations/*/README.md`, `examples/README.md`).
-- Keep the Python/Rust binding contract current when the public API changes: `docs/sdk/python.mdx`, the JSON Schema notes in `schemas/SCHEMA.md`, the generated references under `docs/reference/api/`, and the integration skills under `skills/` (which restate public contracts and must be kept in parity). Regenerate docs with `just docs` after changing the docs site.
+- Keep public bindings current when the API changes: `docs/sdk/python.mdx` for
+  the Python SDK; `adapter-contract/` and `typescript/adapter-contract/` for the
+  southbound adapter contract; the JSON Schema notes in `schemas/SCHEMA.md`;
+  the generated references under `docs/reference/api/`; and the integration
+  skills under `skills/` (which restate public contracts and must be kept in
+  parity). Regenerate docs with `just docs` after changing the docs site.
 - Keep release policy and the end-to-end maintainer workflow in `RELEASING.md`; keep packaging implementation guidance in `.agents/skills/maintain-packaging/SKILL.md`. Do not move release-history policy into user-facing docs or add a duplicate `CHANGELOG.md`.
 - Keep the stable public wrapper `scripts/generate_api_docs.sh` at the `scripts/` root in docs and examples. Reference namespaced helper paths under `scripts/docs/` only when documenting internal maintenance work.
 - Use branch prefixes for your work: `feat/`, `fix/`, `docs/`, `test/`, or `refactor/`.
