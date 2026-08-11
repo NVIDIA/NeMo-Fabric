@@ -105,7 +105,7 @@ def disabled_toolsets(config: AgentConfig) -> list[str]:
 def build_hermes_config(
     agent_config: AgentConfig,
     *,
-    workspace: str = ".",
+    workspace: str,
     relay_enabled: bool = False,
 ) -> dict[str, Any]:
     settings = _settings(agent_config)
@@ -169,7 +169,7 @@ def write_hermes_config(
     agent_config: AgentConfig,
     hermes_home: Path,
     *,
-    workspace: str = ".",
+    workspace: str,
     relay_enabled: bool = False,
 ) -> tuple[Path, dict[str, Any]]:
     hermes_home.mkdir(parents=True, exist_ok=True)

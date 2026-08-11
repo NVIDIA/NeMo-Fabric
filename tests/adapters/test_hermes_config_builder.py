@@ -33,7 +33,7 @@ def test_build_hermes_config_omits_unset_values_without_hermes_agent():
         }
     )
 
-    config = adapter.build_hermes_config(config)
+    config = adapter.build_hermes_config(config, workspace=".")
 
     assert config["model"] == {
         "provider": "nvidia",
@@ -64,6 +64,7 @@ def test_write_hermes_config_round_trips_without_pyyaml(
     config_path, config = adapter.write_hermes_config(
         agent_config,
         tmp_path / "hermes-home",
+        workspace=".",
     )
 
     assert json.loads(config_path.read_text(encoding="utf-8")) == config

@@ -312,7 +312,7 @@ def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
         }
     )
 
-    config = adapter.build_hermes_config(agent_config)
+    config = adapter.build_hermes_config(agent_config, workspace=".")
 
     assert "max_turns" not in config["agent"]
 
@@ -328,7 +328,7 @@ def test_build_hermes_config_omits_max_turns_when_fabric_limit_null():
         }
     )
 
-    config = adapter.build_hermes_config(agent_config)
+    config = adapter.build_hermes_config(agent_config, workspace=".")
 
     assert "max_turns" not in config["agent"]
 
@@ -580,6 +580,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
     config_path, config = adapter.write_hermes_config(
         agent_config,
         tmp_path / "hermes-home",
+        workspace=".",
     )
 
     assert config_path == tmp_path / "hermes-home" / "config.yaml"
