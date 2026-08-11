@@ -452,15 +452,24 @@ After the release is live, verify:
    dist-tag, and provenance:
 
    ```bash
-   npm view "@nvidia/nemo-fabric-adapter-contract@<release-version>" version
-   npm view "@nvidia/nemo-fabric-adapter-contract" dist-tags
-   verification_dir="$(mktemp -d)"
-   trap 'rm -rf "$verification_dir"' EXIT
-   cd "$verification_dir"
-   npm init --yes
-   npm install --ignore-scripts --save-exact \
-     "@nvidia/nemo-fabric-adapter-contract@<release-version>"
-   npm audit signatures
+   (
+     set -euo pipefail
+     npmjs_registry="https://registry.npmjs.org/"
+     npm view "@nvidia/nemo-fabric-adapter-contract@<release-version>" version \
+       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry"
+     npm view "@nvidia/nemo-fabric-adapter-contract" dist-tags \
+       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry"
+     verification_dir="$(mktemp -d)"
+     trap 'rm -rf "$verification_dir"' EXIT
+     cd "$verification_dir"
+     npm init --yes \
+       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry"
+     npm install --ignore-scripts --save-exact \
+       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry" \
+       "@nvidia/nemo-fabric-adapter-contract@<release-version>"
+     npm audit signatures \
+       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry"
+   )
    ```
 
 5. The Fern documentation site shows the expected version and release notes.
