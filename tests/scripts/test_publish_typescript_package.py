@@ -92,13 +92,14 @@ def package_directory_fixture(tmp_path: Path) -> Path:
 def _exact_view_responses(
     *,
     integrity: str = INTEGRITY,
+    dist_tag: str = "latest",
     dist_tag_version: str = VERSION,
 ) -> list[tuple[list[str], subprocess.CompletedProcess[str]]]:
     package_version = f"{PACKAGE}@{VERSION}"
     return [
         (["view", package_version, "version"], _result(VERSION)),
         (["view", package_version, "dist.integrity"], _result(integrity)),
-        (["view", PACKAGE, "dist-tags.latest"], _result(dist_tag_version)),
+        (["view", PACKAGE, f"dist-tags.{dist_tag}"], _result(dist_tag_version)),
     ]
 
 
@@ -157,25 +158,29 @@ def test_existing_conflicting_package_fails(
     runner.assert_finished()
 
 
-def test_absent_package_publishes_and_verifies(package_directory: Path):
+@pytest.mark.parametrize("dist_tag", ["latest", "next"])
+def test_absent_package_publishes_and_verifies(
+    package_directory: Path,
+    dist_tag: str,
+):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
             (["pack", "--json"], _pack_result()),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
-            (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
+            (["view", PACKAGE, f"dist-tags.{dist_tag}"], _result("0.1.0")),
             (
-                ["publish", f"./{TARBALL}", "--access", "public", "--tag", "latest"],
+                ["publish", f"./{TARBALL}", "--access", "public", "--tag", dist_tag],
                 _result("published"),
             ),
-            *_exact_view_responses(),
+            *_exact_view_responses(dist_tag=dist_tag),
         ]
     )
 
     publish_typescript_package.publish_package(
         package_directory,
         VERSION,
-        "latest",
+        dist_tag,
         run_npm=runner,
         sleep=lambda _: None,
     )
@@ -427,7 +432,7 @@ def test_failed_publish_exhaustion_reports_both_failures(package_directory: Path
 
 
 @pytest.mark.parametrize(
-    ("candidate", "current", "is_newer"),
+    "case",
     [
         ("0.2.1", "0.2.0", True),
         ("0.2.0", "0.2.0-rc.1", True),
@@ -437,7 +442,8 @@ def test_failed_publish_exhaustion_reports_both_failures(package_directory: Path
         ("0.2.1", "0.3.0", False),
     ],
 )
-def test_version_order(candidate: str, current: str, is_newer: bool):
+def test_version_order(case: tuple[str, str, bool]):
+    candidate, current, is_newer = case
     assert (
         publish_typescript_package._version_key(candidate)
         > publish_typescript_package._version_key(current)

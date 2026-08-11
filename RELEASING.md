@@ -454,6 +454,13 @@ After the release is live, verify:
    ```bash
    npm view "@nvidia/nemo-fabric-adapter-contract@<release-version>" version
    npm view "@nvidia/nemo-fabric-adapter-contract" dist-tags
+   verification_dir="$(mktemp -d)"
+   trap 'rm -rf "$verification_dir"' EXIT
+   cd "$verification_dir"
+   npm init --yes
+   npm install --ignore-scripts --save-exact \
+     "@nvidia/nemo-fabric-adapter-contract@<release-version>"
+   npm audit signatures
    ```
 
 5. The Fern documentation site shows the expected version and release notes.
