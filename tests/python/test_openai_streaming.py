@@ -777,7 +777,13 @@ async def test_listener_accepts_record_payload_at_byte_limit(delimiter):
     )
     buffer = bytearray()
 
-    await listener._feed(buffer, encoded + delimiter)
+    if delimiter == b"\r\n":
+        await listener._feed(buffer, encoded + b"\r")
+        assert buffer == bytearray(encoded + b"\r")
+        assert listener.records.empty()
+        await listener._feed(buffer, b"\n")
+    else:
+        await listener._feed(buffer, encoded + delimiter)
 
     assert await listener.records.get() == record["chunk"]
     assert buffer == bytearray()

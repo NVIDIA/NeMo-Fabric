@@ -367,13 +367,13 @@ def test_lifecycle_host_rejects_unimplemented_openai_stream_without_poisoning_ru
     }
 
 
-def _openai_profile_choice(**overrides: Any) -> dict[str, Any]:
+def _openai_profile_choice(**overrides: object) -> dict[str, Any]:
     choice: dict[str, Any] = {"index": 0, "delta": {}}
     choice.update(overrides)
     return choice
 
 
-def _openai_profile_chunk(**overrides: Any) -> dict[str, Any]:
+def _openai_profile_chunk(**overrides: object) -> dict[str, Any]:
     chunk: dict[str, Any] = {
         "id": "chunk-1",
         "object": "chat.completion.chunk",
