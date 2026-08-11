@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 import requests
-from _utils.utils import assert_semantic_relay_artifacts
+from _utils.utils import assert_semantic_relay_artifacts, atof_records
 from nemo_fabric import (
     EnvironmentConfig,
     Fabric,
@@ -241,6 +241,80 @@ async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
         assert tool_results
         assert not tool_results[0]["is_error"]
         assert "America/Los_Angeles" in str(tool_results[0]["content"])
+
+
+@pytest.mark.usefixtures("nemo_relay")
+@pytest.mark.parametrize("skill", ["default", "alternate", None])
+async def test_skill_selection(
+    api_server, tmp_path, skill, default_skill, alternate_skill
+):
+    config = fabric_config(tmp_path, relay=True)
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+    config.add_skill_path(default_skill)
+
+    if skill == "alternate" or skill is None:
+        config.remove_skill_path(default_skill)
+
+    if skill == "alternate":
+        config.add_skill_path(alternate_skill)
+
+    if skill is not None:
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "tool_call": {
+                    "name": "Skill",
+                    "arguments": {"skill": skill},
+                }
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input=f"Use the {skill} skill." if skill else "Reply without using a skill.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    skill_records = [
+        record
+        for record in atof_records(result["output"])
+        if record["category"] == "tool" and record["name"] == "Skill"
+    ]
+    if skill is None:
+        assert not skill_records
+    else:
+        skill_end = next(
+            record for record in skill_records if record["scope_category"] == "end"
+        )
+        assert skill_end["data"] == {"commandName": skill, "success": True}
+
+
+@pytest.mark.usefixtures("nemo_relay")
+@pytest.mark.parametrize("model", ["m1", "m2"])
+async def test_model_selection(api_server, tmp_path, model):
+    config = fabric_config(tmp_path, relay=True)
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = model
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+
+    result = await Fabric().run(config, base_dir=tmp_path, input="Reply with hello.")
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    llm_starts = [
+        record
+        for record in atof_records(result["output"])
+        if record["category"] == "llm" and record["scope_category"] == "start"
+    ]
+    assert {record["data"]["content"]["model"] for record in llm_starts} == {model}
 
 
 @pytest.mark.skipif(

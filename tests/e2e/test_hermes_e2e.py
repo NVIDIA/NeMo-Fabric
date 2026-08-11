@@ -15,6 +15,7 @@ from packaging.version import Version
 import pytest
 import requests
 import yaml
+from _utils.utils import atof_records
 
 from examples.code_review_agent import (
     hermes_config,
@@ -199,6 +200,88 @@ async def test_mcp_stdio_transport(
             tool_end["metadata"].get("status") == "ok"
         )
         assert "America/Los_Angeles" in tool_end["data"]
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("skill", ["default", "alternate", None])
+async def test_skill_selection(
+    code_review_agent_dir: Path,
+    api_server: str,
+    skill: str | None,
+    default_skill: Path,
+    alternate_skill: Path,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    config.add_skill_path(default_skill)
+
+    if skill == "alternate" or skill is None:
+        config.remove_skill_path(default_skill)
+
+    if skill == "alternate":
+        config.add_skill_path(alternate_skill)
+
+    if skill is not None:
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "tool_call": {
+                    "name": "skill_view",
+                    "arguments": {"name": skill},
+                }
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+
+    result = await Fabric().run(
+        config,
+        base_dir=code_review_agent_dir,
+        input=f"Use the {skill} skill." if skill else "Reply without using a skill.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    tool_records = [
+        record
+        for record in atof_records(result["output"])
+        if record["category"] == "tool"
+    ]
+    serialized_records = json.dumps(tool_records)
+    if skill is None:
+        assert "default skill loaded" not in serialized_records
+        assert "alternate skill loaded" not in serialized_records
+    else:
+        assert f"{skill} skill loaded" in serialized_records
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("model", ["m1", "m2"])
+async def test_model_selection(
+    code_review_agent_dir: Path,
+    api_server: str,
+    model: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = model
+    config.models["default"].base_url = f"{api_server}/v1"
+
+    result = await Fabric().run(
+        config,
+        base_dir=code_review_agent_dir,
+        input="Reply with hello.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    llm_starts = [
+        record
+        for record in atof_records(result["output"])
+        if record["category"] == "llm" and record["scope_category"] == "start"
+    ]
+    assert {record["data"]["content"]["model"] for record in llm_starts} == {model}
 
 
 class TestHermesE2E:

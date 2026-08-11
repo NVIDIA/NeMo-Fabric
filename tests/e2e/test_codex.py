@@ -9,6 +9,7 @@ RUN_FABRIC_CODEX_INTEGRATION=1 uv run pytest tests/e2e/test_codex.py
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
 import sys
@@ -17,7 +18,90 @@ import warnings
 
 import pytest
 import requests
-from _utils.utils import assert_semantic_relay_artifacts
+from _utils.utils import assert_semantic_relay_artifacts, atof_records
+
+
+def _mock_codex_config(api_server, tmp_path):
+    from examples.code_review_agent import codex_config, with_relay
+
+    config = with_relay(codex_config())
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.workspace = tmp_path
+    config.environment.artifacts = tmp_path / "artifacts"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+    config.runtime.artifacts = tmp_path / "artifacts"
+    return config
+
+
+@pytest.mark.usefixtures("nemo_relay")
+@pytest.mark.parametrize("skill", ["default", "alternate", None])
+async def test_skill_selection(
+    api_server, tmp_path, skill, default_skill, alternate_skill
+):
+    from nemo_fabric import Fabric
+
+    config = _mock_codex_config(api_server, tmp_path)
+    config.models["default"].model = "fabric-echo"
+    config.add_skill_path(default_skill)
+
+    if skill == "alternate" or skill is None:
+        config.remove_skill_path(default_skill)
+    if skill == "alternate":
+        config.add_skill_path(alternate_skill)
+
+    if skill is not None:
+        selected_skill = default_skill if skill == "default" else alternate_skill
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "tool_call": {
+                    "name": "exec_command",
+                    "arguments": {
+                        "cmd": f"cat {selected_skill / 'SKILL.md'}",
+                        "workdir": str(tmp_path),
+                    },
+                }
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input=f"Use the {skill} skill." if skill else "Reply without using a skill.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    records = atof_records(result["output"])
+    tool_records = [record for record in records if record["category"] == "tool"]
+    serialized_records = json.dumps(tool_records)
+    if skill is None:
+        assert "default skill loaded" not in serialized_records
+        assert "alternate skill loaded" not in serialized_records
+    else:
+        assert f"{skill} skill loaded" in serialized_records
+
+
+@pytest.mark.usefixtures("nemo_relay")
+@pytest.mark.parametrize("model", ["m1", "m2"])
+async def test_model_selection(api_server, tmp_path, model):
+    from nemo_fabric import Fabric
+
+    config = _mock_codex_config(api_server, tmp_path)
+    config.models["default"].model = model
+
+    result = await Fabric().run(config, base_dir=tmp_path, input="Reply with hello.")
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    llm_starts = [
+        record
+        for record in atof_records(result["output"])
+        if record["category"] == "llm" and record["scope_category"] == "start"
+    ]
+    assert {record["data"]["content"]["model"] for record in llm_starts} == {model}
 
 
 @pytest.mark.parametrize("enabled", [True, False])

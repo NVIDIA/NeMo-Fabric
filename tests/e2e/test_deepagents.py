@@ -10,6 +10,7 @@ RUN_FABRIC_DEEPAGENTS_INTEGRATION=1 NVIDIA_API_KEY=... \
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
 import uuid
@@ -17,6 +18,7 @@ import warnings
 
 import pytest
 import requests
+from _utils.utils import atof_records
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
@@ -172,6 +174,103 @@ async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
         assert tool_calls
         assert tool_results
         assert "America/Los_Angeles" in str(tool_results[0]["content"])
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("skill", ["default", "alternate", None])
+async def test_skill_selection(
+    api_server, tmp_path, skill, default_skill, alternate_skill
+):
+    pytest.importorskip("deepagents")
+    from examples.code_review_agent import deepagents_config, with_relay
+    from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
+
+    config = with_relay(deepagents_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=default_skill.parents[2],
+        artifacts=tmp_path / "artifacts",
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+    )
+    config.add_skill_path(default_skill)
+
+    if skill == "alternate" or skill is None:
+        config.remove_skill_path(default_skill)
+
+    if skill == "alternate":
+        config.add_skill_path(alternate_skill)
+
+    if skill is not None:
+        selected_skill = default_skill if skill == "default" else alternate_skill
+        skill_file = selected_skill.relative_to(default_skill.parents[2]) / "SKILL.md"
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "tool_call": {
+                    "name": "read_file",
+                    "arguments": {"file_path": f"/{skill_file}"},
+                }
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input=f"Use the {skill} skill." if skill else "Reply without using a skill.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    tool_records = [
+        record
+        for record in atof_records(result["output"])
+        if record["category"] == "tool"
+    ]
+    serialized_records = json.dumps(tool_records)
+    if skill is None:
+        assert "default skill loaded" not in serialized_records
+        assert "alternate skill loaded" not in serialized_records
+    else:
+        assert f"{skill} skill loaded" in serialized_records
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("model", ["m1", "m2"])
+async def test_model_selection(api_server, tmp_path, model):
+    pytest.importorskip("deepagents")
+    from examples.code_review_agent import deepagents_config, with_relay
+    from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
+
+    config = with_relay(deepagents_config())
+    config.models["default"].model = model
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment = EnvironmentConfig(
+        provider="local",
+        workspace=tmp_path,
+        artifacts=tmp_path / "artifacts",
+    )
+    config.runtime = RuntimeConfig(
+        input_schema="chat",
+        output_schema="message",
+        artifacts=tmp_path / "artifacts",
+    )
+
+    result = await Fabric().run(config, base_dir=tmp_path, input="Reply with hello.")
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    llm_starts = [
+        record
+        for record in atof_records(result["output"])
+        if record["category"] == "llm" and record["scope_category"] == "start"
+    ]
+    assert {record["data"]["content"]["model"] for record in llm_starts} == {model}
 
 
 @pytest.fixture(name="_require_integration")

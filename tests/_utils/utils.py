@@ -6,6 +6,18 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+
+def atof_records(output: Mapping[str, Any]) -> list[dict[str, Any]]:
+    atof_path = next(
+        Path(artifact["path"])
+        for artifact in output["relay_artifacts"]
+        if artifact["kind"] == "atof"
+    )
+    return [
+        json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
 def _relay_event_total_tokens(event: dict) -> int:
     profile = event.get("category_profile") or {}
     annotated = profile.get("annotated_response") or {}
@@ -19,13 +31,8 @@ def assert_semantic_relay_artifacts(
 ) -> None:
     """Assert Relay artifacts contain model, usage, and agent-response semantics."""
 
-    artifacts = {
-        item["kind"]: Path(item["path"]) for item in output["relay_artifacts"]
-    }
-    events = [
-        json.loads(line)
-        for line in artifacts["atof"].read_text(encoding="utf-8").splitlines()
-    ]
+    artifacts = {item["kind"]: Path(item["path"]) for item in output["relay_artifacts"]}
+    events = atof_records(output)
     llm_starts = [
         event
         for event in events
@@ -33,8 +40,7 @@ def assert_semantic_relay_artifacts(
     ]
     assert llm_starts, events
     assert all(
-        isinstance(event.get("data", {}).get("content"), dict)
-        for event in llm_starts
+        isinstance(event.get("data", {}).get("content"), dict) for event in llm_starts
     )
     assert all(event["data"]["content"].get("model") for event in llm_starts)
 
@@ -57,6 +63,8 @@ def assert_semantic_relay_artifacts(
     assert any(
         expected_response.lower() in message.lower() for message in agent_messages
     ), agent_messages
+
+
 def assert_relay_disabled_native_observability(result: dict):
     """Assert telemetry-off runs still surface native harness evidence."""
 
