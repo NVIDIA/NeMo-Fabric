@@ -278,12 +278,13 @@ def test_build_options_maps_mcp_headers_and_oauth(claude_payload):
         "mcpServers"
     ]
 
+    # OAuth is handled in-process at start(); no oauth block is staged for Claude.
     assert mcp_servers["docs"] == {
         "type": "http",
         "url": "https://mcp.example.test",
         "headers": {"X-Tenant": "fabric"},
-        "oauth": {"clientId": "fabric-client", "callbackPort": 8765},
     }
+    assert "oauth" not in mcp_servers["docs"]
 
 
 def test_claude_maps_mcp_oauth_scopes(claude_payload):
@@ -295,7 +296,8 @@ def test_claude_maps_mcp_oauth_scopes(claude_payload):
         "mcpServers"
     ]
 
-    assert mcp_servers["docs"]["oauth"] == {"scopes": "read"}
+    assert "oauth" not in mcp_servers["docs"]
+    assert mcp_servers["docs"] == {"type": "http", "url": "https://mcp.example.test"}
 
 
 def test_claude_maps_mcp_oauth_client_secret_configuration(claude_payload):
@@ -311,7 +313,8 @@ def test_claude_maps_mcp_oauth_client_secret_configuration(claude_payload):
         "mcpServers"
     ]
 
-    assert mcp_servers["docs"]["oauth"] == {"clientId": "fabric-client"}
+    assert "oauth" not in mcp_servers["docs"]
+    assert mcp_servers["docs"] == {"type": "http", "url": "https://mcp.example.test"}
 
 
 def test_claude_rejects_mcp_service_account_authentication(claude_payload):
@@ -327,114 +330,16 @@ def test_claude_rejects_mcp_service_account_authentication(claude_payload):
         adapter.build_options(claude_payload)
 
 
-async def test_claude_rejects_authenticated_stdio_server_without_exposing_env(
-    claude_payload, monkeypatch
-):
+def test_claude_rejects_authenticated_stdio_server_without_exposing_env(claude_payload):
     server = claude_payload["capability_plan"]["native"]["mcp_servers"]["repo"]
     server["authentication"] = {"type": "oauth2"}
     credential = server["env"]["REPO_MCP_MODE"]
-    login = AsyncMock()
-    run_command = AsyncMock()
-    monkeypatch.setattr(adapter, "_login_mcp_server", login)
-    monkeypatch.setattr(adapter, "_run_claude_mcp_command", run_command)
-    client = MagicMock(spec=adapter.ClaudeSDKClient)
-    client.get_mcp_status = AsyncMock()
-    runtime = adapter.ClaudeRuntime()
-    runtime._options = ClaudeAgentOptions(cli_path="claude")
 
-    with pytest.raises(adapter.AdapterConfigError, match="stdio transport"):
-        await runtime._authenticate_mcp_servers(
-            claude_payload,
-            client,
-            invocation_timeout=30,
-        )
+    with pytest.raises(adapter.AdapterConfigError, match="stdio") as caught:
+        adapter.build_options(claude_payload)
 
-    login.assert_not_awaited()
-    run_command.assert_not_awaited()
-    assert credential not in repr(login.await_args_list)
-    assert credential not in repr(run_command.await_args_list)
-
-
-async def test_claude_stages_dynamic_mcp_server_before_login(
-    claude_payload, monkeypatch
-):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["authentication"] = {"type": "oauth2"}
-    options = adapter.build_options(claude_payload)
-    run_command = AsyncMock(
-        side_effect=[
-            (1, 'No MCP server named "docs".'),
-            (0, "added"),
-            (0, "authenticated"),
-        ]
-    )
-    monkeypatch.setattr(adapter, "_run_claude_mcp_command", run_command)
-    mapped_server = adapter._authenticated_mcp_servers(claude_payload)["docs"]
-
-    await adapter._login_mcp_server(
-        claude_payload,
-        options,
-        "docs",
-        mapped_server,
-        timeout=30,
-    )
-
-    assert run_command.await_args_list[0].args[1:] == ("login", "docs")
-    assert run_command.await_args_list[0].kwargs["interactive"] is True
-    add_arguments = run_command.await_args_list[1].args[1:]
-    assert add_arguments[:4] == ("add-json", "--scope", "local", "docs")
-    assert json.loads(add_arguments[4]) == mapped_server
-    assert "interactive" not in run_command.await_args_list[1].kwargs
-    assert run_command.await_args_list[2].args[1:] == ("login", "docs")
-    assert run_command.await_args_list[2].kwargs["interactive"] is True
-
-
-@pytest.mark.skipif(
-    not hasattr(os, "openpty"), reason="os.openpty is unavailable on this platform"
-)
-async def test_claude_interactive_mcp_command_has_terminal_stdin(tmp_path):
-    cli = tmp_path / "claude"
-    cli.write_text(
-        "#!/usr/bin/env python3\n"
-        "import sys\n"
-        "print(sys.stdin.isatty())\n"
-        "raise SystemExit(0 if sys.stdin.isatty() else 1)\n",
-        encoding="utf-8",
-    )
-    cli.chmod(0o755)
-    options = ClaudeAgentOptions(cli_path=cli)
-
-    code, output = await adapter._run_claude_mcp_command(
-        options,
-        "login",
-        "docs",
-        timeout=5,
-        interactive=True,
-    )
-
-    assert code == 0
-    assert output.strip() == "True"
-
-
-async def test_claude_interactive_mcp_command_requires_local_pseudo_terminal(
-    monkeypatch,
-):
-    monkeypatch.delattr(os, "openpty", raising=False)
-    options = ClaudeAgentOptions(cli_path="claude")
-
-    with pytest.raises(
-        adapter.ClaudeAdapterError,
-        match="requires a local pseudo-terminal",
-    ) as caught:
-        await adapter._run_claude_mcp_command(
-            options,
-            "login",
-            "docs",
-            timeout=5,
-            interactive=True,
-        )
-
-    assert caught.value.code == "claude_mcp_authentication_failed"
+    assert caught.value.code == "claude_invalid_configuration"
+    assert credential not in str(caught.value)
 
 
 def test_claude_forwards_browser_environment_for_mcp_login(claude_payload):
@@ -453,7 +358,22 @@ def test_claude_forwards_browser_environment_for_mcp_login(claude_payload):
     )
 
 
-async def test_claude_authenticates_and_reconnects_before_prompt(
+def test_claude_stages_oauth_token_literally_in_headers(claude_payload):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["authentication"] = {"type": "oauth2"}
+    server["custom_headers"] = {"X-Tenant": "fabric"}
+
+    options = adapter.build_options(claude_payload, oauth_tokens={"docs": "tok-abc123"})
+    mcp_config = json.loads(options.mcp_servers.read_text(encoding="utf-8"))
+
+    assert mcp_config["mcpServers"]["docs"]["headers"] == {
+        "Authorization": "Bearer tok-abc123",
+        "X-Tenant": "fabric",
+    }
+    assert not any("tok-abc123" in str(v) for v in options.env.values())
+
+
+async def test_claude_prefetches_oauth_tokens_before_connect(
     claude_payload, monkeypatch
 ):
     server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
@@ -461,32 +381,47 @@ async def test_claude_authenticates_and_reconnects_before_prompt(
         "type": "oauth2",
         "authorization_timeout_seconds": 12,
     }
-    options = adapter.build_options(claude_payload)
+    self_auth = AsyncMock(return_value="tok-prefetched")
+    monkeypatch.setattr(adapter, "_self_authenticate_http_mcp_server", self_auth)
+
+    tokens = await adapter._prefetch_mcp_oauth_tokens(claude_payload)
+
+    assert tokens == {"docs": "tok-prefetched"}
+    call = self_auth.await_args
+    assert call.args[:3] == ("docs", "https://mcp.example.test", "http")
+    assert call.kwargs["timeout"] == 12
+
+
+async def test_claude_checks_mcp_connectivity_on_first_invoke(claude_payload):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["authentication"] = {"type": "oauth2"}
     client = MagicMock(spec=adapter.ClaudeSDKClient)
     client.get_mcp_status = AsyncMock(
-        side_effect=[
-            {"mcpServers": [{"name": "docs", "status": "needs-auth"}]},
-            {"mcpServers": [{"name": "docs", "status": "connected"}]},
-        ]
+        return_value={"mcpServers": [{"name": "docs", "status": "connected"}]}
     )
-    client.reconnect_mcp_server = AsyncMock()
-    login = AsyncMock()
-    monkeypatch.setattr(adapter, "_login_mcp_server", login)
     runtime = adapter.ClaudeRuntime()
-    runtime._options = options
-    mapped_server = adapter._authenticated_mcp_servers(claude_payload)["docs"]
 
-    await runtime._authenticate_mcp_servers(claude_payload, client, 30)
+    await runtime._authenticate_mcp_servers(claude_payload, client)
 
-    login.assert_awaited_once_with(
-        claude_payload,
-        options,
-        "docs",
-        mapped_server,
-        timeout=12,
-    )
-    client.reconnect_mcp_server.assert_awaited_once_with("docs")
+    client.get_mcp_status.assert_awaited()
     assert runtime._mcp_authentication_checked is True
+
+
+async def test_claude_raises_when_mcp_server_unavailable_at_invoke(claude_payload):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["authentication"] = {"type": "oauth2"}
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+    client.get_mcp_status = AsyncMock(
+        return_value={"mcpServers": [{"name": "docs", "status": "failed"}]}
+    )
+    runtime = adapter.ClaudeRuntime()
+
+    with pytest.raises(adapter.ClaudeAdapterError) as caught:
+        await runtime._authenticate_mcp_servers(claude_payload, client)
+
+    assert caught.value.code == "claude_mcp_unavailable"
+    assert caught.value.metadata == {"server": "docs", "status": "failed"}
+    assert runtime._mcp_authentication_checked is False
 
 
 async def test_tool_policy_hooks_gate_built_in_and_mcp_tools(claude_payload):
