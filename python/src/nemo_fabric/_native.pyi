@@ -24,4 +24,10 @@ def invoke_runtime(
     runtime_json: str,
     request_json: str,
 ) -> str: ...
+def invoke_openai_stream(
+    plan_json: str,
+    runtime_json: str,
+    request_json: str,
+    transport_json: str,
+) -> str: ...
 def stop_runtime(plan_json: str, runtime_json: str) -> str: ...

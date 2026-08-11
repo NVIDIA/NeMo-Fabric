@@ -1,5 +1,5 @@
 ---
-title: "Streaming"
+title: "Relay Streaming"
 slug: "/reference/api/python-library-reference/streaming"
 description: "Consume raw NVIDIA NeMo Relay ATOF records and terminal invocation results."
 ---
@@ -19,7 +19,7 @@ NeMo Relay streaming support for the NVIDIA NeMo Fabric Python SDK.
 
 Async iterator of raw ATOF records for one runtime invocation.
 
-Consume the final normalized result separately with :meth:`result`. If iteration stops early, call :meth:`aclose` before starting another turn.
+Consume the final normalized result separately with ``result()``. If iteration stops early, call ``aclose()`` before starting another turn.
 
 
 

@@ -1,0 +1,368 @@
+{
+  "$defs": {
+    "ArtifactManifest": {
+      "additionalProperties": false,
+      "description": "Manifest of run artifacts.",
+      "properties": {
+        "artifacts": {
+          "description": "Artifact entries.",
+          "items": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "type": "array"
+        },
+        "root": {
+          "description": "Artifact root directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ArtifactRef": {
+      "additionalProperties": false,
+      "description": "Reference to one artifact.",
+      "properties": {
+        "kind": {
+          "description": "Artifact kind.",
+          "type": "string"
+        },
+        "media_type": {
+          "description": "Optional media type.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Artifact-specific metadata preserved across the Rust and Python SDK boundary.",
+          "type": "object"
+        },
+        "name": {
+          "description": "Logical artifact name.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Artifact path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "path"
+      ],
+      "type": "object"
+    },
+    "ControlLocation": {
+      "description": "Where NeMo Fabric control code runs relative to the environment.",
+      "oneOf": [
+        {
+          "const": "external_control",
+          "description": "NeMo Fabric runs on the host/control plane and starts or connects to the harness in the environment.",
+          "type": "string"
+        },
+        {
+          "const": "in_env_control",
+          "description": "NeMo Fabric runs inside the prepared environment with the harness.",
+          "type": "string"
+        }
+      ]
+    },
+    "EnvironmentHandle": {
+      "additionalProperties": false,
+      "description": "Resolved execution environment context.",
+      "properties": {
+        "artifacts": {
+          "description": "Artifact root visible to the harness runtime.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection": {
+          "additionalProperties": true,
+          "description": "Provider connection metadata.",
+          "type": "object"
+        },
+        "control_location": {
+          "$ref": "#/$defs/ControlLocation",
+          "description": "Where NeMo Fabric control code runs."
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables visible to the harness and its tools.",
+          "type": "object"
+        },
+        "environment_id": {
+          "description": "Environment handle id.",
+          "type": "string"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Provider-specific metadata.",
+          "type": "object"
+        },
+        "ownership": {
+          "$ref": "#/$defs/EnvironmentOwnership",
+          "description": "Whether NeMo Fabric owns the environment resource."
+        },
+        "provider": {
+          "description": "Environment provider.",
+          "type": "string"
+        },
+        "workspace": {
+          "description": "Workspace visible to the harness runtime.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "environment_id",
+        "provider",
+        "control_location",
+        "ownership"
+      ],
+      "type": "object"
+    },
+    "EnvironmentOwnership": {
+      "description": "Whether NeMo Fabric owns the underlying environment resource.",
+      "oneOf": [
+        {
+          "const": "caller_owned",
+          "description": "The caller or a surrounding system owns the environment resource.",
+          "type": "string"
+        },
+        {
+          "const": "fabric_owned",
+          "description": "NeMo Fabric created or leased the environment resource and may release it.",
+          "type": "string"
+        }
+      ]
+    },
+    "OpenAiStreamHost": {
+      "description": "Supported native-streaming listener host.",
+      "oneOf": [
+        {
+          "const": "127.0.0.1",
+          "description": "SDK-owned IPv4 loopback listener.",
+          "type": "string"
+        }
+      ]
+    },
+    "OpenAiStreamProfile": {
+      "description": "Supported OpenAI-compatible chunk profile.",
+      "oneOf": [
+        {
+          "const": "openai.chat_completions.chunk/v1",
+          "description": "OpenAI Chat Completions chunk objects.",
+          "type": "string"
+        }
+      ]
+    },
+    "OpenAiStreamProtocolVersion": {
+      "description": "Supported southbound native-streaming protocol version.",
+      "oneOf": [
+        {
+          "const": "fabric.openai_stream/v1alpha1",
+          "description": "Initial authenticated loopback HTTP and chunked-NDJSON protocol.",
+          "type": "string"
+        }
+      ]
+    },
+    "OpenAiStreamSink": {
+      "additionalProperties": false,
+      "description": "Adapter-facing stream sink with invocation identity generated by NVIDIA NeMo Fabric.",
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/OpenAiStreamHost",
+          "description": "Loopback host owned by the SDK listener."
+        },
+        "invocation_id": {
+          "description": "Invocation id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "port": {
+          "description": "Loopback TCP port owned by the SDK listener.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "profile": {
+          "$ref": "#/$defs/OpenAiStreamProfile",
+          "description": "OpenAI event profile emitted on this stream."
+        },
+        "protocol_version": {
+          "$ref": "#/$defs/OpenAiStreamProtocolVersion",
+          "description": "Southbound stream protocol version."
+        },
+        "request_id": {
+          "description": "Request id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "runtime_id": {
+          "description": "Runtime id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "token": {
+          "description": "Single-use bearer token. Adapters must not log or persist this value.",
+          "minLength": 1,
+          "pattern": "^[^\\r\\n]*\\S[^\\r\\n]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol_version",
+        "profile",
+        "host",
+        "port",
+        "token",
+        "runtime_id",
+        "invocation_id",
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "RunRequest": {
+      "description": "A request passed to a NeMo Fabric-managed harness runtime.",
+      "properties": {
+        "context": {
+          "additionalProperties": true,
+          "description": "Runtime context such as task, rollout, workflow, or caller metadata.",
+          "type": "object"
+        },
+        "input": {
+          "default": null,
+          "description": "Request payload for the harness."
+        },
+        "overrides": {
+          "description": "Per-invocation overrides allowed by the resolved config."
+        },
+        "request_id": {
+          "description": "Request id.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "type": "object"
+    },
+    "RuntimeContext": {
+      "additionalProperties": false,
+      "description": "Context generated for one invocation of a started runtime.",
+      "properties": {
+        "artifacts": {
+          "$ref": "#/$defs/ArtifactManifest",
+          "description": "Artifact manifest visible to the adapter at invocation start."
+        },
+        "environment": {
+          "$ref": "#/$defs/EnvironmentHandle",
+          "description": "Prepared execution environment."
+        },
+        "invocation_id": {
+          "description": "Invocation handle id.",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Request id.",
+          "type": "string"
+        },
+        "runtime_id": {
+          "description": "Runtime handle id.",
+          "type": "string"
+        },
+        "telemetry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeTelemetryContext"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Runtime telemetry context generated for this invocation."
+        }
+      },
+      "required": [
+        "runtime_id",
+        "invocation_id",
+        "request_id",
+        "environment",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "RuntimeTelemetryContext": {
+      "additionalProperties": false,
+      "description": "Runtime telemetry config passed to adapters.",
+      "properties": {
+        "config_path": {
+          "description": "Generated Relay config path for this invocation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Environment variables NeMo Fabric applies while invoking the adapter.",
+          "type": "object"
+        },
+        "metadata": {
+          "additionalProperties": true,
+          "description": "Additional telemetry metadata surfaced to consumers and adapters.",
+          "type": "object"
+        },
+        "relay_enabled": {
+          "description": "Whether Relay is enabled for this invocation.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "relay_enabled"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One adapter-native OpenAI streaming invocation.",
+  "properties": {
+    "request": {
+      "$ref": "#/$defs/RunRequest",
+      "description": "Typed caller request for this invocation."
+    },
+    "runtime_context": {
+      "$ref": "#/$defs/RuntimeContext",
+      "description": "Invocation context generated by NeMo Fabric."
+    },
+    "stream": {
+      "$ref": "#/$defs/OpenAiStreamSink",
+      "description": "Authenticated progressive-output sink for this invocation."
+    }
+  },
+  "required": [
+    "runtime_context",
+    "request",
+    "stream"
+  ],
+  "title": "OpenAiStreamInvocation",
+  "type": "object"
+}

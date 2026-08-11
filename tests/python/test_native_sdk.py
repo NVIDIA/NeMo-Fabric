@@ -18,6 +18,7 @@ from examples.code_review_agent import base_config
 from nemo_fabric import Fabric
 from nemo_fabric import FabricConfig
 from nemo_fabric import FabricConfigError
+from nemo_fabric import RunRequest
 
 
 async def test_native_sdk(hermes_shim_agent_dir: Path):
@@ -175,6 +176,17 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     ) as runtime:
         first = await runtime.invoke(input="hello runtime one")
         second = await runtime.invoke(input="hello runtime two")
+        openai_stream = runtime.invoke_openai_stream(input="hello streaming")
+        openai_chunks = [chunk async for chunk in openai_stream]
+        openai_result = await openai_stream.result()
+        empty_stream = runtime.invoke_openai_stream(
+            request=RunRequest(
+                input="hello empty streaming",
+                context={"openai_stream_mode": "empty"},
+            )
+        )
+        empty_chunks = [chunk async for chunk in empty_stream]
+        empty_result = await empty_stream.result()
 
     assert result["status"] == "succeeded"
     assert result.harness == "hermes"
@@ -188,3 +200,15 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert first.harness == "hermes"
     assert first["runtime_id"] == second["runtime_id"]
     assert runtime.handle["runtime_id"] == first["runtime_id"]
+    assert runtime.supports_openai_streaming is True
+    assert [
+        choice["delta"]["content"]
+        for chunk in openai_chunks
+        for choice in chunk["choices"]
+    ] == ["hel", "lo"]
+    assert openai_result.status == "succeeded"
+    assert openai_result.output["received"] == "hello streaming"
+    assert openai_result.output["openai_stream_invocation_count"] == 1
+    assert empty_chunks == []
+    assert empty_result.status == "succeeded"
+    assert empty_result.output["openai_stream_invocation_count"] == 2

@@ -104,8 +104,8 @@ class _AtofRecordQueue:
 class InvokeStream:
     """Async iterator of raw ATOF records for one runtime invocation.
 
-    Consume the final normalized result separately with :meth:`result`. If
-    iteration stops early, call :meth:`aclose` before starting another turn.
+    Consume the final normalized result separately with ``result()``. If
+    iteration stops early, call ``aclose()`` before starting another turn.
     """
 
     def __init__(

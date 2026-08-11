@@ -10,8 +10,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use nemo_fabric_core::{
-    FabricConfig, ResolveContext, RunPlan, RunRequest, RuntimeHandle, doctor_plan,
-    resolve_diagnostic_plan_from_config_with_adapter_directories,
+    FabricConfig, OpenAiStreamTransport, ResolveContext, RunPlan, RunRequest, RuntimeHandle,
+    doctor_plan, resolve_diagnostic_plan_from_config_with_adapter_directories,
     resolve_run_plan_from_config_with_adapter_directories, run_plan,
 };
 use pyo3::exceptions::PyRuntimeError;
@@ -144,6 +144,25 @@ fn invoke_runtime(
     to_json(&result)
 }
 
+/// Invoke a previously started runtime with native OpenAI streaming.
+#[pyfunction]
+fn invoke_openai_stream(
+    py: Python<'_>,
+    plan_json: String,
+    runtime_json: String,
+    request_json: String,
+    transport_json: String,
+) -> PyResult<String> {
+    let plan = parse_run_plan(plan_json)?;
+    let runtime = parse_runtime_handle(runtime_json)?;
+    let request = parse_run_request(request_json)?;
+    let transport = parse_openai_stream_transport(transport_json)?;
+    let result = py
+        .detach(|| nemo_fabric_core::invoke_openai_stream(&plan, &runtime, request, transport))
+        .map_err(to_py_error)?;
+    to_json(&result)
+}
+
 /// Stop a previously started runtime and return FabricEvent list JSON.
 #[pyfunction]
 fn stop_runtime(py: Python<'_>, plan_json: String, runtime_json: String) -> PyResult<String> {
@@ -163,6 +182,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run_config, m)?)?;
     m.add_function(wrap_pyfunction!(start_runtime, m)?)?;
     m.add_function(wrap_pyfunction!(invoke_runtime, m)?)?;
+    m.add_function(wrap_pyfunction!(invoke_openai_stream, m)?)?;
     m.add_function(wrap_pyfunction!(stop_runtime, m)?)?;
     Ok(())
 }
@@ -303,5 +323,9 @@ fn parse_run_plan(contents: String) -> PyResult<RunPlan> {
 }
 
 fn parse_runtime_handle(contents: String) -> PyResult<RuntimeHandle> {
+    serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
+fn parse_openai_stream_transport(contents: String) -> PyResult<OpenAiStreamTransport> {
     serde_json::from_str(&contents).map_err(|error| PyRuntimeError::new_err(error.to_string()))
 }

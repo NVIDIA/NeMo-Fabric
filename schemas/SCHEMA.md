@@ -27,13 +27,15 @@ schemas/
 │   ├── agent-run-result.schema.json
 │   ├── runtime-context.schema.json
 │   └── legacy/
-│       └── adapter-invocation.schema.json
+│       ├── adapter-invocation.schema.json
+│       ├── openai-stream-invocation.schema.json
+│       └── openai-stream-record.schema.json
 └── *.schema.json              # Northbound and Fabric-runtime contracts
 ```
 
 An adapter author can treat `adapter-contract/` as the complete schema entry
-point. The `legacy/` subdirectory contains only the transitional local-host
-payload used while first-party adapters migrate to the typed execution types.
+point. The `legacy/` subdirectory contains transitional local-host payloads
+used while first-party adapters migrate to typed execution types.
 
 `FabricConfig` is the northbound source of consumer intent. Planning produces
 the `CapabilityPlan` as routed evidence and projects the fields accepted by the
@@ -70,6 +72,14 @@ descriptor schema.
   an initialized persistent local adapter host. It contains `runtime_context`
   and the northbound `run-request`. It will be removed after adapters consume
   the typed southbound request directly.
+- `adapter-contract/legacy/openai-stream-invocation`: current native OpenAI
+  stream payload sent to an initialized persistent local adapter host. It adds
+  a Fabric-owned authenticated loopback stream sink to the per-turn runtime
+  context and request. The common host validates and removes the sink before
+  calling `invoke_openai_stream(payload, emit)`.
+- `adapter-contract/legacy/openai-stream-record`: correlated chunk and explicit
+  end records carried as chunked NDJSON. The chunk variant freezes the
+  `openai.chat_completions.chunk/v1` profile accepted by the SDK listener.
 
 ## Fabric Consumer and Runtime Contracts
 

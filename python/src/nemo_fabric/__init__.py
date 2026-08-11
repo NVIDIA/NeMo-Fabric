@@ -40,6 +40,7 @@ from nemo_fabric.models import ToolsConfig
 from nemo_fabric.models import ToolDefinitionConfig
 from nemo_fabric.models import WorkflowConfig
 from nemo_fabric.models import WorkflowEntrypointConfig
+from nemo_fabric.openai_streaming import OpenAIInvokeStream
 from nemo_fabric.runtime import Runtime
 from nemo_fabric.runtime import RuntimeStatus
 from nemo_fabric.streaming import InvokeStream
@@ -80,6 +81,7 @@ __all__ = [
     "McpServerConfig",
     "MetadataConfig",
     "ModelConfig",
+    "OpenAIInvokeStream",
     "RelayAtifConfig",
     "RelayAtofConfig",
     "RelayAtofFileSinkConfig",
