@@ -218,6 +218,8 @@ class AgentMcpServerConfig(AgentContractBlock):
     url: str
     args: list[str] = _empty_list()
     env: dict[str, str] = _empty_dict()
+    authentication: dict[str, JsonValue] | None = _optional()
+    custom_headers: dict[str, str] = _empty_dict()
     allowed_tools: list[str] | None = _optional()
     blocked_tools: list[str] = _empty_list()
 

@@ -256,12 +256,16 @@ def write_hermes_relay_plugin_config(
 
 
 def hermes_mcp_server_config(
-    server: dict[str, Any], *, name: str = "configured"
+    server: AgentMcpServerConfig, *, name: str = "configured"
 ) -> dict[str, Any]:
     transport = server.transport.strip().lower()
     target = os.path.expandvars(server.url).strip()
 
     if transport == "stdio":
+        if server.authentication:
+            raise ValueError("MCP authentication is not supported for stdio transport")
+        if server.custom_headers:
+            raise ValueError("MCP custom_headers are not supported for stdio transport")
         return common_utils.without_none(
             {
                 "enabled": True,
@@ -276,12 +280,12 @@ def hermes_mcp_server_config(
         "url": target,
         "transport": transport,
     }
-    if headers := server.get("custom_headers"):
+    if headers := server.custom_headers:
         try:
             result["headers"] = mcp_auth.normalize_custom_headers(name, headers)
         except mcp_auth.McpAuthConfigError as error:
             raise ValueError(str(error)) from error
-    if authentication := server.get("authentication"):
+    if authentication := server.authentication:
         raw_authentication = authentication
         try:
             if (

@@ -171,6 +171,30 @@ def test_agent_model_config_rejects_float_overflow():
         )
 
 
+def test_agent_mcp_server_config_preserves_http_authentication():
+    server = AgentMcpServerConfig.from_mapping(
+        {
+            "transport": "streamable-http",
+            "url": "https://mcp.example.test/mcp",
+            "authentication": {
+                "type": "oauth2",
+                "client_id": "fabric-client",
+            },
+            "custom_headers": {"X-Tenant": "fabric"},
+        }
+    )
+
+    assert server.to_mapping() == {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test/mcp",
+        "authentication": {
+            "type": "oauth2",
+            "client_id": "fabric-client",
+        },
+        "custom_headers": {"X-Tenant": "fabric"},
+    }
+
+
 def test_agent_config_model_tracks_rust_schema_root_fields():
     rust_schema = json.loads(
         (ROOT / "schemas/adapter-contract/agent-config.schema.json").read_text(

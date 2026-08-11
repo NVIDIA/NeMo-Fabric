@@ -167,6 +167,12 @@ pub struct AgentMcpServerConfig {
     /// Environment variables passed to an MCP stdio process.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Authentication used by an HTTP MCP server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<serde_json::Map<String, Value>>,
+    /// HTTP headers passed to an MCP server.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom_headers: BTreeMap<String, String>,
     /// MCP tool names to expose. `None` exposes every discovered tool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_tools: Option<Vec<String>>,
@@ -327,6 +333,14 @@ pub(crate) fn project_agent_config(
                         url: server.url.clone(),
                         args: server.args.clone(),
                         env: server.env.clone(),
+                        authentication: server.authentication.as_ref().map(|authentication| {
+                            serde_json::to_value(authentication)
+                                .expect("MCP authentication must serialize")
+                                .as_object()
+                                .expect("MCP authentication must serialize as an object")
+                                .clone()
+                        }),
+                        custom_headers: server.custom_headers.clone(),
                         allowed_tools: server.allowed_tools.clone(),
                         blocked_tools: server.blocked_tools.clone(),
                         extensions: server.extensions.clone(),

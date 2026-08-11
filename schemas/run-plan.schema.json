@@ -538,12 +538,27 @@
           },
           "type": "array"
         },
+        "authentication": {
+          "additionalProperties": true,
+          "description": "Authentication used by an HTTP MCP server.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "blocked_tools": {
           "description": "MCP tool names blocked after applying the optional allowlist.",
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "custom_headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "HTTP headers passed to an MCP server.",
+          "type": "object"
         },
         "env": {
           "additionalProperties": {
