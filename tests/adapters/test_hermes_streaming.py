@@ -8,6 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 
 if sys.version_info >= (3, 14):
     pytest.skip(
@@ -26,7 +28,10 @@ async def test_relay_invocation_passes_fabric_request_id_to_hermes(
     task_ids: list[object] = []
     runtime = adapter.HermesRuntime()
     runtime._started = True
-    runtime._start_payload = {}
+    runtime._agent_config = AgentConfig.from_mapping(
+        {"models": {"default": {"provider": "nvidia", "model": "test-model"}}}
+    )
+    runtime._model_config = runtime._agent_config.models["default"]
     runtime._runtime_id = "runtime-1"
     runtime._agent = SimpleNamespace(
         session_id="runtime-1",
@@ -65,8 +70,21 @@ async def test_relay_invocation_passes_fabric_request_id_to_hermes(
 
     await runtime.invoke(
         {
-            "runtime_context": {"runtime_id": "runtime-1"},
-            "request": {"input": "hello", "request_id": "request-1"},
+            "runtime_context": RuntimeContext.from_mapping(
+                {
+                    "runtime_id": "runtime-1",
+                    "invocation_id": "invocation-1",
+                    "request_id": "request-1",
+                    "environment": {
+                        "environment_id": "environment-1",
+                        "provider": "test",
+                        "control_location": "in_env_control",
+                        "ownership": "caller_owned",
+                    },
+                    "artifacts": {},
+                }
+            ).to_mapping(),
+            "request": {"input": "hello"},
         }
     )
 

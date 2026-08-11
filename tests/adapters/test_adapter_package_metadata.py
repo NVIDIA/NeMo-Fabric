@@ -86,7 +86,10 @@ ADAPTER_EXTRAS = {
         ),
         (
             "adapters/hermes",
-            [f"nemo-fabric-adapters-common == {PACKAGE_VERSION}"],
+            [
+                f"nemo-fabric-adapter-contract == {PACKAGE_VERSION}",
+                f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
+            ],
         ),
     ],
 )
