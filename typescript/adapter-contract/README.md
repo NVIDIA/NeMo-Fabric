@@ -11,8 +11,8 @@ Schemas maintained in the NeMo Fabric repository.
 
 ## Install
 
-After the first npm release is published, install the package from the public
-registry:
+After the first supported npm release is published, install the package from
+the public registry:
 
 ```bash
 npm install nemo-fabric-adapter-contract
@@ -23,7 +23,7 @@ Until then, build and install an exact tarball from a NeMo Fabric checkout:
 ```bash
 npm ci --prefix typescript/adapter-contract --ignore-scripts
 npm pack --prefix typescript/adapter-contract
-npm install ./nvidia-nemo-fabric-adapter-contract-0.2.0.tgz
+npm install ./nemo-fabric-adapter-contract-0.2.0.tgz
 ```
 
 Use Node.js 20.18.3 or later and TypeScript 5.3 or later. Use a compatible

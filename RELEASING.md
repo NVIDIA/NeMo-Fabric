@@ -191,38 +191,33 @@ you are not committing them.
 ## Bootstrap npm Trusted Publishing
 
 The npm package must exist before npm can bind it to a GitHub trusted publisher.
-This is a one-time bootstrap for
-`nemo-fabric-adapter-contract`; normal releases use OpenID Connect (OIDC)
-and do not use an npm write token in GitHub Actions.
+`nemo-fabric-adapter-contract@0.0.0` was published once as an inert registry
+bootstrap. It contains only the package metadata, README, and Apache-2.0
+license; the first supported contract release must be published by the trusted
+GitHub Actions workflow. Do not publish or tag `0.0.0` again. npm versions are
+immutable.
 
-Before the first TypeScript package release:
+The bootstrap was published with `--tag next`. The registry also initialized
+`latest` to `0.0.0` because it was the package's first version and rejected
+removing that only `latest` tag. Leave both tags on the inert bootstrap: RC and
+beta releases move `next`, and the first stable release replaces `latest`.
 
-1. Create and protect the GitHub `npmjs` environment. Require the release
-   approvers who should authorize registry publication, and restrict deployment
-   tags to `v*`.
-2. Commit the intended prerelease version on the release branch. From that
-   exact clean commit, run the version helper as an idempotency check and run
-   the same package checks used by CI. Use the real first release candidate
-   rather than a disposable version because npm versions are immutable. Use
-   Node.js 24 and npm 11.5.1 or later, matching the trusted-publishing workflow,
-   so the later integrity reconciliation uses the same packaging toolchain:
+Before the first supported TypeScript package release:
+
+1. Add at least one more NVIDIA maintainer to the package so registry
+   administration does not depend on the bootstrap publisher's account:
 
    ```bash
-   just set-version 0.2.0-rc.1
-   git diff --exit-code
-   just test-typescript
-   cd typescript/adapter-contract
-   npm login
-   npm publish --access public --tag next
    npm owner add <second-nvidia-maintainer> nemo-fabric-adapter-contract
-   npm logout
    ```
 
-   The initial publisher needs account-level two-factor authentication. Keep at
-   least two NVIDIA maintainers on the package so registry administration does
-   not depend on one personal account. Do not push the matching release tag yet.
-3. In the npm package settings, configure the single trusted publisher with
-   these exact, case-sensitive values:
+   Maintainers must use account-level two-factor authentication.
+2. Create and protect the GitHub `npmjs` environment. Require the release
+   approvers who should authorize registry publication, and restrict deployment
+   tags to `v*`.
+3. After `publish_typescript.yml` is present on the default branch, configure
+   the package's single trusted publisher in npm with these exact,
+   case-sensitive values:
 
    - Organization or user: `NVIDIA`
    - Repository: `NeMo-Fabric`
@@ -230,16 +225,16 @@ Before the first TypeScript package release:
    - Environment: `npmjs`
    - Allowed action: `npm publish`
 
-4. Push the signed tag for that already-published release candidate and approve
-   the `npmjs` environment when prompted. The workflow exits without
-   republishing only when its repack has byte-identical integrity and the
-   `next` dist-tag is exact. A mismatch fails closed because npm versions are
-   immutable; do not overwrite or weaken the check. Use the next genuine
-   release version for the first OIDC publication instead.
-5. After a later release publishes through OIDC, confirm its provenance on npm.
+4. Cut the first genuine release tag and approve the `npmjs` environment when
+   prompted. The workflow tests, packs, and publishes that release through OIDC;
+   do not manually pre-publish the release version. On a retry, the workflow
+   exits without republishing only when its repack has byte-identical integrity
+   and the expected dist-tag is exact. A mismatch fails closed because npm
+   versions are immutable; do not overwrite or weaken the check.
+5. Confirm the release's provenance on npm.
    In the npm package settings, require two-factor authentication and disallow
-   token publication. Then remove or revoke any local or automation credentials
-   used for bootstrap.
+   token publication. Then remove or revoke any local credentials used for the
+   bootstrap.
 
 The workflow publishes stable versions with the `latest` dist-tag and beta or
 RC versions with `next`. Alpha versions are not published. A retry skips only
