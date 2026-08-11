@@ -511,6 +511,17 @@ def _stage_mcp_config(
         return None
     fabric_runtime_id = runtime_id(payload)
     environment: dict[str, str] = {}
+
+    def project_environment_value(server_name: str, value_name: str, value: str) -> str:
+        projection_key = (
+            sha256(f"{fabric_runtime_id}\0{server_name}\0{value_name}".encode())
+            .hexdigest()
+            .upper()
+        )
+        projected_name = f"NEMO_FABRIC_CLAUDE_MCP_{projection_key}"
+        environment[projected_name] = value
+        return f"${{{projected_name}}}"
+
     for server_name, server in servers.items():
         raw_environment = server.get("env")
         if raw_environment is not None:
@@ -530,23 +541,18 @@ def _stage_mcp_config(
                         "claude_invalid_configuration",
                         f"MCP server {server_name} env values must be strings",
                     )
-                projection_key = (
-                    sha256(
-                        f"{fabric_runtime_id}\0{server_name}\0{variable_name}".encode()
-                    )
-                    .hexdigest()
-                    .upper()
+                projected_environment[variable_name] = project_environment_value(
+                    server_name, variable_name, value
                 )
-                projected_name = f"NEMO_FABRIC_CLAUDE_MCP_{projection_key}"
-                projected_environment[variable_name] = f"${{{projected_name}}}"
-                environment[projected_name] = value
             server["env"] = projected_environment
 
         if oauth_tokens and (token := oauth_tokens.get(server_name)):
-            # Claude Code expands ${VAR} references only in stdio env dicts, not
-            # in HTTP header values, so the token must be written literally here.
-            # The file is 0o600 and is removed by _cleanup_mcp_config on stop().
-            server.setdefault("headers", {})["Authorization"] = f"Bearer {token}"
+            token_reference = project_environment_value(
+                server_name, "oauth_access_token", token
+            )
+            server.setdefault("headers", {})["Authorization"] = (
+                f"Bearer {token_reference}"
+            )
 
     config_root = (
         _artifact_root(payload)
@@ -580,9 +586,7 @@ def _cleanup_mcp_config(config_path: Path | None) -> None:
     if config_path is None:
         return
     try:
-        config_path.unlink(missing_ok=True)
-        (config_path.parent / (config_path.name + ".tmp")).unlink(missing_ok=True)
-        config_path.parent.rmdir()
+        shutil.rmtree(config_path.parent)
     except OSError:
         LOGGER.exception("Claude MCP runtime configuration could not be removed")
 

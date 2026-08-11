@@ -358,19 +358,22 @@ def test_claude_forwards_browser_environment_for_mcp_login(claude_payload):
     )
 
 
-def test_claude_stages_oauth_token_literally_in_headers(claude_payload):
+def test_claude_projects_oauth_token_into_child_environment(claude_payload):
     server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
     server["authentication"] = {"type": "oauth2"}
     server["custom_headers"] = {"X-Tenant": "fabric"}
 
     options = adapter.build_options(claude_payload, oauth_tokens={"docs": "tok-abc123"})
-    mcp_config = json.loads(options.mcp_servers.read_text(encoding="utf-8"))
+    serialized_mcp = options.mcp_servers.read_text(encoding="utf-8")
+    mcp_config = json.loads(serialized_mcp)
 
-    assert mcp_config["mcpServers"]["docs"]["headers"] == {
-        "Authorization": "Bearer tok-abc123",
-        "X-Tenant": "fabric",
-    }
-    assert not any("tok-abc123" in str(v) for v in options.env.values())
+    assert "tok-abc123" not in serialized_mcp
+    authorization = mcp_config["mcpServers"]["docs"]["headers"]["Authorization"]
+    assert authorization.startswith("Bearer ${NEMO_FABRIC_CLAUDE_MCP_")
+    assert authorization.endswith("}")
+    projected_name = authorization.removeprefix("Bearer ${").removesuffix("}")
+    assert options.env[projected_name] == "tok-abc123"
+    assert mcp_config["mcpServers"]["docs"]["headers"]["X-Tenant"] == "fabric"
 
 
 async def test_claude_prefetches_oauth_tokens_before_connect(
@@ -1060,6 +1063,18 @@ async def test_claude_runtime_removes_mcp_config_after_failed_sdk_connect(
     assert not staged_paths[0].exists()
 
 
+def test_cleanup_mcp_config_removes_runtime_directory(tmp_path):
+    config_root = tmp_path / "mcp"
+    config_root.mkdir()
+    config_path = config_root / "mcp.json"
+    config_path.write_text("{}", encoding="utf-8")
+    (config_root / "abandoned").write_text("partial", encoding="utf-8")
+
+    adapter._cleanup_mcp_config(config_path)
+
+    assert not config_root.exists()
+
+
 async def test_claude_runtime_owns_one_relay_gateway_until_stop(
     relay_payload, monkeypatch, tmp_path
 ):
@@ -1386,7 +1401,14 @@ async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
     relay.plugin_path.mkdir()
     process = MagicMock()
     mock_stop = MagicMock()
-    mock_rmtree = MagicMock(side_effect=OSError("raw plugin cleanup failure"))
+    real_rmtree = adapter.shutil.rmtree
+
+    def remove_tree(path):
+        if path == relay.plugin_path:
+            raise OSError("raw plugin cleanup failure")
+        real_rmtree(path)
+
+    mock_rmtree = MagicMock(side_effect=remove_tree)
     monkeypatch.setattr(adapter, "prepare_claude_relay", MagicMock(return_value=relay))
     monkeypatch.setattr(
         adapter.relay_gateway,
@@ -1415,6 +1437,7 @@ async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
         key: value for key, value in relay_payload.items() if key != "request"
     }
     await runtime.start(start_payload)
+    mcp_config_root = runtime._mcp_config_path.parent
     output = await runtime.invoke(lifecycle_invocation(relay_payload))
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         await runtime.stop()
@@ -1424,8 +1447,11 @@ async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
     assert caught.value.code == "claude_relay_cleanup_failed"
     assert "raw plugin cleanup failure" not in str(caught.value)
     mock_stop.assert_called_once_with(process)
-    mock_rmtree.assert_called_once_with(relay.plugin_path)
+    assert mock_rmtree.call_count == 2
+    mock_rmtree.assert_any_call(relay.plugin_path)
+    mock_rmtree.assert_any_call(mcp_config_root)
     assert relay.plugin_path.exists()
+    assert not mcp_config_root.exists()
 
 
 @pytest.mark.parametrize(
