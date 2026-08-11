@@ -55,7 +55,7 @@ LOGGER = logging.getLogger(__name__)
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
-    lifecycle.serve(NatRuntime, config_model=AgentConfig)
+    lifecycle.serve(NatRuntime, config_loader=AgentConfig.from_mapping)
 
 
 def _config_error(code: str, message: str, **metadata: Any) -> lifecycle.LifecycleError:

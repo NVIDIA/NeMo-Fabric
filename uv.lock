@@ -2245,12 +2245,10 @@ test = [
 name = "nemo-fabric-adapter-contract"
 version = "0.2.0"
 source = { editable = "adapter-contract" }
-dependencies = [
-    { name = "pydantic" },
-]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.12,<3" }]
+requires-dist = [{ name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.12,<3" }]
+provides-extras = ["pydantic"]
 
 [[package]]
 name = "nemo-fabric-adapters-claude"

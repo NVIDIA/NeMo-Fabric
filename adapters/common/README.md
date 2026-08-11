@@ -50,11 +50,11 @@ host to validate the southbound contract before `start`:
 ```python
 from nemo_fabric_adapter_contract.models import AgentConfig
 
-lifecycle.serve(AdapterRuntime, config_model=AgentConfig)
+lifecycle.serve(AdapterRuntime, config_loader=AgentConfig.from_mapping)
 ```
 
 The runtime then receives an `AgentConfig` instance in `payload["config"]`.
-Omitting `config_model` preserves the legacy `FabricConfig` mapping.
+Omitting `config_loader` preserves the legacy `FabricConfig` mapping.
 
 NeMo Fabric calls the factory once per local host to create one runtime instance and
 serializes invocations through that instance. The host keeps one event loop

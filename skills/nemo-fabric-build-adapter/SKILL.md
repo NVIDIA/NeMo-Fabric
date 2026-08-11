@@ -71,7 +71,8 @@ Install the descriptor in the standard shared-data location. For setuptools:
 "share/nemo-fabric/adapters/acme" = ["fabric-adapter.json"]
 ```
 
-Depend on `nemo-fabric-adapter-contract` for typed Pydantic models. Add
+Depend on `nemo-fabric-adapter-contract` for typed standard-library dataclasses.
+Install its optional `pydantic` extra only for Pydantic interoperability. Add
 `nemo-fabric-adapters-common` only if the adapter chooses its lifecycle or
 Relay helpers. A bare adapter package should not depend on the NeMo Fabric
 runtime.
@@ -130,7 +131,7 @@ class TargetRuntime:
 
 
 def main() -> None:
-    lifecycle.serve(TargetRuntime, config_model=AgentConfig)
+    lifecycle.serve(TargetRuntime, config_loader=AgentConfig.from_mapping)
 ```
 
 Keep current host request/result conversion in dedicated functions. The

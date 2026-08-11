@@ -36,7 +36,7 @@ class AdapterRuntime(Protocol):
 
 
 RuntimeFactory = Callable[[], AdapterRuntime]
-ConfigModel = type[Any]
+ConfigLoader = Callable[[Any], Any]
 
 
 class LifecycleError(Exception):
@@ -221,16 +221,16 @@ async def _handle_start(
     runtime_factory: RuntimeFactory,
     payload: dict[str, Any],
     message_runtime_id: str,
-    config_model: ConfigModel | None,
+    config_loader: ConfigLoader | None,
 ) -> dict[str, Any]:
     if state.runtime is not None:
         raise LifecycleError(
             "lifecycle_already_started",
             "Lifecycle host already owns a runtime",
         )
-    if config_model is not None:
+    if config_loader is not None:
         try:
-            config = config_model.model_validate(payload.get("config"))
+            config = config_loader(payload.get("config"))
         except Exception as error:
             raise LifecycleError(
                 "lifecycle_invalid_config",
@@ -282,7 +282,7 @@ async def _dispatch(
     operation: str,
     payload: dict[str, Any],
     message_runtime_id: str,
-    config_model: ConfigModel | None,
+    config_loader: ConfigLoader | None,
 ) -> dict[str, Any]:
     if operation == "start":
         return await _handle_start(
@@ -290,7 +290,7 @@ async def _dispatch(
             runtime_factory,
             payload,
             message_runtime_id,
-            config_model,
+            config_loader,
         )
     runtime = _active_runtime(state, message_runtime_id)
     if operation == "invoke":
@@ -325,7 +325,7 @@ def _encode_response(
 async def _serve(
     runtime_factory: RuntimeFactory,
     *,
-    config_model: ConfigModel | None,
+    config_loader: ConfigLoader | None,
     input_stream: TextIO,
     output_stream: TextIO,
 ) -> None:
@@ -353,7 +353,7 @@ async def _serve(
                     operation,
                     payload,
                     message_runtime_id,
-                    config_model,
+                    config_loader,
                 )
                 should_stop = operation == "stop"
             except LifecycleError as error:
@@ -390,15 +390,18 @@ async def _serve(
 def serve(
     runtime_factory: RuntimeFactory,
     *,
-    config_model: ConfigModel | None = None,
+    config_loader: ConfigLoader | None = None,
     input_stream: TextIO = sys.stdin,
     output_stream: TextIO = sys.stdout,
 ) -> None:
     """Serve ordered lifecycle requests for exactly one Fabric runtime.
 
-    ``config_model`` opts an adapter into typed southbound configuration. The
-    host validates the start payload and passes the resulting model instance as
-    ``payload["config"]``. Omitting it preserves the legacy mapping unchanged.
+    ``config_loader`` decodes and validates the southbound start configuration.
+    Contract-compliant adapters use ``AgentConfig.from_mapping`` so the runtime
+    receives the canonical ``AgentConfig`` in ``payload["config"]``. The
+    callable is generic only to keep this lifecycle host framework-neutral; it
+    does not define alternative adapter contract types. Omitting it preserves
+    the untyped mapping for adapters that have not yet migrated.
     """
 
     # Reserve process stdout for the protocol for the entire host lifetime,
@@ -407,7 +410,7 @@ def serve(
         asyncio.run(
             _serve(
                 runtime_factory,
-                config_model=config_model,
+                config_loader=config_loader,
                 input_stream=input_stream,
                 output_stream=output_stream,
             )

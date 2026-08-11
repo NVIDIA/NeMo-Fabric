@@ -162,7 +162,7 @@ def test_lifecycle_host_validates_opt_in_typed_config_before_adapter_start():
 
     lifecycle.serve(
         Runtime,
-        config_model=AgentConfig,
+        config_loader=AgentConfig.from_mapping,
         input_stream=input_stream,
         output_stream=output_stream,
     )
@@ -202,7 +202,7 @@ def test_lifecycle_host_rejects_invalid_opt_in_config_before_runtime_creation():
 
     lifecycle.serve(
         Runtime,
-        config_model=AgentConfig,
+        config_loader=AgentConfig.from_mapping,
         input_stream=input_stream,
         output_stream=output_stream,
     )

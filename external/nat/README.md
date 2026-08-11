@@ -10,8 +10,8 @@ the NeMo Fabric lifecycle contract. It is a third-party adapter reference, not a
 bundled NeMo Fabric adapter or a published package.
 
 The implementation constructs NAT configuration in memory from the typed
-southbound `AgentConfig`; it does not read a NAT YAML file or parse the
-northbound `FabricConfig`.
+southbound `AgentConfig` dataclass; it does not read a NAT YAML file, parse the
+northbound `FabricConfig`, or depend on Pydantic for its contract boundary.
 
 ## Configuration Boundary
 
