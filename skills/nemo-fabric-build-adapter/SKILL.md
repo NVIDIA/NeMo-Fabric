@@ -78,9 +78,9 @@ Relay helpers. A bare adapter package should not depend on the NeMo Fabric
 runtime.
 
 For a TypeScript adapter, depend on
-`@nvidia/nemo-fabric-adapter-contract`. Import the negotiated descriptor,
+`nemo-fabric-adapter-contract`. Import the negotiated descriptor,
 configuration, and runtime-context types from the package root. Import request
-and result types from `@nvidia/nemo-fabric-adapter-contract/preview` only when
+and result types from `nemo-fabric-adapter-contract/preview` only when
 working on the future typed invocation boundary. TypeScript types do not
 validate data received from a process or network boundary; validate untrusted
 values against the JSON Schemas included with the package.

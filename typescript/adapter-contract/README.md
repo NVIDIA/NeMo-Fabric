@@ -15,7 +15,7 @@ After the first npm release is published, install the package from the public
 registry:
 
 ```bash
-npm install @nvidia/nemo-fabric-adapter-contract
+npm install nemo-fabric-adapter-contract
 ```
 
 Until then, build and install an exact tarball from a NeMo Fabric checkout:
@@ -38,12 +38,12 @@ The root entry point contains the negotiated descriptor, southbound agent
 configuration, and runtime context types:
 
 ```typescript
-import { ADAPTER_CONTRACT_VERSION } from "@nvidia/nemo-fabric-adapter-contract";
+import { ADAPTER_CONTRACT_VERSION } from "nemo-fabric-adapter-contract";
 import type {
   AdapterDescriptor,
   AgentConfig,
   RuntimeContext,
-} from "@nvidia/nemo-fabric-adapter-contract";
+} from "nemo-fabric-adapter-contract";
 
 const descriptor: AdapterDescriptor = {
   contract_version: ADAPTER_CONTRACT_VERSION,
@@ -66,7 +66,7 @@ transport. Import them through the explicit preview entry point:
 import type {
   AgentRunRequest,
   AgentRunResult,
-} from "@nvidia/nemo-fabric-adapter-contract/preview";
+} from "nemo-fabric-adapter-contract/preview";
 ```
 
 Do not depend on preview types as a stable transport contract. In particular,
@@ -80,7 +80,7 @@ The package bundles byte-identical copies of the canonical schemas. Consumers
 that need runtime validation can use their validator of choice, for example:
 
 ```typescript
-import agentConfigSchema from "@nvidia/nemo-fabric-adapter-contract/schemas/agent-config" with { type: "json" };
+import agentConfigSchema from "nemo-fabric-adapter-contract/schemas/agent-config" with { type: "json" };
 ```
 
 The TypeScript declarations provide compile-time checking only. They do not

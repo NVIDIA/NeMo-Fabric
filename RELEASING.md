@@ -31,7 +31,7 @@ The release pipeline publishes these package surfaces from a tag push:
 | Ecosystem | Published Surface |
 |---|---|
 | crates.io | `nemo-fabric-core`, `nemo-fabric-cli` |
-| npm | `@nvidia/nemo-fabric-adapter-contract` |
+| npm | `nemo-fabric-adapter-contract` |
 | GitHub Actions | `nemo-fabric`, `nemo-fabric-runtime`, `nemo-fabric-adapters-common`, `nemo-fabric-adapters-claude`, `nemo-fabric-adapters-codex`, `nemo-fabric-adapters-deepagents`, and `nemo-fabric-adapters-hermes` wheel artifacts |
 | Fern | The documentation site |
 
@@ -192,7 +192,7 @@ you are not committing them.
 
 The npm package must exist before npm can bind it to a GitHub trusted publisher.
 This is a one-time bootstrap for
-`@nvidia/nemo-fabric-adapter-contract`; normal releases use OpenID Connect (OIDC)
+`nemo-fabric-adapter-contract`; normal releases use OpenID Connect (OIDC)
 and do not use an npm write token in GitHub Actions.
 
 Before the first TypeScript package release:
@@ -214,11 +214,13 @@ Before the first TypeScript package release:
    cd typescript/adapter-contract
    npm login
    npm publish --access public --tag next
+   npm owner add <second-nvidia-maintainer> nemo-fabric-adapter-contract
    npm logout
    ```
 
-   The publisher needs write access to the `@nvidia` scope and account-level
-   two-factor authentication. Do not push the matching release tag yet.
+   The initial publisher needs account-level two-factor authentication. Keep at
+   least two NVIDIA maintainers on the package so registry administration does
+   not depend on one personal account. Do not push the matching release tag yet.
 3. In the npm package settings, configure the single trusted publisher with
    these exact, case-sensitive values:
 
@@ -393,7 +395,7 @@ The release pipeline then:
 3. Publishes `nemo-fabric-core` and `nemo-fabric-cli` to crates.io through
    trusted publishing for stable, beta, and RC tags. Alpha tags are not
    published to crates.io.
-4. Publishes `@nvidia/nemo-fabric-adapter-contract` to npm through trusted
+4. Publishes `nemo-fabric-adapter-contract` to npm through trusted
    publishing for stable, beta, and RC tags. Stable releases use the `latest`
    dist-tag; beta and RC releases use `next`. Alpha tags are not published to
    npm.
@@ -455,20 +457,18 @@ After the release is live, verify:
    (
      set -euo pipefail
      npmjs_registry="https://registry.npmjs.org/"
-     npm view "@nvidia/nemo-fabric-adapter-contract@<release-version>" version \
-       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry"
-     npm view "@nvidia/nemo-fabric-adapter-contract" dist-tags \
-       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry"
+     npm view "nemo-fabric-adapter-contract@<release-version>" version \
+       --registry="$npmjs_registry"
+     npm view "nemo-fabric-adapter-contract" dist-tags \
+       --registry="$npmjs_registry"
      verification_dir="$(mktemp -d)"
      trap 'rm -rf "$verification_dir"' EXIT
      cd "$verification_dir"
-     npm init --yes \
-       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry"
+     npm init --yes --registry="$npmjs_registry"
      npm install --ignore-scripts --save-exact \
-       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry" \
-       "@nvidia/nemo-fabric-adapter-contract@<release-version>"
-     npm audit signatures \
-       --registry="$npmjs_registry" --@nvidia:registry="$npmjs_registry"
+       --registry="$npmjs_registry" \
+       "nemo-fabric-adapter-contract@<release-version>"
+     npm audit signatures --registry="$npmjs_registry"
    )
    ```
 

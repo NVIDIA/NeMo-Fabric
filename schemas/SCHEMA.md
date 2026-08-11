@@ -41,7 +41,7 @@ The language bindings preserve this boundary:
 
 - Python adapters use `nemo-fabric-adapter-contract` for dependency-free
   dataclasses and optional Pydantic models.
-- TypeScript adapters use `@nvidia/nemo-fabric-adapter-contract` for the
+- TypeScript adapters use `nemo-fabric-adapter-contract` for the
   negotiated descriptor, configuration, and runtime-context types. Preview
   request and result types are isolated under the package's `./preview`
   subpath. The package also includes these canonical schemas for runtime

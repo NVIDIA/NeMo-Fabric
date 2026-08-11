@@ -25,7 +25,7 @@ def package_files_fixture(tmp_path: Path) -> tuple[Path, Path]:
     package_path.write_text(
         json.dumps(
             {
-                "name": "@nvidia/nemo-fabric-adapter-contract",
+                "name": "nemo-fabric-adapter-contract",
                 "version": "0.2.0",
                 "devDependencies": {"typescript": "5.9.3"},
             },
@@ -37,13 +37,13 @@ def package_files_fixture(tmp_path: Path) -> tuple[Path, Path]:
     lock_path.write_text(
         json.dumps(
             {
-                "name": "@nvidia/nemo-fabric-adapter-contract",
+                "name": "nemo-fabric-adapter-contract",
                 "version": "0.2.0",
                 "lockfileVersion": 3,
                 "requires": True,
                 "packages": {
                     "": {
-                        "name": "@nvidia/nemo-fabric-adapter-contract",
+                        "name": "nemo-fabric-adapter-contract",
                         "version": "0.2.0",
                         "devDependencies": {"typescript": "5.9.3"},
                     },

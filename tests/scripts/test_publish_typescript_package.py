@@ -18,7 +18,7 @@ sys.path.insert(0, str(CI_SCRIPTS))
 import publish_typescript_package  # noqa: E402
 
 
-PACKAGE = "@nvidia/nemo-fabric-adapter-contract"
+PACKAGE = "nemo-fabric-adapter-contract"
 VERSION = "0.2.0"
 INTEGRITY = "sha512-expected"
 TARBALL = "nvidia-nemo-fabric-adapter-contract-0.2.0.tgz"

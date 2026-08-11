@@ -119,10 +119,10 @@ try {
   );
   await writeFile(
     join(consumerRoot, "index.ts"),
-    `import { ADAPTER_CONTRACT_VERSION } from "@nvidia/nemo-fabric-adapter-contract";
-import agentConfigSchema from "@nvidia/nemo-fabric-adapter-contract/schemas/agent-config" with { type: "json" };
-import type { AdapterDescriptor } from "@nvidia/nemo-fabric-adapter-contract";
-import type { AgentRunResult } from "@nvidia/nemo-fabric-adapter-contract/preview";
+    `import { ADAPTER_CONTRACT_VERSION } from "nemo-fabric-adapter-contract";
+import agentConfigSchema from "nemo-fabric-adapter-contract/schemas/agent-config" with { type: "json" };
+import type { AdapterDescriptor } from "nemo-fabric-adapter-contract";
+import type { AgentRunResult } from "nemo-fabric-adapter-contract/preview";
 
 const descriptor: AdapterDescriptor = {
   adapter_id: "example",
@@ -162,7 +162,7 @@ if (
     await readFile(
       join(
         temporaryRoot,
-        "node_modules/@nvidia/nemo-fabric-adapter-contract/package.json",
+        "node_modules/nemo-fabric-adapter-contract/package.json",
       ),
       "utf8",
     ),
