@@ -1334,6 +1334,7 @@ def test_error_result_is_normalized_as_failure(claude_payload):
         num_turns=4,
         session_id="claude-session",
         errors=["provider-specific failure"],
+        api_error_status=404,
     )
 
     output = adapter.normalize_result(claude_payload, [], result)
@@ -1343,7 +1344,7 @@ def test_error_result_is_normalized_as_failure(claude_payload):
         "code": "claude_result_failed",
         "message": "Claude returned an error result",
         "retryable": False,
-        "metadata": {"subtype": "error_max_turns"},
+        "metadata": {"subtype": "error_max_turns", "api_error_status": 404},
     }
 
 

@@ -720,11 +720,14 @@ def normalize_result(
     failed = _result_failed(result)
     error = None
     if failed:
+        metadata = {"subtype": result.subtype}
+        if result.api_error_status is not None:
+            metadata["api_error_status"] = result.api_error_status
         error = {
             "code": "claude_result_failed",
             "message": "Claude returned an error result",
             "retryable": False,
-            "metadata": {"subtype": result.subtype},
+            "metadata": metadata,
         }
     return {
         "harness": "claude",
