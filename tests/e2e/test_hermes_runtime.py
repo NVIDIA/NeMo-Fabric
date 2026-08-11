@@ -31,8 +31,6 @@ async def test_hermes_runtime():
 
 async def test_hermes_runtime_with_relay():
     _require_hermes_integration()
-    if importlib.util.find_spec("nemo_relay") is None:
-        pytest.fail("the nemo-relay Python package is required")
     await _run(relay=True)
 
 
@@ -103,8 +101,7 @@ async def _run(*, relay: bool) -> None:
             for result in (r1, r2):
                 assert result.telemetry[0].provider == "relay", result.to_mapping()
                 assert {
-                    artifact["kind"]
-                    for artifact in result["output"]["relay_artifacts"]
+                    artifact["kind"] for artifact in result["output"]["relay_artifacts"]
                 } >= {"atof", "atif"}, result.to_mapping()
 
     assert runtime.status is RuntimeStatus.STOPPED, runtime.status

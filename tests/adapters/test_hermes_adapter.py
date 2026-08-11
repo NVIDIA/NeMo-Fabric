@@ -5,13 +5,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import inspect
 import json
 import os
 import sys
+import threading
+import tomllib
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -58,107 +61,192 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
         adapter.validate_hermes_telemetry_provider(payload)
 
 
-def test_finalize_relay_session_flushes_before_artifact_collection(monkeypatch):
-    calls: list[str] = []
-    invoke_hook = MagicMock(side_effect=lambda *args, **kwargs: calls.append("hook"))
-    runtime = adapter.HermesRuntime()
-    runtime._relay_plugin_config = {"components": []}
-    runtime._agent = SimpleNamespace(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
+def test_write_hermes_relay_plugin_config_uses_upstream_toml(
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(adapter, "distribution_version", lambda _name: "0.6.0")
+    relay_config_path = tmp_path / "relay.json"
+    relay_config_path.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "atof": {
+                            "enabled": True,
+                            "sinks": [{"type": "file"}],
+                        },
+                        "atif": {"enabled": True},
+                        "opentelemetry": {
+                            "enabled": True,
+                            "endpoint": "https://otel.example/v1/traces",
+                            "service_name": "fabric",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
     )
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
+    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config_path))
+    payload = {
+        "agent_name": "hermes-test-agent",
+        "base_dir": str(tmp_path),
+        "config": {
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}}
+        },
+        "runtime_context": {"runtime_id": "runtime-hermes-relay"},
+    }
 
-    from nemo_relay import subscribers
+    plugin_config_path, plugin_config = adapter.write_hermes_relay_plugin_config(
+        payload
+    )
 
-    monkeypatch.setattr(subscribers, "flush", lambda: calls.append("flush"))
-
-    runtime._finalize_relay_session()
-
-    assert calls == ["hook", "flush"]
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
+    assert plugin_config_path == tmp_path / "relay-config" / "plugins.toml"
+    with plugin_config_path.open("rb") as stream:
+        staged_plugin_config = tomllib.load(stream)
+    staged_observability = staged_plugin_config["components"][0]["config"]
+    assert staged_observability["version"] == 2
+    assert staged_observability["atif"]["enabled"] is True
+    assert staged_observability["atof"]["sinks"][0]["mode"] == "append"
+    assert staged_observability["opentelemetry"] == {
+        "enabled": True,
+        "endpoint": "https://otel.example/v1/traces",
+        "service_name": "fabric",
+    }
+    assert plugin_config["components"][0]["config"]["atof"]["sinks"][0][
+        "output_directory"
+    ] == str(tmp_path / "artifacts" / "relay" / "runtime-hermes-relay")
+    assert (
+        plugin_config["components"][0]["config"]["atof"]["sinks"][0]["mode"]
+        == "overwrite"
     )
 
 
-async def test_stop_does_not_refinalize_completed_relay_turn(monkeypatch):
-    invoke_hook = MagicMock()
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._relay_plugin_config = {"components": []}
-    agent = MagicMock(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
+def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(adapter, "distribution_version", lambda _name: "0.7.2")
+    relay_config_path = tmp_path / "relay.json"
+    relay_config_path.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "opentelemetry": {
+                            "enabled": True,
+                            "endpoint": "https://otel.example/v1/traces",
+                            "service_name": "fabric",
+                        },
+                        "openinference": {
+                            "enabled": True,
+                            "endpoint": "https://openinference.example/v1/traces",
+                            "service_name": "fabric",
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
     )
-    session_db = MagicMock()
-    runtime._agent = agent
-    runtime._session_db = session_db
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
+    monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config_path))
+    payload = {
+        "agent_name": "hermes-test-agent",
+        "base_dir": str(tmp_path),
+        "config": {
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}}
+        },
+        "runtime_context": {"runtime_id": "runtime-hermes-relay"},
+    }
 
-    from nemo_relay import subscribers
+    plugin_config_path, _ = adapter.write_hermes_relay_plugin_config(payload)
 
-    flush = MagicMock()
-    monkeypatch.setattr(subscribers, "flush", flush)
+    with plugin_config_path.open("rb") as stream:
+        staged_observability = tomllib.load(stream)["components"][0]["config"]
+    assert staged_observability["version"] == 3
+    assert staged_observability["opentelemetry"] == {
+        "enabled": True,
+        "endpoints": [
+            {
+                "type": "full",
+                "endpoint": "https://otel.example/v1/traces",
+                "service_name": "fabric",
+            },
+            {
+                "type": "openinference",
+                "endpoint": "https://openinference.example/v1/traces",
+                "service_name": "fabric",
+            },
+        ],
+    }
 
-    runtime._finalize_relay_session()
-    await runtime.stop()
 
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
+def test_finalize_hermes_relay_session_uses_legacy_plugin_hook(monkeypatch):
+    hermes_cli = ModuleType("hermes_cli")
+    hermes_plugins = ModuleType("hermes_cli.plugins")
+    mock_invoke_hook = MagicMock()
+    hermes_plugins.invoke_hook = mock_invoke_hook  # type: ignore[attr-defined]
+
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
+    monkeypatch.delitem(sys.modules, "hermes_cli.lifecycle", raising=False)
+
+    adapter.finalize_hermes_relay_session("session-legacy")
+
+    mock_invoke_hook.assert_called_once_with(
+        "on_session_finalize", session_id="session-legacy", platform="fabric"
     )
-    flush.assert_called_once_with()
-    agent.close.assert_called_once_with()
-    session_db.close.assert_called_once_with()
-    assert runtime._started is False
-    assert runtime._relay_session_pending is False
-    assert runtime._relay_finalize_hook_invoked is False
 
 
-async def test_stop_retries_failed_relay_flush_without_refinalizing(monkeypatch):
-    invoke_hook = MagicMock()
-    runtime = adapter.HermesRuntime()
-    runtime._started = True
-    runtime._relay_plugin_config = {"components": []}
-    runtime._agent = MagicMock(
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
+async def test_runtime_start_stages_upstream_relay_plugin_configuration(
+    monkeypatch,
+    tmp_path: Path,
+):
+    plugin_config_path = tmp_path / "relay-config" / "plugins.toml"
+
+    monkeypatch.setattr(
+        adapter,
+        "write_hermes_relay_plugin_config",
+        lambda _payload: (plugin_config_path, {"version": 1}),
     )
-    runtime._session_db = MagicMock()
-    runtime._invoke_hook = invoke_hook
-    runtime._relay_session_pending = True
 
-    from nemo_relay import subscribers
+    def stop_after_staging(
+        _payload: dict[str, object],
+        _hermes_home: Path,
+        *,
+        relay_enabled: bool,
+    ) -> tuple[Path, dict[str, object]]:
+        assert relay_enabled is True
+        assert os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(plugin_config_path)
+        assert all(
+            name not in os.environ
+            for name in adapter.HERMES_RELAY_ENV_NAMES
+            if name != "HERMES_NEMO_RELAY_PLUGINS_TOML"
+        )
+        raise RuntimeError("stop after Relay plugin staging")
 
-    flush = MagicMock(side_effect=[RuntimeError("flush failed"), None])
-    monkeypatch.setattr(subscribers, "flush", flush)
+    monkeypatch.setattr(adapter, "write_hermes_config", stop_after_staging)
+    for name in adapter.HERMES_RELAY_ENV_NAMES:
+        monkeypatch.setenv(name, "before")
+    payload = {
+        "base_dir": str(tmp_path),
+        "config": {
+            "harness": {"settings": {}},
+            "models": {"default": {"provider": "nvidia", "model": "test-model"}},
+        },
+        "runtime_context": {
+            "runtime_id": "runtime-relay-plugin",
+            "environment": {"workspace": str(tmp_path)},
+            "artifacts": {"root": str(tmp_path / "artifacts")},
+        },
+        "telemetry_plan": {"providers": ["relay"], "relay_enabled": True},
+    }
 
-    with pytest.raises(RuntimeError, match="flush failed"):
-        runtime._finalize_relay_session()
+    with pytest.raises(RuntimeError, match="stop after Relay plugin staging"):
+        await adapter.HermesRuntime().start(payload)
 
-    assert runtime._relay_session_pending is True
-    assert runtime._relay_finalize_hook_invoked is True
-    await runtime.stop()
-
-    invoke_hook.assert_called_once_with(
-        "on_session_finalize",
-        session_id="runtime-1",
-        model="test-model",
-        platform="fabric",
-    )
-    assert flush.call_count == 2
-    assert runtime._relay_session_pending is False
-    assert runtime._relay_finalize_hook_invoked is False
+    assert all(name not in os.environ for name in adapter.HERMES_RELAY_ENV_NAMES)
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -706,9 +794,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         "base_dir": str(tmp_path),
         "config": {
             "harness": {"settings": {}},
-            "instructions": {
-                "system": {"content": "system", "mode": "replace"}
-            },
+            "instructions": {"system": {"content": "system", "mode": "replace"}},
             "runtime": {"max_turns": None},
             "tools": {"enabled": []},
             "models": {
@@ -726,6 +812,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         },
         "request": {
             "input": "hello",
+            "request_id": "request-1",
             "context": {"history": [{"role": "user", "content": "stale"}]},
         },
         "capability_plan": {"native": {}},
@@ -743,6 +830,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     )
     payload["runtime_context"]["invocation_id"] = "invocation-2"
     payload["request"]["input"] = "continue"
+    payload["request"]["request_id"] = "request-2"
     second = await runtime.invoke(
         {
             "runtime_context": payload["runtime_context"],
@@ -777,11 +865,13 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert first_call.kwargs == {
         "system_message": "system",
         "conversation_history": None,
+        "task_id": "request-1",
     }
     assert second_call.args == ("continue",)
     assert second_call.kwargs == {
         "system_message": "system",
         "conversation_history": first_messages,
+        "task_id": "request-2",
     }
     mock_ai_agent.close.assert_called_once_with()
     mock_session_db.close.assert_called_once_with()
@@ -789,6 +879,7 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
     assert runtime._session_db is None
     assert runtime._start_payload is None
     assert runtime._conversation_history is None
+    assert runtime._relay_plugin_config_path is None
     assert first["response"] == "first response"
     assert second["response"] == "second response"
     assert "session_id" not in second
@@ -800,6 +891,112 @@ async def test_persistent_runtime_reuses_hermes_agent_session_and_history(
         / "runtimes"
         / "runtime-fabric-123"
     )
+
+
+async def test_runtime_stop_waits_for_cancelled_invoke_worker(monkeypatch):
+    worker_started = threading.Event()
+    worker_release = threading.Event()
+    mock_agent = MagicMock()
+    mock_session_db = MagicMock()
+
+    def run_turn(**_kwargs):
+        worker_started.set()
+        assert worker_release.wait(timeout=1)
+        return (
+            {
+                "response": "completed after cancellation",
+                "completed": True,
+                "failed": False,
+                "messages": [],
+            },
+            "",
+        )
+
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", run_turn)
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-cancelled-invoke"
+    runtime._start_payload = {"config": {"instructions": {}}}
+    runtime._agent = mock_agent
+    runtime._session_db = mock_session_db
+
+    invoke_task = asyncio.create_task(
+        runtime.invoke(
+            {
+                "runtime_context": {"runtime_id": runtime._runtime_id},
+                "request": {"input": "wait"},
+            }
+        )
+    )
+    assert await asyncio.to_thread(worker_started.wait, 1)
+
+    invoke_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await invoke_task
+
+    stop_task = asyncio.create_task(runtime.stop())
+    await asyncio.sleep(0)
+    mock_agent.close.assert_not_called()
+    mock_session_db.close.assert_not_called()
+
+    worker_release.set()
+    await stop_task
+
+    mock_agent.close.assert_called_once_with()
+    mock_session_db.close.assert_called_once_with()
+
+
+async def test_runtime_allows_invoke_after_cancelled_worker_finishes(monkeypatch):
+    worker_started = threading.Event()
+    worker_release = threading.Event()
+    mock_agent = MagicMock()
+    mock_session_db = MagicMock()
+    calls = 0
+
+    def run_turn(**_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            worker_started.set()
+            assert worker_release.wait(timeout=1)
+        return (
+            {
+                "response": f"turn-{calls}",
+                "completed": True,
+                "failed": False,
+                "messages": [],
+            },
+            "",
+        )
+
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", run_turn)
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-cancelled-invoke"
+    runtime._start_payload = {"config": {"instructions": {}}}
+    runtime._agent = mock_agent
+    runtime._session_db = mock_session_db
+    invocation = {
+        "runtime_context": {"runtime_id": runtime._runtime_id},
+        "request": {"input": "wait"},
+    }
+
+    cancelled_invoke = asyncio.create_task(runtime.invoke(invocation))
+    assert await asyncio.to_thread(worker_started.wait, 1)
+    active_invoke_task = runtime._active_invoke_task
+    assert active_invoke_task is not None
+
+    cancelled_invoke.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_invoke
+
+    worker_release.set()
+    await asyncio.wait_for(asyncio.shield(active_invoke_task), timeout=1)
+
+    result = await runtime.invoke(invocation)
+
+    assert result["response"] == "turn-2"
+    await runtime.stop()
 
 
 def test_main_serves_persistent_runtime(monkeypatch):
