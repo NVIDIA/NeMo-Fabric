@@ -1279,7 +1279,7 @@ def test_environment_rejects_non_string_runtime_telemetry_env(
         "env": telemetry_env,
     }
 
-    with pytest.raises(ContractValidationError, match="telemetry.env"):
+    with pytest.raises(ContractValidationError, match=r"telemetry\.env"):
         runtime_input(codex_payload)
 
 
