@@ -539,6 +539,13 @@ async def test_a_dirty_scope_stack_quarantines_telemetry_for_later_turns(
         )
 
     monkeypatch.setattr(sys.modules["nemo_relay.scope"], "scope", leaking_scope)
+    # A recognisable artifact so the faulting turn's publication can be checked by value
+    # rather than by the key merely existing: real collection over an empty evidence dir
+    # returns [], which would pass a presence-only assertion either way.
+    artifacts = [{"kind": "atif", "path": str(tmp_path / "trajectory.atif.json")}]
+    monkeypatch.setattr(
+        adapter.common_utils, "collect_relay_artifacts", lambda _config: artifacts
+    )
 
     first, second = await invoke_twice(relay_payload(tmp_path))
 
@@ -554,7 +561,9 @@ async def test_a_dirty_scope_stack_quarantines_telemetry_for_later_turns(
     assert "unreliable" in second["telemetry"]["error"]
     # Only turn 1 opened a request scope; turn 2 must not push onto the dirty stack.
     assert entered == ["deepagents-request"]
-    # Artifacts on disk belong to turn 1, so turn 2 must not reference them as its own.
+    # Turn 1 opened a scope and produced its own (partial) artifacts, so it still
+    # publishes them; turn 2 has none of its own and must not claim turn 1's.
+    assert first["relay_artifacts"] == artifacts
     assert "relay_artifacts" not in second
 
     # Turn 1 owns the fault, so it reports it verbatim and needs no separate cause.
