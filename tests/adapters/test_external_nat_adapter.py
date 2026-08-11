@@ -550,6 +550,7 @@ def test_nat_workflow_refs_plan_through_generic_descriptor(
     monkeypatch: pytest.MonkeyPatch,
     ref: str,
     expected_type: str,
+    *,
     uses_react_config_shape: bool,
 ):
     descriptor = ROOT / "external" / "nat" / "fabric-adapter.json"
