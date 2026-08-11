@@ -540,8 +540,15 @@ def test_build_options_rejects_skill_path_without_skill_manifest(claude_payload)
     skill_path = Path(claude_payload["config"]["skills"]["paths"][0])
     (skill_path / "SKILL.md").unlink()
 
-    with pytest.raises(adapter.AdapterConfigError, match="SKILL.md"):
+    with pytest.raises(adapter.AdapterConfigError, match=r"SKILL\.md"):
         build_options(claude_payload)
+
+
+def test_runtime_context_validation_uses_lifecycle_error():
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        adapter._runtime_context({"runtime_context": {}})
+
+    assert caught.value.code == "claude_invalid_runtime_context"
 
 
 def test_build_options_maps_custom_provider_to_claude_gateway_environment(

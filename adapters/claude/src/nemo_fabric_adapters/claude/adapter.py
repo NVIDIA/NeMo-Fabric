@@ -30,6 +30,7 @@ from claude_agent_sdk import ProcessError
 from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
+from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
@@ -165,6 +166,16 @@ def _positive_number(value: Any, *, name: str) -> float:
 
 def runtime_id(runtime_context: RuntimeContext) -> str:
     return runtime_context.runtime_id
+
+
+def _runtime_context(payload: dict[str, Any]) -> RuntimeContext:
+    try:
+        return RuntimeContext.from_mapping(payload.get("runtime_context"))
+    except ContractValidationError as error:
+        raise lifecycle.LifecycleError(
+            "claude_invalid_runtime_context",
+            "Claude runtime context is invalid",
+        ) from error
 
 
 def request_prompt(payload: dict[str, Any]) -> str:
@@ -905,7 +916,7 @@ class ClaudeRuntime:
                 raise lifecycle.LifecycleError(
                     "claude_invalid_config", "Claude requires a validated AgentConfig"
                 )
-            runtime_context = RuntimeContext.from_mapping(payload.get("runtime_context"))
+            runtime_context = _runtime_context(payload)
             base_dir = common_utils.base_dir(payload)
             model = _selected_model_config(agent_config)
             fabric_runtime_id = runtime_id(runtime_context)
@@ -940,7 +951,7 @@ class ClaudeRuntime:
                 "claude_runtime_not_started",
                 "Claude runtime is not started",
             )
-        runtime_context = RuntimeContext.from_mapping(invocation.get("runtime_context"))
+        runtime_context = _runtime_context(invocation)
         if runtime_id(runtime_context) != fabric_runtime_id:
             raise lifecycle.LifecycleError(
                 "claude_runtime_mismatch",
