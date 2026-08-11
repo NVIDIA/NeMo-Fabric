@@ -2359,8 +2359,8 @@ requires-dist = [
     { name = "hermes-agent", extras = ["mcp"], marker = "python_full_version < '3.14' and extra == 'harness'", specifier = ">=0.19.0" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.6.0,<0.7" },
-    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.7" },
+    { name = "nemo-relay", marker = "extra == 'full'", specifier = ">=0.6.0,<0.8" },
+    { name = "nemo-relay", marker = "extra == 'relay'", specifier = ">=0.6.0,<0.8" },
 ]
 provides-extras = ["harness", "relay", "full"]
 

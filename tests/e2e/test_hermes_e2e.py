@@ -7,9 +7,11 @@ import json
 import os
 import sys
 import warnings
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 from types import ModuleType
 
+from packaging.version import Version
 import pytest
 import requests
 import yaml
@@ -58,6 +60,11 @@ async def test_hermes_persistent_host_reuses_native_session(
     assert first["metadata"]["adapter_runner"] == "persistent_local_host", results
     assert first["metadata"]["host_pid"] == second["metadata"]["host_pid"], results
     assert "user_count=2" in second["output"]["response"], results
+    for turn in (first, second):
+        assert {artifact["kind"] for artifact in turn["output"]["relay_artifacts"]} >= {
+            "atof",
+            "atif",
+        }, turn.to_mapping()
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
@@ -106,14 +113,19 @@ async def test_mcp_stdio_transport(
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
     tool_name = "mcp__mcp_server_time__get_current_time"
+    tool_arguments = {"timezone": "America/Los_Angeles"}
+    if Version(distribution_version("hermes-agent")) < Version("0.20"):
+        # The released 0.19 integration accepts the configured MCP tool directly.
+        tool_call = {"name": tool_name, "arguments": tool_arguments}
+    else:
+        # Newer Hermes versions dispatch MCP schemas through their native bridge.
+        tool_call = {
+            "name": "tool_call",
+            "arguments": {"name": tool_name, "arguments": tool_arguments},
+        }
     scenario_response = requests.post(
         f"{api_server}/_scenario",
-        json={
-            "tool_call": {
-                "name": tool_name,
-                "arguments": {"timezone": "America/Los_Angeles"},
-            }
-        },
+        json={"tool_call": tool_call},
         timeout=5,
     )
     scenario_response.raise_for_status()
@@ -177,12 +189,15 @@ async def test_mcp_stdio_transport(
             "args": ["-m", "mcp_server_time"],
             "env": {"MCP_TIME_TEST": "enabled"},
         }
+        assert "mcp_server_time" in result["output"]["enabled_toolsets"]
         assert {record["scope_category"] for record in tool_records} == {"start", "end"}
         tool_end = next(
             record for record in tool_records if record["scope_category"] == "end"
         )
         assert tool_end["category"] == "tool"
-        assert tool_end["metadata"]["status"] == "ok"
+        assert tool_end["metadata"].get("otel.status_code") == "OK" or (
+            tool_end["metadata"].get("status") == "ok"
+        )
         assert "America/Los_Angeles" in tool_end["data"]
 
 
@@ -243,7 +258,7 @@ class TestHermesE2E:
         assert output["base_url"] == f"{self.api_server}/v1"
         assert output["error"] is None
         assert output["relay_runtime"]["enabled"] is True
-        assert output["relay_runtime"]["emitter"] == "hermes.observability/nemo_relay"
+        assert output["relay_runtime"]["emitter"] == "hermes-agent/nemo-relay"
         assert output["failed"] is False
 
         assert "echo user_count=" in output["response"]
@@ -257,7 +272,10 @@ class TestHermesE2E:
 
         hermes_config = yaml.safe_load(hermes_config_path.read_text(encoding="utf-8"))
         assert hermes_config["model"]["provider"] == "nvidia"
-        assert hermes_config["model"]["default"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+        assert (
+            hermes_config["model"]["default"]
+            == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+        )
         assert hermes_config["model"]["base_url"] == f"{self.api_server}/v1"
         assert hermes_config["plugins"]["enabled"] == ["observability/nemo_relay"]
         assert output["hermes_native_config"]["plugins"] == ["observability/nemo_relay"]
@@ -315,16 +333,42 @@ class TestHermesE2E:
         actual_atof_fields = set().union(*(record.keys() for record in atof_records))
         assert actual_atof_fields.issuperset(expected_atof_fields)
 
-        assert len(atof_records) == 7
+        record_kinds = {
+            (record["name"], record.get("scope_category")) for record in atof_records
+        }
+        assert record_kinds.issuperset({("nvidia", "start"), ("nvidia", "end")})
 
-        assert all(
-            record["metadata"]["model"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
-            and record["metadata"]["platform"] == self.atof_platform
+        session_scopes = [
+            record
             for record in atof_records
-        )
+            if record["name"] == "hermes.session"
+            or str(record["name"]).startswith("hermes-session-")
+        ]
+        assert {record.get("scope_category") for record in session_scopes} >= {
+            "start",
+            "end",
+        }
 
-        assert atof_records[-2]["name"] == "hermes.session.end"
-        assert atof_records[-1]["scope_category"] == "end"
+        current_turn_scopes = [
+            record
+            for record in atof_records
+            if record["name"] == "hermes.turn"
+            and record.get("scope_category") in {"start", "end"}
+        ]
+        upstream_turn_marks = [
+            record
+            for record in atof_records
+            if record["name"] in {"hermes.turn.start", "hermes.turn.end"}
+        ]
+        turn_marks = current_turn_scopes or upstream_turn_marks
+        assert turn_marks
+
+        fabric_scopes = [*session_scopes, *turn_marks]
+        assert all(
+            record["metadata"].get("hermes.execution_surface") == "fabric"
+            or record["metadata"].get("platform") == self.atof_platform
+            for record in fabric_scopes
+        )
 
     async def test_atif_artifacts(self):
         kinds = {artifact["kind"] for artifact in self.relay_artifacts}
@@ -354,7 +398,12 @@ class TestHermesE2E:
 
         last_step = steps[-1]
         assert last_step["source"] == "agent"
-        assert last_step["message"] == self.output["response"]
-        assert last_step["model_name"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+        # The upstream exporter derives this field from the provider's final
+        # wire response. The mock streaming response has no final text field,
+        # while Fabric's normalized response is assembled from its deltas.
+        assert last_step["message"] in {"", self.output["response"]}
+        assert (
+            last_step["model_name"] == "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+        )
         assert last_step["extra"]["invocation"]["framework"] == "nemo_relay"
         assert last_step["extra"]["invocation"]["status"] == "completed"
