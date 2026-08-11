@@ -84,10 +84,12 @@ def test_render_relay_hooks_rejects_unsupported_agent():
 
 
 def test_render_relay_hooks_uses_windows_command_quoting(monkeypatch):
-    executable = Path(r"C:\Program Files\NVIDIA\nemo-relay.exe")
+    executable = Path(r"C:\Users\runneradmin\.cargo\bin\nemo-relay.exe")
     monkeypatch.setattr(relay_hooks, "platform", "win32")
 
     hooks = relay_hooks.render_relay_hooks("claude", executable)["hooks"]
 
     command = hooks["SessionStart"][0]["hooks"][0]["command"]
-    assert command == f'"{executable}" hook-forward claude'
+    assert command == (
+        '"C:/Users/runneradmin/.cargo/bin/nemo-relay.exe" hook-forward claude'
+    )

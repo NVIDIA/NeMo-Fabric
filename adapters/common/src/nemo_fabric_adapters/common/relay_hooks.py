@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import shlex
-import subprocess
 from pathlib import Path
 from sys import platform
 from typing import Any, Literal
@@ -73,7 +72,7 @@ def render_relay_hooks(
         raise ValueError(f"unsupported NeMo Relay hook agent {agent!r}")
 
     executable_arg = (
-        subprocess.list2cmdline([str(executable)])
+        '"' + str(executable).replace("\\", "/") + '"'
         if platform == "win32"
         else shlex.quote(str(executable))
     )
