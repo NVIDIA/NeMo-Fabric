@@ -144,10 +144,6 @@ def _settings(inputs: CodexRuntimeInput) -> dict[str, Any]:
     return inputs.config.harness.settings if inputs.config.harness else {}
 
 
-def runtime_id(inputs: CodexRuntimeInput) -> str:
-    return inputs.context.runtime_id
-
-
 def request_prompt(payload: dict[str, Any]) -> str:
     value = (payload.get("request") or {}).get("input")
     if not isinstance(value, str):
@@ -658,7 +654,7 @@ def validate_runtime_payload(inputs: CodexRuntimeInput) -> str:
 
     settings = _settings(inputs)
     _native_skill_paths(inputs)
-    fabric_runtime_id = runtime_id(inputs)
+    fabric_runtime_id = inputs.context.runtime_id
     resolve_cwd(inputs)
     selected_model(inputs)
     sandbox(inputs)
