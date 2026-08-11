@@ -12,6 +12,7 @@ const manifest = JSON.parse(
 const lockfile = JSON.parse(
   await readFile(resolve(packageRoot, "package-lock.json"), "utf8"),
 );
+const reviewedPermissiveLicenses = new Set(["Apache-2.0", "MIT", "Python-2.0"]);
 
 for (const field of [
   "dependencies",
@@ -39,15 +40,19 @@ if (productionDependencies.length > 0) {
   );
 }
 
-const missingLicenses = dependencies.filter(
-  (dependency) =>
-    typeof dependency.license !== "string" || dependency.license.length === 0,
+const unreviewedLicenses = dependencies.filter(
+  (dependency) => !reviewedPermissiveLicenses.has(dependency.license),
 );
-if (missingLicenses.length > 0) {
+if (unreviewedLicenses.length > 0) {
+  const details = unreviewedLicenses
+    .map(
+      (dependency) =>
+        `${dependency.path} (${JSON.stringify(dependency.license) ?? "missing"})`,
+    )
+    .join(", ");
   throw new Error(
-    `Package lock contains dependencies without license metadata: ${missingLicenses
-      .map((dependency) => dependency.path)
-      .join(", ")}`,
+    `Dependency licenses require explicit dependency-approver review: ${details}. ` +
+      "Add only reviewed permissive SPDX identifiers to the allowlist.",
   );
 }
 

@@ -1190,14 +1190,6 @@ pub enum TelemetryProvider {
 impl TelemetryProvider {
     const ALL: [Self; 2] = [Self::Relay, Self::Native];
 
-    /// Keep [`Self::ALL`] synchronized when adding a provider variant.
-    #[allow(dead_code)]
-    const fn assert_all_variants_listed(self) {
-        match self {
-            Self::Relay | Self::Native => {}
-        }
-    }
-
     /// Return the stable configuration value for this provider.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -2431,7 +2423,7 @@ fn resolve_telemetry_plan(
     let native_provider = telemetry.providers.get(&TelemetryProvider::Native);
     let relay = config.relay.as_ref();
     let relay_enabled = relay_provider.is_some();
-    let providers = [TelemetryProvider::Relay, TelemetryProvider::Native]
+    let providers = TelemetryProvider::ALL
         .into_iter()
         .filter(|provider| telemetry.providers.contains_key(provider))
         .collect::<Vec<_>>();

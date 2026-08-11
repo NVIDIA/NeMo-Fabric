@@ -220,6 +220,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TelemetryProvider;
 
     fn schema_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../schemas")
@@ -353,10 +354,22 @@ mod tests {
                 "usage"
             ])
         );
+        let declared_providers = &schema["$defs"]["AdapterTelemetrySupport"]["properties"]["providers"]
+            ["propertyNames"]["enum"];
+        assert_eq!(declared_providers, &serde_json::json!(["relay", "native"]));
+        let provider_schema =
+            serde_json::to_value(schema_for!(TelemetryProvider)).expect("provider schema");
+        let derived_providers = Value::Array(
+            provider_schema["oneOf"]
+                .as_array()
+                .expect("provider variants")
+                .iter()
+                .map(|variant| variant["const"].clone())
+                .collect(),
+        );
         assert_eq!(
-            schema["$defs"]["AdapterTelemetrySupport"]["properties"]["providers"]["propertyNames"]
-                ["enum"],
-            serde_json::json!(["relay", "native"])
+            declared_providers, &derived_providers,
+            "TelemetryProvider::ALL must include every enum variant"
         );
 
         let validator = jsonschema::validator_for(&schema).expect("valid descriptor schema");

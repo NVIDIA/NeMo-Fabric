@@ -19,6 +19,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::agent_config::validate_agent_config;
 use crate::config::{
     AdapterConfigInput, AdapterKind, AgentConfig, CapabilityPlan, CapabilityTarget,
     ControlLocation, EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
@@ -557,6 +558,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
 /// Start or connect to a harness runtime.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
     validate_config(&plan.config)?;
+    validate_agent_config(&plan.agent_config)?;
     validate_harness_settings(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_workflow(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_adapter_compatibility(plan)?;
@@ -2879,6 +2881,30 @@ for line in sys.stdin:
                 && settings_path == "harness.settings.unknown"
         ));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_revalidates_southbound_config_before_runtime_start() {
+        for field in ["provider", "model"] {
+            let (root, plan) = local_host_plan("success");
+            let mut serialized = serde_json::to_value(plan).expect("serialize plan");
+            serialized["agent_config"]["models"]["primary"] = serde_json::json!({
+                "provider": "nvidia",
+                "model": "test-model"
+            });
+            serialized["agent_config"]["models"]["primary"][field] =
+                Value::String(" \t".to_string());
+            let plan: RunPlan = serde_json::from_value(serialized).expect("deserialize run plan");
+
+            let error = start_runtime(&plan).expect_err("start must reject blank agent config");
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field: actual, .. }
+                    if actual == format!("agent_config.models.primary.{field}")
+            ));
+            assert!(!root.join("artifacts").exists());
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]

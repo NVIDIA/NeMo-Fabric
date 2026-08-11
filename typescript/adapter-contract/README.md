@@ -26,9 +26,10 @@ npm pack --prefix typescript/adapter-contract
 npm install ./nvidia-nemo-fabric-adapter-contract-0.2.0.tgz
 ```
 
-Use Node.js 20.18.3 or later and TypeScript 5.3 or later. Configure TypeScript
-with `node16`, `nodenext`, or `bundler` module resolution so package export
-subpaths resolve correctly. Enable `resolveJsonModule` when importing the
+Use Node.js 20.18.3 or later and TypeScript 5.3 or later. Use a compatible
+TypeScript module pair: `module: "NodeNext"` with
+`moduleResolution: "NodeNext"`, or `module: "ESNext"` with
+`moduleResolution: "bundler"`. Enable `resolveJsonModule` when importing the
 bundled JSON Schemas.
 
 ## Stable v1alpha2 Contract
