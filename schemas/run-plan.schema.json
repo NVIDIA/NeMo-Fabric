@@ -1301,6 +1301,7 @@
       "description": "MCP server authentication configuration.",
       "oneOf": [
         {
+          "additionalProperties": false,
           "description": "OAuth 2.0 authorization-code authentication.",
           "properties": {
             "authorization_timeout_seconds": {
@@ -1370,6 +1371,7 @@
           "type": "object"
         },
         {
+          "additionalProperties": false,
           "description": "OAuth 2.0 client-credentials authentication for headless workloads.",
           "properties": {
             "client_id": {

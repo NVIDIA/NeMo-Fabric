@@ -757,7 +757,7 @@ fn is_default_mcp_token_cache_buffer_seconds(value: &u64) -> bool {
 
 /// MCP server authentication configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum McpAuthenticationConfig {
     /// OAuth 2.0 authorization-code authentication.
     #[serde(rename = "oauth2")]
@@ -3190,6 +3190,32 @@ mod tests {
         .expect_err("unknown MCP transport");
 
         assert!(error.to_string().contains("unknown variant `websocket`"));
+    }
+
+    #[test]
+    fn mcp_oauth_authentication_rejects_unknown_fields() {
+        let error = serde_json::from_value::<McpAuthenticationConfig>(serde_json::json!({
+            "type": "oauth2",
+            "client_id": "fabric-client",
+            "unknown": true
+        }))
+        .expect_err("unknown OAuth field");
+
+        assert!(error.to_string().contains("unknown field `unknown`"));
+    }
+
+    #[test]
+    fn mcp_service_account_authentication_rejects_unknown_fields() {
+        let error = serde_json::from_value::<McpAuthenticationConfig>(serde_json::json!({
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "token_url": "https://auth.example/token",
+            "unknown": true
+        }))
+        .expect_err("unknown service-account field");
+
+        assert!(error.to_string().contains("unknown field `unknown`"));
     }
 
     #[test]
