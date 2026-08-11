@@ -247,15 +247,11 @@ def selected_model(config: AgentConfig) -> str:
     return model.model.removeprefix("openai/") if model.provider == "openai" else model.model
 
 
-def selected_model_provider(config: AgentConfig) -> str:
-    return _selected_model_config(config).provider
-
-
 def custom_model_provider_config(
     config: AgentConfig, context: RuntimeContext
 ) -> dict[str, Any]:
     model_config = _selected_model_config(config)
-    provider = selected_model_provider(config)
+    provider = model_config.provider
     if provider == "openai":
         return {}
     api_key_env = model_config.api_key_env
@@ -368,12 +364,12 @@ def child_environment(
     configured = context.environment.env
     values.update(configured)
     if (
-        selected_model_provider(config) == "openai"
+        model_config.provider == "openai"
         and api_key_env is not None
         and api_key_env in values
     ):
         values["OPENAI_API_KEY"] = values[api_key_env]
-    if selected_model_provider(config) != "openai":
+    if model_config.provider != "openai":
         codex_home = state_dir(context, base_dir) / "custom-provider-home"
         values["CODEX_HOME"] = str(codex_home)
     # The SDK overlays this mapping on the parent environment. An empty
@@ -566,7 +562,7 @@ def thread_config(
     )
     _apply_config_overrides(result, overrides)
     if relay is not None:
-        provider = selected_model_provider(config)
+        provider = _selected_model_config(config).provider
         transport_config = (
             {"openai_base_url": relay.gateway.url}
             if provider == "openai"
@@ -833,7 +829,7 @@ def _thread_options(
         "cwd": str(resolve_cwd(context, base_dir)),
         "developer_instructions": _optional_string(settings, "developer_instructions"),
         "model": selected_model(config),
-        "model_provider": selected_model_provider(config),
+        "model_provider": _selected_model_config(config).provider,
         "personality": _personality(config),
         "sandbox": sandbox(config),
         "service_tier": _optional_string(settings, "service_tier"),
@@ -999,7 +995,7 @@ class CodexRuntime:
             self._relay = relay
             self._gateway_process = _start_relay_gateway(context, base_dir, relay)
             client_config = sdk_config(agent_config, context, base_dir, relay)
-            if selected_model_provider(agent_config) != "openai":
+            if _selected_model_config(agent_config).provider != "openai":
                 await asyncio.to_thread(
                     Path(client_config.env["CODEX_HOME"]).mkdir,
                     parents=True,
