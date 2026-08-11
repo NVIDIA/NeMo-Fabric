@@ -133,6 +133,7 @@ def mock_nat_fixture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     mock_sessions = MagicMock(name="sessions")
     mock_sessions.session = MagicMock(return_value=mock_session_context)
     mock_sessions.shutdown = AsyncMock()
+    mock_sessions.is_workflow_per_user = False
     mock_session_manager = MagicMock(name="SessionManager")
     mock_session_manager.create = AsyncMock(return_value=mock_sessions)
 
@@ -245,7 +246,10 @@ def test_descriptor_declares_exact_source_reference_contract():
     assert workflow_schema["additionalProperties"] is False
     entrypoint_schema = workflow_schema["properties"]["entrypoint"]
     assert entrypoint_schema["properties"]["kind"]["const"] == "factory"
-    assert entrypoint_schema["properties"]["ref"]["const"] == "fabric.agent.react"
+    ref_schema = entrypoint_schema["properties"]["ref"]
+    assert ref_schema["type"] == "string"
+    assert ref_schema["minLength"] == 1
+    assert ref_schema["pattern"] == r"^\S+$"
     assert entrypoint_schema["required"] == ["kind", "ref"]
     assert entrypoint_schema["additionalProperties"] is False
     assert workflow_schema["properties"]["settings"]["properties"]["_type"] is False
@@ -355,22 +359,108 @@ def test_system_instruction_rejects_duplicate_nat_instruction_source(make_payloa
     assert error.value.code == "nat_system_instruction_conflict"
 
 
-def test_react_agent_without_tool_names_defaults_to_empty_list(make_payload):
-    payload = make_payload(workflow=_fabric_workflow(llm_name="default"))
+@pytest.mark.parametrize(
+    ("ref", "expected_type", "uses_react_config_shape"),
+    [
+        ("fabric.agent.react", "react_agent", True),
+        ("react_agent", "react_agent", True),
+        (
+            "nat.plugins.langchain.agent.react_agent/react_agent",
+            "nat.plugins.langchain.agent.react_agent/react_agent",
+            True,
+        ),
+        ("per_user_react_agent", "per_user_react_agent", True),
+        (
+            "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
+            "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
+            True,
+        ),
+        ("tool_calling_agent", "tool_calling_agent", False),
+        (
+            "nat.plugins.langchain.agent.tool_calling_agent/tool_calling_agent",
+            "nat.plugins.langchain.agent.tool_calling_agent/tool_calling_agent",
+            False,
+        ),
+        ("third.party/react_agent", "third.party/react_agent", False),
+        ("third.party/per_user_react_agent", "third.party/per_user_react_agent", False),
+    ],
+)
+def test_workflow_refs_pass_through_with_react_tool_defaults(
+    make_payload,
+    ref: str,
+    expected_type: str,
+    uses_react_config_shape: bool,
+):
+    payload = make_payload(workflow=_fabric_workflow(ref, llm_name="default"))
 
     result = adapter.build_nat_config_mapping(payload["config"])
 
-    assert result["workflow"]["tool_names"] == []
+    assert result["workflow"]["_type"] == expected_type
+    if uses_react_config_shape:
+        assert result["workflow"]["tool_names"] == []
+    else:
+        assert "tool_names" not in result["workflow"]
 
 
-def test_shared_nat_adapter_rejects_an_unknown_fabric_factory(make_payload):
-    payload = make_payload(workflow=_fabric_workflow("fabric.agent.custom"))
+@pytest.mark.parametrize(
+    "ref",
+    ["third.party/react_agent", "third.party/per_user_react_agent"],
+)
+def test_arbitrary_registry_ref_does_not_inherit_react_field_translation(
+    make_payload,
+    ref: str,
+):
+    payload = make_payload(
+        workflow=_fabric_workflow(ref, llm_name="default"),
+        instruction="Portable instruction",
+    )
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as error:
         adapter.build_nat_config_mapping(payload["config"])
 
-    assert error.value.code == "nat_invalid_workflow"
-    assert error.value.metadata["field"] == "workflow.entrypoint.ref"
+    assert error.value.code == "nat_system_instruction_unsupported"
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "per_user_react_agent",
+        "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
+    ],
+)
+def test_per_user_react_maps_system_instruction_and_tool_policy(
+    make_payload,
+    ref: str,
+):
+    payload = make_payload(
+        workflow=_fabric_workflow(
+            ref,
+            llm_name="default",
+            tool_names=["clock", "unused"],
+        ),
+        functions={
+            "clock": {"_type": "current_datetime"},
+            "unused": {"_type": "unused_function"},
+        },
+        instruction="Use the clock for time questions.",
+        tools={"enabled": ["clock"]},
+    )
+
+    result = adapter.build_nat_config_mapping(payload["config"])
+
+    assert result["workflow"]["additional_instructions"] == (
+        "Use the clock for time questions."
+    )
+    assert result["workflow"]["tool_names"] == ["clock"]
+    assert result["functions"] == {"clock": {"_type": "current_datetime"}}
+
+
+def test_nat_registry_ref_passes_through_without_adapter_catalog(make_payload):
+    payload = make_payload(workflow=_fabric_workflow("installed.custom/workflow"))
+
+    result = adapter.build_nat_config_mapping(payload["config"])
+
+    assert result["workflow"] == {"_type": "installed.custom/workflow"}
 
 
 def test_missing_root_workflow_is_rejected(make_payload):
@@ -388,7 +478,6 @@ def test_missing_root_workflow_is_rejected(make_payload):
     ("workflow", "field"),
     [
         (_fabric_workflow(kind="python_callable"), "workflow.entrypoint.kind"),
-        (_fabric_workflow("fabric.agent.unknown"), "workflow.entrypoint.ref"),
         (_fabric_workflow(_type="react_agent"), "workflow.settings._type"),
     ],
 )
@@ -439,6 +528,52 @@ def test_typed_examples_project_and_translate_through_one_nat_adapter(
         }
 
 
+@pytest.mark.parametrize(
+    ("ref", "expected_type"),
+    [
+        ("per_user_react_agent", "per_user_react_agent"),
+        (
+            "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
+            "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
+        ),
+        ("tool_calling_agent", "tool_calling_agent"),
+        (
+            "nat.plugins.langchain.agent.tool_calling_agent/tool_calling_agent",
+            "nat.plugins.langchain.agent.tool_calling_agent/tool_calling_agent",
+        ),
+    ],
+)
+def test_nat_workflow_refs_plan_through_generic_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    ref: str,
+    expected_type: str,
+):
+    descriptor = ROOT / "external" / "nat" / "fabric-adapter.json"
+    staged_descriptor = tmp_path / "adapters" / "nat" / "fabric-adapter.json"
+    staged_descriptor.parent.mkdir(parents=True)
+    staged_descriptor.write_text(
+        descriptor.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    namespace = runpy.run_path(
+        str(ROOT / "external" / "nat" / "examples" / "calculator.py")
+    )
+    config = namespace["build_config"]()
+    config.workflow.entrypoint.ref = ref
+    if ref.rsplit("/", 1)[-1] not in {"react_agent", "per_user_react_agent"}:
+        config.instructions = None
+        config.mcp = None
+        config.tools = None
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+
+    plan = Fabric().plan(config, base_dir=tmp_path)
+
+    assert plan.config.workflow.entrypoint.ref == ref
+    southbound = AgentConfig.from_mapping(plan.to_mapping()["agent_config"])
+    nat_config = adapter.build_nat_config_mapping(southbound)
+    assert nat_config["workflow"]["_type"] == expected_type
+
+
 def test_calculator_example_uses_the_source_stdio_server():
     namespace = runpy.run_path(
         str(ROOT / "external" / "nat" / "examples" / "calculator.py")
@@ -486,9 +621,27 @@ def test_build_typed_config_discovers_components_before_validation(
     mock_nat["discover"].assert_called_once_with(mock_nat["plugin_types"].CONFIG_OBJECT)
 
 
+@pytest.mark.parametrize(
+    ("ref", "expected_type"),
+    [
+        ("fabric.agent.react", "react_agent"),
+        ("per_user_react_agent", "per_user_react_agent"),
+        (
+            "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
+            "per_user_react_agent",
+        ),
+        ("tool_calling_agent", "tool_calling_agent"),
+        (
+            "nat.plugins.langchain.agent.tool_calling_agent/tool_calling_agent",
+            "tool_calling_agent",
+        ),
+    ],
+)
 def test_build_typed_config_contract_with_installed_nat(
     make_payload,
     monkeypatch: pytest.MonkeyPatch,
+    ref: str,
+    expected_type: str,
 ):
     config_module = pytest.importorskip(
         "nat.data_models.config",
@@ -500,7 +653,7 @@ def test_build_typed_config_contract_with_installed_nat(
     )
     monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
     payload = make_payload(
-        workflow=_fabric_workflow(llm_name="default"),
+        workflow=_fabric_workflow(ref, llm_name="default"),
         models={
             "default": {
                 "provider": "nvidia",
@@ -513,8 +666,80 @@ def test_build_typed_config_contract_with_installed_nat(
     result = adapter.build_nat_config(payload["config"])
 
     assert isinstance(result, config_module.Config)
-    assert result.workflow.type == "react_agent"
+    assert result.workflow.type == expected_type
     assert result.llms["default"].model_name == "nvidia/test-model"
+
+
+async def test_installed_nat_reuses_isolates_and_cleans_per_user_builders(
+    make_payload,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    session_module = pytest.importorskip(
+        "nat.runtime.session",
+        reason="NAT is not installed in the base Fabric test environment",
+    )
+    per_user_builder_module = pytest.importorskip(
+        "nat.builder.per_user_workflow_builder",
+        reason="The installed NAT version does not support per-user workflows",
+    )
+    pytest.importorskip(
+        "nat.plugins.langchain.agent.react_agent",
+        reason="The NAT LangChain extra is not installed",
+    )
+    config = adapter.build_nat_config(
+        make_payload(
+            workflow=_fabric_workflow(
+                "per_user_react_agent",
+                llm_name="default",
+            )
+        )["config"]
+    )
+    shared_builder = MagicMock(name="shared-builder")
+    workflows = [MagicMock(name="workflow-a"), MagicMock(name="workflow-b")]
+    builders: list[MagicMock] = []
+    for index, workflow in enumerate(workflows):
+        builder = MagicMock(name=f"per-user-builder-{index}")
+        builder.__aenter__ = AsyncMock(return_value=builder)
+        builder.__aexit__ = AsyncMock(return_value=False)
+        builder.populate_builder = AsyncMock()
+        builder.build = AsyncMock(return_value=workflow)
+        builders.append(builder)
+    mock_per_user_builder = MagicMock(
+        name="PerUserWorkflowBuilder",
+        side_effect=builders,
+    )
+    monkeypatch.setattr(
+        per_user_builder_module,
+        "PerUserWorkflowBuilder",
+        mock_per_user_builder,
+    )
+
+    manager = await session_module.SessionManager.create(
+        config=config,
+        shared_builder=shared_builder,
+    )
+    assert manager.is_workflow_per_user is True
+    try:
+        async with manager.session(user_id="user-a") as first_a:
+            first_a_workflow = first_a.workflow
+        async with manager.session(user_id="user-b") as first_b:
+            first_b_workflow = first_b.workflow
+        async with manager.session(user_id="user-a") as second_a:
+            second_a_workflow = second_a.workflow
+    finally:
+        await manager.shutdown()
+
+    assert first_a_workflow is workflows[0]
+    assert first_b_workflow is workflows[1]
+    assert second_a_workflow is workflows[0]
+    assert mock_per_user_builder.call_args_list == [
+        call(user_id="user-a", shared_builder=shared_builder),
+        call(user_id="user-b", shared_builder=shared_builder),
+    ]
+    for builder in builders:
+        builder.populate_builder.assert_awaited_once_with(config)
+        builder.build.assert_awaited_once_with(entry_function=None)
+        builder.__aexit__.assert_awaited_once_with(None, None, None)
 
 
 @pytest.mark.parametrize(
@@ -810,6 +1035,156 @@ async def test_runtime_reuses_one_builder_across_invocations_and_cleans_up(
     assert mock_nat["runner"].result.await_count == 2
     mock_nat["sessions"].shutdown.assert_awaited_once_with()
     assert mock_nat["builder_context"].__aexit__.await_count == 1
+
+
+async def test_per_user_runtime_forwards_identity_and_cleans_nat_before_builder(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    mock_nat["sessions"].is_workflow_per_user = True
+    events: list[str] = []
+    mock_nat["runner"].result = AsyncMock(
+        side_effect=[{"answer": "a1"}, {"answer": "b1"}, {"answer": "a2"}]
+    )
+    mock_nat["sessions"].shutdown.side_effect = lambda: events.append("sessions")
+    mock_nat["builder_context"].__aexit__.side_effect = lambda *_args: (
+        events.append("builder") or False
+    )
+    runtime = adapter.NatRuntime()
+    await runtime.start(
+        make_payload(
+            workflow=_fabric_workflow(
+                "nat.plugins.langchain.agent.react_agent/per_user_react_agent"
+            )
+        )
+    )
+
+    results = [
+        await runtime.invoke(
+            make_invocation_payload(
+                input_value=message,
+                request_id=f"message-{index}",
+                context={"user_id": user},
+            )
+        )
+        for index, (user, message) in enumerate(
+            [("user-a", "first"), ("user-b", "first"), ("user-a", "second")],
+            start=1,
+        )
+    ]
+    await runtime.stop()
+
+    assert [result["response"] for result in results] == [
+        {"answer": "a1"},
+        {"answer": "b1"},
+        {"answer": "a2"},
+    ]
+    assert mock_nat["sessions"].session.call_args_list == [
+        call(user_id="user-a", user_message_id="message-1"),
+        call(user_id="user-b", user_message_id="message-2"),
+        call(user_id="user-a", user_message_id="message-3"),
+    ]
+    mock_nat["workflow_builder"].from_config.assert_called_once_with(
+        config=mock_nat["typed_config"]
+    )
+    mock_nat["session_manager"].create.assert_awaited_once_with(
+        config=mock_nat["typed_config"],
+        shared_builder=mock_nat["builder"],
+    )
+    assert events == ["sessions", "builder"]
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        None,
+        {},
+        {"user_id": ""},
+        {"user_id": " \t "},
+        {"user_id": 42},
+    ],
+)
+async def test_per_user_runtime_rejects_missing_or_invalid_user_before_session(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+    context: dict[str, Any] | None,
+):
+    mock_nat["sessions"].is_workflow_per_user = True
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload(workflow=_fabric_workflow("tool_calling_agent")))
+    try:
+        result = await runtime.invoke(make_invocation_payload(context=context))
+    finally:
+        await runtime.stop()
+
+    assert result["error"] == {
+        "code": "nat_invalid_request",
+        "message": (
+            "NAT per-user workflow requires request.context.user_id "
+            "as a non-empty string"
+        ),
+        "retryable": False,
+    }
+    mock_nat["sessions"].session.assert_not_called()
+
+
+async def test_runtime_defaults_missing_per_user_metadata_to_shared(
+    make_payload,
+    make_invocation_payload,
+    mock_nat,
+):
+    del mock_nat["sessions"].is_workflow_per_user
+    runtime = adapter.NatRuntime()
+    await runtime.start(make_payload(workflow=_fabric_workflow("per_user_react_agent")))
+    try:
+        result = await runtime.invoke(make_invocation_payload())
+    finally:
+        await runtime.stop()
+
+    assert result["response"] == {"answer": 42}
+    mock_nat["sessions"].session.assert_called_once_with(
+        user_message_id="request-1"
+    )
+
+
+async def test_independent_fabric_runtimes_create_separate_nat_managers(
+    make_payload,
+    mock_nat,
+):
+    builders: list[MagicMock] = []
+    builder_contexts: list[MagicMock] = []
+    managers: list[MagicMock] = []
+    for index in range(2):
+        builder = MagicMock(name=f"builder-{index}")
+        builder_context = MagicMock(name=f"builder-context-{index}")
+        builder_context.__aenter__ = AsyncMock(return_value=builder)
+        builder_context.__aexit__ = AsyncMock(return_value=False)
+        manager = MagicMock(name=f"manager-{index}")
+        manager.shutdown = AsyncMock()
+        builders.append(builder)
+        builder_contexts.append(builder_context)
+        managers.append(manager)
+
+    mock_nat["workflow_builder"].from_config.side_effect = builder_contexts
+    mock_nat["session_manager"].create.side_effect = managers
+    first_payload = make_payload(workflow=_fabric_workflow("per_user_react_agent"))
+    second_payload = make_payload(workflow=_fabric_workflow("per_user_react_agent"))
+    second_payload["runtime_context"]["runtime_id"] = "runtime-2"
+    first_runtime = adapter.NatRuntime()
+    second_runtime = adapter.NatRuntime()
+    await first_runtime.start(first_payload)
+    await second_runtime.start(second_payload)
+    await first_runtime.stop()
+    await second_runtime.stop()
+
+    assert mock_nat["session_manager"].create.await_args_list == [
+        call(config=mock_nat["typed_config"], shared_builder=builders[0]),
+        call(config=mock_nat["typed_config"], shared_builder=builders[1]),
+    ]
+    managers[0].shutdown.assert_awaited_once_with()
+    managers[1].shutdown.assert_awaited_once_with()
 
 
 async def test_start_rejects_an_already_started_runtime(make_payload, mock_nat):

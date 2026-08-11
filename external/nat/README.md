@@ -15,16 +15,18 @@ northbound `FabricConfig`, or depend on Pydantic for its contract boundary.
 
 ## Configuration Boundary
 
-NeMo Fabric owns portable configuration. `workflow` selects a Fabric-enumerated
-agent factory and `tools.definitions` supplies named functions and function
-groups that the adapter resolves as installed NAT components.
+NeMo Fabric owns portable configuration. `workflow` selects the existing
+portable ReAct alias or an installed NAT registry factory.
+`tools.definitions` supplies named functions and function groups that the
+adapter resolves as installed NAT components.
 
 | NeMo Fabric input | NAT configuration |
 | --- | --- |
 | `models.<role>` | `llms.<role>`; every NeMo Fabric model-role name is preserved |
-| `instructions.system` | Built-in `react_agent` workflow `additional_instructions`; other workflow types reject this field in the initial adapter |
-| `workflow.entrypoint.kind=factory` | Resolve a Fabric-enumerated agent intent |
+| `instructions.system` | Built-in shared and per-user ReAct workflow `additional_instructions`; other workflow types reject this field in the initial adapter |
+| `workflow.entrypoint.kind=factory` | Resolve a NAT registry factory |
 | `workflow.entrypoint.ref=fabric.agent.react` | NAT `react_agent` workflow factory |
+| Any other `workflow.entrypoint.ref` | Forward the short or fully qualified NAT registry type unchanged |
 | `workflow.settings` | Remaining `workflow` component fields |
 | `tools.definitions.<name>` with `kind=function` | NAT `functions.<name>`; `ref` becomes `_type` |
 | `tools.definitions.<name>` with `kind=function_group` | NAT `function_groups.<name>`; `ref` becomes `_type` |
@@ -34,15 +36,45 @@ groups that the adapter resolves as installed NAT components.
 The adapter loads installed `nat.components` entry points before NAT validates
 the generated configuration. A custom function or function group is supplied
 as an installed NAT component package and selected by `tools.definitions.ref`.
-No Python callable crosses the configuration contract. A custom adapter may
-publish a broader workflow schema without changing this shared NAT adapter.
+No Python callable crosses the configuration contract. Installed NAT owns the
+accepted registry types and validates their native settings.
+
+NAT validates registry references after loading installed component entry
+points. The adapter does not maintain a workflow catalog. It translates
+portable system instructions and tool policy only for the shared and per-user
+ReAct configuration shapes whose fields it knows; other NAT workflows remain
+available when callers use their native `workflow.settings` and omit those
+normalized ReAct-specific fields.
 
 At runtime, `start` loads components, enters one `WorkflowBuilder`, creates a
 `SessionManager` with that shared builder, and retains both resources. Each
 `invoke` opens a session from the retained manager, enters `session.run(...)`,
-and awaits `runner.result()`. `stop` shuts down the session manager and exits
-the builder context. This first reference does not claim cancellation, service,
-streaming, or live-update support.
+and awaits `runner.result()`. The adapter reads NAT's session-manager metadata
+to determine whether invocation identity is required, validates and forwards
+that identity to `SessionManager.session(...)`, and leaves builder creation,
+caching, and cleanup to NAT. Repeated requests for one user reuse NAT's cached
+builder, different users remain isolated, and separate NeMo Fabric runtimes
+own separate session managers.
+
+After starting a multi-turn runtime, invoke a per-user workflow with a typed
+request:
+
+```python
+from nemo_fabric import RunRequest
+
+result = await runtime.invoke(
+    request=RunRequest(
+        input="What did I ask previously?",
+        context={"user_id": "user-123"},
+    )
+)
+```
+
+`stop` first shuts down the session manager, including NAT's cleanup task and
+cached per-user builders, and then exits the shared builder context. NAT can
+also evict inactive per-user builders according to its session cleanup policy.
+This reference does not claim cancellation, service, streaming, or live-update
+support.
 
 ## MCP Tool Filters
 

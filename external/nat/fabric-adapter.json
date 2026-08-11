@@ -21,11 +21,13 @@
         "properties": {
           "kind": {
             "const": "factory",
-            "description": "Resolve a Fabric-enumerated agent intent through this adapter."
+            "description": "Resolve a NAT registry factory through this adapter."
           },
           "ref": {
-            "const": "fabric.agent.react",
-            "description": "Build Fabric's ReAct agent intent with the NAT react_agent factory."
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S+$",
+            "description": "Resolve an installed NAT workflow registry type; fabric.agent.react is retained as the portable ReAct alias."
           }
         },
         "required": ["kind", "ref"],

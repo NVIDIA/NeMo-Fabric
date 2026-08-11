@@ -6,7 +6,9 @@
 
 The adapter builds one in-memory NAT configuration from Fabric's normalized
 configuration and adapter-owned NAT component settings. One persistent adapter
-host owns the resulting workflow for the complete Fabric runtime lifecycle.
+host owns the shared builder and session manager for the complete Fabric
+runtime lifecycle. NAT owns workflow-specific session behavior beneath that
+manager, including per-user workflow builders.
 """
 
 from __future__ import annotations
@@ -29,10 +31,15 @@ MODE = "agent_config"
 WORKFLOW_FACTORY_KIND = "factory"
 FABRIC_REACT_AGENT = "fabric.agent.react"
 FUNCTION_GROUP_SEPARATOR = "__"
-REACT_AGENT_REFS = frozenset(
+# This allowlist selects the field codec for NAT's known ReAct configuration
+# models. It never determines shared versus per-user lifecycle; SessionManager
+# owns that decision.
+REACT_CONFIG_TYPES = frozenset(
     {
         "react_agent",
+        "per_user_react_agent",
         "nat.plugins.langchain.agent.react_agent/react_agent",
+        "nat.plugins.langchain.agent.react_agent/per_user_react_agent",
     }
 )
 RESERVED_MODEL_SETTINGS = frozenset(
@@ -98,13 +105,6 @@ def _nat_workflow(agent_config: AgentConfig) -> dict[str, Any]:
             f"workflow.entrypoint.kind must equal {WORKFLOW_FACTORY_KIND!r}",
             field="workflow.entrypoint.kind",
         )
-    if entrypoint.ref != FABRIC_REACT_AGENT:
-        raise _config_error(
-            "nat_invalid_workflow",
-            f"NAT does not support workflow factory {entrypoint.ref!r}",
-            field="workflow.entrypoint.ref",
-        )
-
     settings = workflow_config.settings
     if "_type" in settings:
         raise _config_error(
@@ -114,8 +114,10 @@ def _nat_workflow(agent_config: AgentConfig) -> dict[str, Any]:
         )
 
     workflow = copy.deepcopy(settings)
-    workflow["_type"] = "react_agent"
-    if _is_react_agent(workflow):
+    workflow["_type"] = (
+        "react_agent" if entrypoint.ref == FABRIC_REACT_AGENT else entrypoint.ref
+    )
+    if _uses_react_config_shape(workflow):
         workflow.setdefault("tool_names", [])
     return workflow
 
@@ -214,8 +216,8 @@ def _nat_llms(agent_config: AgentConfig) -> dict[str, dict[str, Any]]:
     return llms
 
 
-def _is_react_agent(workflow: dict[str, Any]) -> bool:
-    return workflow.get("_type") in REACT_AGENT_REFS
+def _uses_react_config_shape(workflow: dict[str, Any]) -> bool:
+    return workflow.get("_type") in REACT_CONFIG_TYPES
 
 
 def _apply_system_instruction(
@@ -226,7 +228,7 @@ def _apply_system_instruction(
         return
 
     workflow = config["workflow"]
-    if not _is_react_agent(workflow):
+    if not _uses_react_config_shape(workflow):
         raise _config_error(
             "nat_system_instruction_unsupported",
             "instructions.system is supported only for a NAT react_agent workflow",
@@ -636,7 +638,11 @@ def build_nat_config(agent_config: AgentConfig) -> Any:
         ) from error
 
 
-def _session_kwargs(request: dict[str, Any]) -> dict[str, str]:
+def _session_kwargs(
+    request: dict[str, Any],
+    *,
+    require_user_id: bool = False,
+) -> dict[str, str]:
     context = request.get("context")
     if context is None:
         context = {}
@@ -648,11 +654,18 @@ def _session_kwargs(request: dict[str, Any]) -> dict[str, str]:
         "conversation_id": context.get("conversation_id"),
         "user_message_id": context.get("user_message_id") or request.get("request_id"),
     }
+    user_id = values["user_id"]
+    if require_user_id and (not isinstance(user_id, str) or not user_id.strip()):
+        raise ValueError(
+            "NAT per-user workflow requires request.context.user_id "
+            "as a non-empty string"
+        )
+
     result: dict[str, str] = {}
     for name, value in values.items():
         if value is None:
             continue
-        if not isinstance(value, str) or not value:
+        if not isinstance(value, str) or not value.strip():
             raise ValueError(
                 f"NAT invocation request context {name} must be a non-empty string"
             )
@@ -767,7 +780,12 @@ class NatRuntime:
                 "NAT invocation request must be a mapping",
             )
         try:
-            session_kwargs = _session_kwargs(request)
+            session_kwargs = _session_kwargs(
+                request,
+                require_user_id=bool(
+                    getattr(self._sessions, "is_workflow_per_user", False)
+                ),
+            )
         except ValueError as error:
             return _failure_output("nat_invalid_request", str(error))
 
