@@ -18,6 +18,7 @@ if sys.version_info >= (3, 14):
     )
 
 from nemo_fabric_adapters.hermes import adapter
+from nemo_fabric_adapters.hermes import telemetry
 
 
 async def test_relay_invocation_passes_fabric_request_id_to_hermes(
@@ -58,7 +59,7 @@ async def test_relay_invocation_passes_fabric_request_id_to_hermes(
 
     monkeypatch.setattr(adapter, "_invoke_hermes_turn", invoke_turn)
     monkeypatch.setattr(
-        adapter,
+        telemetry,
         "finalize_hermes_relay_session",
         lambda _session_id: events.append("finalize"),
     )

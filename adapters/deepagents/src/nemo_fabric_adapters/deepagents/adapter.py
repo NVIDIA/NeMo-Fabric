@@ -653,7 +653,9 @@ class DeepAgentsRuntime:
         if outcome.error is None:
             self._completed_invocations += 1
 
-        telemetry_runtime, relay_artifacts, collect_error = self._telemetry_output()
+        telemetry_runtime, relay_artifacts, collect_error = self._telemetry_output(
+            inherited_quarantine=inherited_quarantine
+        )
         return normalize_output(
             model_name=self._model_name,
             base_url=self._base_url,
@@ -750,11 +752,18 @@ class DeepAgentsRuntime:
 
     def _telemetry_output(
         self,
+        *,
+        inherited_quarantine: bool,
     ) -> tuple[dict[str, Any] | None, list[dict[str, str]] | None, str | None]:
         """Return the telemetry block, artifact references, and any collection fault.
 
         Collecting references walks the filesystem, so it is returned as a fault rather
         than raised: raising here would discard an already-completed turn.
+
+        ``inherited_quarantine`` is the state from *before* this turn: the turn that
+        poisoned the runtime opened a scope and produced its own partial artifacts, so it
+        still publishes them; only turns that inherit the quarantine have none of their
+        own to publish.
         """
 
         if self._observability is None:
@@ -766,7 +775,7 @@ class DeepAgentsRuntime:
         }
         if not self._observability.collect_artifacts:
             return telemetry_runtime, None, None
-        if self._telemetry_quarantine is not None:
+        if inherited_quarantine:
             return telemetry_runtime, None, None
         try:
             relay_artifacts = common_utils.collect_relay_artifacts(

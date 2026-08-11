@@ -32,6 +32,8 @@ if importlib.util.find_spec("run_agent") is not None:
     import nemo_fabric_adapters.common.utils as common_utils
 
     from nemo_fabric_adapters.hermes import adapter
+    from nemo_fabric_adapters.hermes import configuration
+    from nemo_fabric_adapters.hermes import telemetry
 
 
 def _agent_config(value: dict[str, object]) -> AgentConfig:
@@ -75,14 +77,14 @@ def _runtime_context(
 def test_validate_hermes_telemetry_provider_accepts_relay(
     providers: list[str] | None,
 ):
-    adapter.validate_hermes_telemetry_provider(_runtime_context(providers=providers))
+    telemetry.validate_hermes_telemetry_provider(_runtime_context(providers=providers))
 
 
 def test_validate_hermes_telemetry_provider_rejects_native():
     with pytest.raises(
         ValueError, match="only relay telemetry is supported for Hermes"
     ):
-        adapter.validate_hermes_telemetry_provider(
+        telemetry.validate_hermes_telemetry_provider(
             _runtime_context(providers=["native"])
         )
 
@@ -91,7 +93,7 @@ def test_validate_hermes_telemetry_provider_rejects_mixed_native_and_relay():
     with pytest.raises(
         ValueError, match="only relay telemetry is supported for Hermes"
     ):
-        adapter.validate_hermes_telemetry_provider(
+        telemetry.validate_hermes_telemetry_provider(
             _runtime_context(providers=["relay", "native"])
         )
 
@@ -121,7 +123,7 @@ def test_write_hermes_relay_plugin_config_uses_upstream_toml(
     monkeypatch,
     tmp_path: Path,
 ):
-    monkeypatch.setattr(adapter, "distribution_version", lambda _name: "0.6.0")
+    monkeypatch.setattr(telemetry, "distribution_version", lambda _name: "0.6.0")
     relay_config_path = tmp_path / "relay.json"
     relay_config_path.write_text(
         json.dumps(
@@ -151,7 +153,7 @@ def test_write_hermes_relay_plugin_config_uses_upstream_toml(
         "runtime_context": {"runtime_id": "runtime-hermes-relay"},
     }
 
-    plugin_config_path, plugin_config = adapter.write_hermes_relay_plugin_config(
+    plugin_config_path, plugin_config = telemetry.write_hermes_relay_plugin_config(
         payload
     )
 
@@ -180,7 +182,7 @@ def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
     monkeypatch,
     tmp_path: Path,
 ):
-    monkeypatch.setattr(adapter, "distribution_version", lambda _name: "0.7.2")
+    monkeypatch.setattr(telemetry, "distribution_version", lambda _name: "0.7.2")
     relay_config_path = tmp_path / "relay.json"
     relay_config_path.write_text(
         json.dumps(
@@ -213,7 +215,7 @@ def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
         "runtime_context": {"runtime_id": "runtime-hermes-relay"},
     }
 
-    plugin_config_path, _ = adapter.write_hermes_relay_plugin_config(payload)
+    plugin_config_path, _ = telemetry.write_hermes_relay_plugin_config(payload)
 
     with plugin_config_path.open("rb") as stream:
         staged_observability = tomllib.load(stream)["components"][0]["config"]
@@ -245,7 +247,7 @@ def test_finalize_hermes_relay_session_uses_legacy_plugin_hook(monkeypatch):
     monkeypatch.setitem(sys.modules, "hermes_cli.plugins", hermes_plugins)
     monkeypatch.delitem(sys.modules, "hermes_cli.lifecycle", raising=False)
 
-    adapter.finalize_hermes_relay_session("session-legacy")
+    telemetry.finalize_hermes_relay_session("session-legacy")
 
     mock_invoke_hook.assert_called_once_with(
         "on_session_finalize", session_id="session-legacy", platform="fabric"
@@ -258,7 +260,7 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
 ):
     plugin_config_path = tmp_path / "relay-config" / "plugins.toml"
     monkeypatch.setattr(
-        adapter,
+        telemetry,
         "write_hermes_relay_plugin_config",
         lambda _payload: (plugin_config_path, {"version": 1}),
     )
@@ -268,13 +270,13 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
         assert os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] == str(plugin_config_path)
         assert all(
             name not in os.environ
-            for name in adapter.HERMES_RELAY_ENV_NAMES
+            for name in telemetry.HERMES_RELAY_ENV_NAMES
             if name != "HERMES_NEMO_RELAY_PLUGINS_TOML"
         )
         raise RuntimeError("stop after Relay plugin staging")
 
-    monkeypatch.setattr(adapter, "write_hermes_config", stop_after_staging)
-    for name in adapter.HERMES_RELAY_ENV_NAMES:
+    monkeypatch.setattr(configuration, "write_hermes_config", stop_after_staging)
+    for name in telemetry.HERMES_RELAY_ENV_NAMES:
         monkeypatch.setenv(name, "before")
     payload = {
         "base_dir": str(tmp_path),
@@ -297,7 +299,7 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
     with pytest.raises(RuntimeError, match="stop after Relay plugin staging"):
         await adapter.HermesRuntime().start(payload)
 
-    assert all(name not in os.environ for name in adapter.HERMES_RELAY_ENV_NAMES)
+    assert all(name not in os.environ for name in telemetry.HERMES_RELAY_ENV_NAMES)
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -335,7 +337,7 @@ def test_build_hermes_config_maps_fabric_config_to_hermes_config():
             },
         }
     )
-    config = adapter.build_hermes_config(
+    config = configuration.build_hermes_config(
         agent_config,
         workspace="/workspace/repo",
         relay_enabled=True,
@@ -396,7 +398,7 @@ def test_build_hermes_config_omits_max_turns_when_fabric_limit_unset():
         }
     )
 
-    config = adapter.build_hermes_config(agent_config, workspace=".")
+    config = configuration.build_hermes_config(agent_config, workspace=".")
 
     assert "max_turns" not in config["agent"]
 
@@ -412,7 +414,7 @@ def test_build_hermes_config_omits_max_turns_when_fabric_limit_null():
         }
     )
 
-    config = adapter.build_hermes_config(agent_config, workspace=".")
+    config = configuration.build_hermes_config(agent_config, workspace=".")
 
     assert "max_turns" not in config["agent"]
 
@@ -483,7 +485,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
     )
     payload["config"] = agent_config.to_mapping()
 
-    config = adapter.build_hermes_config(
+    config = configuration.build_hermes_config(
         agent_config,
         workspace=str(tmp_path / "workspace"),
         relay_enabled=True,
@@ -546,7 +548,7 @@ def test_build_hermes_config_maps_stdio_mcp_args_and_env_from_agent_config(
         }
     )
 
-    config = adapter.build_hermes_config(
+    config = configuration.build_hermes_config(
         agent_config,
         workspace=str(tmp_path / "workspace"),
     )
@@ -837,7 +839,7 @@ def test_write_hermes_config_writes_file(tmp_path: Path):
         }
     )
 
-    config_path, config = adapter.write_hermes_config(
+    config_path, config = configuration.write_hermes_config(
         agent_config,
         tmp_path / "hermes-home",
         workspace=".",
@@ -880,11 +882,11 @@ def test_hermes_mcp_server_config(
     server: AgentMcpServerConfig,
     expected: dict[str, object],
 ):
-    assert adapter.hermes_mcp_server_config(server) == expected
+    assert configuration.hermes_mcp_server_config(server) == expected
 
 
 def test_summarize_hermes_config():
-    assert adapter.summarize_hermes_config(
+    assert configuration.summarize_hermes_config(
         {
             "model": {"default": "demo"},
             "terminal": {"backend": "local"},
@@ -942,7 +944,9 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
         assert os.environ["TERMINAL_ENV"] == "local"
         raise RuntimeError("stop after environment setup")
 
-    monkeypatch.setattr(adapter, "write_hermes_config", stop_after_environment_setup)
+    monkeypatch.setattr(
+        configuration, "write_hermes_config", stop_after_environment_setup
+    )
     payload = {
         "base_dir": str(tmp_path),
         "runtime_context": _runtime_context(

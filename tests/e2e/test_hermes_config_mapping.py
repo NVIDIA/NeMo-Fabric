@@ -15,12 +15,12 @@ from nemo_fabric_adapter_contract.models import AgentConfig
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
 if importlib.util.find_spec("run_agent") is not None:
-    from nemo_fabric_adapters.hermes import adapter as hermes_adapter
+    from nemo_fabric_adapters.hermes import configuration
 
 
 def test_hermes_config_mapping(tmp_path: Path):
     hermes_home = tmp_path / "home"
-    config_path, config = hermes_adapter.write_hermes_config(
+    config_path, config = configuration.write_hermes_config(
         agent_config(),
         hermes_home,
         workspace=str(tmp_path / "workspace"),
