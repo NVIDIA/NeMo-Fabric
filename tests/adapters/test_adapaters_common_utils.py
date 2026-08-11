@@ -346,7 +346,9 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         "runtime_context": {"runtime_id": "runtime-current"},
     }
 
-    plugin_config = common_utils.load_relay_plugin_config(payload)
+    plugin_config = common_utils.load_relay_plugin_config(
+        payload, model_name="typed/deepagents-model"
+    )
     observability = plugin_config["components"][0]["config"]
 
     assert plugin_config["version"] == 1
@@ -371,7 +373,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         == "trajectory-{session_id}.atif.json"
     )
     assert observability["atif"]["agent_name"] == "review-agent"
-    assert observability["atif"]["model_name"] == "nvidia/review-model"
+    assert observability["atif"]["model_name"] == "typed/deepagents-model"
     assert Path(observability["atif"]["output_directory"]).is_dir()
 
     atof_file = Path(file_sink["output_directory"]) / "events.atof.jsonl"

@@ -1816,6 +1816,9 @@ fn runtime_telemetry_context(
             Value::String(output_dir.to_string_lossy().into_owned()),
         );
     }
+    if let Some(native_config) = &telemetry.native_config {
+        metadata.insert("native_config".to_string(), native_config.clone());
+    }
     if !telemetry.adapter_outputs.is_empty() {
         metadata.insert(
             "adapter_outputs".to_string(),
@@ -2454,7 +2457,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::config::{ResolveContext, resolve_run_plan_from_config};
+    use crate::config::{ResolveContext, TelemetryProvider, resolve_run_plan_from_config};
 
     fn local_host_plan(mode: &str) -> (PathBuf, RunPlan) {
         local_host_plan_with_relay(mode, false)
@@ -2641,6 +2644,26 @@ for line in sys.stdin:
             serde_json::json!("python3")
         );
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_context_preserves_native_telemetry_config() {
+        let (root, mut plan) = local_host_plan("success");
+        let native_config = serde_json::json!({"components": [{"kind": "observability"}]});
+        plan.telemetry_plan = Some(TelemetryPlan {
+            providers: vec![TelemetryProvider::Native],
+            relay_enabled: false,
+            relay_project: None,
+            relay_output_dir: None,
+            relay_config: None,
+            native_config: Some(native_config.clone()),
+            adapter_outputs: Vec::new(),
+        });
+
+        let telemetry = runtime_telemetry_context(&plan, None).expect("telemetry context");
+
+        assert_eq!(telemetry.metadata["native_config"], native_config);
         let _ = fs::remove_dir_all(root);
     }
 

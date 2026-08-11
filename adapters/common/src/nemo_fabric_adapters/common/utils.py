@@ -231,7 +231,9 @@ def dump_yaml(value: dict[str, Any]) -> str:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
 
 
-def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
+def load_relay_plugin_config(
+    payload: dict[str, Any], *, model_name: str | None = None
+) -> dict[str, Any]:
     config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
     if not config_path:
         raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
@@ -254,12 +256,12 @@ def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
         }
     plugin_config.setdefault("version", 1)
     plugin_config.setdefault("components", [])
-    normalize_relay_output_dirs(plugin_config, payload)
+    normalize_relay_output_dirs(plugin_config, payload, model_name=model_name)
     return plugin_config
 
 
 def normalize_relay_output_dirs(
-    plugin_config: dict[str, Any], payload: dict[str, Any]
+    plugin_config: dict[str, Any], payload: dict[str, Any], *, model_name: str | None = None
 ) -> None:
     base = Path(base_dir(payload)).resolve()
     runtime_id = runtime_context(payload)["runtime_id"]
@@ -301,7 +303,7 @@ def normalize_relay_output_dirs(
         Path(atif["output_directory"]).mkdir(parents=True, exist_ok=True)
         atif.setdefault("filename_template", "trajectory-{session_id}.atif.json")
         atif.setdefault("agent_name", agent_name(payload))
-        atif.setdefault("model_name", relay_model_name(payload))
+        atif.setdefault("model_name", model_name or relay_model_name(payload))
 
 
 def _artifact_directory(value: Any) -> Path | None:

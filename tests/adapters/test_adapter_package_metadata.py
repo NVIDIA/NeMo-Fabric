@@ -80,6 +80,7 @@ ADAPTER_EXTRAS = {
         (
             "adapters/deepagents",
             [
+                f"nemo-fabric-adapter-contract == {PACKAGE_VERSION}",
                 f"nemo-fabric-adapters-common == {PACKAGE_VERSION}",
                 "langchain-mcp-adapters>=0.1,<0.3.0",
                 "langchain-openai>=0.3",
