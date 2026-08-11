@@ -250,17 +250,14 @@ def test_codex_adapter_maps_fabric_request_to_sdk(tmp_path):
         "request": {"input": "Fix the calculator."},
     }
 
-    inputs = adapter.CodexRuntimeInput(
-        config=AgentConfig.from_mapping(payload["config"]),
-        context=RuntimeContext.from_mapping(payload["runtime_context"]),
-        base_dir=payload["base_dir"],
-    )
+    config = AgentConfig.from_mapping(payload["config"])
+    context = RuntimeContext.from_mapping(payload["runtime_context"])
 
-    assert adapter.selected_model(inputs) == "gpt-5.4"
-    assert adapter.sandbox(inputs) == adapter.Sandbox.workspace_write
-    assert adapter._reasoning_effort(inputs) == adapter.ReasoningEffort.high
-    assert adapter.thread_config(inputs, relay=None) == {}
-    assert adapter.resolve_cwd(inputs) == tmp_path
+    assert adapter.selected_model(config) == "gpt-5.4"
+    assert adapter.sandbox(config) == adapter.Sandbox.workspace_write
+    assert adapter._reasoning_effort(config) == adapter.ReasoningEffort.high
+    assert adapter.thread_config(config, context, relay=None) == {}
+    assert adapter.resolve_cwd(context, payload["base_dir"]) == tmp_path
 
 
 def test_claude_calculator_run_uses_current_adapter_contract():
