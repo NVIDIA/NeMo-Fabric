@@ -922,6 +922,7 @@ The model defines the following fields:
 | `args` | `list[str]` | No | `list()` | — | Command-line arguments passed to an MCP stdio server process. |
 | `env` | `dict[str, str]` | No | `dict()` | — | — |
 | `authentication` | `McpAuthenticationConfig \| None` | No | `None` | — | — |
+| `custom_headers` | `dict[str, str]` | No | `dict()` | — | HTTP headers passed to an MCP server when transport is sse or streamable-http. |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
 | `allowed_tools` | `list[str] \| None` | No | `None` | — | MCP tools to expose. None exposes every discovered tool; an empty list exposes no tools. |
 | `blocked_tools` | `list[str]` | No | `list()` | — | MCP tools to block after applying the optional allowlist. |
@@ -1040,6 +1041,7 @@ def add_server(
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     authentication: McpAuthenticationConfig | None = None,
+    custom_headers: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     allowed_tools: Sequence[str] | None = None,
     blocked_tools: Sequence[str] = (),
@@ -2329,6 +2331,7 @@ def add_mcp_server(
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
     authentication: McpAuthenticationConfig | None = None,
+    custom_headers: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     allowed_tools: Sequence[str] | None = None,
     blocked_tools: Sequence[str] = (),

@@ -206,12 +206,10 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
             client_id="fabric-client",
             scopes=["repo"],
         ),
+        custom_headers={"X-Tenant": "fabric"},
         exposure="fabric_managed",
         allowed_tools=["issues.read", "pull_requests.read"],
         blocked_tools=["issues.delete"],
-        extra_fields={
-            "custom_headers": {"X-Tenant": "fabric"},
-        },
     )
     config.enable_relay(
         project="fabric-tests",
@@ -361,6 +359,8 @@ def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():
     )
 
     assert isinstance(server.authentication, McpAuthenticationConfig)
+    assert server.custom_headers == {"X-Tenant": "fabric"}
+    assert "custom_headers" not in server.extra_fields
     assert server.to_mapping() == {
         "transport": "streamable-http",
         "url": "https://mcp.example.test/jira",
@@ -440,16 +440,36 @@ def test_mcp_authentication_rejects_invalid_policy(authentication):
         McpAuthenticationConfig.model_validate(authentication)
 
 
-def test_mcp_config_add_server_preserves_legacy_authentication_extra_field():
+def test_mcp_config_add_server_preserves_legacy_mcp_extra_fields():
     config = McpConfig().add_server(
         "docs",
         transport="streamable-http",
         url="https://mcp.example.test",
-        extra_fields={"authentication": {"type": "oauth2"}},
+        extra_fields={
+            "authentication": {"type": "oauth2"},
+            "custom_headers": {"X-Tenant": "fabric"},
+        },
     )
 
     assert config.to_mapping()["servers"]["docs"]["authentication"] == {
         "type": "oauth2"
+    }
+    assert config.to_mapping()["servers"]["docs"]["custom_headers"] == {
+        "X-Tenant": "fabric"
+    }
+
+
+def test_mcp_config_add_server_accepts_custom_headers():
+    config = McpConfig().add_server(
+        "docs",
+        transport="streamable-http",
+        url="https://mcp.example.test",
+        custom_headers={"X-Tenant": "fabric"},
+    )
+
+    assert config.servers["docs"].custom_headers == {"X-Tenant": "fabric"}
+    assert config.to_mapping()["servers"]["docs"]["custom_headers"] == {
+        "X-Tenant": "fabric"
     }
 
 

@@ -426,6 +426,14 @@ class McpServerConfig(FabricBaseModel):
     authentication: McpAuthenticationConfig | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    custom_headers: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+        description=(
+            "HTTP headers passed to an MCP server when transport is sse or "
+            "streamable-http."
+        ),
+    )
     exposure: Literal["harness_native", "fabric_managed"] = "harness_native"
     allowed_tools: list[str] | None = Field(
         default=None,
@@ -489,6 +497,7 @@ class McpConfig(FabricBaseModel):
         args: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
         authentication: McpAuthenticationConfig | None = None,
+        custom_headers: Mapping[str, str] | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
@@ -504,6 +513,7 @@ class McpConfig(FabricBaseModel):
         legacy_args = extensions.pop("args", ())
         legacy_env = extensions.pop("env", None)
         legacy_authentication = extensions.pop("authentication", None)
+        legacy_custom_headers = extensions.pop("custom_headers", None)
         if isinstance(allowed_tools, str):
             raise TypeError("allowed_tools must be a sequence of strings, not a string")
         if isinstance(blocked_tools, str):
@@ -516,6 +526,11 @@ class McpConfig(FabricBaseModel):
             env=env if env is not None else legacy_env or {},
             authentication=(
                 authentication if authentication is not None else legacy_authentication
+            ),
+            custom_headers=(
+                custom_headers
+                if custom_headers is not None
+                else legacy_custom_headers or {}
             ),
             exposure=exposure,
             allowed_tools=None if allowed_tools is None else list(allowed_tools),
@@ -853,6 +868,7 @@ class FabricConfig(FabricBaseModel):
         args: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
         authentication: McpAuthenticationConfig | None = None,
+        custom_headers: Mapping[str, str] | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
@@ -873,6 +889,7 @@ class FabricConfig(FabricBaseModel):
             args=args,
             env=env,
             authentication=authentication,
+            custom_headers=custom_headers,
             exposure=exposure,
             allowed_tools=allowed_tools,
             blocked_tools=blocked_tools,
