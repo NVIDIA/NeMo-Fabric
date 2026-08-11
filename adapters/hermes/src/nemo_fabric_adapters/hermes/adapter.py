@@ -249,6 +249,7 @@ class HermesRuntime:
         self._started = False
         self._agent_config: AgentConfig | None = None
         self._runtime_id: str | None = None
+        self._settings: dict[str, Any] = {}
         self._model_config: AgentModelConfig | None = None
         self._hermes_home: Path | None = None
         self._hermes_config_path: Path | None = None
@@ -282,7 +283,7 @@ class HermesRuntime:
             runtime_context = RuntimeContext.from_mapping(payload.get("runtime_context"))
             validate_hermes_telemetry_provider(runtime_context)
             self._agent_config = agent_config
-            settings = _settings(agent_config)
+            self._settings = _settings(agent_config)
             model_config = _selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
@@ -302,7 +303,7 @@ class HermesRuntime:
             os.environ["TERMINAL_ENV"] = "local"
             os.environ.setdefault(
                 "TERMINAL_TIMEOUT",
-                str(settings.get("terminal_timeout", 60)),
+                str(self._settings.get("terminal_timeout", 60)),
             )
 
             relay_enabled = bool(
@@ -373,15 +374,15 @@ class HermesRuntime:
                         skip_context_files=True,
                         skip_memory=True,
                         save_trajectories=bool(
-                            settings.get("save_trajectories", False)
+                            self._settings.get("save_trajectories", False)
                         ),
-                        max_tokens=settings.get("max_tokens", 512),
+                        max_tokens=self._settings.get("max_tokens", 512),
                         request_overrides=(
                             {"temperature": temperature}
                             if temperature is not None
                             else None
                         ),
-                        reasoning_config=settings.get(
+                        reasoning_config=self._settings.get(
                             "reasoning_config", {"effort": "none"}
                         ),
                         platform="fabric",
@@ -534,6 +535,7 @@ class HermesRuntime:
         self._session_db = None
         self._agent_config = None
         self._runtime_id = None
+        self._settings = {}
         self._model_config = None
         self._hermes_home = None
         self._hermes_config_path = None
