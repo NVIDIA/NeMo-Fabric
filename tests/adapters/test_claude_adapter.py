@@ -392,6 +392,51 @@ async def test_claude_prefetches_oauth_tokens_before_connect(
     assert call.kwargs["timeout"] == 12
 
 
+async def test_claude_preserves_missing_oauth_token_error(monkeypatch):
+    import httpx
+
+    mock_provider = MagicMock()
+    mock_http_client = MagicMock()
+    mock_http_client.post = AsyncMock()
+    mock_http_client_context = MagicMock()
+    mock_http_client_context.__aenter__ = AsyncMock(return_value=mock_http_client)
+    mock_http_client_context.__aexit__ = AsyncMock(return_value=None)
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        MagicMock(return_value=mock_http_client_context),
+    )
+    monkeypatch.setattr(
+        adapter.mcp_auth,
+        "create_mcp_oauth_provider",
+        MagicMock(return_value=mock_provider),
+    )
+    access_token = MagicMock(return_value=None)
+    monkeypatch.setattr(adapter.mcp_auth, "access_token", access_token)
+    config = adapter.mcp_auth.McpOAuth2Config(
+        client_id=None,
+        client_secret_env=None,
+        scopes=(),
+        redirect_uri=None,
+    )
+
+    with pytest.raises(adapter.ClaudeAdapterError) as caught:
+        await adapter._self_authenticate_http_mcp_server(
+            "docs",
+            "https://mcp.example.test",
+            "http",
+            config,
+            timeout=12,
+        )
+
+    access_token.assert_called_once_with(mock_provider)
+    assert caught.value.code == "claude_mcp_authentication_failed"
+    assert caught.value.message == (
+        "MCP server 'docs' OAuth flow did not return an access token"
+    )
+    assert caught.value.metadata == {"server": "docs"}
+
+
 async def test_claude_checks_mcp_connectivity_on_first_invoke(claude_payload):
     server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
     server["authentication"] = {"type": "oauth2"}
@@ -404,7 +449,7 @@ async def test_claude_checks_mcp_connectivity_on_first_invoke(claude_payload):
     await runtime._authenticate_mcp_servers(claude_payload, client)
 
     client.get_mcp_status.assert_awaited()
-    assert runtime._mcp_authentication_checked is True
+    assert runtime._mcp_authentication_checked == {"docs": True}
 
 
 async def test_claude_raises_when_mcp_server_unavailable_at_invoke(claude_payload):
@@ -421,7 +466,57 @@ async def test_claude_raises_when_mcp_server_unavailable_at_invoke(claude_payloa
 
     assert caught.value.code == "claude_mcp_unavailable"
     assert caught.value.metadata == {"server": "docs", "status": "failed"}
-    assert runtime._mcp_authentication_checked is False
+    assert runtime._mcp_authentication_checked == {"docs": False}
+
+
+async def test_claude_tracks_mcp_authentication_per_server(claude_payload):
+    servers = claude_payload["capability_plan"]["native"]["mcp_servers"]
+    servers["docs"]["authentication"] = {"type": "oauth2"}
+    servers["issues"] = {
+        "transport": "streamable-http",
+        "url": "https://issues.example.test",
+        "authentication": {"type": "oauth2"},
+    }
+    client = MagicMock(spec=adapter.ClaudeSDKClient)
+    client.get_mcp_status = AsyncMock(
+        side_effect=[
+            {
+                "mcpServers": [
+                    {"name": "docs", "status": "connected"},
+                    {"name": "issues", "status": "failed"},
+                ]
+            },
+            {
+                "mcpServers": [
+                    {"name": "docs", "status": "connected"},
+                    {"name": "issues", "status": "failed"},
+                ]
+            },
+            {
+                "mcpServers": [
+                    {"name": "docs", "status": "connected"},
+                    {"name": "issues", "status": "connected"},
+                ]
+            },
+        ]
+    )
+    runtime = adapter.ClaudeRuntime()
+
+    with pytest.raises(adapter.ClaudeAdapterError):
+        await runtime._authenticate_mcp_servers(claude_payload, client)
+
+    assert runtime._mcp_authentication_checked == {
+        "docs": True,
+        "issues": False,
+    }
+
+    await runtime._authenticate_mcp_servers(claude_payload, client)
+
+    assert client.get_mcp_status.await_count == 3
+    assert runtime._mcp_authentication_checked == {
+        "docs": True,
+        "issues": True,
+    }
 
 
 async def test_tool_policy_hooks_gate_built_in_and_mcp_tools(claude_payload):

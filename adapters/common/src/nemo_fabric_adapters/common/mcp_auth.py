@@ -604,6 +604,14 @@ def create_mcp_oauth_provider(
     return provider
 
 
+def access_token(provider: Any) -> str | None:
+    """Return the current access token from an MCP SDK OAuth provider."""
+
+    context = getattr(provider, "context", None)
+    tokens = getattr(context, "current_tokens", None) if context is not None else None
+    return getattr(tokens, "access_token", None) if tokens is not None else None
+
+
 def create_mcp_service_account_auth(
     server_name: str,
     config: McpServiceAccountConfig,

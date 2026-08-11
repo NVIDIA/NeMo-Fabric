@@ -462,11 +462,7 @@ async def _self_authenticate_http_mcp_server(
             metadata={"server": server_name},
         ) from error
 
-    context = getattr(provider, "context", None)
-    tokens = getattr(context, "current_tokens", None) if context is not None else None
-    access_token: str | None = (
-        getattr(tokens, "access_token", None) if tokens is not None else None
-    )
+    access_token = mcp_auth.access_token(provider)
     if not access_token:
         raise ClaudeAdapterError(
             "claude_mcp_authentication_failed",
@@ -1114,7 +1110,7 @@ class ClaudeRuntime:
         self._fabric_runtime_id: str | None = None
         self._claude_session_id: str | None = None
         self._client: ClaudeSDKClient | None = None
-        self._mcp_authentication_checked = False
+        self._mcp_authentication_checked: dict[str, bool] = {}
         self._relay: ClaudeRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
         self._mcp_config_path: Path | None = None
@@ -1244,10 +1240,11 @@ class ClaudeRuntime:
         payload: dict[str, Any],
         client: ClaudeSDKClient,
     ) -> None:
-        if self._mcp_authentication_checked:
-            return
-
         for name in _authenticated_mcp_servers(payload):
+            if self._mcp_authentication_checked.get(name, False):
+                continue
+
+            self._mcp_authentication_checked[name] = False
             status = await self._mcp_server_status(client, name)
             if status != "connected":
                 raise ClaudeAdapterError(
@@ -1256,7 +1253,7 @@ class ClaudeRuntime:
                     metadata={"server": name, "status": status},
                 )
 
-        self._mcp_authentication_checked = True
+            self._mcp_authentication_checked[name] = True
 
     async def _mcp_server_status(
         self,
@@ -1354,7 +1351,7 @@ class ClaudeRuntime:
         self._start_payload = None
         self._fabric_runtime_id = None
         self._claude_session_id = None
-        self._mcp_authentication_checked = False
+        self._mcp_authentication_checked = {}
         self._unusable = True
 
         disconnect_error: BaseException | None = None

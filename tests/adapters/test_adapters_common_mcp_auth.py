@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import os
 import socket
+from types import SimpleNamespace
 from urllib.parse import urlparse
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -49,6 +50,26 @@ def test_parse_oauth2_config_allows_dynamic_registration_to_supply_client_secret
     assert config.client_secret_env is None
     assert config.enable_dynamic_registration is True
     assert config.token_endpoint_auth_method == "client_secret_post"
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    [
+        (
+            SimpleNamespace(
+                context=SimpleNamespace(
+                    current_tokens=SimpleNamespace(access_token="fabric-token")
+                )
+            ),
+            "fabric-token",
+        ),
+        (SimpleNamespace(context=SimpleNamespace(current_tokens=None)), None),
+        (SimpleNamespace(context=None), None),
+        (SimpleNamespace(), None),
+    ],
+)
+def test_access_token(provider, expected):
+    assert mcp_auth.access_token(provider) == expected
 
 
 @pytest.mark.parametrize("value", [None, {}, {"type": "bearer"}])
