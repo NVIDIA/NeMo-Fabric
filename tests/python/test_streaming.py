@@ -928,6 +928,96 @@ async def test_listener_correlates_records_to_active_turn(
     await listener.close()
 
 
+async def test_listener_correlates_upstream_hermes_turn_records():
+    listener = await _AtofStreamListener(maxsize=4).start()
+    listener.begin_stream(request_id="request-2", turn_index=2)
+    turn_id = "upstream-turn"
+    current = [
+        {
+            "kind": "mark",
+            "name": "hermes.turn.start",
+            "uuid": "turn-start",
+            "metadata": {
+                "platform": "fabric",
+                "task_id": "request-2",
+                "turn_id": turn_id,
+            },
+        },
+        {
+            "kind": "scope",
+            "scope_category": "start",
+            "uuid": "llm",
+            "parent_uuid": "session",
+            "metadata": {"turn_id": turn_id},
+        },
+        {"kind": "mark", "uuid": "llm-child", "parent_uuid": "llm"},
+        {
+            "kind": "mark",
+            "name": "hermes.turn.end",
+            "uuid": "turn-end",
+            "metadata": {
+                "platform": "fabric",
+                "task_id": "request-2",
+                "turn_id": turn_id,
+            },
+        },
+    ]
+
+    await _post_chunked(
+        listener.url,
+        [
+            {
+                "kind": "scope",
+                "scope_category": "start",
+                "uuid": "previous",
+                "metadata": {"nemo_fabric_request_id": "request-1"},
+            },
+            *current,
+        ],
+    )
+
+    assert [await listener.records.get() for _ in current] == current
+    assert listener.records.empty()
+    listener.end_stream()
+    await listener.close()
+
+
+async def test_listener_rejects_late_upstream_hermes_turn_marker():
+    listener = await _AtofStreamListener().start()
+    previous = {
+        "kind": "mark",
+        "name": "hermes.turn.start",
+        "uuid": "previous-turn",
+        "metadata": {
+            "platform": "fabric",
+            "task_id": "request-1",
+            "turn_id": "previous-turn",
+        },
+    }
+    listener.begin_stream(request_id="request-1")
+    await _post_chunked(listener.url, [previous])
+    assert await listener.records.get() == previous
+    listener.end_stream()
+
+    current = {
+        "kind": "mark",
+        "name": "hermes.turn.start",
+        "uuid": "current-turn",
+        "metadata": {
+            "platform": "fabric",
+            "task_id": "request-2",
+            "turn_id": "current-turn",
+        },
+    }
+    listener.begin_stream(request_id="request-2")
+    await _post_chunked(listener.url, [previous, current])
+
+    assert await listener.records.get() == current
+    assert listener.records.empty()
+    listener.end_stream()
+    await listener.close()
+
+
 async def test_listener_applies_byte_budget_backpressure():
     record = {"uuid": "record", "payload": "x" * 16}
     record_size = len(json.dumps(record).encode())
