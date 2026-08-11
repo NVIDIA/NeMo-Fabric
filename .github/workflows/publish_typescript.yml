@@ -43,6 +43,11 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
+      - name: Install just
+        uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
+        with:
+          tool: just@1.50.0
+
       - name: Validate trusted publishing toolchain
         run: |
           set -euo pipefail
@@ -93,18 +98,16 @@ jobs:
           esac
 
           python3 scripts/ci/set_typescript_project_version.py "$version"
+          git diff --exit-code -- \
+            typescript/adapter-contract/package.json \
+            typescript/adapter-contract/package-lock.json
           {
             echo "version=$version"
             echo "dist_tag=$dist_tag"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Install dependencies
-        working-directory: typescript/adapter-contract
-        run: npm ci --ignore-scripts --no-audit --no-fund
-
       - name: Test package
-        working-directory: typescript/adapter-contract
-        run: npm test
+        run: just test-typescript
 
       - name: Publish package
         env:

@@ -203,7 +203,9 @@ Before the first TypeScript package release:
 2. Commit the intended prerelease version on the release branch. From that
    exact clean commit, run the version helper as an idempotency check and run
    the same package checks used by CI. Use the real first release candidate
-   rather than a disposable version because npm versions are immutable:
+   rather than a disposable version because npm versions are immutable. Use
+   Node.js 24 and npm 11.5.1 or later, matching the trusted-publishing workflow,
+   so the later integrity reconciliation uses the same packaging toolchain:
 
    ```bash
    just set-version 0.2.0-rc.1

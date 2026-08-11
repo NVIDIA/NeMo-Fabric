@@ -81,7 +81,8 @@ class NpmRunner:
         assert self.responses == []
 
 
-def _package_directory(tmp_path: Path) -> Path:
+@pytest.fixture(name="package_directory")
+def package_directory_fixture(tmp_path: Path) -> Path:
     package_directory = tmp_path / "package"
     package_directory.mkdir()
     (package_directory / TARBALL).write_bytes(b"package")
@@ -101,8 +102,7 @@ def _exact_view_responses(
     ]
 
 
-def test_existing_exact_package_is_an_idempotent_success(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_existing_exact_package_is_an_idempotent_success(package_directory: Path):
     runner = NpmRunner(
         [(["pack", "--json"], _pack_result()), *_exact_view_responses()]
     )
@@ -127,12 +127,11 @@ def test_existing_exact_package_is_an_idempotent_success(tmp_path: Path):
     ],
 )
 def test_existing_conflicting_package_fails(
-    tmp_path: Path,
+    package_directory: Path,
     integrity: str,
     dist_tag_version: str,
     error: str,
 ):
-    package_directory = _package_directory(tmp_path)
     runner = NpmRunner(
         [
             (["pack", "--json"], _pack_result()),
@@ -158,8 +157,7 @@ def test_existing_conflicting_package_fails(
     runner.assert_finished()
 
 
-def test_absent_package_publishes_and_verifies(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_absent_package_publishes_and_verifies(package_directory: Path):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
@@ -185,8 +183,7 @@ def test_absent_package_publishes_and_verifies(tmp_path: Path):
     runner.assert_finished()
 
 
-def test_non_404_lookup_failure_fails_closed(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_non_404_lookup_failure_fails_closed(package_directory: Path):
     runner = NpmRunner(
         [
             (["pack", "--json"], _pack_result()),
@@ -212,8 +209,7 @@ def test_non_404_lookup_failure_fails_closed(tmp_path: Path):
     runner.assert_finished()
 
 
-def test_dist_tag_cannot_move_backward(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_dist_tag_cannot_move_backward(package_directory: Path):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
@@ -238,8 +234,7 @@ def test_dist_tag_cannot_move_backward(tmp_path: Path):
     runner.assert_finished()
 
 
-def test_ambiguous_publish_failure_reconciles_registry_state(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_ambiguous_publish_failure_reconciles_registry_state(package_directory: Path):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
@@ -265,8 +260,7 @@ def test_ambiguous_publish_failure_reconciles_registry_state(tmp_path: Path):
     runner.assert_finished()
 
 
-def test_invalid_dist_tag_fails_before_packing(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_invalid_dist_tag_fails_before_packing(package_directory: Path):
     runner = NpmRunner([])
 
     with pytest.raises(
@@ -285,10 +279,9 @@ def test_invalid_dist_tag_fails_before_packing(tmp_path: Path):
 
 @pytest.mark.parametrize("verification_attempts", [0, -1])
 def test_invalid_verification_attempts_fail_before_packing(
-    tmp_path: Path,
+    package_directory: Path,
     verification_attempts: int,
 ):
-    package_directory = _package_directory(tmp_path)
     runner = NpmRunner([])
 
     with pytest.raises(
@@ -306,15 +299,14 @@ def test_invalid_verification_attempts_fail_before_packing(
     runner.assert_finished()
 
 
-def test_packed_version_must_match_release(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_packed_version_must_match_release(package_directory: Path):
     runner = NpmRunner(
         [(["pack", "--json"], _pack_result(version="0.2.1"))]
     )
 
     with pytest.raises(
         publish_typescript_package.PublicationError,
-        match="Packed version 0.2.1 does not match release 0.2.0",
+        match=r"Packed version 0\.2\.1 does not match release 0\.2\.0",
     ):
         publish_typescript_package.publish_package(
             package_directory,
@@ -326,8 +318,7 @@ def test_packed_version_must_match_release(tmp_path: Path):
     runner.assert_finished()
 
 
-def test_packed_filename_must_be_safe(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_packed_filename_must_be_safe(package_directory: Path):
     runner = NpmRunner(
         [(["pack", "--json"], _pack_result(filename="../package.tgz"))]
     )
@@ -346,15 +337,14 @@ def test_packed_filename_must_be_safe(tmp_path: Path):
     runner.assert_finished()
 
 
-def test_packed_tarball_must_exist(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_packed_tarball_must_exist(package_directory: Path):
     runner = NpmRunner(
         [(["pack", "--json"], _pack_result(filename="missing.tgz"))]
     )
 
     with pytest.raises(
         publish_typescript_package.PublicationError,
-        match="npm pack did not create missing.tgz",
+        match=r"npm pack did not create missing\.tgz",
     ):
         publish_typescript_package.publish_package(
             package_directory,
@@ -366,8 +356,7 @@ def test_packed_tarball_must_exist(tmp_path: Path):
     runner.assert_finished()
 
 
-def test_visible_post_publish_conflict_fails_without_retry(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_visible_post_publish_conflict_fails_without_retry(package_directory: Path):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
@@ -399,8 +388,7 @@ def test_visible_post_publish_conflict_fails_without_retry(tmp_path: Path):
     runner.assert_finished()
 
 
-def test_failed_publish_exhaustion_reports_both_failures(tmp_path: Path):
-    package_directory = _package_directory(tmp_path)
+def test_failed_publish_exhaustion_reports_both_failures(package_directory: Path):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
