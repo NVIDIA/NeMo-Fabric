@@ -479,9 +479,19 @@ def test_codex_rejects_mcp_oauth_client_id(codex_payload):
         adapter.thread_config(codex_payload, None)
 
 
+@pytest.mark.parametrize(
+    ("invocation_timeout", "oauth_timeout", "expected_timeout"),
+    [(30, 12, 12), (5, 12, 5)],
+)
 def test_codex_logs_into_mcp_server_before_first_turn(
-    codex_payload, mock_codex, monkeypatch
+    codex_payload,
+    mock_codex,
+    monkeypatch,
+    invocation_timeout,
+    oauth_timeout,
+    expected_timeout,
 ):
+    codex_payload["config"]["runtime"]["timeout_seconds"] = invocation_timeout
     codex_payload["capability_plan"] = {
         "native": {
             "mcp_servers": {
@@ -491,7 +501,7 @@ def test_codex_logs_into_mcp_server_before_first_turn(
                     "authentication": {
                         "type": "oauth2",
                         "scopes": ["read", "write"],
-                        "authorization_timeout_seconds": 12,
+                        "authorization_timeout_seconds": oauth_timeout,
                     },
                 }
             }
@@ -513,7 +523,7 @@ def test_codex_logs_into_mcp_server_before_first_turn(
         "name": "remote",
         "scopes": ["read", "write"],
         "threadId": "thread-123",
-        "timeoutSecs": 12,
+        "timeoutSecs": expected_timeout,
     }
     open_browser.assert_awaited_once_with(mock_codex.oauth_authorization_url)
     mock_codex.next_notification.assert_awaited_once_with()

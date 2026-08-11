@@ -442,7 +442,10 @@ async def _login_mcp_server(
 
 
 async def _authenticate_mcp_servers(
-    codex: AsyncCodex, thread: Any, payload: dict[str, Any]
+    codex: AsyncCodex,
+    thread: Any,
+    payload: dict[str, Any],
+    invocation_timeout_seconds: float,
 ) -> None:
     oauth_servers = _mcp_oauth_servers(payload)
     if not oauth_servers:
@@ -466,7 +469,10 @@ async def _authenticate_mcp_servers(
                 name=name,
                 scopes=list(oauth.scopes) or None,
                 thread_id=thread_id,
-                timeout=oauth.authorization_timeout_seconds,
+                timeout=min(
+                    invocation_timeout_seconds,
+                    oauth.authorization_timeout_seconds,
+                ),
             )
     except CodexAdapterError:
         raise
@@ -1291,12 +1297,15 @@ class CodexRuntime:
 
         try:
             request_prompt(payload)
-            timeout_seconds(payload)
+            invocation_timeout_seconds = timeout_seconds(payload)
             _reasoning_effort(payload)
             _output_schema(payload)
             if not self._mcp_authentication_checked:
                 await _authenticate_mcp_servers(
-                    self._client, self._thread, self._start_payload
+                    self._client,
+                    self._thread,
+                    self._start_payload,
+                    invocation_timeout_seconds,
                 )
                 self._mcp_authentication_checked = True
 
