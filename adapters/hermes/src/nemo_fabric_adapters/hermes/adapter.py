@@ -322,6 +322,7 @@ class HermesRuntime:
             self._hermes_config_path, self._hermes_config = write_hermes_config(
                 agent_config,
                 self._hermes_home,
+                # Workspace belongs to the per-runtime context, not AgentConfig.
                 workspace=str(runtime_context.environment.workspace or "."),
                 relay_enabled=relay_enabled,
             )
