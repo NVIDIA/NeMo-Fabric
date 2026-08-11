@@ -63,6 +63,19 @@ def test_normalize_custom_headers_requires_mapping():
 
 
 @pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("X-Tenant", False),
+        ("X-Tenant\r", True),
+        ("X-Tenant\nvalue", True),
+        ("X-Tenant\r\nvalue", True),
+    ],
+)
+def test_contains_crlf(value, expected):
+    assert mcp_auth.contains_crlf(value) is expected
+
+
+@pytest.mark.parametrize(
     ("name", "value"),
     [
         ("X-Foo\r", "bar"),
@@ -78,6 +91,23 @@ def test_normalize_custom_headers_rejects_newlines(name, value):
     assert str(error.value) == (
         f"MCP server 'docs' custom_headers contain invalid characters in {name!r}"
     )
+
+
+def test_normalize_custom_headers_expands_environment_variables():
+    os.environ["FABRIC_HEADER_VALUE"] = "fabric"
+
+    assert mcp_auth.normalize_custom_headers(
+        "docs", {"X-Tenant": "${FABRIC_HEADER_VALUE}"}
+    ) == {"X-Tenant": "fabric"}
+
+
+def test_normalize_custom_headers_rejects_newlines_after_expansion():
+    os.environ["FABRIC_HEADER_VALUE"] = "fabric\r\nX-Evil: injected"
+
+    with pytest.raises(mcp_auth.McpAuthConfigError, match="invalid characters"):
+        mcp_auth.normalize_custom_headers(
+            "docs", {"X-Tenant": "${FABRIC_HEADER_VALUE}"}
+        )
 
 
 def test_resolve_client_secret_uses_named_environment_variable():

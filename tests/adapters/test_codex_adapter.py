@@ -376,6 +376,7 @@ def test_start_failure_is_not_masked_by_sdk_close_failure(
 
 def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_codex):
     os.environ["FABRIC_TEST_MCP_URL"] = "https://mcp.example.test/mcp"
+    os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
     codex_payload["capability_plan"] = {
         "native": {
             "mcp_servers": {
@@ -395,7 +396,7 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
                 "remote": {
                     "transport": "streamable-http",
                     "url": "${FABRIC_TEST_MCP_URL}",
-                    "custom_headers": {"X-Tenant": "fabric"},
+                    "custom_headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
                     "authentication": {
                         "type": "oauth2",
                         "scopes": ["read", "write"],

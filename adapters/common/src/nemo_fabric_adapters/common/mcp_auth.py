@@ -220,19 +220,33 @@ def parse_service_account_config(
     )
 
 
-def normalize_custom_headers(server_name: str, value: Any) -> dict[str, str]:
-    """Validate and stringify an MCP custom-header mapping."""
+def contains_crlf(value: str) -> bool:
+    """Return whether a string contains a carriage return or line feed."""
+
+    return "\r" in value or "\n" in value
+
+
+def normalize_custom_headers(server_name: str, value: dict[str, str]) -> dict[str, str]:
+    """Validate and expand an MCP custom-header mapping."""
 
     if not isinstance(value, Mapping):
         raise McpAuthConfigError(
             f"MCP server {server_name!r} custom_headers must be a mapping"
         )
+    results: dict[str, str] = {}
     for name, item in value.items():
-        if any(character in str(name) + str(item) for character in ("\r", "\n")):
+        if contains_crlf(name) or contains_crlf(item):
             raise McpAuthConfigError(
                 f"MCP server {server_name!r} custom_headers contain invalid characters in {name!r}"
             )
-    return {str(name): str(item) for name, item in value.items()}
+        expanded_item = os.path.expandvars(item)
+        if contains_crlf(expanded_item):
+            raise McpAuthConfigError(
+                f"MCP server {server_name!r} custom_headers contain invalid characters in {name!r}"
+            )
+        results[name] = expanded_item
+
+    return results
 
 
 def resolve_client_secret(

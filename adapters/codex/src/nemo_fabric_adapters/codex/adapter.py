@@ -215,10 +215,7 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 raise AdapterConfigError(
                     "codex_invalid_configuration", str(error)
                 ) from error
-            result[name]["http_headers"] = {
-                key: os.path.expandvars(value)
-                for key, value in normalized_headers.items()
-            }
+            result[name]["http_headers"] = normalized_headers
         if authentication := server.get("authentication"):
             oauth = _mcp_oauth_config(name, authentication)
             if oauth.client_secret_env:

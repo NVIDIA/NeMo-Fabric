@@ -309,9 +309,7 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
             normalized_headers = mcp_auth.normalize_custom_headers(name, headers)
         except mcp_auth.McpAuthConfigError as error:
             raise AdapterConfigError(f"{error}.") from error
-        connection["headers"] = {
-            key: os.path.expandvars(value) for key, value in normalized_headers.items()
-        }
+        connection["headers"] = normalized_headers
     if authentication := spec.get("authentication"):
         connection["auth"] = _mcp_http_auth(name, target, authentication)
     return connection
