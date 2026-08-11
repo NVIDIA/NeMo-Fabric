@@ -41,6 +41,7 @@ for exact wire values.
 | Field | Validates |
 | --- | --- |
 | `settings_schema` | `FabricConfig.harness.settings` |
+| `model_schema` | Every entry in `FabricConfig.models` after excluding separately validated extensions |
 | `workflow_schema` | The complete `FabricConfig.workflow` block |
 | `tool_definition_schema` | Every entry in `FabricConfig.tools.definitions` |
 | `extension_schemas` | Named `extensions` maps at southbound extension points |
@@ -54,7 +55,9 @@ settings are an intentional compatibility surface.
 If an adapter does not support settings, publish a closed empty
 `settings_schema`. A configured workflow fails planning when the descriptor
 does not publish `workflow_schema`. Named tool definitions similarly fail when
-`tool_definition_schema` is absent.
+`tool_definition_schema` is absent. An omitted `model_schema` preserves dynamic
+model-provider behavior; when present, the schema is applied to every model role
+and its failures are reported consistently by planning and `doctor(...)`.
 
 ## Minimal Python Descriptor
 

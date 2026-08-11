@@ -203,6 +203,12 @@ by adapter:
 
 Model selection is deterministic: the `default` role wins; otherwise a single
 named role is selected. More than one role without `default` fails planning.
+Claude and Codex publish a descriptor-owned `model_schema` for every configured
+model role. Their native providers (`anthropic` and `openai`, respectively)
+keep the existing authentication path. Other providers remain valid only with
+an explicit `base_url` and `api_key_env`. The same schema rejects undeclared
+`ModelConfig.settings` during planning and reports each issue through
+`doctor(...)` before adapter startup.
 
 If a normalized field has no complete mapping, `plan(...)` and runtime start
 fail with a configuration compatibility error naming the adapter and field.
