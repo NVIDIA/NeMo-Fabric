@@ -40,9 +40,25 @@ publish a broader workflow schema without changing this shared NAT adapter.
 At runtime, `start` loads components, enters one `WorkflowBuilder`, creates a
 `SessionManager` with that shared builder, and retains both resources. Each
 `invoke` opens a session from the retained manager, enters `session.run(...)`,
-and awaits `runner.result()`. `stop` shuts down the session manager and exits
-the builder context. This first reference does not claim cancellation, service,
-streaming, or live-update support.
+and awaits `runner.result()`. That runner path already invokes NAT functions
+asynchronously while preserving NAT's concurrency, context, tracing, and
+lifecycle behavior; the adapter does not call a workflow function's lower-level
+`ainvoke()` method directly.
+
+Native OpenAI streaming is available when the retained `SessionManager` reports
+`ChatResponseChunk` as the workflow's streaming output schema. NAT 1.8's shared
+ReAct registration declares that schema. The adapter checks the schema rather
+than branching on a workflow name, opens one NAT session and run, and consumes
+`runner.result_stream(to_type=ChatResponseChunk)` exactly once. It serializes and
+forwards the OpenAI Chat Completions chunks in order. The terminal Fabric result
+contains the concatenated string `delta.content` values for choice index `0`;
+empty and usage-only streams complete with an empty response. The adapter does
+not add SSE framing, a `[DONE]` marker, or a synthetic finish chunk. A workflow
+without the required schema returns `nat_openai_stream_unsupported_schema`
+before NAT opens a session.
+
+`stop` shuts down the session manager and exits the builder context. This first
+reference does not claim cancellation, service, or live-update support.
 
 ## MCP Tool Filters
 

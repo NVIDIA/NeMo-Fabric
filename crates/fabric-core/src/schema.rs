@@ -13,7 +13,8 @@ use crate::config::{AdapterDescriptor, AgentConfig, FabricConfig, RunPlan};
 use crate::error::{FabricError, Result};
 use crate::runtime::{
     AdapterInvocation, ArtifactManifest, EnvironmentHandle, ErrorInfo, FabricEvent,
-    InvocationHandle, RunRequest, RunResult, RuntimeContext, RuntimeHandle,
+    InvocationHandle, OpenAiStreamInvocation, OpenAiStreamRecord, RunRequest, RunResult,
+    RuntimeContext, RuntimeHandle,
 };
 use crate::{AgentRunRequest, AgentRunResult};
 
@@ -34,6 +35,10 @@ pub enum SchemaName {
     RunPlan,
     /// Initialized-runtime invocation payload schema.
     AdapterInvocation,
+    /// Adapter-facing native OpenAI streaming invocation schema.
+    OpenAiStreamInvocation,
+    /// Adapter-native OpenAI streaming NDJSON record schema.
+    OpenAiStreamRecord,
     /// Runtime context schema.
     RuntimeContext,
     /// Environment handle schema.
@@ -56,7 +61,7 @@ pub enum SchemaName {
 
 impl SchemaName {
     /// All public schemas in stable output order.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 18] = [
         Self::Agent,
         Self::AgentConfig,
         Self::AgentRunRequest,
@@ -64,6 +69,8 @@ impl SchemaName {
         Self::AdapterDescriptor,
         Self::RunPlan,
         Self::AdapterInvocation,
+        Self::OpenAiStreamInvocation,
+        Self::OpenAiStreamRecord,
         Self::RuntimeContext,
         Self::EnvironmentHandle,
         Self::RuntimeHandle,
@@ -85,6 +92,8 @@ impl SchemaName {
             Self::AdapterDescriptor => "adapter-descriptor",
             Self::RunPlan => "run-plan",
             Self::AdapterInvocation => "adapter-invocation",
+            Self::OpenAiStreamInvocation => "openai-stream-invocation",
+            Self::OpenAiStreamRecord => "openai-stream-record",
             Self::RuntimeContext => "runtime-context",
             Self::EnvironmentHandle => "environment-handle",
             Self::RuntimeHandle => "runtime-handle",
@@ -111,9 +120,11 @@ impl SchemaName {
             | Self::AgentRunResult
             | Self::AdapterDescriptor
             | Self::RuntimeContext => PathBuf::from("adapter-contract").join(filename),
-            Self::AdapterInvocation => PathBuf::from("adapter-contract")
-                .join("legacy")
-                .join(filename),
+            Self::AdapterInvocation | Self::OpenAiStreamInvocation | Self::OpenAiStreamRecord => {
+                PathBuf::from("adapter-contract")
+                    .join("legacy")
+                    .join(filename)
+            }
             _ => PathBuf::from(filename),
         }
     }
@@ -128,6 +139,10 @@ impl SchemaName {
             "adapter-descriptor" | "adapter_descriptor" => Ok(Self::AdapterDescriptor),
             "run-plan" | "run_plan" => Ok(Self::RunPlan),
             "adapter-invocation" | "adapter_invocation" => Ok(Self::AdapterInvocation),
+            "openai-stream-invocation" | "openai_stream_invocation" => {
+                Ok(Self::OpenAiStreamInvocation)
+            }
+            "openai-stream-record" | "openai_stream_record" => Ok(Self::OpenAiStreamRecord),
             "runtime-context" | "runtime_context" => Ok(Self::RuntimeContext),
             "environment-handle" | "environment_handle" => Ok(Self::EnvironmentHandle),
             "runtime-handle" | "runtime_handle" => Ok(Self::RuntimeHandle),
@@ -158,6 +173,8 @@ pub fn generate_schema(schema: SchemaName) -> Result<Value> {
         SchemaName::AdapterDescriptor => to_value(schema_for!(AdapterDescriptor)),
         SchemaName::RunPlan => to_value(schema_for!(RunPlan)),
         SchemaName::AdapterInvocation => to_value(schema_for!(AdapterInvocation)),
+        SchemaName::OpenAiStreamInvocation => to_value(schema_for!(OpenAiStreamInvocation)),
+        SchemaName::OpenAiStreamRecord => to_value(schema_for!(OpenAiStreamRecord)),
         SchemaName::RuntimeContext => to_value(schema_for!(RuntimeContext)),
         SchemaName::EnvironmentHandle => to_value(schema_for!(EnvironmentHandle)),
         SchemaName::RuntimeHandle => to_value(schema_for!(RuntimeHandle)),
@@ -275,6 +292,18 @@ mod tests {
                 .join(SchemaName::AdapterInvocation.filename())
         );
         assert_eq!(
+            SchemaName::OpenAiStreamInvocation.relative_path(),
+            PathBuf::from("adapter-contract")
+                .join("legacy")
+                .join(SchemaName::OpenAiStreamInvocation.filename())
+        );
+        assert_eq!(
+            SchemaName::OpenAiStreamRecord.relative_path(),
+            PathBuf::from("adapter-contract")
+                .join("legacy")
+                .join(SchemaName::OpenAiStreamRecord.filename())
+        );
+        assert_eq!(
             SchemaName::Agent.relative_path(),
             PathBuf::from(SchemaName::Agent.filename())
         );
@@ -312,6 +341,57 @@ mod tests {
             schema["$defs"]["McpAuthenticationConfig"]["oneOf"][0]["properties"]["authorization_timeout_seconds"]
                 ["minimum"],
             1
+        );
+    }
+
+    #[test]
+    fn openai_stream_schemas_freeze_transport_and_record_invariants() {
+        let invocation =
+            generate_schema(SchemaName::OpenAiStreamInvocation).expect("schema generation");
+        let sink = &invocation["$defs"]["OpenAiStreamSink"];
+        assert_eq!(sink["properties"]["port"]["minimum"], 1);
+        assert_eq!(sink["properties"]["token"]["minLength"], 1);
+        assert_eq!(
+            sink["properties"]["token"]["pattern"],
+            r"^[^\r\n]*\S[^\r\n]*$"
+        );
+        assert_eq!(
+            invocation["$defs"]["OpenAiStreamProtocolVersion"]["oneOf"][0]["const"],
+            crate::runtime::OPENAI_STREAM_PROTOCOL_VERSION
+        );
+        assert_eq!(
+            invocation["$defs"]["OpenAiStreamProfile"]["oneOf"][0]["const"],
+            crate::runtime::OPENAI_CHAT_COMPLETIONS_CHUNK_PROFILE
+        );
+        assert_eq!(
+            invocation["$defs"]["OpenAiStreamHost"]["oneOf"][0]["const"],
+            crate::runtime::OPENAI_STREAM_HOST
+        );
+
+        let record = generate_schema(SchemaName::OpenAiStreamRecord).expect("schema generation");
+        assert_eq!(record["oneOf"][0]["properties"]["type"]["const"], "chunk");
+        assert_eq!(record["oneOf"][1]["properties"]["type"]["const"], "end");
+        assert_eq!(record["oneOf"][0]["additionalProperties"], false);
+        assert_eq!(record["oneOf"][1]["additionalProperties"], false);
+        assert_eq!(
+            record["oneOf"][0]["properties"]["sequence"]["maximum"],
+            u64::MAX
+        );
+        assert_eq!(
+            record["oneOf"][1]["properties"]["sequence"]["maximum"],
+            u64::MAX
+        );
+        assert_eq!(
+            record["$defs"]["OpenAiChatCompletionChunk"]["required"],
+            serde_json::json!(["id", "object", "created", "model", "choices"])
+        );
+        assert_eq!(
+            record["$defs"]["OpenAiChatCompletionChunk"]["properties"]["created"]["maximum"],
+            u64::MAX
+        );
+        assert_eq!(
+            record["$defs"]["OpenAiChatCompletionChunkObject"]["oneOf"][0]["const"],
+            "chat.completion.chunk"
         );
     }
 

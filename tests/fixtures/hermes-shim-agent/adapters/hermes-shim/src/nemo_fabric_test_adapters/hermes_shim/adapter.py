@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
+from collections.abc import Callable
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +22,7 @@ def main() -> None:
 class ShimRuntime:
     def __init__(self) -> None:
         self._start_payload: dict[str, Any] | None = None
+        self._openai_stream_invocations = 0
 
     async def start(self, payload: dict[str, Any]) -> None:
         self._start_payload = payload
@@ -36,8 +40,48 @@ class ShimRuntime:
         }
         return run_selected_mode(payload)
 
+    async def invoke_openai_stream(
+        self,
+        invocation: dict[str, Any],
+        emit: Callable[[Mapping[str, Any]], Awaitable[None]],
+    ) -> dict[str, Any]:
+        if self._start_payload is None:
+            raise lifecycle.LifecycleError(
+                "hermes_runtime_not_started",
+                "shim runtime is not started",
+            )
+        self._openai_stream_invocations += 1
+        request = invocation.get("request") or {}
+        context = request.get("context") or {}
+        if context.get("openai_stream_mode") != "empty":
+            for index, content in enumerate(("hel", "lo")):
+                await emit(
+                    {
+                        "id": f"shim-chunk-{index}",
+                        "object": "chat.completion.chunk",
+                        "created": 0,
+                        "model": "test-model",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": content},
+                                "finish_reason": None,
+                            }
+                        ],
+                    }
+                )
+        payload = {
+            **self._start_payload,
+            "runtime_context": invocation.get("runtime_context"),
+            "request": request,
+        }
+        output = run_selected_mode(payload)
+        output["openai_stream_invocation_count"] = self._openai_stream_invocations
+        return output
+
     async def stop(self) -> None:
         self._start_payload = None
+        self._openai_stream_invocations = 0
 
 
 def fabric_config(payload: dict[str, Any]) -> dict[str, Any]:

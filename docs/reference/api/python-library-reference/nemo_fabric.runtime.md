@@ -84,6 +84,12 @@ Return the current ``ACTIVE``, ``STOPPED``, or ``FAILED`` state.
 
 ---
 
+### <kbd>property</kbd> supports_openai_streaming
+
+Return whether the selected adapter implements native OpenAI streaming.
+
+---
+
 ### <kbd>property</kbd> supports_streaming
 
 Return whether NVIDIA NeMo Relay ATOF streaming is enabled.
@@ -127,6 +133,31 @@ Run one turn on this runtime.
 ---
 
 
+### <kbd>method</kbd> `invoke_openai_stream`
+
+```python
+def invoke_openai_stream(
+    *,
+    input: Any = None,
+    request: RunRequest | None = None,
+) -> OpenAIInvokeStream
+```
+
+Start one turn and stream native OpenAI chat-completion chunks.
+
+The returned stream yields ``chat.completion.chunk`` mappings. Await ``stream.result()`` for the separate normalized terminal result.
+
+
+
+**Raises:**
+
+ - <b>`FabricCapabilityError`</b>:  If the selected adapter does not advertise  native OpenAI streaming.
+ - <b>`FabricConfigError`</b>:  If request fields conflict or are not  JSON-compatible.
+ - <b>`FabricStateError`</b>:  If another turn or stream is active.
+
+---
+
+
 ### <kbd>method</kbd> `invoke_stream`
 
 ```python
@@ -139,7 +170,7 @@ def invoke_stream(
 
 Start one turn and stream raw NeMo Relay ATOF records as they arrive.
 
-``input`` and ``request`` are mutually exclusive. The returned :class:`InvokeStream` yields raw ATOF dictionaries. Await ``stream.result()`` for the terminal normalized :class:`RunResult`.
+``input`` and ``request`` are mutually exclusive. The returned ``InvokeStream`` yields raw ATOF dictionaries. Await ``stream.result()`` for the terminal normalized ``RunResult``.
 
 
 

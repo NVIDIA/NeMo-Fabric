@@ -164,6 +164,22 @@ pub enum FabricError {
         /// Adapter kind.
         adapter_kind: AdapterKind,
     },
+    /// A requested runtime capability is not implemented by the selected adapter.
+    #[error("adapter `{adapter_id}` does not support runtime capability `{capability}`")]
+    UnsupportedRuntimeCapability {
+        /// Selected adapter id or harness name.
+        adapter_id: String,
+        /// Requested capability.
+        capability: &'static str,
+    },
+    /// The SDK-provided native streaming transport is invalid.
+    #[error("invalid OpenAI stream transport at `{field}`: {reason}")]
+    InvalidOpenAiStreamTransport {
+        /// Invalid transport field.
+        field: &'static str,
+        /// Validation failure without credential material.
+        reason: &'static str,
+    },
     /// A persistent local-host lifecycle operation failed.
     #[error(
         "adapter lifecycle {operation} failed for runtime `{runtime_id}` ({code}): {message}{diagnostics_suffix}",

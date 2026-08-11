@@ -1,0 +1,246 @@
+{
+  "$defs": {
+    "OpenAiChatCompletionChunk": {
+      "additionalProperties": true,
+      "description": "OpenAI Chat Completions chunk accepted by the native streaming profile.",
+      "properties": {
+        "choices": {
+          "description": "Incremental choices; an explicit usage-only chunk can contain none.",
+          "items": {
+            "$ref": "#/$defs/OpenAiChatCompletionChunkChoice"
+          },
+          "type": "array"
+        },
+        "created": {
+          "description": "Unix timestamp in seconds.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "Provider-generated response identifier.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "model": {
+          "description": "Model identifier.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "object": {
+          "$ref": "#/$defs/OpenAiChatCompletionChunkObject",
+          "description": "Exact OpenAI streaming object discriminator."
+        },
+        "usage": {
+          "additionalProperties": true,
+          "description": "Optional token-usage data.",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "object",
+        "created",
+        "model",
+        "choices"
+      ],
+      "type": "object"
+    },
+    "OpenAiChatCompletionChunkChoice": {
+      "additionalProperties": true,
+      "description": "One choice within an OpenAI Chat Completions streaming chunk.",
+      "properties": {
+        "delta": {
+          "$ref": "#/$defs/OpenAiChatCompletionChunkDelta",
+          "description": "Incremental assistant message fields."
+        },
+        "finish_reason": {
+          "description": "Terminal reason when this choice finishes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "index": {
+          "description": "Choice index within the response.",
+          "format": "uint32",
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "logprobs": {
+          "additionalProperties": true,
+          "description": "Incremental log-probability information.",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "delta"
+      ],
+      "type": "object"
+    },
+    "OpenAiChatCompletionChunkDelta": {
+      "additionalProperties": true,
+      "description": "Incremental assistant message fields carried by one OpenAI choice.",
+      "properties": {
+        "content": {
+          "description": "Incremental text content.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "function_call": {
+          "additionalProperties": true,
+          "description": "Legacy incremental function-call fields.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "refusal": {
+          "description": "Incremental refusal content.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "description": "Incremental message role.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tool_calls": {
+          "description": "Incremental tool-call fields.",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "OpenAiChatCompletionChunkObject": {
+      "description": "Exact OpenAI object discriminator accepted by the v1 chunk profile.",
+      "oneOf": [
+        {
+          "const": "chat.completion.chunk",
+          "description": "OpenAI Chat Completions streaming chunk.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One correlated NDJSON record on the adapter-native stream channel.",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "description": "One OpenAI Chat Completions chunk.",
+      "properties": {
+        "chunk": {
+          "$ref": "#/$defs/OpenAiChatCompletionChunk",
+          "description": "OpenAI-compatible chunk passed through to the consumer."
+        },
+        "invocation_id": {
+          "description": "Invocation id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Request id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "runtime_id": {
+          "description": "Runtime id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "sequence": {
+          "description": "Monotonic zero-based record sequence.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "chunk",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "sequence",
+        "runtime_id",
+        "invocation_id",
+        "request_id",
+        "chunk"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Explicit successful end of the progressive event channel.",
+      "properties": {
+        "invocation_id": {
+          "description": "Invocation id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Request id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "runtime_id": {
+          "description": "Runtime id for stream correlation.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "type": "string"
+        },
+        "sequence": {
+          "description": "Monotonic zero-based record sequence.",
+          "format": "uint64",
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "end",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "sequence",
+        "runtime_id",
+        "invocation_id",
+        "request_id"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "OpenAiStreamRecord"
+}

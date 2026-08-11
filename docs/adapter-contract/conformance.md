@@ -46,7 +46,8 @@ Test each descriptor claim separately:
 | Requirements | `doctor(...)` reports both satisfied and missing states. |
 | Telemetry output | Output is produced and correlated to the correct invocation. |
 | Relay-backed stream | Ordinary invoke completes while correlated ATOF reaches `Runtime.invoke_stream()`. |
-| Cancellation, updates, or native streaming | Do not claim until the installed Fabric runtime exposes and tests the corresponding adapter operation. |
+| Native OpenAI stream | The descriptor declares `capabilities.streaming`; `invoke_openai_stream` executes exactly once, emits only valid `chat.completion.chunk` mappings, and returns a separate terminal result. Test empty and multi-chunk streams, early consumer close, and invalid chunks. |
+| Cancellation or updates | Do not claim until the installed Fabric runtime exposes and tests the corresponding adapter operation. |
 
 ## Minimum Test Matrix
 
@@ -62,8 +63,13 @@ Run this minimum test matrix before publishing an adapter:
    stop.
 8. Start failure, invoke transport failure, malformed output, and cleanup on
    EOF.
-9. Two independent runtimes to check state isolation.
-10. Secret-redaction checks for logs and persisted diagnostic payloads.
+9. If native OpenAI streaming is claimed, test empty and multi-chunk streams,
+   a separate terminal result, early close without cancellation, one active
+   turn, malformed and oversized records, chunk-profile validation, monotonic
+   sequence and identity correlation, an explicit end record, unauthenticated
+   and surplus connections, and exactly one target invocation.
+10. Two independent runtimes to check state isolation.
+11. Secret-redaction checks for logs and persisted diagnostic payloads.
 
 Record unsupported optional capabilities explicitly rather than omitting them
 from release notes. Link test results to the exact adapter package and contract

@@ -44,6 +44,36 @@ class AdapterRuntime:
 lifecycle.serve(AdapterRuntime)
 ```
 
+If the adapter descriptor declares `capabilities.streaming`, the runtime must
+also implement native OpenAI Chat Completions streaming:
+
+```python
+class AdapterRuntime:
+    async def invoke_openai_stream(self, payload, emit):
+        async for chunk in self.client.stream(payload["request"]["input"]):
+            await emit(chunk)
+        return {"answer": "..."}
+```
+
+The optional method must have the signature
+`async invoke_openai_stream(payload, emit)`. Execute the target exactly once,
+await `emit(chunk)` only for mappings in the
+`openai.chat_completions.chunk/v1` profile, and return one JSON-compatible
+terminal outcome. Each chunk requires non-empty `id` and `model` strings, a
+nonnegative integer `created`, the exact `chat.completion.chunk` object
+discriminator, and structurally valid `choices`. An empty chunk stream is
+valid.
+
+The SDK owns the authenticated loopback HTTP transport with chunked NDJSON
+framing. The common host validates its credentials and framing, removes the
+transport from the adapter payload, and supplies `emit`. Do not write chunks to
+stdout or log stream credentials. This method is not used for Relay-backed
+`Runtime.invoke_stream()`, which continues to execute ordinary `invoke`.
+Process bindings that implement the wire protocol directly must follow the
+generated
+[`openai-stream-record.schema.json`](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/legacy/openai-stream-record.schema.json)
+chunk and explicit-end envelopes.
+
 Adapters whose descriptor sets `config.input` to `agent_config` can ask the
 host to validate the southbound contract before `start`:
 

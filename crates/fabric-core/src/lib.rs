@@ -38,9 +38,12 @@ pub use doctor::{DoctorCheck, DoctorReport, DoctorStatus, doctor_plan};
 pub use error::{FabricError, Result};
 pub use runtime::{
     AdapterInvocation, ArtifactManifest, ArtifactRef, EnvironmentHandle, ErrorInfo, ErrorStage,
-    FabricEvent, InvocationHandle, RunRequest, RunResult, RunStatus, RuntimeContext, RuntimeHandle,
-    RuntimeTelemetryContext, TelemetryRef, invoke_runtime, prepare_environment, run_plan,
-    start_runtime, stop_runtime,
+    FabricEvent, InvocationHandle, OpenAiChatCompletionChunk, OpenAiChatCompletionChunkChoice,
+    OpenAiChatCompletionChunkDelta, OpenAiChatCompletionChunkObject, OpenAiStreamHost,
+    OpenAiStreamInvocation, OpenAiStreamProfile, OpenAiStreamProtocolVersion, OpenAiStreamRecord,
+    OpenAiStreamSink, OpenAiStreamTransport, RunRequest, RunResult, RunStatus, RuntimeContext,
+    RuntimeHandle, RuntimeTelemetryContext, TelemetryRef, invoke_openai_stream, invoke_runtime,
+    prepare_environment, run_plan, start_runtime, stop_runtime,
 };
 pub use schema::{
     SchemaName, generate_all_schemas, generate_schema, generate_schema_json, write_schema_snapshots,
