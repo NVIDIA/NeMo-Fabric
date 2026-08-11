@@ -367,6 +367,24 @@ def test_lifecycle_host_rejects_unimplemented_openai_stream_without_poisoning_ru
     }
 
 
+def _openai_profile_choice(**overrides: Any) -> dict[str, Any]:
+    choice: dict[str, Any] = {"index": 0, "delta": {}}
+    choice.update(overrides)
+    return choice
+
+
+def _openai_profile_chunk(**overrides: Any) -> dict[str, Any]:
+    chunk: dict[str, Any] = {
+        "id": "chunk-1",
+        "object": "chat.completion.chunk",
+        "created": 0,
+        "model": "test-model",
+        "choices": [],
+    }
+    chunk.update(overrides)
+    return chunk
+
+
 @pytest.mark.parametrize(
     "chunk",
     [
@@ -408,47 +426,36 @@ def test_openai_chunk_validators_accept_shared_profile_fixtures(chunk):
 @pytest.mark.parametrize(
     "chunk",
     [
-        {
-            "id": "missing-model",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "choices": [],
-        },
-        {
-            "id": "invalid-choice",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "model": "test-model",
-            "choices": [{"index": False, "delta": {}}],
-        },
-        {
-            "id": "   ",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "model": "test-model",
-            "choices": [],
-        },
-        {
-            "id": "blank-model",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "model": "\t",
-            "choices": [],
-        },
-        {
-            "id": "created-overflow",
-            "object": "chat.completion.chunk",
-            "created": 1 << 64,
-            "model": "test-model",
-            "choices": [],
-        },
-        {
-            "id": "index-overflow",
-            "object": "chat.completion.chunk",
-            "created": 0,
-            "model": "test-model",
-            "choices": [{"index": 1 << 32, "delta": {}}],
-        },
+        _openai_profile_chunk(object="chat.completion"),
+        _openai_profile_chunk(id="   "),
+        _openai_profile_chunk(model="\t"),
+        _openai_profile_chunk(created=False),
+        _openai_profile_chunk(created=-1),
+        _openai_profile_chunk(created="0"),
+        _openai_profile_chunk(created=1 << 64),
+        _openai_profile_chunk(choices={}),
+        _openai_profile_chunk(choices=[None]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(index=False)]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(index=-1)]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(index="0")]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(index=1 << 32)]),
+        _openai_profile_chunk(choices=[{"index": 0}]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(delta=[])]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(delta={"content": 1})]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(delta={"refusal": 1})]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(delta={"role": 1})]),
+        _openai_profile_chunk(
+            choices=[_openai_profile_choice(delta={"function_call": []})]
+        ),
+        _openai_profile_chunk(
+            choices=[_openai_profile_choice(delta={"tool_calls": {}})]
+        ),
+        _openai_profile_chunk(
+            choices=[_openai_profile_choice(delta={"tool_calls": [None]})]
+        ),
+        _openai_profile_chunk(choices=[_openai_profile_choice(finish_reason=1)]),
+        _openai_profile_chunk(choices=[_openai_profile_choice(logprobs=[])]),
+        _openai_profile_chunk(usage=[]),
     ],
 )
 def test_openai_chunk_validators_reject_shared_profile_fixtures(chunk):

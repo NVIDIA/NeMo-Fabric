@@ -402,7 +402,11 @@ async def test_successful_terminal_result_requires_an_explicit_stream_end(
     assert runtime.invocations == []
 
 
-async def test_failed_terminal_result_without_stream_preserves_failure(mock_native):
+@pytest.mark.parametrize("iterate_first", [False, True])
+async def test_failed_terminal_result_without_stream_preserves_failure(
+    mock_native,
+    iterate_first,
+):
     def invoke_failed_without_stream(
         _plan_json,
         runtime_json,
@@ -423,7 +427,10 @@ async def test_failed_terminal_result_without_stream_preserves_failure(mock_nati
     mock_native.invoke_openai_stream.side_effect = invoke_failed_without_stream
     runtime = _runtime_wrapper(mock_native)
 
-    result = await runtime.invoke_openai_stream(input="fail before stream").result()
+    stream = runtime.invoke_openai_stream(input="fail before stream")
+    if iterate_first:
+        assert [chunk async for chunk in stream] == []
+    result = await stream.result()
 
     assert result.status == "failed"
     assert result.error.code == "shim_failed"
@@ -757,6 +764,23 @@ async def test_listener_rejects_negative_chunk_size():
         match="Invalid OpenAI stream chunk size",
     ):
         await listener._read_chunked(reader, bytearray())
+
+
+@pytest.mark.parametrize("delimiter", [b"\n", b"\r\n"])
+async def test_listener_accepts_record_payload_at_byte_limit(delimiter):
+    record = _record()
+    encoded = json.dumps(record, separators=(",", ":")).encode()
+    listener = openai_streaming._OpenAIStreamListener(
+        runtime_id="runtime-1",
+        request_id="request-1",
+        max_record_bytes=len(encoded),
+    )
+    buffer = bytearray()
+
+    await listener._feed(buffer, encoded + delimiter)
+
+    assert await listener.records.get() == record["chunk"]
+    assert buffer == bytearray()
 
 
 async def test_missing_end_record_fails_the_invocation(mock_native):

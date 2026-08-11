@@ -270,30 +270,32 @@ class _OpenAIStreamListener:
         while True:
             newline = buffer.find(b"\n")
             if newline < 0:
-                if len(buffer) > self._max_record_bytes:
+                # A record exactly at the limit can have a trailing CR while
+                # waiting for the LF half of its delimiter.
+                pending_crlf = (
+                    len(buffer) == self._max_record_bytes + 1
+                    and buffer.endswith(b"\r")
+                )
+                if len(buffer) > self._max_record_bytes and not pending_crlf:
                     raise _ProtocolError(
                         f"OpenAI stream record exceeds {self._max_record_bytes} bytes",
                         413,
                     )
                 return
-            if newline > self._max_record_bytes:
-                raise _ProtocolError(
-                    f"OpenAI stream record exceeds {self._max_record_bytes} bytes",
-                    413,
-                )
             line = bytes(buffer[:newline])
             del buffer[: newline + 1]
             await self._emit_line(line)
 
     async def _emit_line(self, line: bytes) -> None:
-        stripped = line.strip()
-        if not stripped:
-            return
-        if len(stripped) > self._max_record_bytes:
+        payload = line.removesuffix(b"\r")
+        if len(payload) > self._max_record_bytes:
             raise _ProtocolError(
                 f"OpenAI stream record exceeds {self._max_record_bytes} bytes",
                 413,
             )
+        stripped = payload.strip()
+        if not stripped:
+            return
         try:
             record = json.loads(stripped, parse_constant=_reject_json_constant)
         except (json.JSONDecodeError, RecursionError, ValueError) as error:
@@ -526,6 +528,13 @@ class OpenAIInvokeStream:
                 item = queue.get_nowait()
             elif self._task.done():
                 if self._task.cancelled() or self._task.exception() is not None:
+                    await self._finalize()
+                    raise StopAsyncIteration
+                result = self._task.result()
+                if (
+                    result.status != "succeeded"
+                    and self._listener.invocation_id is None
+                ):
                     await self._finalize()
                     raise StopAsyncIteration
                 getter = asyncio.create_task(queue.get())
