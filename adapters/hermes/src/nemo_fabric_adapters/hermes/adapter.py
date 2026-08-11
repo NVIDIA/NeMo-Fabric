@@ -11,23 +11,22 @@ surface and invokes the installed Hermes runtime.
 from __future__ import annotations
 
 import asyncio
-import copy
 import inspect
 import json
 import logging
 import os
 from contextlib import redirect_stdout
-from importlib.metadata import version as distribution_version
 from io import StringIO
 from pathlib import Path
 from typing import Any
 
 from nemo_fabric_adapter_contract.models import AgentConfig
-from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapters.hermes import configuration
+from nemo_fabric_adapters.hermes import telemetry
 
 # Default agent loop budget when FabricConfig.runtime.max_turns is unset.
 # Mirrors Hermes' own AIAgent default (agent/agent_init.py); a lower value such
@@ -35,280 +34,12 @@ import nemo_fabric_adapters.common.utils as common_utils
 # answering while the trial still reports success). See FABRIC-85.
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
-PROVIDER_DEFAULT_API_KEY_ENV = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "nvidia": "NVIDIA_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-}
-# Hermes 0.16+ discovers Relay from this TOML path and falls back to direct
-# ATIF/ATOF only when TOML initialization fails. Clear only those enable flags.
-HERMES_RELAY_ENV_NAMES = (
-    "HERMES_NEMO_RELAY_PLUGINS_TOML",
-    "HERMES_NEMO_RELAY_ATIF_ENABLED",
-    "HERMES_NEMO_RELAY_ATOF_ENABLED",
-)
-
-
-def _settings(config: AgentConfig) -> dict[str, Any]:
-    return config.harness.settings if config.harness is not None else {}
-
-
-def _selected_model(config: AgentConfig) -> AgentModelConfig:
-    model = config.models.get("default")
-    if model is None and len(config.models) == 1:
-        model = next(iter(config.models.values()))
-    if model is None:
-        raise ValueError("Hermes requires a default model or exactly one model")
-    return model
-
-
-def _max_turns(config: AgentConfig) -> int | None:
-    return config.runtime.max_turns if config.runtime is not None else None
-
-
-def finalize_hermes_relay_session(session_id: str) -> None:
-    """Finalize one Relay session through the installed Hermes lifecycle API."""
-    try:
-        from hermes_cli.lifecycle import finalize_session
-    except ModuleNotFoundError as error:
-        if error.name != "hermes_cli.lifecycle":
-            raise
-        # Hermes 0.19 exposes the same finalization boundary as a plugin hook.
-        from hermes_cli.plugins import invoke_hook
-
-        invoke_hook("on_session_finalize", session_id=session_id, platform="fabric")
-    else:
-        finalize_session(session_id=session_id, platform="fabric")
-
-
-def _api_key_env(model_config: AgentModelConfig) -> str:
-    explicit = model_config.api_key_env
-    if isinstance(explicit, str) and explicit:
-        return explicit
-    provider = str(model_config.provider or "").lower()
-    default = PROVIDER_DEFAULT_API_KEY_ENV.get(provider)
-    if default is None:
-        raise ValueError(
-            f"selected model api_key_env is required for provider {provider!r}"
-        )
-    return default
-
-
-def validate_hermes_telemetry_provider(runtime_context: RuntimeContext) -> None:
-    telemetry = runtime_context.telemetry
-    providers = telemetry.metadata.get("telemetry_providers", []) if telemetry else []
-    if any(provider != "relay" for provider in providers):
-        raise ValueError("only relay telemetry is supported for Hermes")
-
-
-def disabled_toolsets(config: AgentConfig) -> list[str]:
-    return config.tools.blocked if config.tools is not None else []
-
-
-def build_hermes_config(
-    agent_config: AgentConfig,
-    *,
-    workspace: str,
-    relay_enabled: bool = False,
-) -> dict[str, Any]:
-    settings = _settings(agent_config)
-    model_config = _selected_model(agent_config)
-    blocked_toolsets = disabled_toolsets(agent_config)
-    enabled_toolsets = (
-        agent_config.tools.enabled if agent_config.tools is not None else None
-    )
-
-    config: dict[str, Any] = {
-        "model": common_utils.without_none(
-            {
-                "provider": model_config.provider,
-                "default": model_config.model,
-                "base_url": model_config.base_url,
-            }
-        ),
-        "agent": common_utils.without_none(
-            {
-                "max_turns": _max_turns(agent_config),
-                "disabled_toolsets": blocked_toolsets or None,
-            }
-        ),
-        "terminal": common_utils.without_none(
-            {
-                "backend": "local",
-                "cwd": workspace,
-                "timeout": settings.get("terminal_timeout", 60),
-            }
-        ),
-    }
-
-    skill_dirs = (
-        [str(path) for path in agent_config.skills.paths]
-        if agent_config.skills is not None
-        else []
-    )
-    if skill_dirs:
-        config["skills"] = {"external_dirs": skill_dirs}
-
-    mcp_servers = agent_config.mcp.servers if agent_config.mcp is not None else {}
-    if mcp_servers:
-        config["mcp_servers"] = {
-            name: hermes_mcp_server_config(server)
-            for name, server in sorted(mcp_servers.items())
-        }
-
-    if enabled_toolsets is not None:
-        config["platform_toolsets"] = {"cli": enabled_toolsets}
-
-    plugins = common_utils.normalize_list(settings.get("plugins_enabled"))
-    if relay_enabled and "observability/nemo_relay" not in plugins:
-        plugins.append("observability/nemo_relay")
-    if plugins:
-        config["plugins"] = {"enabled": plugins}
-
-    return config
-
-
-def write_hermes_config(
-    agent_config: AgentConfig,
-    hermes_home: Path,
-    *,
-    workspace: str,
-    relay_enabled: bool = False,
-) -> tuple[Path, dict[str, Any]]:
-    hermes_home.mkdir(parents=True, exist_ok=True)
-    config = build_hermes_config(
-        agent_config,
-        workspace=workspace,
-        relay_enabled=relay_enabled,
-    )
-    config_path = hermes_home / "config.yaml"
-    config_path.write_text(common_utils.dump_yaml(config), encoding="utf-8")
-    return config_path, config
-
-
-def write_hermes_relay_plugin_config(
-    payload: dict[str, Any],
-) -> tuple[Path, dict[str, Any]]:
-    """Stage Fabric's resolved Relay config for Hermes' bundled integration."""
-
-    plugin_config = common_utils.load_relay_plugin_config(payload)
-    hermes_plugin_config = copy.deepcopy(plugin_config)
-    relay_version = distribution_version("nemo-relay")
-    try:
-        relay_major, relay_minor = (
-            int(part) for part in relay_version.split(".", maxsplit=2)[:2]
-        )
-    except ValueError as error:
-        raise RuntimeError(
-            f"unsupported NeMo Relay version {relay_version!r}"
-        ) from error
-    observability_version = 3 if (relay_major, relay_minor) >= (0, 7) else 2
-    for component in hermes_plugin_config.get("components", []):
-        if component.get("kind") != "observability":
-            continue
-        observability = component.get("config")
-        if not isinstance(observability, dict):
-            continue
-
-        if observability_version == 3 and observability.get("version") != 3:
-            # Relay 0.7 combines Fabric's legacy OTLP and OpenInference exporter
-            # settings into typed OpenTelemetry endpoints in its v3 schema.
-            endpoints = []
-            for config_name, endpoint_type in (
-                ("opentelemetry", "full"),
-                ("openinference", "openinference"),
-            ):
-                exporter = observability.pop(config_name, None)
-                if not isinstance(exporter, dict) or not exporter.get("enabled"):
-                    continue
-                endpoint = {
-                    key: value
-                    for key, value in exporter.items()
-                    if key != "enabled" and value is not None
-                }
-                endpoint["type"] = endpoint_type
-                endpoints.append(endpoint)
-            if endpoints:
-                observability["opentelemetry"] = {
-                    "enabled": True,
-                    "endpoints": endpoints,
-                }
-            observability["version"] = 3
-
-        # Fabric finalizes Hermes' Relay session after every invocation. Each
-        # finalization reinitializes Relay for the next turn, so a file sink
-        # cannot overwrite the runtime-scoped artifact it created previously.
-        for sink in (observability.get("atof") or {}).get("sinks") or []:
-            if isinstance(sink, dict) and sink.get("type") == "file":
-                if sink.get("mode") == "overwrite":
-                    sink["mode"] = "append"
-    _, plugin_config_path = common_utils.write_relay_configs(
-        plugin_config=hermes_plugin_config,
-        observability_version=observability_version,
-    )
-    if plugin_config_path is None:
-        raise RuntimeError("Hermes Relay plugin configuration was not generated")
-    return plugin_config_path, plugin_config
-
-
-def hermes_mcp_server_config(server: AgentMcpServerConfig) -> dict[str, Any]:
-    transport = server.transport.strip().lower()
-    target = os.path.expandvars(server.url).strip()
-    if not target:
-        raise ValueError("MCP server mapping requires a URL")
-
-    if transport == "stdio":
-        return common_utils.without_none(
-            {
-                "enabled": True,
-                "command": target,
-                "args": server.args or None,
-                "env": server.env or None,
-            }
-        )
-
-    return {"enabled": True, "url": target, "transport": transport}
-
-
-def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "model": config.get("model", {}),
-        "terminal": config.get("terminal", {}),
-        "skill_dirs": (config.get("skills") or {}).get("external_dirs", []),
-        "mcp_servers": sorted((config.get("mcp_servers") or {}).keys()),
-        "plugins": (config.get("plugins") or {}).get("enabled", []),
-        "platform_toolsets": config.get("platform_toolsets", {}),
-        "disabled_toolsets": (config.get("agent") or {}).get("disabled_toolsets", []),
-    }
 
 
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
     lifecycle.serve(HermesRuntime, config_loader=AgentConfig.from_mapping)
-
-
-def resolve_hermes_toolsets(
-    agent_config: AgentConfig, config: dict[str, Any]
-) -> list[str] | None:
-    enabled = agent_config.tools.enabled if agent_config.tools is not None else None
-    if enabled is not None:
-        return enabled
-
-    from hermes_cli.tools_config import _get_platform_tools
-
-    return sorted(_get_platform_tools(config, "cli"))
-
-
-def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:
-    root = runtime_context.artifacts.root
-    if root:
-        artifact_root = Path(str(root))
-        if not artifact_root.is_absolute():
-            artifact_root = Path(base_dir) / artifact_root
-        return artifact_root.resolve()
-    return Path(base_dir).resolve() / "artifacts"
 
 
 class HermesRuntime:
@@ -346,10 +77,10 @@ class HermesRuntime:
                     "Hermes requires a validated AgentConfig",
                 )
             runtime_context = RuntimeContext.from_mapping(payload.get("runtime_context"))
-            validate_hermes_telemetry_provider(runtime_context)
+            telemetry.validate_hermes_telemetry_provider(runtime_context)
             self._agent_config = agent_config
-            self._settings = _settings(agent_config)
-            model_config = _selected_model(agent_config)
+            self._settings = configuration._settings(agent_config)
+            model_config = configuration._selected_model(agent_config)
             self._model_config = model_config
             self._runtime_id = runtime_context.runtime_id
             self._hermes_home = (
@@ -379,21 +110,24 @@ class HermesRuntime:
                 (
                     self._relay_plugin_config_path,
                     self._relay_plugin_config,
-                ) = write_hermes_relay_plugin_config(relay_payload)
-                for name in HERMES_RELAY_ENV_NAMES:
+                ) = telemetry.write_hermes_relay_plugin_config(relay_payload)
+                for name in telemetry.HERMES_RELAY_ENV_NAMES:
                     os.environ.pop(name, None)
                 os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = str(
                     self._relay_plugin_config_path
                 )
 
-            self._hermes_config_path, self._hermes_config = write_hermes_config(
+            (
+                self._hermes_config_path,
+                self._hermes_config,
+            ) = configuration.write_hermes_config(
                 agent_config,
                 self._hermes_home,
                 # Workspace belongs to the per-runtime context, not AgentConfig.
                 workspace=str(runtime_context.environment.workspace or "."),
                 relay_enabled=relay_enabled,
             )
-            api_key_env = _api_key_env(model_config)
+            api_key_env = configuration._api_key_env(model_config)
             api_key = os.environ.get(api_key_env)
             if not api_key:
                 raise RuntimeError(f"{api_key_env} is required for Hermes mode")
@@ -416,12 +150,12 @@ class HermesRuntime:
 
                     await asyncio.to_thread(discover_mcp_tools)
 
-                self._enabled_toolsets = resolve_hermes_toolsets(
+                self._enabled_toolsets = configuration.resolve_hermes_toolsets(
                     agent_config, loaded_hermes_config
                 )
                 self._session_db = SessionDB()
                 self._conversation_history = None
-                max_iterations = _max_turns(agent_config)
+                max_iterations = configuration._max_turns(agent_config)
                 if max_iterations is None:
                     max_iterations = DEFAULT_MAX_ITERATIONS
                 temperature = model_config.temperature
@@ -434,7 +168,8 @@ class HermesRuntime:
                         model=model_config.model,
                         max_iterations=int(max_iterations),
                         enabled_toolsets=self._enabled_toolsets,
-                        disabled_toolsets=disabled_toolsets(agent_config) or None,
+                        disabled_toolsets=configuration.disabled_toolsets(agent_config)
+                        or None,
                         quiet_mode=True,
                         skip_context_files=True,
                         skip_memory=True,
@@ -506,7 +241,7 @@ class HermesRuntime:
                     # each invoke as an artifact-complete boundary, so finalize
                     # through Hermes' lifecycle instead of reaching into Relay
                     # directly.
-                    finalize_hermes_relay_session(str(self._agent.session_id))
+                    telemetry.finalize_hermes_relay_session(str(self._agent.session_id))
 
         # Hermes' upstream Relay integration drives async Relay hooks from its
         # synchronous agent loop. Run that loop outside this lifecycle server's
@@ -551,7 +286,9 @@ class HermesRuntime:
             "adapter_stdout": adapter_stdout,
             "hermes_home": str(self._hermes_home),
             "hermes_config_path": str(self._hermes_config_path),
-            "hermes_native_config": summarize_hermes_config(self._hermes_config),
+            "hermes_native_config": configuration.summarize_hermes_config(
+                self._hermes_config
+            ),
             "enabled_toolsets": self._enabled_toolsets,
         }
         if self._relay_plugin_config is not None:
@@ -598,7 +335,7 @@ class HermesRuntime:
         self._started = False
 
         if had_relay_plugin:
-            for name in HERMES_RELAY_ENV_NAMES:
+            for name in telemetry.HERMES_RELAY_ENV_NAMES:
                 os.environ.pop(name, None)
 
         if had_mcp_servers:
@@ -632,6 +369,16 @@ class HermesRuntime:
                 "hermes_runtime_stop_failed",
                 "Hermes runtime failed to stop cleanly",
             ) from errors[0]
+
+
+def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    root = runtime_context.artifacts.root
+    if root:
+        artifact_root = Path(str(root))
+        if not artifact_root.is_absolute():
+            artifact_root = Path(base_dir) / artifact_root
+        return artifact_root.resolve()
+    return Path(base_dir).resolve() / "artifacts"
 
 
 def _invoke_hermes_turn(
