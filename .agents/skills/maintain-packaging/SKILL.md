@@ -73,6 +73,7 @@ commitment.
   ```bash
   uv run pre-commit run --all-files attributions-rust
   uv run pre-commit run --all-files attributions-python
+  uv run pre-commit run --all-files attributions-node
   ```
 
 The license diff is evidence for reviewers. Dependency approvers make

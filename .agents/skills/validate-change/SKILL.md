@@ -38,7 +38,8 @@ surfaces touched by a change.
   `attributions-python` pre-commit hooks.
 - If the TypeScript manifest or npm lockfile changed, inspect the complete npm
   dependency tree and license fields, confirm the package still has zero
-  production dependencies, and run its package and audit checks.
+  production dependencies, run the `attributions-node` pre-commit hook, and run
+  its package and audit checks.
 - If documentation or examples changed, run `just docs` when practical and
   verify documented commands against the current repository.
 - If code changes alter APIs, commands, paths, packaging behavior, telemetry
@@ -104,6 +105,7 @@ just docs
 uv run --no-project python scripts/licensing/license_diff.py --base-ref origin/main
 uv run pre-commit run --all-files attributions-rust
 uv run pre-commit run --all-files attributions-python
+uv run pre-commit run --all-files attributions-node
 
 # Justfile and patch hygiene
 just --fmt --check
