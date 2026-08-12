@@ -83,6 +83,14 @@ adapter-tests = [
   "nemo-fabric-adapters-hermes[harness]; python_version < '3.14'",
 ]
 
+langgraph-example = [
+  "langchain>=1.3,<2.0",
+  "langchain-mcp-adapters>=0.1,<0.3.0",
+  "langchain-openai>=0.3,<2.0",
+  "langgraph>=1.2,<2.0",
+  "mcp>=1.10",
+]
+
 dev = [
     "ipython~=8.20",
     "pip-licenses>=5,<6",

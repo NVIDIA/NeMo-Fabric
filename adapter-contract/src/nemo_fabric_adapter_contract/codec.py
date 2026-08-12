@@ -164,6 +164,8 @@ def encode_dataclass(instance: Any) -> dict[str, Any]:
             continue
         if item.metadata.get("omit_empty") and not value:
             continue
+        if "omit_default" in item.metadata and value == item.metadata["omit_default"]:
+            continue
         result[item.name] = _encode_value(value, path=(item.name,))
     return result
 
@@ -187,6 +189,16 @@ def _decode_value(
         if type(None) in arguments and value is None:
             return None
         options = tuple(option for option in arguments if option is not type(None))
+        if isinstance(value, Mapping) and "type" in value:
+            tagged_options = [
+                option
+                for option in options
+                if isinstance(option, type)
+                and get_origin(_resolved_type_hints(option).get("type")) is Literal
+                and value["type"] in get_args(_resolved_type_hints(option)["type"])
+            ]
+            if len(tagged_options) == 1:
+                return _decode_value(tagged_options[0], value, path=path)
         errors = []
         for option in options:
             try:

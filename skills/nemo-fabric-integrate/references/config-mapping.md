@@ -24,7 +24,7 @@ Import these from the top-level `nemo_fabric` package:
 | `RuntimeConfig` | Input/output labels, artifact location, invocation timeout, and harness turn limit. |
 | `EnvironmentConfig` | Execution environment, workspace, and harness-visible variables. |
 | `ToolsConfig` / `ToolDefinitionConfig` | Named tool and tool-group definitions plus selection and blocking policy. |
-| `McpConfig` / `McpServerConfig` | MCP transport, network URL or stdio executable, separate process arguments, environment, exposure, and optional per-server tool policy. |
+| `McpConfig` / `McpServerConfig` | MCP transport, network URL or stdio executable, separate stdio process arguments and environment, exposure, and optional per-server tool policy. |
 | `SkillConfig` | Skill directories. |
 | `TelemetryConfig` | Telemetry providers. |
 | `RelayConfig` and `Relay*Config` | NVIDIA NeMo Relay observability under the top-level `relay` block. |
@@ -34,13 +34,18 @@ indexes the public config models. The generated pages omit constructor fields an
 defaults, so read the installed `nemo_fabric` models (they ship `py.typed`) for
 exact field names and defaults.
 
+Claude and Codex validate every model role against their descriptor-owned
+`model_schema`. Provider identifiers outside their native `anthropic` and
+`openai` paths require both `ModelConfig.base_url` and
+`ModelConfig.api_key_env`; undeclared `ModelConfig.settings` also fail planning.
+
 ## Build And Shape
 
 Construct the nested config directly, then adjust capabilities with helper
 methods that edit the typed config in place and return it:
 
 - `add_skill_path(path)` / `remove_skill_path(path)`
-- `add_mcp_server(name, *, transport, url, args, env, exposure, allowed_tools, blocked_tools, ...)` / `remove_mcp_server(name)`
+- `add_mcp_server(name, *, transport, url, args, env, authentication, custom_headers, exposure, allowed_tools, blocked_tools, ...)` / `remove_mcp_server(name)`
 - `enable_relay(...)` for NVIDIA NeMo Relay observability in the `relay` block
 - `ToolsConfig(enabled=..., blocked=...)` for tool policy
 - `add_tool_definition(name, kind=..., ref=..., settings=...)` / `remove_tool_definition(name)`

@@ -68,6 +68,8 @@ def test_native_run_rejects_multiple_request_sources(hermes_shim_agent_dir: Path
 def test_plan_rejects_adapter_incompatible_normalized_tool_policy():
     config = base_config()
     config.harness.adapter_id = "nvidia.fabric.codex"
+    config.models["default"].provider = "openai"
+    config.models["default"].model = "openai/gpt-5.4"
     config.models["default"].temperature = None
     config.block_tools("Bash")
 
@@ -135,6 +137,12 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
                         "transport": "streamable-http",
                         "url": "${GITHUB_MCP_URL}",
                         "exposure": "harness_native",
+                        "custom_headers": {"X-Tenant": "fabric"},
+                        "authentication": {
+                            "type": "oauth2",
+                            "client_id": "fabric-client",
+                            "scopes": ["repo"],
+                        },
                     }
                 }
             },
@@ -154,6 +162,13 @@ async def smoke(client: Fabric, fixture_agent: Path) -> None:
     assert typed_plan["agent_name"] == "typed-hermes-shim-agent"
     assert typed_plan["adapter_descriptor"]["source"] == "local"
     assert typed_plan["telemetry_plan"]["relay_enabled"] is True
+    native_mcp = typed_plan["capability_plan"]["native"]["mcp_servers"]["github"]
+    assert native_mcp["custom_headers"] == {"X-Tenant": "fabric"}
+    assert native_mcp["authentication"] == {
+        "type": "oauth2",
+        "client_id": "fabric-client",
+        "scopes": ["repo"],
+    }
     resolved_config = typed_plan.config.to_mapping()
     assert resolved_config["harness"]["adapter_id"] == "test.fabric.hermes_shim"
     assert "settings" not in resolved_config["harness"]

@@ -15,6 +15,7 @@ from packaging.version import Version
 import pytest
 import requests
 import yaml
+from _utils.utils import assert_atof_model, assert_atof_skill_selection
 
 from examples.code_review_agent import (
     hermes_config,
@@ -102,6 +103,51 @@ async def test_hermes_persistent_host_with_relay(
         json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
     ]
     assert sum(record["name"] == "hermes.session.end" for record in atof_records) == 2
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key")
+async def test_env_secrets_in_headers(
+    code_review_agent_dir: Path,
+    api_server: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    os.environ["MY_KEY"] = "XYZ"
+    tool_name = "mcp__headers__get_authorization_header"
+    if Version(distribution_version("hermes-agent")) < Version("0.20"):
+        tool_call = {"name": tool_name, "arguments": {}}
+    else:
+        tool_call = {
+            "name": "tool_call",
+            "arguments": {"name": tool_name, "arguments": {}},
+        }
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": tool_call},
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    config.add_mcp_server(
+        "headers",
+        transport="streamable-http",
+        url=f"{api_server}/mcp",
+        authentication=None,
+        custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+    )
+
+    result = await Fabric().run(
+        config,
+        base_dir=code_review_agent_dir,
+        input="Use the MCP tool to return its Authorization header.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    response = requests.get(f"{api_server}/_mcp_authorization_headers", timeout=5)
+    response.raise_for_status()
+    assert set(response.json()) == {"Bearer XYZ"}
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
@@ -199,6 +245,73 @@ async def test_mcp_stdio_transport(
             tool_end["metadata"].get("status") == "ok"
         )
         assert "America/Los_Angeles" in tool_end["data"]
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("skill", ["default", "alternate", None])
+async def test_skill_selection(
+    code_review_agent_dir: Path,
+    api_server: str,
+    skill: str | None,
+    default_skill: Path,
+    alternate_skill: Path,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    config.add_skill_path(default_skill)
+
+    if skill == "alternate" or skill is None:
+        config.remove_skill_path(default_skill)
+
+    if skill == "alternate":
+        config.add_skill_path(alternate_skill)
+
+    if skill is not None:
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "tool_call": {
+                    "name": "skill_view",
+                    "arguments": {"name": skill},
+                }
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+
+    result = await Fabric().run(
+        config,
+        base_dir=code_review_agent_dir,
+        input=f"Use the {skill} skill." if skill else "Reply without using a skill.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    assert_atof_skill_selection(result["output"], skill)
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+@pytest.mark.parametrize("model", ["m1", "m2"])
+async def test_model_selection(
+    code_review_agent_dir: Path,
+    api_server: str,
+    model: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    config = with_relay(hermes_config())
+    config.models["default"].model = model
+    config.models["default"].base_url = f"{api_server}/v1"
+
+    result = await Fabric().run(
+        config,
+        base_dir=code_review_agent_dir,
+        input="Reply with hello.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    assert_atof_model(result["output"], model)
 
 
 class TestHermesE2E:

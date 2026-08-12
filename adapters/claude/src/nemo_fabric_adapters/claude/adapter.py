@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import asdict
@@ -91,6 +92,11 @@ INHERITED_ENV_NAMES = {
     "https_proxy",
     "no_proxy",
 }
+MCP_HEADER_ENVIRONMENT_VARIABLE = re.compile(
+    r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}"
+    r"|\$([A-Za-z_][A-Za-z0-9_]*)"
+    r"|%([A-Za-z_][A-Za-z0-9_]*)%"
+)
 
 
 @dataclass(frozen=True)
@@ -284,6 +290,21 @@ def _mcp_servers(config: AgentConfig) -> dict[str, Any]:
                 "claude_invalid_configuration",
                 f"unsupported MCP transport: {transport}",
             )
+        if headers := server.custom_headers:
+            try:
+                common_utils.validate_http_headers(name, headers)
+                result[name]["headers"] = headers
+            except ValueError as error:
+                raise AdapterConfigError(
+                    "claude_invalid_configuration", str(error)
+                ) from error
+
+        auth = server.authentication
+        if auth is not None:
+            raise AdapterConfigError(
+                "claude_invalid_configuration",
+                f"MCP server {name!r} {auth.type!r} authentication is not supported by Claude",
+            )
     return result
 
 
@@ -304,30 +325,47 @@ def _stage_mcp_config(
         return None
     fabric_runtime_id = runtime_context.runtime_id
     environment: dict[str, str] = {}
+
+    def project_environment_value(server_name: str, value_name: str, value: str) -> str:
+        projection_key = (
+            sha256(f"{fabric_runtime_id}\0{server_name}\0{value_name}".encode())
+            .hexdigest()
+            .upper()
+        )
+        projected_name = f"NEMO_FABRIC_CLAUDE_MCP_{projection_key}"
+        environment[projected_name] = value
+        return f"${{{projected_name}}}"
+
     for server_name, server in servers.items():
         raw_environment = server.get("env")
-        if raw_environment is None:
-            continue
-        server_environment = raw_environment
-        projected_environment: dict[str, str] = {}
-        for variable_name, value in sorted(server_environment.items()):
-            if not isinstance(variable_name, str) or not variable_name:
-                raise AdapterConfigError(
-                    "claude_invalid_configuration",
-                    f"MCP server {server_name} env names must be non-empty strings",
+        if raw_environment is not None:
+            projected_environment: dict[str, str] = {}
+            for variable_name, value in sorted(raw_environment.items()):
+                projected_environment[variable_name] = project_environment_value(
+                    server_name, variable_name, value
                 )
-            if not isinstance(value, str):
-                raise AdapterConfigError(
-                    "claude_invalid_configuration",
-                    f"MCP server {server_name} env values must be strings",
+            server["env"] = projected_environment
+
+        if headers := server.get("headers"):
+            projected_headers: dict[str, str] = {}
+            for header_name, header_value in headers.items():
+
+                def project_header_reference(match: re.Match[str]) -> str:
+                    variable_name = next(
+                        group for group in match.groups() if group is not None
+                    )
+                    if variable_name in os.environ:
+                        value = os.environ[variable_name]
+                    else:
+                        return match.group(0)
+                    return project_environment_value(
+                        server_name, f"header:{header_name}:{variable_name}", value
+                    )
+
+                projected_headers[header_name] = MCP_HEADER_ENVIRONMENT_VARIABLE.sub(
+                    project_header_reference, header_value
                 )
-            projection_key = sha256(
-                f"{fabric_runtime_id}\0{server_name}\0{variable_name}".encode()
-            ).hexdigest().upper()
-            projected_name = f"NEMO_FABRIC_CLAUDE_MCP_{projection_key}"
-            projected_environment[variable_name] = f"${{{projected_name}}}"
-            environment[projected_name] = value
-        server["env"] = projected_environment
+            server["headers"] = projected_headers
 
     config_root = (
         _artifact_root(runtime_context, base_dir)
@@ -361,8 +399,7 @@ def _cleanup_mcp_config(config_path: Path | None) -> None:
     if config_path is None:
         return
     try:
-        config_path.unlink(missing_ok=True)
-        config_path.parent.rmdir()
+        shutil.rmtree(config_path.parent)
     except OSError:
         LOGGER.exception("Claude MCP runtime configuration could not be removed")
 
@@ -645,6 +682,10 @@ def timeout_seconds() -> float:
     return 1800.0
 
 
+def _remaining_timeout(deadline: float) -> float:
+    return max(0.0, deadline - asyncio.get_running_loop().time())
+
+
 def _artifact_root(runtime_context: RuntimeContext, base_dir: str) -> Path:
     root = runtime_context.artifacts.root
     if root:
@@ -922,6 +963,7 @@ class ClaudeRuntime:
             options = build_options(agent_config, runtime_context, base_dir, relay=relay)
             if isinstance(options.mcp_servers, Path):
                 self._mcp_config_path = options.mcp_servers
+
             client = ClaudeSDKClient(options)
             await client.connect()
         except ClaudeAdapterError as error:
@@ -959,11 +1001,13 @@ class ClaudeRuntime:
                 "Claude runtime cannot accept another invocation after a runtime failure",
             )
 
+        invocation_deadline = asyncio.get_running_loop().time() + timeout_seconds()
         try:
             prompt = request_prompt(invocation)
-            invocation_timeout = timeout_seconds()
         except ClaudeAdapterError as error:
             output = adapter_failure(error)
+        except ClaudeSDKError as error:
+            output = sdk_failure(error)
         else:
             relay = self._relay
             atif_before = (
@@ -975,7 +1019,7 @@ class ClaudeRuntime:
             output = await self._run_query(
                 client,
                 prompt,
-                invocation_timeout,
+                _remaining_timeout(invocation_deadline),
             )
             if (
                 output.get("completed")
@@ -1009,14 +1053,14 @@ class ClaudeRuntime:
         self,
         client: ClaudeSDKClient,
         prompt: str,
-        invocation_timeout: float,
+        remaining_timeout: float,
     ) -> dict[str, Any]:
         """Run one SDK query and normalize its terminal result."""
 
         messages: list[Message] = []
         result: ResultMessage | None = None
         try:
-            async with asyncio.timeout(invocation_timeout):
+            async with asyncio.timeout(remaining_timeout):
                 await client.query(prompt)
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):

@@ -212,6 +212,9 @@ pub struct AdapterDescriptor {
     /// JSON Schema for adapter-owned `harness.settings`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_schema: Option<serde_json::Map<String, Value>>,
+    /// JSON Schema applied to every normalized `FabricConfig.models` entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_schema: Option<serde_json::Map<String, Value>>,
     /// JSON Schema for adapter-owned `FabricConfig.workflow`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workflow_schema: Option<serde_json::Map<String, Value>>,
@@ -707,12 +710,130 @@ pub struct McpConfig {
     pub extensions: BTreeMap<String, Value>,
 }
 
+/// MCP server transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpTransport {
+    /// Standard input/output transport.
+    Stdio,
+    /// Server-Sent Events transport.
+    Sse,
+    /// Streamable HTTP transport.
+    StreamableHttp,
+}
+
+impl McpTransport {
+    /// Return the stable configuration value for this transport.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stdio => "stdio",
+            Self::Sse => "sse",
+            Self::StreamableHttp => "streamable-http",
+        }
+    }
+}
+
+/// OAuth client authentication method used at the token endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OAuthTokenEndpointAuthMethod {
+    /// Public client without a client secret.
+    None,
+    /// Send the client secret in the token request body.
+    ClientSecretPost,
+    /// Send the client credentials with HTTP Basic authentication.
+    ClientSecretBasic,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+fn default_mcp_oauth_timeout_seconds() -> u64 {
+    300
+}
+
+fn is_default_mcp_oauth_timeout_seconds(value: &u64) -> bool {
+    *value == default_mcp_oauth_timeout_seconds()
+}
+
+fn default_mcp_token_cache_buffer_seconds() -> u64 {
+    300
+}
+
+fn is_default_mcp_token_cache_buffer_seconds(value: &u64) -> bool {
+    *value == default_mcp_token_cache_buffer_seconds()
+}
+
+/// MCP server authentication configuration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum McpAuthenticationConfig {
+    /// OAuth 2.0 authorization-code authentication.
+    #[serde(rename = "oauth2")]
+    OAuth2 {
+        /// Pre-registered OAuth client identifier. Omit to allow dynamic registration.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_id: Option<String>,
+        /// Environment variable containing the OAuth client secret.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_secret_env: Option<String>,
+        /// OAuth scopes requested by the MCP client.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        scopes: Vec<String>,
+        /// OAuth callback URI for clients that require a pre-registered redirect URI.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        redirect_uri: Option<String>,
+        /// Whether the client may register dynamically when `client_id` is omitted.
+        #[serde(default = "default_true", skip_serializing_if = "is_true")]
+        enable_dynamic_registration: bool,
+        /// Client name advertised during dynamic registration.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_name: Option<String>,
+        /// Client authentication method used at the token endpoint.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>,
+        /// Maximum time to wait for interactive authorization.
+        #[serde(
+            default = "default_mcp_oauth_timeout_seconds",
+            skip_serializing_if = "is_default_mcp_oauth_timeout_seconds"
+        )]
+        #[schemars(range(min = 1))]
+        authorization_timeout_seconds: u64,
+    },
+    /// OAuth 2.0 client-credentials authentication for headless workloads.
+    ServiceAccount {
+        /// OAuth client identifier.
+        client_id: String,
+        /// Environment variable containing the OAuth client secret.
+        client_secret_env: String,
+        /// OAuth token endpoint.
+        token_url: String,
+        /// OAuth scopes requested by the MCP client.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        scopes: Vec<String>,
+        /// Client authentication method used at the token endpoint.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>,
+        /// Refresh the cached token this many seconds before expiry.
+        #[serde(
+            default = "default_mcp_token_cache_buffer_seconds",
+            skip_serializing_if = "is_default_mcp_token_cache_buffer_seconds"
+        )]
+        token_cache_buffer_seconds: u64,
+    },
+}
+
 /// MCP server configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct McpServerConfig {
     /// MCP transport.
-    pub transport: String,
-    /// MCP server URL for network transports or executable for stdio.
+    pub transport: McpTransport,
+    /// MCP server URL or process command (when transport=stdio), depending on transport.
     pub url: String,
     /// Command-line arguments passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -720,6 +841,9 @@ pub struct McpServerConfig {
     /// Environment variables passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Authentication used by an HTTP MCP server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<McpAuthenticationConfig>,
     /// How NeMo Fabric exposes the MCP capability to the harness.
     pub exposure: McpExposure,
     /// MCP tool names to expose. `None` exposes every tool discovered from the server.
@@ -731,6 +855,9 @@ pub struct McpServerConfig {
     /// Additive MCP server fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
+    /// HTTP headers passed to an MCP server when transport is `sse` or `streamable-http`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom_headers: BTreeMap<String, String>,
 }
 
 /// MCP exposure strategy.
@@ -1324,6 +1451,137 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
     if let Some(mcp) = &config.mcp {
         for (server_name, server) in &mcp.servers {
             let field = format!("mcp.servers.{server_name}");
+            if server.transport != McpTransport::Stdio && !server.env.is_empty() {
+                return invalid_config(format!("{field}.env"), "is only valid for stdio transport");
+            }
+            if server.transport == McpTransport::Stdio
+                && (server.authentication.is_some() || !server.custom_headers.is_empty())
+            {
+                return invalid_config(
+                    &field,
+                    "authentication and custom_headers require an HTTP transport",
+                );
+            }
+            if let Some(authentication) = &server.authentication {
+                match authentication {
+                    McpAuthenticationConfig::OAuth2 {
+                        client_id,
+                        client_secret_env,
+                        scopes,
+                        redirect_uri,
+                        enable_dynamic_registration,
+                        client_name,
+                        token_endpoint_auth_method,
+                        authorization_timeout_seconds,
+                    } => {
+                        validate_names(&format!("{field}.authentication.scopes"), scopes)?;
+                        if client_id
+                            .as_ref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.client_id"),
+                                "must be a non-empty string",
+                            );
+                        }
+                        if client_secret_env
+                            .as_ref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.client_secret_env"),
+                                "must be a non-empty string",
+                            );
+                        }
+                        if client_secret_env.is_some() && client_id.is_none() {
+                            return invalid_config(
+                                format!("{field}.authentication.client_secret_env"),
+                                "requires client_id",
+                            );
+                        }
+                        if !enable_dynamic_registration && client_id.is_none() {
+                            return invalid_config(
+                                format!("{field}.authentication.client_id"),
+                                "is required when dynamic registration is disabled",
+                            );
+                        }
+                        if matches!(
+                            token_endpoint_auth_method,
+                            Some(
+                                OAuthTokenEndpointAuthMethod::ClientSecretBasic
+                                    | OAuthTokenEndpointAuthMethod::ClientSecretPost
+                            )
+                        ) && client_secret_env.is_none()
+                            && client_id.is_some()
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.token_endpoint_auth_method"),
+                                "requires client_secret_env for a pre-registered client",
+                            );
+                        }
+                        if *token_endpoint_auth_method == Some(OAuthTokenEndpointAuthMethod::None)
+                            && client_secret_env.is_some()
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.token_endpoint_auth_method"),
+                                "`none` cannot be combined with client_secret_env",
+                            );
+                        }
+                        if redirect_uri
+                            .as_ref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.redirect_uri"),
+                                "must be a non-empty string",
+                            );
+                        }
+                        if client_name
+                            .as_ref()
+                            .is_some_and(|value| value.trim().is_empty())
+                        {
+                            return invalid_config(
+                                format!("{field}.authentication.client_name"),
+                                "must be a non-empty string",
+                            );
+                        }
+                        if *authorization_timeout_seconds == 0 {
+                            return invalid_config(
+                                format!("{field}.authentication.authorization_timeout_seconds"),
+                                "must be greater than zero",
+                            );
+                        }
+                    }
+                    McpAuthenticationConfig::ServiceAccount {
+                        client_id,
+                        client_secret_env,
+                        token_url,
+                        scopes,
+                        token_endpoint_auth_method,
+                        ..
+                    } => {
+                        for (name, value) in [
+                            ("client_id", client_id),
+                            ("client_secret_env", client_secret_env),
+                            ("token_url", token_url),
+                        ] {
+                            if value.trim().is_empty() {
+                                return invalid_config(
+                                    format!("{field}.authentication.{name}"),
+                                    "must be a non-empty string",
+                                );
+                            }
+                        }
+                        validate_names(&format!("{field}.authentication.scopes"), scopes)?;
+                        if *token_endpoint_auth_method == Some(OAuthTokenEndpointAuthMethod::None) {
+                            return invalid_config(
+                                format!("{field}.authentication.token_endpoint_auth_method"),
+                                "service_account requires client_secret_basic or client_secret_post",
+                            );
+                        }
+                    }
+                }
+            }
             if let Some(allowed_tools) = &server.allowed_tools {
                 validate_names(&format!("{field}.allowed_tools"), allowed_tools)?;
                 if let Some(name) = allowed_tools
@@ -1587,6 +1845,28 @@ pub(crate) fn adapter_config_compatibility_issues(
             ));
         }
     }
+
+    if let Some(schema) = &descriptor.model_schema {
+        let schema = Value::Object(schema.clone());
+        let validator = jsonschema::validator_for(&schema)
+            .expect("adapter model schema was validated during descriptor resolution");
+        for (role, model) in &config.models {
+            let mut value = serde_json::to_value(model)
+                .expect("typed model configuration is always JSON serializable");
+            if let Some(object) = value.as_object_mut() {
+                for extension in model.extensions.keys() {
+                    object.remove(extension);
+                }
+            }
+            for error in validator.iter_errors(&value) {
+                issues.push(incompatible(
+                    schema_error_path(&error, &format!("models.{role}")),
+                    schema_error_reason(&error, "adapter model schema"),
+                ));
+            }
+        }
+    }
+
     for (role, model) in &config.models {
         if model.base_url.is_some() && !accepts(AdapterConfigField::ModelBaseUrl) {
             issues.push(incompatible(
@@ -1679,6 +1959,7 @@ fn validate_adapter_descriptor_shape(descriptor: &AdapterDescriptor, path: &Path
     }
     for (field, schema) in [
         ("settings_schema", descriptor.settings_schema.as_ref()),
+        ("model_schema", descriptor.model_schema.as_ref()),
         ("workflow_schema", descriptor.workflow_schema.as_ref()),
         (
             "tool_definition_schema",
@@ -2222,10 +2503,12 @@ fn resolve_capability_plan(
                     (
                         name.clone(),
                         McpServerPlan {
-                            transport: server.transport.clone(),
+                            transport: server.transport,
                             url: server.url.clone(),
                             args: server.args.clone(),
                             env: server.env.clone(),
+                            authentication: server.authentication.clone(),
+                            custom_headers: server.custom_headers.clone(),
                             exposure: server.exposure,
                             extensions: server.extensions.clone(),
                             allowed_tools: server.allowed_tools.clone(),
@@ -2686,7 +2969,7 @@ pub enum CapabilityTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct McpServerPlan {
     /// MCP transport.
-    pub transport: String,
+    pub transport: McpTransport,
     /// MCP server URL for network transports or executable for stdio.
     pub url: String,
     /// Command-line arguments passed to an MCP stdio server process.
@@ -2695,6 +2978,12 @@ pub struct McpServerPlan {
     /// Environment variables passed to an MCP stdio server process.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Authentication used by an HTTP MCP server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<McpAuthenticationConfig>,
+    /// HTTP headers passed to an MCP server.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom_headers: BTreeMap<String, String>,
     /// Exposure strategy.
     pub exposure: McpExposure,
     /// Additive MCP server fields from author config.
@@ -2790,6 +3079,23 @@ mod tests {
             "skills": {"paths": ["skills/review"]}
         }))
         .expect("typed config")
+    }
+
+    fn config_with_model(adapter_id: &str, provider: &str) -> FabricConfig {
+        let mut config = typed_config(adapter_id);
+        config.models.insert(
+            "default".to_string(),
+            ModelConfig {
+                provider: provider.to_string(),
+                model: "test-model".to_string(),
+                temperature: None,
+                api_key_env: None,
+                base_url: None,
+                settings: serde_json::Map::new(),
+                extensions: BTreeMap::new(),
+            },
+        );
+        config
     }
 
     fn typed_workflow() -> WorkflowConfig {
@@ -2918,7 +3224,7 @@ mod tests {
             .mcp_servers
             .get("analyzer")
             .expect("native analyzer mcp server");
-        assert_eq!(server.transport, "stdio");
+        assert_eq!(server.transport, McpTransport::Stdio);
         assert_eq!(server.url, "/tmp/analyzer-mcp");
         assert_eq!(server.exposure, McpExposure::HarnessNative);
         assert_eq!(server.args, vec!["--stdio".to_string()]);
@@ -2930,6 +3236,161 @@ mod tests {
             )])
         );
         assert!(server.extensions.is_empty());
+    }
+
+    #[test]
+    fn mcp_env_requires_stdio_transport() {
+        for transport in [McpTransport::Sse, McpTransport::StreamableHttp] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.mcp = Some(McpConfig {
+                servers: BTreeMap::from([(
+                    "docs".to_string(),
+                    McpServerConfig {
+                        transport,
+                        url: "https://mcp.example".to_string(),
+                        args: Vec::new(),
+                        env: BTreeMap::from([("MCP_SECRET".to_string(), "secret".to_string())]),
+                        authentication: None,
+                        custom_headers: BTreeMap::new(),
+                        exposure: McpExposure::HarnessNative,
+                        allowed_tools: None,
+                        blocked_tools: Vec::new(),
+                        extensions: BTreeMap::new(),
+                    },
+                )]),
+                extensions: BTreeMap::new(),
+            });
+
+            let error = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/fabric-invalid-mcp-env"),
+            )
+            .expect_err("HTTP MCP env must be rejected");
+
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field, .. }
+                    if field == "mcp.servers.docs.env"
+            ));
+        }
+    }
+
+    #[test]
+    fn mcp_transport_rejects_unknown_values() {
+        let error = serde_json::from_value::<McpServerConfig>(serde_json::json!({
+            "transport": "websocket",
+            "url": "https://mcp.example",
+            "exposure": "harness_native"
+        }))
+        .expect_err("unknown MCP transport");
+
+        assert!(error.to_string().contains("unknown variant `websocket`"));
+    }
+
+    #[test]
+    fn mcp_transport_as_str_matches_serialized_value() {
+        for transport in [
+            McpTransport::Stdio,
+            McpTransport::Sse,
+            McpTransport::StreamableHttp,
+        ] {
+            assert_eq!(
+                serde_json::to_value(transport).expect("serialize MCP transport"),
+                transport.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_oauth_authentication_rejects_unknown_fields() {
+        let error = serde_json::from_value::<McpAuthenticationConfig>(serde_json::json!({
+            "type": "oauth2",
+            "client_id": "fabric-client",
+            "unknown": true
+        }))
+        .expect_err("unknown OAuth field");
+
+        assert!(error.to_string().contains("unknown field `unknown`"));
+    }
+
+    #[test]
+    fn mcp_service_account_authentication_rejects_unknown_fields() {
+        let error = serde_json::from_value::<McpAuthenticationConfig>(serde_json::json!({
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "token_url": "https://auth.example/token",
+            "unknown": true
+        }))
+        .expect_err("unknown service-account field");
+
+        assert!(error.to_string().contains("unknown field `unknown`"));
+    }
+
+    #[test]
+    fn mcp_http_authentication_and_headers_survive_capability_planning() {
+        let mut config = typed_config("nvidia.fabric.hermes");
+        config.skills = None;
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "jira".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example/jira",
+                    "exposure": "harness_native",
+                    "custom_headers": {"X-Tenant": "fabric"},
+                    "authentication": {
+                        "type": "oauth2",
+                        "client_id": "fabric-client",
+                        "client_secret_env": "MCP_CLIENT_SECRET",
+                        "scopes": ["read:jira", "write:jira"],
+                        "redirect_uri": "http://127.0.0.1:8765/callback",
+                        "enable_dynamic_registration": false,
+                        "client_name": "NeMo Fabric",
+                        "token_endpoint_auth_method": "client_secret_post",
+                        "authorization_timeout_seconds": 120
+                    }
+                }))
+                .expect("authenticated MCP server"),
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect("authenticated Hermes MCP plan");
+        let server = plan
+            .capability_plan
+            .native
+            .mcp_servers
+            .get("jira")
+            .expect("native Jira MCP server");
+
+        assert_eq!(server.transport, McpTransport::StreamableHttp);
+        assert_eq!(
+            server.custom_headers,
+            BTreeMap::from([("X-Tenant".to_string(), "fabric".to_string())])
+        );
+        assert_eq!(
+            server.authentication,
+            Some(McpAuthenticationConfig::OAuth2 {
+                client_id: Some("fabric-client".to_string()),
+                client_secret_env: Some("MCP_CLIENT_SECRET".to_string()),
+                scopes: vec!["read:jira".to_string(), "write:jira".to_string()],
+                redirect_uri: Some("http://127.0.0.1:8765/callback".to_string()),
+                enable_dynamic_registration: false,
+                client_name: Some("NeMo Fabric".to_string()),
+                token_endpoint_auth_method: Some(OAuthTokenEndpointAuthMethod::ClientSecretPost,),
+                authorization_timeout_seconds: 120,
+            })
+        );
+        let projected = plan
+            .agent_config
+            .mcp
+            .as_ref()
+            .and_then(|mcp| mcp.servers.get("jira"))
+            .expect("projected Jira MCP server");
+        assert_eq!(projected.custom_headers, server.custom_headers);
+        assert_eq!(projected.authentication, server.authentication);
     }
 
     #[test]
@@ -2977,6 +3438,127 @@ mod tests {
                 .mcp_servers
                 .contains_key("managed")
         );
+    }
+
+    #[test]
+    fn mcp_service_account_authentication_survives_capability_planning() {
+        let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+        config.skills = None;
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "automation".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example/automation",
+                    "exposure": "harness_native",
+                    "authentication": {
+                        "type": "service_account",
+                        "client_id": "fabric-client",
+                        "client_secret_env": "MCP_CLIENT_SECRET",
+                        "token_url": "https://auth.example/token",
+                        "scopes": ["mcp:invoke"],
+                        "token_endpoint_auth_method": "client_secret_basic",
+                        "token_cache_buffer_seconds": 60
+                    }
+                }))
+                .expect("service-account MCP server"),
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        let plan = resolve_run_plan_from_config(config, ResolveContext::new(repository_root()))
+            .expect("authenticated Deep Agents MCP plan");
+        let server = plan
+            .capability_plan
+            .native
+            .mcp_servers
+            .get("automation")
+            .expect("native automation MCP server");
+
+        assert_eq!(
+            server.authentication,
+            Some(McpAuthenticationConfig::ServiceAccount {
+                client_id: "fabric-client".to_string(),
+                client_secret_env: "MCP_CLIENT_SECRET".to_string(),
+                token_url: "https://auth.example/token".to_string(),
+                scopes: vec!["mcp:invoke".to_string()],
+                token_endpoint_auth_method: Some(OAuthTokenEndpointAuthMethod::ClientSecretBasic,),
+                token_cache_buffer_seconds: 60,
+            })
+        );
+    }
+
+    #[test]
+    fn mcp_oauth_allows_dynamic_registration_to_supply_client_secret() {
+        let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+        config.mcp = Some(McpConfig {
+            servers: BTreeMap::from([(
+                "docs".to_string(),
+                serde_json::from_value(serde_json::json!({
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example/docs",
+                    "exposure": "harness_native",
+                    "authentication": {
+                        "type": "oauth2",
+                        "token_endpoint_auth_method": "client_secret_post"
+                    }
+                }))
+                .expect("dynamically registered MCP server"),
+            )]),
+            extensions: BTreeMap::new(),
+        });
+
+        validate_config(&config).expect("dynamic registration supplies client credentials");
+    }
+
+    #[test]
+    fn rejects_invalid_mcp_authentication_policy() {
+        let cases = [
+            (
+                serde_json::json!({
+                    "type": "oauth2",
+                    "authorization_timeout_seconds": 0
+                }),
+                "authorization_timeout_seconds",
+            ),
+            (
+                serde_json::json!({
+                    "type": "oauth2",
+                    "enable_dynamic_registration": false
+                }),
+                "client_id",
+            ),
+            (
+                serde_json::json!({
+                    "type": "service_account",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "MCP_CLIENT_SECRET",
+                    "token_url": "https://auth.example/token",
+                    "token_endpoint_auth_method": "none"
+                }),
+                "token_endpoint_auth_method",
+            ),
+        ];
+
+        for (authentication, expected) in cases {
+            let mut config = typed_config("nvidia.fabric.langchain.deepagents");
+            config.mcp = Some(McpConfig {
+                servers: BTreeMap::from([(
+                    "invalid".to_string(),
+                    serde_json::from_value(serde_json::json!({
+                        "transport": "streamable-http",
+                        "url": "https://mcp.example/invalid",
+                        "exposure": "harness_native",
+                        "authentication": authentication,
+                    }))
+                    .expect("syntactically valid MCP server"),
+                )]),
+                extensions: BTreeMap::new(),
+            });
+
+            let error = validate_config(&config).expect_err("invalid MCP auth must fail");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 
     #[test]
@@ -3241,6 +3823,97 @@ mod tests {
     }
 
     #[test]
+    fn adapter_model_schemas_accept_native_and_explicit_custom_providers() {
+        for (adapter_id, native_provider) in [
+            ("nvidia.fabric.claude", "anthropic"),
+            ("nvidia.fabric.codex", "openai"),
+        ] {
+            resolve_run_plan_from_config(
+                config_with_model(adapter_id, native_provider),
+                ResolveContext::new("/tmp/fabric-native-provider"),
+            )
+            .expect("adapter-native provider");
+
+            let mut custom = config_with_model(adapter_id, "acme");
+            let model = custom.models.get_mut("default").expect("default model");
+            model.api_key_env = Some("ACME_API_KEY".to_string());
+            model.base_url = Some("https://models.example/v1".to_string());
+            resolve_run_plan_from_config(
+                custom,
+                ResolveContext::new("/tmp/fabric-custom-provider"),
+            )
+            .expect("explicit custom provider");
+        }
+
+        resolve_run_plan_from_config(
+            config_with_model("nvidia.fabric.langchain.deepagents", "acme"),
+            ResolveContext::new("/tmp/fabric-dynamic-provider"),
+        )
+        .expect("adapter without a model schema preserves dynamic providers");
+    }
+
+    #[test]
+    fn adapter_model_schemas_validate_every_model_role() {
+        for (adapter_id, native_provider) in [
+            ("nvidia.fabric.claude", "anthropic"),
+            ("nvidia.fabric.codex", "openai"),
+        ] {
+            let mut config = config_with_model(adapter_id, native_provider);
+            config.models.insert(
+                "review".to_string(),
+                ModelConfig {
+                    provider: "acme".to_string(),
+                    model: "review-model".to_string(),
+                    temperature: None,
+                    api_key_env: None,
+                    base_url: None,
+                    settings: serde_json::Map::new(),
+                    extensions: BTreeMap::new(),
+                },
+            );
+            let path = repository_root().join(match adapter_id {
+                "nvidia.fabric.claude" => "adapters/claude/fabric-adapter.json",
+                "nvidia.fabric.codex" => "adapters/codex/fabric-adapter.json",
+                _ => unreachable!("test adapter"),
+            });
+            let descriptor = load_adapter_descriptor(&path).expect("adapter descriptor");
+
+            let fields = adapter_config_compatibility_issues(&config, Some(&descriptor))
+                .into_iter()
+                .map(|issue| issue.field)
+                .collect::<BTreeSet<_>>();
+
+            assert!(fields.contains("models.review.base_url"));
+            assert!(fields.contains("models.review.api_key_env"));
+        }
+    }
+
+    #[test]
+    fn adapter_model_schema_rejects_undeclared_settings() {
+        let mut config = config_with_model("nvidia.fabric.claude", "anthropic");
+        config
+            .models
+            .get_mut("default")
+            .expect("default model")
+            .settings
+            .insert("api_timeout".to_string(), serde_json::json!(30));
+
+        let error =
+            resolve_run_plan_from_config(config, ResolveContext::new("/tmp/fabric-model-settings"))
+                .expect_err("undeclared model setting");
+
+        assert!(matches!(
+            error,
+            FabricError::AdapterCompatibility {
+                adapter_id,
+                field,
+                ..
+            } if adapter_id == "nvidia.fabric.claude"
+                && field == "models.default.settings.api_timeout"
+        ));
+    }
+
+    #[test]
     fn unsupported_enabled_tools_report_canonical_field() {
         let adapter_id = "nvidia.fabric.codex";
         let mut config = typed_config(adapter_id);
@@ -3368,10 +4041,12 @@ mod tests {
             servers: BTreeMap::from([(
                 "docs".to_string(),
                 McpServerConfig {
-                    transport: "streamable-http".to_string(),
+                    transport: McpTransport::StreamableHttp,
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    authentication: None,
+                    custom_headers: BTreeMap::new(),
                     exposure: McpExposure::FabricManaged,
                     allowed_tools: None,
                     blocked_tools: Vec::new(),
@@ -3416,10 +4091,12 @@ mod tests {
             servers: BTreeMap::from([(
                 "docs".to_string(),
                 McpServerConfig {
-                    transport: "streamable-http".to_string(),
+                    transport: McpTransport::StreamableHttp,
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    authentication: None,
+                    custom_headers: BTreeMap::new(),
                     exposure: McpExposure::HarnessNative,
                     allowed_tools: Some(Vec::new()),
                     blocked_tools: vec!["delete".to_string()],
@@ -3466,10 +4143,12 @@ mod tests {
                 servers: BTreeMap::from([(
                     "docs".to_string(),
                     McpServerConfig {
-                        transport: "streamable-http".to_string(),
+                        transport: McpTransport::StreamableHttp,
                         url: "https://mcp.example".to_string(),
                         args: Vec::new(),
                         env: BTreeMap::new(),
+                        authentication: None,
+                        custom_headers: BTreeMap::new(),
                         exposure: McpExposure::HarnessNative,
                         allowed_tools,
                         blocked_tools,
@@ -3503,10 +4182,12 @@ mod tests {
             servers: BTreeMap::from([(
                 "docs".to_string(),
                 McpServerConfig {
-                    transport: "streamable-http".to_string(),
+                    transport: McpTransport::StreamableHttp,
                     url: "https://mcp.example".to_string(),
                     args: Vec::new(),
                     env: BTreeMap::new(),
+                    authentication: None,
+                    custom_headers: BTreeMap::new(),
                     exposure: McpExposure::HarnessNative,
                     allowed_tools: Some(vec!["search".to_string()]),
                     blocked_tools: vec!["search".to_string()],
@@ -3547,10 +4228,12 @@ mod tests {
                 servers: BTreeMap::from([(
                     "docs".to_string(),
                     McpServerConfig {
-                        transport: "streamable-http".to_string(),
+                        transport: McpTransport::StreamableHttp,
                         url: "https://mcp.example".to_string(),
                         args: Vec::new(),
                         env: BTreeMap::new(),
+                        authentication: None,
+                        custom_headers: BTreeMap::new(),
                         exposure: McpExposure::HarnessNative,
                         allowed_tools,
                         blocked_tools,
@@ -4146,6 +4829,37 @@ mod tests {
                     && message.contains(
                         "settings_schema root type must allow object instances"
                     )
+            ));
+        }
+    }
+
+    #[test]
+    fn adapter_model_schema_must_be_valid_and_allow_objects() {
+        let path = repository_root().join("adapters/claude/fabric-adapter.json");
+        let valid_descriptor = load_adapter_descriptor(&path).expect("Claude descriptor");
+
+        for (schema, expected) in [
+            (
+                serde_json::json!({"type": 7}),
+                "model_schema is not valid JSON Schema",
+            ),
+            (
+                serde_json::json!({"type": "string"}),
+                "model_schema root type must allow object instances",
+            ),
+        ] {
+            let mut descriptor = valid_descriptor.clone();
+            descriptor.model_schema =
+                Some(schema.as_object().expect("model schema object").clone());
+
+            let error = validate_adapter_descriptor_shape(&descriptor, &path)
+                .expect_err("invalid model schema");
+            assert!(matches!(
+                error,
+                FabricError::InvalidAdapterDescriptor {
+                    path: error_path,
+                    message,
+                } if error_path == path && message.contains(expected)
             ));
         }
     }
