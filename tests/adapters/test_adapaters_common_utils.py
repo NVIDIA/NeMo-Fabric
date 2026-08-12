@@ -211,9 +211,7 @@ def test_selected_model_config(
 def test_normalized_instruction_runtime_and_tool_accessors():
     payload = {
         "config": {
-            "instructions": {
-                "system": {"content": "Be concise.", "mode": "replace"}
-            },
+            "instructions": {"system": {"content": "Be concise.", "mode": "replace"}},
             "runtime": {"timeout_seconds": 12.5, "max_turns": 7},
             "tools": {
                 "enabled": [],
@@ -657,12 +655,16 @@ def test_collect_relay_artifacts_ignores_path_resolution_runtime_errors(
 
     monkeypatch.setattr(Path, "resolve", resolve)
 
-    assert common_utils.collect_relay_artifacts(
-        _atof_artifact_config(tmp_path / "loop")
-    ) == []
-    assert common_utils.collect_relay_artifacts(
-        _atof_artifact_config(artifact_dir, filename="loop")
-    ) == []
+    assert (
+        common_utils.collect_relay_artifacts(_atof_artifact_config(tmp_path / "loop"))
+        == []
+    )
+    assert (
+        common_utils.collect_relay_artifacts(
+            _atof_artifact_config(artifact_dir, filename="loop")
+        )
+        == []
+    )
 
 
 def test_collect_relay_artifacts_non_string_atof_filename_uses_glob(tmp_path: Path):

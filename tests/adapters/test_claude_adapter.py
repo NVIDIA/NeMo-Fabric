@@ -69,7 +69,10 @@ def runtime_context(payload: dict[str, Any]) -> RuntimeContext:
 
 def build_options(payload: dict[str, Any], *, relay=None) -> ClaudeAgentOptions:
     return adapter.build_options(
-        agent_config(payload), runtime_context(payload), payload["base_dir"], relay=relay
+        agent_config(payload),
+        runtime_context(payload),
+        payload["base_dir"],
+        relay=relay,
     )
 
 
@@ -766,7 +769,9 @@ def test_selected_model_rejects_empty_provider(claude_payload):
     model["provider"] = ""
 
     with pytest.raises(Exception, match="non-empty lowercase identifier"):
-        adapter.selected_model(adapter._selected_model_config(agent_config(claude_payload)))
+        adapter.selected_model(
+            adapter._selected_model_config(agent_config(claude_payload))
+        )
 
 
 def test_normalize_result_exposes_session_usage_cost_and_buffered_events(
@@ -1567,4 +1572,6 @@ def test_main_serves_persistent_runtime(monkeypatch):
 
     adapter.main()
 
-    serve.assert_called_once_with(adapter.ClaudeRuntime, config_loader=AgentConfig.from_mapping)
+    serve.assert_called_once_with(
+        adapter.ClaudeRuntime, config_loader=AgentConfig.from_mapping
+    )

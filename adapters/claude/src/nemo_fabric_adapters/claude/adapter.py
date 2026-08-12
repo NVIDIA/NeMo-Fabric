@@ -722,9 +722,7 @@ def _result_failed(result: ResultMessage) -> bool:
     )
 
 
-def normalize_result(
-    messages: list[Message], result: ResultMessage
-) -> dict[str, Any]:
+def normalize_result(messages: list[Message], result: ResultMessage) -> dict[str, Any]:
     failed = _result_failed(result)
     error = None
     if failed:
@@ -964,8 +962,12 @@ class ClaudeRuntime:
                 common_utils.agent_name(payload), model, runtime_context, base_dir
             )
             self._relay = relay
-            self._gateway_process = _start_relay_gateway(runtime_context, base_dir, relay)
-            options = build_options(agent_config, runtime_context, base_dir, relay=relay)
+            self._gateway_process = _start_relay_gateway(
+                runtime_context, base_dir, relay
+            )
+            options = build_options(
+                agent_config, runtime_context, base_dir, relay=relay
+            )
             if isinstance(options.mcp_servers, Path):
                 self._mcp_config_path = options.mcp_servers
 
