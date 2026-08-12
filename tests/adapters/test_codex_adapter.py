@@ -482,6 +482,82 @@ def test_codex_rejects_mcp_oauth_client_id(codex_payload):
         adapter.thread_config(codex_payload, None)
 
 
+async def test_mcp_auth_statuses_paginates_until_cursor_is_none():
+    client = MagicMock()
+    client.request = AsyncMock(
+        side_effect=[
+            SimpleNamespace(
+                data=[
+                    SimpleNamespace(
+                        name="first", auth_status=adapter.McpAuthStatus.o_auth
+                    )
+                ],
+                next_cursor="page-2",
+            ),
+            SimpleNamespace(
+                data=[
+                    SimpleNamespace(
+                        name="second",
+                        auth_status=adapter.McpAuthStatus.not_logged_in,
+                    )
+                ],
+                next_cursor=None,
+            ),
+        ]
+    )
+
+    statuses = await adapter._mcp_auth_statuses(
+        client, thread_id="thread-123", timeout=1
+    )
+
+    assert statuses == {
+        "first": adapter.McpAuthStatus.o_auth,
+        "second": adapter.McpAuthStatus.not_logged_in,
+    }
+    assert client.request.await_args_list[0].args[1] == {
+        "detail": "toolsAndAuthOnly",
+        "threadId": "thread-123",
+    }
+    assert client.request.await_args_list[1].args[1] == {
+        "detail": "toolsAndAuthOnly",
+        "threadId": "thread-123",
+        "cursor": "page-2",
+    }
+
+
+async def test_mcp_auth_statuses_rejects_repeated_cursor():
+    client = MagicMock()
+    client.request = AsyncMock(
+        side_effect=[
+            SimpleNamespace(data=[], next_cursor="repeated"),
+            SimpleNamespace(data=[], next_cursor="repeated"),
+        ]
+    )
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="returned a repeated cursor"
+    ) as caught:
+        await adapter._mcp_auth_statuses(client, thread_id="thread-123", timeout=1)
+
+    assert caught.value.code == "codex_mcp_authentication_failed"
+    assert client.request.await_count == 2
+
+
+async def test_mcp_auth_statuses_respects_invocation_timeout():
+    async def block_request(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    client = MagicMock()
+    client.request = AsyncMock(side_effect=block_request)
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="status listing timed out"
+    ) as caught:
+        await adapter._mcp_auth_statuses(client, thread_id="thread-123", timeout=0.01)
+
+    assert caught.value.code == "codex_mcp_authentication_failed"
+
+
 @pytest.mark.parametrize(
     ("invocation_timeout", "oauth_timeout", "expected_timeout"),
     [(30, 12, 12), (5, 12, 5)],

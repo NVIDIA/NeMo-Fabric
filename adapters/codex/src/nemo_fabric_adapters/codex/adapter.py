@@ -354,26 +354,42 @@ def _codex_protocol_client(codex: AsyncCodex) -> Any:
 
 
 async def _mcp_auth_statuses(
-    client: Any, *, thread_id: str
+    client: Any, *, thread_id: str, timeout: float
 ) -> dict[str, McpAuthStatus]:
     statuses: dict[str, McpAuthStatus] = {}
+    seen_cursors: set[str] = set()
     cursor: str | None = None
-    while True:
-        params: dict[str, Any] = {
-            "detail": "toolsAndAuthOnly",
-            "threadId": thread_id,
-        }
-        if cursor is not None:
-            params["cursor"] = cursor
-        response = await client.request(
-            "mcpServerStatus/list",
-            params,
-            response_model=ListMcpServerStatusResponse,
-        )
-        statuses.update({server.name: server.auth_status for server in response.data})
-        cursor = response.next_cursor
-        if cursor is None:
-            return statuses
+    try:
+        async with asyncio.timeout(timeout):
+            while True:
+                params: dict[str, Any] = {
+                    "detail": "toolsAndAuthOnly",
+                    "threadId": thread_id,
+                }
+                if cursor is not None:
+                    params["cursor"] = cursor
+                response = await client.request(
+                    "mcpServerStatus/list",
+                    params,
+                    response_model=ListMcpServerStatusResponse,
+                )
+                statuses.update(
+                    {server.name: server.auth_status for server in response.data}
+                )
+                cursor = response.next_cursor
+                if cursor is None:
+                    return statuses
+                if cursor in seen_cursors:
+                    raise AdapterConfigError(
+                        "codex_mcp_authentication_failed",
+                        "Codex MCP status listing returned a repeated cursor",
+                    )
+                seen_cursors.add(cursor)
+    except TimeoutError as error:
+        raise AdapterConfigError(
+            "codex_mcp_authentication_failed",
+            "Codex MCP status listing timed out",
+        ) from error
 
 
 async def _login_mcp_server(
@@ -440,7 +456,11 @@ async def _authenticate_mcp_servers(
     client = _codex_protocol_client(codex)
     thread_id = str(thread.id)
     try:
-        statuses = await _mcp_auth_statuses(client, thread_id=thread_id)
+        statuses = await _mcp_auth_statuses(
+            client,
+            thread_id=thread_id,
+            timeout=invocation_timeout_seconds,
+        )
         for name, oauth in oauth_servers.items():
             status = statuses.get(name)
             if status in {McpAuthStatus.o_auth, McpAuthStatus.bearer_token}:
