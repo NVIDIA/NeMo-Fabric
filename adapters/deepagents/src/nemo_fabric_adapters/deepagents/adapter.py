@@ -319,7 +319,7 @@ def _mcp_connection(
     if headers := spec.get("custom_headers"):
         try:
             common_utils.validate_http_headers(name, headers)
-        except ValueError as error:
+        except Exception as error:
             raise AdapterConfigError(f"{error}.") from error
         connection["headers"] = headers
 
