@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use crate::config::{
     AdapterConfigField, AdapterDescriptor, CapabilityPlan, FabricConfig, InstructionMode,
-    McpAuthenticationConfig, McpTransport,
+    McpAuthenticationConfig,
 };
 
 /// Configuration projected southbound to one adapter target.
@@ -324,12 +324,7 @@ pub(crate) fn project_agent_config(
                 (
                     name.clone(),
                     AgentMcpServerConfig {
-                        transport: match server.transport {
-                            McpTransport::Stdio => "stdio",
-                            McpTransport::Sse => "sse",
-                            McpTransport::StreamableHttp => "streamable-http",
-                        }
-                        .to_string(),
+                        transport: server.transport.as_str().to_string(),
                         url: server.url.clone(),
                         args: server.args.clone(),
                         env: server.env.clone(),

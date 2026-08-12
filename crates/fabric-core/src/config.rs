@@ -719,6 +719,17 @@ pub enum McpTransport {
     StreamableHttp,
 }
 
+impl McpTransport {
+    /// Return the stable configuration value for this transport.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Stdio => "stdio",
+            Self::Sse => "sse",
+            Self::StreamableHttp => "streamable-http",
+        }
+    }
+}
+
 /// OAuth client authentication method used at the token endpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -3190,6 +3201,20 @@ mod tests {
         .expect_err("unknown MCP transport");
 
         assert!(error.to_string().contains("unknown variant `websocket`"));
+    }
+
+    #[test]
+    fn mcp_transport_as_str_matches_serialized_value() {
+        for transport in [
+            McpTransport::Stdio,
+            McpTransport::Sse,
+            McpTransport::StreamableHttp,
+        ] {
+            assert_eq!(
+                serde_json::to_value(transport).expect("serialize MCP transport"),
+                transport.as_str()
+            );
+        }
     }
 
     #[test]
