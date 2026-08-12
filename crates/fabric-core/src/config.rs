@@ -799,6 +799,7 @@ pub enum McpAuthenticationConfig {
             default = "default_mcp_oauth_timeout_seconds",
             skip_serializing_if = "is_default_mcp_oauth_timeout_seconds"
         )]
+        #[schemars(range(min = 1))]
         authorization_timeout_seconds: u64,
     },
     /// OAuth 2.0 client-credentials authentication for headless workloads.
@@ -3430,6 +3431,13 @@ mod tests {
     #[test]
     fn rejects_invalid_mcp_authentication_policy() {
         let cases = [
+            (
+                serde_json::json!({
+                    "type": "oauth2",
+                    "authorization_timeout_seconds": 0
+                }),
+                "authorization_timeout_seconds",
+            ),
             (
                 serde_json::json!({
                     "type": "oauth2",

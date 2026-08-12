@@ -182,7 +182,7 @@
             "authorization_timeout_seconds": {
               "description": "Maximum time to wait for interactive authorization.",
               "format": "uint64",
-              "minimum": 0,
+              "minimum": 1,
               "type": "integer"
             },
             "client_id": {
