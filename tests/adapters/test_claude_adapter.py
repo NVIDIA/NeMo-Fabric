@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import tomllib
 from collections.abc import AsyncIterator
 from collections.abc import Callable
@@ -393,12 +394,19 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
         "PostCompact",
         "SessionEnd",
     }
-    assert (
-        hooks["SessionStart"]
-        == adapter.relay_hooks.render_relay_hooks("claude", executable)["hooks"][
-            "SessionStart"
+    executable_arg = str(executable)
+    if sys.platform == "win32":
+        executable_arg = executable_arg.replace("\\", "/")
+        executable_arg = f'"{executable_arg}"'
+    assert hooks["SessionStart"][0] == {
+        "hooks": [
+            {
+                "type": "command",
+                "command": f"{executable_arg} hook-forward claude",
+                "timeout": 30,
+            }
         ]
-    )
+    }
     assert hooks["PermissionRequest"][0]["matcher"] == "*"
 
 
