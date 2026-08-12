@@ -193,6 +193,7 @@ def mock_codex_fixture(monkeypatch):
     mock_codex.next_result = None
     mock_codex.next_thread = None
     mock_codex.mcp_auth_statuses = {}
+    mock_codex.report_mcp_auth_statuses = True
     mock_codex.mcp_login_success = True
     mock_codex.mcp_login_error = None
     mock_codex.oauth_authorization_url = "https://auth.example.test/authorize"
@@ -254,7 +255,10 @@ def mock_codex_fixture(monkeypatch):
         async def thread_start(**kwargs):
             config = kwargs.get("config") or {}
             for name, server in config.get("mcp_servers", {}).items():
-                if server.get("auth") == "oauth":
+                if (
+                    server.get("auth") == "oauth"
+                    and mock_codex.report_mcp_auth_statuses
+                ):
                     mock_codex.mcp_auth_statuses.setdefault(
                         name, adapter.McpAuthStatus.o_auth
                     )
@@ -615,7 +619,7 @@ async def test_mcp_auth_statuses_distinguishes_request_timeout():
 
 @pytest.mark.parametrize(
     ("invocation_timeout", "oauth_timeout", "expected_timeout"),
-    [(30, 12, 12), (5, 12, 5)],
+    [(30, 12, 12), (5, 12, 5), (5.1, 12, 6)],
 )
 def test_codex_logs_into_mcp_server_before_first_turn(
     codex_payload,
@@ -692,6 +696,34 @@ def test_codex_reports_failed_mcp_oauth_login_before_turn(
     assert output["error"]["message"] == (
         "Codex MCP OAuth login failed for server 'remote'"
     )
+    mock_codex.instances[0].thread.turn.assert_not_awaited()
+
+
+def test_codex_reports_missing_mcp_auth_status_before_turn(codex_payload, mock_codex):
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {"type": "oauth2"},
+            },
+        },
+    )
+    mock_codex.report_mcp_auth_statuses = False
+
+    output = invoke_once(codex_payload)
+
+    assert output["failed"] is True
+    assert output["error"] == {
+        "code": "codex_mcp_authentication_failed",
+        "message": "Codex did not report a status for MCP server 'remote'",
+        "retryable": False,
+    }
+    assert [call.args[0] for call in mock_codex.skill_request.await_args_list] == [
+        "mcpServerStatus/list"
+    ]
+    mock_codex.next_notification.assert_not_awaited()
     mock_codex.instances[0].thread.turn.assert_not_awaited()
 
 

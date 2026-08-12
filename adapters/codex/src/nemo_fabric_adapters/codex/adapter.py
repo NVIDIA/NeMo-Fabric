@@ -406,7 +406,7 @@ async def _login_mcp_server(
     params: dict[str, Any] = {
         "name": name,
         "threadId": thread_id,
-        "timeoutSecs": timeout,
+        "timeoutSecs": math.ceil(timeout), # Cast to an int
     }
     if scopes:
         params["scopes"] = scopes
@@ -468,15 +468,15 @@ async def _authenticate_mcp_servers(
             status = statuses.get(name)
             if status in {McpAuthStatus.o_auth, McpAuthStatus.bearer_token}:
                 continue
-            if status != McpAuthStatus.not_logged_in:
-                raise AdapterConfigError(
-                    "codex_mcp_authentication_failed",
-                    f"Codex MCP server {name!r} does not support the configured OAuth login",
-                )
             if status is None:
                 raise AdapterConfigError(
                     "codex_mcp_authentication_failed",
                     f"Codex did not report a status for MCP server {name!r}",
+                )
+            if status != McpAuthStatus.not_logged_in:
+                raise AdapterConfigError(
+                    "codex_mcp_authentication_failed",
+                    f"Codex MCP server {name!r} does not support the configured OAuth login",
                 )
             await _login_mcp_server(
                 client,
