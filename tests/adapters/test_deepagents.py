@@ -26,6 +26,9 @@ from unittest.mock import MagicMock
 import pytest
 from nemo_fabric_adapter_contract.codec import ContractValidationError
 from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import McpOAuth2Config
+from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
@@ -1174,18 +1177,29 @@ async def test_mcp_servers_become_adapter_tools(
     assert tool_names == ["read_file", "write_file"]
 
 
-@pytest.mark.parametrize("authentication_type", ["oauth2", "service_account"])
-def test_deepagents_rejects_mcp_authentication(authentication_type):
+@pytest.mark.parametrize(
+    "authentication",
+    [
+        McpOAuth2Config(type="oauth2"),
+        McpServiceAccountConfig(
+            type="service_account",
+            client_id="client",
+            client_secret_env="CLIENT_SECRET",
+            token_url="https://auth.example.test/token",
+        ),
+    ],
+)
+def test_deepagents_rejects_mcp_authentication(authentication):
     with pytest.raises(
         adapter.AdapterConfigError, match="not supported by Deep Agents"
     ):
         adapter._mcp_connection(
             "automation",
-            {
-                "transport": "streamable-http",
-                "url": "https://mcp.example.test/mcp",
-                "authentication": {"type": authentication_type},
-            },
+            AgentMcpServerConfig(
+                transport="streamable-http",
+                url="https://mcp.example.test/mcp",
+                authentication=authentication,
+            ),
         )
 
 
