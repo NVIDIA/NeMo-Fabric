@@ -448,6 +448,52 @@ def test_mcp_authentication_rejects_invalid_policy(authentication):
         McpAuthenticationConfig.model_validate(authentication)
 
 
+@pytest.mark.parametrize(
+    "authentication",
+    [
+        {"type": "oauth2", "unknown": True},
+        {
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "token_url": "https://auth.example.test/token",
+            "unknown": True,
+        },
+    ],
+)
+def test_mcp_authentication_rejects_unknown_variant_fields(authentication):
+    with pytest.raises(ValidationError, match="unknown"):
+        McpAuthenticationConfig(**authentication)
+
+
+@pytest.mark.parametrize(
+    ("authentication_type", "field", "value"),
+    [
+        ("oauth2", "token_url", None),
+        ("oauth2", "token_cache_buffer_seconds", 300),
+        ("service_account", "redirect_uri", None),
+        ("service_account", "enable_dynamic_registration", True),
+        ("service_account", "client_name", None),
+        ("service_account", "authorization_timeout_seconds", 300),
+    ],
+)
+def test_mcp_authentication_rejects_explicit_cross_variant_fields(
+    authentication_type, field, value
+):
+    authentication = {"type": authentication_type, field: value}
+    if authentication_type == "service_account":
+        authentication.update(
+            {
+                "client_id": "fabric-client",
+                "client_secret_env": "MCP_CLIENT_SECRET",
+                "token_url": "https://auth.example.test/token",
+            }
+        )
+
+    with pytest.raises(ValidationError, match=field):
+        McpAuthenticationConfig(**authentication)
+
+
 def test_mcp_config_add_server_preserves_legacy_mcp_extra_fields():
     config = McpConfig().add_server(
         "docs",

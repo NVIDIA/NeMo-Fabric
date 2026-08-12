@@ -295,6 +295,8 @@ class SkillConfig(FabricBaseModel):
 class McpAuthenticationConfig(FabricBaseModel):
     """MCP server authentication configuration."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["oauth2", "service_account"]
     client_id: str | None = None
     client_secret_env: str | None = None
@@ -340,19 +342,19 @@ class McpAuthenticationConfig(FabricBaseModel):
     @model_validator(mode="after")
     def _validate_authentication_type(self) -> Self:
         if self.type == "oauth2":
+            service_account_fields = self.model_fields_set.intersection(
+                {"token_url", "token_cache_buffer_seconds"}
+            )
+            if service_account_fields:
+                name = sorted(service_account_fields)[0]
+                raise ValueError(
+                    f"{name} is only valid for service_account authentication"
+                )
             if self.client_secret_env and not self.client_id:
                 raise ValueError("client_secret_env requires client_id")
             if not self.client_id and not self.enable_dynamic_registration:
                 raise ValueError(
                     "oauth2 authentication requires client_id when dynamic registration is disabled"
-                )
-            if self.token_url is not None:
-                raise ValueError(
-                    "token_url is only valid for service_account authentication"
-                )
-            if self.token_cache_buffer_seconds != 300:
-                raise ValueError(
-                    "token_cache_buffer_seconds is only valid for service_account authentication"
                 )
             if (
                 self.token_endpoint_auth_method
@@ -375,6 +377,17 @@ class McpAuthenticationConfig(FabricBaseModel):
                 )
             return self
 
+        oauth2_fields = self.model_fields_set.intersection(
+            {
+                "redirect_uri",
+                "enable_dynamic_registration",
+                "client_name",
+                "authorization_timeout_seconds",
+            }
+        )
+        if oauth2_fields:
+            name = sorted(oauth2_fields)[0]
+            raise ValueError(f"{name} is only valid for oauth2 authentication")
         missing = [
             name
             for name, value in (
@@ -387,18 +400,6 @@ class McpAuthenticationConfig(FabricBaseModel):
         if missing:
             raise ValueError(
                 "service_account authentication requires " + ", ".join(missing)
-            )
-        if self.redirect_uri is not None:
-            raise ValueError("redirect_uri is only valid for oauth2 authentication")
-        if self.client_name is not None:
-            raise ValueError("client_name is only valid for oauth2 authentication")
-        if self.authorization_timeout_seconds != 300:
-            raise ValueError(
-                "authorization_timeout_seconds is only valid for oauth2 authentication"
-            )
-        if not self.enable_dynamic_registration:
-            raise ValueError(
-                "enable_dynamic_registration is only valid for oauth2 authentication"
             )
         if self.token_endpoint_auth_method == "none":
             raise ValueError(
