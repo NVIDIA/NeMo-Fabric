@@ -111,13 +111,9 @@ def resolve_api_key_env(model_config: AgentModelConfig) -> str:
     """
 
     explicit = model_config.api_key_env
-    if isinstance(explicit, str) and explicit:
-        return explicit
     if explicit is not None:
-        raise AdapterConfigError(
-            "models.default.api_key_env must be a non-empty string."
-        )
-    provider = str(model_config.provider or "").lower()
+        return explicit
+    provider = model_config.provider
     if provider == "openai":
         return "OPENAI_API_KEY"
     raise AdapterConfigError(
@@ -166,10 +162,6 @@ def selected_model_config(config: AgentConfig) -> AgentModelConfig:
     raise AdapterConfigError("Deep Agents requires a default model or exactly one model.")
 
 
-def resolve_base_url(model_config: AgentModelConfig) -> str | None:
-    return model_config.base_url
-
-
 def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
     """Build a LangChain chat model from Fabric model config.
 
@@ -178,20 +170,13 @@ def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | No
     """
 
     model_name = model_config.model
-    if not model_name:
-        raise RuntimeError(
-            "models.default.model is required for the Deep Agents adapter"
-        )
-
     api_key_env = resolve_api_key_env(model_config)
     api_key = os.environ.get(api_key_env)
     if not api_key:
         raise RuntimeError(f"{api_key_env} is required for the Deep Agents adapter")
 
-    provider = str(model_config.provider or "").lower()
-    if not provider:
-        raise AdapterConfigError("models.default.provider is required.")
-    base_url = resolve_base_url(model_config)
+    provider = model_config.provider
+    base_url = model_config.base_url
     temperature = model_config.temperature
 
     if provider in OPENAI_COMPATIBLE_PROVIDERS - {"openai"} and not base_url:
@@ -291,9 +276,9 @@ async def _mcp_tools(config: AgentConfig) -> list[Any]:
 
 def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
     # A misconfigured server must fail loudly, not be silently dropped.
-    transport = str(spec.transport or "").strip().lower().replace("-", "_")
+    transport = spec.transport.strip().lower().replace("-", "_")
     # AgentMcpServerConfig carries the command in ``url`` and stdio extensions.
-    target = os.path.expandvars(str(spec.url or "")).strip()
+    target = os.path.expandvars(spec.url).strip()
     if not target:
         raise AdapterConfigError(
             f"MCP server '{name}' requires a url (or command in url)."
@@ -334,7 +319,7 @@ def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
 
 def state_dir(runtime_context: RuntimeContext, base_dir: str) -> Path:
     base_dir = Path(base_dir).resolve()
-    root = runtime_context.artifacts.root or os.environ.get("FABRIC_ARTIFACTS")
+    root = runtime_context.artifacts.root
     if root:
         return Path(str(root)).resolve() / ".fabric" / "deepagents"
     return base_dir / "artifacts" / "deepagents" / ".fabric"
@@ -529,7 +514,7 @@ class DeepAgentsRuntime:
             runtime_id = runtime_context.runtime_id
             model, self._model_name, self._base_url = build_chat_model(model_config)
             self._runtime_id = runtime_id
-            self._thread_id = uuid.uuid4().hex if runtime_id else None
+            self._thread_id = uuid.uuid4().hex
 
             telemetry = runtime_context.telemetry
             telemetry_providers = (
@@ -544,8 +529,9 @@ class DeepAgentsRuntime:
                 else ""
             )
             self._observability = resolve_observability(
-                payload,
                 runtime_context,
+                base_dir,
+                common_utils.agent_name(payload),
                 model_config.model,
                 self._telemetry_provider,
                 relay_enabled,
@@ -558,11 +544,10 @@ class DeepAgentsRuntime:
                 model,
                 settings,
             )
-            if runtime_id:
-                self._checkpointer = await open_checkpointer(
-                    checkpointer_path(runtime_context, base_dir, runtime_id)
-                )
-                agent_kwargs["checkpointer"] = self._checkpointer
+            self._checkpointer = await open_checkpointer(
+                checkpointer_path(runtime_context, base_dir, runtime_id)
+            )
+            agent_kwargs["checkpointer"] = self._checkpointer
 
             if self._observability is not None:
                 agent_kwargs = self._configure_observability(agent_kwargs)
@@ -934,8 +919,9 @@ def _relay_dependency_error() -> RuntimeError:
 
 
 def resolve_observability(
-    payload: dict[str, Any],
     runtime_context: RuntimeContext,
+    base_dir: str,
+    agent_name: str,
     model_name: str,
     telemetry_provider: str,
     relay_enabled: bool,
@@ -951,7 +937,12 @@ def resolve_observability(
 
     if relay_enabled and telemetry_provider == "relay":
         return Observability(
-            common_utils.load_relay_plugin_config(payload, model_name=model_name),
+            common_utils.load_relay_plugin_config(
+                base_dir_value=base_dir,
+                runtime_id=runtime_context.runtime_id,
+                agent_name_value=agent_name,
+                model_name=model_name,
+            ),
             "deepagents.observability/nemo_relay",
             True,
         )

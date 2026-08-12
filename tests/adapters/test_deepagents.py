@@ -425,6 +425,9 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     assert fake_relay["plugin_open"]
     assert fake_relay["plugin_configs"] == [plugin_config]
     assert load_relay_plugin_config.call_args.kwargs == {
+        "base_dir_value": str(tmp_path),
+        "runtime_id": "run-1",
+        "agent_name_value": "fabric-agent",
         "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
     }
     assert output["telemetry"] == {
@@ -453,7 +456,7 @@ def relay_payload_fixture(make_payload, monkeypatch):
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        lambda _p, **_kwargs: {"version": 1, "components": []},
+        lambda **_kwargs: {"version": 1, "components": []},
     )
 
     def build(tmp_path) -> dict[str, Any]:
@@ -1068,6 +1071,15 @@ def test_apply_callbacks_without_callbacks_leaves_config_untouched():
     }
 
 
+def test_state_dir_uses_runtime_artifact_context(tmp_path, make_payload, monkeypatch):
+    context = RuntimeContext.from_mapping(make_payload(tmp_path)["runtime_context"])
+    monkeypatch.setenv("FABRIC_ARTIFACTS", str(tmp_path / "ignored"))
+
+    assert adapter.state_dir(context, str(tmp_path)) == (
+        tmp_path / "artifacts" / "deepagents" / ".fabric"
+    )
+
+
 async def test_invoke_compiled_agent_wires_callbacks_into_run_config(fake_sdks):
     from deepagents import create_deep_agent
 
@@ -1393,7 +1405,7 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        lambda _payload, **_kwargs: plugin_config,
+        lambda **_kwargs: plugin_config,
     )
     monkeypatch.setattr(
         adapter.common_utils,
