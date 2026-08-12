@@ -51,11 +51,11 @@ jobs:
           target_sha="$(git rev-parse HEAD)"
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
 
-          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-            existing_sha="$(git ls-remote --tags origin "refs/tags/${tag}^{}" | awk '{print $1}' || true)"
-            if [[ -z "$existing_sha" ]]; then
-              existing_sha="$(git ls-remote --tags origin "refs/tags/${tag}" | awk '{print $1}' || true)"
-            fi
+          existing_sha="$(
+            git ls-remote --tags origin "refs/tags/${tag}^{}" "refs/tags/${tag}" 2>/dev/null |
+              awk 'index($2, "^{}") { print $1; found=1; exit } END { if (!found && NF) print $1 }' || true
+          )"
+          if [[ -n "$existing_sha" ]]; then
             if [[ "$existing_sha" == "$target_sha" ]]; then
               echo "Nightly alpha tag already exists for main: ${tag}"
               exit 0
