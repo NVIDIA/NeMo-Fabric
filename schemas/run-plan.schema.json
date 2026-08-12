@@ -1515,7 +1515,7 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "HTTP headers passed to an MCP server when transport is `sse` or `streamable_http`.",
+          "description": "HTTP headers passed to an MCP server when transport is `sse` or `streamable-http`.",
           "type": "object"
         },
         "env": {

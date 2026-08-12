@@ -851,7 +851,7 @@ pub struct McpServerConfig {
     /// Additive MCP server fields.
     #[serde(default, flatten)]
     pub extensions: BTreeMap<String, Value>,
-    /// HTTP headers passed to an MCP server when transport is `sse` or `streamable_http`.
+    /// HTTP headers passed to an MCP server when transport is `sse` or `streamable-http`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub custom_headers: BTreeMap<String, String>,
 }
