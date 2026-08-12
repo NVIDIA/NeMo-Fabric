@@ -68,7 +68,7 @@ uv sync --group adapter-tests
 uv run --no-sync pytest tests/adapters/test_<name>*.py
 just test-python
 just lock-python && just wheels
-cargo run -p nemo-fabric-core --example generate-schemas -- schemas
+just schemas
 cargo fmt --all -- --check && just test-rust
 just docs
 uv run pre-commit run --all-files --show-diff-on-failure

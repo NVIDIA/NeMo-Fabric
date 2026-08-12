@@ -109,6 +109,12 @@ Use the core generator to regenerate them after intentional contract changes:
 cargo run -p nemo-fabric-core --example generate-schemas -- schemas
 ```
 
+Alternate `just` approach:
+
+```bash
+just schemas
+```
+
 To add a new schema-backed typed model:
 
 1. Define the public Rust type in `crates/fabric-core`.
