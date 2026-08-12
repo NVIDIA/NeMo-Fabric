@@ -17,28 +17,45 @@ from typing import Any
 _FIELD_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 
 
-def validate_http_header(name: str, value: str) -> None:
+def validate_http_header(server_name: str, name: str, value: str) -> None:
     """Validate one HTTP header name and value."""
 
     if not isinstance(name, str) or not _FIELD_NAME.fullmatch(name):
-        raise ValueError(f"Invalid HTTP header name: {name!r}")
+        raise ValueError(
+            f"Invalid HTTP header name {name!r} for MCP server {server_name!r}"
+        )
 
     if not isinstance(value, str):
-        raise TypeError("HTTP header value must be a string")
+        raise TypeError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "must be a string"
+        )
 
     if not value or not value.strip():
-        raise ValueError("HTTP header value must not be blank")
+        raise ValueError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "must not be blank"
+        )
 
     try:
         encoded = value.encode("latin-1")
     except UnicodeEncodeError as error:
-        raise ValueError("HTTP header value is not Latin-1 encodable") from error
+        raise ValueError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "is not Latin-1 encodable"
+        ) from error
 
     if value[:1] in (" ", "\t") or value[-1:] in (" ", "\t"):
-        raise ValueError("HTTP header value has outer whitespace")
+        raise ValueError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "has outer whitespace"
+        )
 
     if any((byte < 0x20 and byte != 0x09) or byte == 0x7F for byte in encoded):
-        raise ValueError("HTTP header value contains a control character")
+        raise ValueError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "contains a control character"
+        )
 
 
 def normalize_custom_headers(server_name: str, value: dict[str, str]) -> dict[str, str]:
@@ -46,8 +63,10 @@ def normalize_custom_headers(server_name: str, value: dict[str, str]) -> dict[st
 
     results: dict[str, str] = {}
     for name, item in value.items():
+        if not isinstance(item, str):
+            validate_http_header(server_name, name, item)
         expanded_item = os.path.expandvars(item)
-        validate_http_header(name, expanded_item)
+        validate_http_header(server_name, name, expanded_item)
         results[name] = expanded_item
 
     return results

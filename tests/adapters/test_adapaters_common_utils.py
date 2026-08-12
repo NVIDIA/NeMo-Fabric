@@ -4,6 +4,7 @@
 import builtins
 import json
 import os
+import re
 import sys
 import tomllib
 from io import StringIO
@@ -29,7 +30,10 @@ import pytest
     ],
 )
 def test_normalize_custom_headers_rejects_invalid_names(name):
-    with pytest.raises(ValueError, match="Invalid HTTP header name"):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(f"Invalid HTTP header name {name!r} for MCP server 'docs'"),
+    ):
         common_utils.normalize_custom_headers("docs", {name: "bar"})
 
 
@@ -49,7 +53,10 @@ def test_normalize_custom_headers_rejects_invalid_names(name):
     ],
 )
 def test_normalize_custom_headers_rejects_invalid_values(value, message):
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(
+        ValueError,
+        match=rf"HTTP header value for 'X-Foo' on MCP server 'docs' .*{message}",
+    ):
         common_utils.normalize_custom_headers("docs", {"X-Foo": value})
 
 
@@ -60,7 +67,10 @@ def test_normalize_custom_headers_accepts_latin_1_and_embedded_tab():
 
 
 def test_normalize_custom_headers_rejects_non_string_value():
-    with pytest.raises(TypeError):
+    with pytest.raises(
+        TypeError,
+        match="HTTP header value for 'X-Foo' on MCP server 'docs' must be a string",
+    ):
         common_utils.normalize_custom_headers("docs", {"X-Foo": None})
 
 
