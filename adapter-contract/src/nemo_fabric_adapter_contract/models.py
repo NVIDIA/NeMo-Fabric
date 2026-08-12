@@ -41,6 +41,10 @@ def _empty_list():
     return field(default_factory=list, metadata={"omit_empty": True})
 
 
+def _default(value: Any):
+    return field(default=value, metadata={"omit_default": value})
+
+
 def _json_value_field(*, default: Any = MISSING, omit_empty: bool = False):
     metadata = {"json": True}
     if omit_empty:
@@ -210,6 +214,108 @@ def _validate_tool_names(value: list[str] | None, field_name: str, label: str) -
         )
 
 
+class OAuthTokenEndpointAuthMethod(StrEnum):
+    """OAuth client authentication method used at the token endpoint."""
+
+    NONE = "none"
+    CLIENT_SECRET_POST = "client_secret_post"
+    CLIENT_SECRET_BASIC = "client_secret_basic"
+
+
+@dataclass(slots=True, kw_only=True)
+class McpOAuth2Config(ContractModel):
+    """OAuth 2.0 authorization-code authentication for an MCP server."""
+
+    type: Literal["oauth2"]
+    client_id: str | None = _optional()
+    client_secret_env: str | None = _optional()
+    scopes: list[str] = _empty_list()
+    redirect_uri: str | None = _optional()
+    enable_dynamic_registration: bool = _default(True)
+    client_name: str | None = _optional()
+    token_endpoint_auth_method: OAuthTokenEndpointAuthMethod | None = _optional()
+    authorization_timeout_seconds: int = _default(300)
+
+    @property
+    def scope(self) -> str | None:
+        """Return scopes in the space-delimited form expected by OAuth clients."""
+
+        value = " ".join(self.scopes)
+        return value or None
+
+    def _validate(self) -> None:
+        for name in ("client_id", "client_secret_env", "redirect_uri", "client_name"):
+            if (value := getattr(self, name)) is not None:
+                _nonblank(value, name)
+        _validate_tool_names(self.scopes, "scopes", "authentication scope")
+        if self.client_secret_env is not None and self.client_id is None:
+            raise ContractValidationError(
+                "requires client_id", path=("client_secret_env",)
+            )
+        if not self.enable_dynamic_registration and self.client_id is None:
+            raise ContractValidationError(
+                "is required when dynamic registration is disabled",
+                path=("client_id",),
+            )
+        if (
+            self.token_endpoint_auth_method
+            in {
+                OAuthTokenEndpointAuthMethod.CLIENT_SECRET_BASIC,
+                OAuthTokenEndpointAuthMethod.CLIENT_SECRET_POST,
+            }
+            and self.client_id is not None
+            and self.client_secret_env is None
+        ):
+            raise ContractValidationError(
+                "requires client_secret_env for a pre-registered client",
+                path=("token_endpoint_auth_method",),
+            )
+        if (
+            self.token_endpoint_auth_method is OAuthTokenEndpointAuthMethod.NONE
+            and self.client_secret_env is not None
+        ):
+            raise ContractValidationError(
+                "'none' cannot be combined with client_secret_env",
+                path=("token_endpoint_auth_method",),
+            )
+        if not 1 <= self.authorization_timeout_seconds <= (1 << 64) - 1:
+            raise ContractValidationError(
+                "must be greater than zero",
+                path=("authorization_timeout_seconds",),
+            )
+
+
+@dataclass(slots=True, kw_only=True)
+class McpServiceAccountConfig(ContractModel):
+    """OAuth 2.0 client-credentials authentication for an MCP server."""
+
+    type: Literal["service_account"]
+    client_id: str
+    client_secret_env: str
+    token_url: str
+    scopes: list[str] = _empty_list()
+    token_endpoint_auth_method: OAuthTokenEndpointAuthMethod | None = _optional()
+    token_cache_buffer_seconds: int = _default(300)
+
+    def _validate(self) -> None:
+        for name in ("client_id", "client_secret_env", "token_url"):
+            _nonblank(getattr(self, name), name)
+        _validate_tool_names(self.scopes, "scopes", "authentication scope")
+        if self.token_endpoint_auth_method is OAuthTokenEndpointAuthMethod.NONE:
+            raise ContractValidationError(
+                "service_account requires client_secret_basic or client_secret_post",
+                path=("token_endpoint_auth_method",),
+            )
+        _bounded_int(
+            self.token_cache_buffer_seconds,
+            "token_cache_buffer_seconds",
+            (1 << 64) - 1,
+        )
+
+
+McpAuthenticationConfig = McpOAuth2Config | McpServiceAccountConfig
+
+
 @dataclass(slots=True, kw_only=True)
 class AgentMcpServerConfig(AgentContractBlock):
     """One MCP server routed to the adapter target."""
@@ -218,7 +324,7 @@ class AgentMcpServerConfig(AgentContractBlock):
     url: str
     args: list[str] = _empty_list()
     env: dict[str, str] = _empty_dict()
-    authentication: dict[str, JsonValue] | None = _optional()
+    authentication: McpAuthenticationConfig | None = _optional()
     custom_headers: dict[str, str] = _empty_dict()
     allowed_tools: list[str] | None = _optional()
     blocked_tools: list[str] = _empty_list()

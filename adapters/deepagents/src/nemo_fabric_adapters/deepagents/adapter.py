@@ -26,7 +26,6 @@ from typing import NamedTuple
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
 from nemo_fabric_adapters.common import lifecycle
-from nemo_fabric_adapters.common import mcp_auth
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
@@ -322,8 +321,8 @@ def _mcp_connection(
     connection = {"transport": transport, "url": target}
     if headers := spec.get("custom_headers"):
         try:
-            normalized_headers = mcp_auth.normalize_custom_headers(name, headers)
-        except mcp_auth.McpAuthConfigError as error:
+            normalized_headers = common_utils.normalize_custom_headers(name, headers)
+        except ValueError as error:
             raise AdapterConfigError(f"{error}.") from error
         connection["headers"] = normalized_headers
 

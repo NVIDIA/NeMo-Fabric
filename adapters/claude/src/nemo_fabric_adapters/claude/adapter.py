@@ -31,7 +31,6 @@ from claude_agent_sdk import ResultMessage
 from claude_agent_sdk import HookMatcher
 from claude_agent_sdk._errors import MessageParseError
 from nemo_fabric_adapters.common import lifecycle
-from nemo_fabric_adapters.common import mcp_auth
 from nemo_fabric_adapters.common import relay_artifacts
 from nemo_fabric_adapters.common import relay_gateway
 from nemo_fabric_adapters.common import relay_hooks
@@ -326,10 +325,10 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
             )
         if headers := server.get("custom_headers"):
             try:
-                result[name]["headers"] = mcp_auth.normalize_custom_headers(
+                result[name]["headers"] = common_utils.normalize_custom_headers(
                     name, headers
                 )
-            except mcp_auth.McpAuthConfigError as error:
+            except ValueError as error:
                 raise AdapterConfigError(
                     "claude_invalid_configuration", str(error)
                 ) from error

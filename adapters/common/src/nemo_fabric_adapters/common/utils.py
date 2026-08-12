@@ -13,6 +13,31 @@ from pathlib import Path
 from typing import Any
 
 
+def contains_crlf(value: str) -> bool:
+    """Return whether a string contains a carriage return or line feed."""
+
+    return "\r" in value or "\n" in value
+
+
+def normalize_custom_headers(server_name: str, value: dict[str, str]) -> dict[str, str]:
+    """Validate and expand an MCP custom-header mapping."""
+
+    results: dict[str, str] = {}
+    for name, item in value.items():
+        if contains_crlf(name) or contains_crlf(item):
+            raise ValueError(
+                f"MCP server {server_name!r} custom_headers contain invalid characters in {name!r}"
+            )
+        expanded_item = os.path.expandvars(item)
+        if contains_crlf(expanded_item):
+            raise ValueError(
+                f"MCP server {server_name!r} custom_headers contain invalid characters in {name!r}"
+            )
+        results[name] = expanded_item
+
+    return results
+
+
 def current_virtualenv() -> Path | None:
     """Return the current virtual environment, if Python is running in one."""
 

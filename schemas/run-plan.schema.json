@@ -539,12 +539,15 @@
           "type": "array"
         },
         "authentication": {
-          "additionalProperties": true,
-          "description": "Authentication used by an HTTP MCP server.",
-          "type": [
-            "object",
-            "null"
-          ]
+          "anyOf": [
+            {
+              "$ref": "#/$defs/McpAuthenticationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Authentication used by an HTTP MCP server."
         },
         "blocked_tools": {
           "description": "MCP tool names blocked after applying the optional allowlist.",

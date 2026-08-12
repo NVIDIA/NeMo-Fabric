@@ -3281,20 +3281,7 @@ mod tests {
             .and_then(|mcp| mcp.servers.get("jira"))
             .expect("projected Jira MCP server");
         assert_eq!(projected.custom_headers, server.custom_headers);
-        assert_eq!(
-            projected
-                .authentication
-                .as_ref()
-                .and_then(|authentication| authentication.get("type")),
-            Some(&serde_json::json!("oauth2"))
-        );
-        assert_eq!(
-            projected
-                .authentication
-                .as_ref()
-                .and_then(|authentication| authentication.get("client_secret_env")),
-            Some(&serde_json::json!("MCP_CLIENT_SECRET"))
-        );
+        assert_eq!(projected.authentication, server.authentication);
     }
 
     #[test]

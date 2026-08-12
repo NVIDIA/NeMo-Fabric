@@ -46,7 +46,9 @@ FabricConfig + adapter descriptor + resolved capability plan
 Use the generated
 [`AgentConfig` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-config.schema.json)
 for exact fields and constraints. Python adapters can import matching
-dataclasses from `nemo_fabric_adapter_contract.models`.
+dataclasses from `nemo_fabric_adapter_contract.models`. MCP authentication is
+decoded as `McpOAuth2Config` or `McpServiceAccountConfig` before the adapter
+receives `AgentMcpServerConfig`.
 
 ## Projection Rules
 

@@ -37,12 +37,15 @@ from openai_codex.generated.v2_all import (
 )
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import McpAuthenticationConfig
+from nemo_fabric_adapter_contract.models import McpOAuth2Config
+from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
 import nemo_fabric_adapters.common.utils as common_utils
 from nemo_fabric_adapters.common import lifecycle
-from nemo_fabric_adapters.common import mcp_auth
 
 
 DEFAULT_TIMEOUT_SECONDS = 1800.0
@@ -171,61 +174,51 @@ def _native_capabilities(payload: dict[str, Any]) -> dict[str, Any]:
     return _mapping(plan.get("native"), name="capability_plan.native")
 
 
-def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _native_mcp_server_specs(
+    payload: dict[str, Any],
+) -> dict[str, AgentMcpServerConfig]:
     servers = _mapping(
         _native_capabilities(payload).get("mcp_servers"),
         name="native MCP servers",
     )
-    result: dict[str, dict[str, Any]] = {}
+    result: dict[str, AgentMcpServerConfig] = {}
     for name, raw in sorted(servers.items()):
-        if not isinstance(name, str) or not name:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                "MCP server names must be non-empty strings",
-            )
-        server = _mapping(raw, name=f"MCP server {name}")
-        transport = server.get("transport")
-        if not isinstance(transport, str) or not transport:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"MCP server {name} transport is required",
-            )
-        target = server.get("url")
-        if not isinstance(target, str) or not target:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"MCP server {name} URL is required",
-            )
-        target = os.path.expandvars(target).strip()
-        if not target:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"MCP server {name} URL is required",
-            )
-        normalized_transport = transport.strip().lower().replace("_", "-")
+        server = dict(_mapping(raw, name=f"MCP server {name}"))
+        server.pop("exposure", None)
+        result[name] = AgentMcpServerConfig.from_mapping(server)
+    return result
+
+
+def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for name, server in _native_mcp_server_specs(payload).items():
+        target = os.path.expandvars(server.url).strip()
+        normalized_transport = server.transport.strip().lower().replace("_", "-")
         if normalized_transport == "stdio":
             result[name] = {
                 "command": target,
-                "args": common_utils.normalize_list(server.get("args")),
+                "args": server.args,
             }
-            if env := server.get("env"):
+            if env := server.env:
                 result[name]["env"] = env
         elif normalized_transport in {"http", "streamable-http"}:
             result[name] = {"url": target}
         else:
             raise AdapterConfigError(
                 "codex_invalid_configuration",
-                f"unsupported Codex MCP transport: {transport}",
+                f"unsupported Codex MCP transport: {server.transport}",
             )
-        if headers := server.get("custom_headers"):
+        if headers := server.custom_headers:
             try:
-                normalized_headers = mcp_auth.normalize_custom_headers(name, headers)
-            except mcp_auth.McpAuthConfigError as error:
+                normalized_headers = common_utils.normalize_custom_headers(
+                    name, headers
+                )
+            except ValueError as error:
                 raise AdapterConfigError(
                     "codex_invalid_configuration", str(error)
                 ) from error
             result[name]["http_headers"] = normalized_headers
-        if authentication := server.get("authentication"):
+        if authentication := server.authentication:
             oauth = _mcp_oauth_config(name, authentication)
             if oauth.client_secret_env:
                 raise AdapterConfigError(
@@ -253,32 +246,21 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return result
 
 
-def _mcp_oauth_config(name: str, value: Any) -> mcp_auth.McpOAuth2Config:
-    try:
-        if isinstance(value, Mapping) and value.get("type") == "service_account":
-            raise mcp_auth.McpAuthConfigError(
-                f"MCP server {name!r} service_account authentication is not supported by Codex"
-            )
-        return mcp_auth.parse_oauth2_config(name, value)
-    except mcp_auth.McpAuthConfigError as error:
-        raise AdapterConfigError("codex_invalid_configuration", str(error)) from error
+def _mcp_oauth_config(name: str, value: McpAuthenticationConfig) -> McpOAuth2Config:
+    if isinstance(value, McpServiceAccountConfig):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            f"MCP server {name!r} service_account authentication is not supported by Codex",
+        )
+    return value
 
 
 def _mcp_oauth_callback_url(payload: dict[str, Any]) -> str | None:
-    servers = _mapping(
-        _native_capabilities(payload).get("mcp_servers"), name="native MCP servers"
-    )
     values = {
         oauth.redirect_uri
-        for name, raw in servers.items()
-        if (
-            (
-                authentication := _mapping(raw, name=f"MCP server {name}").get(
-                    "authentication"
-                )
-            )
-            and (oauth := _mcp_oauth_config(name, authentication)).redirect_uri
-        )
+        for name, server in _native_mcp_server_specs(payload).items()
+        if (authentication := server.authentication)
+        and (oauth := _mcp_oauth_config(name, authentication)).redirect_uri
     }
     if len(values) > 1:
         raise AdapterConfigError(
@@ -349,15 +331,10 @@ async def _register_skill_roots(codex: AsyncCodex, skill_paths: list[Path]) -> N
 
 def _mcp_oauth_servers(
     payload: dict[str, Any],
-) -> dict[str, mcp_auth.McpOAuth2Config]:
-    servers = _mapping(
-        _native_capabilities(payload).get("mcp_servers"),
-        name="native MCP servers",
-    )
-    result: dict[str, mcp_auth.McpOAuth2Config] = {}
-    for name, raw in servers.items():
-        server = _mapping(raw, name=f"MCP server {name}")
-        authentication = server.get("authentication")
+) -> dict[str, McpOAuth2Config]:
+    result: dict[str, McpOAuth2Config] = {}
+    for name, server in _native_mcp_server_specs(payload).items():
+        authentication = server.authentication
         if not authentication:
             continue
         result[name] = _mcp_oauth_config(name, authentication)

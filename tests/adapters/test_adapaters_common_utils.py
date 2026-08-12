@@ -15,6 +15,54 @@ import pytest
 
 
 @pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("X-Tenant", False),
+        ("X-Tenant\r", True),
+        ("X-Tenant\nvalue", True),
+        ("X-Tenant\r\nvalue", True),
+    ],
+)
+def test_contains_crlf(value, expected):
+    assert common_utils.contains_crlf(value) is expected
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("X-Foo\r", "bar"),
+        ("X-Foo\n", "bar"),
+        ("X-Foo", "bar\r"),
+        ("X-Foo", "bar\nX-Evil: injected"),
+    ],
+)
+def test_normalize_custom_headers_rejects_newlines(name, value):
+    with pytest.raises(ValueError) as error:
+        common_utils.normalize_custom_headers("docs", {name: value})
+
+    assert str(error.value) == (
+        f"MCP server 'docs' custom_headers contain invalid characters in {name!r}"
+    )
+
+
+def test_normalize_custom_headers_expands_environment_variables():
+    os.environ["FABRIC_HEADER_VALUE"] = "fabric"
+
+    assert common_utils.normalize_custom_headers(
+        "docs", {"X-Tenant": "${FABRIC_HEADER_VALUE}"}
+    ) == {"X-Tenant": "fabric"}
+
+
+def test_normalize_custom_headers_rejects_newlines_after_expansion():
+    os.environ["FABRIC_HEADER_VALUE"] = "fabric\r\nX-Evil: injected"
+
+    with pytest.raises(ValueError, match="invalid characters"):
+        common_utils.normalize_custom_headers(
+            "docs", {"X-Tenant": "${FABRIC_HEADER_VALUE}"}
+        )
+
+
+@pytest.mark.parametrize(
     ("prefix", "base_prefix", "expected"),
     [
         ("/usr", "/usr", None),

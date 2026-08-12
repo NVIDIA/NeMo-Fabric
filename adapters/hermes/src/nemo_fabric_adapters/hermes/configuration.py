@@ -6,14 +6,14 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
-from nemo_fabric_adapters.common import mcp_auth
+from nemo_fabric_adapter_contract.models import McpOAuth2Config
+from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 import nemo_fabric_adapters.common.utils as common_utils
 
 
@@ -27,7 +27,7 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
 
 def _resolve_client_secret(
     server_name: str,
-    config: mcp_auth.McpOAuth2Config,
+    config: McpOAuth2Config,
 ) -> str | None:
     """Resolve a Hermes OAuth client secret without retaining or logging it."""
 
@@ -35,7 +35,7 @@ def _resolve_client_secret(
         return None
     secret = os.environ.get(config.client_secret_env)
     if not secret:
-        raise mcp_auth.McpAuthConfigError(
+        raise ValueError(
             f"MCP server {server_name!r} authentication.client_secret_env "
             "references an unset environment variable"
         )
@@ -183,23 +183,12 @@ def hermes_mcp_server_config(
         "transport": transport,
     }
     if headers := server.custom_headers:
-        try:
-            result["headers"] = mcp_auth.normalize_custom_headers(name, headers)
-        except mcp_auth.McpAuthConfigError as error:
-            raise ValueError(str(error)) from error
+        result["headers"] = common_utils.normalize_custom_headers(name, headers)
     if authentication := server.authentication:
-        raw_authentication = authentication
-        try:
-            if (
-                isinstance(authentication, Mapping)
-                and authentication.get("type") == "service_account"
-            ):
-                raise mcp_auth.McpAuthConfigError(
-                    f"MCP server {name!r} service_account authentication is not supported by Hermes"
-                )
-            authentication = mcp_auth.parse_oauth2_config(name, authentication)
-        except mcp_auth.McpAuthConfigError as error:
-            raise ValueError(str(error)) from error
+        if isinstance(authentication, McpServiceAccountConfig):
+            raise ValueError(
+                f"MCP server {name!r} service_account authentication is not supported by Hermes"
+            )
         if authentication.client_name:
             raise ValueError(
                 f"MCP server {name!r} authentication.client_name is not supported by Hermes"
@@ -208,7 +197,7 @@ def hermes_mcp_server_config(
             raise ValueError(
                 f"MCP server {name!r} authentication.token_endpoint_auth_method is not supported by Hermes"
             )
-        if "authorization_timeout_seconds" in raw_authentication:
+        if authentication.authorization_timeout_seconds != 300:
             raise ValueError(
                 f"MCP server {name!r} authentication.authorization_timeout_seconds is not supported by Hermes"
             )
@@ -220,10 +209,7 @@ def hermes_mcp_server_config(
             }
         )
         if secret_env := authentication.client_secret_env:
-            try:
-                _resolve_client_secret(name, authentication)
-            except mcp_auth.McpAuthConfigError as error:
-                raise ValueError(str(error)) from error
+            _resolve_client_secret(name, authentication)
             oauth["client_secret"] = f"${{{secret_env}}}"
         result["auth"] = "oauth"
         result["oauth"] = oauth

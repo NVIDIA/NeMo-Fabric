@@ -91,6 +91,12 @@ def codex_payload_fixture(tmp_path):
     }
 
 
+def configure_mcp(payload, servers):
+    capability_plan = payload.setdefault("capability_plan", {})
+    native = capability_plan.setdefault("native", {})
+    native["mcp_servers"] = servers
+
+
 def successful_result(response="done"):
     return SimpleNamespace(
         id="turn-1",
@@ -377,35 +383,34 @@ def test_start_failure_is_not_masked_by_sdk_close_failure(
 def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_codex):
     os.environ["FABRIC_TEST_MCP_URL"] = "https://mcp.example.test/mcp"
     os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
-    codex_payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "repo": {
-                    "transport": "stdio",
-                    "url": "python",
-                    "args": [
-                        "-m",
-                        "repo_mcp",
-                        "--root",
-                        ".",
-                        "--config",
-                        "repo config.json",
-                    ],
-                    "env": {"REPO_MCP_MODE": "test"},
+    configure_mcp(
+        codex_payload,
+        {
+            "repo": {
+                "transport": "stdio",
+                "url": "python",
+                "args": [
+                    "-m",
+                    "repo_mcp",
+                    "--root",
+                    ".",
+                    "--config",
+                    "repo config.json",
+                ],
+                "env": {"REPO_MCP_MODE": "test"},
+            },
+            "remote": {
+                "transport": "streamable-http",
+                "url": "${FABRIC_TEST_MCP_URL}",
+                "custom_headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
+                "authentication": {
+                    "type": "oauth2",
+                    "scopes": ["read", "write"],
+                    "redirect_uri": "http://127.0.0.1:8765/callback",
                 },
-                "remote": {
-                    "transport": "streamable-http",
-                    "url": "${FABRIC_TEST_MCP_URL}",
-                    "custom_headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
-                    "authentication": {
-                        "type": "oauth2",
-                        "scopes": ["read", "write"],
-                        "redirect_uri": "http://127.0.0.1:8765/callback",
-                    },
-                },
-            }
-        }
-    }
+            },
+        },
+    )
     codex_payload["config"]["harness"]["settings"]["config_overrides"][
         "mcp_servers.remote.required"
     ] = True
@@ -439,41 +444,39 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
 
 
 def test_codex_rejects_mcp_oauth_client_secret(codex_payload):
-    codex_payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "remote": {
-                    "transport": "streamable-http",
-                    "url": "https://mcp.example.test/mcp",
-                    "authentication": {
-                        "type": "oauth2",
-                        "client_id": "fabric-client",
-                        "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
-                    },
-                }
-            }
-        }
-    }
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {
+                    "type": "oauth2",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                },
+            },
+        },
+    )
 
     with pytest.raises(adapter.AdapterConfigError, match="client_secret_env"):
         adapter.thread_config(codex_payload, None)
 
 
 def test_codex_rejects_mcp_oauth_client_id(codex_payload):
-    codex_payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "remote": {
-                    "transport": "streamable-http",
-                    "url": "https://mcp.example.test/mcp",
-                    "authentication": {
-                        "type": "oauth2",
-                        "client_id": "fabric-client",
-                    },
-                }
-            }
-        }
-    }
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {
+                    "type": "oauth2",
+                    "client_id": "fabric-client",
+                },
+            },
+        },
+    )
 
     with pytest.raises(adapter.AdapterConfigError, match="client_id"):
         adapter.thread_config(codex_payload, None)
@@ -492,21 +495,20 @@ def test_codex_logs_into_mcp_server_before_first_turn(
     expected_timeout,
 ):
     codex_payload["config"]["runtime"]["timeout_seconds"] = invocation_timeout
-    codex_payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "remote": {
-                    "transport": "streamable-http",
-                    "url": "https://mcp.example.test/mcp",
-                    "authentication": {
-                        "type": "oauth2",
-                        "scopes": ["read", "write"],
-                        "authorization_timeout_seconds": oauth_timeout,
-                    },
-                }
-            }
-        }
-    }
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {
+                    "type": "oauth2",
+                    "scopes": ["read", "write"],
+                    "authorization_timeout_seconds": oauth_timeout,
+                },
+            },
+        },
+    )
     mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
     open_browser = AsyncMock(return_value=True)
     monkeypatch.setattr(adapter, "_open_authorization_url", open_browser)
@@ -533,17 +535,16 @@ def test_codex_logs_into_mcp_server_before_first_turn(
 def test_codex_reports_failed_mcp_oauth_login_before_turn(
     codex_payload, mock_codex, monkeypatch
 ):
-    codex_payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "remote": {
-                    "transport": "streamable-http",
-                    "url": "https://mcp.example.test/mcp",
-                    "authentication": {"type": "oauth2"},
-                }
-            }
-        }
-    }
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {"type": "oauth2"},
+            },
+        },
+    )
     mock_codex.mcp_auth_statuses["remote"] = adapter.McpAuthStatus.not_logged_in
     mock_codex.mcp_login_success = False
     mock_codex.mcp_login_error = "authorization denied"
@@ -575,22 +576,21 @@ async def test_codex_opens_mcp_authorization_url_without_blocking(monkeypatch, o
 
 
 def test_codex_rejects_mcp_service_account_authentication(codex_payload):
-    codex_payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "remote": {
-                    "transport": "streamable-http",
-                    "url": "https://mcp.example.test/mcp",
-                    "authentication": {
-                        "type": "service_account",
-                        "client_id": "fabric-client",
-                        "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
-                        "token_url": "https://auth.example.test/token",
-                    },
-                }
-            }
-        }
-    }
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {
+                    "type": "service_account",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                    "token_url": "https://auth.example.test/token",
+                },
+            },
+        },
+    )
 
     with pytest.raises(adapter.AdapterConfigError, match="service_account"):
         adapter.thread_config(codex_payload, None)
@@ -647,13 +647,10 @@ def test_sdk_closes_when_skill_registration_is_unavailable(
 
 @pytest.mark.parametrize("transport", ["sse", "carrier-pigeon"])
 def test_sdk_rejects_unsupported_mcp_transport(codex_payload, mock_codex, transport):
-    codex_payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "bad": {"transport": transport, "url": "https://mcp.example.test"}
-            }
-        }
-    }
+    configure_mcp(
+        codex_payload,
+        {"bad": {"transport": transport, "url": "https://mcp.example.test"}},
+    )
 
     error = runtime_start_error(codex_payload)
 
@@ -756,14 +753,17 @@ async def test_persistent_runtime_registers_skills_once_and_maps_mcp(
     codex_payload["capability_plan"] = {
         "native": {
             "skill_paths": ["skills/review"],
-            "mcp_servers": {
-                "review": {
-                    "transport": "streamable-http",
-                    "url": "https://mcp.example.test/review",
-                }
-            },
         }
     }
+    configure_mcp(
+        codex_payload,
+        {
+            "review": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/review",
+            }
+        },
+    )
     start_payload = dict(codex_payload)
     start_payload.pop("request")
     runtime = adapter.CodexRuntime()
