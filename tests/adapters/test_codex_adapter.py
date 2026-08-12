@@ -455,9 +455,7 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
                 "X-Tenant": "fabric",
                 "X-Unbraced": "unbraced",
                 "X-Windows": (
-                    "windows"
-                    if os.name == "nt"
-                    else "%FABRIC_TEST_WINDOWS_HEADER%"
+                    "windows" if os.name == "nt" else "%FABRIC_TEST_WINDOWS_HEADER%"
                 ),
                 "X-Static": "static",
             },
@@ -756,9 +754,7 @@ def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):
             f"---\nname: {skill.name}\ndescription: Test skill.\n---\n",
             encoding="utf-8",
         )
-    codex_payload["config"]["skills"] = {
-        "paths": ["skills/review", "skills/test"]
-    }
+    codex_payload["config"]["skills"] = {"paths": ["skills/review", "skills/test"]}
 
     output = invoke_once(codex_payload)
 
@@ -912,9 +908,10 @@ async def test_runtime_ignores_legacy_plan_fields(codex_payload, mock_codex):
 
     output = await invoke_once_async(codex_payload)
 
-    assert "mcp_servers" not in mock_codex.instances[0].thread_start.await_args.kwargs[
-        "config"
-    ]
+    assert (
+        "mcp_servers"
+        not in mock_codex.instances[0].thread_start.await_args.kwargs["config"]
+    )
     assert "relay_runtime" not in output
 
 
@@ -1610,7 +1607,7 @@ def test_environment_preserves_runtime_telemetry_env(codex_payload):
             "FABRIC_RELAY_ENABLED": "true",
             "FABRIC_RELAY_CONFIG_PATH": "/tmp/relay.json",
             "CODEX_EXPLICIT": "telemetry",
-        }
+        },
     }
     codex_payload["runtime_context"]["environment"]["env"] = {
         "CODEX_EXPLICIT": "configured"
@@ -1665,4 +1662,6 @@ def test_main_serves_persistent_runtime(monkeypatch):
 
     adapter.main()
 
-    serve.assert_called_once_with(adapter.CodexRuntime, config_loader=AgentConfig.from_mapping)
+    serve.assert_called_once_with(
+        adapter.CodexRuntime, config_loader=AgentConfig.from_mapping
+    )

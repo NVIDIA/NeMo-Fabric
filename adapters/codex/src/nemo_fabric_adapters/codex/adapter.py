@@ -492,7 +492,11 @@ def _selected_model_config(config: AgentConfig) -> AgentModelConfig:
 
 def selected_model(config: AgentConfig) -> str:
     model = _selected_model_config(config)
-    return model.model.removeprefix("openai/") if model.provider == "openai" else model.model
+    return (
+        model.model.removeprefix("openai/")
+        if model.provider == "openai"
+        else model.model
+    )
 
 
 def custom_model_provider_config(
@@ -509,10 +513,7 @@ def custom_model_provider_config(
             "selected model api_key_env is required for a custom "
             "Responses-compatible provider",
         )
-    if not (
-        context.environment.env.get(api_key_env)
-        or os.environ.get(api_key_env)
-    ):
+    if not (context.environment.env.get(api_key_env) or os.environ.get(api_key_env)):
         raise AdapterConfigError(
             "codex_invalid_configuration",
             f"{api_key_env} is required for the selected model provider",
@@ -687,7 +688,9 @@ def _apply_config_overrides(config: dict[str, Any], overrides: dict[str, Any]) -
 
 def native_codex_telemetry_config(context: RuntimeContext) -> dict[str, Any]:
     telemetry = context.telemetry
-    if telemetry is None or "native" not in telemetry.metadata.get("telemetry_providers", []):
+    if telemetry is None or "native" not in telemetry.metadata.get(
+        "telemetry_providers", []
+    ):
         return {}
 
     telemetry_config = telemetry.metadata.get("native_config", {})
@@ -1244,7 +1247,9 @@ class CodexRuntime:
                 )
             context = _runtime_context(payload)
             base_dir = common_utils.base_dir(payload)
-            fabric_runtime_id = validate_runtime_payload(agent_config, context, base_dir)
+            fabric_runtime_id = validate_runtime_payload(
+                agent_config, context, base_dir
+            )
             relay = prepare_codex_relay(
                 common_utils.agent_name(payload), agent_config, context, base_dir
             )
@@ -1259,7 +1264,9 @@ class CodexRuntime:
                 )
             client = AsyncCodex(config=client_config)
             self._client = client
-            await _register_skill_roots(client, _native_skill_paths(agent_config, base_dir))
+            await _register_skill_roots(
+                client, _native_skill_paths(agent_config, base_dir)
+            )
             thread = await _open_thread(
                 client,
                 agent_config,
@@ -1315,7 +1322,7 @@ class CodexRuntime:
             return _failure(
                 "codex_runtime_unavailable",
                 "Codex runtime cannot accept another invocation after a runtime failure",
-        )
+            )
 
         try:
             request_prompt(invocation)
