@@ -33,19 +33,9 @@ def lifecycle_start_payload(payload):
 
 
 def runtime_input(payload):
-    context = dict(payload["runtime_context"])
-    telemetry_plan = payload.get("telemetry_plan")
-    if telemetry_plan and "telemetry" not in context:
-        metadata = {"telemetry_providers": telemetry_plan.get("providers", [])}
-        if "native_config" in telemetry_plan:
-            metadata["native_config"] = telemetry_plan["native_config"]
-        context["telemetry"] = {
-            "relay_enabled": telemetry_plan.get("relay_enabled", False),
-            "metadata": metadata,
-        }
     return (
         AgentConfig.from_mapping(payload["config"]),
-        RuntimeContext.from_mapping(context),
+        RuntimeContext.from_mapping(payload["runtime_context"]),
         payload["base_dir"],
     )
 
@@ -766,9 +756,6 @@ def test_sdk_registers_native_skill_roots(codex_payload, mock_codex, tmp_path):
             f"---\nname: {skill.name}\ndescription: Test skill.\n---\n",
             encoding="utf-8",
         )
-    codex_payload["capability_plan"] = {
-        "native": {"skill_paths": ["skills/review", "skills/test"]}
-    }
     codex_payload["config"]["skills"] = {
         "paths": ["skills/review", "skills/test"]
     }
@@ -798,7 +785,6 @@ def test_sdk_closes_when_skill_registration_is_unavailable(
         "---\nname: review\ndescription: Test skill.\n---\n",
         encoding="utf-8",
     )
-    codex_payload["capability_plan"] = {"native": {"skill_paths": ["skills/review"]}}
     codex_payload["config"]["skills"] = {"paths": ["skills/review"]}
     mock_codex.skill_request = None
 
@@ -826,7 +812,6 @@ def test_sdk_rejects_unsupported_mcp_transport(codex_payload, mock_codex, transp
 
 def test_sdk_rejects_invalid_native_skill_path(codex_payload, mock_codex, tmp_path):
     missing = tmp_path / "skills" / "missing"
-    codex_payload["capability_plan"] = {"native": {"skill_paths": [str(missing)]}}
     codex_payload["config"]["skills"] = {"paths": [str(missing)]}
 
     error = runtime_start_error(codex_payload)
@@ -892,6 +877,9 @@ async def test_persistent_runtime_reuses_one_client_and_thread(
     await runtime.start(lifecycle_start_payload(start_payload))
     first = await runtime.invoke(lifecycle_invocation(codex_payload))
     codex_payload["runtime_context"]["invocation_id"] = "invocation-2"
+    codex_payload["runtime_context"]["request_id"] = "request-2"
+    second_artifacts = Path(codex_payload["base_dir"]) / "second-artifacts"
+    codex_payload["runtime_context"]["artifacts"] = {"root": str(second_artifacts)}
     codex_payload["request"]["input"] = "Continue."
     second = await runtime.invoke(lifecycle_invocation(codex_payload))
     await runtime.stop()
@@ -902,7 +890,32 @@ async def test_persistent_runtime_reuses_one_client_and_thread(
     client.thread_start.assert_awaited_once()
     assert client.thread.turn.await_count == 2
     assert client.thread.turn.await_args_list[1].args[0] == "Continue."
+    assert second["state_dir"] == str(second_artifacts / ".fabric" / "codex")
     client.close.assert_awaited_once()
+
+
+async def test_runtime_ignores_legacy_plan_fields(codex_payload, mock_codex):
+    codex_payload["capability_plan"] = {
+        "native": {
+            "mcp_servers": {
+                "ignored": {
+                    "transport": "streamable-http",
+                    "url": "https://mcp.example.test/ignored",
+                }
+            }
+        }
+    }
+    codex_payload["telemetry_plan"] = {
+        "providers": ["relay"],
+        "relay_enabled": True,
+    }
+
+    output = await invoke_once_async(codex_payload)
+
+    assert "mcp_servers" not in mock_codex.instances[0].thread_start.await_args.kwargs[
+        "config"
+    ]
+    assert "relay_runtime" not in output
 
 
 async def test_persistent_runtime_registers_skills_once_and_maps_mcp(
@@ -914,11 +927,6 @@ async def test_persistent_runtime_registers_skills_once_and_maps_mcp(
         "---\nname: review\ndescription: Test skill.\n---\n",
         encoding="utf-8",
     )
-    codex_payload["capability_plan"] = {
-        "native": {
-            "skill_paths": ["skills/review"],
-        }
-    }
     codex_payload["config"]["skills"] = {"paths": ["skills/review"]}
     configure_mcp(
         codex_payload,
@@ -955,9 +963,9 @@ async def test_persistent_runtime_registers_skills_once_and_maps_mcp(
 async def test_persistent_runtime_owns_one_relay_gateway(
     codex_payload, mock_codex, monkeypatch, tmp_path
 ):
-    codex_payload["telemetry_plan"] = {
-        "providers": ["relay"],
+    codex_payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
     }
     gateway = adapter.relay_gateway.RelayGatewayLaunch(
         executable=tmp_path / "nemo-relay",
@@ -998,9 +1006,9 @@ async def test_persistent_runtime_owns_one_relay_gateway(
 async def test_relay_waits_for_delayed_atif_before_collecting_artifacts(
     codex_payload, mock_codex, monkeypatch, tmp_path
 ):
-    codex_payload["telemetry_plan"] = {
-        "providers": ["relay"],
+    codex_payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
     }
     atif_dir = tmp_path / "relay" / "atif"
     atif_dir.mkdir(parents=True)
@@ -1042,9 +1050,9 @@ async def test_relay_waits_for_delayed_atif_before_collecting_artifacts(
 async def test_relay_atif_timeout_fails_successful_turn_explicitly(
     codex_payload, mock_codex, monkeypatch, tmp_path
 ):
-    codex_payload["telemetry_plan"] = {
-        "providers": ["relay"],
+    codex_payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
     }
     atif_dir = tmp_path / "relay" / "atif"
     atif_dir.mkdir(parents=True)
@@ -1234,9 +1242,9 @@ def test_custom_provider_requires_explicit_endpoint(codex_payload, mock_codex):
 def test_relay_uses_gateway_and_request_scoped_sdk_config(
     codex_payload, mock_codex, monkeypatch, tmp_path
 ):
-    codex_payload["telemetry_plan"] = {
-        "providers": ["relay"],
+    codex_payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
     }
     relay_config_path = tmp_path / "relay-config" / "config.toml"
     executable = tmp_path / "bin" / "nemo-relay"
@@ -1306,9 +1314,9 @@ def test_relay_routes_custom_provider_through_gateway(codex_payload, tmp_path):
             "base_url": "https://acme.example/v1",
         }
     )
-    codex_payload["telemetry_plan"] = {
-        "providers": ["relay"],
+    codex_payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
     }
     os.environ["ACME_API_KEY"] = "acme-secret"
     gateway = adapter.relay_gateway.RelayGatewayLaunch(
@@ -1346,9 +1354,9 @@ def test_prepare_relay_reuses_one_resolved_executable(
             "base_url": "https://acme.example/v1/",
         }
     )
-    codex_payload["telemetry_plan"] = {
-        "providers": ["relay"],
+    codex_payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
+        "metadata": {"telemetry_providers": ["relay"]},
     }
     executable = tmp_path / "nemo-relay"
     config_path = tmp_path / "relay-config" / "config.toml"
@@ -1360,17 +1368,16 @@ def test_prepare_relay_reuses_one_resolved_executable(
         )
     )
     write = MagicMock(return_value=(config_path, plugin_path))
+    load = MagicMock(return_value={"version": 1, "components": []})
     monkeypatch.setattr(adapter.relay_gateway, "resolve_relay_command", resolve)
     monkeypatch.setattr(adapter.relay_gateway, "relay_cli_contract", contract)
     monkeypatch.setattr(adapter.relay_gateway, "find_available_tcp_port", lambda: 43210)
-    monkeypatch.setattr(
-        adapter.common_utils,
-        "load_relay_plugin_config",
-        MagicMock(return_value={"version": 1, "components": []}),
-    )
+    monkeypatch.setattr(adapter.common_utils, "load_relay_plugin_config", load)
     monkeypatch.setattr(adapter.common_utils, "write_relay_configs", write)
 
-    relay = adapter.prepare_codex_relay(codex_payload, *runtime_input(codex_payload))
+    relay = adapter.prepare_codex_relay(
+        codex_payload["agent_name"], *runtime_input(codex_payload)
+    )
 
     assert relay is not None
     assert relay.gateway.executable == executable
@@ -1381,6 +1388,12 @@ def test_prepare_relay_reuses_one_resolved_executable(
         "nemo-relay",
     )
     contract.assert_called_once_with(executable)
+    load.assert_called_once_with(
+        base_dir_value=codex_payload["base_dir"],
+        runtime_id="runtime-1",
+        agent_name_value="codex-test",
+        model_name="acme/code-model",
+    )
     write.assert_called_once_with(
         relay_config={},
         plugin_config={"version": 1, "components": []},
@@ -1442,24 +1455,28 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
             },
         }
     )
-    codex_payload["telemetry_plan"] = {
-        "providers": ["native"],
+    codex_payload["runtime_context"]["telemetry"] = {
         "relay_enabled": False,
-        "native_config": {
-            "components": [
-                {
-                    "kind": "observability",
-                    "enabled": True,
-                    "config": {
-                        "opentelemetry": {
-                            "enabled": True,
-                            "endpoint": "http://localhost:4318/v1/traces",
-                            "transport": "http_binary",
-                            "resource_attributes": {"deployment.environment": "test"},
-                        }
-                    },
-                }
-            ]
+        "metadata": {
+            "telemetry_providers": ["native"],
+            "native_config": {
+                "components": [
+                    {
+                        "kind": "observability",
+                        "enabled": True,
+                        "config": {
+                            "opentelemetry": {
+                                "enabled": True,
+                                "endpoint": "http://localhost:4318/v1/traces",
+                                "transport": "http_binary",
+                                "resource_attributes": {
+                                    "deployment.environment": "test"
+                                },
+                            }
+                        },
+                    }
+                ]
+            },
         },
     }
 

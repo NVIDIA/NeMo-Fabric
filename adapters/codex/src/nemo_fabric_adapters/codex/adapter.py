@@ -734,7 +734,7 @@ def native_codex_telemetry_config(context: RuntimeContext) -> dict[str, Any]:
 
 
 def prepare_codex_relay(
-    payload: dict[str, Any],
+    agent_name: str,
     config: AgentConfig,
     context: RuntimeContext,
     base_dir: str,
@@ -756,7 +756,10 @@ def prepare_codex_relay(
     try:
         relay_contract = relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(
-            payload, model_name=_selected_model_config(config).model
+            base_dir_value=base_dir,
+            runtime_id=context.runtime_id,
+            agent_name_value=agent_name,
+            model_name=_selected_model_config(config).model,
         )
         config_path, plugin_config_path = common_utils.write_relay_configs(
             # Codex execution remains SDK-owned; Relay runs only as a gateway.
@@ -1242,7 +1245,9 @@ class CodexRuntime:
             context = _runtime_context(payload)
             base_dir = common_utils.base_dir(payload)
             fabric_runtime_id = validate_runtime_payload(agent_config, context, base_dir)
-            relay = prepare_codex_relay(payload, agent_config, context, base_dir)
+            relay = prepare_codex_relay(
+                common_utils.agent_name(payload), agent_config, context, base_dir
+            )
             self._relay = relay
             self._gateway_process = _start_relay_gateway(context, base_dir, relay)
             client_config = sdk_config(agent_config, context, base_dir, relay)
@@ -1333,7 +1338,7 @@ class CodexRuntime:
                 else None
             )
             output, usable = await _invoke_thread(
-                config, context, base_dir, invocation, self._thread
+                config, runtime_context, base_dir, invocation, self._thread
             )
             if (
                 output.get("completed")
