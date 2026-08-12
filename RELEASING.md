@@ -458,24 +458,17 @@ After the release is live, verify:
      set -euo pipefail
      npmjs_registry="https://registry.npmjs.org/"
      npm view "nemo-fabric-adapter-contract@<release-version>" version \
-       --registry="$npmjs_registry" \
-       --@nvidia:registry="$npmjs_registry"
+       --registry="$npmjs_registry"
      npm view "nemo-fabric-adapter-contract" dist-tags \
-       --registry="$npmjs_registry" \
-       --@nvidia:registry="$npmjs_registry"
+       --registry="$npmjs_registry"
      verification_dir="$(mktemp -d)"
      trap 'rm -rf "$verification_dir"' EXIT
      cd "$verification_dir"
-     npm init --yes \
-       --registry="$npmjs_registry" \
-       --@nvidia:registry="$npmjs_registry"
+     npm init --yes --registry="$npmjs_registry"
      npm install --ignore-scripts --save-exact \
        --registry="$npmjs_registry" \
-       --@nvidia:registry="$npmjs_registry" \
        "nemo-fabric-adapter-contract@<release-version>"
-     npm audit signatures \
-       --registry="$npmjs_registry" \
-       --@nvidia:registry="$npmjs_registry"
+     npm audit signatures --registry="$npmjs_registry"
    )
    ```
 
