@@ -305,6 +305,14 @@
       "minLength": 1,
       "type": "string"
     },
+    "model_schema": {
+      "additionalProperties": true,
+      "description": "JSON Schema applied to every normalized `FabricConfig.models` entry.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "requirements": {
       "$ref": "#/$defs/AdapterRequirements",
       "default": {},

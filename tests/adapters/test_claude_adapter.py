@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import tomllib
 from collections.abc import AsyncIterator
 from collections.abc import Callable
@@ -85,6 +86,31 @@ def test_claude_descriptor_is_narrow_and_versioned():
         "adapter_kind": "python",
         "runner": {
             "module": "nemo_fabric_adapters.claude.adapter",
+        },
+        "model_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "provider": {"type": "string", "minLength": 1},
+                "model": {"type": "string", "minLength": 1},
+                "temperature": {"type": "number"},
+                "api_key_env": {"type": "string", "minLength": 1},
+                "base_url": {"type": "string", "minLength": 1},
+                "settings": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                },
+            },
+            "required": ["provider", "model"],
+            "if": {
+                "properties": {"provider": {"const": "anthropic"}},
+                "required": ["provider"],
+            },
+            "else": {
+                "required": ["base_url", "api_key_env"],
+            },
+            "additionalProperties": False,
         },
         "settings_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -264,6 +290,68 @@ def test_build_options_maps_normalized_capabilities_and_claude_settings(claude_p
     assert "ANTHROPIC_BASE_URL" not in options.env
 
 
+@pytest.mark.parametrize("authentication_type", ["oauth2", "service_account"])
+def test_claude_rejects_mcp_authentication(claude_payload, authentication_type):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["authentication"] = {"type": authentication_type}
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="not supported by Claude"
+    ) as caught:
+        adapter.build_options(claude_payload)
+
+    assert caught.value.code == "claude_invalid_configuration"
+
+
+def test_claude_maps_mcp_custom_headers(claude_payload):
+    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
+    server["custom_headers"] = {
+        "X-Tenant": "${FABRIC_TEST_MCP_HEADER}",
+        "X-Windows": "%FABRIC_TEST_WINDOWS_HEADER%",
+    }
+    os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
+    os.environ["FABRIC_TEST_WINDOWS_HEADER"] = "windows"
+
+    options = adapter.build_options(claude_payload)
+    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
+        "mcpServers"
+    ]
+
+    tenant_reference = mcp_servers["docs"]["headers"]["X-Tenant"]
+    windows_reference = mcp_servers["docs"]["headers"]["X-Windows"]
+    assert tenant_reference.startswith("${NEMO_FABRIC_CLAUDE_MCP_")
+    assert windows_reference.startswith("${NEMO_FABRIC_CLAUDE_MCP_")
+    assert options.env[tenant_reference[2:-1]] == "fabric"
+    assert options.env[windows_reference[2:-1]] == "windows"
+    assert options.env["FABRIC_TEST_MCP_HEADER"] == ""
+    assert options.env["FABRIC_TEST_WINDOWS_HEADER"] == ""
+
+
+async def test_claude_invoke_passes_remaining_budget_to_query(
+    claude_payload, monkeypatch
+):
+    runtime = adapter.ClaudeRuntime()
+    runtime._start_payload = {
+        key: value for key, value in claude_payload.items() if key != "request"
+    }
+    runtime._fabric_runtime_id = claude_payload["runtime_context"]["runtime_id"]
+    runtime._client = MagicMock(spec=adapter.ClaudeSDKClient)
+    run_query = AsyncMock(return_value={"completed": False})
+    monkeypatch.setattr(runtime, "_run_query", run_query)
+    remaining_timeout = MagicMock(return_value=7.0)
+    monkeypatch.setattr(adapter, "_remaining_timeout", remaining_timeout)
+    loop = asyncio.get_running_loop()
+    before = loop.time()
+
+    await runtime.invoke(lifecycle_invocation(claude_payload))
+
+    after = loop.time()
+    invocation_deadline = remaining_timeout.call_args.args[0]
+    assert before + 30 <= invocation_deadline <= after + 30
+    remaining_timeout.assert_called_once_with(invocation_deadline)
+    assert run_query.await_args.args[3] == 7.0
+
+
 async def test_tool_policy_hooks_gate_built_in_and_mcp_tools(claude_payload):
     claude_payload["config"]["tools"] = {
         "enabled": ["Read", "Edit"],
@@ -393,11 +481,15 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
         "PostCompact",
         "SessionEnd",
     }
+    executable_arg = str(executable)
+    if sys.platform == "win32":
+        executable_arg = executable_arg.replace("\\", "/")
+        executable_arg = f'"{executable_arg}"'
     assert hooks["SessionStart"][0] == {
         "hooks": [
             {
                 "type": "command",
-                "command": f"{executable} hook-forward claude",
+                "command": f"{executable_arg} hook-forward claude",
                 "timeout": 30,
             }
         ]
@@ -728,6 +820,18 @@ async def test_claude_runtime_removes_mcp_config_after_failed_sdk_connect(
     assert not staged_paths[0].exists()
 
 
+def test_cleanup_mcp_config_removes_runtime_directory(tmp_path):
+    config_root = tmp_path / "mcp"
+    config_root.mkdir()
+    config_path = config_root / "mcp.json"
+    config_path.write_text("{}", encoding="utf-8")
+    (config_root / "abandoned").write_text("partial", encoding="utf-8")
+
+    adapter._cleanup_mcp_config(config_path)
+
+    assert not config_root.exists()
+
+
 async def test_claude_runtime_owns_one_relay_gateway_until_stop(
     relay_payload, monkeypatch, tmp_path
 ):
@@ -1054,7 +1158,14 @@ async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
     relay.plugin_path.mkdir()
     process = MagicMock()
     mock_stop = MagicMock()
-    mock_rmtree = MagicMock(side_effect=OSError("raw plugin cleanup failure"))
+    real_rmtree = adapter.shutil.rmtree
+
+    def remove_tree(path):
+        if path == relay.plugin_path:
+            raise OSError("raw plugin cleanup failure")
+        real_rmtree(path)
+
+    mock_rmtree = MagicMock(side_effect=remove_tree)
     monkeypatch.setattr(adapter, "prepare_claude_relay", MagicMock(return_value=relay))
     monkeypatch.setattr(
         adapter.relay_gateway,
@@ -1083,6 +1194,7 @@ async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
         key: value for key, value in relay_payload.items() if key != "request"
     }
     await runtime.start(start_payload)
+    mcp_config_root = runtime._mcp_config_path.parent
     output = await runtime.invoke(lifecycle_invocation(relay_payload))
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
         await runtime.stop()
@@ -1092,8 +1204,11 @@ async def test_runtime_stop_reports_relay_plugin_cleanup_failure(
     assert caught.value.code == "claude_relay_cleanup_failed"
     assert "raw plugin cleanup failure" not in str(caught.value)
     mock_stop.assert_called_once_with(process)
-    mock_rmtree.assert_called_once_with(relay.plugin_path)
+    assert mock_rmtree.call_count == 2
+    mock_rmtree.assert_any_call(relay.plugin_path)
+    mock_rmtree.assert_any_call(mcp_config_root)
     assert relay.plugin_path.exists()
+    assert not mcp_config_root.exists()
 
 
 @pytest.mark.parametrize(

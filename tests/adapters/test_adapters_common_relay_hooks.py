@@ -49,7 +49,10 @@ CODEX_EXPECTED_EVENTS = (
 )
 def test_render_relay_hooks_matches_relay_agent_contract(agent, expected_events):
     executable = Path("/opt/nvidia relay/bin/nemo-relay")
-    quoted_executable = f'"{executable}"' if platform == "win32" else f"'{executable}'"
+    executable_path = str(executable).replace("\\", "/")
+    quoted_executable = (
+        f'"{executable_path}"' if platform == "win32" else f"'{executable}'"
+    )
 
     hooks = relay_hooks.render_relay_hooks(agent, executable)["hooks"]
 
@@ -83,11 +86,20 @@ def test_render_relay_hooks_rejects_unsupported_agent():
         )
 
 
-def test_render_relay_hooks_uses_windows_command_quoting(monkeypatch):
-    executable = Path(r"C:\Program Files\NVIDIA\nemo-relay.exe")
+@pytest.mark.parametrize(
+    ("agent", "expected_executable"),
+    [
+        ("claude", '"C:/Users/runneradmin/.cargo/bin/nemo-relay.exe"'),
+        ("codex", "C:/Users/runneradmin/.cargo/bin/nemo-relay.exe"),
+    ],
+)
+def test_render_relay_hooks_uses_windows_agent_command_format(
+    monkeypatch, agent, expected_executable
+):
+    executable = Path(r"C:\Users\runneradmin\.cargo\bin\nemo-relay.exe")
     monkeypatch.setattr(relay_hooks, "platform", "win32")
 
-    hooks = relay_hooks.render_relay_hooks("claude", executable)["hooks"]
+    hooks = relay_hooks.render_relay_hooks(agent, executable)["hooks"]
 
     command = hooks["SessionStart"][0]["hooks"][0]["command"]
-    assert command == f'"{executable}" hook-forward claude'
+    assert command == f"{expected_executable} hook-forward {agent}"

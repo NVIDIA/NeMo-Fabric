@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 import uvicorn
 
 
@@ -32,6 +32,7 @@ def mock_api_server(port: int) -> Iterator[str]:
     app.state.status_code = 200
     app.state.tool_call = None
     app.state.tool_call_sent = False
+    app.state.mcp_authorization_headers = []
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -69,6 +70,54 @@ def mock_api_server(port: int) -> Iterator[str]:
             "status_code": app.state.status_code,
             "tool_call": app.state.tool_call,
         }
+
+    @app.get("/_mcp_authorization_headers")
+    def mcp_authorization_headers() -> list[str | None]:
+        return list(app.state.mcp_authorization_headers)
+
+    @app.post("/mcp")
+    async def mcp(request: Request):
+        payload = await request.json()
+        app.state.mcp_authorization_headers.append(request.headers.get("authorization"))
+        method = payload.get("method")
+        if method == "notifications/initialized":
+            return Response(status_code=202)
+        if method == "initialize":
+            result = {
+                "protocolVersion": payload["params"]["protocolVersion"],
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "fabric-header-test", "version": "1.0.0"},
+            }
+        elif method == "tools/list":
+            result = {
+                "tools": [
+                    {
+                        "name": "get_authorization_header",
+                        "description": "Return the Authorization header sent to the MCP server.",
+                        "inputSchema": {"type": "object", "properties": {}},
+                    }
+                ]
+            }
+        elif method == "tools/call":
+            result = {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": request.headers.get("authorization", ""),
+                    }
+                ]
+            }
+        elif method == "ping":
+            result = {}
+        else:
+            return JSONResponse(
+                {
+                    "jsonrpc": "2.0",
+                    "id": payload.get("id"),
+                    "error": {"code": -32601, "message": "Method not found"},
+                }
+            )
+        return JSONResponse({"jsonrpc": "2.0", "id": payload["id"], "result": result})
 
     @app.post("/v1/chat/completions")
     async def chat_completions(request: Request):
