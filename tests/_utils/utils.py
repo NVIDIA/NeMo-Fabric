@@ -6,6 +6,63 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+
+def atof_records(output: Mapping[str, Any]) -> list[dict[str, Any]]:
+    atof_path = next(
+        Path(artifact["path"])
+        for artifact in output["relay_artifacts"]
+        if artifact["kind"] == "atof"
+    )
+    return [
+        json.loads(line) for line in atof_path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def assert_atof_skill_selection(
+    output: Mapping[str, Any], expected_skill: str | None
+) -> None:
+    records = atof_records(output)
+    tool_records = [record for record in records if record["category"] == "tool"]
+    llm_end_records = [
+        record
+        for record in records
+        if record["category"] == "llm" and record["scope_category"] == "end"
+    ]
+    serialized_tool_records = json.dumps(tool_records).replace("\\\\", "/")
+    serialized_skill_calls = json.dumps(tool_records + llm_end_records).replace(
+        "\\\\", "/"
+    )
+    loaded_skills = {
+        skill
+        for skill in ("default", "alternate")
+        if f"{skill} skill loaded" in serialized_tool_records
+        or f"/{skill}/SKILL.md" in serialized_skill_calls
+    }
+    claude_skill_ends = [
+        record
+        for record in tool_records
+        if record["name"] == "Skill" and record["scope_category"] == "end"
+    ]
+    assert all(record["data"]["success"] for record in claude_skill_ends)
+    loaded_skills.update(record["data"]["commandName"] for record in claude_skill_ends)
+
+    expected_skills = {expected_skill} if expected_skill is not None else set()
+    assert loaded_skills == expected_skills
+
+
+def assert_atof_model(output: Mapping[str, Any], expected_model: str) -> None:
+    events = atof_records(output)
+    llm_starts = [
+        record
+        for record in events
+        if record["category"] == "llm" and record["scope_category"] == "start"
+    ]
+    assert llm_starts, events
+    assert {record["data"]["content"]["model"] for record in llm_starts} == {
+        expected_model
+    }
+
+
 def _relay_event_total_tokens(event: dict) -> int:
     profile = event.get("category_profile") or {}
     annotated = profile.get("annotated_response") or {}
@@ -19,13 +76,8 @@ def assert_semantic_relay_artifacts(
 ) -> None:
     """Assert Relay artifacts contain model, usage, and agent-response semantics."""
 
-    artifacts = {
-        item["kind"]: Path(item["path"]) for item in output["relay_artifacts"]
-    }
-    events = [
-        json.loads(line)
-        for line in artifacts["atof"].read_text(encoding="utf-8").splitlines()
-    ]
+    artifacts = {item["kind"]: Path(item["path"]) for item in output["relay_artifacts"]}
+    events = atof_records(output)
     llm_starts = [
         event
         for event in events
@@ -33,8 +85,7 @@ def assert_semantic_relay_artifacts(
     ]
     assert llm_starts, events
     assert all(
-        isinstance(event.get("data", {}).get("content"), dict)
-        for event in llm_starts
+        isinstance(event.get("data", {}).get("content"), dict) for event in llm_starts
     )
     assert all(event["data"]["content"].get("model") for event in llm_starts)
 
@@ -57,6 +108,8 @@ def assert_semantic_relay_artifacts(
     assert any(
         expected_response.lower() in message.lower() for message in agent_messages
     ), agent_messages
+
+
 def assert_relay_disabled_native_observability(result: dict):
     """Assert telemetry-off runs still surface native harness evidence."""
 
