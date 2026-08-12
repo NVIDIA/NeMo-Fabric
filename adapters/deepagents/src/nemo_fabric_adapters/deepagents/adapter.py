@@ -11,11 +11,9 @@ LangGraph checkpointer across ordered invocations.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import inspect
 import json
-import logging
 import os
 import uuid
 from collections.abc import Callable
@@ -29,7 +27,6 @@ from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
 HARNESS = "deepagents"
-LOGGER = logging.getLogger(__name__)
 # Providers we serve through the OpenAI-compatible ``ChatOpenAI`` client.
 OPENAI_COMPATIBLE_PROVIDERS = {"nvidia", "openai", "openai-compatible"}
 # MCP transports langchain-mcp-adapters accepts (after normalization).
@@ -379,9 +376,7 @@ async def close_checkpointer(checkpointer: Any) -> None:
 
 
 async def build_agent_kwargs(
-    payload: dict[str, Any],
-    model: Any,
-    settings: dict[str, Any],
+    payload: dict[str, Any], model: Any, settings: dict[str, Any]
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
