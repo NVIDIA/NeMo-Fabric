@@ -303,7 +303,12 @@ def dump_yaml(value: dict[str, Any]) -> str:
 
 
 def load_relay_plugin_config(
-    payload: dict[str, Any], *, model_name: str | None = None
+    payload: dict[str, Any] | None = None,
+    *,
+    base_dir_value: str | None = None,
+    runtime_id: str | None = None,
+    agent_name_value: str | None = None,
+    model_name: str | None = None,
 ) -> dict[str, Any]:
     config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
     if not config_path:
@@ -327,15 +332,29 @@ def load_relay_plugin_config(
         }
     plugin_config.setdefault("version", 1)
     plugin_config.setdefault("components", [])
-    normalize_relay_output_dirs(plugin_config, payload, model_name=model_name)
+    normalize_relay_output_dirs(
+        plugin_config,
+        payload,
+        base_dir_value=base_dir_value,
+        runtime_id=runtime_id,
+        agent_name_value=agent_name_value,
+        model_name=model_name,
+    )
     return plugin_config
 
 
 def normalize_relay_output_dirs(
-    plugin_config: dict[str, Any], payload: dict[str, Any], *, model_name: str | None = None
+    plugin_config: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+    *,
+    base_dir_value: str | None = None,
+    runtime_id: str | None = None,
+    agent_name_value: str | None = None,
+    model_name: str | None = None,
 ) -> None:
-    base = Path(base_dir(payload)).resolve()
-    runtime_id = runtime_context(payload)["runtime_id"]
+    payload = payload or {}
+    base = Path(base_dir_value or base_dir(payload)).resolve()
+    runtime_id = runtime_id or runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":
             continue
@@ -373,7 +392,7 @@ def normalize_relay_output_dirs(
         atif["output_directory"] = str(path / str(runtime_id))
         Path(atif["output_directory"]).mkdir(parents=True, exist_ok=True)
         atif.setdefault("filename_template", "trajectory-{session_id}.atif.json")
-        atif.setdefault("agent_name", agent_name(payload))
+        atif.setdefault("agent_name", agent_name_value or agent_name(payload))
         atif.setdefault("model_name", model_name or relay_model_name(payload))
 
 

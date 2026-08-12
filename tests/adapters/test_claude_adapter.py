@@ -76,7 +76,7 @@ def build_options(payload: dict[str, Any], *, relay=None) -> ClaudeAgentOptions:
 def prepare_claude_relay(payload: dict[str, Any]):
     config = agent_config(payload)
     return adapter.prepare_claude_relay(
-        payload,
+        payload["agent_name"],
         adapter._selected_model_config(config),
         runtime_context(payload),
         payload["base_dir"],

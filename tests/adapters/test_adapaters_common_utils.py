@@ -394,16 +394,22 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     (previous_atof_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
     (previous_atif_dir / "trajectory-old.atif.json").write_text("{}", encoding="utf-8")
     payload = {
-        "agent_name": "review-agent",
-        "base_dir": str(tmp_path),
+        "agent_name": "ignored-agent",
+        "base_dir": str(tmp_path / "ignored"),
         "config": {
             "harness": {"settings": {"model": "review"}},
-            "models": {"review": {"model": "nvidia/review-model"}},
+            "models": {"review": {"model": "ignored-model"}},
         },
-        "runtime_context": {"runtime_id": "runtime-current"},
+        "runtime_context": {"runtime_id": "ignored-runtime"},
     }
 
-    plugin_config = common_utils.load_relay_plugin_config(payload)
+    plugin_config = common_utils.load_relay_plugin_config(
+        payload,
+        base_dir_value=str(tmp_path),
+        runtime_id="runtime-current",
+        agent_name_value="review-agent",
+        model_name="typed/claude-model",
+    )
     observability = plugin_config["components"][0]["config"]
 
     assert plugin_config["version"] == 1
@@ -428,7 +434,7 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
         == "trajectory-{session_id}.atif.json"
     )
     assert observability["atif"]["agent_name"] == "review-agent"
-    assert observability["atif"]["model_name"] == "nvidia/review-model"
+    assert observability["atif"]["model_name"] == "typed/claude-model"
     assert Path(observability["atif"]["output_directory"]).is_dir()
 
     atof_file = Path(file_sink["output_directory"]) / "events.atof.jsonl"

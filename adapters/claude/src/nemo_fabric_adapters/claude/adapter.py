@@ -493,7 +493,7 @@ def _stage_relay_plugin(plugin_path: Path, executable: Path) -> None:
 
 
 def prepare_claude_relay(
-    payload: dict[str, Any],
+    agent_name: str,
     model: AgentModelConfig,
     runtime_context: RuntimeContext,
     base_dir: str,
@@ -517,7 +517,10 @@ def prepare_claude_relay(
     try:
         relay_contract = relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(
-            payload, model_name=model.model
+            base_dir_value=base_dir,
+            runtime_id=runtime_context.runtime_id,
+            agent_name_value=agent_name,
+            model_name=model.model,
         )
         config_path, plugin_config_path = common_utils.write_relay_configs(
             relay_config={"agents": {"claude": {"command": "claude"}}},
@@ -957,7 +960,9 @@ class ClaudeRuntime:
             base_dir = common_utils.base_dir(payload)
             model = _selected_model_config(agent_config)
             fabric_runtime_id = runtime_context.runtime_id
-            relay = prepare_claude_relay(payload, model, runtime_context, base_dir)
+            relay = prepare_claude_relay(
+                common_utils.agent_name(payload), model, runtime_context, base_dir
+            )
             self._relay = relay
             self._gateway_process = _start_relay_gateway(runtime_context, base_dir, relay)
             options = build_options(agent_config, runtime_context, base_dir, relay=relay)
