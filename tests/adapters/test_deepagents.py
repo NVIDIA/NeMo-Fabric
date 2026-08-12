@@ -1112,13 +1112,17 @@ async def test_mcp_servers_become_adapter_tools(
         types.ModuleType("langchain_mcp_adapters"),
     )
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
-
     payload = make_payload(tmp_path)
+    os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
     # McpServerPlan carries the URL/command in ``url``.
     payload["capability_plan"] = {
         "native": {
             "mcp_servers": {
-                "fs": {"transport": "streamable-http", "url": "http://localhost:9/mcp"},
+                "fs": {
+                    "transport": "streamable-http",
+                    "url": "http://localhost:9/mcp",
+                    "custom_headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
+                },
                 "local": {
                     "transport": "stdio",
                     "url": "my-server",
@@ -1133,7 +1137,11 @@ async def test_mcp_servers_become_adapter_tools(
 
     assert output["failed"] is False
     assert mock_client_cls.call_args.args[0] == {
-        "fs": {"transport": "streamable_http", "url": "http://localhost:9/mcp"},
+        "fs": {
+            "transport": "streamable_http",
+            "url": "http://localhost:9/mcp",
+            "headers": {"X-Tenant": "fabric"},
+        },
         "local": {
             "transport": "stdio",
             "command": "my-server",
@@ -1143,6 +1151,21 @@ async def test_mcp_servers_become_adapter_tools(
     }
     tool_names = [tool.name for tool in fake_sdks["create_kwargs"]["tools"]]
     assert tool_names == ["read_file", "write_file"]
+
+
+@pytest.mark.parametrize("authentication_type", ["oauth2", "service_account"])
+def test_deepagents_rejects_mcp_authentication(authentication_type):
+    with pytest.raises(
+        adapter.AdapterConfigError, match="not supported by Deep Agents"
+    ):
+        adapter._mcp_connection(
+            "automation",
+            {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "authentication": {"type": authentication_type},
+            },
+        )
 
 
 @pytest.mark.usefixtures("use_real_langgraph")

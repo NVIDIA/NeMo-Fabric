@@ -324,8 +324,12 @@ generate-typescript-contract: install-typescript
 pack-typescript: install-typescript
     npm run pack:check --prefix typescript/adapter-contract
 
+# Generate the JSON Schema files from the Rust configuration types.
+schemas:
+    cargo run -p nemo-fabric-core --example generate-schemas -- schemas
+
 # Build all supported language packages.
-build-all: build-rust build-python build-typescript
+build-all: build-rust build-python schemas build-typescript
 
 # Create or update the lockfile for every Python project.
 lock-python:

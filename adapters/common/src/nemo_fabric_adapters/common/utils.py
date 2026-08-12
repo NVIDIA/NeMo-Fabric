@@ -8,9 +8,84 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
+
+
+_FIELD_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+
+
+def validate_http_header(server_name: str, name: str, value: str) -> None:
+    """Validate one HTTP header name and value."""
+
+    if not isinstance(name, str) or not _FIELD_NAME.fullmatch(name):
+        raise ValueError(
+            f"Invalid HTTP header name {name!r} for MCP server {server_name!r}"
+        )
+
+    if not isinstance(value, str):
+        raise TypeError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "must be a string"
+        )
+
+    if not value or not value.strip():
+        raise ValueError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "must not be blank"
+        )
+
+    try:
+        encoded = value.encode("latin-1")
+    except UnicodeEncodeError as error:
+        raise ValueError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "is not Latin-1 encodable"
+        ) from error
+
+    if value[:1] in (" ", "\t") or value[-1:] in (" ", "\t"):
+        raise ValueError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "has outer whitespace"
+        )
+
+    if any((byte < 0x20 and byte != 0x09) or byte == 0x7F for byte in encoded):
+        raise ValueError(
+            f"HTTP header value for {name!r} on MCP server {server_name!r} "
+            "contains a control character"
+        )
+
+
+def validate_http_headers(server_name: str, value: dict[str, str]) -> None:
+    """
+    Validate an MCP custom-header mapping.
+
+    Use this method for harnesses that support environment variable expansion
+    in HTTP headers. For harnesses that don't support environment variable
+    expansion, use expand_http_headers instead.
+    """
+
+    for name, item in value.items():
+        validate_http_header(server_name, name, item)
+
+
+def expand_http_headers(server_name: str, value: dict[str, str]) -> dict[str, str]:
+    """
+    Expand environment variables and validate an MCP custom-header mapping.
+
+    Use this method instead of validate_http_headers for harnesses that don't
+    support environment variable expansion in HTTP headers.
+    """
+
+    expanded: dict[str, str] = {}
+    for name, item in value.items():
+        item = os.path.expandvars(item)
+        validate_http_header(server_name, name, item)
+        expanded[name] = item
+
+    return expanded
 
 
 def current_virtualenv() -> Path | None:

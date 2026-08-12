@@ -286,7 +286,10 @@ async def _mcp_tools(payload: dict[str, Any]) -> list[Any]:
     return list(await client.get_tools())
 
 
-def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
+def _mcp_connection(
+    name: str,
+    spec: dict[str, Any],
+) -> dict[str, Any]:
     # A misconfigured server must fail loudly, not be silently dropped.
     if not isinstance(spec, dict):
         raise AdapterConfigError(f"MCP server '{name}' must be a mapping.")
@@ -312,7 +315,20 @@ def _mcp_connection(name: str, spec: dict[str, Any]) -> dict[str, Any]:
         raise AdapterConfigError(
             f"MCP server '{name}' has unsupported transport '{transport}'."
         )
-    return {"transport": transport, "url": target}
+    connection = {"transport": transport, "url": target}
+    if headers := spec.get("custom_headers"):
+        try:
+            headers = common_utils.expand_http_headers(name, headers)
+        except Exception as error:
+            raise AdapterConfigError(f"{error}.") from error
+        connection["headers"] = headers
+
+    auth = spec.get("authentication")
+    if auth is not None:
+        raise AdapterConfigError(
+            f"MCP server {name!r} {auth.get('type')!r} authentication is not supported by Deep Agents."
+        )
+    return connection
 
 
 # --- runtime state ---------------------------------------------------------

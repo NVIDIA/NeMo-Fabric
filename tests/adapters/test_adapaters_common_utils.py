@@ -4,6 +4,7 @@
 import builtins
 import json
 import os
+import re
 import sys
 import tomllib
 from io import StringIO
@@ -12,6 +13,78 @@ from typing import Any
 
 import nemo_fabric_adapters.common.utils as common_utils
 import pytest
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "",
+        " ",
+        "X Foo",
+        "X:Foo",
+        "X-Föö",
+        "X-Foo\0",
+        "X-Foo\v",
+        "X-Foo\r",
+        "X-Foo\n",
+    ],
+)
+def test_validate_http_headers_rejects_invalid_names(name):
+    with pytest.raises(
+        ValueError,
+        match=re.escape(f"Invalid HTTP header name {name!r} for MCP server 'docs'"),
+    ):
+        common_utils.validate_http_headers("docs", {name: "bar"})
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("", "must not be blank"),
+        (" \t ", "must not be blank"),
+        (" value", "outer whitespace"),
+        ("value\t", "outer whitespace"),
+        ("bar\0", "control character"),
+        ("bar\v", "control character"),
+        ("bar\r", "control character"),
+        ("bar\nX-Evil: injected", "control character"),
+        ("bar\x7f", "control character"),
+        ("Bearer 🔑", "not Latin-1 encodable"),
+    ],
+)
+def test_validate_http_headers_rejects_invalid_values(value, message):
+    with pytest.raises(
+        ValueError,
+        match=rf"HTTP header value for 'X-Foo' on MCP server 'docs' .*{message}",
+    ):
+        common_utils.validate_http_headers("docs", {"X-Foo": value})
+
+
+def test_validate_http_headers_accepts_latin_1_and_embedded_tab():
+    assert (
+        common_utils.validate_http_headers("docs", {"X-Description": "café\tvalue"})
+        is None
+    )
+
+
+def test_validate_http_headers_rejects_non_string_value():
+    with pytest.raises(
+        TypeError,
+        match="HTTP header value for 'X-Foo' on MCP server 'docs' must be a string",
+    ):
+        common_utils.validate_http_headers("docs", {"X-Foo": None})
+
+
+def test_expand_http_headers_expands_environment_variables_before_validation():
+    os.environ["FABRIC_TEST_HEADER"] = "fabric"
+
+    assert common_utils.expand_http_headers(
+        "docs",
+        {
+            "X-Tenant": "${FABRIC_TEST_HEADER}",
+            "X-Static": "static",
+        },
+    ) == {"X-Tenant": "fabric", "X-Static": "static"}
 
 
 @pytest.mark.parametrize(

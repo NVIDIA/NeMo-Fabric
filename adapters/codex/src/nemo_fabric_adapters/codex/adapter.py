@@ -12,6 +12,7 @@ import logging
 import math
 import os
 import subprocess
+import webbrowser
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -26,9 +27,19 @@ from openai_codex import (
     TransportClosedError,
     is_retryable_error,
 )
-from openai_codex.generated.v2_all import SkillsExtraRootsSetResponse
+from openai_codex.generated.v2_all import (
+    ListMcpServerStatusResponse,
+    McpAuthStatus,
+    McpServerOauthLoginCompletedNotification,
+    McpServerOauthLoginResponse,
+    SkillsExtraRootsSetResponse,
+)
 from openai_codex.types import Personality, ReasoningEffort, TurnStatus
 
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import McpAuthenticationConfig
+from nemo_fabric_adapter_contract.models import McpOAuth2Config
+from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 import nemo_fabric_adapters.common.relay_gateway as relay_gateway
 import nemo_fabric_adapters.common.relay_hooks as relay_hooks
 import nemo_fabric_adapters.common.relay_artifacts as relay_artifacts
@@ -47,11 +58,20 @@ APPROVAL_MODES = {
     "auto_review": ApprovalMode.auto_review,
     "deny_all": ApprovalMode.deny_all,
 }
+
+
+async def _open_authorization_url(authorization_url: str) -> bool:
+    """Open a Codex OAuth authorization URL without blocking the event loop."""
+
+    return await asyncio.to_thread(webbrowser.open, authorization_url)
+
+
 INHERITED_ENV_NAMES = {
     "APPDATA",
     "CODEX_HOME",
     "CODEX_SQLITE_HOME",
     "COMSPEC",
+    "DBUS_SESSION_BUS_ADDRESS",
     "HOME",
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -74,6 +94,7 @@ INHERITED_ENV_NAMES = {
     "XDG_CACHE_HOME",
     "XDG_CONFIG_HOME",
     "XDG_DATA_HOME",
+    "XDG_RUNTIME_DIR",
     "http_proxy",
     "https_proxy",
     "no_proxy",
@@ -152,53 +173,98 @@ def _native_capabilities(payload: dict[str, Any]) -> dict[str, Any]:
     return _mapping(plan.get("native"), name="capability_plan.native")
 
 
-def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _native_mcp_server_specs(
+    payload: dict[str, Any],
+) -> dict[str, AgentMcpServerConfig]:
     servers = _mapping(
         _native_capabilities(payload).get("mcp_servers"),
         name="native MCP servers",
     )
-    result: dict[str, dict[str, Any]] = {}
+    result: dict[str, AgentMcpServerConfig] = {}
     for name, raw in sorted(servers.items()):
-        if not isinstance(name, str) or not name:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                "MCP server names must be non-empty strings",
-            )
-        server = _mapping(raw, name=f"MCP server {name}")
-        transport = server.get("transport")
-        if not isinstance(transport, str) or not transport:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"MCP server {name} transport is required",
-            )
-        target = server.get("url")
-        if not isinstance(target, str) or not target:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"MCP server {name} URL is required",
-            )
-        target = os.path.expandvars(target).strip()
-        if not target:
-            raise AdapterConfigError(
-                "codex_invalid_configuration",
-                f"MCP server {name} URL is required",
-            )
-        normalized_transport = transport.strip().lower().replace("_", "-")
+        server = dict(_mapping(raw, name=f"MCP server {name}"))
+        server.pop("exposure", None)
+        result[name] = AgentMcpServerConfig.from_mapping(server)
+    return result
+
+
+def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for name, server in _native_mcp_server_specs(payload).items():
+        target = os.path.expandvars(server.url).strip()
+        normalized_transport = server.transport.strip().lower().replace("_", "-")
         if normalized_transport == "stdio":
             result[name] = {
                 "command": target,
-                "args": common_utils.normalize_list(server.get("args")),
+                "args": server.args,
             }
-            if env := server.get("env"):
+            if env := server.env:
                 result[name]["env"] = env
         elif normalized_transport in {"http", "streamable-http"}:
             result[name] = {"url": target}
         else:
             raise AdapterConfigError(
                 "codex_invalid_configuration",
-                f"unsupported Codex MCP transport: {transport}",
+                f"unsupported Codex MCP transport: {server.transport}",
             )
+        if headers := server.custom_headers:
+            try:
+                headers = common_utils.expand_http_headers(name, headers)
+            except ValueError as error:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration", str(error)
+                ) from error
+            result[name]["http_headers"] = headers
+        if authentication := server.authentication:
+            oauth = _mcp_oauth_config(name, authentication)
+            if oauth.client_secret_env:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} authentication.client_secret_env is not supported by Codex",
+                )
+            if oauth.client_id:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} authentication.client_id is not supported by Codex",
+                )
+            if oauth.client_name:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} authentication.client_name is not supported by Codex",
+                )
+            if oauth.token_endpoint_auth_method:
+                raise AdapterConfigError(
+                    "codex_invalid_configuration",
+                    f"MCP server {name} authentication.token_endpoint_auth_method is not supported by Codex",
+                )
+            result[name]["auth"] = "oauth"
+            if oauth.scopes:
+                result[name]["scopes"] = list(oauth.scopes)
     return result
+
+
+def _mcp_oauth_config(name: str, value: McpAuthenticationConfig) -> McpOAuth2Config:
+    if isinstance(value, McpServiceAccountConfig):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            f"MCP server {name!r} service_account authentication is not supported by Codex",
+        )
+    return value
+
+
+def _mcp_oauth_callback_url(payload: dict[str, Any]) -> str | None:
+    values = {
+        oauth.redirect_uri
+        for name, server in _native_mcp_server_specs(payload).items()
+        if (authentication := server.authentication)
+        and (oauth := _mcp_oauth_config(name, authentication)).redirect_uri
+    }
+    if len(values) > 1:
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "Codex supports only one MCP OAuth callback URL per adapter process",
+        )
+    return next(iter(values)) if values else None
 
 
 def _native_skill_paths(payload: dict[str, Any]) -> list[Path]:
@@ -258,6 +324,177 @@ async def _register_skill_roots(codex: AsyncCodex, skill_paths: list[Path]) -> N
         {"extraRoots": [str(path) for path in skill_paths]},
         response_model=SkillsExtraRootsSetResponse,
     )
+
+
+def _mcp_oauth_servers(
+    payload: dict[str, Any],
+) -> dict[str, McpOAuth2Config]:
+    result: dict[str, McpOAuth2Config] = {}
+    for name, server in _native_mcp_server_specs(payload).items():
+        authentication = server.authentication
+        if not authentication:
+            continue
+        result[name] = _mcp_oauth_config(name, authentication)
+    return result
+
+
+def _codex_protocol_client(codex: AsyncCodex) -> Any:
+    client = getattr(codex, "_client", None)
+    if not callable(getattr(client, "request", None)) or not callable(
+        getattr(client, "next_notification", None)
+    ):
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "Codex SDK does not expose the required MCP OAuth requests",
+        )
+    return client
+
+
+async def _mcp_auth_statuses(
+    client: Any, *, thread_id: str, timeout: float
+) -> dict[str, McpAuthStatus]:
+    statuses: dict[str, McpAuthStatus] = {}
+    seen_cursors: set[str] = set()
+    cursor: str | None = None
+    try:
+        async with asyncio.timeout(timeout):
+            while True:
+                params: dict[str, Any] = {
+                    "detail": "toolsAndAuthOnly",
+                    "threadId": thread_id,
+                }
+                if cursor is not None:
+                    params["cursor"] = cursor
+                try:
+                    response = await client.request(
+                        "mcpServerStatus/list",
+                        params,
+                        response_model=ListMcpServerStatusResponse,
+                    )
+                except TimeoutError as error:
+                    raise AdapterConfigError(
+                        "codex_mcp_authentication_failed",
+                        "Codex MCP status listing request timed out",
+                    ) from error
+                statuses.update(
+                    {server.name: server.auth_status for server in response.data}
+                )
+                cursor = response.next_cursor
+                if cursor is None:
+                    return statuses
+                if cursor in seen_cursors:
+                    raise AdapterConfigError(
+                        "codex_mcp_authentication_failed",
+                        "Codex MCP status listing returned a repeated cursor",
+                    )
+                seen_cursors.add(cursor)
+    except TimeoutError as error:
+        raise AdapterConfigError(
+            "codex_mcp_authentication_failed",
+            "Codex MCP status listing timed out",
+        ) from error
+
+
+async def _login_mcp_server(
+    client: Any,
+    *,
+    name: str,
+    scopes: list[str] | None,
+    thread_id: str,
+    timeout: float,
+) -> None:
+    params: dict[str, Any] = {
+        "name": name,
+        "threadId": thread_id,
+        "timeoutSecs": timeout,
+    }
+    if scopes:
+        params["scopes"] = scopes
+    response = await client.request(
+        "mcpServer/oauth/login",
+        params,
+        response_model=McpServerOauthLoginResponse,
+    )
+    opened = await _open_authorization_url(response.authorization_url)
+    if not opened:
+        raise AdapterConfigError(
+            "codex_mcp_authentication_failed",
+            f"Codex could not open a browser to authenticate MCP server {name!r}",
+        )
+
+    try:
+        async with asyncio.timeout(timeout):
+            while True:
+                notification = await client.next_notification()
+                completed = notification.payload
+                if (
+                    notification.method == "mcpServer/oauthLogin/completed"
+                    and isinstance(completed, McpServerOauthLoginCompletedNotification)
+                    and completed.name == name
+                    and completed.thread_id in {None, thread_id}
+                ):
+                    if completed.success:
+                        return
+                    raise AdapterConfigError(
+                        "codex_mcp_authentication_failed",
+                        f"Codex MCP OAuth login failed for server {name!r}",
+                    )
+    except TimeoutError as error:
+        raise AdapterConfigError(
+            "codex_mcp_authentication_failed",
+            f"Codex MCP OAuth login timed out for server {name!r}",
+        ) from error
+
+
+async def _authenticate_mcp_servers(
+    codex: AsyncCodex,
+    thread: Any,
+    payload: dict[str, Any],
+    invocation_timeout_seconds: float,
+) -> None:
+    oauth_servers = _mcp_oauth_servers(payload)
+    if not oauth_servers:
+        return
+
+    client = _codex_protocol_client(codex)
+    thread_id = str(thread.id)
+    try:
+        statuses = await _mcp_auth_statuses(
+            client,
+            thread_id=thread_id,
+            timeout=invocation_timeout_seconds,
+        )
+        for name, oauth in oauth_servers.items():
+            status = statuses.get(name)
+            if status in {McpAuthStatus.o_auth, McpAuthStatus.bearer_token}:
+                continue
+            if status != McpAuthStatus.not_logged_in:
+                raise AdapterConfigError(
+                    "codex_mcp_authentication_failed",
+                    f"Codex MCP server {name!r} does not support the configured OAuth login",
+                )
+            if status is None:
+                raise AdapterConfigError(
+                    "codex_mcp_authentication_failed",
+                    f"Codex did not report a status for MCP server {name!r}",
+                )
+            await _login_mcp_server(
+                client,
+                name=name,
+                scopes=list(oauth.scopes) or None,
+                thread_id=thread_id,
+                timeout=min(
+                    invocation_timeout_seconds,
+                    oauth.authorization_timeout_seconds,
+                ),
+            )
+    except CodexAdapterError:
+        raise
+    except (CodexError, RuntimeError, OSError) as error:
+        raise AdapterConfigError(
+            "codex_mcp_authentication_failed",
+            "Codex MCP OAuth login could not be completed",
+        ) from error
 
 
 def resolve_cwd(payload: dict[str, Any]) -> Path:
@@ -620,6 +857,8 @@ def thread_config(
     mcp_servers = _native_mcp_servers(payload)
     if mcp_servers:
         config["mcp_servers"] = mcp_servers
+    if callback_url := _mcp_oauth_callback_url(payload):
+        config["mcp_oauth_callback_url"] = callback_url
     overrides = _mapping(
         _settings(payload).get("config_overrides"),
         name="harness.settings.config_overrides",
@@ -993,6 +1232,7 @@ class CodexRuntime:
         self._thread: Any = None
         self._relay: CodexRelaySettings | None = None
         self._gateway_process: subprocess.Popen[Any] | None = None
+        self._mcp_authentication_checked = False
         self._unusable = False
 
     async def start(self, payload: dict[str, Any]) -> None:
@@ -1071,9 +1311,18 @@ class CodexRuntime:
 
         try:
             request_prompt(payload)
-            timeout_seconds(payload)
+            invocation_timeout_seconds = timeout_seconds(payload)
             _reasoning_effort(payload)
             _output_schema(payload)
+            if not self._mcp_authentication_checked:
+                await _authenticate_mcp_servers(
+                    self._client,
+                    self._thread,
+                    self._start_payload,
+                    invocation_timeout_seconds,
+                )
+                self._mcp_authentication_checked = True
+
             relay = self._relay
             atif_before = (
                 relay_artifacts.snapshot_atif_files(relay.plugin_config)
@@ -1123,6 +1372,7 @@ class CodexRuntime:
         self._start_payload = None
         self._thread = None
         self._fabric_runtime_id = None
+        self._mcp_authentication_checked = False
         self._unusable = True
 
         close_error: BaseException | None = None

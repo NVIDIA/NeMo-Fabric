@@ -13,6 +13,7 @@ import os
 import sys
 import threading
 import tomllib
+from io import StringIO
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock
@@ -282,9 +283,7 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
         "config": _agent_config(
             {
                 "harness": {"settings": {}},
-                "models": {
-                    "default": {"provider": "nvidia", "model": "test-model"}
-                },
+                "models": {"default": {"provider": "nvidia", "model": "test-model"}},
             }
         ),
         "runtime_context": _runtime_context(
@@ -562,6 +561,91 @@ def test_build_hermes_config_maps_stdio_mcp_args_and_env_from_agent_config(
     }
 
 
+def test_hermes_maps_http_mcp_headers_and_oauth():
+    os.environ["FABRIC_MCP_CLIENT_SECRET"] = "oauth-secret"
+
+    config = adapter.hermes_mcp_server_config(
+        AgentMcpServerConfig(
+            transport="sse",
+            url="https://mcp.example.test/sse",
+            custom_headers={"X-Tenant": "${FABRIC_MCP_HEADER}"},
+            authentication={
+                "type": "oauth2",
+                "client_id": "fabric-client",
+                "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                "scopes": ["read", "write"],
+                "redirect_uri": "http://127.0.0.1:8765/callback",
+            },
+        )
+    )
+
+    assert config == {
+        "enabled": True,
+        "url": "https://mcp.example.test/sse",
+        "transport": "sse",
+        "headers": {"X-Tenant": "${FABRIC_MCP_HEADER}"},
+        "auth": "oauth",
+        "oauth": {
+            "client_id": "fabric-client",
+            "client_secret": "${FABRIC_MCP_CLIENT_SECRET}",
+            "scope": "read write",
+            "redirect_uri": "http://127.0.0.1:8765/callback",
+        },
+    }
+
+
+def test_hermes_rejects_unset_mcp_oauth_client_secret():
+    with pytest.raises(ValueError, match="unset environment variable"):
+        adapter.hermes_mcp_server_config(
+            AgentMcpServerConfig(
+                transport="sse",
+                url="https://mcp.example.test/sse",
+                authentication={
+                    "type": "oauth2",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                },
+            )
+        )
+
+
+def test_hermes_rejects_mcp_service_account_authentication():
+    with pytest.raises(ValueError, match="service_account"):
+        adapter.hermes_mcp_server_config(
+            AgentMcpServerConfig(
+                transport="streamable-http",
+                url="https://mcp.example.test/mcp",
+                authentication={
+                    "type": "service_account",
+                    "client_id": "fabric-client",
+                    "client_secret_env": "FABRIC_MCP_CLIENT_SECRET",
+                    "token_url": "https://auth.example.test/token",
+                },
+            )
+        )
+
+
+def test_hermes_accepts_configured_mcp_oauth_timeout():
+    config = adapter.hermes_mcp_server_config(
+        AgentMcpServerConfig(
+            transport="streamable-http",
+            url="https://mcp.example.test/mcp",
+            authentication={
+                "type": "oauth2",
+                "authorization_timeout_seconds": 30,
+            },
+        )
+    )
+
+    assert config == {
+        "enabled": True,
+        "url": "https://mcp.example.test/mcp",
+        "transport": "streamable-http",
+        "auth": "oauth",
+        "oauth": {},
+    }
+
+
 async def test_runtime_start_discovers_mcp_tools_when_configured(
     monkeypatch,
     tmp_path: Path,
@@ -652,6 +736,119 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
     mock_ai_agent.close.assert_called_once_with()
     mock_session_db.close.assert_called_once_with()
     assert caught.value.code == "hermes_runtime_stop_failed"
+
+
+async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch):
+    thread_calls = []
+
+    async def to_thread(function, *args, **kwargs):
+        thread_calls.append((function, args, kwargs))
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(adapter.asyncio, "to_thread", to_thread)
+    force_interactive_oauth = MagicMock()
+    oauth_stdin_reads: list[str] = []
+    discover_mcp_tools = MagicMock(
+        side_effect=lambda: oauth_stdin_reads.append(sys.stdin.readline())
+    )
+    get_mcp_status = MagicMock(
+        side_effect=[
+            [
+                {
+                    "name": "confluence",
+                    "connected": False,
+                    "status": "failed",
+                }
+            ],
+            [
+                {
+                    "name": "confluence",
+                    "connected": True,
+                    "status": "connected",
+                }
+            ],
+        ]
+    )
+    refresh_agent_mcp_tools = MagicMock()
+
+    tools_oauth = ModuleType("tools.mcp_oauth")
+    tools_oauth.force_interactive_oauth = (  # type: ignore[attr-defined]
+        force_interactive_oauth
+    )
+    tools_mcp = ModuleType("tools.mcp_tool")
+    tools_mcp.discover_mcp_tools = discover_mcp_tools  # type: ignore[attr-defined]
+    tools_mcp.get_mcp_status = get_mcp_status  # type: ignore[attr-defined]
+    tools_mcp.refresh_agent_mcp_tools = (  # type: ignore[attr-defined]
+        refresh_agent_mcp_tools
+    )
+    monkeypatch.setitem(sys.modules, "tools.mcp_oauth", tools_oauth)
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
+
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {
+        "mcp_servers": {
+            "confluence": {"auth": "oauth"},
+            "time": {"transport": "stdio"},
+        }
+    }
+    lifecycle_stdin = StringIO('{"operation":"stop"}\n')
+    monkeypatch.setattr(sys, "stdin", lifecycle_stdin)
+
+    await runtime._authenticate_mcp_servers()
+    await runtime._authenticate_mcp_servers()
+
+    force_interactive_oauth.assert_called_once_with()
+    discover_mcp_tools.assert_called_once_with()
+    assert get_mcp_status.call_count == 2
+    refresh_agent_mcp_tools.assert_called_once_with(
+        runtime._agent,
+        quiet_mode=True,
+    )
+    assert oauth_stdin_reads == [""]
+    assert lifecycle_stdin.readline() == '{"operation":"stop"}\n'
+    assert sys.stdin is lifecycle_stdin
+    assert runtime._mcp_authentication_checked is True
+    assert len(thread_calls) == 4
+    assert thread_calls[0] == (get_mcp_status, (), {})
+    assert thread_calls[1][0].__name__ == "authenticate"
+    assert thread_calls[2] == (get_mcp_status, (), {})
+    assert thread_calls[3] == (
+        refresh_agent_mcp_tools,
+        (runtime._agent,),
+        {"quiet_mode": True},
+    )
+
+
+async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
+    tools_oauth = ModuleType("tools.mcp_oauth")
+    tools_oauth.force_interactive_oauth = MagicMock()  # type: ignore[attr-defined]
+    tools_mcp = ModuleType("tools.mcp_tool")
+    tools_mcp.discover_mcp_tools = MagicMock()  # type: ignore[attr-defined]
+    tools_mcp.get_mcp_status = MagicMock(  # type: ignore[attr-defined]
+        return_value=[
+            {
+                "name": "confluence",
+                "connected": False,
+                "status": "failed",
+            }
+        ]
+    )
+    tools_mcp.refresh_agent_mcp_tools = MagicMock()  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "tools.mcp_oauth", tools_oauth)
+    monkeypatch.setitem(sys.modules, "tools.mcp_tool", tools_mcp)
+
+    runtime = adapter.HermesRuntime()
+    runtime._agent = MagicMock()
+    runtime._hermes_config = {"mcp_servers": {"confluence": {"auth": "oauth"}}}
+
+    with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
+        await runtime._authenticate_mcp_servers()
+
+    assert caught.value.code == "hermes_mcp_authentication_failed"
+    assert caught.value.metadata == {"servers": ["confluence"]}
+    tools_mcp.refresh_agent_mcp_tools.assert_not_called()  # type: ignore[attr-defined]
+    assert runtime._mcp_authentication_checked is False
 
 
 def test_write_hermes_config_writes_file(tmp_path: Path):
@@ -790,10 +987,13 @@ async def test_runtime_start_overrides_inherited_terminal_environment(
 
 
 def test_artifact_root_resolves_relative_to_base_dir(tmp_path: Path):
-    assert adapter._artifact_root(
-        _runtime_context(artifact_root="run-artifacts"),
-        str(tmp_path),
-    ) == (tmp_path / "run-artifacts").resolve()
+    assert (
+        adapter._artifact_root(
+            _runtime_context(artifact_root="run-artifacts"),
+            str(tmp_path),
+        )
+        == (tmp_path / "run-artifacts").resolve()
+    )
 
 
 async def test_persistent_runtime_reuses_hermes_agent_session_and_history(

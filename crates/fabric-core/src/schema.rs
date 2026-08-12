@@ -308,6 +308,11 @@ mod tests {
             schema["$defs"]["RuntimeConfig"]["properties"]["timeout_seconds"]["exclusiveMinimum"],
             0.0
         );
+        assert_eq!(
+            schema["$defs"]["McpAuthenticationConfig"]["oneOf"][0]["properties"]["authorization_timeout_seconds"]
+                ["minimum"],
+            1
+        );
     }
 
     #[test]

@@ -7,6 +7,77 @@
 import type { JsonObject } from "../json.js";
 
 /**
+ * MCP server authentication configuration.
+ */
+export type McpAuthenticationConfig =
+  | {
+      /**
+       * Maximum time to wait for interactive authorization.
+       */
+      authorization_timeout_seconds?: number;
+      /**
+       * Pre-registered OAuth client identifier. Omit to allow dynamic registration.
+       */
+      client_id?: string | null;
+      /**
+       * Client name advertised during dynamic registration.
+       */
+      client_name?: string | null;
+      /**
+       * Environment variable containing the OAuth client secret.
+       */
+      client_secret_env?: string | null;
+      /**
+       * Whether the client may register dynamically when `client_id` is omitted.
+       */
+      enable_dynamic_registration?: boolean;
+      /**
+       * OAuth callback URI for clients that require a pre-registered redirect URI.
+       */
+      redirect_uri?: string | null;
+      /**
+       * OAuth scopes requested by the MCP client.
+       */
+      scopes?: string[];
+      /**
+       * Client authentication method used at the token endpoint.
+       */
+      token_endpoint_auth_method?: OAuthTokenEndpointAuthMethod | null;
+      type: "oauth2";
+    }
+  | {
+      /**
+       * OAuth client identifier.
+       */
+      client_id: string;
+      /**
+       * Environment variable containing the OAuth client secret.
+       */
+      client_secret_env: string;
+      /**
+       * OAuth scopes requested by the MCP client.
+       */
+      scopes?: string[];
+      /**
+       * Refresh the cached token this many seconds before expiry.
+       */
+      token_cache_buffer_seconds?: number;
+      /**
+       * Client authentication method used at the token endpoint.
+       */
+      token_endpoint_auth_method?: OAuthTokenEndpointAuthMethod | null;
+      /**
+       * OAuth token endpoint.
+       */
+      token_url: string;
+      type: "service_account";
+    };
+/**
+ * OAuth client authentication method used at the token endpoint.
+ */
+export type OAuthTokenEndpointAuthMethod = "none" | "client_secret_post" | "client_secret_basic";
+
+/**
  * Configuration projected southbound to one adapter target.
  */
 export interface AgentConfig {
@@ -120,9 +191,19 @@ export interface AgentMcpServerConfig {
    */
   args?: string[];
   /**
+   * Authentication used by an HTTP MCP server.
+   */
+  authentication?: McpAuthenticationConfig | null;
+  /**
    * MCP tool names blocked after applying the optional allowlist.
    */
   blocked_tools?: string[];
+  /**
+   * HTTP headers passed to an MCP server.
+   */
+  custom_headers?: {
+    [k: string]: string;
+  };
   /**
    * Environment variables passed to an MCP stdio process.
    */

@@ -119,7 +119,7 @@ and export them here.
 Use the core generator to regenerate them after intentional contract changes:
 
 ```bash
-cargo run -p nemo-fabric-core --example generate-schemas -- schemas
+just schemas
 ```
 
 To add a new schema-backed typed model:

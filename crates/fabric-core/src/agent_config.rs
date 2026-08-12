@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::config::{
     AdapterConfigField, AdapterDescriptor, CapabilityPlan, FabricConfig, InstructionMode,
+    McpAuthenticationConfig,
 };
 use crate::error::{FabricError, Result};
 
@@ -167,6 +168,12 @@ pub struct AgentMcpServerConfig {
     /// Environment variables passed to an MCP stdio process.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Authentication used by an HTTP MCP server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<McpAuthenticationConfig>,
+    /// HTTP headers passed to an MCP server.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom_headers: BTreeMap<String, String>,
     /// MCP tool names to expose. `None` exposes every discovered tool.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_tools: Option<Vec<String>>,
@@ -392,10 +399,12 @@ pub(crate) fn project_agent_config(
                 (
                     name.clone(),
                     AgentMcpServerConfig {
-                        transport: server.transport.clone(),
+                        transport: server.transport.as_str().to_string(),
                         url: server.url.clone(),
                         args: server.args.clone(),
                         env: server.env.clone(),
+                        authentication: server.authentication.clone(),
+                        custom_headers: server.custom_headers.clone(),
                         allowed_tools: server.allowed_tools.clone(),
                         blocked_tools: server.blocked_tools.clone(),
                         extensions: server.extensions.clone(),

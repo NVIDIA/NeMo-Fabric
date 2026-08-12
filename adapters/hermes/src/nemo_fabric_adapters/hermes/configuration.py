@@ -12,6 +12,8 @@ from typing import Any
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
+from nemo_fabric_adapter_contract.models import McpOAuth2Config
+from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
 import nemo_fabric_adapters.common.utils as common_utils
 
 
@@ -21,6 +23,21 @@ PROVIDER_DEFAULT_API_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
+
+
+def _validate_client_secret(
+    server_name: str,
+    config: McpOAuth2Config,
+):
+    """Resolve a Hermes OAuth client secret without retaining or logging it."""
+
+    if config.client_secret_env is not None:
+        secret = os.environ.get(config.client_secret_env)
+        if not secret:
+            raise ValueError(
+                f"MCP server {server_name!r} authentication.client_secret_env "
+                "references an unset environment variable"
+            )
 
 
 def _settings(config: AgentConfig) -> dict[str, Any]:
@@ -104,7 +121,7 @@ def build_hermes_config(
     mcp_servers = agent_config.mcp.servers if agent_config.mcp is not None else {}
     if mcp_servers:
         config["mcp_servers"] = {
-            name: hermes_mcp_server_config(server)
+            name: hermes_mcp_server_config(server, name=name)
             for name, server in sorted(mcp_servers.items())
         }
 
@@ -138,13 +155,21 @@ def write_hermes_config(
     return config_path, config
 
 
-def hermes_mcp_server_config(server: AgentMcpServerConfig) -> dict[str, Any]:
+def hermes_mcp_server_config(
+    server: AgentMcpServerConfig, *, name: str = "configured"
+) -> dict[str, Any]:
     transport = server.transport.strip().lower()
     target = os.path.expandvars(server.url).strip()
-    if not target:
-        raise ValueError("MCP server mapping requires a URL")
 
     if transport == "stdio":
+        if server.authentication:
+            raise ValueError(
+                f"MCP server {name!r} authentication is not supported for stdio transport"
+            )
+        if server.custom_headers:
+            raise ValueError(
+                f"MCP server {name!r} custom_headers are not supported for stdio transport"
+            )
         return common_utils.without_none(
             {
                 "enabled": True,
@@ -154,7 +179,41 @@ def hermes_mcp_server_config(server: AgentMcpServerConfig) -> dict[str, Any]:
             }
         )
 
-    return {"enabled": True, "url": target, "transport": transport}
+    result: dict[str, Any] = {
+        "enabled": True,
+        "url": target,
+        "transport": transport,
+    }
+    if headers := server.custom_headers:
+        common_utils.validate_http_headers(name, headers)
+        result["headers"] = headers
+    if authentication := server.authentication:
+        if isinstance(authentication, McpServiceAccountConfig):
+            raise ValueError(
+                f"MCP server {name!r} service_account authentication is not supported by Hermes"
+            )
+        if authentication.client_name:
+            raise ValueError(
+                f"MCP server {name!r} authentication.client_name is not supported by Hermes"
+            )
+        if authentication.token_endpoint_auth_method:
+            raise ValueError(
+                f"MCP server {name!r} authentication.token_endpoint_auth_method is not supported by Hermes"
+            )
+
+        oauth = common_utils.without_none(
+            {
+                "client_id": authentication.client_id,
+                "scope": authentication.scope,
+                "redirect_uri": authentication.redirect_uri,
+            }
+        )
+        if secret_env := authentication.client_secret_env:
+            _validate_client_secret(name, authentication)
+            oauth["client_secret"] = f"${{{secret_env}}}"
+        result["auth"] = "oauth"
+        result["oauth"] = oauth
+    return result
 
 
 def summarize_hermes_config(config: dict[str, Any]) -> dict[str, Any]:

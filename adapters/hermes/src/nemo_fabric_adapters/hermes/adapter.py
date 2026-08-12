@@ -15,6 +15,7 @@ import inspect
 import json
 import logging
 import os
+import sys
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -34,6 +35,7 @@ from nemo_fabric_adapters.hermes import telemetry
 # answering while the trial still reports success). See FABRIC-85.
 DEFAULT_MAX_ITERATIONS: int = 90
 LOGGER = logging.getLogger(__name__)
+hermes_mcp_server_config = configuration.hermes_mcp_server_config
 
 
 def main() -> None:
@@ -55,6 +57,7 @@ class HermesRuntime:
         self._hermes_config_path: Path | None = None
         self._hermes_config: dict[str, Any] = {}
         self._enabled_toolsets: list[str] | None = None
+        self._mcp_authentication_checked = False
         self._conversation_history: list[dict[str, Any]] | None = None
         self._session_db: Any = None
         self._agent: Any = None
@@ -76,7 +79,9 @@ class HermesRuntime:
                     "hermes_invalid_config",
                     "Hermes requires a validated AgentConfig",
                 )
-            runtime_context = RuntimeContext.from_mapping(payload.get("runtime_context"))
+            runtime_context = RuntimeContext.from_mapping(
+                payload.get("runtime_context")
+            )
             telemetry.validate_hermes_telemetry_provider(runtime_context)
             self._agent_config = agent_config
             self._settings = configuration._settings(agent_config)
@@ -222,8 +227,12 @@ class HermesRuntime:
             user_message = json.dumps(user_message, sort_keys=True)
         instructions = agent_config.instructions
         system_prompt = (
-            instructions.system.content if instructions and instructions.system else None
+            instructions.system.content
+            if instructions and instructions.system
+            else None
         )
+
+        await self._authenticate_mcp_servers()
 
         def run_hermes_turn() -> tuple[dict[str, Any], str]:
             try:
@@ -303,6 +312,107 @@ class HermesRuntime:
             )
         return output
 
+    async def _authenticate_mcp_servers(self) -> None:
+        if self._mcp_authentication_checked:
+            return
+
+        oauth_server_names = {
+            name
+            for name, server in (self._hermes_config.get("mcp_servers") or {}).items()
+            if server.get("auth") == "oauth"
+        }
+        if not oauth_server_names:
+            self._mcp_authentication_checked = True
+            return
+
+        from tools.mcp_oauth import force_interactive_oauth
+        from tools.mcp_tool import (
+            discover_mcp_tools,
+            get_mcp_status,
+            refresh_agent_mcp_tools,
+        )
+
+        statuses = {
+            status["name"]: status for status in await asyncio.to_thread(get_mcp_status)
+        }
+        disconnected = {
+            name
+            for name in oauth_server_names
+            if not statuses.get(name, {}).get("connected")
+        }
+        if disconnected:
+
+            def authenticate() -> None:
+                lifecycle_stdin = sys.stdin
+                try:
+                    # Hermes forces interactive OAuth to enable the browser flow,
+                    # which also starts an optional stdin paste reader. Fabric's
+                    # stdin carries lifecycle messages, so give only that fallback
+                    # an immediate EOF while the loopback callback remains active.
+                    sys.stdin = StringIO()
+                    with redirect_stdout(StringIO()), force_interactive_oauth():
+                        discover_mcp_tools()
+                finally:
+                    sys.stdin = lifecycle_stdin
+
+            try:
+                await asyncio.to_thread(authenticate)
+            except Exception as error:
+                raise lifecycle.LifecycleError(
+                    "hermes_mcp_authentication_failed",
+                    "Hermes could not authenticate the configured MCP servers",
+                    metadata={"servers": sorted(disconnected)},
+                ) from error
+
+            statuses = {
+                status["name"]: status
+                for status in await asyncio.to_thread(get_mcp_status)
+            }
+            disconnected = {
+                name
+                for name in oauth_server_names
+                if not statuses.get(name, {}).get("connected")
+            }
+            if disconnected:
+                raise lifecycle.LifecycleError(
+                    "hermes_mcp_authentication_failed",
+                    "Hermes could not authenticate the configured MCP servers",
+                    metadata={"servers": sorted(disconnected)},
+                )
+
+            await asyncio.to_thread(
+                refresh_agent_mcp_tools,
+                self._agent,
+                quiet_mode=True,
+            )
+
+        self._mcp_authentication_checked = True
+
+    def _finalize_relay_session(self) -> None:
+        if (
+            self._relay_plugin_config is None
+            or self._agent is None
+            or self._invoke_hook is None
+            or not self._relay_session_pending
+        ):
+            return
+        if not self._relay_finalize_hook_invoked:
+            self._invoke_hook(
+                "on_session_finalize",
+                session_id=getattr(self._agent, "session_id", ""),
+                model=getattr(self._agent, "model", None) or self._relay_model_name,
+                platform=getattr(self._agent, "platform", None) or "fabric",
+            )
+            self._relay_finalize_hook_invoked = True
+        # Relay subscriber callbacks are queued. The long-lived plugin context
+        # does not flush them until runtime shutdown, but invocation results
+        # must include artifacts produced by this turn.
+        from nemo_relay import subscribers
+
+        subscribers.flush()
+        self._relay_session_pending = False
+        self._relay_finalize_hook_invoked = False
+
     async def stop(self) -> None:
         active_invoke_task = self._active_invoke_task
         errors: list[BaseException] = []
@@ -329,6 +439,7 @@ class HermesRuntime:
         self._hermes_config_path = None
         self._hermes_config = {}
         self._enabled_toolsets = None
+        self._mcp_authentication_checked = False
         self._conversation_history = None
         self._relay_plugin_config = None
         self._relay_plugin_config_path = None

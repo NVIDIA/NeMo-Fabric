@@ -13,6 +13,8 @@ import type {
   EnvironmentOwnership,
   InstructionMode,
   JsonValue,
+  McpAuthenticationConfig,
+  OAuthTokenEndpointAuthMethod,
   RuntimeContext,
   TelemetryProvider,
 } from "../src/index.js";
@@ -37,8 +39,33 @@ const config: AgentConfig = {
       temperature: null,
     },
   },
+  mcp: {
+    servers: {
+      protected: {
+        authentication: {
+          client_id: "fabric-client",
+          scopes: ["tools:read"],
+          token_endpoint_auth_method: "client_secret_basic",
+          type: "oauth2",
+        },
+        custom_headers: { "X-Fabric-Client": "typescript" },
+        transport: "streamable_http",
+        url: "https://mcp.example.com",
+      },
+    },
+  },
   tools: { enabled: null },
 };
+
+const serviceAccountAuthentication: McpAuthenticationConfig = {
+  client_id: "fabric-service",
+  client_secret_env: "FABRIC_CLIENT_SECRET",
+  token_endpoint_auth_method: "client_secret_post",
+  token_url: "https://auth.example.com/token",
+  type: "service_account",
+};
+
+const tokenEndpointAuthMethod: OAuthTokenEndpointAuthMethod = "none";
 
 const context: RuntimeContext = {
   artifacts: { artifacts: [], root: null },
@@ -84,6 +111,8 @@ const supportTypes: [
 
 void descriptor;
 void config;
+void serviceAccountAuthentication;
+void tokenEndpointAuthMethod;
 void context;
 void jsonValues;
 void supportTypes;
@@ -146,6 +175,12 @@ const invalidClosedConfig: AgentConfig = {
   },
 };
 void invalidClosedConfig;
+
+// @ts-expect-error service-account authentication requires client credentials and a token URL
+const incompleteServiceAccountAuthentication: McpAuthenticationConfig = {
+  type: "service_account",
+};
+void incompleteServiceAccountAuthentication;
 
 const invalidTelemetryProvider: AdapterDescriptor = {
   adapter_id: "pi",

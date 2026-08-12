@@ -2293,6 +2293,7 @@ name = "nemo-fabric-adapters-codex"
 version = "0.2.0"
 source = { editable = "adapters/codex" }
 dependencies = [
+    { name = "nemo-fabric-adapter-contract" },
     { name = "nemo-fabric-adapters-common" },
     { name = "tomli-w" },
 ]
@@ -2304,6 +2305,7 @@ harness = [
 
 [package.metadata]
 requires-dist = [
+    { name = "nemo-fabric-adapter-contract", editable = "adapter-contract" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
     { name = "openai-codex", marker = "extra == 'full'", specifier = "==0.144.4" },
     { name = "openai-codex", marker = "extra == 'harness'", specifier = "==0.144.4" },
