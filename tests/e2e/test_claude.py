@@ -177,6 +177,66 @@ async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
 
 
+@pytest.mark.parametrize("method", ["explicit", "inherited", "inherited-env"])
+async def test_env_secrets_in_headers(api_server, tmp_path, method):
+    os.environ.pop("MY_KEY", None)
+    os.environ.pop("MY_TOKEN", None)
+    tool_name = "mcp__headers__get_authorization_header"
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": {"name": tool_name, "arguments": {}}},
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = fabric_config(tmp_path)
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+    config.tools = ToolsConfig(enabled=[tool_name])
+    if method == "explicit":
+        config.add_mcp_server(
+            "headers",
+            transport="streamable-http",
+            url=f"{api_server}/mcp",
+            authentication=None,
+            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+            env={"MY_KEY": "XYZ"},
+        )
+    elif method == "inherited":
+        os.environ["MY_KEY"] = "XYZ"
+        config.add_mcp_server(
+            "headers",
+            transport="streamable-http",
+            url=f"{api_server}/mcp",
+            authentication=None,
+            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+        )
+    else:
+        os.environ["MY_TOKEN"] = "XYZ"
+        config.add_mcp_server(
+            "headers",
+            transport="streamable-http",
+            url=f"{api_server}/mcp",
+            authentication=None,
+            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+            env={"MY_KEY": "${MY_TOKEN}"},
+        )
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input="Use the MCP tool to return its Authorization header.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    response = requests.get(f"{api_server}/_mcp_authorization_headers", timeout=5)
+    response.raise_for_status()
+    assert set(response.json()) == {"Bearer XYZ"}
+
+
 @pytest.mark.parametrize("enabled", [True, False])
 async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
     tool_name = "mcp__mcp_server_time__get_current_time"

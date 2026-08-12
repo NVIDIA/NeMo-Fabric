@@ -104,6 +104,75 @@ async def test_hermes_persistent_host_with_relay(
     assert sum(record["name"] == "hermes.session.end" for record in atof_records) == 2
 
 
+@pytest.mark.usefixtures("mock_nvidia_api_key")
+@pytest.mark.parametrize("method", ["explicit", "inherited", "inherited-env"])
+async def test_env_secrets_in_headers(
+    code_review_agent_dir: Path,
+    api_server: str,
+    method: str,
+):
+    os.environ["ADAPTER_PYTHON"] = sys.executable
+    os.environ.pop("MY_KEY", None)
+    os.environ.pop("MY_TOKEN", None)
+    tool_name = "mcp__headers__get_authorization_header"
+    if Version(distribution_version("hermes-agent")) < Version("0.20"):
+        tool_call = {"name": tool_name, "arguments": {}}
+    else:
+        tool_call = {
+            "name": "tool_call",
+            "arguments": {"name": tool_name, "arguments": {}},
+        }
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": tool_call},
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = hermes_config()
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.tools.enabled = None
+    if method == "explicit":
+        config.add_mcp_server(
+            "headers",
+            transport="streamable-http",
+            url=f"{api_server}/mcp",
+            authentication=None,
+            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+            env={"MY_KEY": "XYZ"},
+        )
+    elif method == "inherited":
+        os.environ["MY_KEY"] = "XYZ"
+        config.add_mcp_server(
+            "headers",
+            transport="streamable-http",
+            url=f"{api_server}/mcp",
+            authentication=None,
+            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+        )
+    else:
+        os.environ["MY_TOKEN"] = "XYZ"
+        config.add_mcp_server(
+            "headers",
+            transport="streamable-http",
+            url=f"{api_server}/mcp",
+            authentication=None,
+            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+            env={"MY_KEY": "${MY_TOKEN}"},
+        )
+
+    result = await Fabric().run(
+        config,
+        base_dir=code_review_agent_dir,
+        input="Use the MCP tool to return its Authorization header.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    response = requests.get(f"{api_server}/_mcp_authorization_headers", timeout=5)
+    response.raise_for_status()
+    assert set(response.json()) == {"Bearer XYZ"}
+
+
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
 @pytest.mark.parametrize("enabled", [True, False])
 async def test_mcp_stdio_transport(

@@ -280,7 +280,7 @@ class McpOAuth2Config(ContractModel):
             )
         if not 1 <= self.authorization_timeout_seconds <= (1 << 64) - 1:
             raise ContractValidationError(
-                "must be greater than zero",
+                f"must be greater than zero and less than or equal to {(1 << 64) - 1}",
                 path=("authorization_timeout_seconds",),
             )
 

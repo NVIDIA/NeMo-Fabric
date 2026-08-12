@@ -15,34 +15,53 @@ import pytest
 
 
 @pytest.mark.parametrize(
-    ("value", "expected"),
+    "name",
     [
-        ("X-Tenant", False),
-        ("X-Tenant\r", True),
-        ("X-Tenant\nvalue", True),
-        ("X-Tenant\r\nvalue", True),
+        "",
+        " ",
+        "X Foo",
+        "X:Foo",
+        "X-Föö",
+        "X-Foo\0",
+        "X-Foo\v",
+        "X-Foo\r",
+        "X-Foo\n",
     ],
 )
-def test_contains_crlf(value, expected):
-    assert common_utils.contains_crlf(value) is expected
+def test_normalize_custom_headers_rejects_invalid_names(name):
+    with pytest.raises(ValueError, match="Invalid HTTP header name"):
+        common_utils.normalize_custom_headers("docs", {name: "bar"})
 
 
 @pytest.mark.parametrize(
-    ("name", "value"),
+    ("value", "message"),
     [
-        ("X-Foo\r", "bar"),
-        ("X-Foo\n", "bar"),
-        ("X-Foo", "bar\r"),
-        ("X-Foo", "bar\nX-Evil: injected"),
+        ("", "must not be blank"),
+        (" \t ", "must not be blank"),
+        (" value", "outer whitespace"),
+        ("value\t", "outer whitespace"),
+        ("bar\0", "control character"),
+        ("bar\v", "control character"),
+        ("bar\r", "control character"),
+        ("bar\nX-Evil: injected", "control character"),
+        ("bar\x7f", "control character"),
+        ("Bearer 🔑", "not Latin-1 encodable"),
     ],
 )
-def test_normalize_custom_headers_rejects_newlines(name, value):
-    with pytest.raises(ValueError) as error:
-        common_utils.normalize_custom_headers("docs", {name: value})
+def test_normalize_custom_headers_rejects_invalid_values(value, message):
+    with pytest.raises(ValueError, match=message):
+        common_utils.normalize_custom_headers("docs", {"X-Foo": value})
 
-    assert str(error.value) == (
-        f"MCP server 'docs' custom_headers contain invalid characters in {name!r}"
-    )
+
+def test_normalize_custom_headers_accepts_latin_1_and_embedded_tab():
+    assert common_utils.normalize_custom_headers(
+        "docs", {"X-Description": "café\tvalue"}
+    ) == {"X-Description": "café\tvalue"}
+
+
+def test_normalize_custom_headers_rejects_non_string_value():
+    with pytest.raises(TypeError):
+        common_utils.normalize_custom_headers("docs", {"X-Foo": None})
 
 
 def test_normalize_custom_headers_expands_environment_variables():
@@ -53,10 +72,11 @@ def test_normalize_custom_headers_expands_environment_variables():
     ) == {"X-Tenant": "fabric"}
 
 
-def test_normalize_custom_headers_rejects_newlines_after_expansion():
-    os.environ["FABRIC_HEADER_VALUE"] = "fabric\r\nX-Evil: injected"
+@pytest.mark.parametrize("value", ["", " \t ", "fabric\v", "fabric\r\n"])
+def test_normalize_custom_headers_rejects_invalid_values_after_expansion(value):
+    os.environ["FABRIC_HEADER_VALUE"] = value
 
-    with pytest.raises(ValueError, match="invalid characters"):
+    with pytest.raises(ValueError, match="HTTP header value"):
         common_utils.normalize_custom_headers(
             "docs", {"X-Tenant": "${FABRIC_HEADER_VALUE}"}
         )

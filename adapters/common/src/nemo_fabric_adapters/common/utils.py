@@ -8,15 +8,37 @@ from __future__ import annotations
 import glob
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
 
 
-def contains_crlf(value: str) -> bool:
-    """Return whether a string contains a carriage return or line feed."""
+_FIELD_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 
-    return "\r" in value or "\n" in value
+
+def validate_http_header(name: str, value: str) -> None:
+    """Validate one HTTP header name and value."""
+
+    if not isinstance(name, str) or not _FIELD_NAME.fullmatch(name):
+        raise ValueError(f"Invalid HTTP header name: {name!r}")
+
+    if not isinstance(value, str):
+        raise TypeError("HTTP header value must be a string")
+
+    if not value or not value.strip():
+        raise ValueError("HTTP header value must not be blank")
+
+    try:
+        encoded = value.encode("latin-1")
+    except UnicodeEncodeError as error:
+        raise ValueError("HTTP header value is not Latin-1 encodable") from error
+
+    if value[:1] in (" ", "\t") or value[-1:] in (" ", "\t"):
+        raise ValueError("HTTP header value has outer whitespace")
+
+    if any((byte < 0x20 and byte != 0x09) or byte == 0x7F for byte in encoded):
+        raise ValueError("HTTP header value contains a control character")
 
 
 def normalize_custom_headers(server_name: str, value: dict[str, str]) -> dict[str, str]:
@@ -24,15 +46,8 @@ def normalize_custom_headers(server_name: str, value: dict[str, str]) -> dict[st
 
     results: dict[str, str] = {}
     for name, item in value.items():
-        if contains_crlf(name) or contains_crlf(item):
-            raise ValueError(
-                f"MCP server {server_name!r} custom_headers contain invalid characters in {name!r}"
-            )
         expanded_item = os.path.expandvars(item)
-        if contains_crlf(expanded_item):
-            raise ValueError(
-                f"MCP server {server_name!r} custom_headers contain invalid characters in {name!r}"
-            )
+        validate_http_header(name, expanded_item)
         results[name] = expanded_item
 
     return results
