@@ -428,7 +428,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
         "base_dir_value": str(tmp_path),
         "runtime_id": "run-1",
         "agent_name_value": "fabric-agent",
-        "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning"
+        "model_name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
     }
     assert output["telemetry"] == {
         "enabled": True,
@@ -1651,9 +1651,7 @@ async def test_bad_mcp_transport_fails_runtime_start(tmp_path, make_payload):
     # A misconfigured MCP server must fail loudly, not be silently dropped.
     payload = make_payload(tmp_path)
     payload["config"]["mcp"] = {
-        "servers": {
-            "bad": {"transport": "carrier-pigeon", "url": "http://x/mcp"}
-        }
+        "servers": {"bad": {"transport": "carrier-pigeon", "url": "http://x/mcp"}}
     }
 
     with pytest.raises(adapter.AdapterConfigError, match="transport"):

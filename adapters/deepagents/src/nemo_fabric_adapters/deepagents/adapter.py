@@ -159,7 +159,9 @@ def selected_model_config(config: AgentConfig) -> AgentModelConfig:
         return model_config
     if len(config.models) == 1:
         return next(iter(config.models.values()))
-    raise AdapterConfigError("Deep Agents requires a default model or exactly one model.")
+    raise AdapterConfigError(
+        "Deep Agents requires a default model or exactly one model."
+    )
 
 
 def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
@@ -370,7 +372,9 @@ async def build_agent_kwargs(
         "tools": await resolve_tools(config),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
         "system_prompt": (
-            instructions.system.content if instructions and instructions.system else None
+            instructions.system.content
+            if instructions and instructions.system
+            else None
         ),
         "skills": resolve_skills(config),
         "backend": resolve_backend(runtime_context, base_dir),
@@ -506,7 +510,9 @@ class DeepAgentsRuntime:
                     "deepagents_invalid_config",
                     "Deep Agents requires a validated AgentConfig",
                 )
-            runtime_context = RuntimeContext.from_mapping(payload.get("runtime_context"))
+            runtime_context = RuntimeContext.from_mapping(
+                payload.get("runtime_context")
+            )
             model_config = selected_model_config(agent_config)
             preflight_check(model_config)
             settings = agent_config.harness.settings if agent_config.harness else {}
