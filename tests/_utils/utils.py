@@ -21,15 +21,22 @@ def atof_records(output: Mapping[str, Any]) -> list[dict[str, Any]]:
 def assert_atof_skill_selection(
     output: Mapping[str, Any], expected_skill: str | None
 ) -> None:
-    tool_records = [
-        record for record in atof_records(output) if record["category"] == "tool"
+    records = atof_records(output)
+    tool_records = [record for record in records if record["category"] == "tool"]
+    llm_end_records = [
+        record
+        for record in records
+        if record["category"] == "llm" and record["scope_category"] == "end"
     ]
-    serialized_records = json.dumps(tool_records).replace("\\\\", "/")
+    serialized_tool_records = json.dumps(tool_records).replace("\\\\", "/")
+    serialized_skill_calls = json.dumps(tool_records + llm_end_records).replace(
+        "\\\\", "/"
+    )
     loaded_skills = {
         skill
         for skill in ("default", "alternate")
-        if f"{skill} skill loaded" in serialized_records
-        or f"/{skill}/SKILL.md" in serialized_records
+        if f"{skill} skill loaded" in serialized_tool_records
+        or f"/{skill}/SKILL.md" in serialized_skill_calls
     }
     claude_skill_ends = [
         record
