@@ -211,7 +211,10 @@ Before the first supported TypeScript package release:
    npm owner add <second-nvidia-maintainer> nemo-fabric-adapter-contract
    ```
 
-   Maintainers must use account-level two-factor authentication.
+   npm sends each new maintainer an email invitation. The maintainer must accept
+   it before access is granted. Verify every expected account appears in
+   `npm owner ls nemo-fabric-adapter-contract` before the release. Maintainers
+   must use account-level two-factor authentication.
 2. Create and protect the GitHub `npmjs` environment. Require the release
    approvers who should authorize registry publication, and restrict deployment
    tags to `v*`.
