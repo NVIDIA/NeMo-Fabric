@@ -24,7 +24,7 @@ if (unexpectedArguments.length > 0) {
   throw new Error(`Unexpected arguments: ${unexpectedArguments.join(", ")}`);
 }
 
-const currentYear = new Date().getUTCFullYear();
+const currentYear = new Date().getFullYear();
 const banner = `// SPDX-FileCopyrightText: Copyright (c) ${currentYear}, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
