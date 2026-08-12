@@ -38,7 +38,7 @@ FabricConfig + adapter descriptor + resolved capability plan
 | `instructions` | Portable instructions the adapter can apply. |
 | `runtime` | Target behavior such as the maximum number of turns. |
 | `skills` | Skill paths resolved for the task environment. |
-| `mcp` | Named MCP servers and effective per-server tool policy. |
+| `mcp` | Named MCP servers, HTTP authentication metadata and custom headers, and effective per-server tool policy. |
 | `tools` | Named tool or tool-group definitions plus effective selection and blocking policy. |
 | `workflow` | Custom-agent or workflow entry point and construction settings. |
 | `extensions` | Adapter-owned fields validated at a declared extension point. |
@@ -46,7 +46,9 @@ FabricConfig + adapter descriptor + resolved capability plan
 Use the generated
 [`AgentConfig` JSON Schema](https://github.com/NVIDIA/NeMo-Fabric/blob/main/schemas/adapter-contract/agent-config.schema.json)
 for exact fields and constraints. Python adapters can import matching
-dataclasses from `nemo_fabric_adapter_contract.models`.
+dataclasses from `nemo_fabric_adapter_contract.models`. MCP authentication is
+decoded as `McpOAuth2Config` or `McpServiceAccountConfig` before the adapter
+receives `AgentMcpServerConfig`.
 
 ## Projection Rules
 
@@ -57,6 +59,9 @@ The descriptor controls the projection:
 - Every configured model role is validated against `model_schema` when the
   selected descriptor publishes one.
 - Resolved native skills and MCP servers come from the capability plan.
+- HTTP MCP authentication metadata and custom headers remain attached to each
+  projected server. Authentication contains credential environment-variable
+  names, not resolved secret values.
 - `harness.settings` and a configured `workflow` are validated against the
   selected descriptor before startup.
 - Named tool definitions are validated individually against
