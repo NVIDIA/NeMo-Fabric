@@ -16,8 +16,6 @@ import type {
   RuntimeContext,
   TelemetryProvider,
 } from "../src/index.js";
-// @ts-expect-error invocation types are available only from the preview entry point
-import type { AgentRunResult } from "../src/index.js";
 
 const descriptor: AdapterDescriptor = {
   adapter_id: "pi",

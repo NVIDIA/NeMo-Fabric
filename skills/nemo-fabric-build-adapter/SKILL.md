@@ -80,12 +80,13 @@ Relay helpers. A bare adapter package should not depend on the NeMo Fabric
 runtime.
 
 For a TypeScript adapter, depend on
-`nemo-fabric-adapter-contract`. Import the negotiated descriptor,
-configuration, and runtime-context types from the package root. Import request
-and result types from `nemo-fabric-adapter-contract/preview` only when
-working on the future typed invocation boundary. TypeScript types do not
-validate data received from a process or network boundary; validate untrusted
-values against the JSON Schemas included with the package.
+`nemo-fabric-adapter-contract`. Import descriptor, configuration,
+runtime-context, request, and result types from the package root, matching the
+Python package's single model namespace. Request and result types are for work
+on the future typed invocation boundary and are not part of the current host
+protocol. TypeScript types do not validate data received from a process or
+network boundary; validate untrusted values against the JSON Schemas included
+with the package.
 
 ## Map AgentConfig
 

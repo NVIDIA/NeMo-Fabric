@@ -46,8 +46,6 @@ try {
     "dist/index.js",
     "dist/json.d.ts",
     "dist/json.js",
-    "dist/preview.d.ts",
-    "dist/preview.js",
     "dist/version.d.ts",
     "dist/version.js",
     "package.json",
@@ -122,7 +120,7 @@ try {
     `import { ADAPTER_CONTRACT_VERSION } from "nemo-fabric-adapter-contract";
 import agentConfigSchema from "nemo-fabric-adapter-contract/schemas/agent-config" with { type: "json" };
 import type { AdapterDescriptor } from "nemo-fabric-adapter-contract";
-import type { AgentRunResult } from "nemo-fabric-adapter-contract/preview";
+import type { AgentRunResult } from "nemo-fabric-adapter-contract";
 
 const descriptor: AdapterDescriptor = {
   adapter_id: "example",

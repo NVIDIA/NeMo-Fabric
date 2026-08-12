@@ -41,10 +41,11 @@ The language bindings preserve this boundary:
 
 - Python adapters use `nemo-fabric-adapter-contract` for dependency-free
   dataclasses and optional Pydantic models.
-- TypeScript adapters use `nemo-fabric-adapter-contract` for the
-  negotiated descriptor, configuration, and runtime-context types. Preview
-  request and result types are isolated under the package's `./preview`
-  subpath. The package also includes these canonical schemas for runtime
+- TypeScript adapters use `nemo-fabric-adapter-contract` for the descriptor,
+  configuration, runtime-context, request, and result types, matching the
+  Python package's single model namespace. Request and result types retain
+  their documented preview status until the typed invocation transport is
+  negotiated. The package also includes these canonical schemas for runtime
   validation without selecting a validation-library dependency.
 
 `FabricConfig` is the northbound source of consumer intent. Planning produces

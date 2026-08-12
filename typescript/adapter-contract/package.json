@@ -12,10 +12,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./preview": {
-      "types": "./dist/preview.d.ts",
-      "import": "./dist/preview.js"
-    },
     "./schemas/*": "./schemas/*.schema.json",
     "./package.json": "./package.json"
   },

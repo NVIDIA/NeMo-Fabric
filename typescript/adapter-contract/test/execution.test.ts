@@ -6,7 +6,7 @@ import type {
   AgentRunRequest,
   AgentRunResult,
   AgentRunStatus,
-} from "../src/preview.js";
+} from "../src/index.js";
 
 const requests: AgentRunRequest[] = [
   { input: null },

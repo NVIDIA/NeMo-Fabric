@@ -57,19 +57,21 @@ Property names intentionally match the JSON wire format and remain
 `snake_case`. Optional properties are distinct from properties whose value may
 be `null`.
 
-## Preview Invocation Types
+## Invocation Types
 
-Request and result types are not part of the negotiated v1alpha2 lifecycle
-transport. Import them through the explicit preview entry point:
+The package root also exports the same request and result models as the Python
+adapter-contract package:
 
 ```typescript
 import type {
   AgentRunRequest,
   AgentRunResult,
-} from "nemo-fabric-adapter-contract/preview";
+} from "nemo-fabric-adapter-contract";
 ```
 
-Do not depend on preview types as a stable transport contract. In particular,
+These types remain documented as preview because the current local-host
+transport does not yet enforce them. Keep request and result translation at the
+adapter edge until the typed invocation boundary is negotiated. In particular,
 token counts originate from JSON Schema `uint64` values but are represented as
 JavaScript `number`; values greater than `Number.MAX_SAFE_INTEGER` cannot be
 represented exactly.

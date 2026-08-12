@@ -6,11 +6,14 @@ import type {
   AdapterDescriptor,
 } from "./generated/adapter-descriptor.js";
 import type { AgentInstructionConfig } from "./generated/agent-config.js";
+import type { AgentRunResult } from "./generated/agent-run-result.js";
 import type { EnvironmentHandle } from "./generated/runtime-context.js";
 import { ADAPTER_CONTRACT_VERSION } from "./version.js";
 
 export type * from "./generated/adapter-descriptor.js";
 export type * from "./generated/agent-config.js";
+export type * from "./generated/agent-run-request.js";
+export type * from "./generated/agent-run-result.js";
 export type * from "./generated/runtime-context.js";
 export type {
   JsonArray,
@@ -36,5 +39,8 @@ export type ControlLocation = EnvironmentHandle["control_location"];
 
 /** Whether NeMo Fabric owns the underlying environment resource. */
 export type EnvironmentOwnership = EnvironmentHandle["ownership"];
+
+/** Completion status reported by an adapter target. */
+export type AgentRunStatus = AgentRunResult["status"];
 
 export { ADAPTER_CONTRACT_VERSION };
