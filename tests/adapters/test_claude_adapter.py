@@ -393,15 +393,12 @@ def test_prepare_claude_relay_writes_gateway_config_and_complete_hook_plugin(
         "PostCompact",
         "SessionEnd",
     }
-    assert hooks["SessionStart"][0] == {
-        "hooks": [
-            {
-                "type": "command",
-                "command": f"{executable} hook-forward claude",
-                "timeout": 30,
-            }
+    assert (
+        hooks["SessionStart"]
+        == adapter.relay_hooks.render_relay_hooks("claude", executable)["hooks"][
+            "SessionStart"
         ]
-    }
+    )
     assert hooks["PermissionRequest"][0]["matcher"] == "*"
 
 

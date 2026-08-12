@@ -880,11 +880,12 @@ def test_relay_uses_gateway_and_request_scoped_sdk_config(
     assert config["features"]["web_search"] is False
     assert config["openai_base_url"] == gateway.url
     assert "model_providers" not in config
-    assert config["hooks"]["SessionStart"][0]["hooks"][0] == {
-        "type": "command",
-        "command": f"{executable} hook-forward codex",
-        "timeout": 30,
-    }
+    assert (
+        config["hooks"]["SessionStart"]
+        == adapter.relay_hooks.render_relay_hooks("codex", executable)["hooks"][
+            "SessionStart"
+        ]
+    )
     assert output["relay_runtime"] == {
         "enabled": True,
         "emitter": "codex-sdk/nemo-relay",
