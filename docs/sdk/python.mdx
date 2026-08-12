@@ -232,6 +232,75 @@ capability_config.enable_relay(
 )
 ```
 
+### Configure MCP Authentication And Headers
+
+MCP authentication and custom-header support vary by adapter:
+
+| Adapter | OAuth 2.0 Authentication | HTTP `custom_headers` |
+| --- | --- | --- |
+| Claude | Unsupported | Supported |
+| Codex | Supported | Supported |
+| Deep Agents | Unsupported | Supported |
+| Hermes Agent | Supported | Supported |
+
+Claude and Deep Agents return a configuration error when `authentication` is
+set. The bundled adapters do not support `service_account` MCP authentication.
+
+Configure OAuth 2.0 with `McpAuthenticationConfig`. The adapter and MCP server
+complete the authorization flow before the first agent turn. The flow can
+require interactive browser authorization.
+
+```python
+from nemo_fabric import McpAuthenticationConfig
+
+capability_config.add_mcp_server(
+    "github",
+    transport="streamable-http",
+    url="https://mcp.example.com/mcp",
+    authentication=McpAuthenticationConfig(
+        type="oauth2",
+        scopes=["repo:read"],
+    ),
+    exposure="harness_native",
+)
+```
+
+Use `custom_headers` to send HTTP headers with an `sse` or `streamable-http`
+server. Header names and values must be valid HTTP header text. To provide a
+sensitive value, set it in the process environment and use a `${NAME}`
+reference in the header value:
+
+```python
+import getpass
+import os
+
+os.environ["MCP_ACCESS_TOKEN"] = getpass.getpass("MCP access token: ")
+
+capability_config.add_mcp_server(
+    "private-api",
+    transport="streamable-http",
+    url="https://mcp.example.com/mcp",
+    authentication=None,
+    custom_headers={
+        "Authorization": "Bearer ${MCP_ACCESS_TOKEN}",
+        "X-Tenant": "example-team",
+    },
+)
+```
+
+Set referenced environment variables before calling `run(...)` or
+`start_runtime(...)`. Do not use `McpServerConfig.env` for HTTP header
+variables; `env` applies only to `stdio` MCP server processes.
+
+<Warning>
+  The Claude adapter stages its MCP configuration in a file for the Claude SDK.
+  A sensitive value in `custom_headers` can therefore be written to
+  disk. Store sensitive values in environment variables and use `${NAME}` in
+  `custom_headers`. The adapter stages the reference and supplies the value
+  through the scoped child-process environment instead of writing the value to
+  the MCP configuration file.
+</Warning>
+
 MCP tool policy is scoped to one server and uses the tool names that server
 advertises. `allowed_tools=None` exposes every discovered tool, while an empty
 allowlist exposes none. `blocked_tools` is then removed from the allowed or
