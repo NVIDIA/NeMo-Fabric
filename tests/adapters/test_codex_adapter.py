@@ -558,6 +558,20 @@ async def test_mcp_auth_statuses_respects_invocation_timeout():
     assert caught.value.code == "codex_mcp_authentication_failed"
 
 
+async def test_mcp_auth_statuses_distinguishes_request_timeout():
+    request_timeout = TimeoutError("request transport timed out")
+    client = MagicMock()
+    client.request = AsyncMock(side_effect=request_timeout)
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="status listing request timed out"
+    ) as caught:
+        await adapter._mcp_auth_statuses(client, thread_id="thread-123", timeout=1)
+
+    assert caught.value.code == "codex_mcp_authentication_failed"
+    assert caught.value.__cause__ is request_timeout
+
+
 @pytest.mark.parametrize(
     ("invocation_timeout", "oauth_timeout", "expected_timeout"),
     [(30, 12, 12), (5, 12, 5)],

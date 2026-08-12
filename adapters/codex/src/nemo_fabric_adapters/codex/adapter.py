@@ -368,11 +368,17 @@ async def _mcp_auth_statuses(
                 }
                 if cursor is not None:
                     params["cursor"] = cursor
-                response = await client.request(
-                    "mcpServerStatus/list",
-                    params,
-                    response_model=ListMcpServerStatusResponse,
-                )
+                try:
+                    response = await client.request(
+                        "mcpServerStatus/list",
+                        params,
+                        response_model=ListMcpServerStatusResponse,
+                    )
+                except TimeoutError as error:
+                    raise AdapterConfigError(
+                        "codex_mcp_authentication_failed",
+                        "Codex MCP status listing request timed out",
+                    ) from error
                 statuses.update(
                     {server.name: server.auth_status for server in response.data}
                 )
