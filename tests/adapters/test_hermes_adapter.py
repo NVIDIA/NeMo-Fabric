@@ -568,7 +568,7 @@ def test_hermes_maps_http_mcp_headers_and_oauth():
         AgentMcpServerConfig(
             transport="sse",
             url="https://mcp.example.test/sse",
-            custom_headers={"X-Tenant": "fabric"},
+            custom_headers={"X-Tenant": "${FABRIC_MCP_HEADER}"},
             authentication={
                 "type": "oauth2",
                 "client_id": "fabric-client",
@@ -583,7 +583,7 @@ def test_hermes_maps_http_mcp_headers_and_oauth():
         "enabled": True,
         "url": "https://mcp.example.test/sse",
         "transport": "sse",
-        "headers": {"X-Tenant": "fabric"},
+        "headers": {"X-Tenant": "${FABRIC_MCP_HEADER}"},
         "auth": "oauth",
         "oauth": {
             "client_id": "fabric-client",
@@ -625,18 +625,25 @@ def test_hermes_rejects_mcp_service_account_authentication():
         )
 
 
-def test_hermes_rejects_unsupported_mcp_oauth_policy():
-    with pytest.raises(ValueError, match="authorization_timeout_seconds"):
-        adapter.hermes_mcp_server_config(
-            AgentMcpServerConfig(
-                transport="streamable-http",
-                url="https://mcp.example.test/mcp",
-                authentication={
-                    "type": "oauth2",
-                    "authorization_timeout_seconds": 30,
-                },
-            )
+def test_hermes_accepts_configured_mcp_oauth_timeout():
+    config = adapter.hermes_mcp_server_config(
+        AgentMcpServerConfig(
+            transport="streamable-http",
+            url="https://mcp.example.test/mcp",
+            authentication={
+                "type": "oauth2",
+                "authorization_timeout_seconds": 30,
+            },
         )
+    )
+
+    assert config == {
+        "enabled": True,
+        "url": "https://mcp.example.test/mcp",
+        "transport": "streamable-http",
+        "auth": "oauth",
+        "oauth": {},
+    }
 
 
 async def test_runtime_start_discovers_mcp_tools_when_configured(

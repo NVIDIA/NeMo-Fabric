@@ -1096,7 +1096,6 @@ async def test_checkpointer_closed_on_success_and_failure(
 async def test_mcp_servers_become_adapter_tools(
     tmp_path, make_payload, monkeypatch, fake_sdks
 ):
-    os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
     tool_read = MagicMock()
     tool_read.name = "read_file"
     tool_write = MagicMock()
@@ -1140,7 +1139,7 @@ async def test_mcp_servers_become_adapter_tools(
         "fs": {
             "transport": "streamable_http",
             "url": "http://localhost:9/mcp",
-            "headers": {"X-Tenant": "fabric"},
+            "headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
         },
         "local": {
             "transport": "stdio",

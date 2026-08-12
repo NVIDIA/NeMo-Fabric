@@ -88,7 +88,6 @@ INHERITED_ENV_NAMES = {
     "no_proxy",
 }
 
-
 @dataclass(frozen=True)
 class ClaudeRelaySettings:
     """Relay gateway and Claude plugin settings owned by one adapter run."""
@@ -319,9 +318,8 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
             )
         if headers := server.get("custom_headers"):
             try:
-                result[name]["headers"] = common_utils.normalize_custom_headers(
-                    name, headers
-                )
+                common_utils.validate_http_headers(name, headers)
+                result[name]["headers"] = headers
             except ValueError as error:
                 raise AdapterConfigError(
                     "claude_invalid_configuration", str(error)
@@ -827,6 +825,7 @@ def child_environment(
     values.update(
         {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
+
     model = _selected_model_config(payload)
     api_key_env = model.get("api_key_env")
     if isinstance(api_key_env, str) and api_key_env in os.environ:

@@ -58,18 +58,11 @@ def validate_http_header(server_name: str, name: str, value: str) -> None:
         )
 
 
-def normalize_custom_headers(server_name: str, value: dict[str, str]) -> dict[str, str]:
-    """Validate and expand an MCP custom-header mapping."""
+def validate_http_headers(server_name: str, value: dict[str, str]) -> None:
+    """Validate an MCP custom-header mapping."""
 
-    results: dict[str, str] = {}
     for name, item in value.items():
-        if not isinstance(item, str):
-            validate_http_header(server_name, name, item)
-        expanded_item = os.path.expandvars(item)
-        validate_http_header(server_name, name, expanded_item)
-        results[name] = expanded_item
-
-    return results
+        validate_http_header(server_name, name, item)
 
 
 def current_virtualenv() -> Path | None:

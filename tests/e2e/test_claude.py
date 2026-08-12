@@ -177,10 +177,8 @@ async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
 
 
-@pytest.mark.parametrize("method", ["explicit", "inherited", "inherited-env"])
-async def test_env_secrets_in_headers(api_server, tmp_path, method):
-    os.environ.pop("MY_KEY", None)
-    os.environ.pop("MY_TOKEN", None)
+async def test_env_secrets_in_headers(api_server, tmp_path):
+    os.environ["MY_KEY"] = "XYZ"
     tool_name = "mcp__headers__get_authorization_header"
     scenario_response = requests.post(
         f"{api_server}/_scenario",
@@ -196,34 +194,13 @@ async def test_env_secrets_in_headers(api_server, tmp_path, method):
     config.models["default"].base_url = f"{api_server}/v1"
     config.environment.env["FABRIC_TEST_API_KEY"] = "test"
     config.tools = ToolsConfig(enabled=[tool_name])
-    if method == "explicit":
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-            env={"MY_KEY": "XYZ"},
-        )
-    elif method == "inherited":
-        os.environ["MY_KEY"] = "XYZ"
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-        )
-    else:
-        os.environ["MY_TOKEN"] = "XYZ"
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-            env={"MY_KEY": "${MY_TOKEN}"},
-        )
+    config.add_mcp_server(
+        "headers",
+        transport="streamable-http",
+        url=f"{api_server}/mcp",
+        authentication=None,
+        custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+    )
 
     result = await Fabric().run(
         config,

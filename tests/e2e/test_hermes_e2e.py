@@ -105,15 +105,12 @@ async def test_hermes_persistent_host_with_relay(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
-@pytest.mark.parametrize("method", ["explicit", "inherited", "inherited-env"])
 async def test_env_secrets_in_headers(
     code_review_agent_dir: Path,
     api_server: str,
-    method: str,
 ):
     os.environ["ADAPTER_PYTHON"] = sys.executable
-    os.environ.pop("MY_KEY", None)
-    os.environ.pop("MY_TOKEN", None)
+    os.environ["MY_KEY"] = "XYZ"
     tool_name = "mcp__headers__get_authorization_header"
     if Version(distribution_version("hermes-agent")) < Version("0.20"):
         tool_call = {"name": tool_name, "arguments": {}}
@@ -132,34 +129,13 @@ async def test_env_secrets_in_headers(
     config = hermes_config()
     config.models["default"].base_url = f"{api_server}/v1"
     config.tools.enabled = None
-    if method == "explicit":
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-            env={"MY_KEY": "XYZ"},
-        )
-    elif method == "inherited":
-        os.environ["MY_KEY"] = "XYZ"
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-        )
-    else:
-        os.environ["MY_TOKEN"] = "XYZ"
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-            env={"MY_KEY": "${MY_TOKEN}"},
-        )
+    config.add_mcp_server(
+        "headers",
+        transport="streamable-http",
+        url=f"{api_server}/mcp",
+        authentication=None,
+        custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+    )
 
     result = await Fabric().run(
         config,

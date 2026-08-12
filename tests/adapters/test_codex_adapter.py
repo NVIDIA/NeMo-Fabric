@@ -383,6 +383,8 @@ def test_start_failure_is_not_masked_by_sdk_close_failure(
 def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_codex):
     os.environ["FABRIC_TEST_MCP_URL"] = "https://mcp.example.test/mcp"
     os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
+    os.environ["FABRIC_TEST_WINDOWS_HEADER"] = "windows"
+    os.environ["FABRIC_TEST_UNBRACED_HEADER"] = "unbraced"
     configure_mcp(
         codex_payload,
         {
@@ -402,7 +404,12 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
             "remote": {
                 "transport": "streamable-http",
                 "url": "${FABRIC_TEST_MCP_URL}",
-                "custom_headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
+                "custom_headers": {
+                    "X-Tenant": "${FABRIC_TEST_MCP_HEADER}",
+                    "X-Windows": "%FABRIC_TEST_WINDOWS_HEADER%",
+                    "X-Unbraced": "$FABRIC_TEST_UNBRACED_HEADER",
+                    "X-Static": "static",
+                },
                 "authentication": {
                     "type": "oauth2",
                     "scopes": ["read", "write"],
@@ -422,7 +429,12 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
     assert config["mcp_servers"] == {
         "remote": {
             "url": "https://mcp.example.test/mcp",
-            "http_headers": {"X-Tenant": "fabric"},
+            "env_http_headers": {
+                "X-Tenant": "FABRIC_TEST_MCP_HEADER",
+                "X-Unbraced": "FABRIC_TEST_UNBRACED_HEADER",
+                "X-Windows": "FABRIC_TEST_WINDOWS_HEADER",
+            },
+            "http_headers": {"X-Static": "static"},
             "auth": "oauth",
             "scopes": ["read", "write"],
             "required": True,
@@ -440,7 +452,35 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
             "env": {"REPO_MCP_MODE": "test"},
         },
     }
+    assert mock_codex.instances[0].config.env["FABRIC_TEST_MCP_HEADER"] == "fabric"
+    assert (
+        mock_codex.instances[0].config.env["FABRIC_TEST_WINDOWS_HEADER"] == "windows"
+    )
+    assert (
+        mock_codex.instances[0].config.env["FABRIC_TEST_UNBRACED_HEADER"]
+        == "unbraced"
+    )
     assert config["mcp_oauth_callback_url"] == "http://127.0.0.1:8765/callback"
+
+
+def test_codex_preserves_prefixed_environment_reference_as_static_header(
+    codex_payload,
+):
+    configure_mcp(
+        codex_payload,
+        {
+            "remote": {
+                "transport": "streamable-http",
+                "url": "https://mcp.example.test/mcp",
+                "custom_headers": {"Authorization": "Bearer ${MCP_TOKEN}"},
+            }
+        },
+    )
+
+    assert adapter._native_mcp_servers(codex_payload)["remote"] == {
+        "url": "https://mcp.example.test/mcp",
+        "http_headers": {"Authorization": "Bearer ${MCP_TOKEN}"},
+    }
 
 
 def test_codex_rejects_mcp_oauth_client_secret(codex_payload):

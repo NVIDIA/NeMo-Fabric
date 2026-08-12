@@ -279,14 +279,16 @@ def test_claude_rejects_mcp_authentication(claude_payload, authentication_type):
 
 def test_claude_maps_mcp_custom_headers(claude_payload):
     server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["custom_headers"] = {"X-Tenant": "fabric"}
+    server["custom_headers"] = {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"}
+    os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
 
     options = adapter.build_options(claude_payload)
     mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
         "mcpServers"
     ]
 
-    assert mcp_servers["docs"]["headers"] == {"X-Tenant": "fabric"}
+    assert mcp_servers["docs"]["headers"] == {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"}
+    assert options.env["FABRIC_TEST_MCP_HEADER"] == "fabric"
 
 
 async def test_claude_invoke_passes_remaining_budget_to_query(

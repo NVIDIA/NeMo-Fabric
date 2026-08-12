@@ -29,12 +29,12 @@ import pytest
         "X-Foo\n",
     ],
 )
-def test_normalize_custom_headers_rejects_invalid_names(name):
+def test_validate_http_headers_rejects_invalid_names(name):
     with pytest.raises(
         ValueError,
         match=re.escape(f"Invalid HTTP header name {name!r} for MCP server 'docs'"),
     ):
-        common_utils.normalize_custom_headers("docs", {name: "bar"})
+        common_utils.validate_http_headers("docs", {name: "bar"})
 
 
 @pytest.mark.parametrize(
@@ -52,44 +52,27 @@ def test_normalize_custom_headers_rejects_invalid_names(name):
         ("Bearer 🔑", "not Latin-1 encodable"),
     ],
 )
-def test_normalize_custom_headers_rejects_invalid_values(value, message):
+def test_validate_http_headers_rejects_invalid_values(value, message):
     with pytest.raises(
         ValueError,
         match=rf"HTTP header value for 'X-Foo' on MCP server 'docs' .*{message}",
     ):
-        common_utils.normalize_custom_headers("docs", {"X-Foo": value})
+        common_utils.validate_http_headers("docs", {"X-Foo": value})
 
 
-def test_normalize_custom_headers_accepts_latin_1_and_embedded_tab():
-    assert common_utils.normalize_custom_headers(
-        "docs", {"X-Description": "café\tvalue"}
-    ) == {"X-Description": "café\tvalue"}
+def test_validate_http_headers_accepts_latin_1_and_embedded_tab():
+    assert (
+        common_utils.validate_http_headers("docs", {"X-Description": "café\tvalue"})
+        is None
+    )
 
 
-def test_normalize_custom_headers_rejects_non_string_value():
+def test_validate_http_headers_rejects_non_string_value():
     with pytest.raises(
         TypeError,
         match="HTTP header value for 'X-Foo' on MCP server 'docs' must be a string",
     ):
-        common_utils.normalize_custom_headers("docs", {"X-Foo": None})
-
-
-def test_normalize_custom_headers_expands_environment_variables():
-    os.environ["FABRIC_HEADER_VALUE"] = "fabric"
-
-    assert common_utils.normalize_custom_headers(
-        "docs", {"X-Tenant": "${FABRIC_HEADER_VALUE}"}
-    ) == {"X-Tenant": "fabric"}
-
-
-@pytest.mark.parametrize("value", ["", " \t ", "fabric\v", "fabric\r\n"])
-def test_normalize_custom_headers_rejects_invalid_values_after_expansion(value):
-    os.environ["FABRIC_HEADER_VALUE"] = value
-
-    with pytest.raises(ValueError, match="HTTP header value"):
-        common_utils.normalize_custom_headers(
-            "docs", {"X-Tenant": "${FABRIC_HEADER_VALUE}"}
-        )
+        common_utils.validate_http_headers("docs", {"X-Foo": None})
 
 
 @pytest.mark.parametrize(

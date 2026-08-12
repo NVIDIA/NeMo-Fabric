@@ -106,14 +106,12 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
-@pytest.mark.parametrize("method", ["explicit", "inherited", "inherited-env"])
-async def test_env_secrets_in_headers(api_server, tmp_path, method):
+async def test_env_secrets_in_headers_are_not_expanded(api_server, tmp_path):
     pytest.importorskip("deepagents")
     from examples.code_review_agent import deepagents_config
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
 
-    os.environ.pop("MY_KEY", None)
-    os.environ.pop("MY_TOKEN", None)
+    os.environ["MY_KEY"] = "XYZ"
     scenario_response = requests.post(
         f"{api_server}/_scenario",
         json={
@@ -138,34 +136,13 @@ async def test_env_secrets_in_headers(api_server, tmp_path, method):
         output_schema="message",
         artifacts=tmp_path / "artifacts",
     )
-    if method == "explicit":
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-            env={"MY_KEY": "XYZ"},
-        )
-    elif method == "inherited":
-        os.environ["MY_KEY"] = "XYZ"
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-        )
-    else:
-        os.environ["MY_TOKEN"] = "XYZ"
-        config.add_mcp_server(
-            "headers",
-            transport="streamable-http",
-            url=f"{api_server}/mcp",
-            authentication=None,
-            custom_headers={"Authorization": "Bearer ${MY_KEY}"},
-            env={"MY_KEY": "${MY_TOKEN}"},
-        )
+    config.add_mcp_server(
+        "headers",
+        transport="streamable-http",
+        url=f"{api_server}/mcp",
+        authentication=None,
+        custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+    )
 
     result = await Fabric().run(
         config,
@@ -176,7 +153,7 @@ async def test_env_secrets_in_headers(api_server, tmp_path, method):
     assert result["status"] == "succeeded", result.to_mapping()
     response = requests.get(f"{api_server}/_mcp_authorization_headers", timeout=5)
     response.raise_for_status()
-    assert set(response.json()) == {"Bearer XYZ"}
+    assert set(response.json()) == {"Bearer ${MY_KEY}"}
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")

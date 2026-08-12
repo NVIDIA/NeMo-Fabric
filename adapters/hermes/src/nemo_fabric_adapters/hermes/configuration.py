@@ -185,7 +185,8 @@ def hermes_mcp_server_config(
         "transport": transport,
     }
     if headers := server.custom_headers:
-        result["headers"] = common_utils.normalize_custom_headers(name, headers)
+        common_utils.validate_http_headers(name, headers)
+        result["headers"] = headers
     if authentication := server.authentication:
         if isinstance(authentication, McpServiceAccountConfig):
             raise ValueError(

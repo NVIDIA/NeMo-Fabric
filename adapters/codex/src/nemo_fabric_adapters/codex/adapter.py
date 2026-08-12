@@ -11,9 +11,9 @@ import json
 import logging
 import math
 import os
+import re
 import subprocess
 import webbrowser
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -59,6 +59,9 @@ APPROVAL_MODES = {
     "auto_review": ApprovalMode.auto_review,
     "deny_all": ApprovalMode.deny_all,
 }
+ENVIRONMENT_VARIABLE = re.compile(
+    r"(?:\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|%([A-Za-z_][A-Za-z0-9_]*)%)"
+)
 
 
 async def _open_authorization_url(authorization_url: str) -> bool:
@@ -189,6 +192,13 @@ def _native_mcp_server_specs(
     return result
 
 
+def _environment_variable_name(value: str) -> str | None:
+    match = ENVIRONMENT_VARIABLE.fullmatch(value)
+    if match is None:
+        return None
+    return next(group for group in match.groups() if group is not None)
+
+
 def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for name, server in _native_mcp_server_specs(payload).items():
@@ -210,14 +220,22 @@ def _native_mcp_servers(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             )
         if headers := server.custom_headers:
             try:
-                normalized_headers = common_utils.normalize_custom_headers(
-                    name, headers
-                )
+                common_utils.validate_http_headers(name, headers)
             except ValueError as error:
                 raise AdapterConfigError(
                     "codex_invalid_configuration", str(error)
                 ) from error
-            result[name]["http_headers"] = normalized_headers
+            env_headers: dict[str, str] = {}
+            static_headers: dict[str, str] = {}
+            for header, value in headers.items():
+                if env_name := _environment_variable_name(value):
+                    env_headers[header] = env_name
+                else:
+                    static_headers[header] = value
+            if env_headers:
+                result[name]["env_http_headers"] = env_headers
+            if static_headers:
+                result[name]["http_headers"] = static_headers
         if authentication := server.authentication:
             oauth = _mcp_oauth_config(name, authentication)
             if oauth.client_secret_env:
@@ -648,6 +666,13 @@ def child_environment(
     values.update(
         {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
+    for server in _native_mcp_server_specs(payload).values():
+        for header_value in server.custom_headers.values():
+            if (
+                (name := _environment_variable_name(header_value)) is not None
+                and name in os.environ
+            ):
+                values[name] = os.environ[name]
     telemetry = common_utils.runtime_context(payload).get("telemetry")
     if telemetry is None:
         telemetry = {}

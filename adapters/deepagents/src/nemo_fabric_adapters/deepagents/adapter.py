@@ -318,10 +318,10 @@ def _mcp_connection(
     connection = {"transport": transport, "url": target}
     if headers := spec.get("custom_headers"):
         try:
-            normalized_headers = common_utils.normalize_custom_headers(name, headers)
+            common_utils.validate_http_headers(name, headers)
         except ValueError as error:
             raise AdapterConfigError(f"{error}.") from error
-        connection["headers"] = normalized_headers
+        connection["headers"] = headers
 
     auth = spec.get("authentication")
     if auth is not None:
