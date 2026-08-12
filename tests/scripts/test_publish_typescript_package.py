@@ -105,7 +105,10 @@ def _exact_view_responses(
 
 def test_existing_exact_package_is_an_idempotent_success(package_directory: Path):
     runner = NpmRunner(
-        [(["pack", "--json"], _pack_result()), *_exact_view_responses()]
+        [
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
+            *_exact_view_responses(),
+        ]
     )
 
     publish_typescript_package.publish_package(
@@ -135,7 +138,7 @@ def test_existing_conflicting_package_fails(
 ):
     runner = NpmRunner(
         [
-            (["pack", "--json"], _pack_result()),
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
             *_exact_view_responses(
                 integrity=integrity,
                 dist_tag_version=dist_tag_version,
@@ -166,7 +169,7 @@ def test_absent_package_publishes_and_verifies(
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
-            (["pack", "--json"], _pack_result()),
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, f"dist-tags.{dist_tag}"], _result("0.1.0")),
             (
@@ -191,7 +194,7 @@ def test_absent_package_publishes_and_verifies(
 def test_non_404_lookup_failure_fails_closed(package_directory: Path):
     runner = NpmRunner(
         [
-            (["pack", "--json"], _pack_result()),
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
             (
                 ["view", f"{PACKAGE}@{VERSION}", "version"],
                 _result(returncode=1, stderr="npm error code E503"),
@@ -218,7 +221,7 @@ def test_dist_tag_cannot_move_backward(package_directory: Path):
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
-            (["pack", "--json"], _pack_result()),
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, "dist-tags.latest"], _result("0.3.0")),
         ]
@@ -243,7 +246,7 @@ def test_ambiguous_publish_failure_reconciles_registry_state(package_directory: 
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
-            (["pack", "--json"], _pack_result()),
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
             (
@@ -306,7 +309,7 @@ def test_invalid_verification_attempts_fail_before_packing(
 
 def test_packed_version_must_match_release(package_directory: Path):
     runner = NpmRunner(
-        [(["pack", "--json"], _pack_result(version="0.2.1"))]
+        [(["pack", "--json", "--ignore-scripts"], _pack_result(version="0.2.1"))]
     )
 
     with pytest.raises(
@@ -325,7 +328,12 @@ def test_packed_version_must_match_release(package_directory: Path):
 
 def test_packed_filename_must_be_safe(package_directory: Path):
     runner = NpmRunner(
-        [(["pack", "--json"], _pack_result(filename="../package.tgz"))]
+        [
+            (
+                ["pack", "--json", "--ignore-scripts"],
+                _pack_result(filename="../package.tgz"),
+            )
+        ]
     )
 
     with pytest.raises(
@@ -344,7 +352,7 @@ def test_packed_filename_must_be_safe(package_directory: Path):
 
 def test_packed_tarball_must_exist(package_directory: Path):
     runner = NpmRunner(
-        [(["pack", "--json"], _pack_result(filename="missing.tgz"))]
+        [(["pack", "--json", "--ignore-scripts"], _pack_result(filename="missing.tgz"))]
     )
 
     with pytest.raises(
@@ -365,7 +373,7 @@ def test_visible_post_publish_conflict_fails_without_retry(package_directory: Pa
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
-            (["pack", "--json"], _pack_result()),
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
             (
@@ -397,7 +405,7 @@ def test_failed_publish_exhaustion_reports_both_failures(package_directory: Path
     missing = _result(returncode=1, stderr="npm error code E404")
     runner = NpmRunner(
         [
-            (["pack", "--json"], _pack_result()),
+            (["pack", "--json", "--ignore-scripts"], _pack_result()),
             (["view", f"{PACKAGE}@{VERSION}", "version"], missing),
             (["view", PACKAGE, "dist-tags.latest"], _result("0.1.0")),
             (

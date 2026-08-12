@@ -32,6 +32,9 @@ TypeScript module pair: `module: "NodeNext"` with
 `moduleResolution: "bundler"`. Enable `resolveJsonModule` when importing the
 bundled JSON Schemas.
 
+The package is ESM-only and does not support CommonJS `require`. NodeNext
+consumers must set `"type": "module"` in their `package.json`.
+
 ## Stable v1alpha2 Contract
 
 The root entry point contains the negotiated descriptor, southbound agent

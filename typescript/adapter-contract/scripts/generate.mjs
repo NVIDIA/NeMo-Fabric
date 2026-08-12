@@ -24,7 +24,8 @@ if (unexpectedArguments.length > 0) {
   throw new Error(`Unexpected arguments: ${unexpectedArguments.join(", ")}`);
 }
 
-const banner = `// SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+const currentYear = new Date().getUTCFullYear();
+const banner = `// SPDX-FileCopyrightText: Copyright (c) ${currentYear}, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
 // This file is generated from the canonical adapter-contract JSON Schemas.

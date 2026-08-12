@@ -165,6 +165,12 @@ if (
       "utf8",
     ),
   );
+  if (installedManifest.main !== undefined) {
+    throw new Error("The ESM-only package must not advertise a CommonJS main");
+  }
+  if (installedManifest.exports?.["."]?.import !== "./dist/index.js") {
+    throw new Error("The package root must expose the ESM entry point");
+  }
   for (const field of [
     "dependencies",
     "optionalDependencies",

@@ -102,7 +102,7 @@ def _pack_package(
     expected_version: str,
     run_npm: RunNpm,
 ) -> PackageArtifact:
-    result = run_npm(["pack", "--json"], package_directory)
+    result = run_npm(["pack", "--json", "--ignore-scripts"], package_directory)
     output = _require_output(result, action="npm pack")
     try:
         values = json.loads(output)

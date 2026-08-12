@@ -240,7 +240,9 @@ Before the first supported TypeScript package release:
    bootstrap.
 
 The workflow publishes stable versions with the `latest` dist-tag and beta or
-RC versions with `next`. Alpha versions are not published. A retry skips only
+RC versions with `next`. Stable releases do not move `next`; it continues to
+identify the most recently published prerelease until a later beta or RC
+replaces it. Alpha versions are not published. A retry skips only
 when the immutable package version, packed artifact integrity, and expected
 dist-tag all match. If any of them differs, the workflow fails so a maintainer
 can inspect and repair the registry state explicitly. Publication also fails
