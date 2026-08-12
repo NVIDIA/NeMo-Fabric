@@ -113,10 +113,6 @@ collect:github-artifacts:
         fi
         sleep "$NEMO_FABRIC_CI_GITHUB_RUN_POLL_SECONDS"
       done
-      if [ -z "$run_id" ]; then
-        echo "Error: no GitHub Actions run found for tag ${tag}." >&2
-        exit 1
-      fi
 
       run_html_url="$(
         gh run view "$run_id" \
