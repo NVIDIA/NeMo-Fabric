@@ -38,6 +38,33 @@ def _mock_codex_config(api_server, tmp_path):
     return config
 
 
+def _skill_tool_call(selected_skill, workdir):
+    if sys.platform == "win32":
+        return {
+            "name": "shell_command",
+            "arguments": {
+                "command": f'Get-Content -Raw "{selected_skill / "SKILL.md"}"',
+                "workdir": str(workdir),
+            },
+        }
+    return {
+        "name": "exec_command",
+        "arguments": {
+            "cmd": f"cat {selected_skill / 'SKILL.md'}",
+            "workdir": str(workdir),
+        },
+    }
+
+
+def test_skill_tool_call_uses_classic_shell_on_windows(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    tool_call = _skill_tool_call(tmp_path / "default", tmp_path)
+
+    assert tool_call["name"] == "shell_command"
+    assert set(tool_call["arguments"]) == {"command", "workdir"}
+
+
 @pytest.mark.usefixtures("nemo_relay")
 @pytest.mark.parametrize("skill", ["default", "alternate", None])
 async def test_skill_selection(
@@ -58,15 +85,7 @@ async def test_skill_selection(
         selected_skill = default_skill if skill == "default" else alternate_skill
         scenario_response = requests.post(
             f"{api_server}/_scenario",
-            json={
-                "tool_call": {
-                    "name": "exec_command",
-                    "arguments": {
-                        "cmd": f"cat {selected_skill / 'SKILL.md'}",
-                        "workdir": str(tmp_path),
-                    },
-                }
-            },
+            json={"tool_call": _skill_tool_call(selected_skill, tmp_path)},
             timeout=5,
         )
         scenario_response.raise_for_status()
