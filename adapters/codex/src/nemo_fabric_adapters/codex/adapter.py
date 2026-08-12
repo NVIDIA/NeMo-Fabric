@@ -470,6 +470,11 @@ async def _authenticate_mcp_servers(
                     "codex_mcp_authentication_failed",
                     f"Codex MCP server {name!r} does not support the configured OAuth login",
                 )
+            if status is None:
+                raise AdapterConfigError(
+                    "codex_mcp_authentication_failed",
+                    f"Codex did not report a status for MCP server {name!r}",
+                )
             await _login_mcp_server(
                 client,
                 name=name,
