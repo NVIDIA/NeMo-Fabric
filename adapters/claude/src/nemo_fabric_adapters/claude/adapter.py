@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import asdict
@@ -87,6 +88,12 @@ INHERITED_ENV_NAMES = {
     "https_proxy",
     "no_proxy",
 }
+MCP_HEADER_ENVIRONMENT_VARIABLE = re.compile(
+    r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}"
+    r"|\$([A-Za-z_][A-Za-z0-9_]*)"
+    r"|%([A-Za-z_][A-Za-z0-9_]*)%"
+)
+
 
 @dataclass(frozen=True)
 class ClaudeRelaySettings:
@@ -361,6 +368,7 @@ def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
     servers = _mcp_servers(payload)
     if not servers:
         return None
+    native_servers = _native_mcp_server_specs(payload)
     fabric_runtime_id = runtime_id(payload)
     environment: dict[str, str] = {}
 
@@ -375,7 +383,8 @@ def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
         return f"${{{projected_name}}}"
 
     for server_name, server in servers.items():
-        raw_environment = server.get("env")
+        raw_environment = native_servers[server_name].get("env")
+        server_environment: dict[str, Any] = {}
         if raw_environment is not None:
             server_environment = _mapping(
                 raw_environment,
@@ -393,10 +402,40 @@ def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
                         "claude_invalid_configuration",
                         f"MCP server {server_name} env values must be strings",
                     )
-                projected_environment[variable_name] = project_environment_value(
-                    server_name, variable_name, value
+                if "env" in server:
+                    projected_environment[variable_name] = project_environment_value(
+                        server_name, variable_name, value
+                    )
+            if "env" in server:
+                server["env"] = projected_environment
+
+        if headers := server.get("headers"):
+            projected_headers: dict[str, str] = {}
+            for header_name, header_value in headers.items():
+
+                def project_header_reference(match: re.Match[str]) -> str:
+                    variable_name = next(
+                        group for group in match.groups() if group is not None
+                    )
+                    if variable_name in server_environment:
+                        value = server_environment[variable_name]
+                    elif variable_name in os.environ:
+                        value = os.environ[variable_name]
+                    else:
+                        return match.group(0)
+                    if not isinstance(value, str):
+                        raise AdapterConfigError(
+                            "claude_invalid_configuration",
+                            f"MCP server {server_name} env values must be strings",
+                        )
+                    return project_environment_value(
+                        server_name, f"header:{header_name}:{variable_name}", value
+                    )
+
+                projected_headers[header_name] = MCP_HEADER_ENVIRONMENT_VARIABLE.sub(
+                    project_header_reference, header_value
                 )
-            server["env"] = projected_environment
+            server["headers"] = projected_headers
 
     config_root = (
         _artifact_root(payload)
