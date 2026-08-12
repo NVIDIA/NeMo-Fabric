@@ -10,18 +10,20 @@ from pathlib import Path
 
 import pytest
 import yaml
+from nemo_fabric_adapter_contract.models import AgentConfig
 
 pytestmark = pytest.mark.usefixtures("requires_hermes_agent")
 
 if importlib.util.find_spec("run_agent") is not None:
-    from nemo_fabric_adapters.hermes import adapter as hermes_adapter
+    from nemo_fabric_adapters.hermes import configuration
 
 
 def test_hermes_config_mapping(tmp_path: Path):
     hermes_home = tmp_path / "home"
-    config_path, config = hermes_adapter.write_hermes_config(
-        payload(str(tmp_path)),
+    config_path, config = configuration.write_hermes_config(
+        agent_config(),
         hermes_home,
+        workspace=str(tmp_path / "workspace"),
         relay_enabled=True,
     )
 
@@ -36,7 +38,7 @@ def test_hermes_config_mapping(tmp_path: Path):
         "base_url": "https://integrate.api.nvidia.com/v1",
     }
     assert config["terminal"]["backend"] == "local"
-    assert config["terminal"]["cwd"].endswith("/workspace")
+    assert Path(config["terminal"]["cwd"]) == tmp_path / "workspace"
     assert config["terminal"]["timeout"] == 30
     assert config["skills"]["external_dirs"] == ["/tmp/fabric-skills/code-review"]
     assert config["mcp_servers"]["github"] == {
@@ -48,14 +50,10 @@ def test_hermes_config_mapping(tmp_path: Path):
     assert config["plugins"]["enabled"] == ["observability/nemo_relay"]
 
 
-def payload(tmpdir: str) -> dict:
-    return {
-        "agent_name": "code-review-agent",
-        "base_dir": tmpdir,
-        "config": {
-            "environment": {
-                "workspace": f"{tmpdir}/workspace",
-            },
+def agent_config() -> AgentConfig:
+    return AgentConfig.from_mapping(
+        {
+            "harness": {"settings": {"terminal_timeout": 30}},
             "models": {
                 "default": {
                     "provider": "nvidia",
@@ -65,20 +63,14 @@ def payload(tmpdir: str) -> dict:
                 }
             },
             "tools": {"enabled": []},
-        },
-        "settings": {
-            "terminal_timeout": 30,
-        },
-        "capabilities": {
-            "native": {
-                "skill_paths": ["/tmp/fabric-skills/code-review"],
-                "mcp_servers": {
+            "skills": {"paths": ["/tmp/fabric-skills/code-review"]},
+            "mcp": {
+                "servers": {
                     "github": {
                         "transport": "streamable-http",
                         "url": "https://mcp.github.example/mcp",
-                        "exposure": "harness_native",
                     }
-                },
-            }
-        },
-    }
+                }
+            },
+        }
+    )

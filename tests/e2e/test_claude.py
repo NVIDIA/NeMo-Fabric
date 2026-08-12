@@ -13,7 +13,11 @@ from pathlib import Path
 
 import pytest
 import requests
-from _utils.utils import assert_semantic_relay_artifacts
+from _utils.utils import (
+    assert_atof_model,
+    assert_atof_skill_selection,
+    assert_semantic_relay_artifacts,
+)
 from nemo_fabric import (
     EnvironmentConfig,
     Fabric,
@@ -177,6 +181,43 @@ async def test_fabric_session_reuses_persistent_claude_runtime(tmp_path):
     assert not any(artifact.kind == "stderr" for artifact in second.artifacts.artifacts)
 
 
+async def test_env_secrets_in_headers(api_server, tmp_path):
+    os.environ["MY_KEY"] = "XYZ"
+    tool_name = "mcp__headers__get_authorization_header"
+    scenario_response = requests.post(
+        f"{api_server}/_scenario",
+        json={"tool_call": {"name": tool_name, "arguments": {}}},
+        timeout=5,
+    )
+    scenario_response.raise_for_status()
+
+    config = fabric_config(tmp_path)
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+    config.tools = ToolsConfig(enabled=[tool_name])
+    config.add_mcp_server(
+        "headers",
+        transport="streamable-http",
+        url=f"{api_server}/mcp",
+        authentication=None,
+        custom_headers={"Authorization": "Bearer ${MY_KEY}"},
+    )
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input="Use the MCP tool to return its Authorization header.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    response = requests.get(f"{api_server}/_mcp_authorization_headers", timeout=5)
+    response.raise_for_status()
+    assert set(response.json()) == {"Bearer XYZ"}
+
+
 @pytest.mark.parametrize("enabled", [True, False])
 async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
     tool_name = "mcp__mcp_server_time__get_current_time"
@@ -241,6 +282,64 @@ async def test_mcp_stdio_transport(api_server, tmp_path, enabled):
         assert tool_results
         assert not tool_results[0]["is_error"]
         assert "America/Los_Angeles" in str(tool_results[0]["content"])
+
+
+@pytest.mark.usefixtures("nemo_relay")
+@pytest.mark.parametrize("skill", ["default", "alternate", None])
+async def test_skill_selection(
+    api_server, tmp_path, skill, default_skill, alternate_skill
+):
+    config = fabric_config(tmp_path, relay=True)
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = "fabric-echo"
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+    config.add_skill_path(default_skill)
+
+    if skill == "alternate" or skill is None:
+        config.remove_skill_path(default_skill)
+
+    if skill == "alternate":
+        config.add_skill_path(alternate_skill)
+
+    if skill is not None:
+        scenario_response = requests.post(
+            f"{api_server}/_scenario",
+            json={
+                "tool_call": {
+                    "name": "Skill",
+                    "arguments": {"skill": skill},
+                }
+            },
+            timeout=5,
+        )
+        scenario_response.raise_for_status()
+
+    result = await Fabric().run(
+        config,
+        base_dir=tmp_path,
+        input=f"Use the {skill} skill." if skill else "Reply without using a skill.",
+    )
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    assert_atof_skill_selection(result["output"], skill)
+
+
+@pytest.mark.usefixtures("nemo_relay")
+@pytest.mark.parametrize("model", ["m1", "m2"])
+async def test_model_selection(api_server, tmp_path, model):
+    config = fabric_config(tmp_path, relay=True)
+    config.models["default"].provider = "fabric-test"
+    config.models["default"].model = model
+    config.models["default"].api_key_env = "FABRIC_TEST_API_KEY"
+    config.models["default"].base_url = f"{api_server}/v1"
+    config.environment.env["FABRIC_TEST_API_KEY"] = "test"
+
+    result = await Fabric().run(config, base_dir=tmp_path, input="Reply with hello.")
+
+    assert result["status"] == "succeeded", result.to_mapping()
+    assert_atof_model(result["output"], model)
 
 
 @pytest.mark.skipif(

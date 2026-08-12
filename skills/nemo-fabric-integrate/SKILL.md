@@ -16,7 +16,7 @@ lifecycle, and normalized results.
 
 ## Integration Boundary
 
-Stay on the public, in-memory contract. These rules keep a consumer integration
+Use the public, in-memory contract. These rules keep a consumer integration
 supported and upgrade-safe:
 
 - Import only from the public `nemo_fabric` package. Never import `_native` or

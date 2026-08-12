@@ -72,11 +72,15 @@ def render_relay_hooks(
     if agent not in ("claude", "codex"):
         raise ValueError(f"unsupported NeMo Relay hook agent {agent!r}")
 
-    executable_arg = (
-        subprocess.list2cmdline([str(executable)])
-        if platform == "win32"
-        else shlex.quote(str(executable))
-    )
+    if platform == "win32":
+        executable_path = str(executable).replace("\\", "/")
+        executable_arg = (
+            f'"{executable_path}"'
+            if agent == "claude"
+            else subprocess.list2cmdline([executable_path])
+        )
+    else:
+        executable_arg = shlex.quote(str(executable))
     command = f"{executable_arg} hook-forward {agent}"
     hooks: dict[str, list[dict[str, Any]]] = {}
     for event in RELAY_HOOK_EVENTS[agent]:

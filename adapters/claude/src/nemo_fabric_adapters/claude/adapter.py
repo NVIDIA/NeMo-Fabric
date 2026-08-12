@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import asdict
@@ -87,6 +88,11 @@ INHERITED_ENV_NAMES = {
     "https_proxy",
     "no_proxy",
 }
+MCP_HEADER_ENVIRONMENT_VARIABLE = re.compile(
+    r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}"
+    r"|\$([A-Za-z_][A-Za-z0-9_]*)"
+    r"|%([A-Za-z_][A-Za-z0-9_]*)%"
+)
 
 
 @dataclass(frozen=True)
@@ -291,16 +297,9 @@ def _model_environment(
 
 
 def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
-    native = (
-        _mapping(common_utils.capability_plan(payload), name="capability_plan").get(
-            "native"
-        )
-        or {}
-    )
-    servers = _mapping(native, name="capability_plan.native").get("mcp_servers") or {}
+    servers = _native_mcp_server_specs(payload)
     result: dict[str, Any] = {}
-    for name, raw in sorted(_mapping(servers, name="native MCP servers").items()):
-        server = _mapping(raw, name=f"MCP server {name}")
+    for name, server in sorted(servers.items()):
         transport = server.get("transport")
         url = server.get("url")
         if not isinstance(url, str) or not url:
@@ -324,7 +323,36 @@ def _mcp_servers(payload: dict[str, Any]) -> dict[str, Any]:
                 "claude_invalid_configuration",
                 f"unsupported MCP transport: {transport}",
             )
+        if headers := server.get("custom_headers"):
+            try:
+                common_utils.validate_http_headers(name, headers)
+                result[name]["headers"] = headers
+            except ValueError as error:
+                raise AdapterConfigError(
+                    "claude_invalid_configuration", str(error)
+                ) from error
+
+        auth = server.get("authentication")
+        if auth is not None:
+            raise AdapterConfigError(
+                "claude_invalid_configuration",
+                f"MCP server {name!r} {auth.get('type')!r} authentication is not supported by Claude",
+            )
     return result
+
+
+def _native_mcp_server_specs(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    native = (
+        _mapping(common_utils.capability_plan(payload), name="capability_plan").get(
+            "native"
+        )
+        or {}
+    )
+    servers = _mapping(native, name="capability_plan.native").get("mcp_servers") or {}
+    return {
+        name: _mapping(raw, name=f"MCP server {name}")
+        for name, raw in _mapping(servers, name="native MCP servers").items()
+    }
 
 
 def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
@@ -342,33 +370,61 @@ def _stage_mcp_config(payload: dict[str, Any]) -> ClaudeMcpSettings | None:
         return None
     fabric_runtime_id = runtime_id(payload)
     environment: dict[str, str] = {}
+
+    def project_environment_value(server_name: str, value_name: str, value: str) -> str:
+        projection_key = (
+            sha256(f"{fabric_runtime_id}\0{server_name}\0{value_name}".encode())
+            .hexdigest()
+            .upper()
+        )
+        projected_name = f"NEMO_FABRIC_CLAUDE_MCP_{projection_key}"
+        environment[projected_name] = value
+        return f"${{{projected_name}}}"
+
     for server_name, server in servers.items():
         raw_environment = server.get("env")
-        if raw_environment is None:
-            continue
-        server_environment = _mapping(
-            raw_environment,
-            name=f"MCP server {server_name} env",
-        )
-        projected_environment: dict[str, str] = {}
-        for variable_name, value in sorted(server_environment.items()):
-            if not isinstance(variable_name, str) or not variable_name:
-                raise AdapterConfigError(
-                    "claude_invalid_configuration",
-                    f"MCP server {server_name} env names must be non-empty strings",
+        if raw_environment is not None:
+            server_environment = _mapping(
+                raw_environment,
+                name=f"MCP server {server_name} env",
+            )
+            projected_environment: dict[str, str] = {}
+            for variable_name, value in sorted(server_environment.items()):
+                if not isinstance(variable_name, str) or not variable_name:
+                    raise AdapterConfigError(
+                        "claude_invalid_configuration",
+                        f"MCP server {server_name} env names must be non-empty strings",
+                    )
+                if not isinstance(value, str):
+                    raise AdapterConfigError(
+                        "claude_invalid_configuration",
+                        f"MCP server {server_name} env values must be strings",
+                    )
+                projected_environment[variable_name] = project_environment_value(
+                    server_name, variable_name, value
                 )
-            if not isinstance(value, str):
-                raise AdapterConfigError(
-                    "claude_invalid_configuration",
-                    f"MCP server {server_name} env values must be strings",
+            server["env"] = projected_environment
+
+        if headers := server.get("headers"):
+            projected_headers: dict[str, str] = {}
+            for header_name, header_value in headers.items():
+
+                def project_header_reference(match: re.Match[str]) -> str:
+                    variable_name = next(
+                        group for group in match.groups() if group is not None
+                    )
+                    if variable_name in os.environ:
+                        value = os.environ[variable_name]
+                    else:
+                        return match.group(0)
+                    return project_environment_value(
+                        server_name, f"header:{header_name}:{variable_name}", value
+                    )
+
+                projected_headers[header_name] = MCP_HEADER_ENVIRONMENT_VARIABLE.sub(
+                    project_header_reference, header_value
                 )
-            projection_key = sha256(
-                f"{fabric_runtime_id}\0{server_name}\0{variable_name}".encode()
-            ).hexdigest().upper()
-            projected_name = f"NEMO_FABRIC_CLAUDE_MCP_{projection_key}"
-            projected_environment[variable_name] = f"${{{projected_name}}}"
-            environment[projected_name] = value
-        server["env"] = projected_environment
+            server["headers"] = projected_headers
 
     config_root = (
         _artifact_root(payload)
@@ -402,8 +458,7 @@ def _cleanup_mcp_config(config_path: Path | None) -> None:
     if config_path is None:
         return
     try:
-        config_path.unlink(missing_ok=True)
-        config_path.parent.rmdir()
+        shutil.rmtree(config_path.parent)
     except OSError:
         LOGGER.exception("Claude MCP runtime configuration could not be removed")
 
@@ -679,6 +734,10 @@ def timeout_seconds(payload: dict[str, Any]) -> float:
     return _positive_number(value, name="timeout_seconds")
 
 
+def _remaining_timeout(deadline: float) -> float:
+    return max(0.0, deadline - asyncio.get_running_loop().time())
+
+
 def _artifact_root(payload: dict[str, Any]) -> Path:
     artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
     root = artifacts.get("root") if isinstance(artifacts, dict) else None
@@ -794,6 +853,7 @@ def child_environment(
     values.update(
         {name: os.environ[name] for name in INHERITED_ENV_NAMES if name in os.environ}
     )
+
     model = _selected_model_config(payload)
     api_key_env = model.get("api_key_env")
     if isinstance(api_key_env, str) and api_key_env in os.environ:
@@ -947,8 +1007,10 @@ class ClaudeRuntime:
             self._relay = relay
             self._gateway_process = _start_relay_gateway(payload, relay)
             options = build_options(payload, relay=relay)
+
             if isinstance(options.mcp_servers, Path):
                 self._mcp_config_path = options.mcp_servers
+
             client = ClaudeSDKClient(options)
             await client.connect()
         except ClaudeAdapterError as error:
@@ -990,11 +1052,15 @@ class ClaudeRuntime:
                 "Claude runtime cannot accept another invocation after a runtime failure",
             )
 
+        invocation_deadline = asyncio.get_running_loop().time() + timeout_seconds(
+            payload
+        )
         try:
             prompt = request_prompt(payload)
-            invocation_timeout = timeout_seconds(payload)
         except ClaudeAdapterError as error:
             output = adapter_failure(error)
+        except ClaudeSDKError as error:
+            output = sdk_failure(error)
         else:
             relay = self._relay
             atif_before = (
@@ -1007,7 +1073,7 @@ class ClaudeRuntime:
                 payload,
                 client,
                 prompt,
-                invocation_timeout,
+                _remaining_timeout(invocation_deadline),
             )
             if (
                 output.get("completed")
@@ -1042,14 +1108,14 @@ class ClaudeRuntime:
         payload: dict[str, Any],
         client: ClaudeSDKClient,
         prompt: str,
-        invocation_timeout: float,
+        remaining_timeout: float,
     ) -> dict[str, Any]:
         """Run one SDK query and normalize its terminal result."""
 
         messages: list[Message] = []
         result: ResultMessage | None = None
         try:
-            async with asyncio.timeout(invocation_timeout):
+            async with asyncio.timeout(remaining_timeout):
                 await client.query(prompt)
                 async for message in client.receive_response():
                     if isinstance(message, ResultMessage):

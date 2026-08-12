@@ -292,10 +292,126 @@ class SkillConfig(FabricBaseModel):
         return self
 
 
+class McpAuthenticationConfig(FabricBaseModel):
+    """MCP server authentication configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["oauth2", "service_account"]
+    client_id: str | None = None
+    client_secret_env: str | None = None
+    scopes: list[str] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
+    redirect_uri: str | None = None
+    enable_dynamic_registration: bool = Field(
+        default=True, exclude_if=lambda value: value
+    )
+    client_name: str | None = None
+    token_endpoint_auth_method: (
+        Literal["none", "client_secret_post", "client_secret_basic"] | None
+    ) = None
+    authorization_timeout_seconds: int = Field(
+        default=300, gt=0, exclude_if=lambda value: value == 300
+    )
+    token_url: str | None = None
+    token_cache_buffer_seconds: int = Field(
+        default=300, ge=0, exclude_if=lambda value: value == 300
+    )
+
+    @field_validator(
+        "client_id",
+        "client_secret_env",
+        "redirect_uri",
+        "client_name",
+        "token_url",
+    )
+    @classmethod
+    def _validate_optional_nonblank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("authentication values must not be empty")
+        return value
+
+    @field_validator("scopes")
+    @classmethod
+    def _validate_scopes(cls, value: list[str]) -> list[str]:
+        if any(not scope.strip() for scope in value):
+            raise ValueError("authentication scopes must not be empty")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_authentication_type(self) -> Self:
+        if self.type == "oauth2":
+            service_account_fields = self.model_fields_set.intersection(
+                {"token_url", "token_cache_buffer_seconds"}
+            )
+            if service_account_fields:
+                name = sorted(service_account_fields)[0]
+                raise ValueError(
+                    f"{name} is only valid for service_account authentication"
+                )
+            if self.client_secret_env and not self.client_id:
+                raise ValueError("client_secret_env requires client_id")
+            if not self.client_id and not self.enable_dynamic_registration:
+                raise ValueError(
+                    "oauth2 authentication requires client_id when dynamic registration is disabled"
+                )
+            if (
+                self.token_endpoint_auth_method
+                in {
+                    "client_secret_basic",
+                    "client_secret_post",
+                }
+                and self.client_id is not None
+                and not self.client_secret_env
+            ):
+                raise ValueError(
+                    "token_endpoint_auth_method requires client_secret_env for a pre-registered client"
+                )
+            if (
+                self.token_endpoint_auth_method == "none"
+                and self.client_secret_env is not None
+            ):
+                raise ValueError(
+                    "token_endpoint_auth_method 'none' cannot use client_secret_env"
+                )
+            return self
+
+        oauth2_fields = self.model_fields_set.intersection(
+            {
+                "redirect_uri",
+                "enable_dynamic_registration",
+                "client_name",
+                "authorization_timeout_seconds",
+            }
+        )
+        if oauth2_fields:
+            name = sorted(oauth2_fields)[0]
+            raise ValueError(f"{name} is only valid for oauth2 authentication")
+        missing = [
+            name
+            for name, value in (
+                ("client_id", self.client_id),
+                ("client_secret_env", self.client_secret_env),
+                ("token_url", self.token_url),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(
+                "service_account authentication requires " + ", ".join(missing)
+            )
+        if self.token_endpoint_auth_method == "none":
+            raise ValueError(
+                "service_account authentication requires client_secret_basic or client_secret_post"
+            )
+        return self
+
+
 class McpServerConfig(FabricBaseModel):
     """MCP server configuration."""
 
-    transport: str = Field(min_length=1)
+    transport: Literal["stdio", "sse", "streamable-http"]
     url: str = Field(
         min_length=1,
         description=(
@@ -307,7 +423,22 @@ class McpServerConfig(FabricBaseModel):
         exclude_if=lambda value: not value,
         description="Command-line arguments passed to an MCP stdio server process.",
     )
-    env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+        description="Environment variables passed to an MCP stdio server process.",
+    )
+    authentication: McpAuthenticationConfig | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    custom_headers: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+        description=(
+            "HTTP headers passed to an MCP server when transport is sse or "
+            "streamable-http."
+        ),
+    )
     exposure: Literal["harness_native", "fabric_managed"] = "harness_native"
     allowed_tools: list[str] | None = Field(
         default=None,
@@ -341,6 +472,8 @@ class McpServerConfig(FabricBaseModel):
 
     @model_validator(mode="after")
     def _validate_tool_policy(self) -> Self:
+        if self.transport != "stdio" and self.env:
+            raise ValueError("env is only valid for stdio transport")
         if self.allowed_tools is not None:
             overlap = set(self.allowed_tools).intersection(self.blocked_tools)
             if overlap:
@@ -370,6 +503,8 @@ class McpConfig(FabricBaseModel):
         url: str,
         args: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
+        authentication: McpAuthenticationConfig | None = None,
+        custom_headers: Mapping[str, str] | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
@@ -384,6 +519,8 @@ class McpConfig(FabricBaseModel):
         extensions = dict(extra_fields or {})
         legacy_args = extensions.pop("args", ())
         legacy_env = extensions.pop("env", None)
+        legacy_authentication = extensions.pop("authentication", None)
+        legacy_custom_headers = extensions.pop("custom_headers", None)
         if isinstance(allowed_tools, str):
             raise TypeError("allowed_tools must be a sequence of strings, not a string")
         if isinstance(blocked_tools, str):
@@ -394,6 +531,14 @@ class McpConfig(FabricBaseModel):
             url=url,
             args=list(args if args is not None else legacy_args),
             env=env if env is not None else legacy_env or {},
+            authentication=(
+                authentication if authentication is not None else legacy_authentication
+            ),
+            custom_headers=(
+                custom_headers
+                if custom_headers is not None
+                else legacy_custom_headers or {}
+            ),
             exposure=exposure,
             allowed_tools=None if allowed_tools is None else list(allowed_tools),
             blocked_tools=list(blocked_tools),
@@ -729,6 +874,8 @@ class FabricConfig(FabricBaseModel):
         url: str,
         args: Sequence[str] | None = None,
         env: Mapping[str, str] | None = None,
+        authentication: McpAuthenticationConfig | None = None,
+        custom_headers: Mapping[str, str] | None = None,
         exposure: Literal["harness_native", "fabric_managed"] = "harness_native",
         allowed_tools: Sequence[str] | None = None,
         blocked_tools: Sequence[str] = (),
@@ -748,6 +895,8 @@ class FabricConfig(FabricBaseModel):
             url=url,
             args=args,
             env=env,
+            authentication=authentication,
+            custom_headers=custom_headers,
             exposure=exposure,
             allowed_tools=allowed_tools,
             blocked_tools=blocked_tools,

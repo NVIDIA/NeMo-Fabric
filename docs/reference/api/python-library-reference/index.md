@@ -29,6 +29,7 @@ SPDX-License-Identifier: Apache-2.0 -->
 - [`models.HarnessConfig`](./nemo_fabric.models.md#class-harnessconfig): Harness adapter selection plus adapter-owned settings.
 - [`models.InstructionConfig`](./nemo_fabric.models.md#class-instructionconfig): One portable instruction value.
 - [`models.InstructionsConfig`](./nemo_fabric.models.md#class-instructionsconfig): Harness-neutral agent instructions.
+- [`models.McpAuthenticationConfig`](./nemo_fabric.models.md#class-mcpauthenticationconfig): MCP server authentication configuration.
 - [`models.McpConfig`](./nemo_fabric.models.md#class-mcpconfig): MCP capability configuration.
 - [`models.McpServerConfig`](./nemo_fabric.models.md#class-mcpserverconfig): MCP server configuration.
 - [`models.MetadataConfig`](./nemo_fabric.models.md#class-metadataconfig): Human-readable agent identity.

@@ -29,6 +29,7 @@ from nemo_fabric import FabricStateError
 from nemo_fabric import HarnessConfig
 from nemo_fabric import InstructionConfig
 from nemo_fabric import InstructionsConfig
+from nemo_fabric import McpAuthenticationConfig
 from nemo_fabric import McpConfig
 from nemo_fabric import McpServerConfig
 from nemo_fabric import MetadataConfig
@@ -199,7 +200,12 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         transport="streamable-http",
         url="${GITHUB_MCP_URL}",
         args=["--read-only"],
-        env={"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+        authentication=McpAuthenticationConfig(
+            type="oauth2",
+            client_id="fabric-client",
+            scopes=["repo"],
+        ),
+        custom_headers={"X-Tenant": "fabric"},
         exposure="fabric_managed",
         allowed_tools=["issues.read", "pull_requests.read"],
         blocked_tools=["issues.delete"],
@@ -245,7 +251,12 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
                 "transport": "streamable-http",
                 "url": "${GITHUB_MCP_URL}",
                 "args": ["--read-only"],
-                "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+                "authentication": {
+                    "type": "oauth2",
+                    "client_id": "fabric-client",
+                    "scopes": ["repo"],
+                },
+                "custom_headers": {"X-Tenant": "fabric"},
                 "exposure": "fabric_managed",
                 "allowed_tools": ["issues.read", "pull_requests.read"],
                 "blocked_tools": ["issues.delete"],
@@ -314,6 +325,211 @@ def test_mcp_server_tool_policy_preserves_empty_allowlist():
         "servers": {"docs": expected}
     }
     assert server.to_mapping() == expected
+
+
+def test_mcp_server_rejects_unknown_transport():
+    with pytest.raises(ValidationError, match="transport"):
+        McpServerConfig(transport="websocket", url="https://mcp.example.test")
+
+    server = McpServerConfig(
+        transport="streamable-http", url="https://mcp.example.test"
+    )
+    with pytest.raises(ValidationError, match="transport"):
+        server.transport = "websocket"  # type: ignore[assignment]
+
+
+@pytest.mark.parametrize("transport", ["sse", "streamable-http"])
+def test_mcp_server_rejects_env_for_http_transport(transport):
+    with pytest.raises(ValidationError, match="env is only valid for stdio transport"):
+        McpServerConfig(
+            transport=transport,
+            url="https://mcp.example.test",
+            env={"MCP_SECRET": "secret"},
+        )
+
+
+def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():
+    server = McpServerConfig(
+        transport="streamable-http",
+        url="https://mcp.example.test/jira",
+        custom_headers={"X-Tenant": "fabric"},
+        authentication={
+            "type": "oauth2",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "scopes": ["read:jira", "write:jira"],
+            "redirect_uri": "http://127.0.0.1:8765/callback",
+            "enable_dynamic_registration": False,
+            "client_name": "NeMo Fabric",
+            "token_endpoint_auth_method": "client_secret_post",
+            "authorization_timeout_seconds": 120,
+        },
+    )
+
+    assert isinstance(server.authentication, McpAuthenticationConfig)
+    assert server.custom_headers == {"X-Tenant": "fabric"}
+    assert "custom_headers" not in server.extra_fields
+    assert server.to_mapping() == {
+        "transport": "streamable-http",
+        "url": "https://mcp.example.test/jira",
+        "authentication": {
+            "type": "oauth2",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "scopes": ["read:jira", "write:jira"],
+            "redirect_uri": "http://127.0.0.1:8765/callback",
+            "enable_dynamic_registration": False,
+            "client_name": "NeMo Fabric",
+            "token_endpoint_auth_method": "client_secret_post",
+            "authorization_timeout_seconds": 120,
+        },
+        "custom_headers": {"X-Tenant": "fabric"},
+        "exposure": "harness_native",
+    }
+
+
+def test_mcp_server_serializes_service_account_authentication():
+    server = McpServerConfig(
+        transport="streamable-http",
+        url="https://mcp.example.test/automation",
+        authentication=McpAuthenticationConfig(
+            type="service_account",
+            client_id="fabric-client",
+            client_secret_env="MCP_CLIENT_SECRET",
+            token_url="https://auth.example.test/token",
+            scopes=["mcp:invoke"],
+            token_endpoint_auth_method="client_secret_basic",
+            token_cache_buffer_seconds=60,
+        ),
+    )
+
+    assert server.to_mapping()["authentication"] == {
+        "type": "service_account",
+        "client_id": "fabric-client",
+        "client_secret_env": "MCP_CLIENT_SECRET",
+        "token_url": "https://auth.example.test/token",
+        "scopes": ["mcp:invoke"],
+        "token_endpoint_auth_method": "client_secret_basic",
+        "token_cache_buffer_seconds": 60,
+    }
+
+
+def test_mcp_oauth_allows_dynamic_registration_to_supply_client_secret():
+    authentication = McpAuthenticationConfig(
+        type="oauth2",
+        token_endpoint_auth_method="client_secret_post",
+    )
+
+    assert authentication.client_id is None
+    assert authentication.client_secret_env is None
+    assert authentication.enable_dynamic_registration is True
+
+
+@pytest.mark.parametrize(
+    "authentication",
+    [
+        {"type": "oauth2", "enable_dynamic_registration": False},
+        {
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+        },
+        {
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "token_url": "https://auth.example.test/token",
+            "token_endpoint_auth_method": "none",
+        },
+    ],
+)
+def test_mcp_authentication_rejects_invalid_policy(authentication):
+    with pytest.raises(ValidationError):
+        McpAuthenticationConfig.model_validate(authentication)
+
+
+@pytest.mark.parametrize(
+    "authentication",
+    [
+        {"type": "oauth2", "unknown": True},
+        {
+            "type": "service_account",
+            "client_id": "fabric-client",
+            "client_secret_env": "MCP_CLIENT_SECRET",
+            "token_url": "https://auth.example.test/token",
+            "unknown": True,
+        },
+    ],
+)
+def test_mcp_authentication_rejects_unknown_variant_fields(authentication):
+    with pytest.raises(ValidationError, match="unknown"):
+        McpAuthenticationConfig(**authentication)
+
+
+@pytest.mark.parametrize(
+    ("authentication_type", "field", "value"),
+    [
+        ("oauth2", "token_url", None),
+        ("oauth2", "token_cache_buffer_seconds", 300),
+        ("service_account", "redirect_uri", None),
+        ("service_account", "enable_dynamic_registration", True),
+        ("service_account", "client_name", None),
+        ("service_account", "authorization_timeout_seconds", 300),
+    ],
+)
+def test_mcp_authentication_rejects_explicit_cross_variant_fields(
+    authentication_type, field, value
+):
+    authentication = {"type": authentication_type, field: value}
+    if authentication_type == "service_account":
+        authentication.update(
+            {
+                "client_id": "fabric-client",
+                "client_secret_env": "MCP_CLIENT_SECRET",
+                "token_url": "https://auth.example.test/token",
+            }
+        )
+
+    with pytest.raises(ValidationError, match=field):
+        McpAuthenticationConfig(**authentication)
+
+
+def test_mcp_config_add_server_preserves_legacy_mcp_extra_fields():
+    config = McpConfig().add_server(
+        "docs",
+        transport="streamable-http",
+        url="https://mcp.example.test",
+        extra_fields={
+            "authentication": {"type": "oauth2"},
+            "custom_headers": {"X-Tenant": "fabric"},
+        },
+    )
+
+    assert config.to_mapping()["servers"]["docs"]["authentication"] == {
+        "type": "oauth2"
+    }
+    assert config.to_mapping()["servers"]["docs"]["custom_headers"] == {
+        "X-Tenant": "fabric"
+    }
+
+
+def test_mcp_config_add_server_accepts_custom_headers():
+    config = McpConfig().add_server(
+        "docs",
+        transport="streamable-http",
+        url="https://mcp.example.test",
+        custom_headers={"X-Tenant": "fabric"},
+    )
+
+    assert config.servers["docs"].custom_headers == {"X-Tenant": "fabric"}
+    assert config.to_mapping()["servers"]["docs"]["custom_headers"] == {
+        "X-Tenant": "fabric"
+    }
+
+
+def test_mcp_authentication_rejects_unsupported_type():
+    with pytest.raises(ValidationError, match="oauth2"):
+        McpAuthenticationConfig(type="bearer")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize("field", ["allowed_tools", "blocked_tools"])
@@ -449,6 +665,7 @@ def test_run_plan_config_add_mcp_server_emits_tool_filters():
         "docs",
         transport="streamable-http",
         url="https://mcp.example.test",
+        authentication={"type": "oauth2"},
         allowed_tools=["search"],
         blocked_tools=["delete"],
     )
@@ -457,6 +674,7 @@ def test_run_plan_config_add_mcp_server_emits_tool_filters():
         "transport": "streamable-http",
         "url": "https://mcp.example.test",
         "exposure": "harness_native",
+        "authentication": {"type": "oauth2"},
         "allowed_tools": ["search"],
         "blocked_tools": ["delete"],
     }

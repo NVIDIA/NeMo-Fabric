@@ -298,8 +298,12 @@ build-python:
             --reinstall-package nemo-fabric-runtime
     fi
 
+# Generate the JSON Schema files from the Rust configuration types.
+schemas:
+    cargo run -p nemo-fabric-core --example generate-schemas -- schemas
+
 # Build all supported language packages.
-build-all: build-rust build-python
+build-all: build-rust build-python schemas
 
 # Create or update the lockfile for every Python project.
 lock-python:

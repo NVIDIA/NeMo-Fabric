@@ -307,6 +307,11 @@ mod tests {
             schema["$defs"]["RuntimeConfig"]["properties"]["timeout_seconds"]["exclusiveMinimum"],
             0.0
         );
+        assert_eq!(
+            schema["$defs"]["McpAuthenticationConfig"]["oneOf"][0]["properties"]["authorization_timeout_seconds"]
+                ["minimum"],
+            1
+        );
     }
 
     #[test]
@@ -318,6 +323,10 @@ mod tests {
         assert_eq!(schema["properties"]["harness"]["minLength"], 1);
         assert_eq!(
             schema["properties"]["settings_schema"]["type"],
+            serde_json::json!(["object", "null"])
+        );
+        assert_eq!(
+            schema["properties"]["model_schema"]["type"],
             serde_json::json!(["object", "null"])
         );
         assert_eq!(

@@ -825,6 +825,86 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
+## <kbd>class</kbd> `McpAuthenticationConfig`
+
+MCP server authentication configuration.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `type` | `Literal['oauth2', 'service_account']` | Yes | — | — | — |
+| `client_id` | `str \| None` | No | `None` | — | — |
+| `client_secret_env` | `str \| None` | No | `None` | — | — |
+| `scopes` | `list[str]` | No | `list()` | — | — |
+| `redirect_uri` | `str \| None` | No | `None` | — | — |
+| `enable_dynamic_registration` | `bool` | No | `True` | — | — |
+| `client_name` | `str \| None` | No | `None` | — | — |
+| `token_endpoint_auth_method` | `Literal['none', 'client_secret_post', 'client_secret_basic'] \| None` | No | `None` | — | — |
+| `authorization_timeout_seconds` | `int` | No | `300` | `Gt(gt=0)` | — |
+| `token_url` | `str \| None` | No | `None` | — | — |
+| `token_cache_buffer_seconds` | `int` | No | `300` | `Ge(ge=0)` | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
 ## <kbd>class</kbd> `McpServerConfig`
 
 MCP server configuration.
@@ -837,10 +917,12 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `transport` | `str` | Yes | — | `MinLen(min_length=1)` | — |
+| `transport` | `Literal['stdio', 'sse', 'streamable-http']` | Yes | — | — | — |
 | `url` | `str` | Yes | — | `MinLen(min_length=1)` | MCP server URL for network transports or executable for stdio. |
 | `args` | `list[str]` | No | `list()` | — | Command-line arguments passed to an MCP stdio server process. |
-| `env` | `dict[str, str]` | No | `dict()` | — | — |
+| `env` | `dict[str, str]` | No | `dict()` | — | Environment variables passed to an MCP stdio server process. |
+| `authentication` | `McpAuthenticationConfig \| None` | No | `None` | — | — |
+| `custom_headers` | `dict[str, str]` | No | `dict()` | — | HTTP headers passed to an MCP server when transport is sse or streamable-http. |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
 | `allowed_tools` | `list[str] \| None` | No | `None` | — | MCP tools to expose. None exposes every discovered tool; an empty list exposes no tools. |
 | `blocked_tools` | `list[str]` | No | `list()` | — | MCP tools to block after applying the optional allowlist. |
@@ -958,6 +1040,8 @@ def add_server(
     url: str,
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
+    authentication: McpAuthenticationConfig | None = None,
+    custom_headers: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     allowed_tools: Sequence[str] | None = None,
     blocked_tools: Sequence[str] = (),
@@ -2246,6 +2330,8 @@ def add_mcp_server(
     url: str,
     args: Sequence[str] | None = None,
     env: Mapping[str, str] | None = None,
+    authentication: McpAuthenticationConfig | None = None,
+    custom_headers: Mapping[str, str] | None = None,
     exposure: Literal['harness_native', 'fabric_managed'] = 'harness_native',
     allowed_tools: Sequence[str] | None = None,
     blocked_tools: Sequence[str] = (),
