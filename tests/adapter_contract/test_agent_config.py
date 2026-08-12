@@ -199,6 +199,20 @@ def test_agent_mcp_server_config_preserves_http_authentication():
     }
 
 
+@pytest.mark.parametrize("transport", ["sse", "streamable-http"])
+def test_agent_mcp_server_rejects_env_for_http_transport(transport):
+    with pytest.raises(
+        ContractValidationError, match=r"env: env is only valid for stdio transport"
+    ):
+        AgentMcpServerConfig.from_mapping(
+            {
+                "transport": transport,
+                "url": "https://mcp.example.test/mcp",
+                "env": {"MCP_SECRET": "secret"},
+            }
+        )
+
+
 def test_mcp_oauth2_config_matches_rust_defaults_and_wire_shape():
     authentication = McpOAuth2Config.from_mapping(
         {

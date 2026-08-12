@@ -200,7 +200,6 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
         transport="streamable-http",
         url="${GITHUB_MCP_URL}",
         args=["--read-only"],
-        env={"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
         authentication=McpAuthenticationConfig(
             type="oauth2",
             client_id="fabric-client",
@@ -252,7 +251,6 @@ def test_typed_config_authoring_helpers_emit_schema_shape():
                 "transport": "streamable-http",
                 "url": "${GITHUB_MCP_URL}",
                 "args": ["--read-only"],
-                "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
                 "authentication": {
                     "type": "oauth2",
                     "client_id": "fabric-client",
@@ -338,6 +336,16 @@ def test_mcp_server_rejects_unknown_transport():
     )
     with pytest.raises(ValidationError, match="transport"):
         server.transport = "websocket"  # type: ignore[assignment]
+
+
+@pytest.mark.parametrize("transport", ["sse", "streamable-http"])
+def test_mcp_server_rejects_env_for_http_transport(transport):
+    with pytest.raises(ValidationError, match="env is only valid for stdio transport"):
+        McpServerConfig(
+            transport=transport,
+            url="https://mcp.example.test",
+            env={"MCP_SECRET": "secret"},
+        )
 
 
 def test_mcp_server_serializes_oauth2_authentication_and_custom_headers():

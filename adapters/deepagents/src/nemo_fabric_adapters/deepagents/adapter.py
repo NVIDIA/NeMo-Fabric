@@ -318,7 +318,7 @@ def _mcp_connection(
     connection = {"transport": transport, "url": target}
     if headers := spec.get("custom_headers"):
         try:
-            common_utils.validate_http_headers(name, headers)
+            headers = common_utils.expand_http_headers(name, headers)
         except Exception as error:
             raise AdapterConfigError(f"{error}.") from error
         connection["headers"] = headers

@@ -1448,6 +1448,9 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
     if let Some(mcp) = &config.mcp {
         for (server_name, server) in &mcp.servers {
             let field = format!("mcp.servers.{server_name}");
+            if server.transport != McpTransport::Stdio && !server.env.is_empty() {
+                return invalid_config(format!("{field}.env"), "is only valid for stdio transport");
+            }
             if server.transport == McpTransport::Stdio
                 && (server.authentication.is_some() || !server.custom_headers.is_empty())
             {
@@ -3190,6 +3193,43 @@ mod tests {
             )])
         );
         assert!(server.extensions.is_empty());
+    }
+
+    #[test]
+    fn mcp_env_requires_stdio_transport() {
+        for transport in [McpTransport::Sse, McpTransport::StreamableHttp] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.mcp = Some(McpConfig {
+                servers: BTreeMap::from([(
+                    "docs".to_string(),
+                    McpServerConfig {
+                        transport,
+                        url: "https://mcp.example".to_string(),
+                        args: Vec::new(),
+                        env: BTreeMap::from([("MCP_SECRET".to_string(), "secret".to_string())]),
+                        authentication: None,
+                        custom_headers: BTreeMap::new(),
+                        exposure: McpExposure::HarnessNative,
+                        allowed_tools: None,
+                        blocked_tools: Vec::new(),
+                        extensions: BTreeMap::new(),
+                    },
+                )]),
+                extensions: BTreeMap::new(),
+            });
+
+            let error = resolve_run_plan_from_config(
+                config,
+                ResolveContext::new("/tmp/fabric-invalid-mcp-env"),
+            )
+            .expect_err("HTTP MCP env must be rejected");
+
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field, .. }
+                    if field == "mcp.servers.docs.env"
+            ));
+        }
     }
 
     #[test]

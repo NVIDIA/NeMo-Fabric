@@ -1113,6 +1113,7 @@ async def test_mcp_servers_become_adapter_tools(
     )
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
     payload = make_payload(tmp_path)
+    os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
     # McpServerPlan carries the URL/command in ``url``.
     payload["capability_plan"] = {
         "native": {
@@ -1139,7 +1140,7 @@ async def test_mcp_servers_become_adapter_tools(
         "fs": {
             "transport": "streamable_http",
             "url": "http://localhost:9/mcp",
-            "headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
+            "headers": {"X-Tenant": "fabric"},
         },
         "local": {
             "transport": "stdio",

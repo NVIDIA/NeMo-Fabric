@@ -106,7 +106,7 @@ async def test_deepagents_persistent_host_with_relay_and_mock_model(
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")
-async def test_env_secrets_in_headers_are_not_expanded(api_server, tmp_path):
+async def test_env_secrets_in_headers(api_server, tmp_path):
     pytest.importorskip("deepagents")
     from examples.code_review_agent import deepagents_config
     from nemo_fabric import EnvironmentConfig, Fabric, RuntimeConfig
@@ -153,7 +153,7 @@ async def test_env_secrets_in_headers_are_not_expanded(api_server, tmp_path):
     assert result["status"] == "succeeded", result.to_mapping()
     response = requests.get(f"{api_server}/_mcp_authorization_headers", timeout=5)
     response.raise_for_status()
-    assert set(response.json()) == {"Bearer ${MY_KEY}"}
+    assert set(response.json()) == {"Bearer XYZ"}
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key")

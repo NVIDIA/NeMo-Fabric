@@ -429,12 +429,16 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
     assert config["mcp_servers"] == {
         "remote": {
             "url": "https://mcp.example.test/mcp",
-            "env_http_headers": {
-                "X-Tenant": "FABRIC_TEST_MCP_HEADER",
-                "X-Unbraced": "FABRIC_TEST_UNBRACED_HEADER",
-                "X-Windows": "FABRIC_TEST_WINDOWS_HEADER",
+            "http_headers": {
+                "X-Tenant": "fabric",
+                "X-Unbraced": "unbraced",
+                "X-Windows": (
+                    "windows"
+                    if os.name == "nt"
+                    else "%FABRIC_TEST_WINDOWS_HEADER%"
+                ),
+                "X-Static": "static",
             },
-            "http_headers": {"X-Static": "static"},
             "auth": "oauth",
             "scopes": ["read", "write"],
             "required": True,
@@ -452,14 +456,9 @@ def test_sdk_maps_native_mcp_servers_into_thread_config(codex_payload, mock_code
             "env": {"REPO_MCP_MODE": "test"},
         },
     }
-    assert mock_codex.instances[0].config.env["FABRIC_TEST_MCP_HEADER"] == "fabric"
-    assert (
-        mock_codex.instances[0].config.env["FABRIC_TEST_WINDOWS_HEADER"] == "windows"
-    )
-    assert (
-        mock_codex.instances[0].config.env["FABRIC_TEST_UNBRACED_HEADER"]
-        == "unbraced"
-    )
+    assert mock_codex.instances[0].config.env["FABRIC_TEST_MCP_HEADER"] == ""
+    assert mock_codex.instances[0].config.env["FABRIC_TEST_WINDOWS_HEADER"] == ""
+    assert mock_codex.instances[0].config.env["FABRIC_TEST_UNBRACED_HEADER"] == ""
     assert config["mcp_oauth_callback_url"] == "http://127.0.0.1:8765/callback"
 
 

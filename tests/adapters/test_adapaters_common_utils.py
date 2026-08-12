@@ -75,6 +75,18 @@ def test_validate_http_headers_rejects_non_string_value():
         common_utils.validate_http_headers("docs", {"X-Foo": None})
 
 
+def test_expand_http_headers_expands_environment_variables_before_validation():
+    os.environ["FABRIC_TEST_HEADER"] = "fabric"
+
+    assert common_utils.expand_http_headers(
+        "docs",
+        {
+            "X-Tenant": "${FABRIC_TEST_HEADER}",
+            "X-Static": "static",
+        },
+    ) == {"X-Tenant": "fabric", "X-Static": "static"}
+
+
 @pytest.mark.parametrize(
     ("prefix", "base_prefix", "expected"),
     [

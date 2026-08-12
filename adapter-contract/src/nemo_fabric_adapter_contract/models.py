@@ -332,6 +332,10 @@ class AgentMcpServerConfig(AgentContractBlock):
     def _validate(self) -> None:
         _nonblank(self.transport, "transport")
         _nonblank(self.url, "url")
+        if self.transport != "stdio" and self.env:
+            raise ContractValidationError(
+                "env is only valid for stdio transport", path=("env",)
+            )
         _validate_tool_names(self.allowed_tools, "allowed_tools", "MCP tool")
         _validate_tool_names(self.blocked_tools, "blocked_tools", "MCP tool")
         if self.allowed_tools is not None:

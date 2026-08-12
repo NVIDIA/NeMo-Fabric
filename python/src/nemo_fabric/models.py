@@ -422,7 +422,11 @@ class McpServerConfig(FabricBaseModel):
         exclude_if=lambda value: not value,
         description="Command-line arguments passed to an MCP stdio server process.",
     )
-    env: dict[str, str] = Field(default_factory=dict, exclude_if=lambda value: not value)
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        exclude_if=lambda value: not value,
+        description="Environment variables passed to an MCP stdio server process.",
+    )
     authentication: McpAuthenticationConfig | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
@@ -467,6 +471,8 @@ class McpServerConfig(FabricBaseModel):
 
     @model_validator(mode="after")
     def _validate_tool_policy(self) -> Self:
+        if self.transport != "stdio" and self.env:
+            raise ValueError("env is only valid for stdio transport")
         if self.allowed_tools is not None:
             overlap = set(self.allowed_tools).intersection(self.blocked_tools)
             if overlap:

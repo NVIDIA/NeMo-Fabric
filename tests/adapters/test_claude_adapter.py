@@ -301,23 +301,6 @@ def test_claude_maps_mcp_custom_headers(claude_payload):
     assert options.env["FABRIC_TEST_WINDOWS_HEADER"] == ""
 
 
-def test_claude_stages_mcp_header_variable_set_in_server_env(claude_payload):
-    server = claude_payload["capability_plan"]["native"]["mcp_servers"]["docs"]
-    server["custom_headers"] = {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"}
-    server["env"] = {"FABRIC_TEST_MCP_HEADER": "server-value"}
-    os.environ["FABRIC_TEST_MCP_HEADER"] = "parent-value"
-
-    options = adapter.build_options(claude_payload)
-    mcp_servers = json.loads(options.mcp_servers.read_text(encoding="utf-8"))[
-        "mcpServers"
-    ]
-    reference = mcp_servers["docs"]["headers"]["X-Tenant"]
-
-    assert reference.startswith("${NEMO_FABRIC_CLAUDE_MCP_")
-    assert options.env[reference[2:-1]] == "server-value"
-    assert options.env["FABRIC_TEST_MCP_HEADER"] == ""
-
-
 async def test_claude_invoke_passes_remaining_budget_to_query(
     claude_payload, monkeypatch
 ):

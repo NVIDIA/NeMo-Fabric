@@ -920,7 +920,7 @@ The model defines the following fields:
 | `transport` | `Literal['stdio', 'sse', 'streamable-http']` | Yes | — | — | — |
 | `url` | `str` | Yes | — | `MinLen(min_length=1)` | MCP server URL for network transports or executable for stdio. |
 | `args` | `list[str]` | No | `list()` | — | Command-line arguments passed to an MCP stdio server process. |
-| `env` | `dict[str, str]` | No | `dict()` | — | — |
+| `env` | `dict[str, str]` | No | `dict()` | — | Environment variables passed to an MCP stdio server process. |
 | `authentication` | `McpAuthenticationConfig \| None` | No | `None` | — | — |
 | `custom_headers` | `dict[str, str]` | No | `dict()` | — | HTTP headers passed to an MCP server when transport is sse or streamable-http. |
 | `exposure` | `Literal['harness_native', 'fabric_managed']` | No | `'harness_native'` | — | — |
