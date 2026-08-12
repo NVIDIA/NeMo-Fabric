@@ -163,9 +163,13 @@ def hermes_mcp_server_config(
 
     if transport == "stdio":
         if server.authentication:
-            raise ValueError("MCP authentication is not supported for stdio transport")
+            raise ValueError(
+                f"MCP server {name!r} authentication is not supported for stdio transport"
+            )
         if server.custom_headers:
-            raise ValueError("MCP custom_headers are not supported for stdio transport")
+            raise ValueError(
+                f"MCP server {name!r} custom_headers are not supported for stdio transport"
+            )
         return common_utils.without_none(
             {
                 "enabled": True,
