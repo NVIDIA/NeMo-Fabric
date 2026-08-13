@@ -59,6 +59,9 @@ The descriptor controls the projection:
 - Every configured model role is validated against `model_schema` when the
   selected descriptor publishes one.
 - Resolved native skills and MCP servers come from the capability plan.
+- An authenticated MCP server requires the adapter to declare
+  `mcp.auth.oauth2` or `mcp.auth.service_account`, matching the configured
+  authentication type.
 - HTTP MCP authentication metadata and custom headers remain attached to each
   projected server. Authentication contains credential environment-variable
   names, not resolved secret values.
