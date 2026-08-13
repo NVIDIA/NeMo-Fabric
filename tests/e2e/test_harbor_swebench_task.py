@@ -110,7 +110,7 @@ async def test_mini_swe_agent_harbor_swebench_task(hermes_shim_agent_dir: Path):
                 harness=HarnessConfig(
                     adapter_id="nvidia.fabric.mini-swe-agent",
                     resolution="preinstalled",
-                    settings={"timeout_seconds": 180},
+                    settings={"timeout": 180},
                 ),
                 models={
                     "default": ModelConfig(
