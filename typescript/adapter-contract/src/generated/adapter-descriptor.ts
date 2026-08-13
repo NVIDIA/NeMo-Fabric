@@ -45,6 +45,8 @@ export type AdapterConfigField =
   | "tools.definitions"
   | "tools.blocked"
   | "mcp"
+  | "mcp.auth.oauth2"
+  | "mcp.auth.service_account"
   | "mcp.tool_filters"
   | "skills";
 
