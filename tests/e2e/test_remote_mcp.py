@@ -29,6 +29,7 @@ from nemo_fabric import (
     RuntimeConfig,
 )
 
+
 def _tool_call(adapter: str) -> dict[str, object]:
     if adapter == "codex":
         return {"name": "ping", "namespace": "mcp__logging", "arguments": {}}
@@ -45,6 +46,7 @@ def _tool_call(adapter: str) -> dict[str, object]:
         }
     return {"name": tool_name, "arguments": {}}
 
+
 async def _test_e2e_remote_mcp(
     adapter: str,
     api_server: str,
@@ -55,7 +57,7 @@ async def _test_e2e_remote_mcp(
     mcp_url, request_log = mcp_server
 
     model_config = ModelConfig(
-        provider="nvidia", 
+        provider="nvidia",
         model="fabric-test-model",
         api_key_env="FABRIC_TEST_API_KEY",
         base_url=f"{api_server}/v1",
@@ -74,13 +76,13 @@ async def _test_e2e_remote_mcp(
     )
 
     config.enable_relay(
-        output_dir="./artifacts/relay",
+        output_dir=tmp_path / "artifacts/relay",
         observability=RelayObservabilityConfig(
             atof=RelayAtofConfig(
                 enabled=True,
                 sinks=[
                     RelayAtofFileSinkConfig(
-                        output_directory="./artifacts/relay",
+                        output_directory=tmp_path / "artifacts/relay",
                         filename="events.atof.jsonl",
                         mode="overwrite",
                     )
@@ -98,10 +100,12 @@ async def _test_e2e_remote_mcp(
     )
 
     secret_key = "TEST_ABC123"
-    os.environ.update({
-        "ADAPTER_PYTHON": sys.executable,
-        "TEST_SECRET_KEY": secret_key,
-    })
+    os.environ.update(
+        {
+            "ADAPTER_PYTHON": sys.executable,
+            "TEST_SECRET_KEY": secret_key,
+        }
+    )
 
     scenario_response = requests.post(
         f"{api_server}/_scenario",
@@ -134,6 +138,8 @@ async def _test_e2e_remote_mcp(
         for record in requests_logged
     ), requests_logged
 
+    return result
+
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
 async def test_e2e_remote_mcp_claude(
@@ -143,9 +149,28 @@ async def test_e2e_remote_mcp_claude(
     adapter_ids: dict[str, str],
 ):
     pytest.importorskip("claude_agent_sdk")
-    await _test_e2e_remote_mcp(
+
+    os.environ["NEMO_FABRIC_PRESERVE_TMP"] = "1"
+
+    result = await _test_e2e_remote_mcp(
         "claude", api_server, mcp_server, tmp_path, adapter_ids
     )
+
+    mcp_config_path = (
+        tmp_path
+        / "artifacts"
+        / ".fabric"
+        / "claude"
+        / "mcp"
+        / result["runtime_id"]
+        / "mcp.json"
+    )
+
+    assert mcp_config_path.is_file()
+
+    # Verify that the secret key is not present in the saved MCP configuration file.
+    assert "TEST_ABC123" not in mcp_config_path.read_text(encoding="utf-8")
+
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
 async def test_e2e_remote_mcp_codex(
@@ -170,6 +195,7 @@ async def test_e2e_remote_mcp_deepagents(
     await _test_e2e_remote_mcp(
         "deepagents", api_server, mcp_server, tmp_path, adapter_ids
     )
+
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay", "requires_hermes_agent")
 async def test_e2e_remote_mcp_hermes(
