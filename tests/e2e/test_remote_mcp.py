@@ -53,6 +53,7 @@ async def _test_e2e_remote_mcp(
     mcp_server: tuple[str, Path],
     tmp_path: Path,
     adapter_ids: dict[str, str],
+    transport: str = "streamable-http",
 ):
     mcp_url, request_log = mcp_server
 
@@ -93,7 +94,7 @@ async def _test_e2e_remote_mcp(
 
     config.add_mcp_server(
         "logging",
-        transport="streamable-http",
+        transport=transport,
         url=mcp_url,
         authentication=None,
         custom_headers={"X-API-Key": "Bearer ${TEST_SECRET_KEY}"},
@@ -133,12 +134,26 @@ async def _test_e2e_remote_mcp(
         for line in request_log.read_text(encoding="utf-8").splitlines()
     ]
     assert any(
-        record["path"] == "/mcp"
+        record["path"] == ("/sse" if transport == "sse" else "/mcp")
         and record["headers"].get("x-api-key") == f"Bearer {secret_key}"
         for record in requests_logged
     ), requests_logged
 
     return result
+
+
+def _assert_claude_mcp_config_excludes_secret(result, tmp_path: Path) -> None:
+    mcp_config_path = (
+        tmp_path
+        / "artifacts"
+        / ".fabric"
+        / "claude"
+        / "mcp"
+        / result["runtime_id"]
+        / "mcp.json"
+    )
+    assert mcp_config_path.is_file()
+    assert "TEST_ABC123" not in mcp_config_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
@@ -155,21 +170,27 @@ async def test_e2e_remote_mcp_claude(
     result = await _test_e2e_remote_mcp(
         "claude", api_server, mcp_server, tmp_path, adapter_ids
     )
+    _assert_claude_mcp_config_excludes_secret(result, tmp_path)
 
-    mcp_config_path = (
-        tmp_path
-        / "artifacts"
-        / ".fabric"
-        / "claude"
-        / "mcp"
-        / result["runtime_id"]
-        / "mcp.json"
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_e2e_remote_mcp_claude_sse(
+    api_server: str,
+    sse_mcp_server: tuple[str, Path],
+    tmp_path: Path,
+    adapter_ids: dict[str, str],
+):
+    pytest.importorskip("claude_agent_sdk")
+    os.environ["NEMO_FABRIC_PRESERVE_TMP"] = "1"
+    result = await _test_e2e_remote_mcp(
+        "claude",
+        api_server,
+        sse_mcp_server,
+        tmp_path,
+        adapter_ids,
+        transport="sse",
     )
-
-    assert mcp_config_path.is_file()
-
-    # Verify that the secret key is not present in the saved MCP configuration file.
-    assert "TEST_ABC123" not in mcp_config_path.read_text(encoding="utf-8")
+    _assert_claude_mcp_config_excludes_secret(result, tmp_path)
 
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
@@ -180,9 +201,8 @@ async def test_e2e_remote_mcp_codex(
     adapter_ids: dict[str, str],
 ):
     pytest.importorskip("openai_codex")
-    await _test_e2e_remote_mcp(
-        "codex", api_server, mcp_server, tmp_path, adapter_ids
-    )
+    await _test_e2e_remote_mcp("codex", api_server, mcp_server, tmp_path, adapter_ids)
+
 
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
 async def test_e2e_remote_mcp_deepagents(
@@ -197,6 +217,24 @@ async def test_e2e_remote_mcp_deepagents(
     )
 
 
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay")
+async def test_e2e_remote_mcp_deepagents_sse(
+    api_server: str,
+    sse_mcp_server: tuple[str, Path],
+    tmp_path: Path,
+    adapter_ids: dict[str, str],
+):
+    pytest.importorskip("deepagents")
+    await _test_e2e_remote_mcp(
+        "deepagents",
+        api_server,
+        sse_mcp_server,
+        tmp_path,
+        adapter_ids,
+        transport="sse",
+    )
+
+
 @pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay", "requires_hermes_agent")
 async def test_e2e_remote_mcp_hermes(
     api_server: str,
@@ -204,6 +242,21 @@ async def test_e2e_remote_mcp_hermes(
     tmp_path: Path,
     adapter_ids: dict[str, str],
 ):
+    await _test_e2e_remote_mcp("hermes", api_server, mcp_server, tmp_path, adapter_ids)
+
+
+@pytest.mark.usefixtures("mock_nvidia_api_key", "nemo_relay", "requires_hermes_agent")
+async def test_e2e_remote_mcp_hermes_sse(
+    api_server: str,
+    sse_mcp_server: tuple[str, Path],
+    tmp_path: Path,
+    adapter_ids: dict[str, str],
+):
     await _test_e2e_remote_mcp(
-        "hermes", api_server, mcp_server, tmp_path, adapter_ids
+        "hermes",
+        api_server,
+        sse_mcp_server,
+        tmp_path,
+        adapter_ids,
+        transport="sse",
     )

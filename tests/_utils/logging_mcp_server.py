@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Run a streamable-HTTP MCP server that logs every request header."""
+"""Run an HTTP MCP server that logs every request header."""
 
 from __future__ import annotations
 
@@ -69,12 +69,32 @@ def ping() -> str:
     return "pong"
 
 
+def create_app(
+    transport: str, *, log_requests: Path | None = None
+) -> PrintHeadersMiddleware:
+    """Create the logging ASGI application for the selected MCP transport."""
+
+    if transport == "sse":
+        mcp_app = server.sse_app()
+    elif transport == "streamable-http":
+        mcp_app = server.streamable_http_app()
+    else:
+        raise ValueError(f"Unsupported MCP transport: {transport}")
+    return PrintHeadersMiddleware(mcp_app, log_requests=log_requests)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run an MCP server that prints all HTTP request headers."
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--transport",
+        choices=["streamable-http", "sse"],
+        default="streamable-http",
+        help="MCP HTTP transport to serve (default: streamable-http).",
+    )
     parser.add_argument(
         "--log-requests",
         type=Path,
@@ -85,9 +105,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    app = PrintHeadersMiddleware(
-        server.streamable_http_app(), log_requests=args.log_requests
-    )
+    app = create_app(args.transport, log_requests=args.log_requests)
     uvicorn.run(app, host=args.host, port=args.port)
 
 

@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import types
+import typing
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -127,25 +128,29 @@ def adapter_ids_fixture() -> dict[str, str]:
         "hermes": "nvidia.fabric.hermes",
     }
 
-@pytest.fixture(name="mcp_server")
-def mcp_server_fixture(
-    unused_tcp_port: int,
+
+def _mcp_server(
+    transport: typing.Literal["sse", "streamable-http"],
+    port: int,
     tmp_path: Path,
 ) -> Iterator[tuple[str, Path]]:
+    endpoint = "sse" if transport == "sse" else "mcp"
     log_path = tmp_path / "log.jsonl"
     process = subprocess.Popen(
         [
             sys.executable,
             str(CUR_DIR / "_utils" / "logging_mcp_server.py"),
             "--port",
-            str(unused_tcp_port),
+            str(port),
+            "--transport",
+            transport,
             "--log-requests",
             str(log_path),
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    base_url = f"http://127.0.0.1:{unused_tcp_port}"
+    base_url = f"http://127.0.0.1:{port}"
     deadline = time.monotonic() + 30
     try:
         while time.monotonic() < deadline:
@@ -163,7 +168,7 @@ def mcp_server_fixture(
         else:
             raise RuntimeError("MCP server did not become healthy within 30 seconds")
 
-        yield f"{base_url}/mcp", log_path
+        yield f"{base_url}/{endpoint}", log_path
     finally:
         process.terminate()
         try:
@@ -171,6 +176,22 @@ def mcp_server_fixture(
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+
+@pytest.fixture(name="mcp_server")
+def mcp_server_fixture(
+    unused_tcp_port_factory,
+    tmp_path: Path,
+) -> Iterator[tuple[str, Path]]:
+    yield from _mcp_server("streamable-http", unused_tcp_port_factory(), tmp_path)
+
+
+@pytest.fixture(name="sse_mcp_server")
+def sse_mcp_server_fixture(
+    unused_tcp_port_factory,
+    tmp_path: Path,
+) -> Iterator[tuple[str, Path]]:
+    yield from _mcp_server("sse", unused_tcp_port_factory(), tmp_path)
 
 
 @pytest.fixture(name="nemo_relay")
