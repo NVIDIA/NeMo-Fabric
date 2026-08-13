@@ -951,11 +951,7 @@ class ClaudeRuntime:
                 "Claude runtime is already started",
             )
         try:
-            agent_config = payload.get("config")
-            if not isinstance(agent_config, AgentConfig):
-                raise lifecycle.LifecycleError(
-                    "claude_invalid_config", "Claude requires a validated AgentConfig"
-                )
+            agent_config = payload["config"]
             runtime_context = _runtime_context(payload)
             base_dir = common_utils.base_dir(payload)
             model = _selected_model_config(agent_config)
