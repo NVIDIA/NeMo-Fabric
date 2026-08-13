@@ -19,13 +19,50 @@ from nemo_fabric_adapters.mini_swe_agent import adapter
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.fixture(name="fake_mini")
-def fake_mini_fixture(monkeypatch):
+@pytest.fixture(name="mock_mini")
+def mock_mini_fixture(monkeypatch):
     model = MagicMock()
+    model.format_message.side_effect = lambda **message: message
     environment = MagicMock()
     agent = MagicMock()
-    agent.n_calls = 2
-    agent.run.return_value = {"exit_status": "Submitted", "submission": "done"}
+    agent.messages = []
+    agent.n_calls = 0
+    agent.cost = 0.0
+    agent.n_consecutive_format_errors = 0
+    agent.extra_template_vars = {}
+    agent.model = model
+    agent.config.max_consecutive_format_errors = 3
+    agent.config.system_template = "{{system_instruction}}"
+    agent.config.instance_template = "{{task}}"
+    agent.config.model_dump.return_value = {"max_consecutive_format_errors": 3}
+
+    def add_messages(*messages):
+        agent.messages.extend(messages)
+        return list(messages)
+
+    def step():
+        agent.n_calls += 1
+        agent.messages.append(
+            {
+                "role": "exit",
+                "extra": {"exit_status": "Submitted", "submission": "done"},
+            }
+        )
+
+    agent.add_messages.side_effect = add_messages
+    agent.step.side_effect = step
+
+    def run(task, *, system_instruction):
+        agent.messages = [
+            model.format_message(role="system", content=system_instruction),
+            model.format_message(
+                role="user", content=adapter.INSTANCE_TEMPLATE.replace("{{task}}", task)
+            ),
+        ]
+        agent.step()
+        return agent.messages[-1]["extra"]
+
+    agent.run.side_effect = run
     model_factory = MagicMock(return_value=model)
     environment_factory = MagicMock(return_value=environment)
     agent_factory = MagicMock(return_value=agent)
@@ -33,6 +70,7 @@ def fake_mini_fixture(monkeypatch):
         "minisweagent": types.ModuleType("minisweagent"),
         "minisweagent.agents": types.ModuleType("minisweagent.agents"),
         "minisweagent.agents.default": types.ModuleType("minisweagent.agents.default"),
+        "minisweagent.exceptions": types.ModuleType("minisweagent.exceptions"),
         "minisweagent.environments": types.ModuleType("minisweagent.environments"),
         "minisweagent.environments.local": types.ModuleType(
             "minisweagent.environments.local"
@@ -43,6 +81,8 @@ def fake_mini_fixture(monkeypatch):
         ),
     }
     modules["minisweagent.agents.default"].DefaultAgent = agent_factory
+    modules["minisweagent.exceptions"].FormatError = Exception
+    modules["minisweagent.exceptions"].InterruptAgentFlow = Exception
     modules["minisweagent.environments.local"].LocalEnvironment = environment_factory
     modules["minisweagent.models.litellm_model"].LitellmModel = model_factory
     for name, module in modules.items():
@@ -126,14 +166,14 @@ def test_mini_swe_agent_descriptor_is_narrow_and_versioned():
 
 
 async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
-    fake_mini, mini_payload, monkeypatch: pytest.MonkeyPatch
+    mock_mini, mini_payload, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setenv("TEST_MINI_API_KEY", "test-key")
     runtime = adapter.MiniSweAgentRuntime()
     start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
     await runtime.start(start)
 
-    fake_mini["model_factory"].assert_called_once_with(
+    mock_mini["model_factory"].assert_called_once_with(
         model_name="nvidia/test-model",
         model_kwargs={
             "api_key": "test-key",
@@ -141,31 +181,44 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
             "temperature": 0.2,
         },
     )
-    fake_mini["environment_factory"].assert_called_once_with(timeout=45)
+    mock_mini["environment_factory"].assert_called_once_with(timeout=45)
 
     result = await runtime.invoke(mini_payload)
 
-    assert fake_mini["agent_factory"].call_args.kwargs["system_template"] == (
+    assert mock_mini["agent_factory"].call_args.kwargs["system_template"] == (
         "{{system_instruction}}"
     )
-    fake_mini["agent"].run.assert_called_once_with(
+    mock_mini["agent_factory"].assert_called_once_with(
+        mock_mini["model_factory"].return_value,
+        mock_mini["environment_factory"].return_value,
+        system_template="{{system_instruction}}",
+        instance_template=adapter.INSTANCE_TEMPLATE,
+        step_limit=3,
+    )
+    mock_mini["agent"].run.assert_called_once_with(
         "Fix the test.", system_instruction="Work with the literal {{template}}."
     )
     assert result == {
         "failed": False,
         "output": "done",
-        "usage": {"api_calls": 2},
+        "usage": {"api_calls": 1},
     }
     await runtime.stop()
 
 
 async def test_mini_swe_agent_reports_an_incomplete_loop_as_failed(
-    fake_mini, mini_payload
+    mock_mini, mini_payload
 ):
-    fake_mini["agent"].run.return_value = {
-        "exit_status": "LimitsExceeded",
-        "submission": "",
-    }
+    def step():
+        mock_mini["agent"].n_calls += 1
+        mock_mini["agent"].messages.append(
+            {
+                "role": "exit",
+                "extra": {"exit_status": "LimitsExceeded", "submission": ""},
+            }
+        )
+
+    mock_mini["agent"].step.side_effect = step
     runtime = adapter.MiniSweAgentRuntime()
     start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
     await runtime.start(start)
@@ -174,6 +227,29 @@ async def test_mini_swe_agent_reports_an_incomplete_loop_as_failed(
 
     assert result["failed"] is True
     assert result["error"]["code"] == "mini_swe_agent_incomplete"
+
+
+async def test_mini_swe_agent_retains_history_between_invocations(
+    mock_mini, mini_payload
+):
+    runtime = adapter.MiniSweAgentRuntime()
+    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    await runtime.start(start)
+
+    await runtime.invoke(mini_payload)
+    mini_payload["request"]["input"] = "Continue the task."
+    await runtime.invoke(mini_payload)
+
+    agent = mock_mini["agent"]
+    assert mock_mini["agent_factory"].call_count == 1
+    assert [message["role"] for message in agent.messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "exit",
+    ]
+    assert agent.messages[3]["content"] == "Continue the task."
 
 
 def test_mini_swe_agent_module_entrypoint_exits_cleanly():

@@ -22,6 +22,46 @@ Use the bash tool. When complete, run
 """
 
 
+def _continue_agent(agent: Any, task: str) -> dict[str, Any]:
+    from minisweagent.exceptions import FormatError, InterruptAgentFlow
+
+    agent.n_calls = agent.cost = 0
+    format_error_limit = agent.config.model_dump().get(
+        "max_consecutive_format_errors", 0
+    )
+    consecutive_format_errors = 0
+    agent.messages[-1]["role"] = "assistant"
+    agent.add_messages(agent.model.format_message(role="user", content=task))
+    while True:
+        try:
+            agent.step()
+            consecutive_format_errors = 0
+        except FormatError as error:
+            agent.cost += error.messages[0].get("extra", {}).get("cost", 0.0)
+            consecutive_format_errors += 1
+            if 0 < format_error_limit <= consecutive_format_errors:
+                agent.add_messages(
+                    *error.messages,
+                    {
+                        "role": "exit",
+                        "content": "RepeatedFormatError",
+                        "extra": {
+                            "exit_status": "RepeatedFormatError",
+                            "submission": "",
+                        },
+                    },
+                )
+            else:
+                agent.add_messages(*error.messages)
+        except InterruptAgentFlow as error:
+            agent.add_messages(*error.messages)
+        except Exception as error:
+            agent.handle_uncaught_exception(error)
+            raise
+        if agent.messages[-1].get("role") == "exit":
+            return agent.messages[-1].get("extra", {})
+
+
 def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
     model = config.models.get("default")
     if model is None and len(config.models) == 1:
@@ -35,8 +75,7 @@ def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
 
 class MiniSweAgentRuntime:
     def __init__(self) -> None:
-        self._model = self._environment = None
-        self._agent_kwargs: dict[str, Any] = {}
+        self._model = self._environment = self._agent = None
         self._system_instruction = ""
 
     async def start(self, payload: dict[str, Any]) -> None:
@@ -66,26 +105,30 @@ class MiniSweAgentRuntime:
             if config.instructions and config.instructions.system
             else ""
         )
-        self._agent_kwargs = {
-            "system_template": SYSTEM_TEMPLATE,
-            "instance_template": INSTANCE_TEMPLATE,
-            "step_limit": config.runtime.max_turns if config.runtime else 0,
-        }
+        from minisweagent.agents.default import DefaultAgent
+
+        self._agent = DefaultAgent(
+            self._model,
+            self._environment,
+            system_template=SYSTEM_TEMPLATE,
+            instance_template=INSTANCE_TEMPLATE,
+            step_limit=config.runtime.max_turns if config.runtime else 0,
+        )
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
         raw_task = common_utils.request_payload(payload).get("input", "")
         task = raw_task if isinstance(raw_task, str) else json.dumps(raw_task)
-        from minisweagent.agents.default import DefaultAgent
-
-        agent = DefaultAgent(self._model, self._environment, **self._agent_kwargs)
-        result = await asyncio.to_thread(
-            agent.run, task, system_instruction=self._system_instruction
-        )
+        if self._agent.messages:
+            result = await asyncio.to_thread(_continue_agent, self._agent, task)
+        else:
+            result = await asyncio.to_thread(
+                self._agent.run, task, system_instruction=self._system_instruction
+            )
         failed = result.get("exit_status") != "Submitted"
         output: dict[str, Any] = {
             "failed": failed,
             "output": result.get("submission", ""),
-            "usage": {"api_calls": agent.n_calls},
+            "usage": {"api_calls": self._agent.n_calls},
         }
         if failed:
             output["error"] = {
