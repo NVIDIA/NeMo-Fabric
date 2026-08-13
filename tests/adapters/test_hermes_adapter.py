@@ -467,7 +467,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         workspace=str(tmp_path / "workspace"),
         relay_enabled=True,
     )
-    plugin_config = common_utils.load_relay_plugin_config_for_runtime(
+    plugin_config = common_utils.load_relay_plugin_config(
         base_dir=str(tmp_path),
         runtime_id="runtime-matrix",
         agent_name="matrix-agent",

@@ -303,17 +303,6 @@ def dump_yaml(value: dict[str, Any]) -> str:
 
 
 def load_relay_plugin_config(
-    payload: dict[str, Any],
-) -> dict[str, Any]:
-    return load_relay_plugin_config_for_runtime(
-        base_dir=base_dir(payload),
-        runtime_id=runtime_context(payload)["runtime_id"],
-        agent_name=agent_name(payload),
-        model_name=relay_model_name(payload),
-    )
-
-
-def load_relay_plugin_config_for_runtime(
     *, base_dir: str, runtime_id: str, agent_name: str, model_name: str
 ) -> dict[str, Any]:
     config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")

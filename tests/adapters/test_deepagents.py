@@ -404,11 +404,11 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
 ):
     artifacts = [{"kind": "atof", "path": str(tmp_path / "events.atof.jsonl")}]
     plugin_config = {"version": 1, "components": []}
-    load_relay_plugin_config_for_runtime = MagicMock(return_value=plugin_config)
+    load_relay_plugin_config = MagicMock(return_value=plugin_config)
     monkeypatch.setattr(
         adapter.common_utils,
-        "load_relay_plugin_config_for_runtime",
-        load_relay_plugin_config_for_runtime,
+        "load_relay_plugin_config",
+        load_relay_plugin_config,
     )
     monkeypatch.setattr(
         adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts
@@ -424,7 +424,7 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
     assert fake_relay["plugin_configs"] == [plugin_config]
-    assert load_relay_plugin_config_for_runtime.call_args.kwargs == {
+    assert load_relay_plugin_config.call_args.kwargs == {
         "base_dir": str(tmp_path),
         "runtime_id": "run-1",
         "agent_name": "fabric-agent",
@@ -455,7 +455,7 @@ def relay_payload_fixture(make_payload, monkeypatch):
 
     monkeypatch.setattr(
         adapter.common_utils,
-        "load_relay_plugin_config_for_runtime",
+        "load_relay_plugin_config",
         lambda **_kwargs: {"version": 1, "components": []},
     )
 
@@ -1404,7 +1404,7 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
     plugin_config = {"version": 1, "components": []}
     monkeypatch.setattr(
         adapter.common_utils,
-        "load_relay_plugin_config_for_runtime",
+        "load_relay_plugin_config",
         lambda **_kwargs: plugin_config,
     )
     monkeypatch.setattr(
