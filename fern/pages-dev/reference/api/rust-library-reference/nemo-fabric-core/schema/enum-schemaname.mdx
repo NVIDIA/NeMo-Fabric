@@ -18,6 +18,8 @@ pub enum SchemaName {
     AdapterDescriptor,
     RunPlan,
     AdapterInvocation,
+    OpenAiStreamInvocation,
+    OpenAiStreamRecord,
     RuntimeContext,
     EnvironmentHandle,
     RuntimeHandle,
@@ -75,6 +77,18 @@ Resolved run plan schema.
 <pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "AdapterInvocation"}} /></pre>
 
 Initialized-runtime invocation payload schema.
+
+### `OpenAiStreamInvocation`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "OpenAiStreamInvocation"}} /></pre>
+
+Adapter-facing native OpenAI streaming invocation schema.
+
+### `OpenAiStreamRecord`
+
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "OpenAiStreamRecord"}} /></pre>
+
+Adapter-native OpenAI streaming NDJSON record schema.
 
 ### `RuntimeContext`
 
@@ -138,7 +152,7 @@ NeMo Fabric lifecycle event schema.
 
 #### `ALL`
 
-<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.array.html\">16</a>]"}} /></pre>
+<pre className="rust-signature"><code dangerouslySetInnerHTML={{"__html": "pub const ALL: [Self; <a href=\"https://doc.rust-lang.org/1.97.1/std/primitive.array.html\">18</a>]"}} /></pre>
 
 All public schemas in stable output order.
 

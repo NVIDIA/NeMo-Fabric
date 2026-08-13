@@ -23,35 +23,35 @@ OAuth 2.0 authorization-code authentication.
 
 #### Fields
 
-### `client_id: Option<String>`
+##### `client_id: Option<String>`
 
 Pre-registered OAuth client identifier. Omit to allow dynamic registration.
 
-### `client_secret_env: Option<String>`
+##### `client_secret_env: Option<String>`
 
 Environment variable containing the OAuth client secret.
 
-### `scopes: Vec<String>`
+##### `scopes: Vec<String>`
 
 OAuth scopes requested by the MCP client.
 
-### `redirect_uri: Option<String>`
+##### `redirect_uri: Option<String>`
 
 OAuth callback URI for clients that require a pre-registered redirect URI.
 
-### `enable_dynamic_registration: bool`
+##### `enable_dynamic_registration: bool`
 
 Whether the client may register dynamically when `client_id` is omitted.
 
-### `client_name: Option<String>`
+##### `client_name: Option<String>`
 
 Client name advertised during dynamic registration.
 
-### `token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>`
+##### `token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>`
 
 Client authentication method used at the token endpoint.
 
-### `authorization_timeout_seconds: u64`
+##### `authorization_timeout_seconds: u64`
 
 Maximum time to wait for interactive authorization.
 
@@ -63,27 +63,27 @@ OAuth 2.0 client-credentials authentication for headless workloads.
 
 #### Fields
 
-### `client_id: String`
+##### `client_id: String`
 
 OAuth client identifier.
 
-### `client_secret_env: String`
+##### `client_secret_env: String`
 
 Environment variable containing the OAuth client secret.
 
-### `token_url: String`
+##### `token_url: String`
 
 OAuth token endpoint.
 
-### `scopes: Vec<String>`
+##### `scopes: Vec<String>`
 
 OAuth scopes requested by the MCP client.
 
-### `token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>`
+##### `token_endpoint_auth_method: Option<OAuthTokenEndpointAuthMethod>`
 
 Client authentication method used at the token endpoint.
 
-### `token_cache_buffer_seconds: u64`
+##### `token_cache_buffer_seconds: u64`
 
 Refresh the cached token this many seconds before expiry.
 
