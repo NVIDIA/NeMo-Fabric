@@ -9,7 +9,7 @@ ATTRIBUTIONS-*.md @nvidia/nemo-fabric-dep-approvers
 
 # Documentation changes must go to Fabric documentation approvers.
 /docs/ @nvidia/nemo-fabric-doc-approvers
-/docs/reference/api/ @nvidia/nemo-fabric-doc-approvers @nvidia/nemo-fabric-reviewers
+/docs/reference/api/ @nvidia/nemo-fabric-reviewers
 
 # Repository access policy requires Fabric maintainer or admin review.
 /.github/CODEOWNERS @nvidia/nemo-fabric-maintainers @nvidia/nemo-fabric-admins

@@ -16,8 +16,6 @@ repository. Pull request creation is limited to approved users in the
 `NeMo-Fabric-reviewers`, a subset of the developer group. Documentation and
 dependency changes use their specialized approver groups.
 
-Do not request repository access through a public GitHub issue.
-
 For non-security contributions, external contributors should open an issue with
 a reproducer, proposed design, or patch description. A NeMo Fabric maintainer
 can adopt the work into a pull request when appropriate. Do not report security
