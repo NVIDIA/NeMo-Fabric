@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapters.common import lifecycle
 from nemo_fabric_adapters.mini_swe_agent import adapter
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -179,6 +180,43 @@ async def test_mini_swe_agent_reports_an_incomplete_loop_as_failed(
 
     assert result["failed"] is True
     assert result["error"]["code"] == "mini_swe_agent_incomplete"
+
+
+async def test_mini_swe_agent_requires_an_existing_workspace(mini_payload):
+    workspace = Path(mini_payload["runtime_context"]["environment"]["workspace"])
+    mini_payload["runtime_context"]["environment"]["workspace"] = str(
+        workspace / "missing"
+    )
+    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+
+    with pytest.raises(lifecycle.LifecycleError) as error:
+        await adapter.MiniSweAgentRuntime().start(start)
+    assert error.value.code == "mini_swe_agent_invalid_workspace"
+
+
+async def test_mini_swe_agent_reports_lifecycle_errors(fake_mini, mini_payload):
+    runtime = adapter.MiniSweAgentRuntime()
+    with pytest.raises(lifecycle.LifecycleError) as error:
+        await runtime.invoke(mini_payload)
+    assert error.value.code == "mini_swe_agent_not_started"
+
+    start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
+    missing_credentials = {
+        **start,
+        "runtime_context": {
+            **start["runtime_context"],
+            "environment": {**start["runtime_context"]["environment"], "env": {}},
+        },
+    }
+    with pytest.raises(lifecycle.LifecycleError) as error:
+        await runtime.start(missing_credentials)
+    assert error.value.code == "mini_swe_agent_missing_api_key"
+
+    await runtime.start(start)
+    await runtime.stop()
+    with pytest.raises(lifecycle.LifecycleError) as error:
+        await runtime.invoke(mini_payload)
+    assert error.value.code == "mini_swe_agent_not_started"
 
 
 def test_mini_swe_agent_module_entrypoint_exits_cleanly():

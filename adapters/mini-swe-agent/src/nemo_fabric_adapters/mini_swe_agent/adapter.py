@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 from nemo_fabric_adapter_contract import models as contract
@@ -68,9 +69,10 @@ class MiniSweAgentRuntime:
         config: contract.AgentConfig = payload["config"]
         context = contract.RuntimeContext.from_mapping(payload.get("runtime_context"))
         workspace = context.environment.workspace
-        if workspace is None:
+        if workspace is None or not Path(workspace).is_dir():
             raise lifecycle.LifecycleError(
-                "mini_swe_agent_missing_workspace", "environment.workspace is required"
+                "mini_swe_agent_invalid_workspace",
+                "environment.workspace must be an existing directory",
             )
         from minisweagent.environments.local import LocalEnvironment
         from minisweagent.models.litellm_model import LitellmModel
