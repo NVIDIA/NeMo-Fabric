@@ -1613,9 +1613,92 @@ Return a detached JSON-compatible mapping for Rust/core calls.
 ---
 
 
-## <kbd>class</kbd> `RelayOtlpConfig`
+## <kbd>class</kbd> `RelayOpenTelemetryEndpointConfig`
 
-NeMo Relay OTLP export configuration for OpenTelemetry/OpenInference.
+One typed NeMo Relay OpenTelemetry destination.
+
+
+
+### Fields
+
+The model defines the following fields:
+
+| Field | Type | Required | Default | Constraints | Description |
+| --- | --- | --- | --- | --- | --- |
+| `type` | `Literal['full', 'gen_ai', 'openinference']` | Yes | — | — | — |
+| `endpoint` | `str` | Yes | — | `MinLen(min_length=1), _PydanticGeneralMetadata(pattern='\\S')` | — |
+| `mark_projection` | `Literal['inherit', 'event', 'tool']` | No | `'inherit'` | — | — |
+| `mark_exclude_names` | `list[str]` | No | `<generated>` | — | — |
+| `attribute_mappings` | `list[dict[str, str]]` | No | `list()` | — | — |
+| `transport` | `Literal['http_binary', 'grpc']` | No | `'http_binary'` | — | — |
+| `headers` | `dict[str, str]` | No | `dict()` | — | — |
+| `header_env` | `dict[str, str]` | No | `dict()` | — | — |
+| `resource_attributes` | `dict[str, str]` | No | `dict()` | — | — |
+| `service_name` | `str` | No | `'unknown_service'` | — | — |
+| `service_namespace` | `str \| None` | No | `None` | — | — |
+| `service_version` | `str \| None` | No | `None` | — | — |
+| `instrumentation_scope` | `str` | No | `'opentelemetry'` | — | — |
+| `timeout_millis` | `int` | No | `3000` | — | — |
+
+---
+
+### <kbd>property</kbd> extra_fields
+
+Return fields preserved by the extension point for this model.
+
+---
+
+### <kbd>property</kbd> model_extra
+
+Get extra fields set during validation.
+
+
+
+**Returns:**
+  A dictionary of extra fields, or `None` if `config.extra` is not set to `"allow"`.
+
+---
+
+### <kbd>property</kbd> model_fields_set
+
+Returns the set of fields that have been explicitly set on this model instance.
+
+
+
+**Returns:**
+  A set of strings representing the fields that have been set,  i.e. that were not filled from defaults.
+
+
+
+---
+
+
+### <kbd>classmethod</kbd> `from_mapping`
+
+```python
+def from_mapping(value: Mapping[str, Any]) -> Self
+```
+
+Validate a mapping using this Pydantic model.
+
+---
+
+
+### <kbd>method</kbd> `to_mapping`
+
+```python
+def to_mapping() -> dict[str, Any]
+```
+
+Return a detached JSON-compatible mapping for Rust/core calls.
+
+
+---
+
+
+## <kbd>class</kbd> `RelayOpenTelemetryConfig`
+
+NeMo Relay typed OpenTelemetry destination configuration.
 
 
 
@@ -1626,15 +1709,7 @@ The model defines the following fields:
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
 | `enabled` | `bool` | No | `False` | — | — |
-| `transport` | `Literal['http_binary', 'grpc']` | No | `'http_binary'` | — | — |
-| `endpoint` | `str \| None` | No | `None` | — | — |
-| `headers` | `dict[str, str]` | No | `dict()` | — | — |
-| `resource_attributes` | `dict[str, str]` | No | `dict()` | — | — |
-| `service_name` | `str` | No | `'nemo-relay'` | — | — |
-| `service_namespace` | `str \| None` | No | `None` | — | — |
-| `service_version` | `str \| None` | No | `None` | — | — |
-| `instrumentation_scope` | `str \| None` | No | `None` | — | — |
-| `timeout_millis` | `int` | No | `3000` | — | — |
+| `endpoints` | `list[RelayOpenTelemetryEndpointConfig]` | No | `list()` | — | — |
 
 ---
 
@@ -1704,12 +1779,12 @@ The model defines the following fields:
 
 | Field | Type | Required | Default | Constraints | Description |
 | --- | --- | --- | --- | --- | --- |
-| `version` | `int` | No | `2` | — | — |
+| `version` | `Literal[3]` | No | `3` | — | — |
 | `atof` | `RelayAtofConfig \| dict[str, Any] \| None` | No | `None` | — | — |
 | `atif` | `RelayAtifConfig \| dict[str, Any] \| None` | No | `None` | — | — |
-| `opentelemetry` | `RelayOtlpConfig \| dict[str, Any] \| None` | No | `None` | — | — |
-| `openinference` | `RelayOtlpConfig \| dict[str, Any] \| None` | No | `None` | — | — |
+| `opentelemetry` | `RelayOpenTelemetryConfig \| None` | No | `None` | — | — |
 | `policy` | `RelayConfigPolicy \| dict[str, Any] \| None` | No | `None` | — | — |
+| `enable_full_payloads` | `bool` | No | `False` | — | — |
 
 ---
 
@@ -1853,7 +1928,7 @@ The model defines the following fields:
 | --- | --- | --- | --- | --- | --- |
 | `project` | `str \| None` | No | `None` | — | — |
 | `output_dir` | `str \| Path \| None` | No | `None` | — | — |
-| `observability` | `RelayObservabilityConfig \| dict[str, Any] \| None` | No | `None` | — | — |
+| `observability` | `RelayObservabilityConfig \| None` | No | `None` | — | — |
 | `components` | `list[RelayComponentConfig \| dict[str, Any]]` | No | `list()` | — | — |
 | `policy` | `RelayConfigPolicy \| dict[str, Any] \| None` | No | `None` | — | — |
 
@@ -2284,7 +2359,7 @@ The model defines the following fields:
 | `mcp` | `McpConfig \| None` | No | `None` | — | — |
 | `skills` | `SkillConfig \| None` | No | `None` | — | — |
 | `telemetry` | `TelemetryConfig \| None` | No | `None` | — | — |
-| `relay` | `RelayConfig \| dict[str, Any] \| None` | No | `None` | — | — |
+| `relay` | `RelayConfig \| None` | No | `None` | — | — |
 | `tools` | `ToolsConfig \| None` | No | `None` | — | — |
 
 ---
