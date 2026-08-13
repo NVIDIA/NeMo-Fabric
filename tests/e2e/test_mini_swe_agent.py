@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -48,7 +49,8 @@ def mini_config(api_server: str, workspace: Path) -> FabricConfig:
 async def test_mini_swe_agent_plans_diagnoses_and_runs(
     api_server: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    requests.post(
+    response = await asyncio.to_thread(
+        requests.post,
         f"{api_server}/_scenario",
         json={
             "tool_call": {
@@ -59,7 +61,8 @@ async def test_mini_swe_agent_plans_diagnoses_and_runs(
             }
         },
         timeout=5,
-    ).raise_for_status()
+    )
+    response.raise_for_status()
     monkeypatch.setenv("MSWEA_SILENT_STARTUP", "1")
     monkeypatch.setenv("MSWEA_GLOBAL_CONFIG_DIR", str(tmp_path / "mini-config"))
     config = mini_config(api_server, tmp_path)

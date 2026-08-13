@@ -71,6 +71,8 @@ output.
 ## Run a Task
 
 ```python
+import asyncio
+
 from nemo_fabric import EnvironmentConfig, Fabric, FabricConfig, HarnessConfig
 from nemo_fabric import InstructionConfig, InstructionsConfig, MetadataConfig
 from nemo_fabric import ModelConfig, RuntimeConfig
@@ -95,8 +97,14 @@ config = FabricConfig(
     environment=EnvironmentConfig(provider="local", workspace="/workspace"),
 )
 
-result = await Fabric().run(config, base_dir="/workspace", input="Fix the failing test.")
+async def main():
+    return await Fabric().run(
+        config, base_dir="/workspace", input="Fix the failing test."
+    )
+
+
+result = asyncio.run(main())
 ```
 
 The result includes the submitted final output, the mini-SWE-agent exit status,
-and reported LiteLLM cost plus API-call usage.
+and API-call usage.

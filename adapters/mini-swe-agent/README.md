@@ -34,6 +34,8 @@ persist the credential. The adapter does not expose MCP, skills, tool policy,
 native streaming, or native telemetry.
 
 ```python
+import asyncio
+
 from nemo_fabric import EnvironmentConfig, Fabric, FabricConfig, HarnessConfig
 from nemo_fabric import InstructionConfig, InstructionsConfig, MetadataConfig
 from nemo_fabric import ModelConfig, RuntimeConfig
@@ -59,10 +61,16 @@ config = FabricConfig(
     environment=EnvironmentConfig(provider="local", workspace="/workspace"),
 )
 
-result = await Fabric().run(config, base_dir="/workspace", input="Fix the failing test.")
+async def main():
+    return await Fabric().run(
+        config, base_dir="/workspace", input="Fix the failing test."
+    )
+
+
+result = asyncio.run(main())
 ```
 
 Each invocation runs a fresh mini-SWE-agent loop in the runtime's workspace.
-The output includes the submitted final text, `exit_status`, and LiteLLM cost
-plus API-call usage when mini-SWE-agent reports them. A loop that ends without
-submitting a final output produces a failed NVIDIA NeMo Fabric result.
+The output includes the submitted final text, `exit_status`, and API-call
+usage. A loop that ends without submitting a final output produces a failed
+NVIDIA NeMo Fabric result.

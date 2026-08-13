@@ -16,7 +16,7 @@ DEFAULT_API_KEY_ENVS = {
     provider: f"{provider.upper()}_API_KEY"
     for provider in ("anthropic", "nvidia", "openai", "openrouter")
 }
-DEFAULT_SYSTEM_TEMPLATE = "You are a helpful software engineering assistant."
+SYSTEM_TEMPLATE = "{{system_instruction}}"
 INSTANCE_TEMPLATE = """Solve this task in the current workspace:
 
 {{task}}
@@ -61,16 +61,11 @@ def _model_api_key(
 class MiniSweAgentRuntime:
     def __init__(self) -> None:
         self._model = self._environment = None
-        self._runtime_id: str | None = None
         self._agent_kwargs: dict[str, Any] = {}
+        self._system_instruction = ""
 
     async def start(self, payload: dict[str, Any]) -> None:
-        config = payload.get("config")
-        if not isinstance(config, contract.AgentConfig):
-            raise lifecycle.LifecycleError(
-                "mini_swe_agent_invalid_config",
-                "mini-SWE-agent requires a validated AgentConfig",
-            )
+        config: contract.AgentConfig = payload["config"]
         context = contract.RuntimeContext.from_mapping(payload.get("runtime_context"))
         workspace = context.environment.workspace
         if workspace is None:
@@ -100,38 +95,36 @@ class MiniSweAgentRuntime:
         self._environment = LocalEnvironment(
             cwd=str(workspace), env=context.environment.env, timeout=timeout
         )
-        system = config.instructions.system if config.instructions else None
-        template = system.content if system else DEFAULT_SYSTEM_TEMPLATE
+        self._system_instruction = (
+            config.instructions.system.content
+            if config.instructions and config.instructions.system
+            else "You are a helpful software engineering assistant."
+        )
         self._agent_kwargs = {
-            "system_template": template,
+            "system_template": SYSTEM_TEMPLATE,
             "instance_template": INSTANCE_TEMPLATE,
             "step_limit": config.runtime.max_turns if config.runtime else 0,
             "cost_limit": 0,
         }
-        self._runtime_id = context.runtime_id
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
-        context = contract.RuntimeContext.from_mapping(payload.get("runtime_context"))
         if self._model is None or self._environment is None:
             raise lifecycle.LifecycleError(
                 "mini_swe_agent_not_started", "mini-SWE-agent runtime is not started"
-            )
-        if context.runtime_id != self._runtime_id:
-            raise lifecycle.LifecycleError(
-                "mini_swe_agent_runtime_mismatch",
-                "mini-SWE-agent invocation does not match the active runtime",
             )
         raw_task = common_utils.request_payload(payload).get("input", "")
         task = raw_task if isinstance(raw_task, str) else json.dumps(raw_task)
         from minisweagent.agents.default import DefaultAgent
 
         agent = DefaultAgent(self._model, self._environment, **self._agent_kwargs)
-        result = await asyncio.to_thread(agent.run, task)
+        result = await asyncio.to_thread(
+            agent.run, task, system_instruction=self._system_instruction
+        )
         failed = result.get("exit_status") != "Submitted"
         output: dict[str, Any] = {
             "failed": failed,
             "output": result.get("submission", ""),
-            "usage": {"cost_usd": agent.cost, "api_calls": agent.n_calls},
+            "usage": {"api_calls": agent.n_calls},
             "exit_status": result.get("exit_status"),
         }
         if failed:

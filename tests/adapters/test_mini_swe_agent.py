@@ -24,7 +24,6 @@ def fake_mini_fixture(monkeypatch):
     model = MagicMock()
     environment = MagicMock()
     agent = MagicMock()
-    agent.cost = 0.125
     agent.n_calls = 2
     agent.run.return_value = {"exit_status": "Submitted", "submission": "done"}
     model_factory = MagicMock(return_value=model)
@@ -63,7 +62,9 @@ def mini_payload_fixture(tmp_path: Path) -> dict:
     return {
         "config": {
             "harness": {"settings": {"timeout_seconds": 45}},
-            "instructions": {"system": {"content": "Work carefully."}},
+            "instructions": {
+                "system": {"content": "Work with the literal {{template}}."}
+            },
             "models": {
                 "default": {
                     "provider": "nvidia",
@@ -148,12 +149,16 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
 
     result = await runtime.invoke(mini_payload)
 
-    fake_mini["agent_factory"].assert_called_once()
-    fake_mini["agent"].run.assert_called_once_with("Fix the test.")
+    assert fake_mini["agent_factory"].call_args.kwargs["system_template"] == (
+        "{{system_instruction}}"
+    )
+    fake_mini["agent"].run.assert_called_once_with(
+        "Fix the test.", system_instruction="Work with the literal {{template}}."
+    )
     assert result == {
         "failed": False,
         "output": "done",
-        "usage": {"cost_usd": 0.125, "api_calls": 2},
+        "usage": {"api_calls": 2},
         "exit_status": "Submitted",
     }
     await runtime.stop()
