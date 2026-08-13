@@ -327,6 +327,8 @@ An adapter must declare both `mcp` and `mcp.tool_filters` support before
 planning accepts these fields. The bundled adapters currently support
 unfiltered MCP servers only. Per-server MCP policy is distinct from the root
 `ToolsConfig`, which controls adapter-native tools across the harness.
+An MCP server requiring authentication also requires `mcp.auth.oauth2` or
+`mcp.auth.service_account`, matching its configured authentication type.
 
 `tools.definitions` names tools and tool groups that the adapter constructs.
 Each definition has a portable `kind`, an adapter-resolved `ref`, and settings
