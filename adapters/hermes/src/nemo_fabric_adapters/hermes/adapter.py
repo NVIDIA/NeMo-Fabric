@@ -23,6 +23,7 @@ from typing import Any
 
 from nemo_fabric_adapter_contract.models import AgentConfig
 from nemo_fabric_adapter_contract.models import AgentModelConfig
+from nemo_fabric_adapter_contract.models import McpOAuth2Config
 from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
@@ -341,6 +342,11 @@ class HermesRuntime:
             if not statuses.get(name, {}).get("connected")
         }
         if disconnected:
+            total_authorization_timeout_seconds = sum(
+                server.authentication.authorization_timeout_seconds
+                for name, server in self._agent_config.mcp.servers.items()
+                if name in disconnected
+            )
 
             def authenticate() -> None:
                 lifecycle_stdin = sys.stdin
@@ -356,7 +362,10 @@ class HermesRuntime:
                     sys.stdin = lifecycle_stdin
 
             try:
-                await asyncio.to_thread(authenticate)
+                await asyncio.wait_for(
+                    asyncio.to_thread(authenticate),
+                    timeout=total_authorization_timeout_seconds,
+                )
             except Exception as error:
                 raise lifecycle.LifecycleError(
                     "hermes_mcp_authentication_failed",

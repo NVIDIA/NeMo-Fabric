@@ -740,12 +740,18 @@ async def test_runtime_start_discovers_mcp_tools_when_configured(
 
 async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch):
     thread_calls = []
+    authentication_timeouts = []
 
     async def to_thread(function, *args, **kwargs):
         thread_calls.append((function, args, kwargs))
         return function(*args, **kwargs)
 
+    async def wait_for(awaitable, timeout):
+        authentication_timeouts.append(timeout)
+        return await awaitable
+
     monkeypatch.setattr(adapter.asyncio, "to_thread", to_thread)
+    monkeypatch.setattr(adapter.asyncio, "wait_for", wait_for)
     force_interactive_oauth = MagicMock()
     oauth_stdin_reads: list[str] = []
     discover_mcp_tools = MagicMock(
@@ -758,14 +764,18 @@ async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch
                     "name": "confluence",
                     "connected": False,
                     "status": "failed",
-                }
+                },
+                {"name": "github", "connected": False, "status": "failed"},
+                {"name": "notion", "connected": True, "status": "connected"},
             ],
             [
                 {
                     "name": "confluence",
                     "connected": True,
                     "status": "connected",
-                }
+                },
+                {"name": "github", "connected": True, "status": "connected"},
+                {"name": "notion", "connected": True, "status": "connected"},
             ],
         ]
     )
@@ -786,9 +796,43 @@ async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch
 
     runtime = adapter.HermesRuntime()
     runtime._agent = MagicMock()
+    runtime._agent_config = _agent_config(
+        {
+            "mcp": {
+                "servers": {
+                    "confluence": {
+                        "transport": "streamable-http",
+                        "url": "https://confluence.example.test/mcp",
+                        "authentication": {
+                            "type": "oauth2",
+                            "authorization_timeout_seconds": 30,
+                        },
+                    },
+                    "github": {
+                        "transport": "streamable-http",
+                        "url": "https://github.example.test/mcp",
+                        "authentication": {
+                            "type": "oauth2",
+                            "authorization_timeout_seconds": 45,
+                        },
+                    },
+                    "notion": {
+                        "transport": "streamable-http",
+                        "url": "https://notion.example.test/mcp",
+                        "authentication": {
+                            "type": "oauth2",
+                            "authorization_timeout_seconds": 60,
+                        },
+                    },
+                }
+            }
+        }
+    )
     runtime._hermes_config = {
         "mcp_servers": {
             "confluence": {"auth": "oauth"},
+            "github": {"auth": "oauth"},
+            "notion": {"auth": "oauth"},
             "time": {"transport": "stdio"},
         }
     }
@@ -809,6 +853,7 @@ async def test_runtime_authenticates_oauth_mcp_servers_before_invoke(monkeypatch
     assert lifecycle_stdin.readline() == '{"operation":"stop"}\n'
     assert sys.stdin is lifecycle_stdin
     assert runtime._mcp_authentication_checked is True
+    assert authentication_timeouts == [75]
     assert len(thread_calls) == 4
     assert thread_calls[0] == (get_mcp_status, (), {})
     assert thread_calls[1][0].__name__ == "authenticate"
@@ -840,6 +885,19 @@ async def test_runtime_reports_failed_oauth_mcp_authentication(monkeypatch):
 
     runtime = adapter.HermesRuntime()
     runtime._agent = MagicMock()
+    runtime._agent_config = _agent_config(
+        {
+            "mcp": {
+                "servers": {
+                    "confluence": {
+                        "transport": "streamable-http",
+                        "url": "https://confluence.example.test/mcp",
+                        "authentication": {"type": "oauth2"},
+                    }
+                }
+            }
+        }
+    )
     runtime._hermes_config = {"mcp_servers": {"confluence": {"auth": "oauth"}}}
 
     with pytest.raises(adapter.lifecycle.LifecycleError) as caught:
