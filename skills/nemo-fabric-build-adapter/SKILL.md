@@ -81,6 +81,15 @@ Install its optional `pydantic` extra only for Pydantic interoperability. Add
 Relay helpers. A bare adapter package should not depend on the NeMo Fabric
 runtime.
 
+For a TypeScript adapter, depend on
+`nemo-fabric-adapter-contract`. Import descriptor, configuration,
+runtime-context, request, and result types from the package root, matching the
+Python package's single model namespace. Request and result types are for work
+on the future typed invocation boundary and are not part of the current host
+protocol. TypeScript types do not validate data received from a process or
+network boundary; validate untrusted values against the JSON Schemas included
+with the package.
+
 ## Map AgentConfig
 
 Accept a validated `AgentConfig` and translate each declared field once at the

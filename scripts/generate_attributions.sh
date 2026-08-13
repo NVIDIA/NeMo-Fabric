@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Regenerate an ATTRIBUTIONS-*.md file from the relevant lockfile.
-# Usage: ./scripts/generate_attributions.sh <rust|python>
+# Usage: ./scripts/generate_attributions.sh <rust|python|node>
 
 set -euo pipefail
 
@@ -22,8 +22,11 @@ case "${LANG}" in
   python)
     uv run --no-sync python "${ROOT}/scripts/licensing/attributions_lockfile_md.py" python
     ;;
+  node)
+    uv run --no-sync python "${ROOT}/scripts/licensing/attributions_lockfile_md.py" node
+    ;;
   *)
-    echo "Usage: $0 <rust|python>" >&2
+    echo "Usage: $0 <rust|python|node>" >&2
     exit 1
     ;;
 esac

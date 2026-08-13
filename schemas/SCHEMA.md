@@ -8,10 +8,12 @@ SPDX-License-Identifier: Apache-2.0
 This directory contains committed JSON Schema snapshots for the public NeMo Fabric
 contract. The files are generated from the Rust core types, not edited by hand.
 
-The Python SDK exposes Pydantic authoring models for application callers. Those
-models are hand-maintained against these Rust-generated schemas for now. When a
-schema-backed Rust type changes, update the matching Pydantic model and its
-schema-alignment tests in the same change.
+The Python adapter-contract package exposes dependency-free dataclasses with
+optional Pydantic interoperability. Those models are hand-maintained against
+these Rust-generated schemas. The TypeScript adapter-contract package generates
+compile-time declarations from the committed schema snapshots. When a
+schema-backed Rust type changes, update each applicable language binding and
+its parity tests in the same change.
 
 ## Directory Layout
 
@@ -34,6 +36,17 @@ schemas/
 An adapter author can treat `adapter-contract/` as the complete schema entry
 point. The `legacy/` subdirectory contains only the transitional local-host
 payload used while first-party adapters migrate to the typed execution types.
+
+The language bindings preserve this boundary:
+
+- Python adapters use `nemo-fabric-adapter-contract` for dependency-free
+  dataclasses and optional Pydantic models.
+- TypeScript adapters use `nemo-fabric-adapter-contract` for the descriptor,
+  configuration, runtime-context, request, and result types, matching the
+  Python package's single model namespace. Request and result types retain
+  their documented preview status until the typed invocation transport is
+  negotiated. The package also includes these canonical schemas for runtime
+  validation without selecting a validation-library dependency.
 
 `FabricConfig` is the northbound source of consumer intent. Planning produces
 the `CapabilityPlan` as routed evidence and projects the fields accepted by the
@@ -122,3 +135,13 @@ To add a new schema-backed typed model:
 Run `cargo test` after regenerating schemas. The snapshot tests compare the
 committed files against the schemas generated from the current Rust types and
 fail on accidental drift.
+
+Regenerate the TypeScript projection after an intentional adapter-contract
+schema change:
+
+```bash
+just generate-typescript-contract
+```
+
+Run `just test-typescript` to check generated-file drift, strict compile-time
+fixtures, package contents, and clean-consumer imports.

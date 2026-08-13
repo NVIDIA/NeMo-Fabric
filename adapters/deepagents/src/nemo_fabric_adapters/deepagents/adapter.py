@@ -23,6 +23,10 @@ from typing import NamedTuple
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import AgentModelConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
@@ -99,21 +103,17 @@ class ToolGateMiddleware(AgentMiddleware):  # type: ignore[misc]
         return handler(request)
 
 
-def resolve_api_key_env(model_config: dict[str, Any]) -> str:
+def resolve_api_key_env(model_config: AgentModelConfig) -> str:
     """Resolve the credential env var.
 
     OpenAI retains its conventional environment variable. Other providers must
     name the credential explicitly so a key is never sent to the wrong endpoint.
     """
 
-    explicit = model_config.get("api_key_env")
-    if isinstance(explicit, str) and explicit:
-        return explicit
+    explicit = model_config.api_key_env
     if explicit is not None:
-        raise AdapterConfigError(
-            "models.default.api_key_env must be a non-empty string."
-        )
-    provider = str(model_config.get("provider") or "").lower()
+        return explicit
+    provider = model_config.provider
     if provider == "openai":
         return "OPENAI_API_KEY"
     raise AdapterConfigError(
@@ -124,10 +124,10 @@ def resolve_api_key_env(model_config: dict[str, Any]) -> str:
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
-    lifecycle.serve(DeepAgentsRuntime)
+    lifecycle.serve(DeepAgentsRuntime, config_loader=AgentConfig.from_mapping)
 
 
-def preflight_check(payload: dict[str, Any]) -> None:
+def preflight_check(model_config: AgentModelConfig) -> None:
     """Validate invocation-time prerequisites and fail fast with clear errors.
 
     These checks run during adapter startup. Core descriptor diagnostics do not
@@ -145,9 +145,8 @@ def preflight_check(payload: dict[str, Any]) -> None:
             "a compatible Deep Agents harness in the adapter environment."
         )
 
-    model_config = selected_model_config(payload)
     api_key_env = resolve_api_key_env(model_config)
-    if api_key_env not in os.environ:
+    if not os.environ.get(api_key_env):
         raise RuntimeError(
             f"the model-provider credential env var '{api_key_env}' is not set in the "
             "environment. Set it to your API key, or set models.default.api_key_env to the "
@@ -155,38 +154,30 @@ def preflight_check(payload: dict[str, Any]) -> None:
         )
 
 
-def selected_model_config(payload: dict[str, Any]) -> dict[str, Any]:
-    return common_utils.selected_model_config(payload)
+def selected_model_config(config: AgentConfig) -> AgentModelConfig:
+    if model_config := config.models.get("default"):
+        return model_config
+    if len(config.models) == 1:
+        return next(iter(config.models.values()))
+    raise AdapterConfigError(
+        "Deep Agents requires a default model or exactly one model."
+    )
 
 
-def resolve_base_url(model_config: dict[str, Any]) -> str | None:
-    return common_utils.get_base_url(model_config)
-
-
-def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
+def build_chat_model(model_config: AgentModelConfig) -> tuple[Any, str, str | None]:
     """Build a LangChain chat model from Fabric model config.
 
     Known OpenAI-compatible providers use ``ChatOpenAI``. Other providers are
     delegated to ``langchain.chat_models.init_chat_model``.
     """
 
-    model_config = selected_model_config(payload)
-    model_name = model_config.get("model")
-    if not model_name:
-        raise RuntimeError(
-            "models.default.model is required for the Deep Agents adapter"
-        )
-
+    model_name = model_config.model
     api_key_env = resolve_api_key_env(model_config)
-    api_key = os.environ.get(api_key_env)
-    if not api_key:
-        raise RuntimeError(f"{api_key_env} is required for the Deep Agents adapter")
+    api_key = os.environ[api_key_env]
 
-    provider = str(model_config.get("provider") or "").lower()
-    if not provider:
-        raise AdapterConfigError("models.default.provider is required.")
-    base_url = resolve_base_url(model_config)
-    temperature = model_config.get("temperature")
+    provider = model_config.provider
+    base_url = model_config.base_url
+    temperature = model_config.temperature
 
     if provider in OPENAI_COMPATIBLE_PROVIDERS - {"openai"} and not base_url:
         raise AdapterConfigError(
@@ -218,16 +209,15 @@ def build_chat_model(payload: dict[str, Any]) -> tuple[Any, str, str | None]:
     return ChatOpenAI(**_supported_kwargs(ChatOpenAI, kwargs)), model_name, base_url
 
 
-def resolve_backend(payload: dict[str, Any]) -> Any:
+def resolve_backend(runtime_context: RuntimeContext, base_dir: str) -> Any:
     """Root the Deep Agents filesystem backend at the Fabric workspace, if set."""
 
-    environment = common_utils.environment_payload(payload)
-    workspace = environment.get("workspace")
+    workspace = runtime_context.environment.workspace
     if not workspace:
         return None
     root = Path(str(workspace))
     if not root.is_absolute():
-        root = Path(common_utils.base_dir(payload)) / root
+        root = Path(base_dir) / root
     from deepagents.backends import FilesystemBackend
 
     # virtual_mode=True confines the agent to root_dir; absolute paths and ``..``
@@ -235,19 +225,19 @@ def resolve_backend(payload: dict[str, Any]) -> Any:
     return FilesystemBackend(root_dir=str(root), virtual_mode=True)
 
 
-async def resolve_tools(payload: dict[str, Any]) -> list[Any] | None:
+async def resolve_tools(config: AgentConfig) -> list[Any] | None:
     """Resolve Fabric MCP servers into Deep Agents tools."""
 
-    tools = await _mcp_tools(payload)
+    tools = await _mcp_tools(config)
     return tools or None
 
 
-def _blocked_tool_names(payload: dict[str, Any]) -> set[str]:
-    return set(common_utils.blocked_tools(payload))
+def _blocked_tool_names(config: AgentConfig) -> set[str]:
+    return set(config.tools.blocked if config.tools is not None else [])
 
 
-def _enabled_tool_names(payload: dict[str, Any]) -> set[str] | None:
-    enabled = common_utils.enabled_tools(payload)
+def _enabled_tool_names(config: AgentConfig) -> set[str] | None:
+    enabled = config.tools.enabled if config.tools is not None else None
     return None if enabled is None else set(enabled)
 
 
@@ -266,17 +256,15 @@ def tool_policy_middleware(enabled: set[str] | None, blocked: set[str]) -> Any:
     )
 
 
-def resolve_skills(payload: dict[str, Any]) -> list[str] | None:
-    """Map routed ``native.skill_paths`` onto the Deep Agents ``skills`` sources."""
+def resolve_skills(config: AgentConfig) -> list[str] | None:
+    """Map Fabric skill paths onto the Deep Agents ``skills`` sources."""
 
-    native = common_utils.capability_plan(payload).get("native") or {}
-    skills = [str(path) for path in (native.get("skill_paths") or [])]
+    skills = [str(path) for path in (config.skills.paths if config.skills else [])]
     return skills or None
 
 
-async def _mcp_tools(payload: dict[str, Any]) -> list[Any]:
-    native = common_utils.capability_plan(payload).get("native") or {}
-    servers = native.get("mcp_servers") or {}
+async def _mcp_tools(config: AgentConfig) -> list[Any]:
+    servers = config.mcp.servers if config.mcp is not None else {}
     connections = {name: _mcp_connection(name, spec) for name, spec in servers.items()}
     if not connections:
         return []
@@ -286,16 +274,11 @@ async def _mcp_tools(payload: dict[str, Any]) -> list[Any]:
     return list(await client.get_tools())
 
 
-def _mcp_connection(
-    name: str,
-    spec: dict[str, Any],
-) -> dict[str, Any]:
+def _mcp_connection(name: str, spec: AgentMcpServerConfig) -> dict[str, Any]:
     # A misconfigured server must fail loudly, not be silently dropped.
-    if not isinstance(spec, dict):
-        raise AdapterConfigError(f"MCP server '{name}' must be a mapping.")
-    transport = str(spec.get("transport") or "").strip().lower().replace("-", "_")
-    # McpServerPlan carries the command in ``url`` and preserves stdio extensions.
-    target = os.path.expandvars(str(spec.get("url") or "")).strip()
+    transport = spec.transport.strip().lower().replace("-", "_")
+    # AgentMcpServerConfig carries the command in ``url`` and stdio extensions.
+    target = os.path.expandvars(spec.url).strip()
     if not target:
         raise AdapterConfigError(
             f"MCP server '{name}' requires a url (or command in url)."
@@ -304,9 +287,9 @@ def _mcp_connection(
         connection: dict[str, Any] = {
             "transport": "stdio",
             "command": target,
-            "args": common_utils.normalize_list(spec.get("args")),
+            "args": spec.args,
         }
-        if env := spec.get("env"):
+        if env := spec.env:
             connection["env"] = env
         return connection
     if transport in ("", "http", "streamable_http", "streamablehttp"):
@@ -316,17 +299,17 @@ def _mcp_connection(
             f"MCP server '{name}' has unsupported transport '{transport}'."
         )
     connection = {"transport": transport, "url": target}
-    if headers := spec.get("custom_headers"):
+    if headers := spec.custom_headers:
         try:
             headers = common_utils.expand_http_headers(name, headers)
         except Exception as error:
             raise AdapterConfigError(f"{error}.") from error
         connection["headers"] = headers
 
-    auth = spec.get("authentication")
+    auth = spec.authentication
     if auth is not None:
         raise AdapterConfigError(
-            f"MCP server {name!r} {auth.get('type')!r} authentication is not supported by Deep Agents."
+            f"MCP server {name!r} {auth.type!r} authentication is not supported by Deep Agents."
         )
     return connection
 
@@ -334,18 +317,17 @@ def _mcp_connection(
 # --- runtime state ---------------------------------------------------------
 
 
-def state_dir(payload: dict[str, Any]) -> Path:
-    base_dir = Path(common_utils.base_dir(payload)).resolve()
-    artifacts = common_utils.runtime_context(payload).get("artifacts") or {}
-    root = artifacts.get("root") or os.environ.get("FABRIC_ARTIFACTS")
+def state_dir(runtime_context: RuntimeContext, base_dir: str) -> Path:
+    base_dir = Path(base_dir).resolve()
+    root = runtime_context.artifacts.root
     if root:
         return Path(str(root)).resolve() / ".fabric" / "deepagents"
     return base_dir / "artifacts" / "deepagents" / ".fabric"
 
 
-def checkpointer_path(payload: dict[str, Any], runtime_id: str) -> Path:
+def checkpointer_path(context: RuntimeContext, base_dir: str, runtime_id: str) -> Path:
     key = hashlib.sha256(runtime_id.encode("utf-8")).hexdigest()
-    base = state_dir(payload) / "runtimes"
+    base = state_dir(context, base_dir) / "runtimes"
     return base / f"{key}.sqlite"
 
 
@@ -376,23 +358,32 @@ async def close_checkpointer(checkpointer: Any) -> None:
 
 
 async def build_agent_kwargs(
-    payload: dict[str, Any], model: Any, settings: dict[str, Any]
+    config: AgentConfig,
+    runtime_context: RuntimeContext,
+    base_dir: str,
+    model: Any,
+    settings: dict[str, Any],
 ) -> dict[str, Any]:
+    instructions = config.instructions
     kwargs: dict[str, Any] = {
         "model": model,
-        "tools": await resolve_tools(payload),
+        "tools": await resolve_tools(config),
         # deepagents 0.5.x/0.6.x take the system prompt as ``system_prompt``.
-        "system_prompt": common_utils.system_instruction(payload),
-        "skills": resolve_skills(payload),
-        "backend": resolve_backend(payload),
+        "system_prompt": (
+            instructions.system.content
+            if instructions and instructions.system
+            else None
+        ),
+        "skills": resolve_skills(config),
+        "backend": resolve_backend(runtime_context, base_dir),
     }
     # Deep Agents-specific settings (e.g. subagents, interrupt_on) pass through,
     # after validation against the documented JSON-serializable allow-list.
     extra = settings.get("deepagents")
     if extra is not None:
         kwargs.update(_validated_passthrough(extra))
-    enabled = _enabled_tool_names(payload)
-    blocked = _blocked_tool_names(payload)
+    enabled = _enabled_tool_names(config)
+    blocked = _blocked_tool_names(config)
     if enabled is not None or blocked:
         middleware = list(kwargs.get("middleware") or [])
         middleware.append(tool_policy_middleware(enabled, blocked))
@@ -511,15 +502,24 @@ class DeepAgentsRuntime:
             )
 
         try:
-            preflight_check(payload)
-            settings = common_utils.settings_payload(payload)
-            runtime_id = common_utils.runtime_context(payload).get("runtime_id")
-            model, self._model_name, self._base_url = build_chat_model(payload)
+            agent_config = payload["config"]
+            runtime_context = RuntimeContext.from_mapping(
+                payload.get("runtime_context")
+            )
+            model_config = selected_model_config(agent_config)
+            preflight_check(model_config)
+            settings = agent_config.harness.settings if agent_config.harness else {}
+            base_dir = common_utils.base_dir(payload)
+            runtime_id = runtime_context.runtime_id
+            model, self._model_name, self._base_url = build_chat_model(model_config)
             self._runtime_id = runtime_id
-            self._thread_id = uuid.uuid4().hex if runtime_id else None
+            self._thread_id = uuid.uuid4().hex
 
-            telemetry_providers = common_utils.telemetry_providers(payload)
-            relay_enabled = common_utils.relay_enabled(payload)
+            telemetry = runtime_context.telemetry
+            telemetry_providers = (
+                telemetry.metadata.get("telemetry_providers", []) if telemetry else []
+            )
+            relay_enabled = bool(telemetry and telemetry.relay_enabled)
             self._telemetry_provider = (
                 "relay"
                 if relay_enabled
@@ -528,17 +528,25 @@ class DeepAgentsRuntime:
                 else ""
             )
             self._observability = resolve_observability(
-                payload,
+                runtime_context,
+                base_dir,
+                common_utils.agent_name(payload),
+                model_config.model,
                 self._telemetry_provider,
                 relay_enabled,
             )
 
-            agent_kwargs = await build_agent_kwargs(payload, model, settings)
-            if runtime_id:
-                self._checkpointer = await open_checkpointer(
-                    checkpointer_path(payload, runtime_id)
-                )
-                agent_kwargs["checkpointer"] = self._checkpointer
+            agent_kwargs = await build_agent_kwargs(
+                agent_config,
+                runtime_context,
+                base_dir,
+                model,
+                settings,
+            )
+            self._checkpointer = await open_checkpointer(
+                checkpointer_path(runtime_context, base_dir, runtime_id)
+            )
+            agent_kwargs["checkpointer"] = self._checkpointer
 
             if self._observability is not None:
                 agent_kwargs = self._configure_observability(agent_kwargs)
@@ -583,7 +591,8 @@ class DeepAgentsRuntime:
                 "deepagents_runtime_not_started",
                 "Deep Agents runtime is not started",
             )
-        runtime_id = common_utils.runtime_context(invocation).get("runtime_id")
+        runtime_context = RuntimeContext.from_mapping(invocation.get("runtime_context"))
+        runtime_id = runtime_context.runtime_id
         if runtime_id != self._runtime_id:
             raise lifecycle.LifecycleError(
                 "deepagents_runtime_mismatch",
@@ -599,7 +608,7 @@ class DeepAgentsRuntime:
         user_message = request.get("input") or ""
         if not isinstance(user_message, str):
             user_message = json.dumps(user_message, sort_keys=True)
-        request_id = request.get("request_id")
+        request_id = runtime_context.request_id
 
         resumed = self._completed_invocations > 0
         inherited_quarantine = self._telemetry_quarantine is not None
@@ -909,25 +918,41 @@ def _relay_dependency_error() -> RuntimeError:
 
 
 def resolve_observability(
-    payload: dict[str, Any], telemetry_provider: str, relay_enabled: bool
+    runtime_context: RuntimeContext,
+    base_dir: str,
+    agent_name: str,
+    model_name: str,
+    telemetry_provider: str,
+    relay_enabled: bool,
 ) -> Observability | None:
     """Resolve the nemo_relay observability plugin config for relay or native telemetry.
 
     Relay telemetry loads its plugin config from ``FABRIC_RELAY_CONFIG_PATH`` and
     collects ATOF/ATIF artifacts. Native telemetry reads
-    ``telemetry_plan.native_config`` from the payload (e.g. an
+    ``RuntimeContext.telemetry.metadata.native_config`` (e.g. an
     OpenTelemetry/OpenInference exporter) and exports spans directly to the
     configured collector without writing relay artifacts.
     """
 
     if relay_enabled and telemetry_provider == "relay":
         return Observability(
-            common_utils.load_relay_plugin_config(payload),
+            common_utils.load_relay_plugin_config(
+                {
+                    "agent_name": agent_name,
+                    "base_dir": base_dir,
+                    "config": {"models": {"default": {"model": model_name}}},
+                    "runtime_context": runtime_context.to_mapping(),
+                }
+            ),
             "deepagents.observability/nemo_relay",
             True,
         )
     if telemetry_provider == "native":
-        native_config = common_utils.native_telemetry_config(payload)
+        native_config = runtime_context.telemetry.metadata.get("native_config", {})
+        if not isinstance(native_config, dict):
+            raise AdapterConfigError(
+                "runtime_context.telemetry.metadata.native_config must be a mapping."
+            )
         if native_config.get("components"):
             return Observability(
                 native_config, "deepagents.observability/native", False

@@ -249,14 +249,22 @@ set_python_project_versions() {
     "$python_executable" scripts/ci/set_python_project_versions.py "$version"
 }
 
+set_typescript_project_version() {
+    local version="$1"
+    local python_executable=""
+    python_executable="$(uv_python_executable)"
+    "$python_executable" scripts/ci/set_typescript_project_version.py "$version"
+}
+
 set_project_version() {
     local version="$1"
     set_cargo_workspace_version "$version"
     set_python_project_versions "$version"
+    set_typescript_project_version "$version"
 }
 '''
 
-# Remove local Rust and Python build and test artifacts.
+# Remove local Rust, Python, and TypeScript build and test artifacts.
 clean:
     #!/usr/bin/env bash
     shopt -s globstar nullglob
@@ -271,6 +279,8 @@ clean:
         **/coverage.xml \
         **/dist \
         docs/node_modules \
+        typescript/adapter-contract/node_modules \
+        typescript/adapter-contract/*.tgz \
         target/ \
         **/build/
 
@@ -298,12 +308,28 @@ build-python:
             --reinstall-package nemo-fabric-runtime
     fi
 
+# Install the TypeScript adapter contract dependencies from the lockfile.
+install-typescript:
+    npm ci --prefix typescript/adapter-contract --ignore-scripts
+
+# Build the TypeScript adapter contract using the locked dependency set.
+build-typescript: install-typescript
+    npm run build --prefix typescript/adapter-contract
+
+# Generate the TypeScript adapter contract from the committed JSON Schemas.
+generate-typescript-contract: install-typescript
+    npm run generate --prefix typescript/adapter-contract
+
+# Verify the TypeScript adapter contract package tarball.
+pack-typescript: install-typescript
+    npm run pack:check --prefix typescript/adapter-contract
+
 # Generate the JSON Schema files from the Rust configuration types.
 schemas:
     cargo run -p nemo-fabric-core --example generate-schemas -- schemas
 
 # Build all supported language packages.
-build-all: build-rust build-python schemas
+build-all: build-rust build-python schemas build-typescript
 
 # Create or update the lockfile for every Python project.
 lock-python:
@@ -376,8 +402,12 @@ test-python:
 test-rust:
     cargo test --workspace --locked
 
-# Run all Rust and Python tests.
-test-all: test-rust test-python
+# Run the TypeScript adapter contract checks using the locked dependency set.
+test-typescript: install-typescript
+    npm test --prefix typescript/adapter-contract
+
+# Run all Rust, Python, and TypeScript tests.
+test-all: test-rust test-python test-typescript
 
 # Build wheels for every Python project into the repository dist directory.
 wheels:

@@ -187,6 +187,7 @@ def test_contract_dataclasses_validate_assignment():
     "path",
     [
         "",
+        "   ",
         "/tmp/output",
         "../output",
         "nested/../output",

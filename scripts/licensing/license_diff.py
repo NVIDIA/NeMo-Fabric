@@ -29,7 +29,7 @@ from typing import Any, cast
 import attributions_lockfile_md
 from attributions_lockfile_md import LicenseInventoryEntry
 
-LANGUAGES = ("rust", "python")
+LANGUAGES = ("rust", "node", "python")
 Language = str
 
 Inventory = dict[str, list[LicenseInventoryEntry]]
@@ -37,6 +37,7 @@ Diff = dict[str, dict[str, Any]]
 
 LANGUAGE_LABELS = {
     "rust": "Rust",
+    "node": "Node",
     "python": "Python",
 }
 
@@ -48,7 +49,9 @@ def _status(message: str) -> None:
 
 def _configure_root(root: Path) -> None:
     """Point the shared attribution collectors at a repository root."""
-    attributions_lockfile_md.ROOT = root.resolve()
+    resolved = root.resolve()
+    attributions_lockfile_md.ROOT = resolved
+    attributions_lockfile_md.NODE = resolved / "typescript" / "adapter-contract"
 
 
 def generate_inventory(
@@ -67,6 +70,8 @@ def generate_inventory(
                 attributions_lockfile_md._cargo_about_json(),
                 workspace_members,
             )
+        elif language == "node":
+            inventory[language] = attributions_lockfile_md._node_license_inventory()
         elif language == "python":
             inventory[language] = attributions_lockfile_md._python_license_inventory()
         else:
@@ -310,7 +315,7 @@ def main() -> int:
     parser.add_argument(
         "languages",
         nargs="*",
-        metavar="{rust,python,all}",
+        metavar="{rust,node,python,all}",
         help="Language inventories to compare. Defaults to all.",
     )
     parser.add_argument(

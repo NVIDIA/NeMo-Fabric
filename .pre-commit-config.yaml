@@ -9,7 +9,7 @@ repos:
         name: copyright header
         entry: python3 scripts/lint/check_copyright.py
         language: system
-        files: '\.(rs|py|pyi|toml|yaml|yml|md|mdx|sh)$|\.gitignore$'
+        files: '\.(rs|py|pyi|toml|yaml|yml|md|mdx|sh|mjs|ts)$|\.gitignore$'
         exclude: '(/SKILL\.md|node_modules/|target/|\.venv/|^\.github/pull_request_template\.md)$'
 
   # Python lint — enforce the flake8-bugbear cached-instance-method rule (B019)
@@ -60,10 +60,17 @@ repos:
         files: '^(uv\.lock|ATTRIBUTIONS-Python\.md)$'
         pass_filenames: false
 
+      - id: attributions-node
+        name: ATTRIBUTIONS-Node.md (TypeScript package-lock.json)
+        entry: bash scripts/generate_attributions.sh node
+        language: system
+        files: '^(typescript/adapter-contract/package-lock\.json|ATTRIBUTIONS-Node\.md)$'
+        pass_filenames: false
+
       - id: license-diff
         name: Dependency license diff
         entry: uv run --no-project python scripts/licensing/license_diff.py --base-ref HEAD
         language: system
-        files: '(^|/)(Cargo\.toml|Cargo\.lock|pyproject\.toml|uv\.lock)$'
+        files: '(^|/)(Cargo\.toml|Cargo\.lock|pyproject\.toml|uv\.lock)$|^typescript/adapter-contract/package(?:-lock)?\.json$'
         pass_filenames: false
         verbose: false

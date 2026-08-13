@@ -142,8 +142,8 @@ pub enum AgentRunResultValidationError {
     /// A successful result included an error.
     #[error("succeeded result must not include an error")]
     SucceededWithError,
-    /// An artifact path was empty, absolute, or contained parent traversal.
-    #[error("artifact path must be non-empty, relative, and contain no parent traversal: {0}")]
+    /// An artifact path was blank, absolute, or contained parent traversal.
+    #[error("artifact path must be non-blank and relative, and contain no parent traversal: {0}")]
     InvalidArtifactPath(PathBuf),
 }
 
@@ -174,7 +174,7 @@ impl AgentRunResult {
 
 fn is_valid_agent_artifact_path(path: &Path) -> bool {
     let raw = path.to_string_lossy();
-    !raw.is_empty()
+    raw.chars().any(|character| !character.is_whitespace())
         && !path.is_absolute()
         && !raw.starts_with(['/', '\\'])
         && !raw
@@ -197,7 +197,7 @@ where
     let path = PathBuf::deserialize(deserializer)?;
     if !is_valid_agent_artifact_path(&path) {
         return Err(serde::de::Error::custom(
-            "artifact path must be non-empty, relative, and contain no parent traversal",
+            "artifact path must be non-blank and relative, and contain no parent traversal",
         ));
     }
     Ok(path)
@@ -206,6 +206,7 @@ where
 fn agent_artifact_path_schema(generator: &mut SchemaGenerator) -> Schema {
     let mut schema = String::json_schema(generator);
     schema.insert("minLength".into(), 1.into());
+    schema.insert("pattern".into(), r"\S".into());
     schema.insert(
         "not".into(),
         serde_json::json!({
@@ -304,6 +305,7 @@ mod tests {
     fn rejects_unsafe_artifact_paths_during_deserialization() {
         for path in [
             "",
+            " \t",
             "/tmp/output",
             "../output",
             "nested/../output",

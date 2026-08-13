@@ -1,6 +1,6 @@
 ---
 name: contribute-api
-description: Contribute a new NeMo Fabric public API surface safely, with Rust, CLI, Python, schema, adapter, and documentation parity in mind
+description: Contribute a new NVIDIA NeMo Fabric public API surface safely, with Rust, CLI, Python, TypeScript, schema, adapter, and documentation parity in mind
 author: NVIDIA Corporation and Affiliates
 license: Apache-2.0
 ---
@@ -20,8 +20,8 @@ runtime or bindings.
 ## Default Guidance
 
 - Start from the shared Rust core behavior first
-- Decide whether the CLI, PyO3 binding, Python SDK, type stubs, schemas, or
-  adapter contract must expose the new surface
+- Decide whether the CLI, PyO3 binding, Python SDK, type stubs, schemas, or the
+  Python and TypeScript adapter-contract bindings must expose the new surface
 - Keep every affected public surface in parity
 - Update docs and examples in the same branch
 
@@ -37,4 +37,5 @@ runtime or bindings.
 - `validate-change`
 - `review-doc-style`
 - `docs/python-sdk-contract.md`
+- `schemas/SCHEMA.md`
 - `justfile`

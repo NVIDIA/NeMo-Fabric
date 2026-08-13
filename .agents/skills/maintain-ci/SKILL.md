@@ -29,6 +29,10 @@ reliability, or reproducibility.
   `actions/cache`.
 - Use lockfiles or dependency manifests to drive cache invalidation.
 - Keep deploy and publish permissions isolated to the jobs that need them.
+- Publish the TypeScript contract from the dedicated
+  `publish_typescript.yml` workflow through the protected `npmjs` environment.
+  Grant `id-token: write` for npm trusted publishing, and do not provide an npm
+  write token that could mask an OIDC configuration failure.
 - Read both caller and callee when a workflow uses `workflow_call`.
 - Keep documentation publish and preview credentials isolated to the Fern docs
   workflow.
@@ -42,8 +46,11 @@ reliability, or reproducibility.
 - `contents: read` is the default minimum for checkout-based build, test, docs,
   and packaging jobs.
 - `pull-requests: read` is required for PR metadata lookup jobs.
-- `pages: write` and `id-token: write` should be limited to Pages deployment
-  jobs and any caller that invokes them through a reusable workflow.
+- `pages: write` should be limited to Pages deployment jobs and any caller that
+  invokes them through a reusable workflow.
+- `id-token: write` should be limited to jobs that exchange a GitHub OIDC token
+  with a protected deployment target, including Pages deployment and the
+  protected npm publication job.
 - For reusable workflows, the caller must grant every permission the called
   jobs require. The callee cannot elevate beyond what the caller provides.
 
@@ -93,6 +100,8 @@ source instead of assuming local success proves remote success.
 - `.github/workflows/fern-docs.yml`
 - `.github/workflows/nightly-alpha-tag.yml`
 - `.github/workflows/publish_rust.yml`
+- `.github/workflows/publish_typescript.yml`
+- `scripts/ci/publish_typescript_package.py`
 - `.gitlab-ci.yml`
 - `RELEASING.md`
 - `Cargo.lock`

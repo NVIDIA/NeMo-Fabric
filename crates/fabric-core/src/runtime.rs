@@ -19,6 +19,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::agent_config::validate_agent_config;
 use crate::config::{
     AdapterConfigInput, AdapterKind, AgentConfig, CapabilityPlan, CapabilityTarget,
     ControlLocation, EnvironmentOwnership, FabricConfig, RunPlan, TelemetryPlan,
@@ -557,6 +558,7 @@ pub fn prepare_environment(plan: &RunPlan) -> Result<EnvironmentHandle> {
 /// Start or connect to a harness runtime.
 pub fn start_runtime(plan: &RunPlan) -> Result<RuntimeHandle> {
     validate_config(&plan.config)?;
+    validate_agent_config(&plan.agent_config)?;
     validate_harness_settings(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_workflow(&plan.config, plan.adapter_descriptor.as_ref())?;
     validate_adapter_compatibility(plan)?;
@@ -1816,6 +1818,9 @@ fn runtime_telemetry_context(
             Value::String(output_dir.to_string_lossy().into_owned()),
         );
     }
+    if let Some(native_config) = &telemetry.native_config {
+        metadata.insert("native_config".to_string(), native_config.clone());
+    }
     if !telemetry.adapter_outputs.is_empty() {
         metadata.insert(
             "adapter_outputs".to_string(),
@@ -2454,7 +2459,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::config::{ResolveContext, resolve_run_plan_from_config};
+    use crate::config::{ResolveContext, TelemetryProvider, resolve_run_plan_from_config};
 
     fn local_host_plan(mode: &str) -> (PathBuf, RunPlan) {
         local_host_plan_with_relay(mode, false)
@@ -2641,6 +2646,26 @@ for line in sys.stdin:
             serde_json::json!("python3")
         );
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn runtime_context_preserves_native_telemetry_config() {
+        let (root, mut plan) = local_host_plan("success");
+        let native_config = serde_json::json!({"components": [{"kind": "observability"}]});
+        plan.telemetry_plan = Some(TelemetryPlan {
+            providers: vec![TelemetryProvider::Native],
+            relay_enabled: false,
+            relay_project: None,
+            relay_output_dir: None,
+            relay_config: None,
+            native_config: Some(native_config.clone()),
+            adapter_outputs: Vec::new(),
+        });
+
+        let telemetry = runtime_telemetry_context(&plan, None).expect("telemetry context");
+
+        assert_eq!(telemetry.metadata["native_config"], native_config);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -2879,6 +2904,30 @@ for line in sys.stdin:
                 && settings_path == "harness.settings.unknown"
         ));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_host_revalidates_southbound_config_before_runtime_start() {
+        for field in ["provider", "model"] {
+            let (root, plan) = local_host_plan("success");
+            let mut serialized = serde_json::to_value(plan).expect("serialize plan");
+            serialized["agent_config"]["models"]["primary"] = serde_json::json!({
+                "provider": "nvidia",
+                "model": "test-model"
+            });
+            serialized["agent_config"]["models"]["primary"][field] =
+                Value::String(" \t".to_string());
+            let plan: RunPlan = serde_json::from_value(serialized).expect("deserialize run plan");
+
+            let error = start_runtime(&plan).expect_err("start must reject blank agent config");
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field: actual, .. }
+                    if actual == format!("agent_config.models.primary.{field}")
+            ));
+            assert!(!root.join("artifacts").exists());
+            let _ = fs::remove_dir_all(root);
+        }
     }
 
     #[test]

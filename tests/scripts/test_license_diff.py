@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -54,8 +55,66 @@ def test_compare_inventories_classifies_dependency_changes():
 
 
 def test_parse_languages_rejects_unsupported_ecosystems():
-    with pytest.raises(ValueError, match=r"Unsupported language.*node"):
-        license_diff._parse_languages(["node"])
+    with pytest.raises(ValueError, match=r"Unsupported language.*javascript"):
+        license_diff._parse_languages(["javascript"])
+
+
+def test_configure_root_points_node_collector_at_typescript_package(
+    tmp_path: Path,
+):
+    with (
+        patch.object(license_diff.attributions_lockfile_md, "ROOT"),
+        patch.object(license_diff.attributions_lockfile_md, "NODE"),
+    ):
+        license_diff._configure_root(tmp_path)
+
+        assert license_diff.attributions_lockfile_md.ROOT == tmp_path.resolve()
+        assert license_diff.attributions_lockfile_md.NODE == (
+            tmp_path.resolve() / "typescript" / "adapter-contract"
+        )
+
+
+def test_node_inventory_includes_locked_dev_dependencies(tmp_path: Path):
+    package_dir = tmp_path / "typescript" / "adapter-contract"
+    package_dir.mkdir(parents=True)
+    lock = {
+        "name": "local-package",
+        "version": "0.2.0",
+        "packages": {
+            "": {"name": "local-package", "version": "0.2.0"},
+            "node_modules/build-tool": {
+                "version": "1.2.3",
+                "license": "MIT",
+                "dev": True,
+            },
+            "node_modules/ignored": {
+                "version": "4.5.6",
+                "license": "ISC",
+                "extraneous": True,
+            },
+        },
+    }
+    (package_dir / "package-lock.json").write_text(json.dumps(lock))
+
+    with patch.object(
+        license_diff.attributions_lockfile_md,
+        "NODE",
+        package_dir,
+    ):
+        inventory = license_diff.attributions_lockfile_md._node_license_inventory()
+
+    assert inventory == [_entry("build-tool", "1.2.3", "MIT")]
+
+
+def test_node_inventory_is_empty_before_package_exists(tmp_path: Path):
+    with patch.object(
+        license_diff.attributions_lockfile_md,
+        "NODE",
+        tmp_path / "missing-package",
+    ):
+        inventory = license_diff.attributions_lockfile_md._node_license_inventory()
+
+    assert inventory == []
 
 
 def test_worktree_inventory_cleans_up_when_checkout_fails(tmp_path: Path):

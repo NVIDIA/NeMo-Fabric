@@ -61,7 +61,7 @@ def validate_http_header(server_name: str, name: str, value: str) -> None:
 def validate_http_headers(server_name: str, value: dict[str, str]) -> None:
     """
     Validate an MCP custom-header mapping.
-    
+
     Use this method for harnesses that support environment variable expansion
     in HTTP headers. For harnesses that don't support environment variable
     expansion, use expand_http_headers instead.
@@ -74,7 +74,7 @@ def validate_http_headers(server_name: str, value: dict[str, str]) -> None:
 def expand_http_headers(server_name: str, value: dict[str, str]) -> dict[str, str]:
     """
     Expand environment variables and validate an MCP custom-header mapping.
-    
+
     Use this method instead of validate_http_headers for harnesses that don't
     support environment variable expansion in HTTP headers.
     """

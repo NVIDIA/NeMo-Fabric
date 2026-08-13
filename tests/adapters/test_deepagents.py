@@ -24,11 +24,19 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
+from nemo_fabric_adapter_contract.codec import ContractValidationError
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentMcpServerConfig
+from nemo_fabric_adapter_contract.models import McpOAuth2Config
+from nemo_fabric_adapter_contract.models import McpServiceAccountConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.deepagents import adapter  # noqa: E402
 
 
 def lifecycle_start_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in payload.items() if key != "request"}
+    start = {key: value for key, value in payload.items() if key != "request"}
+    start["config"] = AgentConfig.from_mapping(start["config"])
+    return start
 
 
 def lifecycle_invocation(payload: dict[str, Any]) -> dict[str, Any]:
@@ -183,10 +191,17 @@ def make_payload_fixture():
             "runtime_context": {
                 "runtime_id": runtime_id,
                 "invocation_id": "inv-1",
-                "environment": {"workspace": str(tmp_path)},
+                "request_id": "request-1",
+                "environment": {
+                    "environment_id": "test-environment",
+                    "provider": "test",
+                    "control_location": "in_env_control",
+                    "workspace": str(tmp_path),
+                    "ownership": "caller_owned",
+                },
+                "artifacts": {},
             },
             "request": {"input": "hello", "request_id": "request-1"},
-            "capability_plan": {},
         }
 
     return make
@@ -329,8 +344,12 @@ async def test_single_invocation_normalizes_response_usage_and_thread(
     assert "instructions" not in fake_sdks["create_kwargs"]
 
 
-async def test_missing_api_key_fails_runtime_start(tmp_path, make_payload):
-    os.environ.pop("NVIDIA_API_KEY", None)
+@pytest.mark.parametrize("api_key", [None, ""])
+async def test_missing_api_key_fails_runtime_start(tmp_path, make_payload, api_key):
+    if api_key is None:
+        os.environ.pop("NVIDIA_API_KEY", None)
+    else:
+        os.environ["NVIDIA_API_KEY"] = api_key
 
     with pytest.raises(RuntimeError, match="NVIDIA_API_KEY"):
         await adapter.DeepAgentsRuntime().start(
@@ -390,14 +409,9 @@ async def test_relay_telemetry_wraps_agent_and_reports_artifacts(
         adapter.common_utils, "collect_relay_artifacts", lambda _c: artifacts
     )
     payload = make_payload(tmp_path)
-    payload["telemetry_plan"] = {
-        "providers": ["relay"],
+    payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
-        "relay_project": None,
-        "relay_output_dir": None,
-        "relay_config": {},
-        "native_config": None,
-        "adapter_outputs": [],
+        "metadata": {"telemetry_providers": ["relay"]},
     }
 
     output = await invoke_once(payload)
@@ -436,14 +450,9 @@ def relay_payload_fixture(make_payload, monkeypatch):
 
     def build(tmp_path) -> dict[str, Any]:
         payload = make_payload(tmp_path)
-        payload["telemetry_plan"] = {
-            "providers": ["relay"],
+        payload["runtime_context"]["telemetry"] = {
             "relay_enabled": True,
-            "relay_project": None,
-            "relay_output_dir": None,
-            "relay_config": {},
-            "native_config": None,
-            "adapter_outputs": [],
+            "metadata": {"telemetry_providers": ["relay"]},
         }
         return payload
 
@@ -905,36 +914,36 @@ async def test_native_telemetry_exports_without_artifacts(
     tmp_path, make_payload, monkeypatch, fake_sdks, fake_relay
 ):
     payload = make_payload(tmp_path)
-    payload["telemetry_plan"] = {
-        "providers": ["native"],
+    payload["runtime_context"]["telemetry"] = {
         "relay_enabled": False,
-        "relay_project": None,
-        "relay_output_dir": None,
-        "relay_config": None,
-        "native_config": {
-            "version": 1,
-            "components": [
-                {
-                    "kind": "observability",
-                    "enabled": True,
-                    "config": {
-                        "version": 1,
-                        "opentelemetry": {
-                            "enabled": True,
-                            "endpoint": "http://localhost:4318/v1/traces",
+        "metadata": {
+            "telemetry_providers": ["native"],
+            "native_config": {
+                "version": 1,
+                "components": [
+                    {
+                        "kind": "observability",
+                        "enabled": True,
+                        "config": {
+                            "version": 1,
+                            "opentelemetry": {
+                                "enabled": True,
+                                "endpoint": "http://localhost:4318/v1/traces",
+                            },
                         },
-                    },
-                }
-            ],
+                    }
+                ],
+            },
         },
-        "adapter_outputs": [],
     }
 
     output = await invoke_once(payload)
 
     assert fake_relay["wrapped"]
     assert fake_relay["plugin_open"]
-    assert fake_relay["plugin_configs"] == [payload["telemetry_plan"]["native_config"]]
+    assert fake_relay["plugin_configs"] == [
+        payload["runtime_context"]["telemetry"]["metadata"]["native_config"]
+    ]
     assert output["telemetry"] == {
         "enabled": True,
         "provider": "native",
@@ -949,6 +958,29 @@ async def test_native_telemetry_exports_without_artifacts(
     assert fake_relay["callback_handler"] in (fake_sdks["config"] or {}).get(
         "callbacks", []
     )
+
+
+def test_native_telemetry_requires_mapping(tmp_path, make_payload):
+    payload = make_payload(tmp_path)
+    payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": False,
+        "metadata": {
+            "telemetry_providers": ["native"],
+            "native_config": [],
+        },
+    }
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="native_config must be a mapping"
+    ):
+        adapter.resolve_observability(
+            RuntimeContext.from_mapping(payload["runtime_context"]),
+            str(tmp_path),
+            "deepagents-test",
+            "model",
+            "native",
+            False,
+        )
 
 
 async def test_relay_disabled_adds_no_scope_or_callbacks(
@@ -986,16 +1018,21 @@ async def test_missing_nemo_relay_with_native_telemetry_fails_runtime_start(
     monkeypatch.setattr(importlib_util, "find_spec", fake_find_spec)
 
     payload = make_payload(tmp_path)
-    payload["telemetry_plan"] = {
-        "providers": ["native"],
+    payload["runtime_context"]["telemetry"] = {
         "relay_enabled": False,
-        "native_config": {
-            "version": 1,
-            "components": [
-                {"kind": "observability", "enabled": True, "config": {"version": 1}}
-            ],
+        "metadata": {
+            "telemetry_providers": ["native"],
+            "native_config": {
+                "version": 1,
+                "components": [
+                    {
+                        "kind": "observability",
+                        "enabled": True,
+                        "config": {"version": 1},
+                    }
+                ],
+            },
         },
-        "adapter_outputs": [],
     }
 
     with pytest.raises(RuntimeError, match="nemo-relay.*\\[relay\\]"):
@@ -1008,16 +1045,21 @@ async def test_incomplete_nemo_relay_install_fails_runtime_start(
 ):
     monkeypatch.delitem(sys.modules, "nemo_relay.integrations.deepagents")
     payload = make_payload(tmp_path)
-    payload["telemetry_plan"] = {
-        "providers": ["native"],
+    payload["runtime_context"]["telemetry"] = {
         "relay_enabled": False,
-        "native_config": {
-            "version": 1,
-            "components": [
-                {"kind": "observability", "enabled": True, "config": {"version": 1}}
-            ],
+        "metadata": {
+            "telemetry_providers": ["native"],
+            "native_config": {
+                "version": 1,
+                "components": [
+                    {
+                        "kind": "observability",
+                        "enabled": True,
+                        "config": {"version": 1},
+                    }
+                ],
+            },
         },
-        "adapter_outputs": [],
     }
 
     with pytest.raises(RuntimeError, match="compatible 'nemo-relay'.*\\[relay\\]"):
@@ -1039,6 +1081,15 @@ def test_apply_callbacks_without_callbacks_leaves_config_untouched():
     assert adapter._apply_callbacks(config, None) == {
         "configurable": {"thread_id": "t"}
     }
+
+
+def test_state_dir_uses_runtime_artifact_context(tmp_path, make_payload, monkeypatch):
+    context = RuntimeContext.from_mapping(make_payload(tmp_path)["runtime_context"])
+    monkeypatch.setenv("FABRIC_ARTIFACTS", str(tmp_path / "ignored"))
+
+    assert adapter.state_dir(context, str(tmp_path)) == (
+        tmp_path / "artifacts" / "deepagents" / ".fabric"
+    )
 
 
 async def test_invoke_compiled_agent_wires_callbacks_into_run_config(fake_sdks):
@@ -1113,25 +1164,22 @@ async def test_mcp_servers_become_adapter_tools(
     )
     monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", client_mod)
     payload = make_payload(tmp_path)
-    os.environ["FABRIC_TEST_MCP_HEADER"] = "fabric"
-    # McpServerPlan carries the URL/command in ``url``.
-    payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "fs": {
-                    "transport": "streamable-http",
-                    "url": "http://localhost:9/mcp",
-                    "custom_headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
-                },
-                "local": {
-                    "transport": "stdio",
-                    "url": "my-server",
-                    "args": ["--flag", "--config", "repo config.json"],
-                    "env": {"REPO_MCP_MODE": "test"},
-                },
-            }
+    payload["config"]["mcp"] = {
+        "servers": {
+            "fs": {
+                "transport": "streamable-http",
+                "url": "http://localhost:9/mcp",
+                "custom_headers": {"X-Tenant": "${FABRIC_TEST_MCP_HEADER}"},
+            },
+            "local": {
+                "transport": "stdio",
+                "url": "my-server",
+                "args": ["--flag", "--config", "repo config.json"],
+                "env": {"REPO_MCP_MODE": "test"},
+            },
         }
     }
+    monkeypatch.setenv("FABRIC_TEST_MCP_HEADER", "fabric")
 
     output = await invoke_once(payload)
 
@@ -1153,18 +1201,29 @@ async def test_mcp_servers_become_adapter_tools(
     assert tool_names == ["read_file", "write_file"]
 
 
-@pytest.mark.parametrize("authentication_type", ["oauth2", "service_account"])
-def test_deepagents_rejects_mcp_authentication(authentication_type):
+@pytest.mark.parametrize(
+    "authentication",
+    [
+        McpOAuth2Config(type="oauth2"),
+        McpServiceAccountConfig(
+            type="service_account",
+            client_id="client",
+            client_secret_env="CLIENT_SECRET",
+            token_url="https://auth.example.test/token",
+        ),
+    ],
+)
+def test_deepagents_rejects_mcp_authentication(authentication):
     with pytest.raises(
         adapter.AdapterConfigError, match="not supported by Deep Agents"
     ):
         adapter._mcp_connection(
             "automation",
-            {
-                "transport": "streamable-http",
-                "url": "https://mcp.example.test/mcp",
-                "authentication": {"type": authentication_type},
-            },
+            AgentMcpServerConfig(
+                transport="streamable-http",
+                url="https://mcp.example.test/mcp",
+                authentication=authentication,
+            ),
         )
 
 
@@ -1250,7 +1309,7 @@ async def test_openai_provider_keeps_openai_endpoint(
 
 async def test_skill_paths_map_to_skills(tmp_path, make_payload, fake_sdks):
     payload = make_payload(tmp_path)
-    payload["capability_plan"] = {"native": {"skill_paths": ["/skills/a", "/skills/b"]}}
+    payload["config"]["skills"] = {"paths": ["/skills/a", "/skills/b"]}
 
     await invoke_once(payload)
 
@@ -1366,14 +1425,9 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
         lambda _config: artifacts,
     )
     payload = make_payload(tmp_path, runtime_id="run-relay-persistent")
-    payload["telemetry_plan"] = {
-        "providers": ["relay"],
+    payload["runtime_context"]["telemetry"] = {
         "relay_enabled": True,
-        "relay_project": None,
-        "relay_output_dir": None,
-        "relay_config": {},
-        "native_config": None,
-        "adapter_outputs": ["atif"],
+        "metadata": {"telemetry_providers": ["relay"], "adapter_outputs": ["atif"]},
     }
     runtime = adapter.DeepAgentsRuntime()
 
@@ -1421,8 +1475,14 @@ async def test_subagents_are_gated_by_blocked_tools(tmp_path, make_payload):
         ]
     }
 
-    settings = payload["config"]["harness"]["settings"]
-    create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
+    agent_config = AgentConfig.from_mapping(payload["config"])
+    create_kwargs = await adapter.build_agent_kwargs(
+        agent_config,
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        payload["base_dir"],
+        MagicMock(),
+        agent_config.harness.settings,
+    )
     assert create_kwargs["middleware"], (
         "main agent blocked-tools middleware not attached"
     )
@@ -1459,8 +1519,14 @@ async def test_default_subagent_is_gated_by_blocked_tools(tmp_path, make_payload
     payload = make_payload(tmp_path)
     payload["config"]["tools"] = {"blocked": ["write_file"]}
 
-    settings = payload["config"]["harness"]["settings"]
-    create_kwargs = await adapter.build_agent_kwargs(payload, MagicMock(), settings)
+    agent_config = AgentConfig.from_mapping(payload["config"])
+    create_kwargs = await adapter.build_agent_kwargs(
+        agent_config,
+        RuntimeContext.from_mapping(payload["runtime_context"]),
+        payload["base_dir"],
+        MagicMock(),
+        agent_config.harness.settings,
+    )
 
     assert [subagent["name"] for subagent in create_kwargs["subagents"]] == [
         "general-purpose"
@@ -1480,9 +1546,15 @@ async def test_blocked_tools_reject_unenforceable_subagents(
         "subagents": [{"name": "worker", **unsupported}]
     }
 
-    settings = payload["config"]["harness"]["settings"]
+    agent_config = AgentConfig.from_mapping(payload["config"])
     with pytest.raises(adapter.AdapterConfigError, match="cannot be enforced"):
-        await adapter.build_agent_kwargs(payload, MagicMock(), settings)
+        await adapter.build_agent_kwargs(
+            agent_config,
+            RuntimeContext.from_mapping(payload["runtime_context"]),
+            payload["base_dir"],
+            MagicMock(),
+            agent_config.harness.settings,
+        )
 
 
 @pytest.mark.parametrize(
@@ -1590,12 +1662,8 @@ async def test_subagent_usage_folded_from_subgraph(tmp_path, make_payload, monke
 async def test_bad_mcp_transport_fails_runtime_start(tmp_path, make_payload):
     # A misconfigured MCP server must fail loudly, not be silently dropped.
     payload = make_payload(tmp_path)
-    payload["capability_plan"] = {
-        "native": {
-            "mcp_servers": {
-                "bad": {"transport": "carrier-pigeon", "url": "http://x/mcp"}
-            }
-        }
+    payload["config"]["mcp"] = {
+        "servers": {"bad": {"transport": "carrier-pigeon", "url": "http://x/mcp"}}
     }
 
     with pytest.raises(adapter.AdapterConfigError, match="transport"):
@@ -1604,11 +1672,11 @@ async def test_bad_mcp_transport_fails_runtime_start(tmp_path, make_payload):
 
 async def test_empty_mcp_url_fails_runtime_start(tmp_path, make_payload):
     payload = make_payload(tmp_path)
-    payload["capability_plan"] = {
-        "native": {"mcp_servers": {"bad": {"transport": "streamable_http", "url": ""}}}
+    payload["config"]["mcp"] = {
+        "servers": {"bad": {"transport": "streamable_http", "url": ""}}
     }
 
-    with pytest.raises(adapter.AdapterConfigError, match="url"):
+    with pytest.raises(ContractValidationError, match="url"):
         await adapter.DeepAgentsRuntime().start(lifecycle_start_payload(payload))
 
 
@@ -1680,4 +1748,6 @@ def test_main_serves_persistent_runtime(monkeypatch):
 
     adapter.main()
 
-    serve.assert_called_once_with(adapter.DeepAgentsRuntime)
+    serve.assert_called_once_with(
+        adapter.DeepAgentsRuntime, config_loader=AgentConfig.from_mapping
+    )

@@ -456,14 +456,14 @@ def _validate_artifact_path(value: str | Path) -> None:
     components = raw.replace("\\", "/").split("/")
     windows_drive_path = len(raw) >= 2 and raw[0].isalpha() and raw[1] == ":"
     if (
-        not raw
+        not raw.strip()
         or path.is_absolute()
         or raw.startswith(("/", "\\"))
         or windows_drive_path
         or ".." in components
     ):
         raise ContractValidationError(
-            "artifact path must be non-empty, relative, and contain no parent traversal",
+            "artifact path must be nonblank, relative, and contain no parent traversal",
             path=("path",),
         )
 

@@ -2,11 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Default ownership for repository files.
-* @nvidia/nat-developers
+* @nvidia/nemo-fabric-reviewers
 
 # Attribution files require dependency approver review due to change in version(s)
-ATTRIBUTIONS-*.md @nvidia/nat-dep-approvers
+ATTRIBUTIONS-*.md @nvidia/nemo-fabric-dep-approvers
 
-# Documentation changes must go to technical writers and NAT developers.
-/docs/ @nvidia/NeMo-Fabric-doc-approvers @nvidia/NAT-developers
-/docs/reference/api/ @nvidia/NAT-developers
+# Documentation changes must go to Fabric documentation approvers.
+/docs/ @nvidia/nemo-fabric-doc-approvers
+/docs/reference/api/ @nvidia/nemo-fabric-reviewers
+
+# Repository access policy requires Fabric maintainer or admin review.
+/.github/CODEOWNERS @nvidia/nemo-fabric-maintainers @nvidia/nemo-fabric-admins
+/CONTRIBUTING.md @nvidia/nemo-fabric-maintainers @nvidia/nemo-fabric-admins

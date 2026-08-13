@@ -14,6 +14,7 @@ use crate::config::{
     AdapterConfigField, AdapterDescriptor, CapabilityPlan, FabricConfig, InstructionMode,
     McpAuthenticationConfig,
 };
+use crate::error::{FabricError, Result};
 
 /// Configuration projected southbound to one adapter target.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -65,10 +66,10 @@ pub struct AgentHarnessConfig {
 #[serde(deny_unknown_fields)]
 pub struct AgentModelConfig {
     /// Model provider identifier.
-    #[schemars(length(min = 1))]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub provider: String,
     /// Provider model identifier.
-    #[schemars(length(min = 1))]
+    #[schemars(length(min = 1), regex(pattern = r"\S"))]
     pub model: String,
     /// Environment variable containing the provider credential.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -247,6 +248,80 @@ pub struct AgentWorkflowConfig {
     /// Adapter-owned workflow fields.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: BTreeMap<String, Value>,
+}
+
+/// Validate a projected adapter configuration before runtime handoff.
+pub(crate) fn validate_agent_config(config: &AgentConfig) -> Result<()> {
+    for (role, model) in &config.models {
+        require_non_blank(
+            format!("agent_config.models.{role}.provider"),
+            &model.provider,
+        )?;
+        require_non_blank(format!("agent_config.models.{role}.model"), &model.model)?;
+    }
+    if let Some(system) = config
+        .instructions
+        .as_ref()
+        .and_then(|instructions| instructions.system.as_ref())
+    {
+        require_non_blank("agent_config.instructions.system.content", &system.content)?;
+    }
+    if config
+        .runtime
+        .as_ref()
+        .is_some_and(|runtime| runtime.max_turns == Some(0))
+    {
+        return invalid_agent_config(
+            "agent_config.runtime.max_turns",
+            "must be greater than zero",
+        );
+    }
+    if let Some(mcp) = &config.mcp {
+        for (name, server) in &mcp.servers {
+            require_non_blank(
+                format!("agent_config.mcp.servers.{name}.transport"),
+                &server.transport,
+            )?;
+            require_non_blank(format!("agent_config.mcp.servers.{name}.url"), &server.url)?;
+        }
+    }
+    if let Some(tools) = &config.tools {
+        for (name, definition) in &tools.definitions {
+            require_non_blank(
+                format!("agent_config.tools.definitions.{name}.kind"),
+                &definition.kind,
+            )?;
+            require_non_blank(
+                format!("agent_config.tools.definitions.{name}.ref"),
+                &definition.r#ref,
+            )?;
+        }
+    }
+    if let Some(workflow) = &config.workflow {
+        require_non_blank(
+            "agent_config.workflow.entrypoint.kind",
+            &workflow.entrypoint.kind,
+        )?;
+        require_non_blank(
+            "agent_config.workflow.entrypoint.ref",
+            &workflow.entrypoint.r#ref,
+        )?;
+    }
+    Ok(())
+}
+
+fn require_non_blank(field: impl Into<String>, value: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        return invalid_agent_config(field, "must contain a non-whitespace character");
+    }
+    Ok(())
+}
+
+fn invalid_agent_config<T>(field: impl Into<String>, reason: impl Into<String>) -> Result<T> {
+    Err(FabricError::InvalidConfig {
+        field: field.into(),
+        reason: reason.into(),
+    })
 }
 
 /// Project a resolved northbound config into the selected adapter target contract.
