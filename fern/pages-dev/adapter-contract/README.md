@@ -81,3 +81,10 @@ Canonical adapter-facing JSON Schemas are published in the repository
 [`schemas/adapter-contract/` directory](https://github.com/NVIDIA/NeMo-Fabric/tree/main/schemas/adapter-contract).
 Python adapters can validate the southbound models with
 `nemo-fabric-adapter-contract` without depending on the NeMo Fabric runtime.
+TypeScript adapters can import the descriptor, configuration, runtime-context,
+request, and result types from `nemo-fabric-adapter-contract`, matching the
+Python package's single model namespace. The request and result types retain
+their documented preview status until the typed invocation transport is
+negotiated. The TypeScript declarations provide compile-time structure, not
+runtime JSON validation; validate untrusted data against the packaged JSON
+Schemas.
