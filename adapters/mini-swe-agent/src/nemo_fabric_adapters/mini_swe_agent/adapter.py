@@ -22,12 +22,6 @@ Use the bash tool. When complete, run
 """
 
 
-def main() -> None:
-    lifecycle.serve(
-        MiniSweAgentRuntime, config_loader=contract.AgentConfig.from_mapping
-    )
-
-
 def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
     model = config.models.get("default")
     if model is None and len(config.models) == 1:
@@ -103,6 +97,12 @@ class MiniSweAgentRuntime:
 
     async def stop(self) -> None:
         self.__init__()
+
+
+def main() -> None:
+    lifecycle.serve(
+        MiniSweAgentRuntime, config_loader=contract.AgentConfig.from_mapping
+    )
 
 
 if __name__ == "__main__":
