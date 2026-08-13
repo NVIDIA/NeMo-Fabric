@@ -71,6 +71,6 @@ result = asyncio.run(main())
 ```
 
 Each invocation runs a fresh mini-SWE-agent loop in the runtime's workspace.
-The output includes the submitted final text, `exit_status`, and API-call
-usage. A loop that ends without submitting a final output produces a failed
-NVIDIA NeMo Fabric result.
+The output includes the submitted final text and API-call usage. A loop that
+ends without submitting a final output produces a failed NVIDIA NeMo Fabric
+result.

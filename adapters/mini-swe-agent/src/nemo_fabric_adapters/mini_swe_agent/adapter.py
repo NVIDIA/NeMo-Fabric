@@ -92,7 +92,6 @@ class MiniSweAgentRuntime:
             "failed": failed,
             "output": result.get("submission", ""),
             "usage": {"api_calls": agent.n_calls},
-            "exit_status": result.get("exit_status"),
         }
         if failed:
             output["error"] = {

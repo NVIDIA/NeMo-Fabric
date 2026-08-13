@@ -155,7 +155,6 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
         "failed": False,
         "output": "done",
         "usage": {"api_calls": 2},
-        "exit_status": "Submitted",
     }
     await runtime.stop()
 

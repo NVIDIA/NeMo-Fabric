@@ -139,7 +139,6 @@ async def test_mini_swe_agent_harbor_swebench_task(hermes_shim_agent_dir: Path):
     ).to_mapping()
 
     assert result["status"] == "succeeded", result
-    assert result["output"]["exit_status"] == "Submitted", result
 
 
 def assert_docker_image() -> None:
