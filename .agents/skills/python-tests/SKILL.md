@@ -49,7 +49,7 @@ directly:
   dependency group installs each leaf through its `harness` extra.
 - Every leaf provides `full`. Only adapters that import NeMo Relay Python APIs
   provide `relay`; adapters that launch the Relay CLI install
-  `nemo-relay[cli]` through both `harness` and `full`.
+  `nemo-relay-cli-bin` through both `harness` and `full`.
 
 ## Common Commands
 

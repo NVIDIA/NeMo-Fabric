@@ -30,8 +30,8 @@ be managed separately.
 | `nemo-fabric` | Yes | No | No | No | No |
 | `nemo-fabric[relay]` | Yes | No | No | Yes | No |
 | `nemo-fabric[hermes-agent,relay]` | Yes | Yes | Yes | Yes | No |
-| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | Yes | Yes |
-| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | Yes | Yes |
+| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No | Yes |
 | `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes | No |
 | `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes | No |
 | `nemo-fabric-adapters-claude` | No | Yes | No | No | No |
@@ -172,11 +172,11 @@ one or more `RelayOpenTelemetryEndpointConfig` entries.
 
 #### NeMo Relay CLI
 
-Claude and Codex harness extras install the compatible Python package and CLI
-binary together. To install them independently of an adapter, run:
+Claude and Codex harness extras install the compatible CLI binary without the
+Relay Python package. To install the CLI independently of an adapter, run:
 
 ```bash
-pip install "nemo-relay[cli]>=0.7.2,<0.8"
+pip install "nemo-relay-cli-bin>=0.7.2,<0.8"
 ```
 
 On Linux and macOS, install the pinned CLI with the shell installer:

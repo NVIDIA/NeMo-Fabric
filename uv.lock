@@ -2278,7 +2278,7 @@ dependencies = [
 [package.optional-dependencies]
 harness = [
     { name = "claude-agent-sdk" },
-    { name = "nemo-relay", extra = ["cli"] },
+    { name = "nemo-relay-cli-bin" },
 ]
 
 [package.metadata]
@@ -2287,8 +2287,8 @@ requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'harness'", specifier = "==0.2.120" },
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-relay", extras = ["cli"], marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
-    { name = "nemo-relay", extras = ["cli"], marker = "extra == 'harness'", specifier = ">=0.7.2,<0.8" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'harness'", specifier = ">=0.7.2,<0.8" },
     { name = "tomli-w", specifier = "~=1.2" },
 ]
 provides-extras = ["harness", "full"]
@@ -2305,7 +2305,7 @@ dependencies = [
 
 [package.optional-dependencies]
 harness = [
-    { name = "nemo-relay", extra = ["cli"] },
+    { name = "nemo-relay-cli-bin" },
     { name = "openai-codex" },
 ]
 
@@ -2313,8 +2313,8 @@ harness = [
 requires-dist = [
     { name = "nemo-fabric-adapter-contract", editable = "adapter-contract" },
     { name = "nemo-fabric-adapters-common", editable = "adapters/common" },
-    { name = "nemo-relay", extras = ["cli"], marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
-    { name = "nemo-relay", extras = ["cli"], marker = "extra == 'harness'", specifier = ">=0.7.2,<0.8" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'full'", specifier = ">=0.7.2,<0.8" },
+    { name = "nemo-relay-cli-bin", marker = "extra == 'harness'", specifier = ">=0.7.2,<0.8" },
     { name = "openai-codex", marker = "extra == 'full'", specifier = "==0.144.4" },
     { name = "openai-codex", marker = "extra == 'harness'", specifier = "==0.144.4" },
     { name = "tomli-w", specifier = "~=1.2" },
@@ -2418,11 +2418,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/32/8c/e20ec9c52bd1edd953157aaf24d0d9f9ab8afcbf108fc2356f398e252da8/nemo_relay-0.7.2-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b841c92395d7686c7f233036008294b9d362af1ec5123ab0babbfd11cbb04054", size = 10704141, upload-time = "2026-08-08T01:53:30.453Z" },
     { url = "https://files.pythonhosted.org/packages/5a/c1/92a73961ea759b433b1f897b225662d499123cb962b48dc8ece19f610a09/nemo_relay-0.7.2-cp311-abi3-win_amd64.whl", hash = "sha256:0cdcc5e09d6d62d5c1d385dc62c9233eb714a25f36a09da81e5b9731e3c67903", size = 8803938, upload-time = "2026-08-08T01:53:33.437Z" },
     { url = "https://files.pythonhosted.org/packages/9d/ec/2de114dab437431173988b9b11f46e8d377e12d57e1b4903258f3e03c2df/nemo_relay-0.7.2-cp311-abi3-win_arm64.whl", hash = "sha256:ca5f66e617311f836a10d96f120f3f32a99b4267d65048453b31951de3419a9d", size = 8438997, upload-time = "2026-08-08T01:53:36.12Z" },
-]
-
-[package.optional-dependencies]
-cli = [
-    { name = "nemo-relay-cli-bin" },
 ]
 
 [[package]]

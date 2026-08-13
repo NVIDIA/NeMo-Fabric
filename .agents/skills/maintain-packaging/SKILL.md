@@ -47,7 +47,7 @@ commitment.
 - Keep leaf adapters adapter-only by default. Every leaf provides `harness` and
   `full`; provide `relay` only when the adapter imports the NeMo Relay Python
   package. For adapters that launch the Relay CLI, both `harness` and `full`
-  install the version-matched `nemo-relay[cli]` package and remain equivalent.
+  install the version-matched `nemo-relay-cli-bin` package and remain equivalent.
 - First prefer the standard library, an existing dependency, or a small local
   implementation when it keeps the behavior clear and maintainable.
 - When multiple dependencies satisfy the technical requirement, prefer the

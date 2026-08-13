@@ -123,7 +123,7 @@ by the SDK and is not persisted as a NeMo Fabric artifact.
 
 Relay requires a NeMo Relay CLI in the `>=0.7.2,<0.8` range on `PATH`. The
 Claude adapter does not provide a separate `relay` extra; its `harness` and
-`full` extras install the compatible CLI through `nemo-relay[cli]`. The root
+`full` extras install the compatible CLI through `nemo-relay-cli-bin`. The root
 `nemo-fabric[relay]` extra installs only the Relay Python package.
 
 Enable Relay through the normalized NeMo Fabric configuration:

@@ -33,11 +33,11 @@ dependencies = [
 [project.optional-dependencies]
 harness = [
   "openai-codex==0.144.4",
-  "nemo-relay[cli]>=0.7.2,<0.8",
+  "nemo-relay-cli-bin>=0.7.2,<0.8",
 ]
 full = [
   "openai-codex==0.144.4",
-  "nemo-relay[cli]>=0.7.2,<0.8",
+  "nemo-relay-cli-bin>=0.7.2,<0.8",
 ]
 
 [project.urls]

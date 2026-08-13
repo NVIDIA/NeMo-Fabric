@@ -21,7 +21,7 @@ def load_pyproject(path: str) -> dict:
 
 PACKAGE_VERSION = load_pyproject("")["project"]["version"]
 RUNTIME_DEPENDENCY = f"nemo-fabric-runtime == {PACKAGE_VERSION}"
-RELAY_CLI_DEPENDENCY = "nemo-relay[cli]>=0.7.2,<0.8"
+RELAY_CLI_DEPENDENCY = "nemo-relay-cli-bin>=0.7.2,<0.8"
 
 ADAPTER_EXTRAS = {
     "claude": {
