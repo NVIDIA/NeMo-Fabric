@@ -516,7 +516,14 @@ def prepare_claude_relay(
 
     try:
         relay_contract = relay_gateway.relay_cli_contract(executable)
-        plugin_config = common_utils.load_relay_plugin_config(payload)
+        plugin_config = common_utils.load_relay_plugin_config(
+            {
+                "agent_name": agent_name,
+                "base_dir": base_dir,
+                "config": {"models": {"default": model.to_mapping()}},
+                "runtime_context": runtime_context.to_mapping(),
+            }
+        )
         config_path, plugin_config_path = common_utils.write_relay_configs(
             relay_config={"agents": {"claude": {"command": "claude"}}},
             plugin_config=plugin_config,
