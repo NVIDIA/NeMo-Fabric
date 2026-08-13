@@ -1,0 +1,55 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[build-system]
+requires = [
+  "setuptools>=77",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nemo-fabric-adapters-mini-swe-agent"
+version = "0.2.0"
+description = "mini-SWE-agent adapter for NeMo Fabric"
+authors = [
+  { name = "NVIDIA Corporation" },
+]
+keywords = ["agents", "ai", "nemo-fabric", "runtime", "tools"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+readme = "pypi.md"
+requires-python = ">=3.11"
+dependencies = [
+  "nemo-fabric-adapter-contract == 0.2.0",
+  "nemo-fabric-adapters-common == 0.2.0",
+]
+
+[project.optional-dependencies]
+harness = [
+  "mini-swe-agent==2.4.6",
+]
+full = [
+  "mini-swe-agent==2.4.6",
+]
+
+[project.urls]
+Repository = "https://github.com/NVIDIA/NeMo-Fabric"
+Homepage = "https://github.com/NVIDIA/NeMo-Fabric"
+Issues = "https://github.com/NVIDIA/NeMo-Fabric/issues"
+Documentation = "https://docs.nvidia.com/nemo/fabric"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["nemo_fabric_adapters.mini_swe_agent*"]
+
+[tool.setuptools.data-files]
+"share/nemo-fabric/adapters/mini-swe-agent" = ["fabric-adapter.json"]
+
+[tool.uv.sources]
+nemo-fabric-adapter-contract = { path = "../../adapter-contract", editable = true }
+nemo-fabric-adapters-common = { path = "../common", editable = true }

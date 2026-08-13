@@ -1,0 +1,102 @@
+---
+title: "Use the mini-SWE-agent Adapter"
+description: "Install and configure the NVIDIA NeMo Fabric harness integration for mini-SWE-agent."
+---
+{/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0 */}
+
+The NVIDIA NeMo Fabric `nvidia.fabric.mini-swe-agent` adapter runs
+mini-SWE-agent's native shell-only loop in the persistent NeMo Fabric Python
+adapter host. Each invocation creates a fresh mini-SWE-agent loop in the
+configured workspace.
+
+## Install the Adapter
+
+To install the NVIDIA NeMo Fabric runtime, adapter, and supported
+mini-SWE-agent package in one environment, run:
+
+```bash
+pip install "nemo-fabric[mini-swe-agent]"
+```
+
+To install the adapter and supported mini-SWE-agent package without the NVIDIA
+NeMo Fabric runtime, use the `harness` extra:
+
+```bash
+pip install "nemo-fabric-adapters-mini-swe-agent[harness]"
+```
+
+The `harness` and `full` extras both install `mini-swe-agent==2.4.6`. To use
+an environment-managed compatible package, install the bare adapter:
+
+```bash
+pip install nemo-fabric-adapters-mini-swe-agent
+```
+
+For separate runtime and adapter environments, set `ADAPTER_PYTHON` in the
+runtime environment to the adapter environment's Python interpreter. Use
+matching NVIDIA NeMo Fabric release versions for the runtime and adapter unless
+you have validated a different pairing.
+
+## Configure the Adapter
+
+Select the mini-SWE-agent harness by adapter ID:
+
+```python
+from nemo_fabric import HarnessConfig
+
+harness = HarnessConfig(
+    adapter_id="nvidia.fabric.mini-swe-agent",
+    settings={"timeout_seconds": 180},
+)
+```
+
+The adapter maps `models`, `models.base_url`, `models.temperature`,
+`instructions.system`, `runtime.max_turns`, and `environment.workspace` to
+mini-SWE-agent. It passes model credentials from `models.<role>.api_key_env` to
+LiteLLM without persisting the credential. When no explicit variable is
+configured, it uses the conventional variable for OpenAI, Anthropic, NVIDIA, or
+OpenRouter.
+
+`runtime.timeout_seconds` remains the NVIDIA NeMo Fabric invocation deadline.
+The adapter-specific `harness.settings.timeout_seconds` maps to the maximum
+duration of one mini-SWE-agent shell command and defaults to `180` seconds.
+Planning validates that setting and rejects unknown adapter settings.
+
+mini-SWE-agent exposes its native bash tool only. The adapter does not support
+normalized MCP, skills, tool policy, native streaming, or native telemetry.
+NeMo Fabric reports a failed result when the loop ends without submitting final
+output.
+
+## Run a Task
+
+```python
+from nemo_fabric import EnvironmentConfig, Fabric, FabricConfig, HarnessConfig
+from nemo_fabric import InstructionConfig, InstructionsConfig, MetadataConfig
+from nemo_fabric import ModelConfig, RuntimeConfig
+
+config = FabricConfig(
+    metadata=MetadataConfig(name="mini-swe-agent"),
+    harness=HarnessConfig(
+        adapter_id="nvidia.fabric.mini-swe-agent",
+        settings={"timeout_seconds": 180},
+    ),
+    models={
+        "default": ModelConfig(
+            provider="openai",
+            model="gpt-5-mini",
+            api_key_env="OPENAI_API_KEY",
+        )
+    },
+    instructions=InstructionsConfig(
+        system=InstructionConfig(content="Inspect the issue and verify the change.")
+    ),
+    runtime=RuntimeConfig(max_turns=50, timeout_seconds=1800),
+    environment=EnvironmentConfig(provider="local", workspace="/workspace"),
+)
+
+result = await Fabric().run(config, base_dir="/workspace", input="Fix the failing test.")
+```
+
+The result includes the submitted final output, the mini-SWE-agent exit status,
+and reported LiteLLM cost plus API-call usage.

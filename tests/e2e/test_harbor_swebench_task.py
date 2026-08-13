@@ -18,7 +18,16 @@ from pathlib import Path
 import pytest
 
 from _utils.configs import harbor_swebench_config
-from nemo_fabric import Fabric, RunRequest
+from nemo_fabric import (
+    EnvironmentConfig,
+    Fabric,
+    FabricConfig,
+    HarnessConfig,
+    MetadataConfig,
+    ModelConfig,
+    RunRequest,
+    RuntimeConfig,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 HARBOR_ROOT = ROOT.parent / "harbor"
@@ -28,6 +37,8 @@ DEFAULT_TASK = (
 IMAGE = "swebench/sweb.eval.x86_64.django_1776_django-13741:latest"
 RUN_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_DOCKER"
 VERIFY_ENV = "RUN_FABRIC_HARBOR_SWEBENCH_VERIFY"
+MINI_SWE_AGENT_RUN_ENV = "RUN_FABRIC_MINI_SWE_AGENT_HARBOR_SWEBENCH"
+
 
 @pytest.mark.usefixtures("requires_harbor")
 async def test_harbor_swebench_task(hermes_shim_agent_dir: Path):
@@ -70,6 +81,65 @@ async def test_harbor_swebench_task(hermes_shim_agent_dir: Path):
             workspace,
             hermes_shim_agent_dir / "artifacts" / "verifier",
         )
+
+
+@pytest.mark.usefixtures("requires_harbor")
+async def test_mini_swe_agent_harbor_swebench_task(hermes_shim_agent_dir: Path):
+    if os.environ.get(MINI_SWE_AGENT_RUN_ENV) != "1":
+        pytest.skip(f"set {MINI_SWE_AGENT_RUN_ENV}=1 to run the Harbor SWE-Bench smoke")
+    if not os.environ.get("NVIDIA_API_KEY"):
+        pytest.fail("NVIDIA_API_KEY is required for the mini-SWE-agent Harbor smoke")
+
+    task_dir = Path(os.environ.get("FABRIC_HARBOR_SWEBENCH_TASK", DEFAULT_TASK))
+    if not task_dir.exists():
+        raise AssertionError(f"Harbor SWE-Bench task directory not found: {task_dir}")
+    assert_docker_image()
+
+    workspace = hermes_shim_agent_dir / "repos" / "swebench-django-13741"
+    workspace.mkdir(parents=True)
+    copy_testbed_from_image(workspace)
+    assert_clean_workspace(workspace)
+    model = os.environ.get(
+        "FABRIC_MINI_SWE_AGENT_MODEL",
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+    )
+    result = (
+        await Fabric().run(
+            FabricConfig(
+                metadata=MetadataConfig(name="harbor-mini-swe-agent"),
+                harness=HarnessConfig(
+                    adapter_id="nvidia.fabric.mini-swe-agent",
+                    resolution="preinstalled",
+                    settings={"timeout_seconds": 180},
+                ),
+                models={
+                    "default": ModelConfig(
+                        provider=model.split("/", maxsplit=1)[0],
+                        model=model,
+                        api_key_env="NVIDIA_API_KEY",
+                        base_url="https://integrate.api.nvidia.com/v1",
+                    )
+                },
+                runtime=RuntimeConfig(
+                    input_schema="harbor_swe_bench_task",
+                    output_schema="message",
+                    artifacts="./artifacts/mini-swe-agent",
+                    max_turns=75,
+                    timeout_seconds=1800,
+                ),
+                environment=EnvironmentConfig(
+                    provider="local",
+                    workspace=workspace,
+                    artifacts="./artifacts/mini-swe-agent",
+                ),
+            ),
+            base_dir=ROOT,
+            request=RunRequest.from_mapping(build_request(task_dir)),
+        )
+    ).to_mapping()
+
+    assert result["status"] == "succeeded", result
+    assert result["output"]["exit_status"] == "Submitted", result
 
 
 def assert_docker_image() -> None:
@@ -165,6 +235,8 @@ def verify_with_harbor_task(task_dir: Path, workspace: Path, logs: Path) -> None
     assert reward == "1", (logs / "verifier" / "report.json").read_text(
         encoding="utf-8"
     )
+
+
 def run(*command: object, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
         [str(part) for part in command],
