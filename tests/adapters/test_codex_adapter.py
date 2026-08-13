@@ -1369,7 +1369,9 @@ def test_prepare_relay_reuses_one_resolved_executable(
     monkeypatch.setattr(adapter.relay_gateway, "resolve_relay_command", resolve)
     monkeypatch.setattr(adapter.relay_gateway, "relay_cli_contract", contract)
     monkeypatch.setattr(adapter.relay_gateway, "find_available_tcp_port", lambda: 43210)
-    monkeypatch.setattr(adapter.common_utils, "load_relay_plugin_config", load)
+    monkeypatch.setattr(
+        adapter.common_utils, "load_relay_plugin_config_for_runtime", load
+    )
     monkeypatch.setattr(adapter.common_utils, "write_relay_configs", write)
 
     relay = adapter.prepare_codex_relay(
@@ -1386,9 +1388,9 @@ def test_prepare_relay_reuses_one_resolved_executable(
     )
     contract.assert_called_once_with(executable)
     load.assert_called_once_with(
-        base_dir_value=codex_payload["base_dir"],
+        base_dir=codex_payload["base_dir"],
         runtime_id="runtime-1",
-        agent_name_value="codex-test",
+        agent_name="codex-test",
         model_name="acme/code-model",
     )
     write.assert_called_once_with(

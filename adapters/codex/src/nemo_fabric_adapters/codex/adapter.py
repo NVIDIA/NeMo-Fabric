@@ -758,10 +758,10 @@ def prepare_codex_relay(
 
     try:
         relay_contract = relay_gateway.relay_cli_contract(executable)
-        plugin_config = common_utils.load_relay_plugin_config(
-            base_dir_value=base_dir,
+        plugin_config = common_utils.load_relay_plugin_config_for_runtime(
+            base_dir=base_dir,
             runtime_id=context.runtime_id,
-            agent_name_value=agent_name,
+            agent_name=agent_name,
             model_name=_selected_model_config(config).model,
         )
         config_path, plugin_config_path = common_utils.write_relay_configs(
