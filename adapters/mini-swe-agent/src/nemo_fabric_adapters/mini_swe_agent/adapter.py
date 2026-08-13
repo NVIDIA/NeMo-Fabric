@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -8,18 +9,14 @@ import json
 import os
 from typing import Any
 
-from nemo_fabric_adapter_contract.models import AgentConfig
-from nemo_fabric_adapter_contract.models import AgentModelConfig
-from nemo_fabric_adapter_contract.models import RuntimeContext
-from nemo_fabric_adapters.common import lifecycle
-import nemo_fabric_adapters.common.utils as common_utils
+from nemo_fabric_adapter_contract import models as contract
+from nemo_fabric_adapters.common import lifecycle, utils as common_utils
 
 DEFAULT_API_KEY_ENVS = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "nvidia": "NVIDIA_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
+    provider: f"{provider.upper()}_API_KEY"
+    for provider in ("anthropic", "nvidia", "openai", "openrouter")
 }
+DEFAULT_SYSTEM_TEMPLATE = "You are a helpful software engineering assistant."
 INSTANCE_TEMPLATE = """Solve this task in the current workspace:
 
 {{task}}
@@ -30,10 +27,12 @@ Use the bash tool. When complete, run
 
 
 def main() -> None:
-    lifecycle.serve(MiniSweAgentRuntime, config_loader=AgentConfig.from_mapping)
+    lifecycle.serve(
+        MiniSweAgentRuntime, config_loader=contract.AgentConfig.from_mapping
+    )
 
 
-def _selected_model(config: AgentConfig) -> AgentModelConfig:
+def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
     model = config.models.get("default")
     if model is None and len(config.models) == 1:
         model = next(iter(config.models.values()))
@@ -44,7 +43,9 @@ def _selected_model(config: AgentConfig) -> AgentModelConfig:
     return model
 
 
-def _model_api_key(model: AgentModelConfig, environment: dict[str, str]) -> str | None:
+def _model_api_key(
+    model: contract.AgentModelConfig, environment: dict[str, str]
+) -> str | None:
     name = model.api_key_env or DEFAULT_API_KEY_ENVS.get(model.provider)
     if name is None:
         return None
@@ -65,12 +66,12 @@ class MiniSweAgentRuntime:
 
     async def start(self, payload: dict[str, Any]) -> None:
         config = payload.get("config")
-        if not isinstance(config, AgentConfig):
+        if not isinstance(config, contract.AgentConfig):
             raise lifecycle.LifecycleError(
                 "mini_swe_agent_invalid_config",
                 "mini-SWE-agent requires a validated AgentConfig",
             )
-        context = RuntimeContext.from_mapping(payload.get("runtime_context"))
+        context = contract.RuntimeContext.from_mapping(payload.get("runtime_context"))
         workspace = context.environment.workspace
         if workspace is None:
             raise lifecycle.LifecycleError(
@@ -87,9 +88,8 @@ class MiniSweAgentRuntime:
             model_kwargs["api_base"] = model.base_url
         if model.temperature is not None:
             model_kwargs["temperature"] = model.temperature
-        timeout = (config.harness.settings if config.harness else {}).get(
-            "timeout_seconds", 180
-        )
+        settings = config.harness.settings if config.harness else {}
+        timeout = settings.get("timeout_seconds", 180)
         self._model = LitellmModel(
             model_name=(
                 model.model if "/" in model.model else f"{model.provider}/{model.model}"
@@ -101,11 +101,7 @@ class MiniSweAgentRuntime:
             cwd=str(workspace), env=context.environment.env, timeout=timeout
         )
         system = config.instructions.system if config.instructions else None
-        template = (
-            system.content
-            if system
-            else "You are a helpful software engineering assistant."
-        )
+        template = system.content if system else DEFAULT_SYSTEM_TEMPLATE
         self._agent_kwargs = {
             "system_template": template,
             "instance_template": INSTANCE_TEMPLATE,
@@ -115,7 +111,7 @@ class MiniSweAgentRuntime:
         self._runtime_id = context.runtime_id
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
-        context = RuntimeContext.from_mapping(payload.get("runtime_context"))
+        context = contract.RuntimeContext.from_mapping(payload.get("runtime_context"))
         if self._model is None or self._environment is None:
             raise lifecycle.LifecycleError(
                 "mini_swe_agent_not_started", "mini-SWE-agent runtime is not started"
