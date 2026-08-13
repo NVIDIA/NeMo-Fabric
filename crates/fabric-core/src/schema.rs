@@ -447,6 +447,11 @@ mod tests {
             "output": null,
             "error": {"code": "target_error", "message": "target failed"}
         })));
+        assert!(validator.is_valid(&serde_json::json!({
+            "status": "succeeded",
+            "output": null,
+            "error": null
+        })));
         for path in [
             " \t",
             "nested/../output",

@@ -19,7 +19,7 @@ const supportedRunResultConditionals = [
       properties: { status: { const: "succeeded" } },
       required: ["status"],
     },
-    then: { not: { required: ["error"] } },
+    then: { properties: { error: { type: "null" } } },
   },
 ];
 

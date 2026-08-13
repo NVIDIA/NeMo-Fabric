@@ -12,10 +12,10 @@ export type AgentRunResult =
   | AgentRunFailed
   | AgentRunCancelled;
 
-/** Successful terminal result. Successful results cannot carry an error. */
+/** Successful terminal result. Successful results can carry only a null error. */
 export interface AgentRunSucceeded extends AgentRunResultCommon {
   status: "succeeded";
-  error?: never;
+  error?: null;
 }
 
 /** Failed terminal result. Failed results must carry a non-null error. */

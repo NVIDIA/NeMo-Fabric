@@ -19,6 +19,7 @@ const requests: AgentRunRequest[] = [
 
 const results: AgentRunResult[] = [
   { output: null, status: "succeeded" },
+  { error: null, output: null, status: "succeeded" },
   {
     error: { code: "target_error", message: "target failed" },
     output: { partial: true },
