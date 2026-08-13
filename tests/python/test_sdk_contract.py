@@ -1053,7 +1053,7 @@ def test_relay_generic_observability_component_requires_enabled_endpoint(
                 components=[
                     RelayComponentConfig(kind="observability", config=config),
                 ]
-                )
+            )
 
 
 @pytest.mark.parametrize(
