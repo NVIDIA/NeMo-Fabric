@@ -1053,17 +1053,87 @@ def test_relay_generic_observability_component_requires_enabled_endpoint(
                 components=[
                     RelayComponentConfig(kind="observability", config=config),
                 ]
-            )
+                )
+
+
+@pytest.mark.parametrize(
+    ("opentelemetry", "message"),
+    [
+        (False, "opentelemetry config must be an object"),
+        ({"enabled": "true"}, r"opentelemetry\.enabled must be a boolean"),
+        ({"endpoints": None}, r"opentelemetry\.endpoints must be a list"),
+        ({"endpoints": "endpoint"}, r"opentelemetry\.endpoints must be a list"),
+        (
+            {"endpoints": [False]},
+            r"endpoint must be an object for relay\.components\[0\]",
+        ),
+        (
+            {"endpoints": [{"endpoint": "http://localhost:4318/v1/traces"}]},
+            r"endpoint type must be one of .*endpoints\[0\]\.type",
+        ),
+        (
+            {
+                "endpoints": [
+                    {
+                        "type": "zipkin",
+                        "endpoint": "http://localhost:4318/v1/traces",
+                    }
+                ]
+            },
+            r"endpoint type must be one of .*endpoints\[0\]\.type",
+        ),
+    ],
+)
+def test_relay_generic_observability_component_rejects_malformed_opentelemetry(
+    opentelemetry: object,
+    message: str,
+):
+    with pytest.raises(ValidationError, match=message):
+        RelayConfig(
+            components=[
+                {
+                    "kind": "observability",
+                    "config": {
+                        "version": 3,
+                        "opentelemetry": opentelemetry,
+                    },
+                }
+            ]
+        )
+
+
+@pytest.mark.parametrize("endpoint_type", ["full", "gen_ai", "openinference"])
+def test_relay_generic_observability_component_accepts_endpoint_types(
+    endpoint_type: str,
+):
+    RelayConfig(
+        components=[
+            {
+                "kind": "observability",
+                "config": {
+                    "version": 3,
+                    "opentelemetry": {
+                        "endpoints": [
+                            {
+                                "type": endpoint_type,
+                                "endpoint": "http://localhost:4318/v1/traces",
+                            }
+                        ]
+                    },
+                },
+            }
+        ]
+    )
 
 
 @pytest.mark.parametrize(
     "endpoint",
     [
-        {},
-        {"endpoint": None},
-        {"endpoint": 42},
-        {"endpoint": ""},
-        {"endpoint": "   "},
+        {"type": "full"},
+        {"type": "full", "endpoint": None},
+        {"type": "full", "endpoint": 42},
+        {"type": "full", "endpoint": ""},
+        {"type": "full", "endpoint": "   "},
     ],
 )
 def test_relay_generic_observability_component_requires_nonblank_endpoint(endpoint):

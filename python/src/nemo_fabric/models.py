@@ -800,40 +800,68 @@ class RelayConfig(FabricBaseModel):
                     "NeMo Relay observability config version 3 requires OpenInference "
                     f"as an opentelemetry endpoint for relay.components[{index}]"
                 )
-            opentelemetry = config.get("opentelemetry")
-            if isinstance(opentelemetry, Mapping):
-                legacy_fields = sorted(
-                    _LEGACY_FLAT_OTEL_FIELDS.intersection(opentelemetry)
+            if "opentelemetry" not in config:
+                continue
+            opentelemetry = config["opentelemetry"]
+            if not isinstance(opentelemetry, Mapping):
+                raise ValueError(
+                    "NeMo Relay opentelemetry config must be an object for "
+                    f"relay.components[{index}]"
                 )
-                if legacy_fields:
-                    fields = ", ".join(legacy_fields)
+            legacy_fields = sorted(
+                _LEGACY_FLAT_OTEL_FIELDS.intersection(opentelemetry)
+            )
+            if legacy_fields:
+                fields = ", ".join(legacy_fields)
+                raise ValueError(
+                    "NeMo Relay observability config version 3 requires exporter "
+                    "fields inside opentelemetry.endpoints for "
+                    f"relay.components[{index}]: {fields}"
+                )
+            enabled = opentelemetry.get("enabled", False)
+            if not isinstance(enabled, bool):
+                raise ValueError(
+                    "NeMo Relay opentelemetry.enabled must be a boolean for "
+                    f"relay.components[{index}]"
+                )
+            endpoints = opentelemetry.get("endpoints")
+            if "endpoints" in opentelemetry and not isinstance(endpoints, list):
+                raise ValueError(
+                    "NeMo Relay opentelemetry.endpoints must be a list for "
+                    f"relay.components[{index}]"
+                )
+            if enabled and not endpoints:
+                raise ValueError(
+                    "enabled NeMo Relay OpenTelemetry requires at least one "
+                    f"endpoint for relay.components[{index}]"
+                )
+            for endpoint_index, endpoint_config in enumerate(endpoints or []):
+                if not isinstance(endpoint_config, Mapping):
                     raise ValueError(
-                        "NeMo Relay observability config version 3 requires exporter "
-                        "fields inside opentelemetry.endpoints for "
-                        f"relay.components[{index}]: {fields}"
+                        "NeMo Relay OpenTelemetry endpoint must be an object for "
+                        f"relay.components[{index}].config.opentelemetry."
+                        f"endpoints[{endpoint_index}]"
                     )
-                endpoints = opentelemetry.get("endpoints")
-                if opentelemetry.get("enabled") is True and (
-                    not isinstance(endpoints, list) or not endpoints
-                ):
+                endpoint_type = endpoint_config.get("type")
+                if not isinstance(endpoint_type, str) or endpoint_type not in {
+                    "full",
+                    "gen_ai",
+                    "openinference",
+                }:
                     raise ValueError(
-                        "enabled NeMo Relay OpenTelemetry requires at least one "
-                        f"endpoint for relay.components[{index}]"
+                        "NeMo Relay OpenTelemetry endpoint type must be one of "
+                        "'full', 'gen_ai', or 'openinference' for "
+                        f"relay.components[{index}].config.opentelemetry."
+                        f"endpoints[{endpoint_index}].type"
                     )
-                if isinstance(endpoints, list):
-                    for endpoint_index, endpoint_config in enumerate(endpoints):
-                        endpoint = (
-                            endpoint_config.get("endpoint")
-                            if isinstance(endpoint_config, Mapping)
-                            else None
-                        )
-                        if not isinstance(endpoint, str) or not endpoint.strip():
-                            raise ValueError(
-                                "NeMo Relay OpenTelemetry endpoint must be a "
-                                "non-empty string for "
-                                f"relay.components[{index}].config.opentelemetry."
-                                f"endpoints[{endpoint_index}].endpoint"
-                            )
+                endpoint = endpoint_config.get("endpoint")
+                if not isinstance(endpoint, str) or not endpoint.strip():
+                    raise ValueError(
+                        "NeMo Relay OpenTelemetry endpoint must be a non-empty "
+                        "string for "
+                        f"relay.components[{index}].config.opentelemetry."
+                        f"endpoints[{endpoint_index}].endpoint"
+                    )
         return self
 
 

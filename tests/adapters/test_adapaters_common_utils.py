@@ -1218,6 +1218,83 @@ def test_validate_relay_observability_v3_requires_endpoint_when_enabled(
             common_utils.validate_relay_observability_v3(plugin_config)
 
 
+@pytest.mark.parametrize(
+    ("opentelemetry", "message"),
+    [
+        (False, "opentelemetry config must be an object"),
+        ({"enabled": "true"}, r"opentelemetry\.enabled must be a boolean"),
+        ({"endpoints": None}, r"opentelemetry\.endpoints must be a list"),
+        ({"endpoints": "endpoint"}, r"opentelemetry\.endpoints must be a list"),
+        (
+            {"endpoints": [False]},
+            r"endpoint must be an object for opentelemetry\.endpoints\[0\]",
+        ),
+        (
+            {"endpoints": [{"endpoint": "http://localhost:4318/v1/traces"}]},
+            r"endpoint type must be one of .*opentelemetry\.endpoints\[0\]\.type",
+        ),
+        (
+            {
+                "endpoints": [
+                    {
+                        "type": "zipkin",
+                        "endpoint": "http://localhost:4318/v1/traces",
+                    }
+                ]
+            },
+            r"endpoint type must be one of .*opentelemetry\.endpoints\[0\]\.type",
+        ),
+        (
+            {"endpoints": [{"type": "full"}]},
+            r"endpoint must be a non-empty string for opentelemetry\.endpoints\[0\]",
+        ),
+    ],
+)
+def test_validate_relay_observability_v3_rejects_malformed_opentelemetry(
+    opentelemetry: object,
+    message: str,
+):
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {"version": 3, "opentelemetry": opentelemetry},
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match=message):
+        common_utils.validate_relay_observability_v3(plugin_config)
+
+
+@pytest.mark.parametrize("endpoint_type", ["full", "gen_ai", "openinference"])
+def test_validate_relay_observability_v3_accepts_endpoint_types(endpoint_type: str):
+    common_utils.validate_relay_observability_v3(
+        {
+            "version": 1,
+            "components": [
+                {
+                    "kind": "observability",
+                    "enabled": True,
+                    "config": {
+                        "version": 3,
+                        "opentelemetry": {
+                            "endpoints": [
+                                {
+                                    "type": endpoint_type,
+                                    "endpoint": "http://localhost:4318/v1/traces",
+                                }
+                            ]
+                        },
+                    },
+                }
+            ],
+        }
+    )
+
+
 @pytest.mark.parametrize("endpoint", [None, 42, "", " \t "])
 def test_validate_relay_observability_v3_rejects_invalid_endpoint(endpoint: object):
     plugin_config = {
@@ -1446,5 +1523,29 @@ def test_write_relay_configs_rejects_v2_before_creating_config_directory(
             relay_config={"agents": {}},
             plugin_config=plugin_config,
         )
+
+    assert not (tmp_path / "nested" / "relay-config").exists()
+
+
+def test_write_relay_configs_rejects_null_endpoints_before_creating_directory(
+    tmp_path: Path,
+):
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(tmp_path / "nested" / "relay.json")
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 3,
+                    "opentelemetry": {"endpoints": None},
+                },
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match=r"opentelemetry\.endpoints must be a list"):
+        common_utils.write_relay_configs(plugin_config=plugin_config)
 
     assert not (tmp_path / "nested" / "relay-config").exists()

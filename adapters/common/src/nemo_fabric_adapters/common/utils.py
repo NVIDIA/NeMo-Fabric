@@ -396,6 +396,7 @@ def dump_yaml(value: dict[str, Any]) -> str:
 def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
     """Validate Fabric's Relay observability schema boundary without mutation."""
 
+    endpoint_types = {"full", "gen_ai", "openinference"}
     legacy_flat_otel_fields = {
         "attribute_mappings",
         "capture_content",
@@ -434,34 +435,49 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
                 "openinference section; use an opentelemetry endpoint with type "
                 "'openinference'"
             )
-        opentelemetry = config.get("opentelemetry")
-        if isinstance(opentelemetry, dict):
-            legacy_fields = sorted(legacy_flat_otel_fields.intersection(opentelemetry))
-            if legacy_fields:
+        if "opentelemetry" not in config:
+            continue
+        opentelemetry = config["opentelemetry"]
+        if not isinstance(opentelemetry, dict):
+            raise ValueError(
+                "NeMo Relay opentelemetry config must be an object"
+            )
+        legacy_fields = sorted(legacy_flat_otel_fields.intersection(opentelemetry))
+        if legacy_fields:
+            raise ValueError(
+                "NeMo Relay observability config version 3 requires exporter "
+                "fields inside opentelemetry.endpoints: "
+                + ", ".join(legacy_fields)
+            )
+        enabled = opentelemetry.get("enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError("NeMo Relay opentelemetry.enabled must be a boolean")
+        endpoints = opentelemetry.get("endpoints")
+        if "endpoints" in opentelemetry and not isinstance(endpoints, list):
+            raise ValueError("NeMo Relay opentelemetry.endpoints must be a list")
+        if enabled and not endpoints:
+            raise ValueError(
+                "enabled NeMo Relay OpenTelemetry requires at least one endpoint"
+            )
+        for index, endpoint in enumerate(endpoints or []):
+            if not isinstance(endpoint, dict):
                 raise ValueError(
-                    "NeMo Relay observability config version 3 requires exporter "
-                    "fields inside opentelemetry.endpoints: "
-                    + ", ".join(legacy_fields)
+                    "NeMo Relay OpenTelemetry endpoint must be an object for "
+                    f"opentelemetry.endpoints[{index}]"
                 )
-            endpoints = opentelemetry.get("endpoints")
-            if opentelemetry.get("enabled") is True and (
-                not isinstance(endpoints, list) or not endpoints
-            ):
+            endpoint_type = endpoint.get("type")
+            if not isinstance(endpoint_type, str) or endpoint_type not in endpoint_types:
                 raise ValueError(
-                    "enabled NeMo Relay OpenTelemetry requires at least one endpoint"
+                    "NeMo Relay OpenTelemetry endpoint type must be one of "
+                    "'full', 'gen_ai', or 'openinference' for "
+                    f"opentelemetry.endpoints[{index}].type"
                 )
-            if isinstance(endpoints, list):
-                for index, endpoint in enumerate(endpoints):
-                    value = (
-                        endpoint.get("endpoint")
-                        if isinstance(endpoint, dict)
-                        else None
-                    )
-                    if not isinstance(value, str) or not value.strip():
-                        raise ValueError(
-                            "NeMo Relay OpenTelemetry endpoint must be a non-empty "
-                            f"string for opentelemetry.endpoints[{index}]"
-                        )
+            value = endpoint.get("endpoint")
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    "NeMo Relay OpenTelemetry endpoint must be a non-empty "
+                    f"string for opentelemetry.endpoints[{index}]"
+                )
 
 
 def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
