@@ -649,7 +649,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## typescript - 5.9.3
+## typescript - 5.6.3
 **Repository URL**: https://github.com/microsoft/TypeScript
 **License Type(s)**: Apache-2.0
 ### License: https://spdx.org/licenses/Apache-2.0.html

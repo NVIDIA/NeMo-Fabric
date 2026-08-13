@@ -26,7 +26,8 @@ npm pack --prefix typescript/adapter-contract
 npm install ./nemo-fabric-adapter-contract-0.2.0.tgz
 ```
 
-Use Node.js 20.18.3 or later and TypeScript 5.3 or later. Use a compatible
+Use Node.js 20.18.3 or later and TypeScript 5.6 or later. The TypeScript floor
+ensures NodeNext consumers can import the bundled JSON Schemas. Use a compatible
 TypeScript module pair: `module: "NodeNext"` with
 `moduleResolution: "NodeNext"`, or `module: "ESNext"` with
 `moduleResolution: "bundler"`. Enable `resolveJsonModule` when importing the
