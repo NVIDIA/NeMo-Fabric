@@ -166,6 +166,13 @@ files with its runtime-owned configuration. Remove or relocate a user
 Relay-enabled Deep Agents or Hermes Agent runtime. System configuration in
 `/etc/nemo-relay/plugins.toml` remains administrator controlled.
 
+#### Migrate Relay observability configs from 0.6
+
+Relay 0.7 requires observability schema version 3. Move flat OpenTelemetry
+exporter fields into entries under `opentelemetry.endpoints`. In the Python SDK,
+replace the removed `RelayOtlpConfig` model with `RelayOpenTelemetryConfig` and
+one or more `RelayOpenTelemetryEndpointConfig` entries.
+
 #### NeMo Relay CLI
 
 Install the compatible Python package and CLI binary together:

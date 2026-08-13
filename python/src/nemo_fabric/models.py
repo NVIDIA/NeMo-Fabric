@@ -30,6 +30,27 @@ from pydantic import model_serializer
 from pydantic import model_validator
 
 
+_LEGACY_FLAT_OTEL_FIELDS = frozenset(
+    {
+        "attribute_mappings",
+        "capture_content",
+        "endpoint",
+        "header_env",
+        "headers",
+        "instrumentation_scope",
+        "mark_exclude_names",
+        "mark_projection",
+        "resource_attributes",
+        "semantic_selector",
+        "service_name",
+        "service_namespace",
+        "service_version",
+        "timeout_millis",
+        "transport",
+    }
+)
+
+
 def _json_value(value: Any, name: str) -> Any:
     """Validate and detach a JSON-compatible value."""
 
@@ -687,22 +708,7 @@ class RelayOpenTelemetryConfig(FabricBaseModel):
 
     @model_validator(mode="after")
     def _validate_v3_shape(self) -> Self:
-        legacy_fields = {
-            "attribute_mappings",
-            "capture_content",
-            "endpoint",
-            "headers",
-            "instrumentation_scope",
-            "mark_exclude_names",
-            "mark_projection",
-            "resource_attributes",
-            "semantic_selector",
-            "service_name",
-            "service_namespace",
-            "service_version",
-            "timeout_millis",
-            "transport",
-        }.intersection(self.model_extra or {})
+        legacy_fields = _LEGACY_FLAT_OTEL_FIELDS.intersection(self.model_extra or {})
         if legacy_fields:
             fields = ", ".join(sorted(legacy_fields))
             raise ValueError(
@@ -764,23 +770,6 @@ class RelayConfig(FabricBaseModel):
 
     @model_validator(mode="after")
     def _validate_observability_component_versions(self) -> Self:
-        legacy_flat_otel_fields = {
-            "attribute_mappings",
-            "capture_content",
-            "endpoint",
-            "header_env",
-            "headers",
-            "instrumentation_scope",
-            "mark_exclude_names",
-            "mark_projection",
-            "resource_attributes",
-            "semantic_selector",
-            "service_name",
-            "service_namespace",
-            "service_version",
-            "timeout_millis",
-            "transport",
-        }
         for index, component in enumerate(self.components):
             if isinstance(component, RelayComponentConfig):
                 kind = component.kind
@@ -790,6 +779,17 @@ class RelayConfig(FabricBaseModel):
                 config = component.get("config", {})
             if kind != "observability":
                 continue
+            if "version" in config:
+                version = config["version"]
+                if (
+                    not isinstance(version, int)
+                    or isinstance(version, bool)
+                    or version != 3
+                ):
+                    raise ValueError(
+                        "NeMo Relay 0.7 requires observability config version 3 "
+                        f"for relay.components[{index}]"
+                    )
             if "openinference" in config:
                 raise ValueError(
                     "NeMo Relay observability config version 3 requires OpenInference "
@@ -798,7 +798,7 @@ class RelayConfig(FabricBaseModel):
             opentelemetry = config.get("opentelemetry")
             if isinstance(opentelemetry, Mapping):
                 legacy_fields = sorted(
-                    legacy_flat_otel_fields.intersection(opentelemetry)
+                    _LEGACY_FLAT_OTEL_FIELDS.intersection(opentelemetry)
                 )
                 if legacy_fields:
                     fields = ", ".join(legacy_fields)
@@ -807,18 +807,14 @@ class RelayConfig(FabricBaseModel):
                         "fields inside opentelemetry.endpoints for "
                         f"relay.components[{index}]: {fields}"
                     )
-            if "version" not in config:
-                continue
-            version = config["version"]
-            if (
-                not isinstance(version, int)
-                or isinstance(version, bool)
-                or version != 3
-            ):
-                raise ValueError(
-                    "NeMo Relay 0.7 requires observability config version 3 "
-                    f"for relay.components[{index}]"
-                )
+                endpoints = opentelemetry.get("endpoints")
+                if opentelemetry.get("enabled") is True and (
+                    not isinstance(endpoints, list) or not endpoints
+                ):
+                    raise ValueError(
+                        "enabled NeMo Relay OpenTelemetry requires at least one "
+                        f"endpoint for relay.components[{index}]"
+                    )
         return self
 
 

@@ -104,7 +104,7 @@ def test_relay_cli_contract_rejects_unparseable_output(monkeypatch, tmp_path):
 
 
 def test_start_relay_gateway_captures_logs_and_waits_for_health(monkeypatch, tmp_path):
-    monkeypatch.setenv("NEMO_RELAY_CONFIG_SCOPE", "project")
+    os.environ["NEMO_RELAY_CONFIG_SCOPE"] = "project"
     executable = tmp_path / "nemo-relay"
     config_path = tmp_path / "relay-config" / "config.toml"
     config_path.parent.mkdir()

@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import uuid
+from pathlib import Path
 
 import pytest
 from nemo_fabric_adapters.deepagents import adapter
@@ -28,7 +30,7 @@ from nemo_relay.integrations.langchain.callbacks import (  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def isolated_scope_stack(monkeypatch: pytest.MonkeyPatch):
+def isolated_scope_stack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Give each test its own Relay scope stack.
 
     These tests strand a scope on purpose, and the stack is process-global, so without
@@ -36,9 +38,8 @@ def isolated_scope_stack(monkeypatch: pytest.MonkeyPatch):
     assignment is the only way to install a stack for the current context.
     """
 
-    monkeypatch.setattr(
-        adapter.common_utils, "reject_ambient_relay_plugin_config", lambda: None
-    )
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg-config")
+    monkeypatch.chdir(tmp_path)
     token = nemo_relay._scope_stack_var.set(nemo_relay.create_scope_stack())
     try:
         yield

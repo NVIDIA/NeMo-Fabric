@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from nemo_fabric import EnvironmentConfig
 from nemo_fabric import FabricConfig
@@ -321,6 +322,7 @@ def with_native_otel(base: FabricConfig) -> FabricConfig:
 
     config = base.model_copy(deep=True)
     adapter_id = config.harness.adapter_id
+    observability: dict[str, Any]
     if adapter_id == "nvidia.fabric.codex":
         observability = {
             "version": 1,

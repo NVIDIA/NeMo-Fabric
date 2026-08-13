@@ -93,7 +93,8 @@ def test_capability_and_telemetry_variants_do_not_mutate_their_input():
     assert "relay" in variants[3].telemetry.providers
 
 
-def test_native_otel_variants_match_adapter_contracts(nemo_relay):
+@pytest.mark.usefixtures("nemo_relay")
+def test_native_otel_variants_match_adapter_contracts():
     from nemo_relay import plugin
 
     codex = with_native_otel(codex_config())
@@ -129,11 +130,11 @@ def test_native_otel_variants_match_adapter_contracts(nemo_relay):
         ),
     ],
 )
+@pytest.mark.usefixtures("nemo_relay")
 def test_relay_otel_variants_author_v3_endpoints(
     variant,
     endpoint_type: str,
     endpoint: str,
-    nemo_relay,
 ):
     from nemo_relay import plugin
 

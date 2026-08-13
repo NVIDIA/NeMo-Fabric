@@ -116,3 +116,7 @@ Each function returns a deep copy. The four configs can therefore be planned or
 run independently with `base_dir=BASE_DIR`. Set `GITHUB_MCP_URL` before running
 `github_config`; it maps the server into the selected harness's native MCP
 configuration. The default smoke does not configure or contact that server.
+
+`with_native_otel` supports the Codex and Deep Agents adapters. It raises
+`ValueError` for Hermes Agent and Claude, whose native telemetry contracts do
+not accept this configuration.

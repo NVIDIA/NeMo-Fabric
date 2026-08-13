@@ -1553,6 +1553,16 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
             if component.kind != "observability" {
                 continue;
             }
+            if let Some(version) = component.config.get("version")
+                && version.as_u64() != Some(u64::from(RELAY_OBSERVABILITY_VERSION))
+            {
+                return invalid_config(
+                    format!("relay.components.{index}.config.version"),
+                    format!(
+                        "NeMo Relay 0.7 requires observability config version {RELAY_OBSERVABILITY_VERSION}"
+                    ),
+                );
+            }
             if component.config.contains_key("openinference") {
                 return invalid_config(
                     format!("relay.components.{index}.config.openinference"),
@@ -1563,24 +1573,26 @@ pub(crate) fn validate_config(config: &FabricConfig) -> Result<()> {
                 .config
                 .get("opentelemetry")
                 .and_then(Value::as_object)
-                && let Some(field) =
-                    relay_legacy_flat_otel_field(|field| opentelemetry.contains_key(field))
             {
-                return invalid_config(
-                    format!("relay.components.{index}.config.opentelemetry.{field}"),
-                    "moved into each typed endpoint in observability config version 3",
-                );
-            }
-            let Some(version) = component.config.get("version") else {
-                continue;
-            };
-            if version.as_u64() != Some(u64::from(RELAY_OBSERVABILITY_VERSION)) {
-                return invalid_config(
-                    format!("relay.components.{index}.config.version"),
-                    format!(
-                        "NeMo Relay 0.7 requires observability config version {RELAY_OBSERVABILITY_VERSION}"
-                    ),
-                );
+                if let Some(field) =
+                    relay_legacy_flat_otel_field(|field| opentelemetry.contains_key(field))
+                {
+                    return invalid_config(
+                        format!("relay.components.{index}.config.opentelemetry.{field}"),
+                        "moved into each typed endpoint in observability config version 3",
+                    );
+                }
+                if opentelemetry.get("enabled").and_then(Value::as_bool) == Some(true)
+                    && opentelemetry
+                        .get("endpoints")
+                        .and_then(Value::as_array)
+                        .is_none_or(Vec::is_empty)
+                {
+                    return invalid_config(
+                        format!("relay.components.{index}.config.opentelemetry.endpoints"),
+                        "must contain at least one endpoint when OpenTelemetry export is enabled",
+                    );
+                }
             }
         }
     }
@@ -3419,23 +3431,37 @@ mod tests {
 
     #[test]
     fn generic_relay_observability_component_rejects_explicit_v2() {
-        let mut config = typed_config("nvidia.fabric.hermes");
-        config.relay = Some(RelayConfig {
-            components: vec![RelayComponentConfig {
-                kind: "observability".to_string(),
-                enabled: false,
-                config: BTreeMap::from([("version".to_string(), serde_json::json!(2))]),
-                extensions: BTreeMap::new(),
-            }],
-            ..RelayConfig::default()
-        });
+        for component_config in [
+            BTreeMap::from([("version".to_string(), serde_json::json!(2))]),
+            BTreeMap::from([
+                ("version".to_string(), serde_json::json!(2)),
+                (
+                    "opentelemetry".to_string(),
+                    serde_json::json!({
+                        "enabled": true,
+                        "endpoint": "http://localhost:4318/v1/traces"
+                    }),
+                ),
+            ]),
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.relay = Some(RelayConfig {
+                components: vec![RelayComponentConfig {
+                    kind: "observability".to_string(),
+                    enabled: true,
+                    config: component_config,
+                    extensions: BTreeMap::new(),
+                }],
+                ..RelayConfig::default()
+            });
 
-        let error = validate_config(&config).expect_err("Relay v2 component must fail");
-        assert!(matches!(
-            error,
-            FabricError::InvalidConfig { field, .. }
-                if field == "relay.components.0.config.version"
-        ));
+            let error = validate_config(&config).expect_err("Relay v2 component must fail");
+            assert!(matches!(
+                error,
+                FabricError::InvalidConfig { field, .. }
+                    if field == "relay.components.0.config.version"
+            ));
+        }
     }
 
     #[test]
@@ -3452,6 +3478,41 @@ mod tests {
         });
 
         validate_config(&config).expect("Relay 0.7 defaults a missing version to v3");
+    }
+
+    #[test]
+    fn generic_relay_observability_component_requires_enabled_endpoint() {
+        for (opentelemetry, valid) in [
+            (serde_json::json!({"enabled": true}), false),
+            (serde_json::json!({"enabled": true, "endpoints": []}), false),
+            (serde_json::json!({"enabled": false, "endpoints": []}), true),
+        ] {
+            let mut config = typed_config("nvidia.fabric.hermes");
+            config.relay = Some(RelayConfig {
+                components: vec![RelayComponentConfig {
+                    kind: "observability".to_string(),
+                    enabled: true,
+                    config: BTreeMap::from([
+                        ("version".to_string(), serde_json::json!(3)),
+                        ("opentelemetry".to_string(), opentelemetry),
+                    ]),
+                    extensions: BTreeMap::new(),
+                }],
+                ..RelayConfig::default()
+            });
+
+            if valid {
+                validate_config(&config).expect("disabled exporter may omit endpoints");
+            } else {
+                let error =
+                    validate_config(&config).expect_err("enabled exporter needs an endpoint");
+                assert!(matches!(
+                    error,
+                    FabricError::InvalidConfig { field, .. }
+                        if field == "relay.components.0.config.opentelemetry.endpoints"
+                ));
+            }
+        }
     }
 
     #[test]

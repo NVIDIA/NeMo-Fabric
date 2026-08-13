@@ -991,6 +991,59 @@ def test_relay_generic_observability_component_allows_implicit_or_v3_version():
         assert relay.components[0].config == config
 
 
+def test_relay_generic_observability_component_reports_version_before_v3_shape():
+    with pytest.raises(
+        ValidationError,
+        match="requires observability config version 3",
+    ):
+        RelayConfig(
+            components=[
+                RelayComponentConfig(
+                    kind="observability",
+                    config={
+                        "version": 2,
+                        "opentelemetry": {
+                            "enabled": True,
+                            "endpoint": "http://localhost:4318/v1/traces",
+                        },
+                    },
+                )
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    ("opentelemetry", "valid"),
+    [
+        ({"enabled": True}, False),
+        ({"enabled": True, "endpoints": []}, False),
+        ({"enabled": False, "endpoints": []}, True),
+    ],
+)
+def test_relay_generic_observability_component_requires_enabled_endpoint(
+    opentelemetry: dict[str, object],
+    valid: bool,
+):
+    config = {
+        "version": 3,
+        "opentelemetry": opentelemetry,
+    }
+    if valid:
+        relay = RelayConfig(
+            components=[
+                RelayComponentConfig(kind="observability", config=config),
+            ]
+        )
+        assert relay.components[0].config == config
+    else:
+        with pytest.raises(ValidationError, match="requires at least one endpoint"):
+            RelayConfig(
+                components=[
+                    RelayComponentConfig(kind="observability", config=config),
+                ]
+            )
+
+
 @pytest.mark.parametrize(
     "config",
     [
@@ -1045,14 +1098,19 @@ def test_relay_observability_rejects_legacy_openinference_section():
 @pytest.mark.parametrize(
     ("field", "value"),
     [
+        ("attribute_mappings", [{"key": "model", "alias": "llm.model"}]),
         ("endpoint", "http://localhost:4318/v1/traces"),
         ("transport", "http_binary"),
         ("headers", {"authorization": "test"}),
+        ("header_env", {"authorization": "OTEL_AUTHORIZATION"}),
         ("resource_attributes", {"deployment.environment": "test"}),
         ("service_name", "fabric"),
+        ("service_namespace", "platform"),
+        ("service_version", "0.4.0"),
         ("instrumentation_scope", "fabric.relay"),
         ("timeout_millis", 1000),
         ("mark_projection", "tool"),
+        ("mark_exclude_names", ["llm.chunk"]),
         ("semantic_selector", "openinference"),
         ("capture_content", True),
     ],

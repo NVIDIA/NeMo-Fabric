@@ -323,8 +323,8 @@ def test_ambient_relay_plugin_config_paths_prefers_xdg_and_nearest_project(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("version = 1\n", encoding="utf-8")
     nested.mkdir(parents=True)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
-    monkeypatch.setenv("HOME", str(home))
+    os.environ["XDG_CONFIG_HOME"] = str(xdg)
+    os.environ["HOME"] = str(home)
     monkeypatch.chdir(nested)
 
     assert common_utils.ambient_relay_plugin_config_paths() == [
@@ -340,8 +340,25 @@ def test_ambient_relay_plugin_config_paths_falls_back_to_home(
     user_config = home / ".config" / "nemo-relay" / "plugins.toml"
     user_config.parent.mkdir(parents=True)
     user_config.write_text("version = 1\n", encoding="utf-8")
-    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
-    monkeypatch.setenv("HOME", str(home))
+    os.environ.pop("XDG_CONFIG_HOME", None)
+    os.environ["HOME"] = str(home)
+    monkeypatch.chdir(tmp_path)
+
+    assert common_utils.ambient_relay_plugin_config_paths() == [user_config]
+
+
+@pytest.mark.parametrize("xdg_config_home", ["", "relative-config"])
+def test_ambient_relay_plugin_config_paths_ignores_invalid_xdg_home(
+    xdg_config_home: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    home = tmp_path / "home"
+    user_config = home / ".config" / "nemo-relay" / "plugins.toml"
+    user_config.parent.mkdir(parents=True)
+    user_config.write_text("version = 1\n", encoding="utf-8")
+    os.environ["XDG_CONFIG_HOME"] = xdg_config_home
+    os.environ["HOME"] = str(home)
     monkeypatch.chdir(tmp_path)
 
     assert common_utils.ambient_relay_plugin_config_paths() == [user_config]
@@ -350,7 +367,7 @@ def test_ambient_relay_plugin_config_paths_falls_back_to_home(
 def test_reject_ambient_relay_plugin_config_allows_clean_environment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg")
     monkeypatch.chdir(tmp_path)
 
     common_utils.reject_ambient_relay_plugin_config()
@@ -362,10 +379,10 @@ def test_reject_ambient_relay_plugin_config_reports_paths(
     project_config = tmp_path / ".nemo-relay" / "plugins.toml"
     project_config.parent.mkdir()
     project_config.write_text("version = 1\n", encoding="utf-8")
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg")
     monkeypatch.chdir(tmp_path)
 
-    with pytest.raises(RuntimeError, match=str(project_config)):
+    with pytest.raises(RuntimeError, match=re.escape(str(project_config))):
         common_utils.reject_ambient_relay_plugin_config()
 
 
@@ -391,6 +408,8 @@ def test_reject_inherited_relay_plugin_config_allows_system_policy():
     [
         "inherited plugin configuration from discovered file: "
         "/workspace/.nemo-relay/plugins.toml",
+        "inherited plugin configuration from discovered file: "
+        "/etc/nemo-relay/../nemo-relay/plugins.toml",
         "inherited plugin configuration from an unknown source",
     ],
 )
@@ -880,7 +899,6 @@ def test_relay_0_7_validates_v3_plugin_config():
     assert plugin.validate(plugin_config)["diagnostics"] == []
 
 
-@pytest.mark.asyncio
 async def test_relay_0_7_initializes_v3_atof_atif_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -889,7 +907,7 @@ async def test_relay_0_7_initializes_v3_atof_atif_config(
 
     from nemo_relay import plugin
 
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg")
     monkeypatch.chdir(tmp_path)
     artifact_directory = tmp_path / "artifacts"
     artifact_directory.mkdir()
@@ -930,12 +948,10 @@ async def test_relay_0_7_initializes_v3_atof_atif_config(
         assert activation_report["diagnostics"] == []
 
 
-def test_relay_0_7_validates_all_v3_otlp_fields(
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_relay_0_7_validates_all_v3_otlp_fields():
     from nemo_relay import plugin
 
-    monkeypatch.setenv("OTEL_TOKEN", "test-token")
+    os.environ["OTEL_TOKEN"] = "test-token"
     plugin_config = {
         "version": 1,
         "components": [
@@ -1138,6 +1154,64 @@ def test_validate_relay_observability_v3_rejects_explicit_non_v3_versions(
         match=r"unsupported NeMo Relay observability config version .*expected version 3",
     ):
         common_utils.validate_relay_observability_v3(plugin_config)
+
+
+def test_validate_relay_observability_v3_reports_version_before_v3_shape():
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 2,
+                    "opentelemetry": {
+                        "enabled": True,
+                        "endpoint": "http://localhost:4318/v1/traces",
+                    },
+                },
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ValueError,
+        match=r"unsupported NeMo Relay observability config version 2",
+    ):
+        common_utils.validate_relay_observability_v3(plugin_config)
+
+
+@pytest.mark.parametrize(
+    ("opentelemetry", "valid"),
+    [
+        ({"enabled": True}, False),
+        ({"enabled": True, "endpoints": []}, False),
+        ({"enabled": False, "endpoints": []}, True),
+    ],
+)
+def test_validate_relay_observability_v3_requires_endpoint_when_enabled(
+    opentelemetry: dict[str, object],
+    valid: bool,
+):
+    plugin_config = {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {
+                    "version": 3,
+                    "opentelemetry": opentelemetry,
+                },
+            }
+        ],
+    }
+
+    if valid:
+        common_utils.validate_relay_observability_v3(plugin_config)
+    else:
+        with pytest.raises(ValueError, match="requires at least one endpoint"):
+            common_utils.validate_relay_observability_v3(plugin_config)
 
 
 @pytest.mark.parametrize("config", [None, [], "version = 3", 3])

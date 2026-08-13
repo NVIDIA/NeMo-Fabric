@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -98,7 +99,7 @@ def test_partial_relay_config_defaults_to_observability_version_3(tmp_path):
 
 
 def test_relay_observes_graph_and_model_backed_node(tmp_path, monkeypatch):
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg-config")
     monkeypatch.chdir(tmp_path)
     config_path = tmp_path / "relay-config.json"
     config_path.write_text(

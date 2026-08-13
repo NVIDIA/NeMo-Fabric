@@ -254,7 +254,7 @@ def ambient_relay_plugin_config_paths() -> list[Path]:
 
     user_directory: Path | None = None
     xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-    if xdg_config_home is not None:
+    if xdg_config_home and Path(xdg_config_home).is_absolute():
         user_directory = Path(xdg_config_home) / "nemo-relay"
     else:
         home = os.environ.get("HOME") or os.environ.get("USERPROFILE")
@@ -310,6 +310,8 @@ def reject_inherited_relay_plugin_config(report: Any) -> None:
     if not isinstance(diagnostics, list):
         raise RuntimeError("NeMo Relay returned an invalid plugin activation report")
     inherited = []
+    # Relay 0.7.2 exposes the source only in this message. Keep the system-policy
+    # allowlist exact and fail closed until Relay provides a structured source path.
     message_prefix = "inherited plugin configuration from discovered file: "
     system_config = Path("/etc/nemo-relay/plugins.toml")
     for diagnostic in diagnostics:
@@ -419,6 +421,13 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
             raise ValueError(
                 "NeMo Relay observability component config must be an object"
             )
+        if "version" in config:
+            version = config["version"]
+            if isinstance(version, bool) or not isinstance(version, int) or version != 3:
+                raise ValueError(
+                    "unsupported NeMo Relay observability config version "
+                    f"{version!r}; expected version 3"
+                )
         if "openinference" in config:
             raise ValueError(
                 "NeMo Relay observability config version 3 removed the standalone "
@@ -434,14 +443,13 @@ def validate_relay_observability_v3(plugin_config: dict[str, Any]) -> None:
                     "fields inside opentelemetry.endpoints: "
                     + ", ".join(legacy_fields)
                 )
-        if "version" not in config:
-            continue
-        version = config["version"]
-        if isinstance(version, bool) or not isinstance(version, int) or version != 3:
-            raise ValueError(
-                "unsupported NeMo Relay observability config version "
-                f"{version!r}; expected version 3"
-            )
+            endpoints = opentelemetry.get("endpoints")
+            if opentelemetry.get("enabled") is True and (
+                not isinstance(endpoints, list) or not endpoints
+            ):
+                raise ValueError(
+                    "enabled NeMo Relay OpenTelemetry requires at least one endpoint"
+                )
 
 
 def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
