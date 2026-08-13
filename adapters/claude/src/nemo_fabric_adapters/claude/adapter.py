@@ -98,7 +98,6 @@ MCP_HEADER_ENVIRONMENT_VARIABLE = re.compile(
     r"|%([A-Za-z_][A-Za-z0-9_]*)%"
 )
 
-
 @dataclass(frozen=True)
 class ClaudeRelaySettings:
     """Relay gateway and Claude plugin settings owned by one adapter run."""
@@ -143,6 +142,10 @@ class AdapterConfigError(ClaudeAdapterError):
 class AdapterRelayError(ClaudeAdapterError):
     """NeMo Relay setup or lifecycle failure."""
 
+
+def _preserve_tmp() -> bool:
+    """Return True if the adapter should preserve temporary files for debugging."""
+    return os.environ.get("NEMO_FABRIC_PRESERVE_TMP", "").strip() == "1"
 
 def _string_list(value: Any, *, name: str) -> list[str]:
     if value is None:
@@ -372,7 +375,7 @@ def _stage_mcp_config(
         / ".fabric"
         / "claude"
         / "mcp"
-        / sha256(fabric_runtime_id.encode()).hexdigest()
+        / fabric_runtime_id
     )
     if config_root.exists():
         shutil.rmtree(config_root)
@@ -390,13 +393,14 @@ def _stage_mcp_config(
             json.dump({"mcpServers": servers}, stream, indent=2, sort_keys=True)
             stream.write("\n")
     except BaseException:
-        shutil.rmtree(config_root, ignore_errors=True)
+        if not _preserve_tmp():
+            shutil.rmtree(config_root, ignore_errors=True)
         raise
     return ClaudeMcpSettings(config_path=config_path, environment=environment)
 
 
 def _cleanup_mcp_config(config_path: Path | None) -> None:
-    if config_path is None:
+    if config_path is None or _preserve_tmp():
         return
     try:
         shutil.rmtree(config_path.parent)
@@ -559,7 +563,8 @@ def prepare_claude_relay(
     try:
         _stage_relay_plugin(plugin_path, executable)
     except OSError as error:
-        shutil.rmtree(plugin_path, ignore_errors=True)
+        if not _preserve_tmp():
+            shutil.rmtree(plugin_path, ignore_errors=True)
         raise AdapterRelayError(
             "claude_relay_configuration_failed",
             "Claude Relay hook configuration could not be generated",
@@ -892,7 +897,7 @@ def _cleanup_relay(
                     else ""
                 },
             )
-    if relay is not None and relay.plugin_path.exists():
+    if relay is not None and relay.plugin_path.exists() and not _preserve_tmp():
         try:
             shutil.rmtree(relay.plugin_path)
         except OSError:
