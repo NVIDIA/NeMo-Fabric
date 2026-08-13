@@ -22,41 +22,6 @@ Use the bash tool. When complete, run
 """
 
 
-def _retaining_agent_type() -> type[Any]:
-    from minisweagent.agents.default import DefaultAgent
-
-    class RetainingDefaultAgent(DefaultAgent):
-        _retain_messages = _skip_initial_messages = False
-
-        @property
-        def messages(self) -> list[dict[str, Any]]:
-            return self._messages
-
-        @messages.setter
-        def messages(self, messages: list[dict[str, Any]]) -> None:
-            if self._retain_messages and not messages:
-                self._retain_messages = False
-                self._skip_initial_messages = True
-            else:
-                self._messages = messages
-
-        def add_messages(self, *messages: dict[str, Any]) -> list[dict[str, Any]]:
-            if self._skip_initial_messages:
-                self._skip_initial_messages = False
-                return []
-            return super().add_messages(*messages)
-
-        def run(self, task: str = "", **kwargs: Any) -> dict[str, Any]:
-            if self.messages:
-                self.n_calls = self.cost = self.n_consecutive_format_errors = 0
-                self.messages[-1]["role"] = "assistant"
-                self.add_messages(self.model.format_message(role="user", content=task))
-                self._retain_messages = True
-            return super().run(task, **kwargs)
-
-    return RetainingDefaultAgent
-
-
 def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
     model = config.models.get("default")
     if model is None and len(config.models) == 1:
@@ -77,6 +42,38 @@ class MiniSweAgentRuntime:
         config: contract.AgentConfig = payload["config"]
         from minisweagent.environments.local import LocalEnvironment
         from minisweagent.models.litellm_model import LitellmModel
+        from minisweagent.agents.default import DefaultAgent
+
+        class RetainingDefaultAgent(DefaultAgent):
+            _retain_messages = _skip_initial_messages = False
+
+            @property
+            def messages(self) -> list[dict[str, Any]]:
+                return self._messages
+
+            @messages.setter
+            def messages(self, messages: list[dict[str, Any]]) -> None:
+                if self._retain_messages and not messages:
+                    self._retain_messages = False
+                    self._skip_initial_messages = True
+                else:
+                    self._messages = messages
+
+            def add_messages(self, *messages: dict[str, Any]) -> list[dict[str, Any]]:
+                if self._skip_initial_messages:
+                    self._skip_initial_messages = False
+                    return []
+                return super().add_messages(*messages)
+
+            def run(self, task: str = "", **kwargs: Any) -> dict[str, Any]:
+                if self.messages:
+                    self.n_calls = self.cost = self.n_consecutive_format_errors = 0
+                    self.messages[-1]["role"] = "assistant"
+                    self.add_messages(
+                        self.model.format_message(role="user", content=task)
+                    )
+                    self._retain_messages = True
+                return super().run(task, **kwargs)
 
         model = _selected_model(config)
         model_kwargs: dict[str, Any] = {}
@@ -100,7 +97,7 @@ class MiniSweAgentRuntime:
             if config.instructions and config.instructions.system
             else ""
         )
-        self._agent = _retaining_agent_type()(
+        self._agent = RetainingDefaultAgent(
             self._model,
             self._environment,
             system_template=SYSTEM_TEMPLATE,
