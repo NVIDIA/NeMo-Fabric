@@ -12,7 +12,6 @@ from pathlib import Path
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
-from mcp_server_time.server import TimeServer
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Scope, Send
@@ -54,7 +53,6 @@ class PrintHeadersMiddleware:
 
 
 server = FastMCP("header-printer", stateless_http=True, json_response=True)
-time_server = TimeServer()
 
 
 @server.custom_route("/health", methods=["GET"])
