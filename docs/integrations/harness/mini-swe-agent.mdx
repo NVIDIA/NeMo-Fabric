@@ -5,10 +5,8 @@ description: "Install and configure the NVIDIA NeMo Fabric harness integration f
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
 
-The NVIDIA NeMo Fabric `nvidia.fabric.mini-swe-agent` adapter runs
-mini-SWE-agent's native shell-only loop in the persistent NeMo Fabric Python
-adapter host. Each invocation creates a fresh mini-SWE-agent loop in the
-configured workspace.
+Use the NVIDIA NeMo Fabric `nvidia.fabric.mini-swe-agent` adapter to run tasks
+with mini-SWE-agent.
 
 ## Install the Adapter
 
@@ -52,20 +50,16 @@ harness = HarnessConfig(
 )
 ```
 
-The adapter maps `models`, `models.base_url`, `models.temperature`,
-`instructions.system`, `runtime.max_turns`, and `environment.workspace` to
-mini-SWE-agent. It forwards a credential configured through
-`models.<role>.api_key_env` to LiteLLM without persisting it. Without that
-setting, LiteLLM uses its native credential handling.
+The adapter supports `models`, `models.base_url`, `models.temperature`,
+`instructions.system`, `runtime.max_turns`, and `environment.workspace`. Set
+`models.<role>.api_key_env` to the environment variable containing the
+model-provider credential.
 
-`runtime.timeout_seconds` remains the NVIDIA NeMo Fabric invocation deadline.
-The adapter-specific `harness.settings.timeout` maps to the maximum duration of
-one mini-SWE-agent shell command and defaults to `30` seconds. Planning
-validates that setting and rejects unknown adapter settings.
+`runtime.timeout_seconds` sets the NVIDIA NeMo Fabric invocation deadline. Use
+`harness.settings.timeout` to set the maximum duration of one command; the
+default is `30` seconds.
 
-mini-SWE-agent exposes its native bash tool only. The adapter does not support
-normalized MCP, skills, tool policy, native streaming, or native telemetry.
-NeMo Fabric reports a failed result when the loop ends without submitting final
+This adapter does not support MCP, skills, tool policy, streaming, or telemetry
 output.
 
 ## Run a Task

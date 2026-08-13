@@ -57,7 +57,7 @@ provider should expose more precise provenance.
 | [Codex](codex/README.md) | Native OpenAI or a configured Responses-compatible provider | `tools.enabled` and `tools.blocked` unsupported | Normalized: stdio, HTTP, and streamable HTTP | Normalized `SKILL.md` directories | Not exposed |
 | [LangChain Deep Agents](deepagents/README.md) | LangChain model providers | Middleware enforces `tools.enabled` and `tools.blocked` across built-ins, MCP, and local delegation | Normalized through `langchain-mcp-adapters` | Normalized | Built-in, declarative, and Agent Protocol |
 | [Hermes Agent](hermes/README.md) | Configurable provider, model, and base URL | `tools.enabled` and `tools.blocked` map to Hermes native toolset selectors | Normalized | Normalized | Not exposed |
-| [mini-SWE-agent](mini-swe-agent/README.md) | LiteLLM provider and model | Not exposed; mini-SWE-agent provides only its native shell tool | Not exposed | Not exposed | Not exposed |
+| [mini-SWE-agent](mini-swe-agent/README.md) | Configured provider and model | Not exposed | Not exposed | Not exposed | Not exposed |
 
 "Normalized" means that the adapter accepts the corresponding `FabricConfig`
 field. "Not exposed" does not mean that the underlying harness lacks the
@@ -88,9 +88,9 @@ and additive extension maps because their support does not vary by adapter:
 | `schema_version` | Core | Core | Core | Core | Core |
 | `metadata.name`, `.description` | Core | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core |
-| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout_seconds` schema |
+| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema |
 | `workflow.entrypoint`, `.settings` | No | No | No | No | No |
-| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | LiteLLM provider |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes |
@@ -99,7 +99,7 @@ and additive extension maps because their support does not vary by adapter:
 | `instructions.system` | Yes | Yes; base instructions | Yes | Yes | Yes |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
-| `runtime.max_turns` | Yes | No | No | Yes; iteration limit | Yes; shell-loop steps |
+| `runtime.max_turns` | Yes | No | No | Yes; iteration limit | Yes |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |
@@ -140,13 +140,13 @@ and produces normalized trajectories in Agent Trajectory Interchange Format
 | [Codex](codex/README.md) | `AsyncCodex` app-server client and SDK thread | Runtime-owned Relay CLI gateway and Codex SDK hooks | Reuses the SDK thread and persists its thread ID | Closes the SDK client and app server, then stops the gateway | Not implemented |
 | [LangChain Deep Agents](deepagents/README.md) | Compiled LangGraph agent, checkpointer, and thread ID | NeMo Relay Python SDK integration added when the agent is compiled | Creates a fresh Relay request scope and callback for each invocation | Closes the checkpointer; no gateway process | Not implemented |
 | [Hermes Agent](hermes/README.md) | `AIAgent`, `SessionDB`, and conversation history | Hermes Agent NeMo Relay plugin context | Finalizes and flushes Relay after each invocation | Closes the agent and database, then exits the plugin context | Not implemented |
-| [mini-SWE-agent](mini-swe-agent/README.md) | LiteLLM model and local shell environment | Not supported | Creates a fresh native shell loop for each invocation | Releases model and environment references | Not implemented |
+| [mini-SWE-agent](mini-swe-agent/README.md) | Not applicable | Not supported | Not applicable | Not applicable | Not implemented |
 
 Telemetry output names use the descriptor contract values. Claude, Codex, and
 Hermes Agent can emit NeMo Relay ATIF, OpenTelemetry, and OpenInference output. Deep
 Agents supports the same Relay outputs plus native OpenTelemetry and
 OpenInference; Codex also supports native OpenTelemetry. mini-SWE-agent does
-not declare telemetry outputs.
+not support telemetry output.
 
 Shared lifecycle, Relay gateway, hook, and payload helpers are documented in
 the [adapter utilities guide](common/README.md).

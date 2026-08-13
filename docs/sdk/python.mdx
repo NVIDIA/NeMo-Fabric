@@ -173,9 +173,9 @@ by adapter:
 | `schema_version` | Core | Core | Core | Core | Core |
 | `metadata.name`, `.description` | Core | Core | Core | Core | Core |
 | `harness.adapter_id`, `.resolution` | Core | Core | Core | Core | Core |
-| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout_seconds` schema |
+| `harness.settings` | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed adapter schema | Closed `timeout` schema |
 | `workflow.entrypoint`, `.settings` | No | No | No | No | No |
-| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | LiteLLM provider |
+| `models.<role>.provider` | `anthropic` uses native auth; custom names require an Anthropic Messages-compatible `base_url` and `api_key_env` | `openai` uses native auth; custom names require a Responses-compatible `base_url` and `api_key_env` | Dynamic LangChain provider; custom OpenAI-compatible endpoints require `base_url` and `api_key_env` | Dynamic Hermes provider | Configured provider |
 | `models.<role>.model` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.api_key_env` | Yes | Yes | Yes | Yes | Yes |
 | `models.<role>.base_url` | Yes | Yes | Yes | Yes | Yes |
@@ -184,7 +184,7 @@ by adapter:
 | `instructions.system` | Yes | Yes; maps to Codex base instructions | Yes | Yes | Yes |
 | `runtime.input_schema`, `.output_schema` | Core | Core | Core | Core | Core |
 | `runtime.artifacts`, `.timeout_seconds` | Core | Core | Core | Core | Core |
-| `runtime.max_turns` | Yes | No | No | Yes; maps to Hermes iterations | Yes; maps to shell-loop steps |
+| `runtime.max_turns` | Yes | No | No | Yes; maps to Hermes iterations | Yes |
 | `environment.provider`, `.control_location`, `.ownership` | Core | Core | Core | Core | Core |
 | `environment.workspace`, `.artifacts`, `.env` | Core | Core | Core | Core | Core |
 | `environment.connection`, `.metadata`, `.settings` | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned | Environment-provider-owned |

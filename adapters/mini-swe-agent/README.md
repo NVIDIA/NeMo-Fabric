@@ -5,9 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 # NVIDIA NeMo Fabric mini-SWE-agent Adapter
 
-The `nvidia.fabric.mini-swe-agent` adapter runs mini-SWE-agent's native
-shell-only loop through NVIDIA NeMo Fabric. Select the harness by adapter ID;
-the mini-SWE-agent Python package is an implementation detail.
+Use the `nvidia.fabric.mini-swe-agent` adapter to run mini-SWE-agent with
+NVIDIA NeMo Fabric.
 
 ## Install
 
@@ -22,16 +21,15 @@ The `harness` and `full` extras install the latest compatible mini-SWE-agent
 
 ## Configuration
 
-The adapter maps `models`, `models.base_url`, `models.temperature`,
-`instructions.system`, `runtime.max_turns`, and `environment.workspace` to
-mini-SWE-agent. `runtime.timeout_seconds` remains the NVIDIA NeMo Fabric
-invocation deadline. Use the adapter-specific `harness.settings.timeout` to set
-the maximum duration of one shell command; mini-SWE-agent defaults to `30`.
+The adapter supports `models`, `models.base_url`, `models.temperature`,
+`instructions.system`, `runtime.max_turns`, and `environment.workspace`.
+`runtime.timeout_seconds` sets the NVIDIA NeMo Fabric invocation deadline. Use
+`harness.settings.timeout` to set the maximum duration of one command; the
+default is `30` seconds.
 
-mini-SWE-agent uses LiteLLM. The adapter forwards a configured
-`models.<role>.api_key_env` credential to LiteLLM without persisting it. Without
-that setting, LiteLLM uses its native credential handling. The adapter does not
-expose MCP, skills, tool policy, native streaming, or native telemetry.
+Set `models.<role>.api_key_env` to the environment variable containing the
+model-provider credential. This adapter does not support MCP, skills, tool
+policy, streaming, or telemetry output.
 
 ```python
 import asyncio
@@ -70,7 +68,4 @@ async def main():
 result = asyncio.run(main())
 ```
 
-Each invocation runs a fresh mini-SWE-agent loop in the runtime's workspace.
-The output includes the submitted final text and API-call usage. A loop that
-ends without submitting a final output produces a failed NVIDIA NeMo Fabric
-result.
+The result includes the submitted final text and API-call usage.
