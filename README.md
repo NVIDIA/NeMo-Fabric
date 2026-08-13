@@ -267,11 +267,13 @@ through adapters. Use the following reference to compare the integrations:
 
 ## Roadmap
 
-- **Custom harnesses:** Publish the NeMo Fabric adapter contract as canonical
-  schemas and dependency-free language bindings so third-party developers can
-  build integrations that are compatible with NeMo Fabric. Support integrations
-  maintained by NeMo Fabric and compatible third-party integrations.
-- **Custom agents:** Support custom agents built on maintained or third-party
-  harness integrations without requiring an additional, agent-specific adapter.
-  Preserve the normalized NeMo Fabric lifecycle, results, artifacts, and
-  telemetry.
+- **Custom harness adapter contract:** Publish and evolve canonical schemas and
+  dependency-free language bindings for third-party harness integrations.
+- **Experimental NeMo Agent Toolkit adapter:** Develop an experimental adapter
+  for running NeMo Agent Toolkit workflows through the NeMo Fabric lifecycle.
+- **OOAgents:** Add support for
+  [OOAgents](https://github.com/NVIDIA-NeMo/labs-OO-Agents).
+- **Remote agents:** Add support for invoking remotely hosted agents through the
+  NeMo Fabric lifecycle.
+- **Pi coding harness:** Add support for the
+  [Pi coding harness](https://pi.dev/).
