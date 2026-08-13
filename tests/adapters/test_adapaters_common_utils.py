@@ -391,21 +391,10 @@ def test_load_relay_plugin_config_wraps_and_normalizes_bare_observability_config
     previous_atif_dir.mkdir(parents=True)
     (previous_atof_dir / "events.atof.jsonl").write_text("{}", encoding="utf-8")
     (previous_atif_dir / "trajectory-old.atif.json").write_text("{}", encoding="utf-8")
-    payload = {
-        "agent_name": "ignored-agent",
-        "base_dir": str(tmp_path / "ignored"),
-        "config": {
-            "harness": {"settings": {"model": "review"}},
-            "models": {"review": {"model": "ignored-model"}},
-        },
-        "runtime_context": {"runtime_id": "ignored-runtime"},
-    }
-
-    plugin_config = common_utils.load_relay_plugin_config(
-        payload,
-        base_dir_value=str(tmp_path),
+    plugin_config = common_utils.load_relay_plugin_config_for_runtime(
+        base_dir=str(tmp_path),
         runtime_id="runtime-current",
-        agent_name_value="review-agent",
+        agent_name="review-agent",
         model_name="typed/claude-model",
     )
     observability = plugin_config["components"][0]["config"]

@@ -111,11 +111,15 @@ class HermesRuntime:
                 runtime_context.telemetry and runtime_context.telemetry.relay_enabled
             )
             if relay_enabled:
-                relay_payload = {**payload, "config": agent_config.to_mapping()}
                 (
                     self._relay_plugin_config_path,
                     self._relay_plugin_config,
-                ) = telemetry.write_hermes_relay_plugin_config(relay_payload)
+                ) = telemetry.write_hermes_relay_plugin_config(
+                    base_dir=common_utils.base_dir(payload),
+                    runtime_id=runtime_context.runtime_id,
+                    agent_name=common_utils.agent_name(payload),
+                    model_name=model_config.model,
+                )
                 for name in telemetry.HERMES_RELAY_ENV_NAMES:
                     os.environ.pop(name, None)
                 os.environ["HERMES_NEMO_RELAY_PLUGINS_TOML"] = str(

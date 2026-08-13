@@ -144,17 +144,11 @@ def test_write_hermes_relay_plugin_config_uses_upstream_toml(
         encoding="utf-8",
     )
     monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config_path))
-    payload = {
-        "agent_name": "hermes-test-agent",
-        "base_dir": str(tmp_path),
-        "config": {
-            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}}
-        },
-        "runtime_context": {"runtime_id": "runtime-hermes-relay"},
-    }
-
     plugin_config_path, plugin_config = telemetry.write_hermes_relay_plugin_config(
-        payload
+        base_dir=str(tmp_path),
+        runtime_id="runtime-hermes-relay",
+        agent_name="hermes-test-agent",
+        model_name="nvidia/test-model",
     )
 
     assert plugin_config_path == tmp_path / "relay-config" / "plugins.toml"
@@ -206,16 +200,12 @@ def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
         encoding="utf-8",
     )
     monkeypatch.setenv("FABRIC_RELAY_CONFIG_PATH", str(relay_config_path))
-    payload = {
-        "agent_name": "hermes-test-agent",
-        "base_dir": str(tmp_path),
-        "config": {
-            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}}
-        },
-        "runtime_context": {"runtime_id": "runtime-hermes-relay"},
-    }
-
-    plugin_config_path, _ = telemetry.write_hermes_relay_plugin_config(payload)
+    plugin_config_path, _ = telemetry.write_hermes_relay_plugin_config(
+        base_dir=str(tmp_path),
+        runtime_id="runtime-hermes-relay",
+        agent_name="hermes-test-agent",
+        model_name="nvidia/test-model",
+    )
 
     with plugin_config_path.open("rb") as stream:
         staged_observability = tomllib.load(stream)["components"][0]["config"]
@@ -443,18 +433,6 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
         encoding="utf-8",
     )
     os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(relay_config)
-    payload = {
-        "runtime_context": {
-            "runtime_id": "runtime-matrix",
-            "environment": {
-                "workspace": str(tmp_path / "workspace"),
-                "artifacts": str(tmp_path / "artifacts"),
-            },
-            "telemetry": {"relay_enabled": True},
-        },
-        "agent_name": "matrix-agent",
-        "base_dir": str(tmp_path),
-    }
     agent_config = _agent_config(
         {
             "harness": {"settings": {}},
@@ -481,14 +459,17 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             },
         }
     )
-    payload["config"] = agent_config.to_mapping()
-
     config = configuration.build_hermes_config(
         agent_config,
         workspace=str(tmp_path / "workspace"),
         relay_enabled=True,
     )
-    plugin_config = common_utils.load_relay_plugin_config(payload)
+    plugin_config = common_utils.load_relay_plugin_config_for_runtime(
+        base_dir=str(tmp_path),
+        runtime_id="runtime-matrix",
+        agent_name="matrix-agent",
+        model_name=agent_config.models["review"].model,
+    )
     observability = plugin_config["components"][0]["config"]
 
     assert config["model"] == {
