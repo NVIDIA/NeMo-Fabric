@@ -39,6 +39,9 @@ MODULE_SLUGS = {
     "nemo_fabric.client": "/reference/api/python-library-reference/client",
     "nemo_fabric.runtime": "/reference/api/python-library-reference/runtime",
     "nemo_fabric.streaming": "/reference/api/python-library-reference/streaming",
+    "nemo_fabric.openai_streaming": (
+        "/reference/api/python-library-reference/openai-streaming"
+    ),
     "nemo_fabric.models": "/reference/api/python-library-reference/models",
     "nemo_fabric.types": "/reference/api/python-library-reference/types",
     "nemo_fabric.errors": "/reference/api/python-library-reference/errors",

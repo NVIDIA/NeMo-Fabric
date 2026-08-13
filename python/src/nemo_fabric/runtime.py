@@ -10,7 +10,7 @@ import json
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import ValidationError
 
@@ -22,6 +22,7 @@ from nemo_fabric.errors import (
     FabricStateError,
 )
 from nemo_fabric.models import RunRequest
+from nemo_fabric.openai_streaming import OpenAIInvokeStream
 from nemo_fabric.streaming import InvokeStream, _AtofStreamListener
 from nemo_fabric.types import RunPlan, RunResult, RuntimeHandle
 
@@ -37,6 +38,15 @@ class RuntimeStatus(str, Enum):
     ACTIVE = "active"
     STOPPED = "stopped"
     FAILED = "failed"
+
+
+class _RuntimeStream(Protocol):
+    """Internal stream state shared by Relay and native OpenAI streams."""
+
+    _finalized: bool
+    _task: asyncio.Task[Any]
+
+    async def aclose(self) -> None: ...
 
 
 class Runtime:
@@ -72,7 +82,7 @@ class Runtime:
         self._invocations: list[dict[str, Any]] = []
         self._status = RuntimeStatus.ACTIVE
         self._current_task: asyncio.Task[Any] | None = None
-        self._current_stream: InvokeStream | None = None
+        self._current_stream: _RuntimeStream | None = None
         self._stream_listener = stream_listener
         self._closing = False
 
@@ -112,6 +122,25 @@ class Runtime:
 
         return self._stream_listener is not None
 
+    @property
+    def supports_openai_streaming(self) -> bool:
+        """Return whether the selected adapter implements native OpenAI streaming."""
+
+        adapter_descriptor = self._plan.get("adapter_descriptor")
+        descriptor = (
+            adapter_descriptor.get("descriptor")
+            if isinstance(adapter_descriptor, Mapping)
+            else None
+        )
+        descriptor_capabilities = (
+            descriptor.get("capabilities") if isinstance(descriptor, Mapping) else None
+        )
+        return (
+            self._plan.capabilities.streaming
+            and isinstance(descriptor_capabilities, Mapping)
+            and descriptor_capabilities.get("streaming") is True
+        )
+
     async def invoke(
         self,
         *,
@@ -141,11 +170,7 @@ class Runtime:
                 normalized result.
         """
 
-        if self._current_stream is not None and not self._current_stream._finalized:
-            raise FabricStateError(
-                "a streaming invocation is active; fully consume it or call "
-                "`await stream.aclose()` before starting another turn"
-            )
+        self._ensure_no_active_stream()
         self._ensure_invocable()
         payload = _run_request_payload(input=input, request=request)
         return await self._invoke_payload(payload)
@@ -153,6 +178,9 @@ class Runtime:
     async def _invoke_payload(
         self,
         payload: dict[str, Any],
+        *,
+        openai_stream_transport: Mapping[str, Any] | None = None,
+        absorb_result: bool = True,
     ) -> RunResult:
         self._ensure_invocable()
         self._current_task = asyncio.current_task()
@@ -168,19 +196,29 @@ class Runtime:
 
                 def invoke() -> dict[str, Any]:
                     nonlocal native_result
-                    native_result = json.loads(
-                        native.invoke_runtime(
-                            json.dumps(self._plan.to_mapping()),
-                            json.dumps(self._runtime.to_mapping()),
-                            json.dumps(payload),
+                    plan_json = json.dumps(self._plan.to_mapping())
+                    runtime_json = json.dumps(self._runtime.to_mapping())
+                    request_json = json.dumps(payload)
+                    if openai_stream_transport is None:
+                        encoded = native.invoke_runtime(
+                            plan_json,
+                            runtime_json,
+                            request_json,
                         )
-                    )
+                    else:
+                        encoded = native.invoke_openai_stream(
+                            plan_json,
+                            runtime_json,
+                            request_json,
+                            json.dumps(dict(openai_stream_transport)),
+                        )
+                    native_result = json.loads(encoded)
                     return native_result
 
                 result = await _call_blocking(invoke)
                 typed_result = RunResult.from_mapping(result)
             except asyncio.CancelledError:
-                if native_result is not None:
+                if absorb_result and native_result is not None:
                     try:
                         self._absorb(RunResult.from_mapping(native_result))
                     except Exception:
@@ -214,7 +252,8 @@ class Runtime:
             except Exception as error:
                 self._status = RuntimeStatus.FAILED
                 raise FabricRuntimeError(str(error), stage="invoke") from error
-            self._absorb(typed_result)
+            if absorb_result:
+                self._absorb(typed_result)
             return typed_result
         except FabricError:
             raise
@@ -232,8 +271,8 @@ class Runtime:
         """Start one turn and stream raw NeMo Relay ATOF records as they arrive.
 
         ``input`` and ``request`` are mutually exclusive. The returned
-        :class:`InvokeStream` yields raw ATOF dictionaries. Await
-        ``stream.result()`` for the terminal normalized :class:`RunResult`.
+        ``InvokeStream`` yields raw ATOF dictionaries. Await
+        ``stream.result()`` for the terminal normalized ``RunResult``.
 
         Raises:
             FabricCapabilityError: If the runtime was not started with NeMo Relay
@@ -251,11 +290,7 @@ class Runtime:
                 code="streaming_unavailable",
                 details={"capability": "streaming"},
             )
-        if self._current_stream is not None and not self._current_stream._finalized:
-            raise FabricStateError(
-                "a streaming invocation is active; fully consume it or call "
-                "`await stream.aclose()` before starting another turn"
-            )
+        self._ensure_no_active_stream()
         self._ensure_invocable()
         payload = _run_request_payload(input=input, request=request)
         stream = InvokeStream(
@@ -266,6 +301,59 @@ class Runtime:
         )
         self._current_stream = stream
         return stream
+
+    def invoke_openai_stream(
+        self,
+        *,
+        input: Any = None,
+        request: RunRequest | None = None,
+    ) -> OpenAIInvokeStream:
+        """Start one turn and stream native OpenAI chat-completion chunks.
+
+        The returned stream yields ``chat.completion.chunk`` mappings. Await
+        ``stream.result()`` for the separate normalized terminal result.
+
+        Raises:
+            FabricCapabilityError: If the selected adapter does not advertise
+                native OpenAI streaming.
+            FabricConfigError: If request fields conflict or are not
+                JSON-compatible.
+            FabricStateError: If another turn or stream is active.
+        """
+
+        if not self.supports_openai_streaming:
+            raise FabricCapabilityError(
+                "the selected adapter does not support native OpenAI streaming",
+                stage="invoke",
+                code="openai_streaming_unavailable",
+                details={"capability": "streaming"},
+            )
+        self._ensure_no_active_stream()
+        self._ensure_invocable()
+        payload = _run_request_payload(input=input, request=request)
+        stream = OpenAIInvokeStream(
+            lambda transport: self._invoke_payload(
+                payload,
+                openai_stream_transport=transport,
+                absorb_result=False,
+            ),
+            runtime_id=self.runtime_id,
+            request_id=payload["request_id"],
+            on_result=self._absorb,
+            on_protocol_failure=self._mark_failed,
+        )
+        self._current_stream = stream
+        return stream
+
+    def _mark_failed(self) -> None:
+        self._status = RuntimeStatus.FAILED
+
+    def _ensure_no_active_stream(self) -> None:
+        if self._current_stream is not None and not self._current_stream._finalized:
+            raise FabricStateError(
+                "a streaming invocation is active; fully consume it or call "
+                "`await stream.aclose()` before starting another turn"
+            )
 
     def _ensure_invocable(self) -> None:
         if self._status is not RuntimeStatus.ACTIVE:
@@ -295,8 +383,8 @@ class Runtime:
         if self._current_stream is not None and not self._current_stream._finalized:
             if not self._current_stream._task.done():
                 raise FabricStateError(
-                    "cannot stop while a streaming invocation is active; await "
-                    "`stream.result()` and then call `await stream.aclose()`"
+                    "cannot stop while a streaming invocation is active; consume "
+                    "the stream or await `stream.result()` or `stream.aclose()`"
                 )
             await self._current_stream.aclose()
         if self._current_task is not None:

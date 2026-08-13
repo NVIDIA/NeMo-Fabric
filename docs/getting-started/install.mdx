@@ -25,26 +25,22 @@ installation alternatives. A **No** entry means that the expression does not
 install that component; the component can already exist in the environment or
 be managed separately.
 
-| Installation | Runtime | Adapter | Harness | NeMo Relay Python Package |
-| --- | --- | --- | --- | --- |
-| `nemo-fabric` | Yes | No | No | No |
-| `nemo-fabric[relay]` | Yes | No | No | Yes |
-| `nemo-fabric[hermes-agent,relay]` | Yes | Yes | Yes | Yes |
-| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No |
-| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No |
-| `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes |
-| `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes |
-| `nemo-fabric-adapters-claude` | No | Yes | No | No |
+| Installation | Runtime | Adapter | Harness | Relay Python | Relay CLI |
+| --- | --- | --- | --- | --- | --- |
+| `nemo-fabric` | Yes | No | No | No | No |
+| `nemo-fabric[relay]` | Yes | No | No | Yes | No |
+| `nemo-fabric[hermes-agent,relay]` | Yes | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-claude[harness]` | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-claude[full]` | No | Yes | Yes | No | Yes |
+| `nemo-fabric-adapters-deepagents[full]` | No | Yes | Yes | Yes | No |
+| `nemo-fabric-adapters-hermes[relay]` | No | Yes | No | Yes | No |
+| `nemo-fabric-adapters-claude` | No | Yes | No | No | No |
 
-An adapter package's `full` extra is scoped to the adapter environment. It
-installs the supported harness and any Python Relay dependency, but it does not
-install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent to
-`harness` because their Relay integration requires an external executable. For
-LangChain Deep Agents and Hermes Agent, `full` installs both the harness and the
-NeMo Relay Python package.
-
-For Claude and Codex, no Python package extra installs the external
-`nemo-relay` CLI required by Relay telemetry and `Runtime.invoke_stream()`.
+An adapter package's `full` extra is scoped to the adapter environment and does
+not install the NeMo Fabric runtime. For Claude and Codex, `full` is equivalent
+to `harness`; both install the supported harness and `nemo-relay` CLI. For
+LangChain Deep Agents and Hermes Agent, `full` installs the harness and NeMo
+Relay Python package without the CLI.
 
 ### Install the NeMo Fabric Runtime
 
@@ -71,15 +67,16 @@ pip install "nemo-fabric[hermes-agent]"
 
 Each `nemo-fabric` harness extra installs the corresponding adapter package
 with its `harness` extra. You can combine independent `nemo-fabric` extras. For
-example, the following command also installs Harbor and the NeMo Relay Python
-package:
+example, the following command also installs Harbor; the Claude harness extra
+supplies the Relay CLI, while `relay` supplies the Relay Python package:
 
 ```bash
 pip install "nemo-fabric[claude,harbor,relay]"
 ```
 
-The `relay` extra does not install the external `nemo-relay` CLI that Claude and
-Codex require for Relay-enabled runs.
+The Claude and Codex harness extras install the `nemo-relay` CLI required for
+Relay-enabled runs. The root `relay` extra installs only the Relay Python
+package for SDK-native integrations.
 
 ### Install an Adapter and Harness Without the Runtime
 
@@ -159,28 +156,52 @@ install the harness and Relay package together. Claude and Codex do not provide
 a `relay` extra because their adapters launch the external CLI instead of
 importing this Python package.
 
+NeMo Fabric requires `nemo-relay>=0.7.2,<0.8`. For Python-backed Relay
+integrations, NeMo Fabric does not merge user or workspace `plugins.toml`
+files with its runtime-owned configuration. Remove or relocate a user
+`plugins.toml` or the nearest `.nemo-relay/plugins.toml` before starting a
+Relay-enabled Deep Agents or Hermes Agent runtime. System configuration in
+`/etc/nemo-relay/plugins.toml` remains administrator controlled.
+
+#### Migrate Relay Observability Configurations from 0.6
+
+Relay 0.7 requires observability schema version 3. Move flat OpenTelemetry
+exporter fields into entries under `opentelemetry.endpoints`. In the Python SDK,
+replace the removed `RelayOtlpConfig` model with `RelayOpenTelemetryConfig` and
+one or more `RelayOpenTelemetryEndpointConfig` entries.
+
 #### NeMo Relay CLI
 
-**Shell installation method (Linux and macOS):**
+Claude and Codex harness extras install the compatible CLI binary without the
+Relay Python package. To install the CLI independently of an adapter, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh | sh
+pip install "nemo-relay-cli-bin>=0.7.2,<0.8"
 ```
 
-**Windows PowerShell installation method:**
+On Linux and macOS, install the pinned CLI with the shell installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.sh |
+  NEMO_RELAY_VERSION=0.7.2 sh -s --
+```
+
+On Windows, install the pinned CLI with PowerShell:
 
 ```powershell
+$env:NEMO_RELAY_VERSION = "0.7.2"
 irm https://raw.githubusercontent.com/NVIDIA/NeMo-Relay/main/install.ps1 | iex
 ```
 
-**Cargo installation method (requires `cargo-binstall`):**
+If `cargo-binstall` is available, install the pinned CLI with Cargo:
 
 ```bash
-cargo binstall nemo-relay-cli
+cargo binstall nemo-relay-cli --version 0.7.2
 ```
 
-After installation, ensure `nemo-relay` is on `PATH`. When Relay is enabled
-with `FabricConfig.enable_relay(...)`, the Claude and Codex adapters start and
+After installation, run `nemo-relay --version` and confirm the version is in
+the `>=0.7.2,<0.8` range. When Relay is enabled with
+`FabricConfig.enable_relay(...)`, the Claude and Codex adapters start and
 supervise the CLI gateway automatically.
 
 ## Source Installation Method

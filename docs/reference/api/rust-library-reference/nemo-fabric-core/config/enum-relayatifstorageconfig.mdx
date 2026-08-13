@@ -2,7 +2,7 @@
 title: "Enum Relay Atif Storage Config"
 sidebar-title: "RelayAtifStorageConfig"
 description: "Relay ATIF remote storage configuration."
-position: 69
+position: 70
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -23,23 +23,23 @@ Upload ATIF artifacts to HTTP storage.
 
 #### Fields
 
-### `endpoint: String`
+##### `endpoint: String`
 
 HTTP storage endpoint.
 
-### `headers: BTreeMap<String, String>`
+##### `headers: BTreeMap<String, String>`
 
 Static HTTP headers.
 
-### `header_env: BTreeMap<String, String>`
+##### `header_env: BTreeMap<String, String>`
 
 Environment-variable-backed HTTP headers.
 
-### `timeout_millis: u64`
+##### `timeout_millis: u64`
 
 Request timeout in milliseconds.
 
-### `extensions: BTreeMap<String, Value>`
+##### `extensions: BTreeMap<String, Value>`
 
 Additive HTTP storage fields.
 
@@ -51,39 +51,39 @@ Upload ATIF artifacts to S3-compatible storage.
 
 #### Fields
 
-### `bucket: String`
+##### `bucket: String`
 
 S3 bucket name.
 
-### `key_prefix: Option<String>`
+##### `key_prefix: Option<String>`
 
 Optional S3 object key prefix.
 
-### `access_key_id: Option<String>`
+##### `access_key_id: Option<String>`
 
 AWS access key id.
 
-### `secret_access_key_var: Option<String>`
+##### `secret_access_key_var: Option<String>`
 
 Environment variable containing the AWS secret access key.
 
-### `session_token_var: Option<String>`
+##### `session_token_var: Option<String>`
 
 Environment variable containing the AWS session token.
 
-### `region: Option<String>`
+##### `region: Option<String>`
 
 AWS region.
 
-### `endpoint_url: Option<String>`
+##### `endpoint_url: Option<String>`
 
 S3-compatible endpoint URL.
 
-### `allow_http: Option<bool>`
+##### `allow_http: Option<bool>`
 
 Allow HTTP endpoints for S3-compatible storage.
 
-### `extensions: BTreeMap<String, Value>`
+##### `extensions: BTreeMap<String, Value>`
 
 Additive S3 storage fields.
 

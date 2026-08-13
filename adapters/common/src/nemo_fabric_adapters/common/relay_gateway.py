@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import socket
@@ -20,8 +21,8 @@ from typing import Any
 RELAY_HEALTH_TIMEOUT_SECONDS = 10.0
 RELAY_STOP_TIMEOUT_SECONDS = 5.0
 RELAY_VERSION_TIMEOUT_SECONDS = 5.0
-RELAY_MINIMUM_VERSION = (0, 6, 0)
-RELAY_MAXIMUM_VERSION = (0, 7, 0)
+RELAY_MINIMUM_VERSION = (0, 7, 2)
+RELAY_MAXIMUM_VERSION = (0, 8, 0)
 
 
 class RelayGatewayError(RuntimeError):
@@ -46,7 +47,6 @@ class RelayCliContract:
     """Versioned external Relay CLI contract consumed by Fabric adapters."""
 
     version: tuple[int, int, int]
-    observability_version: int
 
 
 def resolve_relay_command(base_dir: Path, value: str | Path) -> Path:
@@ -87,18 +87,25 @@ def relay_cli_contract(executable: Path) -> RelayCliContract:
         raise RelayGatewayError(
             "NeMo Relay CLI version could not be determined"
         ) from error
-    match = re.search(r"\b(\d+)\.(\d+)\.(\d+)", completed.stdout)
+    match = re.search(
+        r"\b(\d+)\.(\d+)\.(\d+)"
+        r"(-[0-9A-Za-z][0-9A-Za-z.-]*)?"
+        r"(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?(?=\s|$)",
+        completed.stdout,
+    )
     if completed.returncode != 0 or match is None:
         raise RelayGatewayError("NeMo Relay CLI version could not be determined")
-    major, minor, patch = (int(value) for value in match.groups())
+    major, minor, patch = (int(value) for value in match.groups()[:3])
     version = (major, minor, patch)
-    if not RELAY_MINIMUM_VERSION <= version < RELAY_MAXIMUM_VERSION:
+    if match.group(4) is not None or not (
+        RELAY_MINIMUM_VERSION <= version < RELAY_MAXIMUM_VERSION
+    ):
         raise RelayGatewayError(
             "unsupported NeMo Relay CLI version "
             f"{'.'.join(str(value) for value in version)}; "
-            "NeMo Fabric requires >=0.6.0,<0.7.0"
+            "NeMo Fabric requires >=0.7.2,<0.8.0"
         )
-    return RelayCliContract(version=version, observability_version=2)
+    return RelayCliContract(version=version)
 
 
 def wait_for_relay_gateway(
@@ -169,10 +176,16 @@ def start_relay_gateway(
     if launch.anthropic_base_url is not None:
         command.extend(["--anthropic-base-url", launch.anthropic_base_url])
     try:
+        env = os.environ.copy()
+        # The explicit, runtime-owned plugins.toml is the only non-system
+        # plugin source for this gateway. Keep ambient project config out of
+        # concurrent Fabric runtimes without mutating process-global state.
+        env["NEMO_RELAY_CONFIG_SCOPE"] = "user"
         with launch.log_path.open("wb") as log_stream:
             process = subprocess.Popen(
                 command,
                 cwd=cwd,
+                env=env,
                 stdout=log_stream,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,

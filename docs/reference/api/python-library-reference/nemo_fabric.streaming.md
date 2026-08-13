@@ -1,5 +1,5 @@
 ---
-title: "Streaming"
+title: "Relay Streaming"
 slug: "/reference/api/python-library-reference/streaming"
 description: "Consume raw NVIDIA NeMo Relay ATOF records and terminal invocation results."
 ---

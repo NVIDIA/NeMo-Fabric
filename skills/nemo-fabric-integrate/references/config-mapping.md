@@ -110,9 +110,9 @@ def with_relay(base: FabricConfig) -> FabricConfig:
 Use this function-and-copy pattern for every variant; keep all variation in
 ordinary Python.
 
-For ATOF, author the NeMo Relay 0.6 sink model directly. Put
-`RelayAtofFileSinkConfig` and `RelayAtofStreamSinkConfig` instances in
-`RelayAtofConfig.sinks`, and set `RelayAtofConfig.enabled=True`.
+For ATOF, author the NeMo Relay 0.7 schema-v3 file and stream sink model
+directly. Put `RelayAtofFileSinkConfig` and `RelayAtofStreamSinkConfig`
+instances in `RelayAtofConfig.sinks`, and set `RelayAtofConfig.enabled=True`.
 
 ## Relative Paths
 

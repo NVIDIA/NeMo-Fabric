@@ -21,17 +21,18 @@ def load_pyproject(path: str) -> dict:
 
 PACKAGE_VERSION = load_pyproject("")["project"]["version"]
 RUNTIME_DEPENDENCY = f"nemo-fabric-runtime == {PACKAGE_VERSION}"
+RELAY_CLI_DEPENDENCY = "nemo-relay-cli-bin>=0.7.2,<0.8"
 
 ADAPTER_EXTRAS = {
     "claude": {
         "path": "adapters/claude",
         "root": f"nemo-fabric-adapters-claude[harness] == {PACKAGE_VERSION}",
-        "harness": ["claude-agent-sdk==0.2.120"],
+        "harness": ["claude-agent-sdk==0.2.120", RELAY_CLI_DEPENDENCY],
     },
     "codex": {
         "path": "adapters/codex",
         "root": f"nemo-fabric-adapters-codex[harness] == {PACKAGE_VERSION}",
-        "harness": ["openai-codex==0.144.4"],
+        "harness": ["openai-codex==0.144.4", RELAY_CLI_DEPENDENCY],
     },
     "deepagents": {
         "path": "adapters/deepagents",
@@ -41,8 +42,8 @@ ADAPTER_EXTRAS = {
             "langchain>=1.3,<2.0",
             "langgraph>=1.2,<2.0",
         ],
-        "relay": ["nemo-relay>=0.6.0,<0.7"],
-        "full_relay": ["nemo-relay[deepagents]>=0.6.0,<0.7"],
+        "relay": ["nemo-relay>=0.7.2,<0.8"],
+        "full_relay": ["nemo-relay[deepagents]>=0.7.2,<0.8"],
     },
     "mini-swe-agent": {
         "path": "adapters/mini-swe-agent",
@@ -56,7 +57,7 @@ ADAPTER_EXTRAS = {
             "python_version < '3.14'"
         ),
         "harness": ["hermes-agent[mcp]>=0.19.0; python_version < '3.14'"],
-        "relay": ["nemo-relay>=0.6.0,<0.7"],
+        "relay": ["nemo-relay>=0.7.2,<0.8"],
     },
 }
 
@@ -143,7 +144,7 @@ def test_root_package_installs_runtime_unconditionally():
 
 def test_root_relay_extra_installs_only_relay():
     extras = load_pyproject("")["project"]["optional-dependencies"]
-    assert extras["relay"] == ["nemo-relay>=0.6.0,<0.7"]
+    assert extras["relay"] == ["nemo-relay>=0.7.2,<0.8"]
 
 
 @pytest.mark.parametrize("name", ADAPTER_EXTRAS)

@@ -567,6 +567,7 @@ class DeepAgentsRuntime:
 
         if importlib.util.find_spec("nemo_relay") is None:
             raise _relay_dependency_error()
+        common_utils.reject_ambient_relay_plugin_config()
         try:
             from nemo_relay import ScopeType, plugin, scope
             from nemo_relay.integrations.deepagents import (
@@ -663,8 +664,12 @@ class DeepAgentsRuntime:
         outcome: TurnOutcome | None = None
         scope_error: str | None = None
         try:
+            common_utils.reject_ambient_relay_plugin_config()
             callback_handler = self._callback_handler_type()
-            async with self._relay_plugin.plugin(self._relay_plugin_config):
+            async with self._relay_plugin.plugin(
+                self._relay_plugin_config
+            ) as activation_report:
+                common_utils.reject_inherited_relay_plugin_config(activation_report)
                 # Caught here rather than left to propagate: an exception crossing the
                 # plugin's ``__aexit__`` is replaced by any fault the plugin raises in
                 # turn, which would lose one of the two.
@@ -935,15 +940,16 @@ def resolve_observability(
     """
 
     if relay_enabled and telemetry_provider == "relay":
+        plugin_config = common_utils.load_relay_plugin_config(
+            {
+                "agent_name": agent_name,
+                "base_dir": base_dir,
+                "config": {"models": {"default": {"model": model_name}}},
+                "runtime_context": runtime_context.to_mapping(),
+            }
+        )
         return Observability(
-            common_utils.load_relay_plugin_config(
-                {
-                    "agent_name": agent_name,
-                    "base_dir": base_dir,
-                    "config": {"models": {"default": {"model": model_name}}},
-                    "runtime_context": runtime_context.to_mapping(),
-                }
-            ),
+            plugin_config,
             "deepagents.observability/nemo_relay",
             True,
         )

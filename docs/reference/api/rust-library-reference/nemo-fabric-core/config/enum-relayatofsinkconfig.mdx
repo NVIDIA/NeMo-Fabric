@@ -2,7 +2,7 @@
 title: "Enum Relay Atof Sink Config"
 sidebar-title: "RelayAtofSinkConfig"
 description: "Relay ATOF sink configuration."
-position: 71
+position: 72
 ---
 {/* SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 SPDX-License-Identifier: Apache-2.0 */}
@@ -23,19 +23,19 @@ Write ATOF records to a local file.
 
 #### Fields
 
-### `output_directory: Option<PathBuf>`
+##### `output_directory: Option<PathBuf>`
 
 Directory used for ATOF files.
 
-### `filename: Option<String>`
+##### `filename: Option<String>`
 
 ATOF file name.
 
-### `mode: RelayAtofMode`
+##### `mode: RelayAtofMode`
 
 File write mode.
 
-### `extensions: BTreeMap<String, Value>`
+##### `extensions: BTreeMap<String, Value>`
 
 Additive file sink fields.
 
@@ -47,35 +47,35 @@ Send ATOF records to a remote stream.
 
 #### Fields
 
-### `url: String`
+##### `url: String`
 
 Stream URL.
 
-### `transport: RelayAtofStreamTransport`
+##### `transport: RelayAtofStreamTransport`
 
 Stream transport.
 
-### `headers: BTreeMap<String, String>`
+##### `headers: BTreeMap<String, String>`
 
 Static stream headers.
 
-### `header_env: BTreeMap<String, String>`
+##### `header_env: BTreeMap<String, String>`
 
 Environment-variable-backed stream headers.
 
-### `timeout_millis: u64`
+##### `timeout_millis: u64`
 
 Request timeout in milliseconds.
 
-### `field_name_policy: RelayAtofStreamFieldNamePolicy`
+##### `field_name_policy: RelayAtofStreamFieldNamePolicy`
 
 Field-name handling policy.
 
-### `name: Option<String>`
+##### `name: Option<String>`
 
 Optional stream sink name.
 
-### `extensions: BTreeMap<String, Value>`
+##### `extensions: BTreeMap<String, Value>`
 
 Additive stream sink fields.
 

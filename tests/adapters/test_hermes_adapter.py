@@ -120,23 +120,35 @@ def test_descriptor_uses_the_typed_agent_config_contract():
     ]
 
 
-def test_write_hermes_relay_plugin_config_uses_upstream_toml(
+def test_write_hermes_relay_plugin_config_passes_through_v3(
     monkeypatch,
     tmp_path: Path,
 ):
-    monkeypatch.setattr(telemetry, "distribution_version", lambda _name: "0.6.0")
+    ambient_guard = MagicMock()
+    monkeypatch.setattr(
+        telemetry.common_utils,
+        "reject_ambient_relay_plugin_config",
+        ambient_guard,
+    )
     relay_config_path = tmp_path / "relay.json"
     relay_config_path.write_text(
         json.dumps(
             {
                 "relay": {
                     "config": {
+                        "version": 3,
                         "atof": {"enabled": True, "sinks": [{"type": "file"}]},
                         "atif": {"enabled": True},
                         "opentelemetry": {
                             "enabled": True,
-                            "endpoint": "https://otel.example/v1/traces",
-                            "service_name": "fabric",
+                            "endpoints": [
+                                {
+                                    "type": "full",
+                                    "endpoint": "https://otel.example/v1/traces",
+                                    "service_name": "fabric",
+                                    "instrumentation_scope": "nemo-relay-otel",
+                                }
+                            ],
                         },
                     }
                 }
@@ -162,43 +174,65 @@ def test_write_hermes_relay_plugin_config_uses_upstream_toml(
     with plugin_config_path.open("rb") as stream:
         staged_plugin_config = tomllib.load(stream)
     staged_observability = staged_plugin_config["components"][0]["config"]
-    assert staged_observability["version"] == 2
+    assert staged_observability["version"] == 3
     assert staged_observability["atif"]["enabled"] is True
     assert staged_observability["atof"]["sinks"][0]["mode"] == "append"
     assert staged_observability["opentelemetry"] == {
         "enabled": True,
-        "endpoint": "https://otel.example/v1/traces",
-        "service_name": "fabric",
+        "endpoints": [
+            {
+                "type": "full",
+                "endpoint": "https://otel.example/v1/traces",
+                "service_name": "fabric",
+                "instrumentation_scope": "nemo-relay-otel",
+            }
+        ],
     }
     assert plugin_config["components"][0]["config"]["atof"]["sinks"][0][
         "output_directory"
     ] == str(tmp_path / "artifacts" / "relay" / "runtime-hermes-relay")
     assert (
-        plugin_config["components"][0]["config"]["atof"]["sinks"][0]["mode"]
-        == "overwrite"
+        plugin_config["components"][0]["config"]["atof"]["sinks"][0]["mode"] == "append"
     )
+    ambient_guard.assert_called_once_with()
 
 
-def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
+def test_write_hermes_relay_plugin_config_preserves_typed_v3_otlp_endpoints(
     monkeypatch,
     tmp_path: Path,
 ):
-    monkeypatch.setattr(telemetry, "distribution_version", lambda _name: "0.7.2")
+    monkeypatch.setattr(
+        telemetry.common_utils,
+        "reject_ambient_relay_plugin_config",
+        MagicMock(),
+    )
     relay_config_path = tmp_path / "relay.json"
     relay_config_path.write_text(
         json.dumps(
             {
                 "relay": {
                     "config": {
+                        "version": 3,
                         "opentelemetry": {
                             "enabled": True,
-                            "endpoint": "https://otel.example/v1/traces",
-                            "service_name": "fabric",
-                        },
-                        "openinference": {
-                            "enabled": True,
-                            "endpoint": "https://openinference.example/v1/traces",
-                            "service_name": "fabric",
+                            "endpoints": [
+                                {
+                                    "type": "full",
+                                    "endpoint": "https://otel.example/v1/traces",
+                                    "service_name": "fabric",
+                                    "instrumentation_scope": "nemo-relay-otel",
+                                },
+                                {
+                                    "type": "openinference",
+                                    "endpoint": (
+                                        "https://openinference.example/v1/traces"
+                                    ),
+                                    "service_name": "fabric",
+                                    "instrumentation_scope": (
+                                        "nemo-relay-openinference"
+                                    ),
+                                },
+                            ],
                         },
                     }
                 }
@@ -228,14 +262,47 @@ def test_write_hermes_relay_plugin_config_migrates_otlp_exporters_to_relay_v3(
                 "type": "full",
                 "endpoint": "https://otel.example/v1/traces",
                 "service_name": "fabric",
+                "instrumentation_scope": "nemo-relay-otel",
             },
             {
                 "type": "openinference",
                 "endpoint": "https://openinference.example/v1/traces",
                 "service_name": "fabric",
+                "instrumentation_scope": "nemo-relay-openinference",
             },
         ],
     }
+
+
+def test_write_hermes_relay_plugin_config_rejects_v2(
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr(
+        telemetry.common_utils,
+        "reject_ambient_relay_plugin_config",
+        MagicMock(),
+    )
+    relay_config_path = tmp_path / "relay.json"
+    relay_config_path.write_text(
+        '{"relay":{"config":{"version":2}}}',
+        encoding="utf-8",
+    )
+    os.environ["FABRIC_RELAY_CONFIG_PATH"] = str(relay_config_path)
+    payload = {
+        "agent_name": "hermes-test-agent",
+        "base_dir": str(tmp_path),
+        "config": {
+            "models": {"default": {"provider": "nvidia", "model": "nvidia/test-model"}}
+        },
+        "runtime_context": {"runtime_id": "runtime-hermes-relay"},
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="unsupported NeMo Relay observability config version 2",
+    ):
+        telemetry.write_hermes_relay_plugin_config(payload)
 
 
 def test_finalize_hermes_relay_session_uses_legacy_plugin_hook(monkeypatch):
@@ -299,6 +366,42 @@ async def test_runtime_start_stages_upstream_relay_plugin_configuration(
         await adapter.HermesRuntime().start(payload)
 
     assert all(name not in os.environ for name in telemetry.HERMES_RELAY_ENV_NAMES)
+
+
+async def test_runtime_rechecks_ambient_relay_config_before_each_turn(
+    monkeypatch,
+):
+    mock_turn = MagicMock()
+    mock_finalize = MagicMock()
+    monkeypatch.setattr(adapter, "_invoke_hermes_turn", mock_turn)
+    monkeypatch.setattr(telemetry, "finalize_hermes_relay_session", mock_finalize)
+    monkeypatch.setattr(
+        common_utils,
+        "reject_ambient_relay_plugin_config",
+        MagicMock(side_effect=RuntimeError("ambient Relay config")),
+    )
+    runtime = adapter.HermesRuntime()
+    runtime._started = True
+    runtime._runtime_id = "runtime-relay-guard"
+    runtime._agent_config = _agent_config(
+        {"models": {"default": {"provider": "test", "model": "test-model"}}}
+    )
+    runtime._model_config = runtime._agent_config.models["default"]
+    runtime._agent = MagicMock()
+    runtime._relay_plugin_config = {"version": 1, "components": []}
+
+    with pytest.raises(RuntimeError, match="ambient Relay config"):
+        await runtime.invoke(
+            {
+                "runtime_context": _runtime_context(
+                    runtime_id=runtime._runtime_id
+                ).to_mapping(),
+                "request": {"input": "hello"},
+            }
+        )
+
+    mock_turn.assert_not_called()
+    mock_finalize.assert_not_called()
 
 
 def test_build_hermes_config_maps_fabric_config_to_hermes_config():
@@ -427,6 +530,7 @@ def test_hermes_config_variation_matrix_surfaces_supported_capabilities(
             {
                 "relay": {
                     "config": {
+                        "version": 3,
                         "atof": {
                             "enabled": True,
                             "sinks": [

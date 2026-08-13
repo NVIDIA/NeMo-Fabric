@@ -30,7 +30,8 @@ from nemo_fabric.models import RelayConfig
 from nemo_fabric.models import RelayConfigPolicy
 from nemo_fabric.models import RelayHttpStorageConfig
 from nemo_fabric.models import RelayObservabilityConfig
-from nemo_fabric.models import RelayOtlpConfig
+from nemo_fabric.models import RelayOpenTelemetryConfig
+from nemo_fabric.models import RelayOpenTelemetryEndpointConfig
 from nemo_fabric.models import RelayS3StorageConfig
 from nemo_fabric.models import RunRequest
 from nemo_fabric.models import RuntimeConfig
@@ -41,6 +42,7 @@ from nemo_fabric.models import ToolsConfig
 from nemo_fabric.models import ToolDefinitionConfig
 from nemo_fabric.models import WorkflowConfig
 from nemo_fabric.models import WorkflowEntrypointConfig
+from nemo_fabric.openai_streaming import OpenAIInvokeStream
 from nemo_fabric.runtime import Runtime
 from nemo_fabric.runtime import RuntimeStatus
 from nemo_fabric.streaming import InvokeStream
@@ -82,6 +84,7 @@ __all__ = [
     "McpServerConfig",
     "MetadataConfig",
     "ModelConfig",
+    "OpenAIInvokeStream",
     "RelayAtifConfig",
     "RelayAtofConfig",
     "RelayAtofFileSinkConfig",
@@ -90,7 +93,8 @@ __all__ = [
     "RelayConfigPolicy",
     "RelayHttpStorageConfig",
     "RelayObservabilityConfig",
-    "RelayOtlpConfig",
+    "RelayOpenTelemetryConfig",
+    "RelayOpenTelemetryEndpointConfig",
     "RelayS3StorageConfig",
     "RelayConfig",
     "FabricNativeUnavailableError",

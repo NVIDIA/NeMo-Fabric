@@ -116,7 +116,10 @@ def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
 
 
 @pytest.fixture(name="nemo_relay")
-def nemo_relay_fixture() -> types.ModuleType:
+def nemo_relay_fixture(
+    tmp_path: Path,
+) -> types.ModuleType:
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg-config")
     return pytest.importorskip("nemo_relay", reason="nemo-relay extra is required")
 
 

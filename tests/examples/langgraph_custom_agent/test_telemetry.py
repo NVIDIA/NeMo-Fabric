@@ -8,11 +8,14 @@ from __future__ import annotations
 import asyncio
 import builtins
 import json
+import os
 from pathlib import Path
 
+import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from nemo_fabric_adapter_contract.models import RuntimeContext
 
+from examples.langgraph_custom_agent.adapter.telemetry import _load_plugin_config
 from examples.langgraph_custom_agent.adapter.telemetry import observe_invocation
 from examples.langgraph_custom_agent.agent.graph import build_email_phishing_graph
 
@@ -72,7 +75,32 @@ def test_relay_disabled_path_does_not_import_relay(tmp_path, monkeypatch):
     assert imported == []
 
 
-def test_relay_observes_graph_and_model_backed_node(tmp_path):
+def test_partial_relay_config_defaults_to_observability_version_3(tmp_path):
+    config_path = tmp_path / "relay-config.json"
+    config_path.write_text('{"relay":{"config":{}}}', encoding="utf-8")
+
+    plugin_config = _load_plugin_config(
+        _context(config_path),
+        base_dir=tmp_path,
+        agent_name="email-phishing",
+        model_name="test-model",
+    )
+
+    assert plugin_config == {
+        "version": 1,
+        "components": [
+            {
+                "kind": "observability",
+                "enabled": True,
+                "config": {"version": 3},
+            }
+        ],
+    }
+
+
+def test_relay_observes_graph_and_model_backed_node(tmp_path, monkeypatch):
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg-config")
+    monkeypatch.chdir(tmp_path)
     config_path = tmp_path / "relay-config.json"
     config_path.write_text(
         json.dumps(
@@ -85,7 +113,7 @@ def test_relay_observes_graph_and_model_backed_node(tmp_path):
                                 "kind": "observability",
                                 "enabled": True,
                                 "config": {
-                                    "version": 2,
+                                    "version": 3,
                                     "atof": {
                                         "enabled": True,
                                         "sinks": [
@@ -131,17 +159,16 @@ def test_relay_observes_graph_and_model_backed_node(tmp_path):
             model_name="test-model",
         ) as telemetry:
             result = await graph.ainvoke(
-                {
-                    "email": (
-                        "Urgent: verify your password at https://example.invalid."
-                    )
-                },
+                {"email": ("Urgent: verify your password at https://example.invalid.")},
                 config=telemetry.runnable_config,
             )
         assert result["classification"] == "phishing"
-        assert telemetry.plugin_config["components"][0]["config"]["atif"][
-            "model_name"
-        ] == "test-model"
+        assert (
+            telemetry.plugin_config["components"][0]["config"]["atif"]["model_name"]
+            == "test-model"
+        )
+        assert telemetry.plugin_config["version"] == 1
+        assert telemetry.plugin_config["components"][0]["config"]["version"] == 3
         return telemetry.artifacts()
 
     artifacts = asyncio.run(run("invocation-1"))
@@ -158,7 +185,40 @@ def test_relay_observes_graph_and_model_backed_node(tmp_path):
         for event in events
     )
     invocation_ids = {
-        event.get("metadata", {}).get("nemo_fabric_invocation_id")
-        for event in events
+        event.get("metadata", {}).get("nemo_fabric_invocation_id") for event in events
     }
     assert {"invocation-1", "invocation-2"}.issubset(invocation_ids)
+
+
+def test_relay_rejects_observability_config_version_2(tmp_path):
+    config_path = tmp_path / "relay-config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "relay": {
+                    "config": {
+                        "version": 1,
+                        "components": [
+                            {
+                                "kind": "observability",
+                                "enabled": True,
+                                "config": {"version": 2},
+                            }
+                        ],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="unsupported NeMo Relay observability config version 2; expected version 3",
+    ):
+        _load_plugin_config(
+            _context(config_path),
+            base_dir=tmp_path,
+            agent_name="email-phishing",
+            model_name="test-model",
+        )

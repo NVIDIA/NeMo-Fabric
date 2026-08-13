@@ -76,11 +76,10 @@ jobs:
           toolchain: stable
           cache: false
 
-      # Remove nemo-relay once we are using 0.7 (and thus the Python package for nemo-relay-cli)
-      - name: Install test tools
+      - name: Install just
         uses: taiki-e/install-action@c070f87102a1c75b3183910f391c1cb887fe13c8 # v2.77.6
         with:
-          tool: just@1.50.0,nemo-relay-cli@0.6.0
+          tool: just@1.50.0
 
       - name: Set up uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8

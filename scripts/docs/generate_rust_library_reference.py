@@ -396,7 +396,9 @@ def _block_markdown(node: PageElement, page: Page, pages_by_html: dict[Path, Pag
 
     if node.name == "span" and "section-header" in classes:
         text = _plain_code(node)
-        return f"### {_inline_code(text)}\n\n" if text else ""
+        parent_classes = _tag_classes(node.parent) if isinstance(node.parent, Tag) else set()
+        level = "#####" if "sub-variant-field" in parent_classes else "###"
+        return f"{level} {_inline_code(text)}\n\n" if text else ""
 
     if node.name == "p":
         text = re.sub(r"\s+", " ", _inline_markdown(node, page, pages_by_html)).strip()
@@ -509,6 +511,7 @@ def _page_title(soup: BeautifulSoup, page: Page) -> str:
             title,
         )
         title = re.sub(r"\s+", " ", title)
+        title = re.sub(r"\bOpen Ai(?=[A-Z])", "OpenAI ", title)
         if title.startswith("Crate "):
             return page.crate_name
         return title

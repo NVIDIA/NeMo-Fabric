@@ -24,6 +24,7 @@ PYTHONPATH="python/src" lazydocs \
   "nemo_fabric.client" \
   "nemo_fabric.runtime" \
   "nemo_fabric.streaming" \
+  "nemo_fabric.openai_streaming" \
   "nemo_fabric.models" \
   "nemo_fabric.types" \
   "nemo_fabric.errors"
@@ -45,7 +46,8 @@ perl -0pi -e 's/(^#{1,2} <kbd>(?:module|class)<\/kbd> `[^`]+`\n)(?!\n)/$1\n/gm' 
   "$out"/*.md
 # lazydocs omits the async marker from generated method signatures.
 perl -0pi -e 's/(### <kbd>method<\/kbd> `(aclose|result)`\n\n```python\n)\2\(/${1}async def ${2}(/g' \
-  "$out/nemo_fabric.streaming.md"
+  "$out/nemo_fabric.streaming.md" \
+  "$out/nemo_fabric.openai_streaming.md"
 
 # Restore signature semantics that lazydocs drops and add field-level contracts
 # for the SDK's Pydantic and immutable mapping models.
@@ -85,9 +87,14 @@ add_frontmatter \
   "/reference/api/python-library-reference/runtime"
 add_frontmatter \
   "$out/nemo_fabric.streaming.md" \
-  "Streaming" \
+  "Relay Streaming" \
   "Consume raw NVIDIA NeMo Relay ATOF records and terminal invocation results." \
   "/reference/api/python-library-reference/streaming"
+add_frontmatter \
+  "$out/nemo_fabric.openai_streaming.md" \
+  "OpenAI Streaming" \
+  "Consume adapter-native OpenAI Chat Completions chunks and terminal invocation results." \
+  "/reference/api/python-library-reference/openai-streaming"
 add_frontmatter \
   "$out/nemo_fabric.models.md" \
   "Models" \

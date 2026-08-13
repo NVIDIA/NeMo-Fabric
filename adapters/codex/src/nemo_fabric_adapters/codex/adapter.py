@@ -761,7 +761,7 @@ def prepare_codex_relay(
         ) from error
 
     try:
-        relay_contract = relay_gateway.relay_cli_contract(executable)
+        relay_gateway.relay_cli_contract(executable)
         plugin_config = common_utils.load_relay_plugin_config(
             {
                 "agent_name": agent_name,
@@ -774,7 +774,6 @@ def prepare_codex_relay(
             # Codex execution remains SDK-owned; Relay runs only as a gateway.
             relay_config={},
             plugin_config=plugin_config,
-            observability_version=relay_contract.observability_version,
         )
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         raise AdapterRelayError(

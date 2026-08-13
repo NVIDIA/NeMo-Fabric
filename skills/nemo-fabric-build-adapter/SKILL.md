@@ -59,8 +59,10 @@ translation:
   keep credential validity and provider availability in startup validation.
 - Declare runtime requirements and telemetry outputs without secret values.
 - Leave optional capability flags false unless the installed NeMo Fabric runtime
-  exposes and tests that adapter operation. Relay-backed ATOF streaming does
-  not require adapter-native streaming.
+  exposes and tests that adapter operation. Set `capabilities.streaming` only
+  when the adapter implements native OpenAI Chat Completions streaming through
+  `invoke_openai_stream`. Relay-backed ATOF streaming is independent and does
+  not require this capability.
 
 Validate descriptor schemas without importing adapter code. Keep all schema
 references local to the descriptor document; do not rely on HTTP or file
@@ -120,9 +122,22 @@ one `stop` for each NeMo Fabric runtime.
 - Translate one request and one terminal outcome in `invoke`.
 - Make `stop` safe after partial startup and failed invocation.
 - Isolate mutable state between independent runtimes.
+- If the descriptor declares `capabilities.streaming`, implement
+  `async invoke_openai_stream(payload, emit)`. Execute the target exactly once,
+  await `emit(chunk)` only for the `openai.chat_completions.chunk/v1` profile,
+  and return one JSON-compatible terminal outcome. Each chunk requires
+  non-empty `id` and `model`, a nonnegative integer `created`, the exact
+  `chat.completion.chunk` discriminator, and structurally valid `choices`. An
+  invocation that emits no chunks is valid.
 - Do not add an adapter streaming method for Relay-backed
   `Runtime.invoke_stream()`; execute ordinary `invoke` and use the provided
   telemetry context.
+
+For native OpenAI streaming, the SDK owns the authenticated loopback HTTP
+transport with chunked NDJSON framing. The common host validates the transport,
+removes its credentials from the adapter payload, and supplies the `emit`
+callback. Do not persist or log stream credentials, write chunks to stdout, add
+SSE framing, or forward other target-native event profiles.
 
 For a Python adapter that opts into the common host:
 
@@ -138,6 +153,11 @@ class TargetRuntime:
 
     async def invoke(self, payload):
         ...
+
+    async def invoke_openai_stream(self, payload, emit):
+        async for chunk in self.target.stream(payload["request"]):
+            await emit(chunk)
+        return self.target.terminal_result()
 
     async def stop(self):
         ...
@@ -177,8 +197,13 @@ Complete these checks before handing off an adapter:
 4. Run `doctor(...)` with both missing and satisfied requirements.
 5. Test start, success, target failure, malformed output, repeated invocation,
    stop, partial-start cleanup, EOF cleanup, and two-runtime isolation.
-6. Test Relay correlation if telemetry support is claimed.
-7. Report the adapter package version, contract version, required-profile
+6. If native OpenAI streaming is claimed, test empty and multi-chunk streams,
+   malformed and oversized records, invalid chunks, sequence and identity
+   mismatches, a missing end record, early consumer close without cancellation,
+   a separate terminal result, one active turn, and exactly one target
+   invocation.
+7. Test Relay correlation separately if telemetry support is claimed.
+8. Report the adapter package version, contract version, required-profile
    result, and every optional capability as supported or unsupported.
 
 Do not claim automated NeMo Fabric conformance until the published conformance

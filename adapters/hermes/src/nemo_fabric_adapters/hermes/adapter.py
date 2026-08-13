@@ -143,6 +143,8 @@ class HermesRuntime:
             from run_agent import AIAgent
 
             with redirect_stdout(StringIO()):
+                if relay_enabled:
+                    common_utils.reject_ambient_relay_plugin_config()
                 discover_plugins(force=True)
                 loaded_hermes_config = load_config()
                 # Hermes 0.12+ no longer discovers MCP tools as an import side effect
@@ -235,6 +237,8 @@ class HermesRuntime:
         await self._authenticate_mcp_servers()
 
         def run_hermes_turn() -> tuple[dict[str, Any], str]:
+            if self._relay_plugin_config is not None:
+                common_utils.reject_ambient_relay_plugin_config()
             try:
                 return _invoke_hermes_turn(
                     agent=self._agent,

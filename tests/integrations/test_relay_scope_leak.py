@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import uuid
+from pathlib import Path
 
 import pytest
 from nemo_fabric_adapters.deepagents import adapter
@@ -28,14 +30,16 @@ from nemo_relay.integrations.langchain.callbacks import (  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
-def isolated_scope_stack():
+def isolated_scope_stack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     """Give each test its own Relay scope stack.
 
     These tests strand a scope on purpose, and the stack is process-global, so without
     isolation the damage would leak into every test that runs afterwards. ``ContextVar``
-    assignment is the only way to install a stack for the current context on Relay 0.6.
+    assignment is the only way to install a stack for the current context.
     """
 
+    os.environ["XDG_CONFIG_HOME"] = str(tmp_path / "xdg-config")
+    monkeypatch.chdir(tmp_path)
     token = nemo_relay._scope_stack_var.set(nemo_relay.create_scope_stack())
     try:
         yield
@@ -138,7 +142,7 @@ class _NoopPlugin:
 
     @contextlib.asynccontextmanager
     async def plugin(self, config: object):
-        yield
+        yield {"diagnostics": [], "runtime_diagnostics": []}
 
 
 async def test_a_poisoned_runtime_quarantines_its_next_turn(monkeypatch):

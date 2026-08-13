@@ -52,6 +52,10 @@ RESERVED_MODEL_SETTINGS = frozenset(
 LOGGER = logging.getLogger(__name__)
 
 
+class _NatStreamSerializationError(Exception):
+    """Internal marker for a NAT chunk that cannot cross the JSON boundary."""
+
+
 def main() -> None:
     """Serve the persistent local-host lifecycle protocol."""
 
@@ -708,6 +712,31 @@ class NatRuntime:
         self._sessions: Any = None
         self._exit_stack: AsyncExitStack | None = None
 
+    def _invocation_request(
+        self,
+        payload: dict[str, Any],
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """Validate common invocation state and return a safe request failure."""
+
+        if self._sessions is None or self._runtime_id is None:
+            raise lifecycle.LifecycleError(
+                "nat_runtime_not_started",
+                "NAT runtime is not started",
+            )
+        if _runtime_id(payload) != self._runtime_id:
+            raise lifecycle.LifecycleError(
+                "nat_runtime_mismatch",
+                "NAT invocation does not match the active runtime",
+            )
+
+        request = common_utils.request_payload(payload)
+        if not isinstance(request, dict):
+            return None, _failure_output(
+                "nat_invalid_request",
+                "NAT invocation request must be a mapping",
+            )
+        return request, None
+
     async def start(self, payload: dict[str, Any]) -> None:
         if self._exit_stack is not None:
             raise lifecycle.LifecycleError(
@@ -749,23 +778,10 @@ class NatRuntime:
         self._exit_stack = stack
 
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if self._sessions is None or self._runtime_id is None:
-            raise lifecycle.LifecycleError(
-                "nat_runtime_not_started",
-                "NAT runtime is not started",
-            )
-        if _runtime_id(payload) != self._runtime_id:
-            raise lifecycle.LifecycleError(
-                "nat_runtime_mismatch",
-                "NAT invocation does not match the active runtime",
-            )
-
-        request = common_utils.request_payload(payload)
-        if not isinstance(request, dict):
-            return _failure_output(
-                "nat_invalid_request",
-                "NAT invocation request must be a mapping",
-            )
+        request, failure = self._invocation_request(payload)
+        if failure is not None:
+            return failure
+        assert request is not None
         try:
             session_kwargs = _session_kwargs(request)
         except ValueError as error:
@@ -806,6 +822,128 @@ class NatRuntime:
                 "NAT workflow returned a result that cannot be represented as JSON",
             )
         return _success_output(response)
+
+    async def invoke_openai_stream(
+        self,
+        payload: dict[str, Any],
+        emit: lifecycle.OpenAIChunkEmitter,
+    ) -> dict[str, Any]:
+        """Forward one NAT result stream declared as OpenAI chunks."""
+
+        request, failure = self._invocation_request(payload)
+        if failure is not None:
+            return failure
+        assert request is not None
+        assert self._sessions is not None
+
+        try:
+            from nat.data_models.api_server import ChatResponseChunk
+
+            streaming_output_schema = (
+                self._sessions.get_workflow_streaming_output_schema()
+            )
+        except Exception as error:
+            LOGGER.error(
+                "NAT workflow streaming schema lookup failed (error_type=%s)",
+                type(error).__name__,
+            )
+            return _failure_output(
+                "nat_workflow_stream_failed",
+                "NAT workflow streaming failed; inspect adapter stderr for details",
+            )
+
+        if streaming_output_schema is not ChatResponseChunk:
+            return _failure_output(
+                "nat_openai_stream_unsupported_schema",
+                "NAT native OpenAI streaming requires a ChatResponseChunk output schema",
+            )
+
+        try:
+            session_kwargs = _session_kwargs(request)
+        except ValueError as error:
+            return _failure_output("nat_invalid_request", str(error))
+
+        response_parts: list[str] = []
+        try:
+            from nat.data_models.runtime_enum import RuntimeTypeEnum
+            from pydantic_core import to_jsonable_python
+
+            async with self._sessions.session(**session_kwargs) as session:
+                async with session.run(
+                    request.get("input", ""),
+                    runtime_type=RuntimeTypeEnum.RUN_OR_SERVE,
+                ) as runner:
+                    stream = runner.result_stream(to_type=ChatResponseChunk)
+
+                    async def close_stream() -> None:
+                        close = getattr(stream, "aclose", None)
+                        if callable(close):
+                            await close()
+
+                    try:
+                        async for chunk in stream:
+                            try:
+                                serialized = to_jsonable_python(
+                                    chunk,
+                                    serialize_unknown=False,
+                                )
+                            except asyncio.CancelledError:
+                                raise
+                            except lifecycle.LifecycleError:
+                                raise
+                            except Exception as error:
+                                raise _NatStreamSerializationError from error
+                            if not isinstance(serialized, dict):
+                                raise _NatStreamSerializationError
+
+                            await emit(serialized)
+                            for choice in serialized.get("choices", []):
+                                if not isinstance(choice, dict):
+                                    continue
+                                if choice.get("index") != 0:
+                                    continue
+                                delta = choice.get("delta")
+                                if not isinstance(delta, dict):
+                                    continue
+                                content = delta.get("content")
+                                if isinstance(content, str):
+                                    response_parts.append(content)
+                    except BaseException:
+                        try:
+                            await close_stream()
+                        except BaseException as error:
+                            LOGGER.error(
+                                "NAT workflow stream cleanup failed while preserving "
+                                "the primary failure (error_type=%s)",
+                                type(error).__name__,
+                            )
+                        raise
+                    else:
+                        await close_stream()
+        except asyncio.CancelledError:
+            raise
+        except lifecycle.LifecycleError:
+            raise
+        except _NatStreamSerializationError as error:
+            LOGGER.error(
+                "NAT workflow returned a non-JSON stream chunk (error_type=%s)",
+                type(error.__cause__ or error).__name__,
+            )
+            return _failure_output(
+                "nat_stream_chunk_not_json_serializable",
+                "NAT workflow returned a stream chunk that cannot be represented as JSON",
+            )
+        except Exception as error:
+            LOGGER.error(
+                "NAT workflow streaming failed (error_type=%s)",
+                type(error).__name__,
+            )
+            return _failure_output(
+                "nat_workflow_stream_failed",
+                "NAT workflow streaming failed; inspect adapter stderr for details",
+            )
+
+        return _success_output("".join(response_parts))
 
     async def stop(self) -> None:
         stack = self._exit_stack

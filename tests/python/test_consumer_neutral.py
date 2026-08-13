@@ -37,7 +37,7 @@ ALLOWED = set(sys.stdlib_module_names) | {
     "typing_extensions",
     "__future__",
 }
-EXPECTED_DEPENDENCIES = ["pydantic>=2.10,<3", "typing-extensions>=4.12"]
+EXPECTED_DEPENDENCIES = ["pydantic>=2.12,<3", "typing-extensions>=4.12"]
 # Consumer/harness packages that must never leak into a plain ``import nemo_fabric``.
 CONSUMER_SPECIFIC = [
     "harbor",

@@ -26,11 +26,9 @@ pip install "nemo-fabric-adapters-codex[harness]"
 ```
 
 The adapter package's `full` extra installs the same dependencies as `harness`;
-it does not install the NeMo Fabric runtime. Codex Relay integration uses the
-external `nemo-relay` CLI, not the Python `nemo-relay` package, so this adapter
-does not provide a `relay` extra. Follow the
-[NeMo Relay CLI installation procedure](../../getting-started/install.mdx#install-nemo-relay),
-then ensure `nemo-relay` is on `PATH`.
+it does not install the NeMo Fabric runtime. Both extras install the supported
+`nemo-relay` CLI. Codex does not import the Relay Python API, so this adapter
+does not provide a separate `relay` extra.
 
 If the environment already manages a compatible Codex SDK, install only the
 adapter:
@@ -204,10 +202,10 @@ NeMo Fabric supplies runtime-scoped Relay configuration to the SDK. It does not
 copy the Codex credential store into Relay configuration or persist credentials
 in Relay artifacts.
 
-NeMo Fabric supports the external NeMo Relay CLI from `0.6.0` up to, but not
-including, `0.7.0`. The Python package named `nemo-relay` is a separate library
-dependency and does not install the CLI. NeMo Fabric owns sidecar supervision and
-runtime-scoped SDK configuration. Relay owns gateway transport behavior,
+NeMo Fabric supports the external NeMo Relay CLI in the `>=0.7.2,<0.8` range.
+NeMo Fabric's `relay` extra installs only the Relay Python library and does not
+install the CLI. NeMo Fabric owns sidecar supervision and runtime-scoped SDK
+configuration. Relay owns gateway transport behavior,
 including decoding `Content-Encoding` before it constructs managed LLM events.
 There is no NeMo Fabric compression setting.
 
