@@ -1501,6 +1501,21 @@ def test_native_sdk_controls_and_telemetry_are_request_scoped(
     assert turn["output_schema"]["required"] == ["summary"]
 
 
+def test_native_telemetry_requires_mapping(codex_payload):
+    codex_payload["runtime_context"]["telemetry"] = {
+        "relay_enabled": False,
+        "metadata": {
+            "telemetry_providers": ["native"],
+            "native_config": [],
+        },
+    }
+
+    with pytest.raises(
+        adapter.AdapterConfigError, match="native_config must be a mapping"
+    ):
+        adapter.native_codex_telemetry_config(runtime_input(codex_payload)[1])
+
+
 def test_timeout_interrupts_native_turn_and_closes_sdk(
     codex_payload, mock_codex, monkeypatch
 ):

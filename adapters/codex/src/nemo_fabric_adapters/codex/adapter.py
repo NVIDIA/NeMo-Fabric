@@ -695,7 +695,10 @@ def native_codex_telemetry_config(context: RuntimeContext) -> dict[str, Any]:
 
     telemetry_config = telemetry.metadata.get("native_config", {})
     if not isinstance(telemetry_config, dict):
-        return {}
+        raise AdapterConfigError(
+            "codex_invalid_configuration",
+            "runtime_context.telemetry.metadata.native_config must be a mapping",
+        )
     for component in telemetry_config.get("components") or []:
         if (
             not isinstance(component, dict)
@@ -1242,11 +1245,7 @@ class CodexRuntime:
             )
 
         try:
-            agent_config = payload.get("config")
-            if not isinstance(agent_config, AgentConfig):
-                raise lifecycle.LifecycleError(
-                    "codex_invalid_config", "Codex requires a validated AgentConfig"
-                )
+            agent_config = payload["config"]
             context = _runtime_context(payload)
             base_dir = common_utils.base_dir(payload)
             fabric_runtime_id = validate_runtime_payload(
