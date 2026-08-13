@@ -758,12 +758,7 @@ def prepare_codex_relay(
 
     try:
         relay_contract = relay_gateway.relay_cli_contract(executable)
-        plugin_config = common_utils.load_relay_plugin_config(
-            base_dir=base_dir,
-            runtime_id=context.runtime_id,
-            agent_name=agent_name,
-            model_name=_selected_model_config(config).model,
-        )
+        plugin_config = common_utils.load_relay_plugin_config(payload)
         config_path, plugin_config_path = common_utils.write_relay_configs(
             # Codex execution remains SDK-owned; Relay runs only as a gateway.
             relay_config={},

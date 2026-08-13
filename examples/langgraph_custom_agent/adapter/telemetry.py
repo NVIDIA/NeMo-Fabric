@@ -74,10 +74,12 @@ def _load_plugin_config(
 
     common_utils.normalize_relay_output_dirs(
         plugin_config,
-        base_dir=str(base_dir),
-        runtime_id=context.runtime_id,
-        agent_name=agent_name,
-        model_name=model_name,
+        {
+            "agent_name": agent_name,
+            "base_dir": str(base_dir),
+            "config": {"models": {"default": {"model": model_name}}},
+            "runtime_context": context.to_mapping(),
+        },
     )
     for component in plugin_config["components"]:
         if component.get("kind") != "observability":

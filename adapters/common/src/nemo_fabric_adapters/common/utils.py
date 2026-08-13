@@ -61,7 +61,7 @@ def validate_http_header(server_name: str, name: str, value: str) -> None:
 def validate_http_headers(server_name: str, value: dict[str, str]) -> None:
     """
     Validate an MCP custom-header mapping.
-
+    
     Use this method for harnesses that support environment variable expansion
     in HTTP headers. For harnesses that don't support environment variable
     expansion, use expand_http_headers instead.
@@ -74,7 +74,7 @@ def validate_http_headers(server_name: str, value: dict[str, str]) -> None:
 def expand_http_headers(server_name: str, value: dict[str, str]) -> dict[str, str]:
     """
     Expand environment variables and validate an MCP custom-header mapping.
-
+    
     Use this method instead of validate_http_headers for harnesses that don't
     support environment variable expansion in HTTP headers.
     """
@@ -302,9 +302,7 @@ def dump_yaml(value: dict[str, Any]) -> str:
         return json.dumps(value, indent=2, sort_keys=False) + "\n"
 
 
-def load_relay_plugin_config(
-    *, base_dir: str, runtime_id: str, agent_name: str, model_name: str
-) -> dict[str, Any]:
+def load_relay_plugin_config(payload: dict[str, Any]) -> dict[str, Any]:
     config_path = os.environ.get("FABRIC_RELAY_CONFIG_PATH")
     if not config_path:
         raise RuntimeError("FABRIC_RELAY_CONFIG_PATH is required when Relay is enabled")
@@ -327,25 +325,15 @@ def load_relay_plugin_config(
         }
     plugin_config.setdefault("version", 1)
     plugin_config.setdefault("components", [])
-    normalize_relay_output_dirs(
-        plugin_config,
-        base_dir=base_dir,
-        runtime_id=runtime_id,
-        agent_name=agent_name,
-        model_name=model_name,
-    )
+    normalize_relay_output_dirs(plugin_config, payload)
     return plugin_config
 
 
 def normalize_relay_output_dirs(
-    plugin_config: dict[str, Any],
-    *,
-    base_dir: str,
-    runtime_id: str,
-    agent_name: str,
-    model_name: str,
+    plugin_config: dict[str, Any], payload: dict[str, Any]
 ) -> None:
-    base = Path(base_dir).resolve()
+    base = Path(base_dir(payload)).resolve()
+    runtime_id = runtime_context(payload)["runtime_id"]
     for component in plugin_config.get("components", []):
         if component.get("kind") != "observability":
             continue
@@ -383,8 +371,8 @@ def normalize_relay_output_dirs(
         atif["output_directory"] = str(path / str(runtime_id))
         Path(atif["output_directory"]).mkdir(parents=True, exist_ok=True)
         atif.setdefault("filename_template", "trajectory-{session_id}.atif.json")
-        atif.setdefault("agent_name", agent_name)
-        atif.setdefault("model_name", model_name)
+        atif.setdefault("agent_name", agent_name(payload))
+        atif.setdefault("model_name", relay_model_name(payload))
 
 
 def _artifact_directory(value: Any) -> Path | None:
