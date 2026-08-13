@@ -111,12 +111,21 @@ def code_review_agent_dir_fixture(repo_root: Path, tmp_path: Path) -> Path:
 
 
 @pytest.fixture(name="api_server")
-def api_server_fixture(unused_tcp_port: int) -> Iterator[str]:
+def api_server_fixture(unused_tcp_port_factory) -> Iterator[str]:
     from _utils.mock_api_server import mock_api_server
 
-    with mock_api_server(unused_tcp_port) as base_url:
+    with mock_api_server(unused_tcp_port_factory()) as base_url:
         yield base_url
 
+
+@pytest.fixture(name="adapter_ids")
+def adapter_ids_fixture() -> dict[str, str]:
+    return {
+        "deepagents": "nvidia.fabric.langchain.deepagents",
+        "claude": "nvidia.fabric.claude",
+        "codex": "nvidia.fabric.codex",
+        "hermes": "nvidia.fabric.hermes",
+    }
 
 @pytest.fixture(name="mcp_server")
 def mcp_server_fixture(
