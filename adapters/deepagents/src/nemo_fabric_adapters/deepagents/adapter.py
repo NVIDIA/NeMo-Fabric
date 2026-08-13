@@ -215,7 +215,7 @@ def resolve_backend(runtime_context: RuntimeContext, base_dir: str) -> Any:
     """Root the Deep Agents filesystem backend at the Fabric workspace, if set."""
 
     workspace = runtime_context.environment.workspace
-    if workspace is None:
+    if not workspace:
         return None
     root = Path(str(workspace))
     if not root.is_absolute():
