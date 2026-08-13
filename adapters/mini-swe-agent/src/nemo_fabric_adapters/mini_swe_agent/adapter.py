@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -9,7 +8,9 @@ import json
 import os
 from typing import Any
 
-from nemo_fabric_adapter_contract.models import AgentConfig, RuntimeContext
+from nemo_fabric_adapter_contract.models import AgentConfig
+from nemo_fabric_adapter_contract.models import AgentModelConfig
+from nemo_fabric_adapter_contract.models import RuntimeContext
 from nemo_fabric_adapters.common import lifecycle
 import nemo_fabric_adapters.common.utils as common_utils
 
@@ -19,7 +20,6 @@ DEFAULT_API_KEY_ENVS = {
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
 }
-DEFAULT_SYSTEM_TEMPLATE = "You are a helpful software engineering assistant."
 INSTANCE_TEMPLATE = """Solve this task in the current workspace:
 
 {{task}}
@@ -33,7 +33,7 @@ def main() -> None:
     lifecycle.serve(MiniSweAgentRuntime, config_loader=AgentConfig.from_mapping)
 
 
-def _selected_model(config: AgentConfig) -> Any:
+def _selected_model(config: AgentConfig) -> AgentModelConfig:
     model = config.models.get("default")
     if model is None and len(config.models) == 1:
         model = next(iter(config.models.values()))
@@ -44,7 +44,7 @@ def _selected_model(config: AgentConfig) -> Any:
     return model
 
 
-def _model_api_key(model: Any, environment: dict[str, str]) -> str | None:
+def _model_api_key(model: AgentModelConfig, environment: dict[str, str]) -> str | None:
     name = model.api_key_env or DEFAULT_API_KEY_ENVS.get(model.provider)
     if name is None:
         return None
@@ -101,7 +101,11 @@ class MiniSweAgentRuntime:
             cwd=str(workspace), env=context.environment.env, timeout=timeout
         )
         system = config.instructions.system if config.instructions else None
-        template = system.content if system else DEFAULT_SYSTEM_TEMPLATE
+        template = (
+            system.content
+            if system
+            else "You are a helpful software engineering assistant."
+        )
         self._agent_kwargs = {
             "system_template": template,
             "instance_template": INSTANCE_TEMPLATE,
