@@ -22,44 +22,39 @@ Use the bash tool. When complete, run
 """
 
 
-def _continue_agent(agent: Any, task: str) -> dict[str, Any]:
-    from minisweagent.exceptions import FormatError, InterruptAgentFlow
+def _retaining_agent_type() -> type[Any]:
+    from minisweagent.agents.default import DefaultAgent
 
-    agent.n_calls = agent.cost = 0
-    format_error_limit = agent.config.model_dump().get(
-        "max_consecutive_format_errors", 0
-    )
-    consecutive_format_errors = 0
-    agent.messages[-1]["role"] = "assistant"
-    agent.add_messages(agent.model.format_message(role="user", content=task))
-    while True:
-        try:
-            agent.step()
-            consecutive_format_errors = 0
-        except FormatError as error:
-            agent.cost += error.messages[0].get("extra", {}).get("cost", 0.0)
-            consecutive_format_errors += 1
-            if 0 < format_error_limit <= consecutive_format_errors:
-                agent.add_messages(
-                    *error.messages,
-                    {
-                        "role": "exit",
-                        "content": "RepeatedFormatError",
-                        "extra": {
-                            "exit_status": "RepeatedFormatError",
-                            "submission": "",
-                        },
-                    },
-                )
+    class RetainingDefaultAgent(DefaultAgent):
+        _retain_messages = _skip_initial_messages = False
+
+        @property
+        def messages(self) -> list[dict[str, Any]]:
+            return self._messages
+
+        @messages.setter
+        def messages(self, messages: list[dict[str, Any]]) -> None:
+            if self._retain_messages and not messages:
+                self._retain_messages = False
+                self._skip_initial_messages = True
             else:
-                agent.add_messages(*error.messages)
-        except InterruptAgentFlow as error:
-            agent.add_messages(*error.messages)
-        except Exception as error:
-            agent.handle_uncaught_exception(error)
-            raise
-        if agent.messages[-1].get("role") == "exit":
-            return agent.messages[-1].get("extra", {})
+                self._messages = messages
+
+        def add_messages(self, *messages: dict[str, Any]) -> list[dict[str, Any]]:
+            if self._skip_initial_messages:
+                self._skip_initial_messages = False
+                return []
+            return super().add_messages(*messages)
+
+        def run(self, task: str = "", **kwargs: Any) -> dict[str, Any]:
+            if self.messages:
+                self.n_calls = self.cost = self.n_consecutive_format_errors = 0
+                self.messages[-1]["role"] = "assistant"
+                self.add_messages(self.model.format_message(role="user", content=task))
+                self._retain_messages = True
+            return super().run(task, **kwargs)
+
+    return RetainingDefaultAgent
 
 
 def _selected_model(config: contract.AgentConfig) -> contract.AgentModelConfig:
@@ -105,9 +100,7 @@ class MiniSweAgentRuntime:
             if config.instructions and config.instructions.system
             else ""
         )
-        from minisweagent.agents.default import DefaultAgent
-
-        self._agent = DefaultAgent(
+        self._agent = _retaining_agent_type()(
             self._model,
             self._environment,
             system_template=SYSTEM_TEMPLATE,
@@ -118,12 +111,9 @@ class MiniSweAgentRuntime:
     async def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
         raw_task = common_utils.request_payload(payload).get("input", "")
         task = raw_task if isinstance(raw_task, str) else json.dumps(raw_task)
-        if self._agent.messages:
-            result = await asyncio.to_thread(_continue_agent, self._agent, task)
-        else:
-            result = await asyncio.to_thread(
-                self._agent.run, task, system_instruction=self._system_instruction
-            )
+        result = await asyncio.to_thread(
+            self._agent.run, task, system_instruction=self._system_instruction
+        )
         failed = result.get("exit_status") != "Submitted"
         output: dict[str, Any] = {
             "failed": failed,

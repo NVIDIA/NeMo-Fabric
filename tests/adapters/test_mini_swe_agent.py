@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -31,60 +30,24 @@ def mock_mini_fixture(monkeypatch):
     agent.n_consecutive_format_errors = 0
     agent.extra_template_vars = {}
     agent.model = model
-    agent.config.max_consecutive_format_errors = 3
-    agent.config.system_template = "{{system_instruction}}"
-    agent.config.instance_template = "{{task}}"
-    agent.config.model_dump.return_value = {"max_consecutive_format_errors": 3}
-
-    def add_messages(*messages):
-        agent.messages.extend(messages)
-        return list(messages)
-
-    def step():
-        agent.n_calls += 1
-        agent.messages.append(
-            {
-                "role": "exit",
-                "extra": {"exit_status": "Submitted", "submission": "done"},
-            }
-        )
-
-    agent.add_messages.side_effect = add_messages
-    agent.step.side_effect = step
 
     def run(task, *, system_instruction):
-        agent.messages = [
-            model.format_message(role="system", content=system_instruction),
-            model.format_message(
-                role="user", content=adapter.INSTANCE_TEMPLATE.replace("{{task}}", task)
-            ),
-        ]
-        agent.step()
-        return agent.messages[-1]["extra"]
+        agent.n_calls = 1
+        return {"exit_status": "Submitted", "submission": "done"}
 
     agent.run.side_effect = run
     model_factory = MagicMock(return_value=model)
     environment_factory = MagicMock(return_value=environment)
     agent_factory = MagicMock(return_value=agent)
+    monkeypatch.setattr(
+        adapter, "_retaining_agent_type", MagicMock(return_value=agent_factory)
+    )
     modules = {
-        "minisweagent": types.ModuleType("minisweagent"),
-        "minisweagent.agents": types.ModuleType("minisweagent.agents"),
-        "minisweagent.agents.default": types.ModuleType("minisweagent.agents.default"),
-        "minisweagent.exceptions": types.ModuleType("minisweagent.exceptions"),
-        "minisweagent.environments": types.ModuleType("minisweagent.environments"),
-        "minisweagent.environments.local": types.ModuleType(
-            "minisweagent.environments.local"
+        "minisweagent.environments.local": MagicMock(
+            LocalEnvironment=environment_factory
         ),
-        "minisweagent.models": types.ModuleType("minisweagent.models"),
-        "minisweagent.models.litellm_model": types.ModuleType(
-            "minisweagent.models.litellm_model"
-        ),
+        "minisweagent.models.litellm_model": MagicMock(LitellmModel=model_factory),
     }
-    modules["minisweagent.agents.default"].DefaultAgent = agent_factory
-    modules["minisweagent.exceptions"].FormatError = Exception
-    modules["minisweagent.exceptions"].InterruptAgentFlow = Exception
-    modules["minisweagent.environments.local"].LocalEnvironment = environment_factory
-    modules["minisweagent.models.litellm_model"].LitellmModel = model_factory
     for name, module in modules.items():
         monkeypatch.setitem(sys.modules, name, module)
     return {
@@ -209,16 +172,11 @@ async def test_mini_swe_agent_maps_config_and_returns_normalized_output(
 async def test_mini_swe_agent_reports_an_incomplete_loop_as_failed(
     mock_mini, mini_payload
 ):
-    def step():
-        mock_mini["agent"].n_calls += 1
-        mock_mini["agent"].messages.append(
-            {
-                "role": "exit",
-                "extra": {"exit_status": "LimitsExceeded", "submission": ""},
-            }
-        )
-
-    mock_mini["agent"].step.side_effect = step
+    mock_mini["agent"].run.side_effect = None
+    mock_mini["agent"].run.return_value = {
+        "exit_status": "LimitsExceeded",
+        "submission": "",
+    }
     runtime = adapter.MiniSweAgentRuntime()
     start = {**mini_payload, "config": AgentConfig.from_mapping(mini_payload["config"])}
     await runtime.start(start)
@@ -240,8 +198,51 @@ async def test_mini_swe_agent_retains_history_between_invocations(
     mini_payload["request"]["input"] = "Continue the task."
     await runtime.invoke(mini_payload)
 
-    agent = mock_mini["agent"]
     assert mock_mini["agent_factory"].call_count == 1
+    assert mock_mini["agent"].run.call_args_list == [
+        (
+            ("Fix the test.",),
+            {"system_instruction": "Work with the literal {{template}}."},
+        ),
+        (
+            ("Continue the task.",),
+            {"system_instruction": "Work with the literal {{template}}."},
+        ),
+    ]
+
+
+def test_retaining_agent_reuses_the_native_run_loop():
+    model = MagicMock()
+    model.format_message.side_effect = lambda **message: message
+    environment = MagicMock()
+    agent = adapter._retaining_agent_type()(
+        model,
+        environment,
+        system_template="{{system_instruction}}",
+        instance_template="{{task}}",
+    )
+
+    def step() -> None:
+        agent.n_calls += 1
+        agent.messages.append(
+            {
+                "role": "exit",
+                "extra": {"exit_status": "Submitted", "submission": "done"},
+            }
+        )
+
+    agent.step = MagicMock(side_effect=step)
+
+    assert agent.run("First task.", system_instruction="System.") == {
+        "exit_status": "Submitted",
+        "submission": "done",
+    }
+    assert agent.run("Continue.", system_instruction="System.") == {
+        "exit_status": "Submitted",
+        "submission": "done",
+    }
+
+    assert agent.n_calls == 1
     assert [message["role"] for message in agent.messages] == [
         "system",
         "user",
@@ -249,7 +250,7 @@ async def test_mini_swe_agent_retains_history_between_invocations(
         "user",
         "exit",
     ]
-    assert agent.messages[3]["content"] == "Continue the task."
+    assert agent.messages[3]["content"] == "Continue."
 
 
 def test_mini_swe_agent_module_entrypoint_exits_cleanly():
