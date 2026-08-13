@@ -456,7 +456,10 @@ def relay_payload_fixture(make_payload, monkeypatch):
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        lambda **_kwargs: {"version": 1, "components": []},
+        lambda *, base_dir, runtime_id, agent_name, model_name: {
+            "version": 1,
+            "components": [],
+        },
     )
 
     def build(tmp_path) -> dict[str, Any]:
@@ -1405,7 +1408,7 @@ async def test_persistent_runtime_scopes_relay_per_invocation(
     monkeypatch.setattr(
         adapter.common_utils,
         "load_relay_plugin_config",
-        lambda **_kwargs: plugin_config,
+        lambda *, base_dir, runtime_id, agent_name, model_name: plugin_config,
     )
     monkeypatch.setattr(
         adapter.common_utils,
